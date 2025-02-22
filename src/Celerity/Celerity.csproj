@@ -17,4 +17,9 @@
 		<MinVerTagPrefix>v</MinVerTagPrefix>
 		<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
+		<None Include="..\..\README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
 </Project>
