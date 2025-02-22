@@ -8,8 +8,9 @@
 		<Authors>Marius Bughiu</Authors>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<PackageId>Celerity.Collections</PackageId>
 		<PackageIcon>icon.png</PackageIcon>
-		<PackageTags>celerity</PackageTags>
+		<PackageTags>celerity;collections</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 
