@@ -26,7 +26,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     private int _threshold;
     private readonly THasher _hasher;
 
-    unsafe public IntDictionary(
+    public IntDictionary(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
     {
@@ -92,7 +92,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         return true;
     }
 
-    unsafe private int ProbeForInsert(int key)
+    private int ProbeForInsert(int key)
     {
         int size = _keys.Length;
 
@@ -107,7 +107,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         return index;
     }
 
-    unsafe private int ProbeForKey(int key)
+    private int ProbeForKey(int key)
     {
         int size = _keys.Length;
 
