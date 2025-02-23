@@ -1,30 +1,48 @@
-﻿namespace Celerity.Collections;
+﻿using Celerity.Hashing;
 
-public class IntDictionary<TValue>
+namespace Celerity.Collections;
+
+public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
 {
-    private const int DEFAULT_CAPACITY = 16;
-    private const float LOAD_FACTOR = 0.75f;
-    private const int EMPTY_KEY = 0; 
-    private TValue EMPTY_VALUE = default;
-
-    private int[] keys;
-    private TValue[] values;
-    private int count;
-    private int threshold;
-
-    public IntDictionary(int capacity = DEFAULT_CAPACITY)
+    public IntDictionary(int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+        : base()
     {
-        int size = NextPowerOfTwo(capacity);
-        keys = new int[size];
-        values = new TValue[size];
-        threshold = (int)(size * LOAD_FACTOR);
-        count = 0;
+
+    }
+}
+
+public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvider<int>
+{
+    protected const int DEFAULT_CAPACITY = 16;
+    protected const float DEFAULT_LOAD_FACTOR = 0.75f;
+    private const int EMPTY_KEY = 0;
+    private readonly TValue EMPTY_VALUE = default;
+
+    private int _count = 0;
+    private int[] _keys;
+    private TValue[] _values;
+    private readonly float _loadFactor;
+    private int _threshold;
+    private readonly THasher _hasher;
+
+    unsafe public IntDictionary(
+        int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+    {
+        int size = FastUtils.NextPowerOfTwo(capacity);
+
+        _keys = new int[size];
+        _values = new TValue[size];
+        _loadFactor = loadFactor;
+        _threshold = (int)(size * _loadFactor);
+        _hasher = default;
     }
 
     /// <summary>
     /// 
     /// </summary>
-    public int Count => count;
+    public int Count => _count;
 
     /// <summary>
     /// Gets or sets a value associated with the given key.
@@ -38,23 +56,23 @@ public class IntDictionary<TValue>
             if (index < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
 
-            return values[index];
+            return _values[index];
         }
         set
         {
-            if (count >= threshold)
+            if (_count >= _threshold)
             {
                 Resize();
             }
 
             int index = ProbeForInsert(key);
-            bool isNewEntry = keys[index] == EMPTY_KEY;
+            bool isNewEntry = _keys[index] == EMPTY_KEY;
 
-            keys[index] = key;
-            values[index] = value;
+            _keys[index] = key;
+            _values[index] = value;
 
             if (isNewEntry)
-                count++;
+                _count++;
         }
     }
 
@@ -66,20 +84,22 @@ public class IntDictionary<TValue>
         if (index < 0)
             return false;
 
-        keys[index] = EMPTY_KEY;
-        values[index] = EMPTY_VALUE;
-        count--;
+        _keys[index] = EMPTY_KEY;
+        _values[index] = EMPTY_VALUE;
+        _count--;
 
         RehashAfterRemove(index);
         return true;
     }
 
-    private int ProbeForInsert(int key)
+    unsafe private int ProbeForInsert(int key)
     {
-        int size = keys.Length;
-        int index = Hash(key) & (size - 1);
+        int size = _keys.Length;
 
-        while (keys[index] != EMPTY_KEY && keys[index] != key)
+        // Only works when size is a power of two
+        int index = _hasher.Hash(key) & (size - 1);
+
+        while (_keys[index] != EMPTY_KEY && _keys[index] != key)
         {
             index = (index + 1) & (size - 1);
         }
@@ -87,14 +107,16 @@ public class IntDictionary<TValue>
         return index;
     }
 
-    private int ProbeForKey(int key)
+    unsafe private int ProbeForKey(int key)
     {
-        int size = keys.Length;
-        int index = Hash(key) & (size - 1);
+        int size = _keys.Length;
 
-        while (keys[index] != EMPTY_KEY)
+        // Only works when size is a power of two
+        int index = _hasher.Hash(key) & (size - 1);
+
+        while (_keys[index] != EMPTY_KEY)
         {
-            if (keys[index] == key)
+            if (_keys[index] == key)
                 return index;
             index = (index + 1) & (size - 1);
         }
@@ -104,49 +126,40 @@ public class IntDictionary<TValue>
 
     private void Resize()
     {
-        int newSize = keys.Length * 2;
-        int[] oldKeys = keys;
-        TValue[] oldValues = values;
+        int newSize = _keys.Length * 2;
+        int[] oldKeys = _keys;
+        TValue[] oldValues = _values;
 
-        keys = new int[newSize];
-        values = new TValue[newSize];
-        threshold = (int)(newSize * LOAD_FACTOR);
-        count = 0;
+        _keys = new int[newSize];
+        _values = new TValue[newSize];
+        _threshold = (int)(newSize * _loadFactor);
+        _count = 0;
 
         for (int i = 0; i < oldKeys.Length; i++)
         {
             if (oldKeys[i] != EMPTY_KEY)
             {
-                this[oldKeys[i]] = oldValues[i]; // Use indexer to reinsert
+                this[oldKeys[i]] = oldValues[i];
             }
         }
     }
 
     private void RehashAfterRemove(int startIndex)
     {
-        int size = keys.Length;
+        int size = _keys.Length;
         int index = (startIndex + 1) & (size - 1);
 
-        while (keys[index] != EMPTY_KEY)
+        while (_keys[index] != EMPTY_KEY)
         {
-            int rehashedKey = keys[index];
-            TValue rehashedValue = values[index];
+            int rehashedKey = _keys[index];
+            TValue rehashedValue = _values[index];
 
-            keys[index] = EMPTY_KEY;
-            values[index] = EMPTY_VALUE;
-            count--;
+            _keys[index] = EMPTY_KEY;
+            _values[index] = EMPTY_VALUE;
+            _count--;
 
-            this[rehashedKey] = rehashedValue; // Reinserting with indexer
+            this[rehashedKey] = rehashedValue;
             index = (index + 1) & (size - 1);
         }
-    }
-
-    private static int Hash(int key) => key ^ (key >> 16);
-
-    private static int NextPowerOfTwo(int n)
-    {
-        int power = 1;
-        while (power < n) power *= 2;
-        return power;
     }
 }
