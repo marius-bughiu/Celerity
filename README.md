@@ -23,3 +23,14 @@ Celerity is a .NET library that provides specialized high-performance collection
 | CelerityDictionary_Lookup | 100000    |   422,466.0 ns |  4,472.81 ns |  3,965.03 ns |         - |
 | Dictionary_Remove         | 100000    |   149,102.9 ns |    926.90 ns |    867.02 ns |         - |
 | CelerityDictionary_Remove | 100000    |   129,491.3 ns |  2,092.50 ns |  1,854.94 ns |         - |
+
+## `IHashProvider`
+
+You can implement your own custom hash provider by implementing `IHashProvider<T>`.
+
+```
+public interface IHashProvider<T>
+{
+    int Hash(T key);
+}
+```
