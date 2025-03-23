@@ -5,7 +5,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 
 ## Benchmarks
 
-### CelerityDictionary
+#### CelerityDictionary
 
 `CelerityDictionary` allows you to bring your own custom key hasher to best suit your needs. Below you have a benchmark between a standard .NET `Dictionary<int, int>` and a `CelerityDictionary<int, int, Int32WangNaiveHasher>` using a random key distribution.
 
