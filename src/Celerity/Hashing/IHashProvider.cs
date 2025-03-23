@@ -2,5 +2,5 @@
 
 public interface IHashProvider<T>
 {
-    T Hash(T key);
+    int Hash(T key);
 }

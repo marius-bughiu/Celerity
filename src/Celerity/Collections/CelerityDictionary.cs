@@ -2,28 +2,7 @@
 
 namespace Celerity.Collections;
 
-public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
-{
-    /// <summary>
-    /// Initializes a new instance of the <see cref="IntDictionary{TValue}"/> class
-    /// with an optional capacity and load factor.
-    /// </summary>
-    /// <param name="capacity">
-    /// The initial capacity of the dictionary. Automatically rounded up
-    /// to the next power of two.
-    /// </param>
-    /// <param name="loadFactor">
-    /// Determines the maximum ratio of count to capacity before resizing.
-    /// </param>
-    public IntDictionary(int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
-        : base()
-    {
-
-    }
-}
-
-public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvider<int>
+public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, IHashProvider<TKey>
 {
     /// <summary>
     /// The default initial capacity of the dictionary if no capacity is specified.
@@ -35,53 +14,51 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     /// </summary>
     protected const float DEFAULT_LOAD_FACTOR = 0.75f;
 
-    private const int EMPTY_KEY = 0;
-    private readonly TValue? EMPTY_VALUE = default;
-
     private int _count = 0;
-    private int[] _keys;
+    private TKey?[] _keys;
     private TValue?[] _values;
     private readonly float _loadFactor;
     private int _threshold;
     private readonly THasher _hasher;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="IntDictionary{TValue, THasher}"/> class
+    /// Initializes a new instance of the <see cref="CelerityDictionary{TKey,TValue,THasher}"/> class
     /// using the specified capacity and load factor.
     /// </summary>
     /// <param name="capacity">
-    /// The initial capacity of the dictionary. Automatically rounded up
-    /// to the next power of two.
+    /// The initial capacity, automatically rounded to the next power of two.
     /// </param>
     /// <param name="loadFactor">
-    /// Determines the maximum ratio of count to capacity before resizing.
+    /// The fraction of the dictionary's size that can be filled before resizing.
     /// </param>
-    public IntDictionary(
+    public CelerityDictionary(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
     {
         int size = FastUtils.NextPowerOfTwo(capacity);
 
-        _keys = new int[size];
-        _values = new TValue[size];
+        _keys = new TKey?[size];
+        _values = new TValue?[size];
         _loadFactor = loadFactor;
         _threshold = (int)(size * _loadFactor);
         _hasher = default;
     }
 
     /// <summary>
-    /// Gets the number of entries currently stored in the dictionary.
+    /// Gets the number of key/value pairs contained in the dictionary.
     /// </summary>
     public int Count => _count;
 
     /// <summary>
     /// Gets or sets the value associated with the specified key.
-    /// Throws <see cref="KeyNotFoundException"/> if the key is not present on get.
+    /// Throws a <see cref="KeyNotFoundException"/> if the key does not exist on get.
     /// </summary>
-    /// <param name="key">The key whose value to get or set.</param>
-    /// <exception cref="KeyNotFoundException">Thrown if the key does not exist.</exception>
+    /// <param name="key">The key of the value to get or set.</param>
+    /// <exception cref="KeyNotFoundException">
+    /// Thrown when attempting to get a value for a key that is not found in the dictionary.
+    /// </exception>
     /// <returns>The value associated with the specified key.</returns>
-    public TValue this[int key]
+    public TValue? this[TKey key]
     {
         get
         {
@@ -89,7 +66,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
             if (index < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
 
-            return _values[index]!;
+            return _values[index];
         }
         set
         {
@@ -99,7 +76,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
             }
 
             int index = ProbeForInsert(key);
-            bool isNewEntry = _keys[index] == EMPTY_KEY;
+            bool isNewEntry = EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey));
 
             _keys[index] = key;
             _values[index] = value;
@@ -112,40 +89,41 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     /// <summary>
     /// Determines whether the specified key is present in the dictionary.
     /// </summary>
-    /// <param name="key">The key to locate in the dictionary.</param>
+    /// <param name="key">The key to locate.</param>
     /// <returns><c>true</c> if the key is found; otherwise, <c>false</c>.</returns>
-    public bool ContainsKey(int key) => ProbeForKey(key) >= 0;
+    public bool ContainsKey(TKey key) => ProbeForKey(key) >= 0;
 
     /// <summary>
     /// Removes the value with the specified key from the dictionary.
     /// </summary>
     /// <param name="key">The key of the element to remove.</param>
     /// <returns>
-    /// <c>true</c> if the item was successfully removed; otherwise, <c>false</c>.
-    /// This method also returns <c>false</c> if <paramref name="key"/> was not found.
+    /// <c>true</c> if the element was successfully removed; otherwise, <c>false</c>.
+    /// Also returns <c>false</c> if the key was not found.
     /// </returns>
-    public bool Remove(int key)
+    public bool Remove(TKey key)
     {
         int index = ProbeForKey(key);
         if (index < 0)
             return false;
 
-        _keys[index] = EMPTY_KEY;
-        _values[index] = EMPTY_VALUE;
+        _keys[index] = default(TKey);
+        _values[index] = default(TValue);
         _count--;
 
         RehashAfterRemove(index);
         return true;
     }
 
-    private int ProbeForInsert(int key)
+    private int ProbeForInsert(TKey key)
     {
         int size = _keys.Length;
 
         // Only works when size is a power of two
         int index = _hasher.Hash(key) & (size - 1);
 
-        while (_keys[index] != EMPTY_KEY && _keys[index] != key)
+        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)) &&
+               !EqualityComparer<TKey>.Default.Equals(_keys[index], key))
         {
             index = (index + 1) & (size - 1);
         }
@@ -153,16 +131,14 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         return index;
     }
 
-    private int ProbeForKey(int key)
+    private int ProbeForKey(TKey key)
     {
         int size = _keys.Length;
-
-        // Only works when size is a power of two
         int index = _hasher.Hash(key) & (size - 1);
 
-        while (_keys[index] != EMPTY_KEY)
+        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)))
         {
-            if (_keys[index] == key)
+            if (EqualityComparer<TKey>.Default.Equals(_keys[index], key))
                 return index;
             index = (index + 1) & (size - 1);
         }
@@ -173,19 +149,19 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     private void Resize()
     {
         int newSize = _keys.Length * 2;
-        int[] oldKeys = _keys;
-        TValue[] oldValues = _values;
+        TKey?[] oldKeys = _keys;
+        TValue?[] oldValues = _values;
 
-        _keys = new int[newSize];
-        _values = new TValue[newSize];
+        _keys = new TKey?[newSize];
+        _values = new TValue?[newSize];
         _threshold = (int)(newSize * _loadFactor);
         _count = 0;
 
         for (int i = 0; i < oldKeys.Length; i++)
         {
-            if (oldKeys[i] != EMPTY_KEY)
+            if (!EqualityComparer<TKey>.Default.Equals(oldKeys[i], default(TKey)))
             {
-                this[oldKeys[i]] = oldValues[i];
+                this[oldKeys[i]!] = oldValues[i];
             }
         }
     }
@@ -195,13 +171,13 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         int size = _keys.Length;
         int index = (startIndex + 1) & (size - 1);
 
-        while (_keys[index] != EMPTY_KEY)
+        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default))
         {
-            int rehashedKey = _keys[index];
+            TKey rehashedKey = _keys[index]!;
             TValue rehashedValue = _values[index]!;
 
-            _keys[index] = EMPTY_KEY;
-            _values[index] = EMPTY_VALUE;
+            _keys[index] = default;
+            _values[index] = default;
             _count--;
 
             this[rehashedKey] = rehashedValue;
