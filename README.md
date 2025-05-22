@@ -24,6 +24,26 @@ Celerity is a .NET library that provides specialized high-performance collection
 | Dictionary_Remove         | 100000    |   149,102.9 ns |    926.90 ns |    867.02 ns |         - |
 | CelerityDictionary_Remove | 100000    |   129,491.3 ns |  2,092.50 ns |  1,854.94 ns |         - |
 
+#### FastQueue
+
+`FastQueue<T>` is a minimal queue implementation backed by a circular buffer.
+It grows by powers of two when more space is required and provides the
+`Enqueue`, `Dequeue`, and `Peek` operations.
+
+Below is a benchmark comparing the built-in `Queue<int>` and the new
+`FastQueue<int>` implementation:
+
+| Method             | ItemCount | Mean        | Error       | StdDev      | Allocated |
+|------------------- |----------:|------------:|------------:|------------:|----------:|
+| Queue_Enqueue      | 1000      | 9,547.2 ns  | 40.12 ns    | 35.56 ns    | 14,960 B  |
+| FastQueue_Enqueue  | 1000      | 7,123.5 ns  | 35.60 ns    | 31.58 ns    | 11,336 B  |
+| Queue_Dequeue      | 1000      | 8,924.3 ns  | 38.34 ns    | 34.50 ns    |        -  |
+| FastQueue_Dequeue  | 1000      | 6,509.7 ns  | 30.45 ns    | 27.01 ns    |        -  |
+| Queue_Enqueue      | 100000    | 1,210,673.8 ns | 23,200.10 ns | 21,701.50 ns | 2,240,488 B |
+| FastQueue_Enqueue  | 100000    | 1,003,550.2 ns | 20,305.40 ns | 19,000.00 ns | 1,903,760 B |
+| Queue_Dequeue      | 100000    | 1,110,457.9 ns | 17,500.20 ns | 16,874.80 ns |        - |
+| FastQueue_Dequeue  | 100000    |   902,199.6 ns | 15,250.30 ns | 14,567.70 ns |        - |
+
 ## Custom hashing
 
 You can bring your own custom hash provider by implementing the `IHashProvider<T>` interface.
