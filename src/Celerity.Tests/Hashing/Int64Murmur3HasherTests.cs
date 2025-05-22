@@ -79,14 +79,11 @@ public class Int64Murmur3HasherTests
     }
 
     /// <summary>
-    /// Mock function that returns a pre-computed value for key=42.
-    /// Replace with the actual integer after running a one-time calculation.
+    /// Returns the pre-computed Murmur3 hash for <c>42L</c>.
     /// </summary>
     private int ComputeExpectedMurmurHashFor42()
     {
-        // Hardcode the expected result once known. 
-        // Example: return 1481640323; // <-- placeholder example
-        // For now, we just re-run the same hasher for demonstration.
-        return _hasher.Hash(42L);
+        // Pre-computed using Int64Murmur3Hasher once.
+        return -1908254260;
     }
 }
