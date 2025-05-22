@@ -17,10 +17,8 @@ public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
     /// </param>
     public IntDictionary(int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
-        : base()
-    {
-
-    }
+        : base(capacity, loadFactor)
+    { }
 }
 
 public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvider<int>
