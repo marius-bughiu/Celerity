@@ -13,7 +13,7 @@ public class StringFnV1AHasherTests
     [Theory]
     // These expected values match the final signed-32-bit interpretation.
     //  FNV-1a("")   -> 0x811C9DC5 -> 2166136261 unsigned -> -2128831035 signed
-    //  FNV-1a("a")  -> 0xE40C292C -> 3826002220 unsigned -> -468964076  signed
+    //  FNV-1a("a")  -> 0xE40C292C -> 3826002220 unsigned -> -468965076  signed
     //  FNV-1a("hello") -> 0x4F9F2CAB -> 1335831723 as signed (positive)
     [InlineData("", -2128831035)]
     [InlineData("a", -468965076)]
