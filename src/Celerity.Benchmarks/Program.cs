@@ -1,9 +1,10 @@
-﻿using BenchmarkDotNet.Running;
+using System.Reflection;
+using BenchmarkDotNet.Running;
 
 internal class Program
 {
     static void Main(string[] args)
     {
-        BenchmarkRunner.Run<CelerityDictionaryBenchmark>();
+        BenchmarkSwitcher.FromAssembly(Assembly.GetExecutingAssembly()).Run(args);
     }
 }
