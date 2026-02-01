@@ -3,6 +3,10 @@
 
 Celerity is a .NET library that provides specialized high-performance collections optimized for specific use cases. It includes data structures designed for better speed or memory efficiency compared to standard .NET collections. The package supports configurable load factors, multiple built-in hash functions, and allows users to define custom hash functions for fine-tuned performance.
 
+## Roadmap
+
+Check out our [comprehensive roadmap](ROADMAP.md) to see what's planned for future releases!
+
 ## Benchmarks
 
 #### CelerityDictionary
