@@ -300,7 +300,7 @@ Expand benchmark suite to cover more realistic workload scenarios and metrics.
 - [ ] Memory allocation benchmarks
 - [ ] Concurrent access benchmarks
 - [ ] Cache locality measurements
-- [ ] Comparison with other high-performance libraries
+- [ ] Comparison with other high-performance libraries (e.g., FastHashSet, FASTER)
 - [ ] Different data distributions (sequential, random, clustered)
 - [ ] Large dataset benchmarks (millions of items)
 

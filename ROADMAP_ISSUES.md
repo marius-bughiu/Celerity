@@ -272,7 +272,7 @@ Expand benchmark suite to cover more realistic workload scenarios and metrics.
 - [ ] Memory allocation benchmarks
 - [ ] Concurrent access benchmarks
 - [ ] Cache locality measurements
-- [ ] Comparison with other high-performance libraries (e.g., FastHashSet, Faster)
+- [ ] Comparison with other high-performance libraries (e.g., FastHashSet, FASTER)
 - [ ] Different data distributions (sequential, random, clustered)
 - [ ] Large dataset benchmarks (millions of items)
 
@@ -320,10 +320,7 @@ gh issue create --title "Code coverage improvements" --label "testing,quality,pr
 Improve test coverage to ensure robustness and catch edge cases.
 
 ## Goals
-- Achieve 95%+ code coverage
-- Edge case testing (null, empty, single item, full capacity, etc.)
-- Fuzz testing for robustness
-- Property-based testing with FsCheck or similar
+Achieve 95%+ code coverage with edge case testing, fuzz testing, and property-based testing.
 
 ## Tasks
 - [ ] Set up code coverage reporting
@@ -351,13 +348,8 @@ Implement specialized collections for specific use cases and domains.
 - [ ] CountMinSketch for frequency estimation
 - [ ] HyperLogLog for cardinality estimation
 
-## Approach
-- Research each data structure
-- Implement with high performance
-- Comprehensive tests and benchmarks
-- Clear documentation on use cases
-
 ## Related
+See ROADMAP.md for context"
 See ROADMAP.md for context"
 
 gh issue create --title "Serialization support" --label "enhancement,serialization,priority:medium" --body "**Priority:** Medium
@@ -812,7 +804,7 @@ Expand benchmark suite to cover more realistic workload scenarios and metrics.
 - [ ] Memory allocation benchmarks
 - [ ] Concurrent access benchmarks
 - [ ] Cache locality measurements
-- [ ] Comparison with other high-performance libraries (e.g., FastHashSet, Faster)
+- [ ] Comparison with other high-performance libraries (e.g., FastHashSet, FASTER)
 - [ ] Different data distributions (sequential, random, clustered)
 - [ ] Large dataset benchmarks (millions of items)
 
@@ -884,10 +876,7 @@ See ROADMAP.md for context
 Improve test coverage to ensure robustness and catch edge cases.
 
 ## Goals
-- Achieve 95%+ code coverage
-- Edge case testing (null, empty, single item, full capacity, etc.)
-- Fuzz testing for robustness
-- Property-based testing with FsCheck or similar
+Achieve 95%+ code coverage with edge case testing, fuzz testing, and property-based testing.
 
 ## Tasks
 - [ ] Set up code coverage reporting
@@ -920,12 +909,6 @@ Implement specialized collections for specific use cases and domains.
 - [ ] BloomFilter for probabilistic membership testing
 - [ ] CountMinSketch for frequency estimation
 - [ ] HyperLogLog for cardinality estimation
-
-## Approach
-- Research each data structure
-- Implement with high performance
-- Comprehensive tests and benchmarks
-- Clear documentation on use cases
 
 ## Related
 See ROADMAP.md for context
