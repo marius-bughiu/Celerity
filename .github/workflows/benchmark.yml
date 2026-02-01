@@ -46,6 +46,7 @@ jobs:
           output-file-path: src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/Celerity.Benchmarks-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
+          # 200% threshold is permissive for initial setup; can be tightened once baseline is established
           alert-threshold: '200%'
           comment-on-alert: true
           fail-on-alert: false
