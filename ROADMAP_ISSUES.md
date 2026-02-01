@@ -350,7 +350,6 @@ Implement specialized collections for specific use cases and domains.
 
 ## Related
 See ROADMAP.md for context"
-See ROADMAP.md for context"
 
 gh issue create --title "Serialization support" --label "enhancement,serialization,priority:medium" --body "**Priority:** Medium
 **Phase:** 6 - Advanced Use Cases (Q1 2027)
