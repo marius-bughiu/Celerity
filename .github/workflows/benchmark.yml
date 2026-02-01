@@ -1,0 +1,51 @@
+name: Continuous Benchmarking
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  benchmark:
+    name: Run benchmarks
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: src
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      
+      - name: Restore workloads
+        run: dotnet workload restore
+      
+      - name: Restore dependencies
+        run: dotnet restore
+      
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+      
+      - name: Run benchmarks
+        run: dotnet run --project Celerity.Benchmarks/Celerity.Benchmarks.csproj --configuration Release --exporters json --filter '*'
+      
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Celerity Benchmarks
+          tool: 'benchmarkdotnet'
+          output-file-path: src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/Celerity.Benchmarks-report-full-compressed.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: false

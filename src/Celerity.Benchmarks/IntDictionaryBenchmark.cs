@@ -1,7 +1,9 @@
 ﻿using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Exporters.Json;
 using Celerity.Collections;
 
 [MemoryDiagnoser(false)]
+[JsonExporterAttribute.FullCompressed]
 public class IntDictionaryBenchmark
 {
     private int[] keys;

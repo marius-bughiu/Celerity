@@ -1,8 +1,10 @@
 ﻿using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Exporters.Json;
 using Celerity.Collections;
 using Celerity.Hashing;
 
 [MemoryDiagnoser(false)]
+[JsonExporterAttribute.FullCompressed]
 public class CelerityDictionaryBenchmark
 {
     private int[] keys;
