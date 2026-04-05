@@ -1,0 +1,81 @@
+# Contributing to Celerity
+
+Thanks for your interest in contributing! Celerity is a small, focused library and we try to keep the contribution process light. Reading this whole file should take about five minutes.
+
+## Getting the code
+
+```bash
+git clone https://github.com/marius-bughiu/Celerity.git
+cd Celerity/src
+dotnet restore
+dotnet build
+dotnet test
+```
+
+Requirements: .NET 8 SDK. Everything else is fetched via NuGet.
+
+## Project layout
+
+```
+src/
+├── Celerity/                 Main library. All public APIs live here.
+│   ├── Collections/          CelerityDictionary, IntDictionary, ...
+│   ├── Hashing/              IHashProvider<T> and built-in implementations.
+│   └── FastUtils.cs          Low-level helpers (e.g. NextPowerOfTwo).
+├── Celerity.Tests/           xUnit test project. Mirrors the main project's layout.
+├── Celerity.Benchmarks/      BenchmarkDotNet project. Not built in CI by default.
+└── Celerity.sln
+```
+
+## Making changes
+
+1. Open (or comment on) an issue before starting a large change. Small bug fixes can skip this step.
+2. Create a branch off `main`.
+3. Write the change together with the test that would have caught the bug. Bug fixes without regression tests will be asked to add one.
+4. Run `dotnet test` locally.
+5. Open a PR. CI will run `dotnet build` and `dotnet test` on your branch automatically (`.github/workflows/ci.yml`).
+
+## Coding conventions
+
+These are enforced by review, not by an analyzer. Reading the existing code is the fastest way to get a feel for the style.
+
+- Target framework is `net8.0`. Nullable reference types are enabled.
+- File-scoped namespaces (`namespace Celerity.Hashing;`).
+- `PascalCase` for public members, `_camelCase` for private fields, `UPPER_CASE` for constants.
+- Every public type and member has an XML doc comment. `GenerateDocumentationFile` is on, so missing docs produce warnings.
+- Hash providers are structs that implement `IHashProvider<T>`. This is load-bearing: passing them as a generic constraint (`where THasher : struct, IHashProvider<T>`) lets the JIT devirtualize `hasher.Hash(...)` calls. Please do not change them to classes or interfaces.
+- Prefer explicit types over `var` where it meaningfully helps readability (e.g. in tight numeric loops). Use `var` freely for obvious right-hand-sides.
+- Avoid allocations on hot paths. If you add a new dependency or a LINQ call inside a probe loop, expect pushback.
+
+## Tests
+
+- Use xUnit.
+- Name tests `Method_ShouldExpectedBehavior_WhenCondition`.
+- Prefer `[Fact]` for a single case, `[Theory] + [InlineData]` for parameterized cases.
+- When fixing a bug, add a test that fails on `main` and passes on your branch. It's fine to reference the issue number in a comment.
+
+## Benchmarks
+
+Benchmarks live in `src/Celerity.Benchmarks`. Run locally with:
+
+```bash
+cd src/Celerity.Benchmarks
+dotnet run -c Release
+```
+
+If a change is motivated by performance, include before/after numbers in the PR description. Numbers without `-c Release` are not useful — BenchmarkDotNet will refuse to run in Debug and the README benchmarks are all Release.
+
+## Releases
+
+Releases are cut by a maintainer via the `Release` workflow (`.github/workflows/release.yml`, triggered manually). Version numbers come from git tags via MinVer (`v0.2.0`, `v0.3.0-beta.1`, etc.). The `CHANGELOG.md` file is updated as part of the release PR, not after the fact.
+
+## Scope
+
+Celerity is narrowly scoped: specialized high-performance collections, hashers, and the minimal supporting utilities they need. We are unlikely to accept:
+
+- General-purpose extension methods that aren't used by a collection in the library.
+- Wrappers around BCL types that don't add a performance benefit backed by benchmarks.
+- Features that require reflection on hot paths.
+- Thread-safety primitives. Use `ConcurrentDictionary<,>` or external locking.
+
+If you're unsure whether something fits, open an issue and ask — it's cheaper for both of us.

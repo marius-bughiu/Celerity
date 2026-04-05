@@ -1,7 +1,12 @@
-﻿using Celerity.Hashing;
+using Celerity.Hashing;
 
 namespace Celerity.Collections;
 
+/// <summary>
+/// A high-performance dictionary keyed by <see cref="int"/>, using
+/// <see cref="Int32WangNaiveHasher"/> by default.
+/// </summary>
+/// <typeparam name="TValue">The type of the stored values.</typeparam>
 public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
 {
     /// <summary>
@@ -17,12 +22,20 @@ public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
     /// </param>
     public IntDictionary(int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
-        : base()
+        : base(capacity, loadFactor)
     {
-
     }
 }
 
+/// <summary>
+/// A high-performance dictionary keyed by <see cref="int"/>, parameterized on a
+/// custom <see cref="IHashProvider{T}"/> implementation.
+/// </summary>
+/// <typeparam name="TValue">The type of the stored values.</typeparam>
+/// <typeparam name="THasher">
+/// The hasher used to compute key hashes. Must be a value type implementing
+/// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
+/// </typeparam>
 public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvider<int>
 {
     /// <summary>
@@ -36,7 +49,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     protected const float DEFAULT_LOAD_FACTOR = 0.75f;
 
     private const int EMPTY_KEY = 0;
-    private readonly TValue? EMPTY_VALUE = default;
+    private static readonly TValue? EMPTY_VALUE = default;
 
     private int _count = 0;
     private int[] _keys;
@@ -44,6 +57,11 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     private readonly float _loadFactor;
     private int _threshold;
     private readonly THasher _hasher;
+
+    // The key value 0 collides with EMPTY_KEY, so it's stored out-of-band
+    // in a dedicated slot. _count includes this entry when _hasZeroKey is true.
+    private bool _hasZeroKey;
+    private TValue? _zeroValue;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="IntDictionary{TValue, THasher}"/> class
@@ -63,7 +81,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         int size = FastUtils.NextPowerOfTwo(capacity);
 
         _keys = new int[size];
-        _values = new TValue[size];
+        _values = new TValue?[size];
         _loadFactor = loadFactor;
         _threshold = (int)(size * _loadFactor);
         _hasher = default;
@@ -85,6 +103,13 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     {
         get
         {
+            if (key == EMPTY_KEY)
+            {
+                if (_hasZeroKey)
+                    return _zeroValue!;
+                throw new KeyNotFoundException($"Key {key} not found.");
+            }
+
             int index = ProbeForKey(key);
             if (index < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
@@ -93,6 +118,17 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         }
         set
         {
+            if (key == EMPTY_KEY)
+            {
+                if (!_hasZeroKey)
+                {
+                    _hasZeroKey = true;
+                    _count++;
+                }
+                _zeroValue = value;
+                return;
+            }
+
             if (_count >= _threshold)
             {
                 Resize();
@@ -114,7 +150,46 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     /// </summary>
     /// <param name="key">The key to locate in the dictionary.</param>
     /// <returns><c>true</c> if the key is found; otherwise, <c>false</c>.</returns>
-    public bool ContainsKey(int key) => ProbeForKey(key) >= 0;
+    public bool ContainsKey(int key)
+    {
+        if (key == EMPTY_KEY)
+            return _hasZeroKey;
+
+        return ProbeForKey(key) >= 0;
+    }
+
+    /// <summary>
+    /// Attempts to get the value associated with the specified key.
+    /// </summary>
+    /// <param name="key">The key to look up.</param>
+    /// <param name="value">
+    /// When this method returns, contains the value associated with <paramref name="key"/>
+    /// if found; otherwise the default value of <typeparamref name="TValue"/>.
+    /// </param>
+    /// <returns><c>true</c> if the key was found; otherwise, <c>false</c>.</returns>
+    public bool TryGetValue(int key, out TValue? value)
+    {
+        if (key == EMPTY_KEY)
+        {
+            if (_hasZeroKey)
+            {
+                value = _zeroValue;
+                return true;
+            }
+            value = default;
+            return false;
+        }
+
+        int index = ProbeForKey(key);
+        if (index < 0)
+        {
+            value = default;
+            return false;
+        }
+
+        value = _values[index];
+        return true;
+    }
 
     /// <summary>
     /// Removes the value with the specified key from the dictionary.
@@ -126,6 +201,16 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     /// </returns>
     public bool Remove(int key)
     {
+        if (key == EMPTY_KEY)
+        {
+            if (!_hasZeroKey)
+                return false;
+            _hasZeroKey = false;
+            _zeroValue = EMPTY_VALUE;
+            _count--;
+            return true;
+        }
+
         int index = ProbeForKey(key);
         if (index < 0)
             return false;
@@ -136,6 +221,22 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
 
         RehashAfterRemove(index);
         return true;
+    }
+
+    /// <summary>
+    /// Removes all keys and values from the dictionary. The underlying
+    /// capacity is preserved.
+    /// </summary>
+    public void Clear()
+    {
+        if (_count == 0)
+            return;
+
+        Array.Clear(_keys, 0, _keys.Length);
+        Array.Clear(_values, 0, _values.Length);
+        _hasZeroKey = false;
+        _zeroValue = EMPTY_VALUE;
+        _count = 0;
     }
 
     private int ProbeForInsert(int key)
@@ -174,18 +275,24 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     {
         int newSize = _keys.Length * 2;
         int[] oldKeys = _keys;
-        TValue[] oldValues = _values;
+        TValue?[] oldValues = _values;
 
         _keys = new int[newSize];
-        _values = new TValue[newSize];
+        _values = new TValue?[newSize];
         _threshold = (int)(newSize * _loadFactor);
-        _count = 0;
+
+        // Reinsert every non-empty slot. We decrement _count for each reinsertion
+        // because the indexer setter will increment it again via its isNewEntry path.
+        // The zero-key entry lives out-of-band and is not in the arrays, so we
+        // don't touch _hasZeroKey / _zeroValue here.
+        int carriedZeroKey = _hasZeroKey ? 1 : 0;
+        _count = carriedZeroKey;
 
         for (int i = 0; i < oldKeys.Length; i++)
         {
             if (oldKeys[i] != EMPTY_KEY)
             {
-                this[oldKeys[i]] = oldValues[i];
+                this[oldKeys[i]] = oldValues[i]!;
             }
         }
     }

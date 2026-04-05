@@ -1,7 +1,17 @@
-﻿using Celerity.Hashing;
+using Celerity.Hashing;
 
 namespace Celerity.Collections;
 
+/// <summary>
+/// A high-performance generic dictionary, parameterized on a custom
+/// <see cref="IHashProvider{T}"/> implementation.
+/// </summary>
+/// <typeparam name="TKey">The type of the keys.</typeparam>
+/// <typeparam name="TValue">The type of the values.</typeparam>
+/// <typeparam name="THasher">
+/// The hasher used to compute key hashes. Must be a value type implementing
+/// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
+/// </typeparam>
 public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, IHashProvider<TKey>
 {
     /// <summary>
@@ -20,6 +30,13 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
     private readonly float _loadFactor;
     private int _threshold;
     private readonly THasher _hasher;
+
+    // The key value default(TKey) (null for reference types, 0 for primitives,
+    // Guid.Empty for Guid, etc.) collides with the "empty slot" sentinel used
+    // during probing, so it's stored out-of-band in a dedicated slot. _count
+    // includes this entry when _hasDefaultKey is true.
+    private bool _hasDefaultKey;
+    private TValue? _defaultKeyValue;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CelerityDictionary{TKey,TValue,THasher}"/> class
@@ -62,6 +79,13 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
     {
         get
         {
+            if (IsDefaultKey(key))
+            {
+                if (_hasDefaultKey)
+                    return _defaultKeyValue;
+                throw new KeyNotFoundException($"Key {key} not found.");
+            }
+
             int index = ProbeForKey(key);
             if (index < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
@@ -70,6 +94,17 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
         }
         set
         {
+            if (IsDefaultKey(key))
+            {
+                if (!_hasDefaultKey)
+                {
+                    _hasDefaultKey = true;
+                    _count++;
+                }
+                _defaultKeyValue = value;
+                return;
+            }
+
             if (_count >= _threshold)
             {
                 Resize();
@@ -91,7 +126,46 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
     /// </summary>
     /// <param name="key">The key to locate.</param>
     /// <returns><c>true</c> if the key is found; otherwise, <c>false</c>.</returns>
-    public bool ContainsKey(TKey key) => ProbeForKey(key) >= 0;
+    public bool ContainsKey(TKey key)
+    {
+        if (IsDefaultKey(key))
+            return _hasDefaultKey;
+
+        return ProbeForKey(key) >= 0;
+    }
+
+    /// <summary>
+    /// Attempts to get the value associated with the specified key.
+    /// </summary>
+    /// <param name="key">The key to look up.</param>
+    /// <param name="value">
+    /// When this method returns, contains the value associated with <paramref name="key"/>
+    /// if found; otherwise the default value of <typeparamref name="TValue"/>.
+    /// </param>
+    /// <returns><c>true</c> if the key was found; otherwise, <c>false</c>.</returns>
+    public bool TryGetValue(TKey key, out TValue? value)
+    {
+        if (IsDefaultKey(key))
+        {
+            if (_hasDefaultKey)
+            {
+                value = _defaultKeyValue;
+                return true;
+            }
+            value = default;
+            return false;
+        }
+
+        int index = ProbeForKey(key);
+        if (index < 0)
+        {
+            value = default;
+            return false;
+        }
+
+        value = _values[index];
+        return true;
+    }
 
     /// <summary>
     /// Removes the value with the specified key from the dictionary.
@@ -103,6 +177,16 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
     /// </returns>
     public bool Remove(TKey key)
     {
+        if (IsDefaultKey(key))
+        {
+            if (!_hasDefaultKey)
+                return false;
+            _hasDefaultKey = false;
+            _defaultKeyValue = default;
+            _count--;
+            return true;
+        }
+
         int index = ProbeForKey(key);
         if (index < 0)
             return false;
@@ -114,6 +198,25 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
         RehashAfterRemove(index);
         return true;
     }
+
+    /// <summary>
+    /// Removes all keys and values from the dictionary. The underlying
+    /// capacity is preserved.
+    /// </summary>
+    public void Clear()
+    {
+        if (_count == 0)
+            return;
+
+        Array.Clear(_keys, 0, _keys.Length);
+        Array.Clear(_values, 0, _values.Length);
+        _hasDefaultKey = false;
+        _defaultKeyValue = default;
+        _count = 0;
+    }
+
+    private static bool IsDefaultKey(TKey key) =>
+        EqualityComparer<TKey>.Default.Equals(key, default(TKey));
 
     private int ProbeForInsert(TKey key)
     {
@@ -155,7 +258,11 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
         _keys = new TKey?[newSize];
         _values = new TValue?[newSize];
         _threshold = (int)(newSize * _loadFactor);
-        _count = 0;
+
+        // The default-key entry lives out-of-band and is not in the arrays,
+        // so preserve its contribution to _count across the rehash.
+        int carriedDefaultKey = _hasDefaultKey ? 1 : 0;
+        _count = carriedDefaultKey;
 
         for (int i = 0; i < oldKeys.Length; i++)
         {
@@ -174,7 +281,7 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
         while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default))
         {
             TKey rehashedKey = _keys[index]!;
-            TValue rehashedValue = _values[index]!;
+            TValue? rehashedValue = _values[index];
 
             _keys[index] = default;
             _values[index] = default;
