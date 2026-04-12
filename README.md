@@ -37,20 +37,16 @@ public interface IHashProvider<T>
 
 ## API overview
 
-Both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue>` expose a compact, allocation-conscious API that mirrors the parts of `Dictionary<TKey, TValue>` most users actually reach for:
-
-- `this[key]` — indexer getter (throws `KeyNotFoundException` on miss) and setter (insert or overwrite).
-- `bool ContainsKey(TKey key)`
-- `bool TryGetValue(TKey key, out TValue? value)`
-- `bool Remove(TKey key)`
-- `void Clear()`
-- `int Count`
+Both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue>` expose a compact, allocation-conscious API that mirrors the parts of `Dictionary<TKey, TValue>` most users actually reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove`, `Clear`, and `Count`.
 
 `IntDictionary` handles the key value `0` and `CelerityDictionary` handles `default(TKey)` (including `null` for reference-type keys) — both are stored out-of-band so they don't collide with the "empty slot" sentinel used during probing.
 
+For full API details — constructors, method signatures, parameters, exceptions, and usage examples — see the **[API reference docs](docs/README.md)**.
+
 ## Project docs
 
-- [`ROADMAP.md`](ROADMAP.md) — prioritized plan through 1.0.
+- [`docs/`](docs/README.md) — API reference (collections, hashing, utilities).
+- [`ROADMAP.md`](ROADMAP.md) — planned milestones and long-term vision.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, test, PR conventions.
 - [`ISSUES.md`](ISSUES.md) — snapshot of the known issue backlog.
