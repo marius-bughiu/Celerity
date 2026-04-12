@@ -18,9 +18,10 @@ The first release after 0.1.x focuses on fixing real bugs exposed by reading the
 
 ### Bug fixes
 
-- `IntDictionary<TValue>` parameterless-ctor-forwarding bug: the convenience subclass accepts `capacity` and `loadFactor` but its initializer calls `: base()`, silently discarding both arguments. Status: `in-progress`.
-- `IntDictionary` cannot store the key `0`: `EMPTY_KEY = 0` is used as the "empty slot" sentinel, which collides with the legitimate key value `0`. Inserting key `0` corrupts `Count` and makes `ContainsKey(0)` and the indexer return wrong answers. Fix via a dedicated `_hasZeroKey` flag and separate value slot. Status: `in-progress`.
-- `CelerityDictionary<TKey, TValue, THasher>` cannot store `default(TKey)`: same root cause as above, generalized. For value-type keys this means `0` / `0L` / `Guid.Empty`, for reference-type keys it means `null`. Fix via a `_hasDefaultKey` flag and a dedicated value slot. Status: `in-progress`.
+- `IntDictionary<TValue>` parameterless-ctor-forwarding bug: the convenience subclass accepts `capacity` and `loadFactor` but its initializer calls `: base()`, silently discarding both arguments. Status: `done`.
+- `IntDictionary` cannot store the key `0`: `EMPTY_KEY = 0` is used as the "empty slot" sentinel, which collides with the legitimate key value `0`. Inserting key `0` corrupts `Count` and makes `ContainsKey(0)` and the indexer return wrong answers. Fix via a dedicated `_hasZeroKey` flag and separate value slot. Status: `done`.
+- `CelerityDictionary<TKey, TValue, THasher>` cannot store `default(TKey)`: same root cause as above, generalized. For value-type keys this means `0` / `0L` / `Guid.Empty`, for reference-type keys it means `null`. Fix via a `_hasDefaultKey` flag and a dedicated value slot. Status: `done`.
+- No constructor validation on `capacity` or `loadFactor`: `loadFactor >= 1.0` caused an infinite loop; `loadFactor <= 0` caused a resize on every insert. Both constructors now validate and throw `ArgumentOutOfRangeException`. Status: `done`.
 
 ### API additions
 
@@ -38,9 +39,9 @@ The first release after 0.1.x focuses on fixing real bugs exposed by reading the
 
 - Implement `IReadOnlyDictionary<TKey, TValue>` on `CelerityDictionary` and `IntDictionary`.
 - Add `Keys` / `Values` enumerable views.
-- Add `Add(TKey, TValue)` that throws on duplicate keys (matching BCL semantics).
+- Add `Add(TKey, TValue)` that throws on duplicate keys (matching BCL semantics). Status: `done`.
 - Add `GetEnumerator()` returning `KeyValuePair<TKey, TValue>`.
-- Add `TryAdd`.
+- Add `TryAdd`. Status: `done`.
 - Ctor that accepts an `IEnumerable<KeyValuePair<TKey, TValue>>`.
 - Bump the bar on XML doc coverage; treat missing docs as a warning-as-error in the main project.
 

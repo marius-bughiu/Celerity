@@ -52,6 +52,11 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
     {
+        if (capacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
+        if (loadFactor <= 0f || loadFactor >= 1f)
+            throw new ArgumentOutOfRangeException(nameof(loadFactor), loadFactor, "Load factor must be between 0 (exclusive) and 1 (exclusive).");
+
         int size = FastUtils.NextPowerOfTwo(capacity);
 
         _keys = new TKey?[size];
@@ -196,6 +201,49 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
         _count--;
 
         RehashAfterRemove(index);
+        return true;
+    }
+
+    /// <summary>
+    /// Adds the specified key and value to the dictionary.
+    /// Throws <see cref="ArgumentException"/> if the key already exists.
+    /// </summary>
+    /// <param name="key">The key of the element to add.</param>
+    /// <param name="value">The value of the element to add.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when an element with the same <paramref name="key"/> already exists.
+    /// </exception>
+    public void Add(TKey key, TValue value)
+    {
+        if (!TryAdd(key, value))
+            throw new ArgumentException($"An element with key {key} already exists.", nameof(key));
+    }
+
+    /// <summary>
+    /// Attempts to add the specified key and value to the dictionary.
+    /// </summary>
+    /// <param name="key">The key of the element to add.</param>
+    /// <param name="value">The value of the element to add.</param>
+    /// <returns>
+    /// <c>true</c> if the key/value pair was added successfully;
+    /// <c>false</c> if the key already exists (the dictionary is unchanged).
+    /// </returns>
+    public bool TryAdd(TKey key, TValue value)
+    {
+        if (IsDefaultKey(key))
+        {
+            if (_hasDefaultKey)
+                return false;
+            _hasDefaultKey = true;
+            _defaultKeyValue = value;
+            _count++;
+            return true;
+        }
+
+        if (ContainsKey(key))
+            return false;
+
+        this[key] = value;
         return true;
     }
 
