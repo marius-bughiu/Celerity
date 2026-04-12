@@ -123,12 +123,22 @@ dotnet pack --configuration Release
 ### Benchmarks (Celerity.Benchmarks)
 - BenchmarkDotNet: Performance benchmarking
 
+## Versioning (critical — read before touching any `.csproj`)
+
+**Version numbers are determined solely by git tags.** The library uses [MinVer](https://github.com/adamralph/minver) which reads the nearest `v`-prefixed tag (e.g. `v1.0.1`) from git history and sets the NuGet package version automatically at build time.
+
+**Rules for coding agents:**
+- **NEVER** add `<Version>`, `<PackageVersion>`, or `<AssemblyVersion>` to any `.csproj` file
+- **NEVER** hardcode a version string anywhere in the source tree
+- The `<MinVerTagPrefix>v</MinVerTagPrefix>` and `<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>` settings in `Celerity.csproj` are the only version-related MSBuild properties — do not change them
+- Pre-release builds (commits after a tag) automatically get versions like `1.0.2-beta.1` — this is correct behavior, not a bug
+- To check the current version: `git tag -l 'v*' --sort=-v:refname | head -1`
+- To see what MinVer computes: `dotnet build /p:MinVerVerbosity=diagnostic`
+
 ## Release Process
 
 Releases are automated via GitHub Actions workflow (`.github/workflows/release.yml`):
-1. Triggered via workflow_dispatch
-2. Builds the solution
-3. Creates NuGet packages
-4. Publishes to NuGet.org
-
-Version numbers are determined by git tags using MinVer with prefix `v` (e.g., `v1.0.0`).
+1. Update `CHANGELOG.md` in a PR and merge to `main`
+2. Tag the merge commit: `git tag -a v1.2.0 -m "Release 1.2.0"` then `git push origin v1.2.0`
+3. Trigger the Release workflow via `workflow_dispatch` in the GitHub Actions UI
+4. The workflow builds, packs, and publishes to NuGet.org
