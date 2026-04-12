@@ -1,6 +1,6 @@
 # Celerity Roadmap
 
-This document tracks the planned direction for the Celerity high-performance collections library. It is a living document maintained by the project maintainers and updated as priorities shift.
+This document tracks the planned direction for the Celerity project. It is a living document maintained by the project maintainers and updated as priorities shift.
 
 Status legend: `planned`, `in-progress`, `done`, `deferred`.
 
@@ -12,70 +12,96 @@ Status legend: `planned`, `in-progress`, `done`, `deferred`.
 4. **Benchmark every perf claim.** The README's numbers are the contract. If a change regresses them, it ships only with a written justification.
 5. **Document the tradeoffs.** Celerity is not "always faster." Each collection should document the workloads where it wins and where it loses.
 
-## Milestone 0.2.0 — Correctness & foundations (current)
+## Vision
 
-The first release after 0.1.x focuses on fixing real bugs exposed by reading the code carefully, filling in obvious API gaps, and standing up CI so future PRs get validated automatically.
+Celerity currently ships a single NuGet package (`Celerity.Collections`). Long-term, the project will expand into a family of focused packages — each targeting a specific area where specialized, high-performance implementations can outperform the BCL in niche scenarios. The package structure will mirror the .NET ecosystem's own organization:
 
-### Bug fixes
+- `Celerity.Collections` — dictionaries, sets, and specialized collection types
+- `Celerity.Hashing` — hash providers, hash evaluation utilities
+- `Celerity.Primitives` — low-level utilities (e.g. fast math, bit manipulation)
 
-- `IntDictionary<TValue>` parameterless-ctor-forwarding bug: the convenience subclass accepts `capacity` and `loadFactor` but its initializer calls `: base()`, silently discarding both arguments. Status: `done`.
-- `IntDictionary` cannot store the key `0`: `EMPTY_KEY = 0` is used as the "empty slot" sentinel, which collides with the legitimate key value `0`. Inserting key `0` corrupts `Count` and makes `ContainsKey(0)` and the indexer return wrong answers. Fix via a dedicated `_hasZeroKey` flag and separate value slot. Status: `done`.
-- `CelerityDictionary<TKey, TValue, THasher>` cannot store `default(TKey)`: same root cause as above, generalized. For value-type keys this means `0` / `0L` / `Guid.Empty`, for reference-type keys it means `null`. Fix via a `_hasDefaultKey` flag and a dedicated value slot. Status: `done`.
-- No constructor validation on `capacity` or `loadFactor`: `loadFactor >= 1.0` caused an infinite loop; `loadFactor <= 0` caused a resize on every insert. Both constructors now validate and throw `ArgumentOutOfRangeException`. Status: `done`.
+Each package will remain narrowly scoped: if a type doesn't offer a measurable performance advantage over its BCL counterpart in at least one documented workload, it doesn't ship.
 
-### API additions
+## Completed milestones
 
-- `TryGetValue(TKey key, out TValue? value)` on both dictionaries.
-- `Clear()` on both dictionaries.
-- `ContainsKey` / `Remove` / `TryGetValue` / `Clear` / `Count` are all covered by unit tests, including the edge cases for the bug fixes above.
+### 1.0.0 / 1.0.1 — Stability & correctness
+
+- Fixed `IntDictionary<TValue>` constructor argument forwarding bug. Status: `done`.
+- Fixed `IntDictionary` key-`0` corruption. Status: `done`.
+- Fixed `CelerityDictionary` `default(TKey)` corruption. Status: `done`.
+- Added constructor validation (`capacity`, `loadFactor`). Status: `done`.
+- Added `TryGetValue`, `Clear`, `Add`, `TryAdd` on both dictionaries. Status: `done`.
+- Stood up CI workflow (`.github/workflows/ci.yml`). Status: `done`.
+- Comprehensive test suites: collision tests, load-factor boundary tests, constructor validation. Status: `done`.
+- Added `CONTRIBUTING.md`, `CHANGELOG.md`, `ROADMAP.md`, `ISSUES.md`. Status: `done`.
+
+## Milestone 1.1.0 — API parity, hashers, and benchmarks
+
+The next release rounds out the `Celerity.Collections` package with missing collection types, expands the hasher library, and stands up CI benchmark tracking.
+
+### Collections
+
+- Implement `CeleritySet<T, THasher>` — set counterpart to `CelerityDictionary`. (#16)
+- Implement `LongDictionary<TValue>` — `IntDictionary` equivalent for `long` keys. (#17)
+- Implement `IReadOnlyDictionary<TKey, TValue>` on `CelerityDictionary` and `IntDictionary`.
+- Add `Keys` / `Values` enumerable views and `GetEnumerator()`.
+- Constructor accepting `IEnumerable<KeyValuePair<TKey, TValue>>`.
+
+### Hashers
+
+- Add `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher`. (#24)
+- Add `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()`.
 
 ### Infrastructure
 
-- Add `.github/workflows/ci.yml` running `dotnet restore`, `dotnet build --no-restore`, and `dotnet test --no-build` on every PR and push to `main`. The existing `release.yml` only runs on `workflow_dispatch`, so PRs are currently unverified.
-- Add `CONTRIBUTING.md` documenting build/test steps, conventions, and the PR process.
-- Add `CHANGELOG.md` following Keep a Changelog.
+- Set up `github-action-benchmark` for continuous performance tracking. (#1)
+- Create hash function evaluator for comparing distribution quality. (#2)
+- Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. (#26)
+- Cross-platform testing (Windows, Linux, macOS). (#28)
+- Improve code coverage. (#29)
+- Improve documentation. (#15)
+- Bump XML doc coverage; treat missing docs as warning-as-error.
 
-## Milestone 0.3.0 — API parity
+## Milestone 1.2.0 — Performance & advanced collections
 
-- Implement `IReadOnlyDictionary<TKey, TValue>` on `CelerityDictionary` and `IntDictionary`.
-- Add `Keys` / `Values` enumerable views.
-- Add `Add(TKey, TValue)` that throws on duplicate keys (matching BCL semantics). Status: `done`.
-- Add `GetEnumerator()` returning `KeyValuePair<TKey, TValue>`.
-- Add `TryAdd`. Status: `done`.
-- Ctor that accepts an `IEnumerable<KeyValuePair<TKey, TValue>>`.
-- Bump the bar on XML doc coverage; treat missing docs as a warning-as-error in the main project.
+Focus on raw performance and specialized collection types that serve more advanced use cases.
 
-## Milestone 0.4.0 — More hashers
+### Collections
 
-- `Int32Murmur3Hasher` (currently only the 64-bit version exists).
-- `Int64WangHasher` for symmetry with the 32-bit version.
-- `GuidHasher`.
-- `UInt32Hasher`, `UInt64Hasher`.
-- A `DefaultHasher<T>` that falls back to `EqualityComparer<T>.Default.GetHashCode()` so `CelerityDictionary` can be used without a custom hasher for types we don't ship a specialized hasher for.
-- Benchmark suite comparing hashers against each other and against `Dictionary<,>` across uniform, clustered, and adversarial key distributions.
+- `FrozenCelerityDictionary` — build-once, read-many variant with perfect hashing for string keys, comparable in spirit to `System.Collections.Frozen` but tunable via `IHashProvider<T>`. (#22)
+- `CelerityMultiMap<TKey, TValue, THasher>` — multi-value dictionary. (#18)
 
-## Milestone 0.5.0 — New collections
+### Performance
 
-- `CeleritySet<T, THasher>` — set counterpart to `CelerityDictionary`.
-- `IntSet` — set counterpart to `IntDictionary`.
-- `SmallDictionary<TKey, TValue>` — a low-allocation dictionary for `n <= ~16` that uses a linear-scan array and upgrades to a hashed layout on overflow. Aims to beat `Dictionary<,>` for tiny, short-lived maps (a common hot path in parsers and AST visitors).
-- `FrozenCelerityDictionary` — build-once, read-many variant with perfect-hashing for string keys, comparable in spirit to `System.Collections.Frozen` but tunable via `IHashProvider<T>`.
+- Robin Hood hashing experiment as alternative to linear probing.
+- Performance optimizations across existing collections. (#27)
+- Native AOT support and trimming compatibility. (#32)
 
-## Milestone 0.6.0 — Memory layout & probing
+## Milestone 2.0.0 — Multi-package restructure
 
-- Investigate Robin Hood hashing as an alternative to linear probing. Benchmark on clustered workloads where linear probing degrades.
-- Investigate SIMD-accelerated probing (SSE2/AVX2) similar to Swiss Tables / `F14`.
-- Explore a struct-of-arrays layout split `(int[] hashes, TKey[] keys, TValue[] values)` to avoid paying the `TKey?` nullability overhead for reference types.
+Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API).
 
-## Milestone 1.0.0 — Stability
+### Package split
 
-- Finalize the public API surface. No breaking changes after 1.0 without a major version bump.
-- Commit to semantic versioning.
-- Publish a results dashboard so users can see perf over time.
-- Multi-target `net8.0;net9.0` once `net9.0` is the current LTS.
+- `Celerity.Collections` — dictionaries, sets, and specialized collections
+- `Celerity.Hashing` — `IHashProvider<T>`, built-in hashers, hash evaluation tools
+- `Celerity.Primitives` — low-level utilities (`FastUtils`, bit manipulation, etc.)
+
+### New collections
+
+- Specialized collections for domain-specific workloads (e.g. graph traversal, spatial indexing). (#30)
+- Memory-pooled collections for zero-allocation hot paths. (#21)
+- SIMD-accelerated probing (SSE2/AVX2) similar to Swiss Tables / `F14`. (#23)
+- Struct-of-arrays layout experiment for cache-friendly memory access.
+
+### Infrastructure
+
+- Multi-target `net8.0;net9.0`.
+- Publish a results dashboard so users can track performance over time.
 
 ## Non-goals
 
 - We are **not** trying to replace `Dictionary<,>` in every scenario. Celerity trades flexibility for speed on specific shapes; that tradeoff must be documented, not hidden.
 - We are **not** a thread-safe collections library. Callers that need concurrency should compose with locks or use `ConcurrentDictionary<,>`.
-- We are **not** a serialization library. Celerity collections should be straightforward to serialize via System.Text.Json / MessagePack, but we won't ship formatters ourselves in 1.0.
+- We are **not** a serialization library. Celerity collections should be straightforward to serialize via System.Text.Json / MessagePack, but we won't ship formatters ourselves.
+- We are **not** a general-purpose data structures library. If a collection doesn't beat the BCL on a documented benchmark, it doesn't belong here.
