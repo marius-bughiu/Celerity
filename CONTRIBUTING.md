@@ -65,9 +65,48 @@ dotnet run -c Release
 
 If a change is motivated by performance, include before/after numbers in the PR description. Numbers without `-c Release` are not useful — BenchmarkDotNet will refuse to run in Debug and the README benchmarks are all Release.
 
-## Releases
+## Versioning
 
-Releases are cut by a maintainer via the `Release` workflow (`.github/workflows/release.yml`, triggered manually). Version numbers come from git tags via MinVer (`v0.2.0`, `v0.3.0-beta.1`, etc.). The `CHANGELOG.md` file is updated as part of the release PR, not after the fact.
+Celerity uses [MinVer](https://github.com/adamralph/minver) to derive NuGet package versions exclusively from **git tags**. There is no `<Version>` or `<PackageVersion>` property in any `.csproj` file — the single source of truth is the `v`-prefixed annotated tag on the commit that represents a release.
+
+### How it works
+
+1. MinVer walks the git history from `HEAD` looking for the nearest tag matching `v{major}.{minor}.{patch}`.
+2. If `HEAD` **is** the tagged commit, the package version is exactly `{major}.{minor}.{patch}` (e.g. tag `v1.0.1` → version `1.0.1`).
+3. If `HEAD` is **ahead** of the latest tag, MinVer appends a pre-release suffix (e.g. `1.0.2-beta.1`). The default pre-release identifier is `beta`, configured via `<MinVerDefaultPreReleaseIdentifiers>` in `Celerity.csproj`.
+4. The tag prefix `v` is configured via `<MinVerTagPrefix>v</MinVerTagPrefix>` in `Celerity.csproj`.
+
+To check what version MinVer computes locally, run:
+
+```bash
+cd src
+dotnet build /p:MinVerVerbosity=diagnostic 2>&1 | grep MinVer
+```
+
+To see the current released version:
+
+```bash
+git tag -l 'v*' --sort=-v:refname | head -1
+```
+
+### Important for coding agents
+
+- **Never** add `<Version>`, `<PackageVersion>`, or `<AssemblyVersion>` to any `.csproj`. MinVer owns versioning.
+- Pre-release builds (any commit after a tag) produce versions like `1.0.2-beta.1`. This is expected and correct.
+- When preparing a release, update `CHANGELOG.md` first, then tag the merge commit.
+
+### Cutting a release
+
+```bash
+# 1. Merge the release PR (which updates CHANGELOG.md)
+# 2. Tag the merge commit on main
+git tag -a v1.2.0 -m "Release 1.2.0"
+git push origin v1.2.0
+
+# 3. Trigger the Release workflow via GitHub Actions UI (workflow_dispatch)
+```
+
+The `Release` workflow (`.github/workflows/release.yml`) builds, packs, and publishes to NuGet.org.
 
 ## Scope
 
