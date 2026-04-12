@@ -140,7 +140,7 @@ Add `void Clear()` on both dictionaries that resets `_count`, clears the `_keys`
 - **type**: test
 - **severity**: medium
 - **milestone**: 0.2.0 and ongoing
-- **status**: partially addressed in 0.2.0
+- **status**: fixed in 0.2.0
 
 ### Description
 
@@ -154,7 +154,9 @@ The existing test suite covers happy-path inserts, overwrites, and one resize. I
 
 ### Fix
 
-Add targeted regression tests alongside the 0.2.0 fixes. Track the remaining gaps in follow-up issues.
+Added across two sessions:
+- `IntDictionaryCollisionTests.cs` and `CelerityDictionaryCollisionTests.cs` — forced-collision, remove-reinsert, string/null-key, and multi-resize tests.
+- `LoadFactorBoundaryTests.cs` — low load factor (0.5), high load factor (0.95), multiple sequential resizes, default/zero-key coexistence with load-factor accounting, and a parameterized Theory across {0.25, 0.5, 0.75, 0.95} for both dictionaries.
 
 ---
 
@@ -175,11 +177,41 @@ Add `CONTRIBUTING.md` (build, test, conventions, PR process) and `CHANGELOG.md` 
 
 ---
 
+## #21 — No constructor validation on `capacity` or `loadFactor`
+
+- **type**: bug
+- **severity**: high
+- **milestone**: 0.2.0
+- **status**: fixed in 0.2.0
+
+### Description
+
+Neither `CelerityDictionary` nor `IntDictionary` validates constructor arguments. Invalid values cause silent, severe runtime failures:
+
+- `loadFactor >= 1.0`: The resize threshold exceeds the array size, so `ProbeForInsert` loops forever once every slot is occupied — an infinite loop.
+- `loadFactor <= 0`: The threshold is 0 (or negative, cast to 0-ish), so every single insert triggers a `Resize()`, doubling the array each time and eventually causing `OutOfMemoryException`.
+- `capacity < 0`: Harmless in practice (`NextPowerOfTwo` clamps to 1), but the caller clearly made a mistake and deserves a loud error.
+
+### Repro
+
+```csharp
+// Infinite loop — hangs forever on the 17th insert
+var map = new IntDictionary<int>(capacity: 16, loadFactor: 1.0f);
+for (int i = 1; i <= 17; i++)
+    map[i] = i;
+```
+
+### Fix
+
+Both constructors now throw `ArgumentOutOfRangeException` for `capacity < 0`, `loadFactor <= 0`, or `loadFactor >= 1`. Regression tests in `ConstructorValidationTests.cs` cover both dictionaries and the convenience subclass.
+
+---
+
 ## Backlog (post-0.2.0)
 
-- **#9** — Implement `IReadOnlyDictionary<TKey, TValue>` (0.3.0).
-- **#10** — Add `Keys` / `Values` / `GetEnumerator()` (0.3.0).
-- **#11** — Add `Add` / `TryAdd` with duplicate-throwing semantics (0.3.0).
+- **#9** — Implement `IReadOnlyDictionary<TKey, TValue>` (0.3.0). Requires `Keys`, `Values`, and `GetEnumerator()` first.
+- **#10** — Add `Keys` / `Values` / `GetEnumerator()` (0.3.0). Next item to tackle.
+- **#11** — Add `Add` / `TryAdd` with duplicate-throwing semantics (0.3.0). Status: `fixed in 0.3.0`.
 - **#12** — `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher` (0.4.0).
 - **#13** — `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()` (0.4.0).
 - **#14** — Expanded benchmark suite: uniform vs clustered vs adversarial key distributions (0.4.0).
