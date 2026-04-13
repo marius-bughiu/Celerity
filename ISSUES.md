@@ -213,9 +213,9 @@ Both constructors now throw `ArgumentOutOfRangeException` for `capacity < 0`, `l
 - **#10** — Add `Keys` / `Values` / `GetEnumerator()` (0.3.0). Next item to tackle.
 - **#11** — Add `Add` / `TryAdd` with duplicate-throwing semantics (0.3.0). Status: `fixed in 0.3.0`.
 - **#12** — `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher` (0.4.0).
-- **#13** — `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()` (0.4.0).
+- **#13** — `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()`. Status: `fixed in 1.1.0`.
 - **#14** — Expanded benchmark suite: uniform vs clustered vs adversarial key distributions (0.4.0).
-- **#15** — `CeleritySet<T, THasher>` and `IntSet` (0.5.0).
+- **#15** — `CeleritySet<T, THasher>` and `IntSet`. Status: `fixed in 1.1.0`.
 - **#16** — `SmallDictionary<TKey, TValue>` optimized for `n <= ~16` (0.5.0).
 - **#17** — `FrozenCelerityDictionary` with perfect hashing for string keys (0.5.0).
 - **#18** — Robin Hood probing experiment (0.6.0).

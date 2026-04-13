@@ -6,6 +6,9 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- `DefaultHasher<T>` in `Celerity.Hashing` — a general-purpose `IHashProvider<T>` that delegates to `EqualityComparer<T>.Default.GetHashCode()`. Use it when no specialized hasher exists for a type (e.g. `Guid`, custom structs, or reference types). It is a struct, so the JIT devirtualizes the outer call on the probe path; the inner `EqualityComparer<T>` dispatch is unavoidable but acceptable for non-hot-path types.
+- XML doc comments added to `IHashProvider<T>`, `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher`. All public hasher types now carry full XML documentation.
+- `DefaultHasherTests` — verifies BCL contract equivalence for int, string, and Guid keys; determinism across calls and struct instances; and integration tests confirming `DefaultHasher<T>` satisfies the hasher constraints on `CeleritySet<T,THasher>`, `IntSet<THasher>`, and `CelerityDictionary<TKey,TValue,THasher>`.
 - `Add(TKey, TValue)` on `CelerityDictionary` and `IntDictionary` — inserts a key/value pair and throws `ArgumentException` if the key already exists, matching BCL `Dictionary<,>` semantics.
 - `TryAdd(TKey, TValue)` on `CelerityDictionary` and `IntDictionary` — inserts without overwriting; returns `true` on success, `false` if the key already exists.  Both methods correctly handle the zero/default-key out-of-band slot.
 - `TryGetValue(TKey, out TValue?)` on `CelerityDictionary` and `IntDictionary`, following BCL semantics.
