@@ -6,6 +6,9 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- `UInt32Hasher` in `Celerity.Hashing` — Wang/Jenkins-style bit-mixer for `uint` keys. Struct hasher, `AggressiveInlining`. Counterpart to `Int32WangNaiveHasher`.
+- `UInt64Hasher` in `Celerity.Hashing` — Murmur3 `fmix64` finalizer for `ulong` keys. Struct hasher, `AggressiveInlining`. Counterpart to `Int64Murmur3Hasher`.
+- `UInt32HasherTests` and `UInt64HasherTests` — exact-value cases (including values crossing the sign bit), determinism, avalanche on the top bit, and a 1000-value distinctness sweep for the 64-bit mixer.
 - `DefaultHasher<T>` in `Celerity.Hashing` — a general-purpose `IHashProvider<T>` that delegates to `EqualityComparer<T>.Default.GetHashCode()`. Use it when no specialized hasher exists for a type (e.g. `Guid`, custom structs, or reference types). It is a struct, so the JIT devirtualizes the outer call on the probe path; the inner `EqualityComparer<T>` dispatch is unavoidable but acceptable for non-hot-path types.
 - XML doc comments added to `IHashProvider<T>`, `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher`. All public hasher types now carry full XML documentation.
 - `DefaultHasherTests` — verifies BCL contract equivalence for int, string, and Guid keys; determinism across calls and struct instances; and integration tests confirming `DefaultHasher<T>` satisfies the hasher constraints on `CeleritySet<T,THasher>`, `IntSet<THasher>`, and `CelerityDictionary<TKey,TValue,THasher>`.
