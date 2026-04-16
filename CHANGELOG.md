@@ -6,6 +6,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- `GuidHasher` in `Celerity.Hashing` — reinterprets the 128-bit `Guid` as two 64-bit halves, runs Murmur3 `fmix64` on each, and XORs the mixed halves. Struct hasher, `AggressiveInlining`, zero-allocation (no stack buffer — reinterpret via `Unsafe.As<Guid, ulong>`). Prefer over `DefaultHasher<Guid>` on hot paths: fully inlineable and avoids the `EqualityComparer<T>.Default` virtual dispatch.
+- `GuidHasherTests` — `Guid.Empty → 0` anchor, determinism across calls and struct instances, avalanche on both the low and high 64-bit halves, shared-prefix/shared-suffix divergence (guards against hashers that weight one half too heavily), two 1000-value distinctness sweeps (sequential low-half keys and `Guid.NewGuid()`), and integration tests confirming `GuidHasher` satisfies the hasher constraint on `CeleritySet<Guid,THasher>` and `CelerityDictionary<Guid,TValue,THasher>` (including the `Guid.Empty` out-of-band slot).
 - `UInt32Hasher` in `Celerity.Hashing` — Wang/Jenkins-style bit-mixer for `uint` keys. Struct hasher, `AggressiveInlining`. Counterpart to `Int32WangNaiveHasher`.
 - `UInt64Hasher` in `Celerity.Hashing` — Murmur3 `fmix64` finalizer for `ulong` keys. Struct hasher, `AggressiveInlining`. Counterpart to `Int64Murmur3Hasher`.
 - `UInt32HasherTests` and `UInt64HasherTests` — exact-value cases (including values crossing the sign bit), determinism, avalanche on the top bit, and a 1000-value distinctness sweep for the 64-bit mixer.
