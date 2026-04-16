@@ -6,6 +6,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- `Int32Murmur3Hasher` in `Celerity.Hashing` — Murmur3 `fmix32` finalizer for `int` keys. Struct hasher, `AggressiveInlining`. Higher-quality avalanche counterpart to `Int32WangNaiveHasher`; use this when keys may be clustered or adversarial.
+- `Int32Murmur3HasherTests` — exact-value cases against the canonical Murmur3 fmix32 reference (including `0`, `1`, `-1`, `int.MinValue`, `int.MaxValue`), determinism, avalanche on the sign bit, a fixed-point sanity check guarding against the finalizer being bypassed, and a 1000-value distinctness sweep.
 - `UInt32Hasher` in `Celerity.Hashing` — Wang/Jenkins-style bit-mixer for `uint` keys. Struct hasher, `AggressiveInlining`. Counterpart to `Int32WangNaiveHasher`.
 - `UInt64Hasher` in `Celerity.Hashing` — Murmur3 `fmix64` finalizer for `ulong` keys. Struct hasher, `AggressiveInlining`. Counterpart to `Int64Murmur3Hasher`.
 - `UInt32HasherTests` and `UInt64HasherTests` — exact-value cases (including values crossing the sign bit), determinism, avalanche on the top bit, and a 1000-value distinctness sweep for the 64-bit mixer.
