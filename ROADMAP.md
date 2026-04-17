@@ -49,7 +49,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 
 ### Hashers
 
-- Add `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher`. (#24) — `UInt32Hasher`, `UInt64Hasher`, and `GuidHasher` `done`; `Int32Murmur3Hasher` and `Int64WangHasher` still `planned`.
+- Add `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher`. (#24) — all `done`.
 - Add `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()`.
 
 ### Infrastructure
