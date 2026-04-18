@@ -163,6 +163,8 @@ public IntDictionary(
 | Property | Type | Description |
 |----------|------|-------------|
 | `Count`  | `int` | Number of entries in the dictionary. |
+| `Keys`   | `KeyCollection` | Allocation-free enumerable view over the keys. |
+| `Values` | `ValueCollection` | Allocation-free enumerable view over the values. |
 
 ### Methods
 
@@ -175,6 +177,7 @@ The method signatures and semantics match `CelerityDictionary`:
 - `bool TryAdd(int key, TValue value)`
 - `bool Remove(int key)`
 - `void Clear()`
+- `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<int, TValue?>`. The out-of-band zero-key entry is yielded first if present. Mutating the dictionary during enumeration throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Iteration order is unspecified and may change between versions.
 
 ### Zero-key handling
 
@@ -192,4 +195,11 @@ ids[99] = "ninety-nine";
 Console.WriteLine(ids.Count); // 2
 ids.Remove(0);
 Console.WriteLine(ids.Count); // 1
+
+// Zero-allocation enumeration (struct enumerator):
+foreach (var kvp in ids)
+    Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
+
+foreach (int key in ids.Keys) { /* ... */ }
+foreach (var value in ids.Values) { /* ... */ }
 ```

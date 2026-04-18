@@ -1,3 +1,4 @@
+using System.Collections;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -62,6 +63,10 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
     // in a dedicated slot. _count includes this entry when _hasZeroKey is true.
     private bool _hasZeroKey;
     private TValue? _zeroValue;
+
+    // Incremented on every structural mutation so active enumerators can
+    // detect concurrent modification and throw, matching BCL semantics.
+    private int _version;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="IntDictionary{TValue, THasher}"/> class
@@ -131,6 +136,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
                     _count++;
                 }
                 _zeroValue = value;
+                _version++;
                 return;
             }
 
@@ -147,6 +153,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
 
             if (isNewEntry)
                 _count++;
+            _version++;
         }
     }
 
@@ -213,6 +220,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
             _hasZeroKey = false;
             _zeroValue = EMPTY_VALUE;
             _count--;
+            _version++;
             return true;
         }
 
@@ -225,6 +233,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         _count--;
 
         RehashAfterRemove(index);
+        _version++;
         return true;
     }
 
@@ -261,6 +270,7 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
             _hasZeroKey = true;
             _zeroValue = value;
             _count++;
+            _version++;
             return true;
         }
 
@@ -285,6 +295,234 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
         _hasZeroKey = false;
         _zeroValue = EMPTY_VALUE;
         _count = 0;
+        _version++;
+    }
+
+    /// <summary>
+    /// Returns an allocation-free enumerator that yields each key/value pair
+    /// stored in the dictionary. The enumeration order is unspecified and may
+    /// change across versions; do not rely on it. If the dictionary is modified
+    /// during enumeration, <see cref="Enumerator.MoveNext"/> throws
+    /// <see cref="InvalidOperationException"/>.
+    /// </summary>
+    /// <returns>A struct enumerator over this dictionary.</returns>
+    public Enumerator GetEnumerator() => new Enumerator(this);
+
+    /// <summary>
+    /// Gets an enumerable view over the keys in the dictionary. The view is a
+    /// lightweight struct and iterating it does not allocate.
+    /// </summary>
+    public KeyCollection Keys => new KeyCollection(this);
+
+    /// <summary>
+    /// Gets an enumerable view over the values in the dictionary. The view is a
+    /// lightweight struct and iterating it does not allocate.
+    /// </summary>
+    public ValueCollection Values => new ValueCollection(this);
+
+    /// <summary>
+    /// A struct enumerator over an <see cref="IntDictionary{TValue, THasher}"/>.
+    /// Because it is a struct, iterating it via <c>foreach</c> avoids the
+    /// allocation that a compiler-generated <c>IEnumerator&lt;T&gt;</c> would
+    /// incur. The out-of-band zero-key entry (if present) is yielded first.
+    /// </summary>
+    public struct Enumerator : IEnumerator<KeyValuePair<int, TValue?>>
+    {
+        private readonly IntDictionary<TValue, THasher> _dict;
+        private readonly int _version;
+        private int _index;
+        private KeyValuePair<int, TValue?> _current;
+        private State _state;
+
+        private enum State : byte
+        {
+            BeforeZeroKey,
+            InArray,
+            Done
+        }
+
+        internal Enumerator(IntDictionary<TValue, THasher> dict)
+        {
+            _dict = dict;
+            _version = dict._version;
+            _index = -1;
+            _current = default;
+            _state = State.BeforeZeroKey;
+        }
+
+        /// <summary>
+        /// Gets the key/value pair at the current position of the enumerator.
+        /// </summary>
+        public KeyValuePair<int, TValue?> Current => _current;
+
+        object IEnumerator.Current => _current;
+
+        /// <summary>
+        /// Advances the enumerator to the next key/value pair.
+        /// </summary>
+        /// <returns>
+        /// <c>true</c> if the enumerator advanced to a new entry; <c>false</c>
+        /// if it has passed the end of the dictionary.
+        /// </returns>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the dictionary was modified since the enumerator was created.
+        /// </exception>
+        public bool MoveNext()
+        {
+            if (_version != _dict._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            if (_state == State.BeforeZeroKey)
+            {
+                _state = State.InArray;
+                if (_dict._hasZeroKey)
+                {
+                    _current = new KeyValuePair<int, TValue?>(0, _dict._zeroValue);
+                    return true;
+                }
+            }
+
+            if (_state == State.InArray)
+            {
+                int[] keys = _dict._keys;
+                TValue?[] values = _dict._values;
+                while (++_index < keys.Length)
+                {
+                    if (keys[_index] != EMPTY_KEY)
+                    {
+                        _current = new KeyValuePair<int, TValue?>(keys[_index], values[_index]);
+                        return true;
+                    }
+                }
+                _state = State.Done;
+            }
+
+            _current = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Resets the enumerator to its initial position, before the first entry.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the dictionary was modified since the enumerator was created.
+        /// </exception>
+        public void Reset()
+        {
+            if (_version != _dict._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            _index = -1;
+            _current = default;
+            _state = State.BeforeZeroKey;
+        }
+
+        /// <summary>
+        /// Releases any resources held by the enumerator. No-op for this type.
+        /// </summary>
+        public void Dispose() { }
+    }
+
+    /// <summary>
+    /// A struct enumerable view over the keys of an
+    /// <see cref="IntDictionary{TValue, THasher}"/>. Iterating it does not
+    /// allocate; passing it through <see cref="IEnumerable{T}"/> will box the
+    /// enumerator and is therefore not zero-allocation.
+    /// </summary>
+    public readonly struct KeyCollection : IEnumerable<int>
+    {
+        private readonly IntDictionary<TValue, THasher> _dict;
+
+        internal KeyCollection(IntDictionary<TValue, THasher> dict) => _dict = dict;
+
+        /// <summary>
+        /// Gets the number of keys in the view (equal to the dictionary's count).
+        /// </summary>
+        public int Count => _dict._count;
+
+        /// <summary>
+        /// Returns an allocation-free struct enumerator over the keys.
+        /// </summary>
+        public Enumerator GetEnumerator() => new Enumerator(_dict);
+
+        IEnumerator<int> IEnumerable<int>.GetEnumerator() => new Enumerator(_dict);
+        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_dict);
+
+        /// <summary>
+        /// A struct enumerator over the keys of an
+        /// <see cref="IntDictionary{TValue, THasher}"/>.
+        /// </summary>
+        public struct Enumerator : IEnumerator<int>
+        {
+            private IntDictionary<TValue, THasher>.Enumerator _inner;
+
+            internal Enumerator(IntDictionary<TValue, THasher> dict) => _inner = dict.GetEnumerator();
+
+            /// <summary>Gets the current key.</summary>
+            public int Current => _inner.Current.Key;
+
+            object IEnumerator.Current => _inner.Current.Key;
+
+            /// <summary>Advances to the next key.</summary>
+            public bool MoveNext() => _inner.MoveNext();
+
+            /// <summary>Resets the enumerator to its initial position.</summary>
+            public void Reset() => _inner.Reset();
+
+            /// <summary>No-op.</summary>
+            public void Dispose() => _inner.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A struct enumerable view over the values of an
+    /// <see cref="IntDictionary{TValue, THasher}"/>. Iterating it does not
+    /// allocate; passing it through <see cref="IEnumerable{T}"/> will box the
+    /// enumerator and is therefore not zero-allocation.
+    /// </summary>
+    public readonly struct ValueCollection : IEnumerable<TValue?>
+    {
+        private readonly IntDictionary<TValue, THasher> _dict;
+
+        internal ValueCollection(IntDictionary<TValue, THasher> dict) => _dict = dict;
+
+        /// <summary>
+        /// Gets the number of values in the view (equal to the dictionary's count).
+        /// </summary>
+        public int Count => _dict._count;
+
+        /// <summary>
+        /// Returns an allocation-free struct enumerator over the values.
+        /// </summary>
+        public Enumerator GetEnumerator() => new Enumerator(_dict);
+
+        IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => new Enumerator(_dict);
+        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_dict);
+
+        /// <summary>
+        /// A struct enumerator over the values of an
+        /// <see cref="IntDictionary{TValue, THasher}"/>.
+        /// </summary>
+        public struct Enumerator : IEnumerator<TValue?>
+        {
+            private IntDictionary<TValue, THasher>.Enumerator _inner;
+
+            internal Enumerator(IntDictionary<TValue, THasher> dict) => _inner = dict.GetEnumerator();
+
+            /// <summary>Gets the current value.</summary>
+            public TValue? Current => _inner.Current.Value;
+
+            object? IEnumerator.Current => _inner.Current.Value;
+
+            /// <summary>Advances to the next value.</summary>
+            public bool MoveNext() => _inner.MoveNext();
+
+            /// <summary>Resets the enumerator to its initial position.</summary>
+            public void Reset() => _inner.Reset();
+
+            /// <summary>No-op.</summary>
+            public void Dispose() => _inner.Dispose();
+        }
     }
 
     private int ProbeForInsert(int key)

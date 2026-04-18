@@ -209,8 +209,8 @@ Both constructors now throw `ArgumentOutOfRangeException` for `capacity < 0`, `l
 
 ## Backlog (post-0.2.0)
 
-- **#9** — Implement `IReadOnlyDictionary<TKey, TValue>` (0.3.0). Requires `Keys`, `Values`, and `GetEnumerator()` first.
-- **#10** — Add `Keys` / `Values` / `GetEnumerator()` (0.3.0). Next item to tackle.
+- **#9** — Implement `IReadOnlyDictionary<TKey, TValue>` (1.1.0). Requires `Keys`, `Values`, and `GetEnumerator()` first.
+- **#10** — Add `Keys` / `Values` / `GetEnumerator()` (1.1.0). Status: `in-progress in 1.1.0` — `IntDictionary` done (allocation-free struct enumerators, zero-key is yielded first, BCL-style mid-enumeration mutation detection). `CelerityDictionary` still to do.
 - **#11** — Add `Add` / `TryAdd` with duplicate-throwing semantics (0.3.0). Status: `fixed in 0.3.0`.
 - **#12** — `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher` (0.4.0). Status: `fixed in 1.1.0` — `UInt32Hasher`, `UInt64Hasher`, `GuidHasher`, `Int32Murmur3Hasher`, and `Int64WangHasher` all complete.
 - **#13** — `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()`. Status: `fixed in 1.1.0`.
