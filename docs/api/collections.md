@@ -35,6 +35,8 @@ Creates a new dictionary. `capacity` is rounded up to the next power of two. `lo
 | Property | Type | Description |
 |----------|------|-------------|
 | `Count`  | `int` | Number of key/value pairs in the dictionary. |
+| `Keys`   | `KeyCollection` | Allocation-free enumerable view over the keys. |
+| `Values` | `ValueCollection` | Allocation-free enumerable view over the values. |
 
 ### Indexer
 
@@ -94,6 +96,14 @@ public void Clear()
 
 Removes all entries. The underlying array capacity is preserved.
 
+#### GetEnumerator
+
+```csharp
+public Enumerator GetEnumerator()
+```
+
+Returns a struct enumerator that yields `KeyValuePair<TKey, TValue?>`. The out-of-band default-key entry is yielded first if present. Mutating the dictionary during enumeration throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Iteration order is unspecified and may change between versions.
+
 ### Default-key handling
 
 `default(TKey)` (which is `null` for reference types, `0` for `int`, `Guid.Empty` for `Guid`, etc.) cannot be stored in the regular probe table because it doubles as the empty-slot sentinel. Celerity handles this transparently via a dedicated `_hasDefaultKey` flag and a separate value slot, so callers never need to worry about it.
@@ -110,6 +120,13 @@ dict[0]  = "zero is fine";
 
 if (dict.TryGetValue(42, out var val))
     Console.WriteLine(val); // "hello"
+
+// Zero-allocation enumeration (struct enumerator):
+foreach (var kvp in dict)
+    Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
+
+foreach (int key in dict.Keys) { /* ... */ }
+foreach (var value in dict.Values) { /* ... */ }
 ```
 
 ---
