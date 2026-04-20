@@ -43,7 +43,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 
 - Implement `CeleritySet<T, THasher>` — set counterpart to `CelerityDictionary`. (#16)
 - Implement `LongDictionary<TValue>` — `IntDictionary` equivalent for `long` keys. (#17)
-- Implement `IReadOnlyDictionary<TKey, TValue>` on `CelerityDictionary` and `IntDictionary`.
+- Implement `IReadOnlyDictionary<TKey, TValue>` on `CelerityDictionary` and `IntDictionary`. Status: `done`.
 - Add `Keys` / `Values` enumerable views and `GetEnumerator()`.
 - Constructor accepting `IEnumerable<KeyValuePair<TKey, TValue>>`.
 

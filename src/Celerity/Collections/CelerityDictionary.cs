@@ -13,7 +13,9 @@ namespace Celerity.Collections;
 /// The hasher used to compute key hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, IHashProvider<TKey>
+public class CelerityDictionary<TKey, TValue, THasher>
+    : IReadOnlyDictionary<TKey, TValue?>
+    where THasher : struct, IHashProvider<TKey>
 {
     /// <summary>
     /// The default initial capacity of the dictionary if no capacity is specified.
@@ -500,6 +502,23 @@ public class CelerityDictionary<TKey, TValue, THasher> where THasher : struct, I
             public void Dispose() => _inner.Dispose();
         }
     }
+
+    // IReadOnlyDictionary<TKey, TValue?> explicit interface members. The primary
+    // (non-interface) surface — the indexer, ContainsKey, TryGetValue, Count, the
+    // struct enumerator, and the KeyCollection / ValueCollection views — already
+    // cover the interface contract. These forwarders only widen those members to
+    // the boxed IEnumerable<T> / IEnumerator<T> shapes the interface requires, so
+    // users who prefer BCL ergonomics (e.g. consuming the dictionary as
+    // `IReadOnlyDictionary<TKey, TValue?>` via LINQ or dependency injection) can
+    // do so without losing the zero-allocation fast path for direct foreach.
+    IEnumerable<TKey> IReadOnlyDictionary<TKey, TValue?>.Keys => Keys;
+
+    IEnumerable<TValue?> IReadOnlyDictionary<TKey, TValue?>.Values => Values;
+
+    IEnumerator<KeyValuePair<TKey, TValue?>> IEnumerable<KeyValuePair<TKey, TValue?>>.GetEnumerator()
+        => GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     private static bool IsDefaultKey(TKey key) =>
         EqualityComparer<TKey>.Default.Equals(key, default(TKey));

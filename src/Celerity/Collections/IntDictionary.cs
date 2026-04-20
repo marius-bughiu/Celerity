@@ -37,7 +37,9 @@ public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
 /// The hasher used to compute key hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvider<int>
+public class IntDictionary<TValue, THasher>
+    : IReadOnlyDictionary<int, TValue?>
+    where THasher : struct, IHashProvider<int>
 {
     /// <summary>
     /// The default initial capacity of the dictionary if no capacity is specified.
@@ -524,6 +526,25 @@ public class IntDictionary<TValue, THasher> where THasher : struct, IHashProvide
             public void Dispose() => _inner.Dispose();
         }
     }
+
+    // IReadOnlyDictionary<int, TValue?> explicit interface members. The primary
+    // (non-interface) surface — the indexer, ContainsKey, TryGetValue, Count, the
+    // struct enumerator, and the KeyCollection / ValueCollection views — already
+    // cover the interface contract. These forwarders only widen those members to
+    // the boxed IEnumerable<T> / IEnumerator<T> shapes the interface requires, so
+    // users who prefer BCL ergonomics (e.g. consuming the dictionary as
+    // `IReadOnlyDictionary<int, TValue?>` via LINQ or dependency injection) can do
+    // so without losing the zero-allocation fast path for direct foreach.
+    TValue? IReadOnlyDictionary<int, TValue?>.this[int key] => this[key];
+
+    IEnumerable<int> IReadOnlyDictionary<int, TValue?>.Keys => Keys;
+
+    IEnumerable<TValue?> IReadOnlyDictionary<int, TValue?>.Values => Values;
+
+    IEnumerator<KeyValuePair<int, TValue?>> IEnumerable<KeyValuePair<int, TValue?>>.GetEnumerator()
+        => GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     private int ProbeForInsert(int key)
     {
