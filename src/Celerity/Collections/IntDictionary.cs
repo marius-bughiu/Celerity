@@ -26,6 +26,37 @@ public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
         : base(capacity, loadFactor)
     {
     }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IntDictionary{TValue}"/> class
+    /// that contains the key/value pairs copied from the specified
+    /// <paramref name="source"/>.
+    /// </summary>
+    /// <param name="source">
+    /// The collection whose key/value pairs are copied into the new dictionary.
+    /// If <paramref name="source"/> implements <see cref="ICollection{T}"/>, its
+    /// <c>Count</c> is used to size the backing storage so inserts do not resize.
+    /// </param>
+    /// <param name="capacity">
+    /// The minimum initial capacity. The final capacity is the larger of this
+    /// value and the source's count, rounded up to the next power of two.
+    /// </param>
+    /// <param name="loadFactor">
+    /// Determines the maximum ratio of count to capacity before resizing.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="source"/> contains one or more duplicate keys.
+    /// </exception>
+    public IntDictionary(
+        IEnumerable<KeyValuePair<int, TValue>> source,
+        int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+        : base(source, capacity, loadFactor)
+    {
+    }
 }
 
 /// <summary>
@@ -97,6 +128,44 @@ public class IntDictionary<TValue, THasher>
         _loadFactor = loadFactor;
         _threshold = (int)(size * _loadFactor);
         _hasher = default;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IntDictionary{TValue, THasher}"/>
+    /// class that contains the key/value pairs copied from the specified
+    /// <paramref name="source"/>.
+    /// </summary>
+    /// <param name="source">
+    /// The collection whose key/value pairs are copied into the new dictionary.
+    /// If <paramref name="source"/> implements <see cref="ICollection{T}"/>, its
+    /// <c>Count</c> is used to size the backing storage so inserts do not resize.
+    /// </param>
+    /// <param name="capacity">
+    /// The minimum initial capacity. The final capacity is the larger of this
+    /// value and the source's count, rounded up to the next power of two.
+    /// </param>
+    /// <param name="loadFactor">
+    /// Determines the maximum ratio of count to capacity before resizing.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="source"/> contains one or more duplicate keys.
+    /// </exception>
+    public IntDictionary(
+        IEnumerable<KeyValuePair<int, TValue>> source,
+        int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+        : this(Math.Max(capacity, (source as ICollection<KeyValuePair<int, TValue>>)?.Count ?? 0), loadFactor)
+    {
+        if (source is null)
+            throw new ArgumentNullException(nameof(source));
+
+        foreach (KeyValuePair<int, TValue> kvp in source)
+        {
+            Add(kvp.Key, kvp.Value);
+        }
     }
 
     /// <summary>
