@@ -41,11 +41,11 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 
 ### Collections
 
-- Implement `CeleritySet<T, THasher>` — set counterpart to `CelerityDictionary`. (#16)
+- Implement `CeleritySet<T, THasher>` — set counterpart to `CelerityDictionary`. (#16) Status: `done`.
 - Implement `LongDictionary<TValue>` — `IntDictionary` equivalent for `long` keys. (#17)
 - Implement `IReadOnlyDictionary<TKey, TValue>` on `CelerityDictionary` and `IntDictionary`. Status: `done`.
-- Add `Keys` / `Values` enumerable views and `GetEnumerator()`.
-- Constructor accepting `IEnumerable<KeyValuePair<TKey, TValue>>`.
+- Add `Keys` / `Values` enumerable views and `GetEnumerator()`. Status: `done`.
+- Constructor accepting `IEnumerable<KeyValuePair<TKey, TValue>>`. Status: `done`.
 
 ### Hashers
 

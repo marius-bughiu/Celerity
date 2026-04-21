@@ -216,6 +216,7 @@ Both constructors now throw `ArgumentOutOfRangeException` for `capacity < 0`, `l
 - **#13** — `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()`. Status: `fixed in 1.1.0`.
 - **#14** — Expanded benchmark suite: uniform vs clustered vs adversarial key distributions (0.4.0).
 - **#15** — `CeleritySet<T, THasher>` and `IntSet`. Status: `fixed in 1.1.0`.
+- **#22** — `IEnumerable<KeyValuePair<TKey, TValue>>` constructor on both dictionaries (1.1.0). Status: `fixed in 1.1.0` — both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue, THasher>` (and the `IntDictionary<TValue>` convenience subclass) now accept a source enumerable at construction. Matches BCL `Dictionary<,>` semantics: `ArgumentNullException` on a null source, `ArgumentException` on duplicate keys (including duplicate zero / default keys), `ICollection<T>.Count` used to pre-size when available, and the out-of-band zero / default-key slot is populated when the source contains a `default(TKey)` entry.
 - **#16** — `SmallDictionary<TKey, TValue>` optimized for `n <= ~16` (0.5.0).
 - **#17** — `FrozenCelerityDictionary` with perfect hashing for string keys (0.5.0).
 - **#18** — Robin Hood probing experiment (0.6.0).
