@@ -222,3 +222,59 @@ Both constructors now throw `ArgumentOutOfRangeException` for `capacity < 0`, `l
 - **#18** — Robin Hood probing experiment (0.6.0).
 - **#19** — SIMD-accelerated probing experiment (0.6.0).
 - **#20** — Struct-of-arrays layout experiment (0.6.0).
+
+---
+
+## #23 — `TryAdd` / `Add` walk the probe chain twice on every insert
+
+- **type**: perf / code-quality
+- **severity**: medium
+- **milestone**: 1.1.0
+- **status**: fixed in 1.1.0
+
+### Description
+
+`TryAdd(key, value)` (on both dictionaries and both sets) is currently implemented as:
+
+```csharp
+public bool TryAdd(int key, TValue value)
+{
+    // ... handle out-of-band zero/default key ...
+    if (ContainsKey(key))   // probe 1 — full ProbeForKey walk
+        return false;
+    this[key] = value;      // probe 2 — full ProbeForInsert walk inside the indexer setter
+    return true;
+}
+```
+
+That's two independent walks of the probe chain on the *common* path (the new-key path) when one would suffice. The same shape applies to `IntSet.TryAdd` / `CeleritySet.TryAdd` (both call `Contains` then `InsertNonZero` / `InsertNonDefault`).
+
+The double probe matters in three places:
+
+1. `Add(key, value)` — delegates to `TryAdd`, so every duplicate-throwing insert pays the same tax.
+2. The new `IEnumerable<KeyValuePair<TKey, TValue>>` constructor (added in 1.1.0) — bulk-loads via `Add`, so loading an N-element source does ~2N probe-chain walks instead of N. This is a regression on the headline 1.1.0 ergonomic API.
+3. Any caller doing `if (!dict.TryAdd(...)) ...` on a hot path.
+
+### Fix
+
+A single `ProbeForInsert(key)` call already returns either:
+
+- the index of an existing entry (`_keys[index] == key`), or
+- the first empty slot in the probe chain (`_keys[index] == EMPTY_KEY` / `default(TKey)`).
+
+`TryAdd` only needs to inspect that slot. If it's not empty, the key already exists → return false. Otherwise insert at that slot directly:
+
+```csharp
+if (_count >= _threshold) Resize();
+int index = ProbeForInsert(key);
+if (_keys[index] != EMPTY_KEY) return false;  // already present
+_keys[index] = key;
+_values[index] = value;
+_count++;
+_version++;
+return true;
+```
+
+`Add(key, value)` is left as a thin throwing wrapper around `TryAdd`. Behaviour is identical to before; the only change is the elimination of the redundant probe walk.
+
+A regression test using a probe-counting `IHashProvider` should accompany the fix — it pins the contract "TryAdd does exactly one probe walk on the new-key path" so a future refactor can't quietly re-introduce the doubling.

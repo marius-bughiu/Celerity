@@ -345,10 +345,22 @@ public class IntDictionary<TValue, THasher>
             return true;
         }
 
-        if (ContainsKey(key))
+        // Single probe: ProbeForInsert returns either the slot of an existing
+        // entry or the first empty slot in the chain. If it's the former, the
+        // key already exists; otherwise we insert here directly. This avoids
+        // the double probe-chain walk that `if (ContainsKey(key)) ...; this[key] = value;`
+        // would do.
+        if (_count >= _threshold)
+            Resize();
+
+        int index = ProbeForInsert(key);
+        if (_keys[index] != EMPTY_KEY)
             return false;
 
-        this[key] = value;
+        _keys[index] = key;
+        _values[index] = value;
+        _count++;
+        _version++;
         return true;
     }
 
