@@ -57,7 +57,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 - Set up `github-action-benchmark` for continuous performance tracking. (#1)
 - Create hash function evaluator for comparing distribution quality. (#2)
 - Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. (#26)
-- Cross-platform testing (Windows, Linux, macOS). (#28)
+- Cross-platform testing (Windows, Linux, macOS). (#28) Status: `done`.
 - Improve code coverage. (#29)
 - Improve documentation. (#15)
 - Bump XML doc coverage; treat missing docs as warning-as-error.
