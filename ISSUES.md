@@ -222,3 +222,4 @@ Both constructors now throw `ArgumentOutOfRangeException` for `capacity < 0`, `l
 - **#18** — Robin Hood probing experiment (0.6.0).
 - **#19** — SIMD-accelerated probing experiment (0.6.0).
 - **#20** — Struct-of-arrays layout experiment (0.6.0).
+- **#23** — `Remove(TKey key, out TValue? value)` overload on both dictionaries (1.1.0). Status: `fixed in 1.1.0` — both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue, THasher>` now expose a BCL-parity `Remove` overload that captures the removed value into an `out` parameter before clearing the slot. The void `Remove(key)` overload now delegates to the new method. The out-of-band default-key / zero-key slot is surfaced through the same path. Spotted while reading the source: BCL `Dictionary<,>` has had this overload since .NET Core 3.0 and it was the only obvious BCL `Remove` shape Celerity was missing.
