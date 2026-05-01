@@ -63,4 +63,4 @@ For full API details — constructors, method signatures, parameters, exceptions
 - [`ROADMAP.md`](ROADMAP.md) — planned milestones and long-term vision.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, test, PR conventions.
-- [`ISSUES.md`](ISSUES.md) — snapshot of the known issue backlog.
+- [GitHub Issues](https://github.com/marius-bughiu/Celerity/issues) — open backlog and bug reports.

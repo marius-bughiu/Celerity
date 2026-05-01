@@ -29,7 +29,7 @@ src/
 
 ## Making changes
 
-1. Open (or comment on) an issue before starting a large change. Small bug fixes can skip this step.
+1. Open (or comment on) a GitHub issue before starting a large change. Small bug fixes can skip this step. Browse open work via the [Issues](https://github.com/marius-bughiu/Celerity/issues) tab or by [milestone](https://github.com/marius-bughiu/Celerity/milestones).
 2. Create a branch off `main`.
 3. Write the change together with the test that would have caught the bug. Bug fixes without regression tests will be asked to add one.
 4. Run `dotnet test` locally.
