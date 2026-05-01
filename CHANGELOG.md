@@ -66,6 +66,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
+- `TryAdd` (and therefore `Add`) on `IntDictionary<TValue, THasher>`, `CelerityDictionary<TKey, TValue, THasher>`, `IntSet<THasher>`, and `CeleritySet<T, THasher>` now walks the probe chain exactly **once** per call instead of twice. The previous implementation called `ContainsKey` / `Contains` followed by the indexer setter / `InsertNon*` helper, each starting its own probe walk; the rewrite uses a single `ProbeForInsert`-style walk that either lands on the existing entry (return `false`) or on the first empty slot (insert in place). Behaviour is identical to before — including the duplicate-key contract on `Add` and the "unchanged on duplicate" contract on `TryAdd` — but bulk-loads via the new `IEnumerable<KeyValuePair<,>>` constructor and any `Add`-heavy hot path now do roughly half the probe work. Closes issue #24. Pinned by `TryAddProbeCountTests`, which uses a counting `IHashProvider` to assert that `TryAdd` calls `Hash` exactly once on both the new-key and duplicate-key paths across all four collections.
 - The `IntDictionary` `EMPTY_VALUE` field is now `static readonly` instead of an instance field. No behavior change; just removes per-instance overhead.
 
 ## [0.1.0] - initial releases

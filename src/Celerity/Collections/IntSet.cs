@@ -133,10 +133,24 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
             return true;
         }
 
-        if (Contains(item))
-            return false;
+        // Single probe: walk the probe chain once and either spot the existing
+        // entry (return false) or land on an empty slot and insert in place.
+        // Avoids the double walk of `if (Contains(item)) ...; InsertNonZero(item);`.
+        if (_count >= _threshold)
+            Resize();
 
-        InsertNonZero(item);
+        int size = _slots.Length;
+        int index = _hasher.Hash(item) & (size - 1);
+
+        while (_slots[index] != EMPTY_SLOT)
+        {
+            if (_slots[index] == item)
+                return false;
+            index = (index + 1) & (size - 1);
+        }
+
+        _slots[index] = item;
+        _count++;
         _version++;
         return true;
     }
