@@ -8,7 +8,13 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    name: build-and-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     defaults:
       run:
@@ -38,7 +44,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ matrix.os }}
           path: src/TestResults/*.trx
           if-no-files-found: warn
           retention-days: 7

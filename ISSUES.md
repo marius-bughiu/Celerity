@@ -217,15 +217,17 @@ Both constructors now throw `ArgumentOutOfRangeException` for `capacity < 0`, `l
 - **#14** — Expanded benchmark suite: uniform vs clustered vs adversarial key distributions (0.4.0).
 - **#15** — `CeleritySet<T, THasher>` and `IntSet`. Status: `fixed in 1.1.0`.
 - **#22** — `IEnumerable<KeyValuePair<TKey, TValue>>` constructor on both dictionaries (1.1.0). Status: `fixed in 1.1.0` — both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue, THasher>` (and the `IntDictionary<TValue>` convenience subclass) now accept a source enumerable at construction. Matches BCL `Dictionary<,>` semantics: `ArgumentNullException` on a null source, `ArgumentException` on duplicate keys (including duplicate zero / default keys), `ICollection<T>.Count` used to pre-size when available, and the out-of-band zero / default-key slot is populated when the source contains a `default(TKey)` entry.
+- **#23** — `GetEnumerator()` on `IntSet` and `CeleritySet` (1.1.0). Status: `fixed in 1.1.0` — both sets now ship a struct `Enumerator` with `_version` mutation tracking, a public `GetEnumerator()` returning that struct, and an explicit `IEnumerable<T>` implementation. The out-of-band zero / `default(T)` entry (including `null` for reference-type elements) is yielded first, then the rest in unspecified order. Entry-point structural mutations (`Add`, `TryAdd`, `Remove`, `Clear`) bump `_version`; no-op forms of those calls do not. Mirror regression-test surfaces (`IntSetEnumerationTests`, `CeleritySetEnumerationTests`) cover empty / single / many-entry, default-first ordering, removal / clear / multi-resize survival, mutation-during-enumeration detection, no-op mutation safety, `Reset` reuse, post-exhaustion `Current`, generic and non-generic `IEnumerable` parity, custom-hasher coverage, and a LINQ smoke test. Shipped in two slices — `IntSet` (PR #50) and `CeleritySet` (this PR). Unblocks the post-1.1.0 `IReadOnlySet<T>` interface and an `IEnumerable<T>` constructor mirroring dictionary issue #22.
 - **#16** — `SmallDictionary<TKey, TValue>` optimized for `n <= ~16` (0.5.0).
 - **#17** — `FrozenCelerityDictionary` with perfect hashing for string keys (0.5.0).
 - **#18** — Robin Hood probing experiment (0.6.0).
 - **#19** — SIMD-accelerated probing experiment (0.6.0).
 - **#20** — Struct-of-arrays layout experiment (0.6.0).
+- **#23** — `Remove(TKey key, out TValue? value)` overload on both dictionaries (1.1.0). Status: `fixed in 1.1.0` — both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue, THasher>` now expose a BCL-parity `Remove` overload that captures the removed value into an `out` parameter before clearing the slot. The void `Remove(key)` overload now delegates to the new method. The out-of-band default-key / zero-key slot is surfaced through the same path. Spotted while reading the source: BCL `Dictionary<,>` has had this overload since .NET Core 3.0 and it was the only obvious BCL `Remove` shape Celerity was missing.
 
 ---
 
-## #23 — `TryAdd` / `Add` walk the probe chain twice on every insert
+## #24 — `TryAdd` / `Add` walk the probe chain twice on every insert
 
 - **type**: perf / code-quality
 - **severity**: medium

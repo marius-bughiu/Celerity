@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -11,7 +13,7 @@ namespace Celerity.Collections;
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class CeleritySet<T, THasher> where THasher : struct, IHashProvider<T>
+public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IHashProvider<T>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
@@ -34,6 +36,12 @@ public class CeleritySet<T, THasher> where THasher : struct, IHashProvider<T>
     // during probing, so it's stored out-of-band. _count includes this entry
     // when _hasDefaultValue is true.
     private bool _hasDefaultValue;
+
+    // Bumped on every entry-point structural mutation (Add / TryAdd / Remove /
+    // Clear). The struct enumerator captures this on construction and re-checks
+    // it from MoveNext / Reset, so any concurrent modification fast-fails with
+    // InvalidOperationException — matching BCL HashSet<T> semantics.
+    private int _version;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CeleritySet{T,THasher}"/> class
@@ -97,6 +105,7 @@ public class CeleritySet<T, THasher> where THasher : struct, IHashProvider<T>
                 return false;
             _hasDefaultValue = true;
             _count++;
+            _version++;
             return true;
         }
 
@@ -118,6 +127,7 @@ public class CeleritySet<T, THasher> where THasher : struct, IHashProvider<T>
 
         _slots[index] = item;
         _count++;
+        _version++;
         return true;
     }
 
@@ -150,6 +160,7 @@ public class CeleritySet<T, THasher> where THasher : struct, IHashProvider<T>
                 return false;
             _hasDefaultValue = false;
             _count--;
+            _version++;
             return true;
         }
 
@@ -161,6 +172,7 @@ public class CeleritySet<T, THasher> where THasher : struct, IHashProvider<T>
         _count--;
 
         RehashAfterRemove(index);
+        _version++;
         return true;
     }
 
@@ -175,6 +187,125 @@ public class CeleritySet<T, THasher> where THasher : struct, IHashProvider<T>
         Array.Clear(_slots, 0, _slots.Length);
         _hasDefaultValue = false;
         _count = 0;
+        _version++;
+    }
+
+    /// <summary>
+    /// Returns an allocation-free enumerator that yields each element stored in
+    /// the set. The enumeration order is unspecified and may change across
+    /// versions; do not rely on it. The out-of-band <c>default(T)</c> entry (if
+    /// present) is yielded first — for reference-type elements that includes
+    /// <c>null</c>. If the set is modified during enumeration,
+    /// <see cref="Enumerator.MoveNext"/> throws
+    /// <see cref="InvalidOperationException"/>.
+    /// </summary>
+    /// <returns>A struct enumerator over this set.</returns>
+    public Enumerator GetEnumerator() => new Enumerator(this);
+
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    /// <summary>
+    /// A struct enumerator over a <see cref="CeleritySet{T,THasher}"/>. Because
+    /// it is a struct, iterating it via <c>foreach</c> avoids the allocation
+    /// that a compiler-generated <c>IEnumerator&lt;T&gt;</c> would incur. The
+    /// out-of-band <c>default(T)</c> entry (if present) is yielded first.
+    /// </summary>
+    public struct Enumerator : IEnumerator<T>
+    {
+        private readonly CeleritySet<T, THasher> _set;
+        private readonly int _version;
+        private int _index;
+        private T? _current;
+        private State _state;
+
+        private enum State : byte
+        {
+            BeforeDefault,
+            InArray,
+            Done
+        }
+
+        internal Enumerator(CeleritySet<T, THasher> set)
+        {
+            _set = set;
+            _version = set._version;
+            _index = -1;
+            _current = default;
+            _state = State.BeforeDefault;
+        }
+
+        /// <summary>
+        /// Gets the element at the current position of the enumerator.
+        /// </summary>
+        public T Current => _current!;
+
+        object? IEnumerator.Current => _current;
+
+        /// <summary>
+        /// Advances the enumerator to the next element.
+        /// </summary>
+        /// <returns>
+        /// <c>true</c> if the enumerator advanced to a new entry; <c>false</c>
+        /// if it has passed the end of the set.
+        /// </returns>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the set was modified since the enumerator was created.
+        /// </exception>
+        public bool MoveNext()
+        {
+            if (_version != _set._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            if (_state == State.BeforeDefault)
+            {
+                _state = State.InArray;
+                if (_set._hasDefaultValue)
+                {
+                    _current = default;
+                    return true;
+                }
+            }
+
+            if (_state == State.InArray)
+            {
+                T?[] slots = _set._slots;
+                while (++_index < slots.Length)
+                {
+                    if (!EqualityComparer<T>.Default.Equals(slots[_index], default(T)))
+                    {
+                        _current = slots[_index];
+                        return true;
+                    }
+                }
+                _state = State.Done;
+            }
+
+            _current = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Resets the enumerator to its initial position, before the first entry.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the set was modified since the enumerator was created.
+        /// </exception>
+        public void Reset()
+        {
+            if (_version != _set._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            _index = -1;
+            _current = default;
+            _state = State.BeforeDefault;
+        }
+
+        /// <summary>
+        /// Releases any resources held by the enumerator. No-op for this type.
+        /// </summary>
+        public void Dispose() { }
     }
 
     private static bool IsDefaultValue(T item) =>

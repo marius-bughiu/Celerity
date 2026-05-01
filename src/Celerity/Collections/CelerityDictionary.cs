@@ -227,12 +227,32 @@ public class CelerityDictionary<TKey, TValue, THasher>
     /// <c>true</c> if the element was successfully removed; otherwise, <c>false</c>.
     /// Also returns <c>false</c> if the key was not found.
     /// </returns>
-    public bool Remove(TKey key)
+    public bool Remove(TKey key) => Remove(key, out _);
+
+    /// <summary>
+    /// Removes the value with the specified key from the dictionary and copies
+    /// the removed value to the <paramref name="value"/> parameter.
+    /// </summary>
+    /// <param name="key">The key of the element to remove.</param>
+    /// <param name="value">
+    /// When this method returns, contains the value that was associated with
+    /// <paramref name="key"/> before removal if the key was found; otherwise the
+    /// default value of <typeparamref name="TValue"/>.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> if the element was successfully removed; otherwise, <c>false</c>.
+    /// Also returns <c>false</c> if the key was not found.
+    /// </returns>
+    public bool Remove(TKey key, out TValue? value)
     {
         if (IsDefaultKey(key))
         {
             if (!_hasDefaultKey)
+            {
+                value = default;
                 return false;
+            }
+            value = _defaultKeyValue;
             _hasDefaultKey = false;
             _defaultKeyValue = default;
             _count--;
@@ -242,8 +262,12 @@ public class CelerityDictionary<TKey, TValue, THasher>
 
         int index = ProbeForKey(key);
         if (index < 0)
+        {
+            value = default;
             return false;
+        }
 
+        value = _values[index];
         _keys[index] = default(TKey);
         _values[index] = default(TValue);
         _count--;

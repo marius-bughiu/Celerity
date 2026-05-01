@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -34,7 +36,7 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class IntSet<THasher> where THasher : struct, IHashProvider<int>
+public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashProvider<int>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
@@ -57,6 +59,12 @@ public class IntSet<THasher> where THasher : struct, IHashProvider<int>
     // The value 0 collides with EMPTY_SLOT, so it's stored out-of-band
     // in a dedicated flag. _count includes this entry when _hasZero is true.
     private bool _hasZero;
+
+    // Bumped on every entry-point structural mutation (Add / TryAdd / Remove /
+    // Clear). The struct enumerator captures this on construction and re-checks
+    // it from MoveNext / Reset, so any concurrent modification fast-fails with
+    // InvalidOperationException — matching BCL HashSet<int> semantics.
+    private int _version;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="IntSet{THasher}"/> class
@@ -121,6 +129,7 @@ public class IntSet<THasher> where THasher : struct, IHashProvider<int>
                 return false;
             _hasZero = true;
             _count++;
+            _version++;
             return true;
         }
 
@@ -142,6 +151,7 @@ public class IntSet<THasher> where THasher : struct, IHashProvider<int>
 
         _slots[index] = item;
         _count++;
+        _version++;
         return true;
     }
 
@@ -174,6 +184,7 @@ public class IntSet<THasher> where THasher : struct, IHashProvider<int>
                 return false;
             _hasZero = false;
             _count--;
+            _version++;
             return true;
         }
 
@@ -185,6 +196,7 @@ public class IntSet<THasher> where THasher : struct, IHashProvider<int>
         _count--;
 
         RehashAfterRemove(index);
+        _version++;
         return true;
     }
 
@@ -199,6 +211,124 @@ public class IntSet<THasher> where THasher : struct, IHashProvider<int>
         Array.Clear(_slots, 0, _slots.Length);
         _hasZero = false;
         _count = 0;
+        _version++;
+    }
+
+    /// <summary>
+    /// Returns an allocation-free enumerator that yields each element stored in
+    /// the set. The enumeration order is unspecified and may change across
+    /// versions; do not rely on it. The out-of-band zero entry (if present) is
+    /// yielded first. If the set is modified during enumeration,
+    /// <see cref="Enumerator.MoveNext"/> throws
+    /// <see cref="InvalidOperationException"/>.
+    /// </summary>
+    /// <returns>A struct enumerator over this set.</returns>
+    public Enumerator GetEnumerator() => new Enumerator(this);
+
+    IEnumerator<int> IEnumerable<int>.GetEnumerator() => GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    /// <summary>
+    /// A struct enumerator over an <see cref="IntSet{THasher}"/>. Because it is
+    /// a struct, iterating it via <c>foreach</c> avoids the allocation that a
+    /// compiler-generated <c>IEnumerator&lt;T&gt;</c> would incur. The
+    /// out-of-band zero entry (if present) is yielded first.
+    /// </summary>
+    public struct Enumerator : IEnumerator<int>
+    {
+        private readonly IntSet<THasher> _set;
+        private readonly int _version;
+        private int _index;
+        private int _current;
+        private State _state;
+
+        private enum State : byte
+        {
+            BeforeZero,
+            InArray,
+            Done
+        }
+
+        internal Enumerator(IntSet<THasher> set)
+        {
+            _set = set;
+            _version = set._version;
+            _index = -1;
+            _current = 0;
+            _state = State.BeforeZero;
+        }
+
+        /// <summary>
+        /// Gets the element at the current position of the enumerator.
+        /// </summary>
+        public int Current => _current;
+
+        object IEnumerator.Current => _current;
+
+        /// <summary>
+        /// Advances the enumerator to the next element.
+        /// </summary>
+        /// <returns>
+        /// <c>true</c> if the enumerator advanced to a new entry; <c>false</c>
+        /// if it has passed the end of the set.
+        /// </returns>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the set was modified since the enumerator was created.
+        /// </exception>
+        public bool MoveNext()
+        {
+            if (_version != _set._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            if (_state == State.BeforeZero)
+            {
+                _state = State.InArray;
+                if (_set._hasZero)
+                {
+                    _current = 0;
+                    return true;
+                }
+            }
+
+            if (_state == State.InArray)
+            {
+                int[] slots = _set._slots;
+                while (++_index < slots.Length)
+                {
+                    if (slots[_index] != EMPTY_SLOT)
+                    {
+                        _current = slots[_index];
+                        return true;
+                    }
+                }
+                _state = State.Done;
+            }
+
+            _current = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Resets the enumerator to its initial position, before the first entry.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the set was modified since the enumerator was created.
+        /// </exception>
+        public void Reset()
+        {
+            if (_version != _set._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            _index = -1;
+            _current = 0;
+            _state = State.BeforeZero;
+        }
+
+        /// <summary>
+        /// Releases any resources held by the enumerator. No-op for this type.
+        /// </summary>
+        public void Dispose() { }
     }
 
     private void InsertNonZero(int item)
