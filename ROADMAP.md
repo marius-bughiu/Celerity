@@ -33,7 +33,7 @@ Each package will remain narrowly scoped: if a type doesn't offer a measurable p
 - Added `TryGetValue`, `Clear`, `Add`, `TryAdd` on both dictionaries. Status: `done`.
 - Stood up CI workflow (`.github/workflows/ci.yml`). Status: `done`.
 - Comprehensive test suites: collision tests, load-factor boundary tests, constructor validation. Status: `done`.
-- Added `CONTRIBUTING.md`, `CHANGELOG.md`, `ROADMAP.md`, `ISSUES.md`. Status: `done`.
+- Added `CONTRIBUTING.md`, `CHANGELOG.md`, `ROADMAP.md`. Status: `done`.
 
 ## Milestone 1.1.0 — API parity, hashers, and benchmarks
 
@@ -41,27 +41,27 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 
 ### Collections
 
-- Implement `CeleritySet<T, THasher>` — set counterpart to `CelerityDictionary`. (#16) Status: `done`.
-- Implement `LongDictionary<TValue>` — `IntDictionary` equivalent for `long` keys. (#17) Status: `done`.
+- Implement `CeleritySet<T, THasher>` — set counterpart to `CelerityDictionary`. Status: `done`.
+- Implement `LongDictionary<TValue>` — `IntDictionary` equivalent for `long` keys. Status: `done`.
 - Implement `IReadOnlyDictionary<TKey, TValue>` on `CelerityDictionary` and `IntDictionary`. Status: `done`.
 - Add `Keys` / `Values` enumerable views and `GetEnumerator()` on the dictionaries. Status: `done`.
 - Constructor accepting `IEnumerable<KeyValuePair<TKey, TValue>>`. Status: `done`.
-- Add `GetEnumerator()` and `IEnumerable<T>` conformance on the sets (`IntSet`, `CeleritySet`). (#23) Status: `done`.
+- Add `GetEnumerator()` and `IEnumerable<T>` conformance on the sets (`IntSet`, `CeleritySet`). Status: `done`.
 
 ### Hashers
 
-- Add `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher`. (#24) — all `done`.
-- Add `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()`.
+- Add `Int32Murmur3Hasher`, `Int64WangHasher`, `GuidHasher`, `UInt32Hasher`, `UInt64Hasher` — all `done`.
+- Add `DefaultHasher<T>` fallback to `EqualityComparer<T>.Default.GetHashCode()`. Status: `done`.
 
 ### Infrastructure
 
-- Set up `github-action-benchmark` for continuous performance tracking. (#1)
-- Create hash function evaluator for comparing distribution quality. (#2)
-- Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. (#26)
-- Cross-platform testing (Windows, Linux, macOS). (#28) Status: `done`.
-- Improve code coverage. (#29)
-- Improve documentation. (#15)
-- Bump XML doc coverage; treat missing docs as warning-as-error. Status: `done` — `Celerity.csproj` now promotes CS1591 to error via `<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>`. Library was already at 100% public-symbol doc coverage at the time of the change; this is a guardrail for future PRs.
+- Set up `github-action-benchmark` for continuous performance tracking.
+- Create hash function evaluator for comparing distribution quality.
+- Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. Tracked in [#60](https://github.com/marius-bughiu/Celerity/issues/60).
+- Cross-platform testing (Windows, Linux, macOS). Status: `done`.
+- Improve code coverage.
+- Improve documentation.
+- Bump XML doc coverage; treat missing docs as warning-as-error. Status: `done` — `Celerity.csproj` promotes CS1591 to error.
 
 ## Milestone 1.2.0 — Performance & advanced collections
 
@@ -69,14 +69,15 @@ Focus on raw performance and specialized collection types that serve more advanc
 
 ### Collections
 
-- `FrozenCelerityDictionary` — build-once, read-many variant with perfect hashing for string keys, comparable in spirit to `System.Collections.Frozen` but tunable via `IHashProvider<T>`. (#22)
-- `CelerityMultiMap<TKey, TValue, THasher>` — multi-value dictionary. (#18)
+- `FrozenCelerityDictionary` — build-once, read-many variant with perfect hashing for string keys, comparable in spirit to `System.Collections.Frozen` but tunable via `IHashProvider<T>`. Tracked in [#62](https://github.com/marius-bughiu/Celerity/issues/62).
+- `CelerityMultiMap<TKey, TValue, THasher>` — multi-value dictionary.
+- `SmallDictionary<TKey, TValue>` — flat-array implementation optimized for `n <= ~16`. Tracked in [#61](https://github.com/marius-bughiu/Celerity/issues/61).
 
 ### Performance
 
-- Robin Hood hashing experiment as alternative to linear probing.
-- Performance optimizations across existing collections. (#27)
-- Native AOT support and trimming compatibility. (#32)
+- Robin Hood hashing experiment as alternative to linear probing. Tracked in [#63](https://github.com/marius-bughiu/Celerity/issues/63).
+- Performance optimizations across existing collections.
+- Native AOT support and trimming compatibility. Tracked in [#32](https://github.com/marius-bughiu/Celerity/issues/32).
 
 ## Milestone 2.0.0 — Multi-package restructure
 
@@ -90,10 +91,10 @@ Split the monolithic `Celerity.Collections` into focused packages mirroring the 
 
 ### New collections
 
-- Specialized collections for domain-specific workloads (e.g. graph traversal, spatial indexing). (#30)
-- Memory-pooled collections for zero-allocation hot paths. (#21)
-- SIMD-accelerated probing (SSE2/AVX2) similar to Swiss Tables / `F14`. (#23)
-- Struct-of-arrays layout experiment for cache-friendly memory access.
+- Specialized collections for domain-specific workloads (e.g. graph traversal, spatial indexing).
+- Memory-pooled collections for zero-allocation hot paths.
+- SIMD-accelerated probing (SSE2/AVX2) similar to Swiss Tables / `F14`. Tracked in [#64](https://github.com/marius-bughiu/Celerity/issues/64).
+- Struct-of-arrays layout experiment for cache-friendly memory access. Tracked in [#65](https://github.com/marius-bughiu/Celerity/issues/65).
 
 ### Infrastructure
 
