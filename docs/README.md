@@ -4,8 +4,8 @@ This folder contains reference documentation for the Celerity high-performance c
 
 ## Contents
 
-- [Collections](api/collections.md) — `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue>`.
-- [Hashing](api/hashing.md) — `IHashProvider<T>` interface and built-in hashers.
+- [Collections](api/collections.md) — `CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`.
+- [Hashing](api/hashing.md) — `IHashProvider<T>` interface and built-in hashers (`Int32WangNaiveHasher`, `Int32Murmur3Hasher`, `Int64WangHasher`, `Int64Murmur3Hasher`, `UInt32Hasher`, `UInt64Hasher`, `GuidHasher`, `StringFnV1AHasher`, `DefaultHasher<T>`).
 - [Utilities](api/utilities.md) — `FastUtils` helper methods.
 
 ## Quick links

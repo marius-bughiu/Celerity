@@ -4,10 +4,11 @@ All collection types live in the `Celerity.Collections` namespace.
 
 ## CelerityDictionary&lt;TKey, TValue, THasher&gt;
 
-A high-performance generic dictionary parameterized on a custom hash provider. Uses open addressing with linear probing and power-of-two sizing for fast index computation.
+A high-performance generic dictionary parameterized on a custom hash provider. Uses open addressing with linear probing and power-of-two sizing for fast index computation. Implements `IReadOnlyDictionary<TKey, TValue?>`.
 
 ```csharp
 public class CelerityDictionary<TKey, TValue, THasher>
+    : IReadOnlyDictionary<TKey, TValue?>
     where THasher : struct, IHashProvider<TKey>
 ```
 
@@ -21,14 +22,23 @@ The `where THasher : struct, IHashProvider<TKey>` constraint lets the JIT devirt
 public CelerityDictionary(
     int capacity = 16,
     float loadFactor = 0.75f)
+
+public CelerityDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
 ```
 
 Creates a new dictionary. `capacity` is rounded up to the next power of two. `loadFactor` controls the fill ratio before the internal arrays are resized.
+
+The `IEnumerable<KeyValuePair<TKey, TValue>>` overload copies entries from `source`. When `source` implements `ICollection<T>`, its `Count` is used to size the backing storage so initial fills avoid resize work; for non-collection enumerables, the caller-supplied `capacity` parameter is used. The out-of-band `default(TKey)` slot is populated when the source contains an entry with `default(TKey)`.
 
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
 - `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+- `ArgumentException` if `source` contains duplicate keys (enumerable overload).
 
 ### Properties
 
@@ -84,9 +94,12 @@ Inserts `key`/`value` if the key is not already present. Returns `true` on succe
 
 ```csharp
 public bool Remove(TKey key)
+public bool Remove(TKey key, out TValue? value)
 ```
 
 Removes the entry for `key`. Returns `true` if the key was found and removed, `false` otherwise. After removal, adjacent entries are rehashed to maintain probe-chain correctness.
+
+The capture overload sets `value` to the value that was associated with the key immediately before removal, or to `default(TValue)` if the key was not found. The out-of-band default-key slot is surfaced through this path identically to the regular probe table.
 
 #### Clear
 
@@ -103,6 +116,10 @@ public Enumerator GetEnumerator()
 ```
 
 Returns a struct enumerator that yields `KeyValuePair<TKey, TValue?>`. The out-of-band default-key entry is yielded first if present. Mutating the dictionary during enumeration throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Iteration order is unspecified and may change between versions.
+
+### IReadOnlyDictionary&lt;TKey, TValue?&gt;
+
+`CelerityDictionary` implements `IReadOnlyDictionary<TKey, TValue?>` via thin explicit interface forwarders on top of the existing struct `KeyCollection` / `ValueCollection` / `Enumerator` types. The zero-allocation `foreach` fast path is preserved; the interface path boxes the enumerator exactly once per `GetEnumerator()` call, matching BCL `Dictionary<,>` behaviour. The out-of-band default-key entry is surfaced through every interface member.
 
 ### Default-key handling
 
@@ -158,10 +175,11 @@ Same semantics and validation as `CelerityDictionary`.
 
 ## IntDictionary&lt;TValue, THasher&gt;
 
-A high-performance dictionary keyed by `int`, parameterized on a custom hash provider. This is a separate implementation from `CelerityDictionary` that avoids the boxing/equality-comparer overhead of generic key types by working directly with `int` keys and using `==` for comparisons.
+A high-performance dictionary keyed by `int`, parameterized on a custom hash provider. This is a separate implementation from `CelerityDictionary` that avoids the boxing/equality-comparer overhead of generic key types by working directly with `int` keys and using `==` for comparisons. Implements `IReadOnlyDictionary<int, TValue?>`.
 
 ```csharp
 public class IntDictionary<TValue, THasher>
+    : IReadOnlyDictionary<int, TValue?>
     where THasher : struct, IHashProvider<int>
 ```
 
@@ -171,9 +189,14 @@ public class IntDictionary<TValue, THasher>
 public IntDictionary(
     int capacity = 16,
     float loadFactor = 0.75f)
+
+public IntDictionary(
+    IEnumerable<KeyValuePair<int, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
 ```
 
-**Throws** the same exceptions as `CelerityDictionary`.
+**Throws** the same exceptions as `CelerityDictionary`. The enumerable overload follows the same `source`-sizing and duplicate-key semantics described above.
 
 ### Properties
 
@@ -193,8 +216,11 @@ The method signatures and semantics match `CelerityDictionary`:
 - `void Add(int key, TValue value)` — throws `ArgumentException` on duplicate.
 - `bool TryAdd(int key, TValue value)`
 - `bool Remove(int key)`
+- `bool Remove(int key, out TValue? value)` — capture overload; `value` is the previous value or `default` if the key was absent.
 - `void Clear()`
 - `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<int, TValue?>`. The out-of-band zero-key entry is yielded first if present. Mutating the dictionary during enumeration throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Iteration order is unspecified and may change between versions.
+
+`IntDictionary<TValue, THasher>` also implements `IReadOnlyDictionary<int, TValue?>` with the same explicit-interface forwarding pattern as `CelerityDictionary`.
 
 ### Zero-key handling
 
@@ -219,4 +245,180 @@ foreach (var kvp in ids)
 
 foreach (int key in ids.Keys) { /* ... */ }
 foreach (var value in ids.Values) { /* ... */ }
+```
+
+---
+
+## LongDictionary&lt;TValue&gt;
+
+A convenience subclass of `LongDictionary<TValue, Int64WangHasher>` for the common case of 64-bit integer-keyed dictionaries.
+
+```csharp
+public class LongDictionary<TValue>
+    : LongDictionary<TValue, Int64WangHasher>
+```
+
+### Constructors
+
+```csharp
+public LongDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public LongDictionary(
+    IEnumerable<KeyValuePair<long, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics and validation as `IntDictionary`.
+
+---
+
+## LongDictionary&lt;TValue, THasher&gt;
+
+A high-performance dictionary keyed by `long`, parameterized on a custom hash provider. Mirrors `IntDictionary` but for 64-bit keys. Defaults to `Int64WangHasher` when used through the convenience subclass. Implements `IReadOnlyDictionary<long, TValue?>`.
+
+```csharp
+public class LongDictionary<TValue, THasher>
+    : IReadOnlyDictionary<long, TValue?>
+    where THasher : struct, IHashProvider<long>
+```
+
+### API
+
+The public surface and semantics match `IntDictionary`:
+
+- `this[long key]`
+- `bool ContainsKey(long key)`
+- `bool TryGetValue(long key, out TValue? value)`
+- `void Add(long key, TValue value)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(long key, TValue value)`
+- `bool Remove(long key)`
+- `bool Remove(long key, out TValue? value)`
+- `void Clear()`
+- `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<long, TValue?>`.
+- `KeyCollection Keys`, `ValueCollection Values` — allocation-free struct views.
+
+### Zero-key handling
+
+The key `0L` collides with the `EMPTY_KEY` sentinel and is stored out-of-band the same way `IntDictionary` handles the key `0`. Two keys that share the lower 32 bits but differ in the upper 32 bits are kept distinct (the probe path does not truncate).
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var map = new LongDictionary<string>();
+map[0L] = "zero is fine";
+map[long.MaxValue] = "edge";
+map[(long)int.MaxValue + 1L] = "no truncation";
+
+Console.WriteLine(map.Count); // 3
+```
+
+---
+
+## CeleritySet&lt;T, THasher&gt;
+
+A high-performance generic set parameterized on a custom hash provider. Set counterpart to `CelerityDictionary`. Implements `IEnumerable<T>`.
+
+```csharp
+public class CeleritySet<T, THasher> : IEnumerable<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+### Constructors
+
+```csharp
+public CeleritySet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Throws the same `ArgumentOutOfRangeException`s as the dictionaries.
+
+### Methods
+
+- `void Add(T item)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(T item)` — `true` on success, `false` if already present.
+- `bool Contains(T item)`
+- `bool Remove(T item)`
+- `void Clear()`
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — struct enumerator. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty`, `null` for reference types) is yielded first when present.
+
+### Default-element handling
+
+`default(T)` is stored out-of-band via a `_hasDefaultValue` flag and never collides with the empty-slot sentinel. Mutating the set during enumeration throws `InvalidOperationException` on the next `MoveNext` / `Reset`, matching BCL `HashSet<T>`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var ids = new CeleritySet<Guid, GuidHasher>();
+ids.Add(Guid.NewGuid());
+ids.Add(Guid.Empty); // default-element slot
+Console.WriteLine(ids.Contains(Guid.Empty)); // True
+
+foreach (var id in ids) { /* ... */ }
+```
+
+---
+
+## IntSet
+
+A convenience subclass of `IntSet<Int32WangNaiveHasher>` for the common case of integer sets.
+
+```csharp
+public class IntSet : IntSet<Int32WangNaiveHasher>
+```
+
+### Constructors
+
+```csharp
+public IntSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+---
+
+## IntSet&lt;THasher&gt;
+
+A high-performance set of `int` values, parameterized on a custom hash provider. Implements `IEnumerable<int>`.
+
+```csharp
+public class IntSet<THasher> : IEnumerable<int>
+    where THasher : struct, IHashProvider<int>
+```
+
+### Methods
+
+- `void Add(int item)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(int item)`
+- `bool Contains(int item)`
+- `bool Remove(int item)`
+- `void Clear()`
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — struct enumerator. The out-of-band zero entry is yielded first when present.
+
+### Zero-element handling
+
+The element `0` collides with the `EMPTY_SLOT` sentinel and is stored out-of-band, same pattern as `IntDictionary`'s zero-key handling.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var seen = new IntSet();
+seen.Add(0);   // zero is fine
+seen.Add(42);
+Console.WriteLine(seen.Contains(0));  // True
+Console.WriteLine(seen.Count);        // 2
+
+foreach (int n in seen) { /* ... */ }
 ```

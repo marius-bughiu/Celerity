@@ -3,6 +3,16 @@
 
 Celerity is a .NET library that provides specialized high-performance collections optimized for specific use cases. It includes data structures designed for better speed or memory efficiency compared to standard .NET collections. The package supports configurable load factors, multiple built-in hash functions, and allows users to define custom hash functions for fine-tuned performance.
 
+## Collections
+
+- `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
+- `IntDictionary<TValue>` / `IntDictionary<TValue, THasher>` — `int`-keyed specialization. Defaults to `Int32WangNaiveHasher`.
+- `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangHasher`.
+- `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
+- `IntSet` / `IntSet<THasher>` — `int`-keyed set specialization.
+
+All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. All collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel.
+
 ## Benchmarks
 
 #### CelerityDictionary
@@ -28,18 +38,22 @@ Celerity is a .NET library that provides specialized high-performance collection
 
 You can bring your own custom hash provider by implementing the `IHashProvider<T>` interface.
 
-```
+```csharp
 public interface IHashProvider<T>
 {
     int Hash(T key);
 }
 ```
 
+Hashers must be **structs** when used with Celerity collections (`where THasher : struct, IHashProvider<T>`) so the JIT can devirtualize and inline `Hash()`. The package ships built-in hashers for `int`, `long`, `uint`, `ulong`, `Guid`, and `string`, plus a `DefaultHasher<T>` fallback that delegates to `EqualityComparer<T>.Default.GetHashCode()`. See [`docs/api/hashing.md`](docs/api/hashing.md) for the full list.
+
 ## API overview
 
-Both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue>` expose a compact, allocation-conscious API that mirrors the parts of `Dictionary<TKey, TValue>` most users actually reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove`, `Clear`, and `Count`.
+The dictionaries (`CelerityDictionary`, `IntDictionary`, `LongDictionary`) expose a compact, allocation-conscious API that mirrors the parts of `Dictionary<TKey, TValue>` most users actually reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove` (both the `bool Remove(key)` and `bool Remove(key, out TValue?)` overloads), `Clear`, `Count`, `Keys`, `Values`, and `GetEnumerator()`. They implement `IReadOnlyDictionary<TKey, TValue?>` and accept an `IEnumerable<KeyValuePair<TKey, TValue>>` source at construction.
 
-`IntDictionary` handles the key value `0` and `CelerityDictionary` handles `default(TKey)` (including `null` for reference-type keys) — both are stored out-of-band so they don't collide with the "empty slot" sentinel used during probing.
+The sets (`CeleritySet`, `IntSet`) expose `Add`, `TryAdd`, `Contains`, `Remove`, `Clear`, `Count`, and a struct enumerator.
+
+The zero / `default(TKey)` key (or element, for sets) is stored out-of-band so it never collides with the empty-slot sentinel used during probing. This includes `null` for reference-type keys.
 
 For full API details — constructors, method signatures, parameters, exceptions, and usage examples — see the **[API reference docs](docs/README.md)**.
 
