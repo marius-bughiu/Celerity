@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **CS1591 (missing XML doc comment) is now a build error in `Celerity.csproj`**, not just a warning. Celerity ships its generated `.xml` documentation file with the NuGet package; gating on CS1591 ensures every public type / member retains a doc comment so that file is never silently incomplete. The library was already at 100% public-symbol doc coverage at the time of the change, so no source had to be updated — this is purely a guardrail to prevent regression. Implements the "Bump XML doc coverage; treat missing docs as warning-as-error" item from the milestone 1.1.0 infrastructure roadmap. Scoped to the main library `.csproj` only; the test and benchmark projects are unaffected because they do not set `<GenerateDocumentationFile>true</GenerateDocumentationFile>`.
+
 ### Added
 
 - `CeleritySet.GetEnumerator()` and `IEnumerable<T>` conformance — struct-based, allocation-free enumeration over a `CeleritySet<T, THasher>`. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty` for `Guid`, `null` for reference-type elements) is yielded first; the rest of the elements follow in unspecified order. The struct enumerator tracks a `_version` counter (bumped on every entry-point structural mutation: `Add`, `TryAdd`, `Remove`, `Clear`) and throws `InvalidOperationException` on `MoveNext` / `Reset` if the set is mutated mid-enumeration, matching BCL `HashSet<T>` semantics. Closes the second slice of issue #23 (`IntSet` shipped in PR #50); the sets are now at full enumeration parity with the dictionaries. Unblocks the post-1.1.0 `IReadOnlySet<T>` interface and an `IEnumerable<T>` constructor mirroring dictionary issue #22.
