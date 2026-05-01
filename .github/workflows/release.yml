@@ -95,9 +95,11 @@ jobs:
           # Extract the section under "## [<version>]" up to (but not including)
           # the next "## [" heading. Empty output means the CHANGELOG was not
           # updated for this version — fail loudly so the maintainer notices.
+          # We use index() rather than regex because matching a literal "[" in
+          # awk's POSIX regex is fiddly across implementations.
           awk -v ver="$version" '
-            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
-            capture && /^## \[/ { exit }
+            index($0, "## [" ver "]") == 1 { capture = 1; next }
+            capture && index($0, "## [") == 1 { exit }
             capture { print }
           ' CHANGELOG.md > release-notes.md
           if [ ! -s release-notes.md ]; then

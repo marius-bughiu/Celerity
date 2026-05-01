@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-01
+
 ### Changed
 
 - **CS1591 (missing XML doc comment) is now a build error in `Celerity.csproj`**, not just a warning. Celerity ships its generated `.xml` documentation file with the NuGet package; gating on CS1591 ensures every public type / member retains a doc comment so that file is never silently incomplete. The library was already at 100% public-symbol doc coverage at the time of the change, so no source had to be updated — this is purely a guardrail to prevent regression. Implements the "Bump XML doc coverage; treat missing docs as warning-as-error" item from the milestone 1.1.0 infrastructure roadmap. Scoped to the main library `.csproj` only; the test and benchmark projects are unaffected because they do not set `<GenerateDocumentationFile>true</GenerateDocumentationFile>`.
@@ -73,5 +75,6 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.1.0
 [0.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v0.1.0
