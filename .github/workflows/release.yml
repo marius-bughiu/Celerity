@@ -73,7 +73,7 @@ jobs:
         id: nuget-login
         uses: NuGet/login@v1
         with:
-          user: marius-bughiu
+          user: marius.bughiu
 
       - name: Publish NuGet package
         run: |
