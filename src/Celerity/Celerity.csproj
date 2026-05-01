@@ -8,6 +8,14 @@
 		<Authors>Marius Bughiu</Authors>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!--
+		  Promote CS1591 (missing XML comment for publicly visible type or member)
+		  from warning to error. Celerity is a public NuGet package; every public
+		  symbol must carry an XML doc comment so the generated .xml shipping in
+		  the package is complete. The library is at 100% public-symbol doc
+		  coverage today and this gate keeps it that way.
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
 		<PackageId>Celerity.Collections</PackageId>
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageTags>celerity;collections</PackageTags>
