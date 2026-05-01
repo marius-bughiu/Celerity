@@ -4,9 +4,9 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
-## [1.1.1] - 2026-05-01
+## [1.1.2] - 2026-05-01
 
-Re-release of [1.1.0]. The first 1.1.0 tag was cut against a NuGet API key that had expired, so the publish step returned HTTP 403 and `Celerity.Collections 1.1.0` never made it to nuget.org. The release workflow has since been migrated to NuGet trusted publishing (OIDC), removing the long-lived API key as a failure mode. 1.1.1 is the same code as the 1.1.0 tag plus the workflow fix, shipped under a fresh version because the original tag couldn't be cleanly recycled.
+First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the repository but never published to nuget.org: `v1.1.0` failed at deploy with HTTP 403 (NuGet API key had expired), and the follow-up `v1.1.1` failed with HTTP 401 because the trusted-publishing migration used the wrong NuGet account name (`marius-bughiu` instead of `marius.bughiu`). 1.1.2 is the same library code as the 1.1.0 tag plus the trusted-publishing migration with the correct user, shipped under a fresh version because the failed tags couldn't be cleanly recycled.
 
 ### Changed
 
@@ -77,6 +77,6 @@ Re-release of [1.1.0]. The first 1.1.0 tag was cut against a NuGet API key that 
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.1.1...HEAD
-[1.1.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.1.1
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.1.2
 [0.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v0.1.0
