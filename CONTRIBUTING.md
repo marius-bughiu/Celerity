@@ -97,16 +97,19 @@ git tag -l 'v*' --sort=-v:refname | head -1
 
 ### Cutting a release
 
+Releases are automated. Pushing a `v`-prefixed tag fires `.github/workflows/release.yml`, which builds, packs, publishes to NuGet.org, and creates a matching GitHub Release with notes extracted from `CHANGELOG.md`.
+
 ```bash
-# 1. Merge the release PR (which updates CHANGELOG.md)
-# 2. Tag the merge commit on main
+# 1. Move the CHANGELOG [Unreleased] block to [X.Y.Z] (with today's date if you
+#    want one — the workflow does not require a date), commit, and merge to main.
+# 2. Tag the merge commit and push the tag.
 git tag -a v1.2.0 -m "Release 1.2.0"
 git push origin v1.2.0
-
-# 3. Trigger the Release workflow via GitHub Actions UI (workflow_dispatch)
 ```
 
-The `Release` workflow (`.github/workflows/release.yml`) builds, packs, and publishes to NuGet.org.
+The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as the GitHub Release body. If no matching section exists for the tag's version, the workflow fails loudly — the fix is to update `CHANGELOG.md` and re-tag.
+
+`workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push.
 
 ## Scope
 
