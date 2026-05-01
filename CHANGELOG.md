@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **CS1591 (missing XML doc comment) is now a build error in `Celerity.csproj`**, not just a warning. Celerity ships its generated `.xml` documentation file with the NuGet package; gating on CS1591 ensures every public type / member retains a doc comment so that file is never silently incomplete. The library was already at 100% public-symbol doc coverage at the time of the change, so no source had to be updated — this is purely a guardrail to prevent regression. Implements the "Bump XML doc coverage; treat missing docs as warning-as-error" item from the milestone 1.1.0 infrastructure roadmap. Scoped to the main library `.csproj` only; the test and benchmark projects are unaffected because they do not set `<GenerateDocumentationFile>true</GenerateDocumentationFile>`.
+
 ### Added
 
 - `IEnumerable<KeyValuePair<TKey, TValue>>` constructor on both `CelerityDictionary<TKey, TValue, THasher>` and `IntDictionary<TValue, THasher>` (and the `IntDictionary<TValue>` convenience subclass). Matches BCL `Dictionary<,>` semantics: throws `ArgumentNullException` on a null source and `ArgumentException` on duplicate keys (including duplicate zero / default keys). When the source implements `ICollection<T>`, its `Count` is used to size the backing storage so the initial fill avoids at least some resize work; non-collection enumerables fall back to the caller-supplied `capacity` parameter. The out-of-band zero-key / default-key slot is populated correctly when the source contains an entry with `default(TKey)`. Completes the last of the milestone 1.1.0 API-parity items on the dictionaries.

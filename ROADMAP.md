@@ -60,7 +60,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 - Cross-platform testing (Windows, Linux, macOS). (#28)
 - Improve code coverage. (#29)
 - Improve documentation. (#15)
-- Bump XML doc coverage; treat missing docs as warning-as-error.
+- Bump XML doc coverage; treat missing docs as warning-as-error. Status: `done` — `Celerity.csproj` now promotes CS1591 to error via `<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>`. Library was already at 100% public-symbol doc coverage at the time of the change; this is a guardrail for future PRs.
 
 ## Milestone 1.2.0 — Performance & advanced collections
 
