@@ -58,7 +58,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 - Set up `github-action-benchmark` for continuous performance tracking. (#1)
 - Create hash function evaluator for comparing distribution quality. (#2)
 - Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. (#26)
-- Cross-platform testing (Windows, Linux, macOS). (#28)
+- Cross-platform testing (Windows, Linux, macOS). (#28) Status: `done`.
 - Improve code coverage. (#29)
 - Improve documentation. (#15)
 - Bump XML doc coverage; treat missing docs as warning-as-error. Status: `done` — `Celerity.csproj` now promotes CS1591 to error via `<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>`. Library was already at 100% public-symbol doc coverage at the time of the change; this is a guardrail for future PRs.
