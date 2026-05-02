@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- `README.md` — new "Quick start" section with concrete, runnable usage examples for `IntDictionary`, `CelerityDictionary` (with `GuidHasher`, `StringFnV1AHasher`, `DefaultHasher<T>`), the sets (`IntSet`, `CeleritySet`), and the `IEnumerable<KeyValuePair<,>>` constructor. Covers indexer get/set, `TryAdd` / `Add` semantics, `TryGetValue`, removal, and bulk-load from a BCL `Dictionary<,>`. Closes the "Add usage examples to README" item from issue #15.
+
 ## [1.1.2] - 2026-05-01
 
 First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the repository but never published to nuget.org: `v1.1.0` failed at deploy with HTTP 403 (NuGet API key had expired), and the follow-up `v1.1.1` failed with HTTP 401 because the trusted-publishing migration used the wrong NuGet account name (`marius-bughiu` instead of `marius.bughiu`). 1.1.2 is the same library code as the 1.1.0 tag plus the trusted-publishing migration with the correct user, shipped under a fresh version because the failed tags couldn't be cleanly recycled.
