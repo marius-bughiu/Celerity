@@ -13,6 +13,101 @@ Celerity is a .NET library that provides specialized high-performance collection
 
 All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. All collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel.
 
+## Quick start
+
+Install from NuGet:
+
+```bash
+dotnet add package Celerity.Collections
+```
+
+### `IntDictionary` — the int-keyed fast path
+
+`IntDictionary<TValue>` defaults to `Int32WangNaiveHasher`, so most callers don't need to pick a hasher.
+
+```csharp
+using Celerity.Collections;
+
+var counts = new IntDictionary<int>();
+counts[42] = 1;
+counts[42]++;            // indexer get/set
+counts.TryAdd(7, 100);   // returns false if key already present, no overwrite
+counts.Add(8, 200);      // throws ArgumentException if key already present
+
+if (counts.TryGetValue(42, out var hits))
+    Console.WriteLine(hits); // 2
+
+counts.Remove(7);
+Console.WriteLine(counts.Count); // 2
+
+// foreach is allocation-free — Enumerator is a struct.
+foreach (var kvp in counts)
+    Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
+```
+
+The zero key is a legitimate value, not the empty-slot sentinel — `counts[0] = 99` round-trips correctly. `LongDictionary<TValue>` follows the exact same surface for `long` keys (defaulting to `Int64WangHasher`).
+
+### `CelerityDictionary` — generic keys with a struct hasher
+
+For non-`int`/`long` keys, pick a hasher from `Celerity.Hashing` (or supply your own). `DefaultHasher<T>` falls back to `EqualityComparer<T>.Default.GetHashCode()` for arbitrary types.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var byId = new CelerityDictionary<Guid, string, GuidHasher>();
+byId[Guid.NewGuid()] = "alice";
+
+var byName = new CelerityDictionary<string, int, StringFnV1AHasher>();
+byName["bob"] = 1;
+
+// DefaultHasher<T> works for any type but pays the EqualityComparer<T> dispatch.
+var byKey = new CelerityDictionary<DateOnly, string, DefaultHasher<DateOnly>>();
+byKey[DateOnly.FromDateTime(DateTime.UtcNow)] = "today";
+```
+
+The hasher is a `struct` and is supplied as a generic constraint, so the JIT devirtualizes and inlines the `Hash()` call on the probe path.
+
+### Sets
+
+`IntSet` and `CeleritySet<T, THasher>` mirror the dictionary types for membership-only workloads.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var seen = new IntSet();
+seen.Add(1);
+seen.Add(2);
+Console.WriteLine(seen.Contains(1)); // true
+seen.Remove(2);
+
+var visitedIds = new CeleritySet<Guid, GuidHasher>();
+visitedIds.TryAdd(Guid.NewGuid()); // returns true on first add, false on duplicate
+```
+
+### Construct from an existing collection
+
+The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`. When the source implements `ICollection<T>`, its `Count` is used to pre-size the backing storage so the bulk fill avoids resize work.
+
+```csharp
+var bcl = new Dictionary<int, string> { [1] = "a", [2] = "b", [3] = "c" };
+var fast = new IntDictionary<string>(bcl);
+
+var fromKvps = new CelerityDictionary<string, int, StringFnV1AHasher>(
+    new[]
+    {
+        new KeyValuePair<string, int>("alice", 1),
+        new KeyValuePair<string, int>("bob",   2),
+    });
+```
+
+Duplicate keys (including duplicate `default(TKey)` / zero-key entries) throw `ArgumentException`, matching BCL `Dictionary<,>` semantics.
+
+### Custom hasher
+
+Implement `IHashProvider<T>` as a `struct` to plug in your own hash function. See [Custom hashing](#custom-hashing) below for the contract and a worked example.
+
 ## Benchmarks
 
 #### CelerityDictionary
