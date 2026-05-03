@@ -108,6 +108,31 @@ Duplicate keys (including duplicate `default(TKey)` / zero-key entries) throw `A
 
 Implement `IHashProvider<T>` as a `struct` to plug in your own hash function. See [Custom hashing](#custom-hashing) below for the contract and a worked example.
 
+## Choosing a collection
+
+Celerity ships specialised types because each one buys a different tradeoff. Use the table below to pick the right one; if your workload doesn't appear here, the BCL collection is usually the right starting point.
+
+| Your workload | Use | Why |
+|---|---|---|
+| Dictionary keyed by `int` | `IntDictionary<TValue>` | Avoids generic boxing / `EqualityComparer<int>` dispatch; defaults to `Int32WangNaiveHasher`. |
+| Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangHasher`. |
+| Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
+| Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
+| Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
+| Need a stable iteration order, multi-threaded access, or a frozen / read-only post-build view | BCL `Dictionary<,>`, `ConcurrentDictionary<,>`, `FrozenDictionary<,>` | Celerity is single-threaded, iteration order is unspecified, and `FrozenCelerityDictionary` is still on the [1.2.0 roadmap](ROADMAP.md). |
+
+Notes on picking a hasher once the collection is settled:
+
+- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case switch to `Int32Murmur3Hasher` / `Int64Murmur3Hasher`.
+- For arbitrary types, `DefaultHasher<T>` (which delegates to `EqualityComparer<T>.Default.GetHashCode()`) is a safe fallback. It still benefits from the struct-hasher devirtualisation; the inner `EqualityComparer<T>` dispatch is the only unavoidable cost. Replace it with a hand-written struct hasher if profiling shows `Hash` on the hot path.
+- The full hasher matrix lives in [`docs/api/hashing.md`](docs/api/hashing.md).
+
+A few cases where Celerity is **not** the right answer today:
+
+- **Concurrent reads/writes from multiple threads.** Celerity collections are single-threaded; use `ConcurrentDictionary<,>` or wrap a BCL `Dictionary<,>` in your own lock.
+- **You need `IDictionary<,>` (mutable interface), `LINQ`-heavy code that relies on `Count`-via-extension on the boxed surface, or anything that depends on a specific iteration order.** Celerity exposes `IReadOnlyDictionary<,>` only and does not guarantee iteration order across versions.
+- **Build-once / read-many lookup tables for string keys.** Today the BCL `FrozenDictionary<,>` will outperform `CelerityDictionary` on lookups; the Celerity equivalent (`FrozenCelerityDictionary`) is planned for 1.2.0 ([#62](https://github.com/marius-bughiu/Celerity/issues/62)).
+
 ## Benchmarks
 
 #### CelerityDictionary
