@@ -6,6 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- `README.md` — new "Choosing a collection" section: a decision table mapping common workloads (`int`-keyed, `long`-keyed, `Guid` / `string` / other-keyed dictionaries, the two set shapes) onto the right Celerity type, plus a short note on picking a hasher and an honest "where Celerity is not the right answer today" list (concurrent access, mutable `IDictionary<,>` consumers, `FrozenDictionary`-style build-once lookups). Sits between the Quick start and Benchmarks sections so a reader who has scanned the API surface can pick the right type without spelunking `docs/api/`. Implements the "Document when to use which collection" item from issue #15.
 - `README.md` — new "Quick start" section with concrete, runnable usage examples for `IntDictionary`, `CelerityDictionary` (with `GuidHasher`, `StringFnV1AHasher`, `DefaultHasher<T>`), the sets (`IntSet`, `CeleritySet`), and the `IEnumerable<KeyValuePair<,>>` constructor. Covers indexer get/set, `TryAdd` / `Add` semantics, `TryGetValue`, removal, and bulk-load from a BCL `Dictionary<,>`. Closes the "Add usage examples to README" item from issue #15.
 
 ## [1.1.2] - 2026-05-01
