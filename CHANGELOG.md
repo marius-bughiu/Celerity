@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- `StringFnV1AHasher.Hash(null)` now throws `ArgumentNullException` (parameter name `"key"`) instead of `NullReferenceException`. Public APIs should signal a null argument as an explicit contract violation, not as an unchecked dereference. The Celerity dictionaries store the out-of-band `null` / `default(TKey)` key entry without ever calling the hasher, so the surface area of this change is limited to direct `StringFnV1AHasher` usage and to consumers that plug the hasher into custom `IHashProvider<string>` callers that do not handle the null-key slot themselves. The XML doc comment on `Hash` now declares the exception, and `StringFnV1AHasherTests.Hash_NullString_*` is updated to assert `ArgumentNullException` rather than pinning the previous wart. Closes #71.
+
 ### Added
 
 - `README.md` — new "Choosing a collection" section: a decision table mapping common workloads (`int`-keyed, `long`-keyed, `Guid` / `string` / other-keyed dictionaries, the two set shapes) onto the right Celerity type, plus a short note on picking a hasher and an honest "where Celerity is not the right answer today" list (concurrent access, mutable `IDictionary<,>` consumers, `FrozenDictionary`-style build-once lookups). Sits between the Quick start and Benchmarks sections so a reader who has scanned the API surface can pick the right type without spelunking `docs/api/`. Implements the "Document when to use which collection" item from issue #15.
