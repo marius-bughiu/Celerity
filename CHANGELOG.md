@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- `LongDictionary<TValue, THasher>.TryAdd` now walks the probe chain exactly **once** per call instead of twice, matching the single-probe rewrite that PR #53 applied to `IntDictionary`, `CelerityDictionary`, `IntSet`, and `CeleritySet`. `LongDictionary` was added in the same release as that rewrite but landed after it in commit order, so it was missed: `TryAdd` was still calling `ContainsKey` followed by the indexer setter, doing two `ProbeForInsert`-style walks per call. Behaviour is unchanged — `Add` still throws on duplicates, `TryAdd` still returns `false` and leaves the existing value untouched, the out-of-band zero-key path is unchanged — but bulk-loads via the `IEnumerable<KeyValuePair<long, TValue>>` constructor and any `if (!dict.TryAdd(...))` insert-or-skip pattern now do roughly half the probe work. Pinned by three new `LongDictionary`-shaped Facts in `TryAddProbeCountTests` (`_NewKey_DoesExactlyOneProbeWalk`, `_DuplicateKey_DoesExactlyOneProbeWalk`, `_PreservesExistingValueOnDuplicate`) using a counting `IHashProvider<long>` mirror of the existing `CountingIntHasher`. Closes issue #77.
+
 ### Added
 
 - `README.md` — new "Choosing a collection" section: a decision table mapping common workloads (`int`-keyed, `long`-keyed, `Guid` / `string` / other-keyed dictionaries, the two set shapes) onto the right Celerity type, plus a short note on picking a hasher and an honest "where Celerity is not the right answer today" list (concurrent access, mutable `IDictionary<,>` consumers, `FrozenDictionary`-style build-once lookups). Sits between the Quick start and Benchmarks sections so a reader who has scanned the API surface can pick the right type without spelunking `docs/api/`. Implements the "Document when to use which collection" item from issue #15.
