@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-10
+
 ### Added
 
 - `README.md` — new "Choosing a collection" section: a decision table mapping common workloads (`int`-keyed, `long`-keyed, `Guid` / `string` / other-keyed dictionaries, the two set shapes) onto the right Celerity type, plus a short note on picking a hasher and an honest "where Celerity is not the right answer today" list (concurrent access, mutable `IDictionary<,>` consumers, `FrozenDictionary`-style build-once lookups). Sits between the Quick start and Benchmarks sections so a reader who has scanned the API surface can pick the right type without spelunking `docs/api/`. Implements the "Document when to use which collection" item from issue #15.
@@ -82,6 +84,7 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.0
 [1.1.2]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.1.2
 [0.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v0.1.0
