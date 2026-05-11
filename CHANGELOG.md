@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- `StringFnV1AHasher.Hash(null)` now throws `ArgumentNullException` (parameter name `"key"`) instead of `NullReferenceException`. Public APIs should signal a null argument as an explicit contract violation, not as an unchecked dereference. The Celerity dictionaries store the out-of-band `null` / `default(TKey)` key entry without ever calling the hasher, so the surface area of this change is limited to direct `StringFnV1AHasher` usage and to consumers that plug the hasher into custom `IHashProvider<string>` callers that do not handle the null-key slot themselves. The XML doc comment on `Hash` now declares the exception, and `StringFnV1AHasherTests.Hash_NullString_*` is updated to assert `ArgumentNullException` rather than pinning the previous wart. Closes #71.
+
 ## [1.2.0] - 2026-05-10
 
 ### Added
