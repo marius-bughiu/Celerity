@@ -314,12 +314,32 @@ public class LongDictionary<TValue, THasher>
     /// <c>true</c> if the item was successfully removed; otherwise, <c>false</c>.
     /// This method also returns <c>false</c> if <paramref name="key"/> was not found.
     /// </returns>
-    public bool Remove(long key)
+    public bool Remove(long key) => Remove(key, out _);
+
+    /// <summary>
+    /// Removes the value with the specified key from the dictionary and copies
+    /// the removed value to the <paramref name="value"/> parameter.
+    /// </summary>
+    /// <param name="key">The key of the element to remove.</param>
+    /// <param name="value">
+    /// When this method returns, contains the value that was associated with
+    /// <paramref name="key"/> before removal if the key was found; otherwise the
+    /// default value of <typeparamref name="TValue"/>.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> if the item was successfully removed; otherwise, <c>false</c>.
+    /// This method also returns <c>false</c> if <paramref name="key"/> was not found.
+    /// </returns>
+    public bool Remove(long key, out TValue? value)
     {
         if (key == EMPTY_KEY)
         {
             if (!_hasZeroKey)
+            {
+                value = default;
                 return false;
+            }
+            value = _zeroValue;
             _hasZeroKey = false;
             _zeroValue = EMPTY_VALUE;
             _count--;
@@ -329,8 +349,12 @@ public class LongDictionary<TValue, THasher>
 
         int index = ProbeForKey(key);
         if (index < 0)
+        {
+            value = default;
             return false;
+        }
 
+        value = _values[index];
         _keys[index] = EMPTY_KEY;
         _values[index] = EMPTY_VALUE;
         _count--;
