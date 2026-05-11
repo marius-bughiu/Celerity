@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- `TryAdd` (and therefore `Add`) on `LongDictionary<TValue, THasher>` now walks the probe chain exactly **once** per call instead of twice, matching the single-probe rewrite already applied to `IntDictionary`, `CelerityDictionary`, `IntSet`, and `CeleritySet` in [PR #53](https://github.com/marius-bughiu/Celerity/pull/53). `LongDictionary` landed in `[1.1.2]` after PR #53 in commit order and never got the parallel rewrite, leaving its `TryAdd` calling `ContainsKey` (probe walk #1) followed by the indexer setter (probe walk #2). The rewrite uses a single `ProbeForInsert` walk that either lands on the existing entry (return `false`) or on the first empty slot (insert in place). Behaviour is identical to before — `Add` still throws on duplicates, `TryAdd` still returns `false` and leaves the existing value untouched, and the out-of-band zero-key path is unchanged. Bulk loads through the `IEnumerable<KeyValuePair<long, TValue>>` constructor now do roughly half the probe work. Pinned by three new `LongDictionary`-shaped Facts on `TryAddProbeCountTests` (`_NewKey_DoesExactlyOneProbeWalk`, `_DuplicateKey_DoesExactlyOneProbeWalk`, `_PreservesExistingValueOnDuplicate`) backed by a `CountingLongHasher` mirroring the existing `CountingIntHasher`. Closes issue #77.
+
 ## [1.2.0] - 2026-05-10
 
 ### Added
