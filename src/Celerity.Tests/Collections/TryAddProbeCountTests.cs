@@ -4,7 +4,8 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Regression tests for issue #23. <see cref="IntDictionary{TValue, THasher}.TryAdd"/>,
+/// Regression tests for the single-probe <c>TryAdd</c> rewrite (PR #53).
+/// <see cref="IntDictionary{TValue, THasher}.TryAdd"/>,
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}.TryAdd"/>,
 /// <see cref="IntSet{THasher}.TryAdd"/>, and
 /// <see cref="CeleritySet{T, THasher}.TryAdd"/> historically walked the probe chain
@@ -47,8 +48,7 @@ public class TryAddProbeCountTests
 
     /// <summary>
     /// A counting hasher for <see cref="long"/> keys. Mirrors
-    /// <see cref="CountingIntHasher"/>: distinct keys distribute across the
-    /// table, and each call increments the static counter.
+    /// <see cref="CountingIntHasher"/> for the 64-bit dictionary.
     /// </summary>
     private struct CountingLongHasher : IHashProvider<long>
     {
@@ -123,6 +123,48 @@ public class TryAddProbeCountTests
 
         Assert.Equal(10, _hashCallCount);
         Assert.Equal(10, map.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_TryAdd_NewKey_DoesExactlyOneProbeWalk()
+    {
+        var map = new LongDictionary<int, CountingLongHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        // 10 brand-new (non-zero) keys. Pre-fix this allocated 20 hash calls
+        // because TryAdd called ContainsKey before delegating to the indexer.
+        for (long i = 1; i <= 10; i++)
+            Assert.True(map.TryAdd(i, (int)(i * 10)));
+
+        Assert.Equal(10, _hashCallCount);
+        Assert.Equal(10, map.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_TryAdd_DuplicateKey_DoesExactlyOneProbeWalk()
+    {
+        var map = new LongDictionary<int, CountingLongHasher>(capacity: 64);
+        for (long i = 1; i <= 5; i++)
+            map.TryAdd(i, (int)i);
+
+        _hashCallCount = 0;
+        for (long i = 1; i <= 5; i++)
+            Assert.False(map.TryAdd(i, -1));
+
+        Assert.Equal(5, _hashCallCount);
+        // Original values must remain untouched on the duplicate path.
+        for (long i = 1; i <= 5; i++)
+            Assert.Equal((int)i, map[i]);
+    }
+
+    [Fact]
+    public void LongDictionary_TryAdd_PreservesExistingValueOnDuplicate()
+    {
+        var map = new LongDictionary<int, CountingLongHasher>(capacity: 64);
+        map.TryAdd(7L, 700);
+
+        Assert.False(map.TryAdd(7L, -1));
+        Assert.Equal(700, map[7L]);
     }
 
     [Fact]
@@ -234,47 +276,4 @@ public class TryAddProbeCountTests
         Assert.Equal(700, map["k7"]);
     }
 
-    [Fact]
-    public void LongDictionary_TryAdd_NewKey_DoesExactlyOneProbeWalk()
-    {
-        // Pre-size so the asserted inserts never resize. Regression test for
-        // issue #77: LongDictionary.TryAdd was missed by PR #53's single-probe
-        // rewrite and was still walking the probe chain twice.
-        var map = new LongDictionary<int, CountingLongHasher>(capacity: 64);
-        _hashCallCount = 0;
-
-        // 10 brand-new (non-zero) keys. Pre-fix this allocated 20 hash calls.
-        for (long i = 1; i <= 10; i++)
-            Assert.True(map.TryAdd(i, (int)(i * 10)));
-
-        Assert.Equal(10, _hashCallCount);
-        Assert.Equal(10, map.Count);
-    }
-
-    [Fact]
-    public void LongDictionary_TryAdd_DuplicateKey_DoesExactlyOneProbeWalk()
-    {
-        var map = new LongDictionary<int, CountingLongHasher>(capacity: 64);
-        for (long i = 1; i <= 5; i++)
-            map.TryAdd(i, (int)i);
-
-        _hashCallCount = 0;
-        for (long i = 1; i <= 5; i++)
-            Assert.False(map.TryAdd(i, -1));
-
-        Assert.Equal(5, _hashCallCount);
-        // Original values must remain untouched on the duplicate path.
-        for (long i = 1; i <= 5; i++)
-            Assert.Equal((int)i, map[i]);
-    }
-
-    [Fact]
-    public void LongDictionary_TryAdd_PreservesExistingValueOnDuplicate()
-    {
-        var map = new LongDictionary<int, CountingLongHasher>(capacity: 64);
-        map.TryAdd(7L, 700);
-
-        Assert.False(map.TryAdd(7L, -1));
-        Assert.Equal(700, map[7L]);
-    }
 }

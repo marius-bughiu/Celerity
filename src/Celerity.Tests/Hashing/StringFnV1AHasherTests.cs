@@ -66,13 +66,18 @@ public class StringFnV1AHasherTests
     }
 
     /// <summary>
-    /// Demonstrates what happens if you pass null into the current implementation.
-    /// The current code will throw NullReferenceException (or potentially an NRE).
-    /// If you'd prefer an explicit ArgumentNullException, modify the struct.
+    /// Hashing a null reference must throw <see cref="ArgumentNullException"/>
+    /// (with the parameter name "key"), not the NullReferenceException the
+    /// implicit dereference would otherwise produce. Celerity dictionaries
+    /// route the out-of-band null/default-key entry around the hasher, so the
+    /// check only ever fires for direct hasher usage — but when it fires, the
+    /// thrown exception must reflect a contract violation, not an unchecked
+    /// dereference. Closes issue #71.
     /// </summary>
     [Fact]
-    public void Hash_NullString_ThrowsNullReferenceException()
+    public void Hash_NullString_ThrowsArgumentNullException()
     {
-        Assert.Throws<NullReferenceException>(() => _hasher.Hash(null));
+        ArgumentNullException ex = Assert.Throws<ArgumentNullException>(() => _hasher.Hash(null!));
+        Assert.Equal("key", ex.ParamName);
     }
 }
