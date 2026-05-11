@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- `LongDictionary<TValue, THasher>.TryAdd` now walks the probe chain exactly **once** per call instead of twice, matching the single-probe rewrite that PR #53 applied to `IntDictionary`, `CelerityDictionary`, `IntSet`, and `CeleritySet`. `LongDictionary` was added in the same release as that rewrite but landed after it in commit order, so it was missed: `TryAdd` was still calling `ContainsKey` followed by the indexer setter, doing two `ProbeForInsert`-style walks per call. Behaviour is unchanged — `Add` still throws on duplicates, `TryAdd` still returns `false` and leaves the existing value untouched, the out-of-band zero-key path is unchanged — but bulk-loads via the `IEnumerable<KeyValuePair<long, TValue>>` constructor and any `if (!dict.TryAdd(...))` insert-or-skip pattern now do roughly half the probe work. Pinned by three new `LongDictionary`-shaped Facts in `TryAddProbeCountTests` (`_NewKey_DoesExactlyOneProbeWalk`, `_DuplicateKey_DoesExactlyOneProbeWalk`, `_PreservesExistingValueOnDuplicate`) using a counting `IHashProvider<long>` mirror of the existing `CountingIntHasher`. Closes issue #77.
+
 ### Fixed
 
 - `StringFnV1AHasher.Hash(null)` now throws `ArgumentNullException` (parameter name `"key"`) instead of `NullReferenceException`. Public APIs should signal a null argument as an explicit contract violation, not as an unchecked dereference. The Celerity dictionaries store the out-of-band `null` / `default(TKey)` key entry without ever calling the hasher, so the surface area of this change is limited to direct `StringFnV1AHasher` usage and to consumers that plug the hasher into custom `IHashProvider<string>` callers that do not handle the null-key slot themselves. The XML doc comment on `Hash` now declares the exception, and `StringFnV1AHasherTests.Hash_NullString_*` is updated to assert `ArgumentNullException` rather than pinning the previous wart. Closes #71.
