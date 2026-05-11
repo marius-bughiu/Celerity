@@ -4,8 +4,9 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Tests for the BCL-parity <c>Remove(key, out value)</c> overload on both
-/// <see cref="IntDictionary{TValue}"/> / <see cref="IntDictionary{TValue, THasher}"/>
+/// Tests for the BCL-parity <c>Remove(key, out value)</c> overload on
+/// <see cref="IntDictionary{TValue}"/> / <see cref="IntDictionary{TValue, THasher}"/>,
+/// <see cref="LongDictionary{TValue}"/> / <see cref="LongDictionary{TValue, THasher}"/>,
 /// and <see cref="CelerityDictionary{TKey, TValue, THasher}"/>. These tests cover
 /// the standard-key path, the out-of-band zero / default-key path, the
 /// not-found path, and the rehash-after-remove path under forced collision.
@@ -20,6 +21,11 @@ public class RemoveOutValueTests
     private struct ConstantIntHasher : IHashProvider<int>
     {
         public int Hash(int key) => 42;
+    }
+
+    private struct ConstantLongHasher : IHashProvider<long>
+    {
+        public int Hash(long key) => 42;
     }
 
     private struct ConstantStringHasher : IHashProvider<string>
@@ -176,6 +182,171 @@ public class RemoveOutValueTests
         Assert.Equal(2, captured);
 
         Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    // ---------------------------------------------------------------
+    //  LongDictionary
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_ReturnsTrueAndCapturedValue_ForExistingKey()
+    {
+        var map = new LongDictionary<string>();
+        map[7L] = "seven";
+
+        bool removed = map.Remove(7L, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("seven", captured);
+        Assert.False(map.ContainsKey(7L));
+        Assert.Equal(0, map.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_ReturnsFalseAndDefault_ForMissingKey()
+    {
+        var map = new LongDictionary<string>();
+        map[1L] = "one";
+
+        bool removed = map.Remove(99L, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Equal(1, map.Count);
+        Assert.Equal("one", map[1L]);
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_ReturnsFalseAndDefault_ForMissingKey_OnEmptyMap()
+    {
+        var map = new LongDictionary<int>();
+
+        bool removed = map.Remove(42L, out int captured);
+
+        Assert.False(removed);
+        Assert.Equal(default, captured);
+        Assert.Equal(0, map.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_CapturesZeroKeyValue()
+    {
+        // The zero key (0L) is stored out-of-band; the out-value must
+        // surface that dedicated slot before it is cleared.
+        var map = new LongDictionary<string>();
+        map[0L] = "zero";
+        map[1L] = "one";
+
+        Assert.Equal(2, map.Count);
+
+        bool removed = map.Remove(0L, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("zero", captured);
+        Assert.False(map.ContainsKey(0L));
+        Assert.Equal(1, map.Count);
+        Assert.Equal("one", map[1L]);
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_ReturnsFalse_WhenZeroKeyAbsent()
+    {
+        var map = new LongDictionary<string>();
+        map[1L] = "one";
+
+        bool removed = map.Remove(0L, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Equal(1, map.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_CapturesDefaultValueType_Correctly()
+    {
+        // Verify value-type values don't surface as an unexpected sentinel
+        // (e.g. the captured-value slot must not be conflated with EMPTY_VALUE).
+        var map = new LongDictionary<int>();
+        map[5L] = 0;
+
+        bool removed = map.Remove(5L, out int captured);
+
+        Assert.True(removed);
+        Assert.Equal(0, captured);
+        Assert.Equal(0, map.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_RehashesCluster_UnderFullCollision()
+    {
+        // Force every key into a single linear-probing chain, then remove
+        // an interior element. The rehash-after-remove path must run; the
+        // captured value must be the original interior value, not a value
+        // that was shuffled during the rehash.
+        var map = new LongDictionary<string, ConstantLongHasher>(16);
+        for (long i = 1; i <= 6; i++)
+            map[i] = $"v{i}";
+
+        bool removed = map.Remove(3L, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("v3", captured);
+        Assert.Equal(5, map.Count);
+        Assert.False(map.ContainsKey(3L));
+
+        // All other keys must still be reachable after the rehash.
+        for (long i = 1; i <= 6; i++)
+        {
+            if (i == 3) continue;
+            Assert.True(map.ContainsKey(i));
+            Assert.Equal($"v{i}", map[i]);
+        }
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_AndReinsertSameKey_Works()
+    {
+        var map = new LongDictionary<int>();
+        map[10L] = 100;
+
+        Assert.True(map.Remove(10L, out int captured));
+        Assert.Equal(100, captured);
+
+        map[10L] = 200;
+        Assert.Equal(200, map[10L]);
+        Assert.Equal(1, map.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_RemoveOutValue_BumpsVersion_AndInvalidatesEnumerator()
+    {
+        // Removing via the new overload must still trip the version-counter
+        // mid-enumeration guard, exactly like the void-Remove overload.
+        var map = new LongDictionary<int>();
+        for (long i = 1; i <= 4; i++)
+            map[i] = (int)i;
+
+        var e = map.GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        Assert.True(map.Remove(2L, out int captured));
+        Assert.Equal(2, captured);
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void LongDictionary_VoidRemove_StillReturnsTrueForFoundKey()
+    {
+        // Regression: the void Remove overload now delegates to the
+        // out-value overload internally; it must continue to behave
+        // identically to its previous standalone implementation.
+        var map = new LongDictionary<string>();
+        map[1L] = "one";
+
+        Assert.True(map.Remove(1L));
+        Assert.False(map.ContainsKey(1L));
+        Assert.Equal(0, map.Count);
     }
 
     // ---------------------------------------------------------------
