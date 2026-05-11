@@ -4,7 +4,8 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Regression tests for issue #23. <see cref="IntDictionary{TValue, THasher}.TryAdd"/>,
+/// Regression tests for the single-probe <c>TryAdd</c> rewrite (PR #53).
+/// <see cref="IntDictionary{TValue, THasher}.TryAdd"/>,
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}.TryAdd"/>,
 /// <see cref="IntSet{THasher}.TryAdd"/>, and
 /// <see cref="CeleritySet{T, THasher}.TryAdd"/> historically walked the probe chain
