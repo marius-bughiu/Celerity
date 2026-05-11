@@ -13,22 +13,10 @@ namespace Celerity.Hashing;
 /// </remarks>
 public struct StringFnV1AHasher : IHashProvider<string>
 {
-    /// <summary>
-    /// Computes the FNV-1a 32-bit hash of the specified string.
-    /// </summary>
-    /// <param name="key">The string to hash. Must not be <c>null</c>.</param>
-    /// <returns>The signed 32-bit FNV-1a hash of <paramref name="key"/>.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="key"/> is <c>null</c>. Celerity dictionaries store the
-    /// out-of-band <c>null</c>-key entry without calling the hasher, so this
-    /// check only surfaces when the hasher is used directly or plugged into a
-    /// consumer that does not handle <c>null</c> keys out-of-band.
-    /// </exception>
+    /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int Hash(string key)
     {
-        ArgumentNullException.ThrowIfNull(key);
-
         // The FNV-1a 32-bit parameters
         const uint fnvPrime = 16777619;
         const uint offsetBasis = 2166136261;

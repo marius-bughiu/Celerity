@@ -26,33 +26,6 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
         : base(capacity, loadFactor)
     {
     }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="IntSet"/> class
-    /// containing the elements copied from the specified <paramref name="source"/>.
-    /// </summary>
-    /// <param name="source">
-    /// The collection whose elements are copied into the new set. Duplicate
-    /// elements in <paramref name="source"/> are silently deduplicated, matching
-    /// BCL <see cref="HashSet{T}"/> semantics.
-    /// </param>
-    /// <param name="capacity">
-    /// The minimum initial capacity. The final capacity is the larger of this
-    /// value and the source's count, rounded up to the next power of two.
-    /// </param>
-    /// <param name="loadFactor">
-    /// Determines the maximum ratio of count to capacity before resizing.
-    /// </param>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="source"/> is <c>null</c>.
-    /// </exception>
-    public IntSet(
-        IEnumerable<int> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
-        : base(source, capacity, loadFactor)
-    {
-    }
 }
 
 /// <summary>
@@ -119,42 +92,6 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
         _loadFactor = loadFactor;
         _threshold = (int)(size * _loadFactor);
         _hasher = default;
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="IntSet{THasher}"/> class
-    /// containing the elements copied from the specified <paramref name="source"/>.
-    /// </summary>
-    /// <param name="source">
-    /// The collection whose elements are copied into the new set. If
-    /// <paramref name="source"/> implements <see cref="ICollection{T}"/>, its
-    /// <c>Count</c> is used to size the backing storage so the initial fill
-    /// avoids resize work. Duplicate elements are silently deduplicated,
-    /// matching BCL <see cref="HashSet{T}"/> semantics.
-    /// </param>
-    /// <param name="capacity">
-    /// The minimum initial capacity. The final capacity is the larger of this
-    /// value and the source's count, rounded up to the next power of two.
-    /// </param>
-    /// <param name="loadFactor">
-    /// Determines the maximum ratio of count to capacity before resizing.
-    /// </param>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="source"/> is <c>null</c>.
-    /// </exception>
-    public IntSet(
-        IEnumerable<int> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
-        : this(Math.Max(capacity, (source as ICollection<int>)?.Count ?? 0), loadFactor)
-    {
-        if (source is null)
-            throw new ArgumentNullException(nameof(source));
-
-        foreach (int item in source)
-        {
-            TryAdd(item);
-        }
     }
 
     /// <summary>
