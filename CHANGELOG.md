@@ -8,8 +8,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - `StringFnV1AHasher.Hash(null)` now throws `ArgumentNullException` (parameter name `"key"`) instead of `NullReferenceException`. Public APIs should signal a null argument as an explicit contract violation, not as an unchecked dereference. The Celerity dictionaries store the out-of-band `null` / `default(TKey)` key entry without ever calling the hasher, so the surface area of this change is limited to direct `StringFnV1AHasher` usage and to consumers that plug the hasher into custom `IHashProvider<string>` callers that do not handle the null-key slot themselves. The XML doc comment on `Hash` now declares the exception, and `StringFnV1AHasherTests.Hash_NullString_*` is updated to assert `ArgumentNullException` rather than pinning the previous wart. Closes #71.
 
+## [1.2.0] - 2026-05-10
+
 ### Added
 
+- `IEnumerable<T>` constructor on `IntSet`, `IntSet<THasher>`, and `CeleritySet<T, THasher>` (and the `IntSet` convenience subclass), mirroring the dictionary `IEnumerable<KeyValuePair<,>>` ctor shipped in 1.1.2. Throws `ArgumentNullException` on a null source. Unlike the dictionary ctor, duplicate elements (including duplicate `default(T)` / zero entries) are silently deduplicated to match BCL `HashSet<T>(IEnumerable<T>)` semantics — sets do not have a duplicate-key contract. When the source implements `ICollection<T>`, its `Count` is used to size the backing storage; otherwise the caller-supplied `capacity` parameter is used. The out-of-band `default(T)` / zero slot is populated correctly when the source contains it. Closes the last set-side API-parity gap for milestone 1.1.0 and unblocks future `IReadOnlySet<T>` work. Closes #69.
+- `SetIEnumerableConstructorTests` — coverage for both sets: null-source and invalid-load-factor validation, empty sources, array / list / non-collection enumerable sources, duplicate-element silent dedupe (including duplicate zero / `null` / `default(T)` entries), zero-element / null-reference-element capture, 500-entry large-source round-trip, source-independence after construction, caller-specified capacity dominating the source count, cross-set copy (`CeleritySet` from an `IntSet` enumeration), and an open-generic `IntSet<Int32WangNaiveHasher>` smoke test.
 - `README.md` — new "Choosing a collection" section: a decision table mapping common workloads (`int`-keyed, `long`-keyed, `Guid` / `string` / other-keyed dictionaries, the two set shapes) onto the right Celerity type, plus a short note on picking a hasher and an honest "where Celerity is not the right answer today" list (concurrent access, mutable `IDictionary<,>` consumers, `FrozenDictionary`-style build-once lookups). Sits between the Quick start and Benchmarks sections so a reader who has scanned the API surface can pick the right type without spelunking `docs/api/`. Implements the "Document when to use which collection" item from issue #15.
 - `README.md` — new "Quick start" section with concrete, runnable usage examples for `IntDictionary`, `CelerityDictionary` (with `GuidHasher`, `StringFnV1AHasher`, `DefaultHasher<T>`), the sets (`IntSet`, `CeleritySet`), and the `IEnumerable<KeyValuePair<,>>` constructor. Covers indexer get/set, `TryAdd` / `Add` semantics, `TryGetValue`, removal, and bulk-load from a BCL `Dictionary<,>`. Closes the "Add usage examples to README" item from issue #15.
 
@@ -86,6 +90,7 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.0
 [1.1.2]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.1.2
 [0.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v0.1.0
