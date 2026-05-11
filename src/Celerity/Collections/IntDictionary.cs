@@ -242,6 +242,38 @@ public class IntDictionary<TValue, THasher>
     }
 
     /// <summary>
+    /// Determines whether the dictionary contains the specified value.
+    /// </summary>
+    /// <param name="value">
+    /// The value to locate. Equality is determined via
+    /// <see cref="EqualityComparer{T}.Default"/>, matching BCL
+    /// <see cref="Dictionary{TKey, TValue}.ContainsValue(TValue)"/> semantics.
+    /// </param>
+    /// <returns><c>true</c> if a matching value is found; otherwise, <c>false</c>.</returns>
+    /// <remarks>
+    /// This operation is <c>O(n)</c> in the dictionary's count: it scans the
+    /// probe table (skipping empty slots) and, when present, the out-of-band
+    /// zero-key slot.
+    /// </remarks>
+    public bool ContainsValue(TValue? value)
+    {
+        var comparer = EqualityComparer<TValue?>.Default;
+
+        if (_hasZeroKey && comparer.Equals(_zeroValue, value))
+            return true;
+
+        int[] keys = _keys;
+        TValue?[] values = _values;
+        for (int i = 0; i < keys.Length; i++)
+        {
+            if (keys[i] != EMPTY_KEY && comparer.Equals(values[i], value))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Attempts to get the value associated with the specified key.
     /// </summary>
     /// <param name="key">The key to look up.</param>
