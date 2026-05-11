@@ -71,6 +71,44 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     }
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="CeleritySet{T,THasher}"/>
+    /// class containing the elements copied from the specified
+    /// <paramref name="source"/>.
+    /// </summary>
+    /// <param name="source">
+    /// The collection whose elements are copied into the new set. If
+    /// <paramref name="source"/> implements <see cref="ICollection{T}"/>, its
+    /// <c>Count</c> is used to size the backing storage so the initial fill
+    /// avoids resize work. Duplicate elements (including duplicate
+    /// <c>default(T)</c> entries) are silently deduplicated, matching BCL
+    /// <see cref="HashSet{T}"/> semantics.
+    /// </param>
+    /// <param name="capacity">
+    /// The minimum initial capacity. The final capacity is the larger of this
+    /// value and the source's count, rounded up to the next power of two.
+    /// </param>
+    /// <param name="loadFactor">
+    /// Determines the maximum ratio of count to capacity before resizing.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    public CeleritySet(
+        IEnumerable<T> source,
+        int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+        : this(Math.Max(capacity, (source as ICollection<T>)?.Count ?? 0), loadFactor)
+    {
+        if (source is null)
+            throw new ArgumentNullException(nameof(source));
+
+        foreach (T item in source)
+        {
+            TryAdd(item);
+        }
+    }
+
+    /// <summary>
     /// Gets the number of elements contained in the set.
     /// </summary>
     public int Count => _count;
