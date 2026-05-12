@@ -718,45 +718,67 @@ public class LongDictionary<TValue, THasher>
     private void Resize()
     {
         int newSize = _keys.Length * 2;
+        int mask = newSize - 1;
         long[] oldKeys = _keys;
         TValue?[] oldValues = _values;
 
-        _keys = new long[newSize];
-        _values = new TValue?[newSize];
-        _threshold = (int)(newSize * _loadFactor);
-
-        // Reinsert every non-empty slot. We decrement _count for each reinsertion
-        // because the indexer setter will increment it again via its isNewEntry path.
-        // The zero-key entry lives out-of-band and is not in the arrays, so we
-        // don't touch _hasZeroKey / _zeroValue here.
-        int carriedZeroKey = _hasZeroKey ? 1 : 0;
-        _count = carriedZeroKey;
+        // Build into fresh local arrays then swap them in at the end. The loop
+        // bypasses the indexer setter on purpose: every reinserted key is known
+        // to be unique in the new table (it came from the previous arrays which
+        // were themselves a valid dictionary), and _count / _version are
+        // conserved across a resize, so the setter's equality check, threshold
+        // check, isNewEntry test, _count++, and _version++ are all dead weight.
+        // The zero-key entry lives out-of-band and is not touched here.
+        long[] newKeys = new long[newSize];
+        TValue?[] newValues = new TValue?[newSize];
 
         for (int i = 0; i < oldKeys.Length; i++)
         {
-            if (oldKeys[i] != EMPTY_KEY)
-            {
-                this[oldKeys[i]] = oldValues[i]!;
-            }
+            long key = oldKeys[i];
+            if (key == EMPTY_KEY)
+                continue;
+
+            int index = _hasher.Hash(key) & mask;
+            while (newKeys[index] != EMPTY_KEY)
+                index = (index + 1) & mask;
+
+            newKeys[index] = key;
+            newValues[index] = oldValues[i];
         }
+
+        _keys = newKeys;
+        _values = newValues;
+        _threshold = (int)(newSize * _loadFactor);
     }
 
     private void RehashAfterRemove(int startIndex)
     {
         int size = _keys.Length;
-        int index = (startIndex + 1) & (size - 1);
+        int mask = size - 1;
+        int index = (startIndex + 1) & mask;
 
         while (_keys[index] != EMPTY_KEY)
         {
             long rehashedKey = _keys[index];
-            TValue rehashedValue = _values[index]!;
+            TValue? rehashedValue = _values[index];
 
             _keys[index] = EMPTY_KEY;
             _values[index] = EMPTY_VALUE;
-            _count--;
 
-            this[rehashedKey] = rehashedValue;
-            index = (index + 1) & (size - 1);
+            // Reinsert at the key's natural position. The key was just removed
+            // from its old slot, so it cannot match any remaining entry — we
+            // probe for an empty slot only, skipping the equality check that
+            // ProbeForInsert would do. _count is a slot-shuffle invariant here
+            // and the caller (Remove) bumps _version exactly once for the
+            // user-visible operation, so neither is touched per rehash.
+            int target = _hasher.Hash(rehashedKey) & mask;
+            while (_keys[target] != EMPTY_KEY)
+                target = (target + 1) & mask;
+
+            _keys[target] = rehashedKey;
+            _values[target] = rehashedValue;
+
+            index = (index + 1) & mask;
         }
     }
 }
