@@ -174,4 +174,43 @@ public class IntDictionaryCollisionTests
         for (int i = 1; i <= 20; i++)
             Assert.Equal(i * 10, map[i]);
     }
+
+    [Fact]
+    public void ResizeThenRemoveSweep_ShouldPreserveAllRemainingKeys_UnderFullCollision()
+    {
+        // Regression for the tightened Resize / RehashAfterRemove rewrite
+        // (issue #83): both paths now reinsert directly into the table without
+        // going through the public indexer setter, so they skip the equality
+        // check in the probe walk and don't touch _count / _version per entry.
+        // This shape exercises both paths under maximum collision pressure:
+        //   1. Bulk-insert past the load-factor threshold so Resize fires
+        //      multiple times rebuilding a single linear chain.
+        //   2. Remove every other key from the middle of the chain, which
+        //      forces RehashAfterRemove to walk and reinsert each survivor
+        //      whose natural position is behind the freshly emptied slot.
+        //   3. Re-insert the removed half, then verify every original key
+        //      maps to its expected value and the count is restored.
+        var map = new IntDictionary<int, ConstantIntHasher>(capacity: 4, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 40; i++)
+            map[i] = i * 7;
+
+        Assert.Equal(40, map.Count);
+
+        for (int i = 1; i <= 40; i += 2)
+            Assert.True(map.Remove(i, out int removed) && removed == i * 7);
+
+        Assert.Equal(20, map.Count);
+        for (int i = 2; i <= 40; i += 2)
+            Assert.Equal(i * 7, map[i]);
+        for (int i = 1; i <= 40; i += 2)
+            Assert.False(map.ContainsKey(i));
+
+        for (int i = 1; i <= 40; i += 2)
+            map[i] = i * 7;
+
+        Assert.Equal(40, map.Count);
+        for (int i = 1; i <= 40; i++)
+            Assert.Equal(i * 7, map[i]);
+    }
 }

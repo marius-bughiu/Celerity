@@ -198,7 +198,7 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
 
         // Single probe: walk the probe chain once and either spot the existing
         // entry (return false) or land on an empty slot and insert in place.
-        // Avoids the double walk of `if (Contains(item)) ...; InsertNonZero(item);`.
+        // Avoids the double walk of `if (Contains(item)) ...; then insert`.
         if (_count >= _threshold)
             Resize();
 
@@ -394,28 +394,6 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
         public void Dispose() { }
     }
 
-    private void InsertNonZero(int item)
-    {
-        if (_count >= _threshold)
-        {
-            Resize();
-        }
-
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
-
-        while (_slots[index] != EMPTY_SLOT && _slots[index] != item)
-        {
-            index = (index + 1) & (size - 1);
-        }
-
-        bool isNewEntry = _slots[index] == EMPTY_SLOT;
-        _slots[index] = item;
-
-        if (isNewEntry)
-            _count++;
-    }
-
     private int ProbeForItem(int item)
     {
         int size = _slots.Length;
@@ -434,38 +412,61 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
     private void Resize()
     {
         int newSize = _slots.Length * 2;
+        int mask = newSize - 1;
         int[] oldSlots = _slots;
 
-        _slots = new int[newSize];
-        _threshold = (int)(newSize * _loadFactor);
-
-        // The zero entry lives out-of-band, so preserve its contribution to _count.
-        int carriedZero = _hasZero ? 1 : 0;
-        _count = carriedZero;
+        // Build into a fresh local array then swap it in at the end. The loop
+        // bypasses InsertNonZero on purpose: every reinserted item is known
+        // to be unique in the new table (it came from the previous array which
+        // was itself a valid set), and _count / _version are conserved across
+        // a resize, so InsertNonZero's equality check, threshold check, and
+        // isNewEntry test are all dead weight. The zero entry lives out-of-band
+        // and is not touched here.
+        int[] newSlots = new int[newSize];
 
         for (int i = 0; i < oldSlots.Length; i++)
         {
-            if (oldSlots[i] != EMPTY_SLOT)
-            {
-                InsertNonZero(oldSlots[i]);
-            }
+            int item = oldSlots[i];
+            if (item == EMPTY_SLOT)
+                continue;
+
+            int index = _hasher.Hash(item) & mask;
+            while (newSlots[index] != EMPTY_SLOT)
+                index = (index + 1) & mask;
+
+            newSlots[index] = item;
         }
+
+        _slots = newSlots;
+        _threshold = (int)(newSize * _loadFactor);
     }
 
     private void RehashAfterRemove(int startIndex)
     {
         int size = _slots.Length;
-        int index = (startIndex + 1) & (size - 1);
+        int mask = size - 1;
+        int index = (startIndex + 1) & mask;
 
         while (_slots[index] != EMPTY_SLOT)
         {
             int rehashedItem = _slots[index];
 
             _slots[index] = EMPTY_SLOT;
-            _count--;
 
-            InsertNonZero(rehashedItem);
-            index = (index + 1) & (size - 1);
+            // Reinsert at the item's natural position. The item was just
+            // removed from its old slot, so it cannot match any remaining
+            // entry — we probe for an empty slot only, skipping the equality
+            // check that InsertNonZero would do. _count is a slot-shuffle
+            // invariant here and the caller (Remove) bumps _version exactly
+            // once for the user-visible operation, so neither is touched
+            // per rehash.
+            int target = _hasher.Hash(rehashedItem) & mask;
+            while (_slots[target] != EMPTY_SLOT)
+                target = (target + 1) & mask;
+
+            _slots[target] = rehashedItem;
+
+            index = (index + 1) & mask;
         }
     }
 }
