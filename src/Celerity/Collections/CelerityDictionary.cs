@@ -667,43 +667,69 @@ public class CelerityDictionary<TKey, TValue, THasher>
     private void Resize()
     {
         int newSize = _keys.Length * 2;
+        int mask = newSize - 1;
         TKey?[] oldKeys = _keys;
         TValue?[] oldValues = _values;
 
-        _keys = new TKey?[newSize];
-        _values = new TValue?[newSize];
-        _threshold = (int)(newSize * _loadFactor);
+        // Build into fresh local arrays then swap them in at the end. The loop
+        // bypasses the indexer setter on purpose: every reinserted key is known
+        // to be unique in the new table (it came from the previous arrays which
+        // were themselves a valid dictionary), and _count / _version are
+        // conserved across a resize, so the setter's equality check, threshold
+        // check, isNewEntry test, _count++, and _version++ are all dead weight.
+        // The default-key entry lives out-of-band and is not touched here.
+        TKey?[] newKeys = new TKey?[newSize];
+        TValue?[] newValues = new TValue?[newSize];
 
-        // The default-key entry lives out-of-band and is not in the arrays,
-        // so preserve its contribution to _count across the rehash.
-        int carriedDefaultKey = _hasDefaultKey ? 1 : 0;
-        _count = carriedDefaultKey;
-
+        var comparer = EqualityComparer<TKey>.Default;
         for (int i = 0; i < oldKeys.Length; i++)
         {
-            if (!EqualityComparer<TKey>.Default.Equals(oldKeys[i], default(TKey)))
-            {
-                this[oldKeys[i]!] = oldValues[i];
-            }
+            TKey? key = oldKeys[i];
+            if (comparer.Equals(key, default(TKey)))
+                continue;
+
+            int index = _hasher.Hash(key!) & mask;
+            while (!comparer.Equals(newKeys[index], default(TKey)))
+                index = (index + 1) & mask;
+
+            newKeys[index] = key;
+            newValues[index] = oldValues[i];
         }
+
+        _keys = newKeys;
+        _values = newValues;
+        _threshold = (int)(newSize * _loadFactor);
     }
 
     private void RehashAfterRemove(int startIndex)
     {
         int size = _keys.Length;
-        int index = (startIndex + 1) & (size - 1);
+        int mask = size - 1;
+        int index = (startIndex + 1) & mask;
 
-        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default))
+        var comparer = EqualityComparer<TKey>.Default;
+        while (!comparer.Equals(_keys[index], default(TKey)))
         {
             TKey rehashedKey = _keys[index]!;
             TValue? rehashedValue = _values[index];
 
             _keys[index] = default;
             _values[index] = default;
-            _count--;
 
-            this[rehashedKey] = rehashedValue;
-            index = (index + 1) & (size - 1);
+            // Reinsert at the key's natural position. The key was just removed
+            // from its old slot, so it cannot match any remaining entry — we
+            // probe for an empty slot only, skipping the equality check that
+            // ProbeForInsert would do. _count is a slot-shuffle invariant here
+            // and the caller (Remove) bumps _version exactly once for the
+            // user-visible operation, so neither is touched per rehash.
+            int target = _hasher.Hash(rehashedKey) & mask;
+            while (!comparer.Equals(_keys[target], default(TKey)))
+                target = (target + 1) & mask;
+
+            _keys[target] = rehashedKey;
+            _values[target] = rehashedValue;
+
+            index = (index + 1) & mask;
         }
     }
 }

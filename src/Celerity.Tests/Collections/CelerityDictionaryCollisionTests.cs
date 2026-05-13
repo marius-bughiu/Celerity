@@ -134,6 +134,42 @@ public class CelerityDictionaryCollisionTests
             Assert.Equal(i * 10, map[i]);
     }
 
+    [Fact]
+    public void ResizeThenRemoveSweep_ShouldPreserveAllRemainingKeys_UnderFullCollision()
+    {
+        // Regression for the tightened Resize / RehashAfterRemove rewrite
+        // (issue #83): both paths now reinsert directly into the table without
+        // going through the public indexer setter, so they skip the equality
+        // check in the probe walk and don't touch _count / _version per entry.
+        // Mirrors the LongDictionary / IntDictionary cases — bulk-insert past
+        // the load-factor threshold to force multiple Resize calls under a
+        // single forced-collision chain, remove every other key to drive
+        // RehashAfterRemove through long clusters, then reinsert and verify.
+        var map = new CelerityDictionary<int, int, ConstantIntHasher>(
+            capacity: 4, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 40; i++)
+            map[i] = i * 7;
+
+        Assert.Equal(40, map.Count);
+
+        for (int i = 1; i <= 40; i += 2)
+            Assert.True(map.Remove(i, out int removed) && removed == i * 7);
+
+        Assert.Equal(20, map.Count);
+        for (int i = 2; i <= 40; i += 2)
+            Assert.Equal(i * 7, map[i]);
+        for (int i = 1; i <= 40; i += 2)
+            Assert.False(map.ContainsKey(i));
+
+        for (int i = 1; i <= 40; i += 2)
+            map[i] = i * 7;
+
+        Assert.Equal(40, map.Count);
+        for (int i = 1; i <= 40; i++)
+            Assert.Equal(i * 7, map[i]);
+    }
+
     // ---------------------------------------------------------------
     //  Remove-then-reinsert with the standard hasher (parity with
     //  IntDictionaryTests.Remove_Then_Reinsert_ManyKeys)

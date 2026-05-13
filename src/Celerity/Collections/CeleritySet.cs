@@ -149,7 +149,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
 
         // Single probe: walk the probe chain once and either spot the existing
         // entry (return false) or land on an empty slot and insert in place.
-        // Avoids the double walk of `if (Contains(item)) ...; InsertNonDefault(item);`.
+        // Avoids the double walk of `if (Contains(item)) ...; then insert`.
         if (_count >= _threshold)
             Resize();
 
@@ -349,29 +349,6 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     private static bool IsDefaultValue(T item) =>
         EqualityComparer<T>.Default.Equals(item, default(T));
 
-    private void InsertNonDefault(T item)
-    {
-        if (_count >= _threshold)
-        {
-            Resize();
-        }
-
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
-
-        while (!EqualityComparer<T>.Default.Equals(_slots[index], default(T)) &&
-               !EqualityComparer<T>.Default.Equals(_slots[index], item))
-        {
-            index = (index + 1) & (size - 1);
-        }
-
-        bool isNewEntry = EqualityComparer<T>.Default.Equals(_slots[index], default(T));
-        _slots[index] = item;
-
-        if (isNewEntry)
-            _count++;
-    }
-
     private int ProbeForItem(T item)
     {
         int size = _slots.Length;
@@ -390,39 +367,63 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     private void Resize()
     {
         int newSize = _slots.Length * 2;
+        int mask = newSize - 1;
         T?[] oldSlots = _slots;
 
-        _slots = new T?[newSize];
-        _threshold = (int)(newSize * _loadFactor);
+        // Build into a fresh local array then swap it in at the end. The loop
+        // bypasses InsertNonDefault on purpose: every reinserted item is known
+        // to be unique in the new table (it came from the previous array which
+        // was itself a valid set), and _count / _version are conserved across
+        // a resize, so InsertNonDefault's equality check, threshold check, and
+        // isNewEntry test are all dead weight. The default-value entry lives
+        // out-of-band and is not touched here.
+        T?[] newSlots = new T?[newSize];
 
-        // The default-value entry lives out-of-band and is not in the array,
-        // so preserve its contribution to _count across the rehash.
-        int carriedDefault = _hasDefaultValue ? 1 : 0;
-        _count = carriedDefault;
-
+        var comparer = EqualityComparer<T>.Default;
         for (int i = 0; i < oldSlots.Length; i++)
         {
-            if (!EqualityComparer<T>.Default.Equals(oldSlots[i], default(T)))
-            {
-                InsertNonDefault(oldSlots[i]!);
-            }
+            T? item = oldSlots[i];
+            if (comparer.Equals(item, default(T)))
+                continue;
+
+            int index = _hasher.Hash(item!) & mask;
+            while (!comparer.Equals(newSlots[index], default(T)))
+                index = (index + 1) & mask;
+
+            newSlots[index] = item;
         }
+
+        _slots = newSlots;
+        _threshold = (int)(newSize * _loadFactor);
     }
 
     private void RehashAfterRemove(int startIndex)
     {
         int size = _slots.Length;
-        int index = (startIndex + 1) & (size - 1);
+        int mask = size - 1;
+        int index = (startIndex + 1) & mask;
 
-        while (!EqualityComparer<T>.Default.Equals(_slots[index], default))
+        var comparer = EqualityComparer<T>.Default;
+        while (!comparer.Equals(_slots[index], default(T)))
         {
             T rehashedItem = _slots[index]!;
 
             _slots[index] = default;
-            _count--;
 
-            InsertNonDefault(rehashedItem);
-            index = (index + 1) & (size - 1);
+            // Reinsert at the item's natural position. The item was just
+            // removed from its old slot, so it cannot match any remaining
+            // entry — we probe for an empty slot only, skipping the equality
+            // check that InsertNonDefault would do. _count is a slot-shuffle
+            // invariant here and the caller (Remove) bumps _version exactly
+            // once for the user-visible operation, so neither is touched
+            // per rehash.
+            int target = _hasher.Hash(rehashedItem) & mask;
+            while (!comparer.Equals(_slots[target], default(T)))
+                target = (target + 1) & mask;
+
+            _slots[target] = rehashedItem;
+
+            index = (index + 1) & mask;
         }
     }
 }
