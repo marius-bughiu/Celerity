@@ -51,7 +51,7 @@ The `IEnumerable<KeyValuePair<TKey, TValue>>` overload copies entries from `sour
 ### Indexer
 
 ```csharp
-public TValue? this[TKey key] { get; set; }
+public TValue this[TKey key] { get; set; }
 ```
 
 **Get** returns the value associated with `key`, or throws `KeyNotFoundException` if the key is not present. **Set** inserts or overwrites the entry for `key`, resizing the internal arrays if the load factor threshold is exceeded.
