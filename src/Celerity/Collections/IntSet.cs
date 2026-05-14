@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -416,12 +415,13 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
         int[] oldSlots = _slots;
 
         // Build into a fresh local array then swap it in at the end. The loop
-        // bypasses InsertNonZero on purpose: every reinserted item is known
-        // to be unique in the new table (it came from the previous array which
-        // was itself a valid set), and _count / _version are conserved across
-        // a resize, so InsertNonZero's equality check, threshold check, and
-        // isNewEntry test are all dead weight. The zero entry lives out-of-band
-        // and is not touched here.
+        // inlines a probe-for-empty-slot walk on purpose: every reinserted item
+        // is known to be unique in the new table (it came from the previous
+        // array which was itself a valid set), and _count / _version are
+        // conserved across a resize, so the equality check inside a general
+        // insert helper, the threshold check, and the per-call _count / _version
+        // bumps are all dead weight. The zero entry lives out-of-band and is
+        // not touched here.
         int[] newSlots = new int[newSize];
 
         for (int i = 0; i < oldSlots.Length; i++)
@@ -456,7 +456,7 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
             // Reinsert at the item's natural position. The item was just
             // removed from its old slot, so it cannot match any remaining
             // entry — we probe for an empty slot only, skipping the equality
-            // check that InsertNonZero would do. _count is a slot-shuffle
+            // check a general insert helper would do. _count is a slot-shuffle
             // invariant here and the caller (Remove) bumps _version exactly
             // once for the user-visible operation, so neither is touched
             // per rehash.
