@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -371,12 +370,13 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
         T?[] oldSlots = _slots;
 
         // Build into a fresh local array then swap it in at the end. The loop
-        // bypasses InsertNonDefault on purpose: every reinserted item is known
-        // to be unique in the new table (it came from the previous array which
-        // was itself a valid set), and _count / _version are conserved across
-        // a resize, so InsertNonDefault's equality check, threshold check, and
-        // isNewEntry test are all dead weight. The default-value entry lives
-        // out-of-band and is not touched here.
+        // inlines a probe-for-empty-slot walk on purpose: every reinserted item
+        // is known to be unique in the new table (it came from the previous
+        // array which was itself a valid set), and _count / _version are
+        // conserved across a resize, so the equality check inside a general
+        // insert helper, the threshold check, and the per-call _count / _version
+        // bumps are all dead weight. The default-value entry lives out-of-band
+        // and is not touched here.
         T?[] newSlots = new T?[newSize];
 
         var comparer = EqualityComparer<T>.Default;
@@ -413,7 +413,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
             // Reinsert at the item's natural position. The item was just
             // removed from its old slot, so it cannot match any remaining
             // entry — we probe for an empty slot only, skipping the equality
-            // check that InsertNonDefault would do. _count is a slot-shuffle
+            // check a general insert helper would do. _count is a slot-shuffle
             // invariant here and the caller (Remove) bumps _version exactly
             // once for the user-visible operation, so neither is touched
             // per rehash.
