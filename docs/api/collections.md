@@ -74,6 +74,16 @@ public bool TryGetValue(TKey key, out TValue? value)
 
 If `key` is found, sets `value` and returns `true`. Otherwise sets `value` to `default` and returns `false`.
 
+#### ContainsValue
+
+```csharp
+public bool ContainsValue(TValue? value)
+```
+
+Returns `true` if any entry's value equals `value` under `EqualityComparer<TValue?>.Default`, matching BCL `Dictionary<TKey, TValue>.ContainsValue(TValue)` semantics. The scan walks the probe table (skipping empty slots so the empty `default(TValue)` payload there is not mistaken for a real entry) and, when present, the out-of-band default-key slot.
+
+This operation is `O(n)` in the dictionary's count. No allocation on the hot path beyond the cached `EqualityComparer<TValue?>.Default` access.
+
 #### Add
 
 ```csharp
@@ -213,6 +223,7 @@ The method signatures and semantics match `CelerityDictionary`:
 - `this[int key]` — indexer (get throws `KeyNotFoundException` on miss; set inserts or overwrites).
 - `bool ContainsKey(int key)`
 - `bool TryGetValue(int key, out TValue? value)`
+- `bool ContainsValue(TValue? value)` — BCL-parity `O(n)` linear scan over the probe table and, when present, the out-of-band zero-key slot.
 - `void Add(int key, TValue value)` — throws `ArgumentException` on duplicate.
 - `bool TryAdd(int key, TValue value)`
 - `bool Remove(int key)`
@@ -292,6 +303,7 @@ The public surface and semantics match `IntDictionary`:
 - `this[long key]`
 - `bool ContainsKey(long key)`
 - `bool TryGetValue(long key, out TValue? value)`
+- `bool ContainsValue(TValue? value)` — BCL-parity `O(n)` linear scan over the probe table and, when present, the out-of-band zero-key slot.
 - `void Add(long key, TValue value)` — throws `ArgumentException` on duplicate.
 - `bool TryAdd(long key, TValue value)`
 - `bool Remove(long key)`
@@ -334,9 +346,22 @@ public class CeleritySet<T, THasher> : IEnumerable<T>
 public CeleritySet(
     int capacity = 16,
     float loadFactor = 0.75f)
+
+public CeleritySet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
 ```
 
-Throws the same `ArgumentOutOfRangeException`s as the dictionaries.
+The first overload creates an empty set; `capacity` is rounded up to the next power of two and `loadFactor` controls the fill ratio before resizing.
+
+The `IEnumerable<T>` overload copies elements from `source`. When `source` implements `ICollection<T>`, its `Count` is used to size the backing storage so the initial fill avoids resize work; otherwise the caller-supplied `capacity` parameter is used. Unlike the dictionary `IEnumerable<KeyValuePair<,>>` constructor, duplicate elements (including duplicate `default(T)` entries) are silently deduplicated to match BCL `HashSet<T>(IEnumerable<T>)` semantics — sets do not have a duplicate-key contract. The out-of-band `default(T)` slot is populated when `source` contains it.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
 
@@ -382,7 +407,14 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
 public IntSet(
     int capacity = 16,
     float loadFactor = 0.75f)
+
+public IntSet(
+    IEnumerable<int> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
 ```
+
+Same semantics and validation as `IntSet<THasher>` (see below).
 
 ---
 
@@ -394,6 +426,27 @@ A high-performance set of `int` values, parameterized on a custom hash provider.
 public class IntSet<THasher> : IEnumerable<int>
     where THasher : struct, IHashProvider<int>
 ```
+
+### Constructors
+
+```csharp
+public IntSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public IntSet(
+    IEnumerable<int> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+The `IEnumerable<int>` overload copies elements from `source`, following the same `ICollection<T>`-sizing rule as `CeleritySet`. Duplicate elements (including the out-of-band zero element appearing more than once) are silently deduplicated, matching BCL `HashSet<int>(IEnumerable<int>)` semantics.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
 
