@@ -350,17 +350,21 @@ public class CelerityDictionary<TKey, TValue, THasher>
             return true;
         }
 
-        // Single probe: ProbeForInsert returns either the slot of an existing
-        // entry or the first empty slot in the chain. If it's the former, the
-        // key already exists; otherwise we insert here directly. This avoids
-        // the double probe-chain walk that `if (ContainsKey(key)) ...; this[key] = value;`
-        // would do.
-        if (_count >= _threshold)
-            Resize();
-
+        // Probe the current table first: if the key already exists, we
+        // return without touching anything — no Resize, no _version bump,
+        // no array swap. The threshold check is deferred to after the
+        // duplicate check so a duplicate-at-threshold call cannot silently
+        // swap out the backing arrays under an active enumerator (see
+        // issue #92).
         int index = ProbeForInsert(key);
         if (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)))
             return false;
+
+        if (_count >= _threshold)
+        {
+            Resize();
+            index = ProbeForInsert(key);
+        }
 
         _keys[index] = key;
         _values[index] = value;

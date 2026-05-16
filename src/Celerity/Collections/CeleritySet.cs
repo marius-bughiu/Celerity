@@ -146,12 +146,12 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
             return true;
         }
 
-        // Single probe: walk the probe chain once and either spot the existing
-        // entry (return false) or land on an empty slot and insert in place.
-        // Avoids the double walk of `if (Contains(item)) ...; then insert`.
-        if (_count >= _threshold)
-            Resize();
-
+        // Probe the current table first: if the item already exists, we
+        // return without touching anything — no Resize, no _version bump,
+        // no array swap. The threshold check is deferred to after the
+        // duplicate check so a duplicate-at-threshold call cannot silently
+        // swap out the backing array under an active enumerator (see
+        // issue #92).
         int size = _slots.Length;
         int index = _hasher.Hash(item) & (size - 1);
 
@@ -160,6 +160,15 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
             if (EqualityComparer<T>.Default.Equals(_slots[index], item))
                 return false;
             index = (index + 1) & (size - 1);
+        }
+
+        if (_count >= _threshold)
+        {
+            Resize();
+            size = _slots.Length;
+            index = _hasher.Hash(item) & (size - 1);
+            while (!EqualityComparer<T>.Default.Equals(_slots[index], default(T)))
+                index = (index + 1) & (size - 1);
         }
 
         _slots[index] = item;
