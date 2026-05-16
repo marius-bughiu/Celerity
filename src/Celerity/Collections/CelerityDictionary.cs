@@ -125,14 +125,14 @@ public class CelerityDictionary<TKey, TValue, THasher>
     /// Thrown when attempting to get a value for a key that is not found in the dictionary.
     /// </exception>
     /// <returns>The value associated with the specified key.</returns>
-    public TValue? this[TKey key]
+    public TValue this[TKey key]
     {
         get
         {
             if (IsDefaultKey(key))
             {
                 if (_hasDefaultKey)
-                    return _defaultKeyValue;
+                    return _defaultKeyValue!;
                 throw new KeyNotFoundException($"Key {key} not found.");
             }
 
@@ -140,7 +140,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
             if (index < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
 
-            return _values[index];
+            return _values[index]!;
         }
         set
         {
@@ -621,6 +621,8 @@ public class CelerityDictionary<TKey, TValue, THasher>
     // users who prefer BCL ergonomics (e.g. consuming the dictionary as
     // `IReadOnlyDictionary<TKey, TValue?>` via LINQ or dependency injection) can
     // do so without losing the zero-allocation fast path for direct foreach.
+    TValue? IReadOnlyDictionary<TKey, TValue?>.this[TKey key] => this[key];
+
     IEnumerable<TKey> IReadOnlyDictionary<TKey, TValue?>.Keys => Keys;
 
     IEnumerable<TValue?> IReadOnlyDictionary<TKey, TValue?>.Values => Values;
