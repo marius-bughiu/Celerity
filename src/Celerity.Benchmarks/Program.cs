@@ -12,6 +12,7 @@ internal class Program
             typeof(LongDictionaryBenchmark),
             typeof(CeleritySetBenchmark),
             typeof(IntSetBenchmark),
+            typeof(LongSetBenchmark),
         };
 
         bool ci = args.Contains("--ci");

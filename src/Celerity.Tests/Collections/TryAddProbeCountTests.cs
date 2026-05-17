@@ -225,6 +225,34 @@ public class TryAddProbeCountTests
     }
 
     [Fact]
+    public void LongSet_TryAdd_NewItem_DoesExactlyOneProbeWalk()
+    {
+        var set = new LongSet<CountingLongHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (long i = 1; i <= 10; i++)
+            Assert.True(set.TryAdd(i));
+
+        Assert.Equal(10, _hashCallCount);
+        Assert.Equal(10, set.Count);
+    }
+
+    [Fact]
+    public void LongSet_TryAdd_DuplicateItem_DoesExactlyOneProbeWalk()
+    {
+        var set = new LongSet<CountingLongHasher>(capacity: 64);
+        for (long i = 1; i <= 5; i++)
+            set.TryAdd(i);
+
+        _hashCallCount = 0;
+        for (long i = 1; i <= 5; i++)
+            Assert.False(set.TryAdd(i));
+
+        Assert.Equal(5, _hashCallCount);
+        Assert.Equal(5, set.Count);
+    }
+
+    [Fact]
     public void CeleritySet_TryAdd_NewItem_DoesExactlyOneProbeWalk()
     {
         var set = new CeleritySet<string, CountingStringHasher>(capacity: 64);

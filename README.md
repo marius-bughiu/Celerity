@@ -10,6 +10,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 - `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangHasher`.
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
 - `IntSet` / `IntSet<THasher>` — `int`-keyed set specialization.
+- `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangHasher`.
 
 All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. All collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel.
 
@@ -118,12 +119,13 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangHasher`. |
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
+| Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
 | Need a stable iteration order, multi-threaded access, or a frozen / read-only post-build view | BCL `Dictionary<,>`, `ConcurrentDictionary<,>`, `FrozenDictionary<,>` | Celerity is single-threaded, iteration order is unspecified, and `FrozenCelerityDictionary` is still on the [1.2.0 roadmap](ROADMAP.md). |
 
 Notes on picking a hasher once the collection is settled:
 
-- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case switch to `Int32Murmur3Hasher` / `Int64Murmur3Hasher`.
+- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`, `LongSet`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case switch to `Int32Murmur3Hasher` / `Int64Murmur3Hasher`.
 - For arbitrary types, `DefaultHasher<T>` (which delegates to `EqualityComparer<T>.Default.GetHashCode()`) is a safe fallback. It still benefits from the struct-hasher devirtualisation; the inner `EqualityComparer<T>` dispatch is the only unavoidable cost. Replace it with a hand-written struct hasher if profiling shows `Hash` on the hot path.
 - The full hasher matrix lives in [`docs/api/hashing.md`](docs/api/hashing.md).
 
@@ -154,7 +156,7 @@ Hashers must be **structs** when used with Celerity collections (`where THasher 
 
 The dictionaries (`CelerityDictionary`, `IntDictionary`, `LongDictionary`) expose a compact, allocation-conscious API that mirrors the parts of `Dictionary<TKey, TValue>` most users actually reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove` (both the `bool Remove(key)` and `bool Remove(key, out TValue?)` overloads), `Clear`, `Count`, `Keys`, `Values`, and `GetEnumerator()`. They implement `IReadOnlyDictionary<TKey, TValue?>` and accept an `IEnumerable<KeyValuePair<TKey, TValue>>` source at construction.
 
-The sets (`CeleritySet`, `IntSet`) expose `Add`, `TryAdd`, `Contains`, `Remove`, `Clear`, `Count`, and a struct enumerator.
+The sets (`CeleritySet`, `IntSet`, `LongSet`) expose `Add`, `TryAdd`, `Contains`, `Remove`, `Clear`, `Count`, and a struct enumerator.
 
 The zero / `default(TKey)` key (or element, for sets) is stored out-of-band so it never collides with the empty-slot sentinel used during probing. This includes `null` for reference-type keys.
 

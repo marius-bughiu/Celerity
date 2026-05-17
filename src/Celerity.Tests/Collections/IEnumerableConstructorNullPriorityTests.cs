@@ -98,6 +98,28 @@ public class IEnumerableConstructorNullPriorityTests
     }
 
     [Fact]
+    public void LongSet_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<long>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LongSet(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void LongSet_Generic_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<long>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LongSet<Int64WangHasher>(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
     public void CeleritySet_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
     {
         IEnumerable<string>? source = null;

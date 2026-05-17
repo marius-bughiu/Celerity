@@ -5,7 +5,8 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// Tests for the <c>IEnumerable&lt;T&gt;</c> constructor on
-/// <see cref="IntSet{THasher}"/> and <see cref="CeleritySet{T, THasher}"/>.
+/// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>, and
+/// <see cref="CeleritySet{T, THasher}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
 /// equivalents, but follows BCL <see cref="HashSet{T}"/> semantics rather than
@@ -196,6 +197,204 @@ public class SetIEnumerableConstructorTests
         Assert.True(set.Contains(1));
         Assert.True(set.Contains(2));
         Assert.True(set.Contains(3));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LongSet — source argument validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LongSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<long>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new LongSet(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void LongSet_ShouldStillValidate_LoadFactor_WhenConstructedFromSource()
+    {
+        var source = new[] { 1L };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongSet(source, loadFactor: 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongSet(source, loadFactor: 0f));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LongSet — happy path
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LongSet_ShouldSupportEmptySource()
+    {
+        var set = new LongSet(Array.Empty<long>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains(0L));
+        Assert.False(set.Contains(1L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldCopyAllElements_FromArraySource()
+    {
+        var source = new[] { 1L, 2L, 3L, 4L, 5L };
+
+        var set = new LongSet(source);
+
+        Assert.Equal(5, set.Count);
+        foreach (long item in source)
+            Assert.True(set.Contains(item));
+    }
+
+    [Fact]
+    public void LongSet_ShouldCopyAllElements_FromListSource()
+    {
+        var source = new List<long> { 10L, 20L, 30L };
+
+        var set = new LongSet(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(10L));
+        Assert.True(set.Contains(20L));
+        Assert.True(set.Contains(30L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        IEnumerable<long> source = Enumerable.Range(1, 50).Select(i => (long)i);
+
+        var set = new LongSet(source);
+
+        Assert.Equal(50, set.Count);
+        for (long i = 1; i <= 50; i++)
+            Assert.True(set.Contains(i));
+    }
+
+    [Fact]
+    public void LongSet_ShouldSilentlyDedupe_DuplicateElements()
+    {
+        var source = new[] { 1L, 2L, 1L, 3L, 2L, 4L, 1L };
+
+        var set = new LongSet(source);
+
+        Assert.Equal(4, set.Count);
+        Assert.True(set.Contains(1L));
+        Assert.True(set.Contains(2L));
+        Assert.True(set.Contains(3L));
+        Assert.True(set.Contains(4L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldSilentlyDedupe_DuplicateZeroElements()
+    {
+        var source = new[] { 0L, 1L, 0L, 2L, 0L };
+
+        var set = new LongSet(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(0L));
+        Assert.True(set.Contains(1L));
+        Assert.True(set.Contains(2L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldCaptureZeroElement_FromSource()
+    {
+        var source = new[] { 0L, 7L, 13L };
+
+        var set = new LongSet(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(0L));
+        Assert.True(set.Contains(7L));
+        Assert.True(set.Contains(13L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldHandleLargeSource()
+    {
+        IEnumerable<long> source = Enumerable.Range(1, 500).Select(i => (long)i);
+
+        var set = new LongSet(source);
+
+        Assert.Equal(500, set.Count);
+        for (long i = 1; i <= 500; i++)
+            Assert.True(set.Contains(i), $"missing element {i}");
+    }
+
+    [Fact]
+    public void LongSet_ShouldBeIndependent_FromSourceArray()
+    {
+        var source = new[] { 1L, 2L, 3L };
+        var set = new LongSet(source);
+
+        source[0] = 999L;
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(1L));
+        Assert.False(set.Contains(999L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldUseCallerCapacity_WhenLargerThanSourceCount()
+    {
+        var source = new[] { 1L, 2L, 3L };
+
+        var set = new LongSet(source, capacity: 1024);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(1L));
+        Assert.True(set.Contains(2L));
+        Assert.True(set.Contains(3L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldRoundtrip_FromAnotherLongSetEnumeration()
+    {
+        var original = new LongSet { 0L, 1L, 2L, 3L, 4L, 5L };
+
+        var copy = new LongSet(original);
+
+        Assert.Equal(original.Count, copy.Count);
+        foreach (long item in original)
+            Assert.True(copy.Contains(item));
+    }
+
+    [Fact]
+    public void LongSet_OpenGeneric_ShouldAcceptIEnumerableSource()
+    {
+        var source = new[] { 1L, 2L, 3L };
+
+        var set = new LongSet<Int64WangHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(1L));
+        Assert.True(set.Contains(2L));
+        Assert.True(set.Contains(3L));
+    }
+
+    [Fact]
+    public void LongSet_ShouldPreserve_ExtremeKeyValues_FromSource()
+    {
+        var source = new[]
+        {
+            long.MaxValue,
+            long.MinValue,
+            (long)int.MaxValue + 1L,
+            (long)int.MinValue - 1L,
+            -1L,
+        };
+
+        var set = new LongSet(source);
+
+        Assert.Equal(source.Length, set.Count);
+        foreach (long item in source)
+            Assert.True(set.Contains(item), $"missing element {item}");
     }
 
     // ──────────────────────────────────────────────────────────────
