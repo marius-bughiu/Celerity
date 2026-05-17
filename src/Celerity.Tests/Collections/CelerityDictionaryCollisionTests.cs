@@ -28,6 +28,18 @@ public class CelerityDictionaryCollisionTests
         public int Hash(string key) => 7;
     }
 
+    /// <summary>
+    /// A test-only hasher that returns the key itself. Combined with a
+    /// power-of-two table size, <c>key &amp; mask</c> places each key at a
+    /// predictable slot, which lets a test build a wrapped cluster whose
+    /// entries have different natural slots — the shape needed to exercise
+    /// every branch of the backward-shift cyclic comparison.
+    /// </summary>
+    private struct IdentityIntHasher : IHashProvider<int>
+    {
+        public int Hash(int key) => key;
+    }
+
     // ---------------------------------------------------------------
     //  Int-key collision tests (same shape as IntDictionary tests)
     // ---------------------------------------------------------------
@@ -273,5 +285,34 @@ public class CelerityDictionaryCollisionTests
         map[null!] = 10;
         Assert.Equal(1, map.Count);
         Assert.Equal(10, map[null!]);
+    }
+
+    [Fact]
+    public void Remove_WrapAroundCluster_KeepsBypassEntriesPut_AndShiftsTheRest()
+    {
+        // Regression for the backward-shift deletion rewrite of
+        // RehashAfterRemove (replaced by BackwardShiftRemove). With table
+        // size 8 (mask = 7) and the identity hasher, keys 6, 7, 8, 14 build
+        // a cluster that crosses the array boundary:
+        //   slot 6 -> 6  (natural 6)
+        //   slot 7 -> 7  (natural 7)
+        //   slot 0 -> 8  (natural 0; collided through 6, 7)
+        //   slot 1 -> 14 (natural 6; displaced through 6, 7, 0)
+        // Removing key 6 must SKIP slots 7 and 0 (bypass cases for the
+        // `i <= j` and `i > j` branches respectively) and SHIFT slot 1 into
+        // the gap.
+        var map = new CelerityDictionary<int, int, IdentityIntHasher>(capacity: 8, loadFactor: 0.9f);
+        map[6] = 60;
+        map[7] = 70;
+        map[8] = 80;
+        map[14] = 140;
+
+        Assert.True(map.Remove(6));
+
+        Assert.Equal(3, map.Count);
+        Assert.False(map.ContainsKey(6));
+        Assert.Equal(70, map[7]);
+        Assert.Equal(80, map[8]);
+        Assert.Equal(140, map[14]);
     }
 }
