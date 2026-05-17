@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -694,6 +695,7 @@ public class IntDictionary<TValue, THasher>
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForInsert(int key)
     {
         int size = _keys.Length;
@@ -709,6 +711,7 @@ public class IntDictionary<TValue, THasher>
         return index;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForKey(int key)
     {
         int size = _keys.Length;
@@ -769,6 +772,7 @@ public class IntDictionary<TValue, THasher>
     // surviving cluster entry is visited exactly once and most are not
     // moved at all — the work-per-cluster collapses from quadratic to
     // linear, which is the bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void BackwardShiftRemove(int startIndex)
     {
         int[] keys = _keys;

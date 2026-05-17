@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -410,6 +411,7 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         public void Dispose() { }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(long item)
     {
         int size = _slots.Length;
@@ -465,6 +467,7 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
     // entry is visited exactly once and most are not moved at all — the
     // work-per-cluster collapses from quadratic to linear, which is the
     // bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void BackwardShiftRemove(int startIndex)
     {
         long[] slots = _slots;

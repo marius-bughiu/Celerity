@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -363,6 +364,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     private static bool IsDefaultValue(T item) =>
         EqualityComparer<T>.Default.Equals(item, default(T));
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(T item)
     {
         int size = _slots.Length;
@@ -419,6 +421,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     // entry is visited exactly once and most are not moved at all — the
     // work-per-cluster collapses from quadratic to linear, which is the
     // bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void BackwardShiftRemove(int startIndex)
     {
         T?[] slots = _slots;

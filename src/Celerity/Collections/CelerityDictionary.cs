@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -646,6 +647,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
     private static bool IsDefaultKey(TKey key) =>
         EqualityComparer<TKey>.Default.Equals(key, default(TKey));
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForInsert(TKey key)
     {
         int size = _keys.Length;
@@ -662,6 +664,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
         return index;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForKey(TKey key)
     {
         int size = _keys.Length;
@@ -721,6 +724,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
     // surviving cluster entry is visited exactly once and most are not
     // moved at all — the work-per-cluster collapses from quadratic to
     // linear, which is the bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void BackwardShiftRemove(int startIndex)
     {
         TKey?[] keys = _keys;
