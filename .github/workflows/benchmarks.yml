@@ -231,13 +231,14 @@ jobs:
           cp web/index.html /tmp/gh-pages/index.html
           mkdir -p /tmp/gh-pages/dev/bench
           cp web/dev/bench/index.html /tmp/gh-pages/dev/bench/index.html
+          cp web/dev/bench/detail.html /tmp/gh-pages/dev/bench/detail.html
           cd /tmp/gh-pages
           if git diff --quiet && git diff --cached --quiet; then
             echo "No dashboard changes to sync"
             exit 0
           fi
           git -c user.name="github-actions" -c user.email="github-actions@github.com" \
-            add index.html dev/bench/index.html
+            add index.html dev/bench/index.html dev/bench/detail.html
           git -c user.name="github-actions" -c user.email="github-actions@github.com" \
             commit -m "Sync custom dashboard from ${GITHUB_SHA:0:7}"
           git push origin gh-pages
