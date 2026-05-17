@@ -74,7 +74,11 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Run benchmarks
-        run: dotnet run --project Celerity.Benchmarks --configuration Release -- --ci
+        # working-directory must be the project folder, not src/. BenchmarkDotNet
+        # writes its artifacts to ./BenchmarkDotNet.Artifacts relative to the
+        # process CWD, and downstream steps look for them under Celerity.Benchmarks/.
+        working-directory: src/Celerity.Benchmarks
+        run: dotnet run --configuration Release -- --ci
 
       - name: Stage benchmark report
         # BenchmarkDotNet's joined-run JSON is named with a timestamp
