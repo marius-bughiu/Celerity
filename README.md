@@ -1,5 +1,5 @@
 # Celerity
-[![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/v/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/vpre/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/)
+[![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/v/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/vpre/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![Live benchmarks](https://img.shields.io/badge/benchmarks-live-0d6e6e?style=flat-square)](https://marius-bughiu.github.io/Celerity/dev/bench/)
 
 Celerity is a .NET library that provides specialized high-performance collections optimized for specific use cases. It includes data structures designed for better speed or memory efficiency compared to standard .NET collections. The package supports configurable load factors, multiple built-in hash functions, and allows users to define custom hash functions for fine-tuned performance.
 
@@ -134,6 +134,8 @@ A few cases where Celerity is **not** the right answer today:
 - **Build-once / read-many lookup tables for string keys.** Today the BCL `FrozenDictionary<,>` will outperform `CelerityDictionary` on lookups; the Celerity equivalent (`FrozenCelerityDictionary`) is planned for 1.2.0 ([#62](https://github.com/marius-bughiu/Celerity/issues/62)).
 
 ## Benchmarks
+
+> **Live results** — the full suite (all 5 collections, 60 measurements) runs in CI on every `main` push and publishes to the [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) with historical trends and PR comparisons. The static numbers below are a snapshot for quick reference.
 
 #### CelerityDictionary
 

@@ -1,0 +1,4 @@
+# data.js is owned by the github-action-benchmark action on the gh-pages branch.
+# We keep a local copy here for previewing the dashboard against real data,
+# but the file itself never belongs in the main branch.
+data.js
