@@ -135,26 +135,7 @@ A few cases where Celerity is **not** the right answer today:
 
 ## Benchmarks
 
-> **Live results** — the full suite (all 5 collections, 60 measurements) runs in CI on every `main` push and publishes to the [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) with historical trends and PR comparisons. The static numbers below are a snapshot for quick reference.
-
-#### CelerityDictionary
-
-`CelerityDictionary` allows you to bring your own custom key hasher to best suit your needs. Below you have a benchmark between a standard .NET `Dictionary<int, int>` and a `CelerityDictionary<int, int, Int32WangNaiveHasher>` using a random key distribution.
-
-| Method                    | ItemCount | Mean           | Error        | StdDev       | Allocated |
-|-------------------------- |---------- |---------------:|-------------:|-------------:|----------:|
-| Dictionary_Insert         | 1000      |    13,768.8 ns |    104.56 ns |     92.69 ns |   73168 B |
-| CelerityDictionary_Insert | 1000      |     8,540.0 ns |     82.35 ns |     73.00 ns |   33072 B |
-| Dictionary_Lookup         | 1000      |     2,842.1 ns |      7.55 ns |      7.06 ns |         - |
-| CelerityDictionary_Lookup | 1000      |     1,660.1 ns |     14.09 ns |     12.49 ns |         - |
-| Dictionary_Remove         | 1000      |     1,358.9 ns |     13.87 ns |     12.97 ns |         - |
-| CelerityDictionary_Remove | 1000      |       870.6 ns |      2.69 ns |      2.38 ns |         - |
-| Dictionary_Insert         | 100000    | 2,466,978.2 ns | 49,091.20 ns | 50,413.05 ns | 6037813 B |
-| CelerityDictionary_Insert | 100000    | 2,860,774.8 ns | 50,391.63 ns | 47,136.36 ns | 4195120 B |
-| Dictionary_Lookup         | 100000    | 1,021,650.8 ns | 11,702.28 ns | 10,373.77 ns |       1 B |
-| CelerityDictionary_Lookup | 100000    |   422,466.0 ns |  4,472.81 ns |  3,965.03 ns |         - |
-| Dictionary_Remove         | 100000    |   149,102.9 ns |    926.90 ns |    867.02 ns |         - |
-| CelerityDictionary_Remove | 100000    |   129,491.3 ns |  2,092.50 ns |  1,854.94 ns |         - |
+**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks all five collections against their .NET BCL counterparts on every `main` push, with historical trends and per-PR regression comparisons. For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop and the dashboard reflects that.
 
 ## Custom hashing
 
