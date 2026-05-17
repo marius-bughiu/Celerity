@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Celerity Benchmarks &mdash; detail</title>
+  <meta name="description" content="Full-resolution view of a single Celerity benchmark, with nanosecond-precision values over time.">
+  <style>
+    :root {
+      --fg: #1a1d1f;
+      --fg-muted: #5a6166;
+      --fg-faint: #8a9296;
+      --bg: #ffffff;
+      --bg-alt: #f7f8f8;
+      --border: #e5e8ea;
+      --border-strong: #cdd2d5;
+      --accent: #0d6e6e;
+      --accent-hover: #0a5757;
+      --bcl: #8a9296;
+      --celerity: #0d6e6e;
+      --win: #0d6e6e;
+      --loss: #b54545;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--fg);
+      background: var(--bg);
+      line-height: 1.55;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header.site {
+      border-bottom: 1px solid var(--border);
+      padding: 18px 0;
+      background: var(--bg);
+    }
+    header.site .wrap { display: flex; align-items: center; gap: 24px; }
+    header.site .brand {
+      font-weight: 600;
+      font-size: 17px;
+      color: var(--fg);
+      letter-spacing: -0.01em;
+    }
+    header.site .brand .dot { color: var(--accent); }
+    header.site nav { display: flex; gap: 18px; margin-left: auto; font-size: 14px; }
+    header.site nav a { color: var(--fg-muted); }
+    header.site nav a:hover { color: var(--fg); text-decoration: none; }
+    @media (max-width: 640px) {
+      header.site nav { gap: 12px; font-size: 13px; }
+      header.site nav a:nth-child(3) { display: none; }
+    }
+
+    /* Back link */
+    .back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 32px;
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    .back svg { width: 14px; height: 14px; }
+    .back:hover { color: var(--fg); text-decoration: none; }
+
+    /* Title */
+    .title-block { margin: 18px 0 28px; }
+    h1.detail-title {
+      font-size: 28px;
+      line-height: 1.2;
+      margin: 0 0 6px;
+      letter-spacing: -0.02em;
+      font-weight: 600;
+    }
+    .detail-sub {
+      font-size: 14px;
+      color: var(--fg-muted);
+    }
+    .detail-sub code {
+      font-family: var(--mono);
+      font-size: 13px;
+      background: var(--bg-alt);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    @media (max-width: 640px) {
+      h1.detail-title { font-size: 22px; }
+    }
+
+    /* Item-count toggle */
+    .toggle {
+      display: inline-flex;
+      gap: 0;
+      margin-top: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .toggle button {
+      background: var(--bg);
+      border: none;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--fg-muted);
+      cursor: pointer;
+      border-right: 1px solid var(--border);
+      transition: background 0.12s, color 0.12s;
+    }
+    .toggle button:last-child { border-right: none; }
+    .toggle button:hover:not(.active) { background: var(--bg-alt); color: var(--fg); }
+    .toggle button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .toggle button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Headline */
+    .headline {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 22px 24px;
+      background: var(--bg);
+      margin: 24px 0 32px;
+      display: flex;
+      align-items: baseline;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+    .headline .big {
+      font-size: 36px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .headline .big.win { color: var(--win); }
+    .headline .big.loss { color: var(--loss); }
+    .headline .big.tie { color: var(--fg-muted); }
+    .headline .big .unit-mark {
+      font-size: 18px;
+      color: var(--fg-muted);
+      font-weight: 500;
+      margin-left: 4px;
+    }
+    .headline .values {
+      display: flex;
+      gap: 28px;
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    .headline .values .v {
+      display: flex;
+      flex-direction: column;
+    }
+    .headline .values .v .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-faint);
+      margin-bottom: 2px;
+    }
+    .headline .values .v .num {
+      font-size: 17px;
+      color: var(--fg);
+      font-family: var(--mono);
+      font-feature-settings: "tnum" 1;
+    }
+
+    /* Chart container */
+    .chart-wrap {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 20px 16px;
+      background: var(--bg);
+      margin-bottom: 32px;
+    }
+    .chart-wrap .chart-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chart-wrap .chart-meta .legend {
+      display: flex;
+      gap: 18px;
+      font-size: 12px;
+      color: var(--fg-muted);
+    }
+    .chart-wrap .chart-meta .legend .swatch {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .chart-wrap .chart-meta .y-unit {
+      font-size: 12px;
+      color: var(--fg-muted);
+    }
+    .chart-wrap .chart-meta .y-unit code {
+      font-family: var(--mono);
+      color: var(--fg);
+    }
+    .chart-wrap canvas { width: 100% !important; height: 420px !important; display: block; }
+    @media (max-width: 640px) {
+      .chart-wrap canvas { height: 300px !important; }
+    }
+
+    /* Measurements table */
+    .section-head {
+      margin: 32px 0 12px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--fg-muted);
+      font-weight: 600;
+    }
+    .section-head .meta { font-size: 13px; color: var(--fg-faint); }
+    table.measurements {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.measurements th, table.measurements td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.measurements th {
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-muted);
+    }
+    table.measurements td.num {
+      font-family: var(--mono);
+      font-feature-settings: "tnum" 1;
+      text-align: right;
+      color: var(--fg);
+    }
+    table.measurements td.commit a {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg-muted);
+    }
+    table.measurements td.commit a:hover { color: var(--accent); }
+    table.measurements td.ratio.win  { color: var(--win); font-weight: 600; }
+    table.measurements td.ratio.loss { color: var(--loss); font-weight: 600; }
+    table.measurements td.ratio.tie  { color: var(--fg-muted); }
+    table.measurements .msg {
+      color: var(--fg-muted);
+      font-size: 12px;
+      max-width: 360px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    @media (max-width: 640px) {
+      table.measurements .col-msg, table.measurements .msg { display: none; }
+    }
+
+    /* Footer */
+    footer.site {
+      margin: 64px 0 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--fg-faint);
+    }
+    footer.site .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    footer.site code { font-family: var(--mono); font-size: 12px; }
+
+    /* Error / empty */
+    .notice {
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      padding: 32px 24px;
+      text-align: center;
+      color: var(--fg-muted);
+      background: var(--bg-alt);
+      margin-top: 24px;
+    }
+    .notice a { color: var(--accent); font-weight: 500; }
+  </style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a href="../../" class="brand">Celerity<span class="dot">.</span></a>
+    <nav>
+      <a href="../../">Home</a>
+      <a href="./">All benchmarks</a>
+      <a href="https://github.com/marius-bughiu/Celerity">GitHub</a>
+      <a href="https://www.nuget.org/packages/Celerity.Collections/">NuGet</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <a class="back" href="./">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10 12L6 8l4-4"/>
+    </svg>
+    All benchmarks
+  </a>
+
+  <div id="content"></div>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <span id="footer-build">&mdash;</span>
+    <span>
+      <a href="data.js">Raw data (data.js)</a>
+      &middot;
+      <a href="https://github.com/marius-bughiu/Celerity">Source</a>
+    </span>
+  </div>
+</footer>
+
+<script src="data.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // Keep in sync with web/dev/bench/index.html.
+  var COLLECTIONS = [
+    { key: 'IntDictionary',       title: 'IntDictionary<int>',                    vs: 'Dictionary<int, int>' },
+    { key: 'LongDictionary',      title: 'LongDictionary<int>',                   vs: 'Dictionary<long, int>' },
+    { key: 'CelerityDictionary',  title: 'CelerityDictionary<int, int, ...>',     vs: 'Dictionary<int, int>' },
+    { key: 'IntSet',              title: 'IntSet',                                vs: 'HashSet<int>' },
+    { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' }
+  ];
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet']);
+  var SUPPORTED_ITEM_COUNTS = [1000, 100000];
+
+  // ---- Read URL params ----
+  function getParams() {
+    var u = new URL(window.location.href);
+    return {
+      c:  u.searchParams.get('c')  || '',
+      op: u.searchParams.get('op') || '',
+      n:  parseInt(u.searchParams.get('n'), 10) || 100000
+    };
+  }
+  var params = getParams();
+
+  var contentEl = document.getElementById('content');
+  function showError(html) {
+    contentEl.innerHTML = '<div class="notice">' + html + ' <a href="./">Back to dashboard &rarr;</a></div>';
+  }
+
+  // ---- Validate params ----
+  var collection = COLLECTIONS.find(function (c) { return c.key === params.c; });
+  if (!collection) {
+    showError('Unknown benchmark.');
+    return;
+  }
+  if (SUPPORTED_ITEM_COUNTS.indexOf(params.n) === -1) {
+    showError('Unknown item count <code>' + params.n + '</code>.');
+    return;
+  }
+  if (!params.op) {
+    showError('Missing op parameter.');
+    return;
+  }
+
+  // ---- Data ----
+  var data = window.BENCHMARK_DATA;
+  if (!data || !data.entries || !data.entries['Celerity Benchmarks'] || data.entries['Celerity Benchmarks'].length === 0) {
+    showError('No benchmark data yet.');
+    return;
+  }
+  var runs = data.entries['Celerity Benchmarks'];
+
+  function parseName(name) {
+    var m = name.match(/^(\w+)Benchmark\.(\w+?)_(\w+)\(ItemCount:\s*(\d+)\)$/);
+    if (!m) return null;
+    return {
+      collection: m[1],
+      typeName: m[2],
+      op: m[3],
+      itemCount: parseInt(m[4], 10),
+      isBcl: BCL_TYPES.has(m[2])
+    };
+  }
+
+  // Build time series for the current (collection, op, itemCount).
+  function seriesFor(col, op, n) {
+    var labels = [];
+    var bcl = [];
+    var celerity = [];
+    runs.forEach(function (run) {
+      var pair = {};
+      run.benches.forEach(function (b) {
+        var p = parseName(b.name);
+        if (!p) return;
+        if (p.collection !== col || p.op !== op || p.itemCount !== n) return;
+        pair[p.isBcl ? 'bcl' : 'celerity'] = b.value;
+      });
+      labels.push({
+        date: new Date(run.date),
+        sha: run.commit.id,
+        url: run.commit.url,
+        message: run.commit.message.split('\n')[0]
+      });
+      bcl.push(pair.bcl == null ? null : pair.bcl);
+      celerity.push(pair.celerity == null ? null : pair.celerity);
+    });
+    return { labels: labels, bcl: bcl, celerity: celerity };
+  }
+
+  // ---- Unit auto-selection ----
+  // Pick a unit based on the largest non-null value across both series so the
+  // axis stays readable. Tooltips & table values use raw ns regardless.
+  function pickUnit(maxNs) {
+    if (maxNs >= 1e6) return { name: 'ms', symbol: 'ms', scale: 1e6 };
+    if (maxNs >= 1e3) return { name: 'µs', symbol: 'µs', scale: 1e3 };
+    return { name: 'ns', symbol: 'ns', scale: 1 };
+  }
+  function fmtInUnit(ns, unit, decimals) {
+    if (ns == null) return '—';
+    var v = ns / unit.scale;
+    var d = decimals != null ? decimals : (v >= 100 ? 0 : v >= 10 ? 1 : 2);
+    return v.toFixed(d) + ' ' + unit.symbol;
+  }
+  // Returns { html, plain, cls }. The html version wraps × in a unit-mark
+  // span; the plain version is used for fallback / no-data states.
+  function fmtRatio(bclNs, celNs) {
+    if (bclNs == null || celNs == null) return { html: '—', plain: '—', cls: 'tie' };
+    var r = bclNs / celNs;
+    if (r >= 1.05) {
+      var num = r.toFixed(2);
+      return {
+        html: num + '<span class="unit-mark">&times; faster</span>',
+        plain: num + '× faster',
+        cls: 'win'
+      };
+    }
+    if (r <= 0.95) {
+      var num2 = (1 / r).toFixed(2);
+      return {
+        html: num2 + '<span class="unit-mark">&times; slower</span>',
+        plain: num2 + '× slower',
+        cls: 'loss'
+      };
+    }
+    return { html: '~ parity', plain: '~ parity', cls: 'tie' };
+  }
+
+  // ---- Render shell once, then update the dynamic parts on toggle ----
+  function renderShell() {
+    contentEl.innerHTML =
+      '<div class="title-block">' +
+        '<h1 class="detail-title">' + collection.title + ' &middot; <span id="op-label"></span></h1>' +
+        '<div class="detail-sub">vs <code id="vs-label">' + collection.vs + '</code> &middot; <span id="n-label"></span></div>' +
+        '<div class="toggle" id="n-toggle"></div>' +
+      '</div>' +
+      '<div class="headline">' +
+        '<div class="big" id="big-ratio"></div>' +
+        '<div class="values">' +
+          '<div class="v"><span class="label">.NET BCL</span><span class="num" id="bcl-num"></span></div>' +
+          '<div class="v"><span class="label">Celerity</span><span class="num" id="cel-num"></span></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="chart-wrap">' +
+        '<div class="chart-meta">' +
+          '<div class="legend">' +
+            '<span><span class="swatch" style="background:var(--bcl)"></span>.NET BCL</span>' +
+            '<span><span class="swatch" style="background:var(--celerity)"></span>Celerity</span>' +
+          '</div>' +
+          '<div class="y-unit">y-axis: <code id="y-unit-label">ns</code> &middot; tooltips show raw ns</div>' +
+        '</div>' +
+        '<canvas id="big-chart"></canvas>' +
+      '</div>' +
+      '<div class="section-head"><h2>Recent measurements</h2><span class="meta" id="run-meta"></span></div>' +
+      '<table class="measurements" id="measurements">' +
+        '<thead><tr>' +
+          '<th>Date</th>' +
+          '<th>Commit</th>' +
+          '<th class="col-msg">Message</th>' +
+          '<th style="text-align:right">.NET BCL</th>' +
+          '<th style="text-align:right">Celerity</th>' +
+          '<th style="text-align:right">Ratio</th>' +
+        '</tr></thead>' +
+        '<tbody></tbody>' +
+      '</table>';
+
+    // Build the toggle buttons.
+    var toggle = document.getElementById('n-toggle');
+    SUPPORTED_ITEM_COUNTS.forEach(function (n) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = n.toLocaleString() + ' items';
+      btn.dataset.n = String(n);
+      btn.addEventListener('click', function () {
+        if (params.n === n) return;
+        params.n = n;
+        var url = new URL(window.location.href);
+        url.searchParams.set('n', String(n));
+        history.replaceState(null, '', url.toString());
+        renderDynamic();
+      });
+      toggle.appendChild(btn);
+    });
+  }
+
+  // Cached chart instance — destroyed/recreated on toggle.
+  var chartInstance = null;
+
+  function renderDynamic() {
+    document.getElementById('op-label').textContent = params.op;
+    document.getElementById('n-label').textContent = params.n.toLocaleString() + ' items';
+
+    // Active toggle button.
+    document.querySelectorAll('#n-toggle button').forEach(function (b) {
+      b.classList.toggle('active', parseInt(b.dataset.n, 10) === params.n);
+    });
+
+    var s = seriesFor(collection.key, params.op, params.n);
+    var hasData = s.labels.length > 0 && (s.bcl.some(function (v) { return v != null; }) || s.celerity.some(function (v) { return v != null; }));
+
+    if (!hasData) {
+      // Replace the dynamic region with a notice but keep the header.
+      var notice = document.createElement('div');
+      notice.className = 'notice';
+      notice.innerHTML = 'No measurements recorded for <code>' + collection.title + '.' + params.op + '</code> at ' + params.n.toLocaleString() + ' items yet. <a href="./">Back to dashboard &rarr;</a>';
+      // Remove headline + chart + table; insert notice in their place.
+      ['headline','chart-wrap','section-head','measurements'].forEach(function () { /* placeholder */ });
+      var existing = document.querySelector('.headline');
+      if (existing) {
+        existing.parentNode.insertBefore(notice, existing);
+        document.querySelector('.headline').remove();
+        document.querySelector('.chart-wrap').remove();
+        var sh = document.querySelectorAll('.section-head');
+        if (sh.length) sh[sh.length - 1].remove();
+        var tbl = document.getElementById('measurements');
+        if (tbl) tbl.remove();
+      }
+      return;
+    }
+
+    // ---- Headline (from latest run with both values) ----
+    var latestPairIdx = -1;
+    for (var i = s.bcl.length - 1; i >= 0; i--) {
+      if (s.bcl[i] != null && s.celerity[i] != null) { latestPairIdx = i; break; }
+    }
+    var latestBcl = latestPairIdx >= 0 ? s.bcl[latestPairIdx] : null;
+    var latestCel = latestPairIdx >= 0 ? s.celerity[latestPairIdx] : null;
+
+    var maxNs = Math.max.apply(null,
+      s.bcl.concat(s.celerity).filter(function (v) { return v != null; })
+    );
+    var unit = pickUnit(maxNs);
+
+    var ratio = fmtRatio(latestBcl, latestCel);
+    var bigEl = document.getElementById('big-ratio');
+    bigEl.className = 'big ' + ratio.cls;
+    bigEl.innerHTML = ratio.html;
+
+    document.getElementById('bcl-num').textContent = latestBcl != null ? fmtInUnit(latestBcl, unit) + ' (' + Math.round(latestBcl).toLocaleString() + ' ns)' : '—';
+    document.getElementById('cel-num').textContent = latestCel != null ? fmtInUnit(latestCel, unit) + ' (' + Math.round(latestCel).toLocaleString() + ' ns)' : '—';
+
+    document.getElementById('y-unit-label').textContent = unit.symbol;
+
+    // ---- Chart ----
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    var ctx = document.getElementById('big-chart').getContext('2d');
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: s.labels.map(function () { return ''; }),
+        datasets: [
+          {
+            label: '.NET BCL',
+            data: s.bcl.map(function (v) { return v == null ? null : v / unit.scale; }),
+            borderColor: '#8a9296',
+            backgroundColor: 'transparent',
+            spanGaps: true,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.18,
+            borderWidth: 2
+          },
+          {
+            label: 'Celerity',
+            data: s.celerity.map(function (v) { return v == null ? null : v / unit.scale; }),
+            borderColor: '#0d6e6e',
+            backgroundColor: 'transparent',
+            spanGaps: true,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.18,
+            borderWidth: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1d1f',
+            padding: 12,
+            titleFont: { size: 12, weight: 'normal' },
+            bodyFont: { size: 13 },
+            footerFont: { size: 11, weight: 'normal' },
+            footerColor: '#cdd2d5',
+            callbacks: {
+              title: function (items) {
+                var lbl = s.labels[items[0].dataIndex];
+                return lbl.date.toISOString().slice(0, 10) + ' · ' + lbl.sha.slice(0, 7);
+              },
+              label: function (item) {
+                var i = item.dataIndex;
+                var rawNs = item.dataset.label === '.NET BCL' ? s.bcl[i] : s.celerity[i];
+                return item.dataset.label + ': ' + Math.round(rawNs).toLocaleString() + ' ns (' + fmtInUnit(rawNs, unit) + ')';
+              },
+              footer: function (items) {
+                var lbl = s.labels[items[0].dataIndex];
+                return lbl.message.length > 60 ? lbl.message.slice(0, 60) + '…' : lbl.message;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { display: false },
+            grid: { display: false, drawBorder: false }
+          },
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: unit.symbol, color: '#5a6166', font: { size: 11 } },
+            ticks: { color: '#5a6166', font: { size: 11 } },
+            grid: { color: '#eef0f1', drawBorder: false },
+            border: { display: false }
+          }
+        }
+      }
+    });
+
+    // ---- Recent measurements table (last 10, newest first) ----
+    var tbody = document.querySelector('#measurements tbody');
+    tbody.innerHTML = '';
+    var rows = [];
+    for (var j = s.labels.length - 1; j >= 0 && rows.length < 10; j--) {
+      rows.push({ label: s.labels[j], bcl: s.bcl[j], celerity: s.celerity[j] });
+    }
+    rows.forEach(function (r) {
+      var rowRatio = fmtRatio(r.bcl, r.celerity);
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + r.label.date.toISOString().slice(0, 10) + '</td>' +
+        '<td class="commit"><a href="' + r.label.url + '">' + r.label.sha.slice(0, 7) + '</a></td>' +
+        '<td class="col-msg msg" title="' + escapeHtml(r.label.message) + '">' + escapeHtml(r.label.message) + '</td>' +
+        '<td class="num">' + (r.bcl == null ? '—' : fmtInUnit(r.bcl, unit, unit.scale === 1 ? 0 : 3) + ' <span style="color:var(--fg-faint);font-size:11px">(' + Math.round(r.bcl).toLocaleString() + ' ns)</span>') + '</td>' +
+        '<td class="num">' + (r.celerity == null ? '—' : fmtInUnit(r.celerity, unit, unit.scale === 1 ? 0 : 3) + ' <span style="color:var(--fg-faint);font-size:11px">(' + Math.round(r.celerity).toLocaleString() + ' ns)</span>') + '</td>' +
+        '<td class="num ratio ' + rowRatio.cls + '">' + rowRatio.plain + '</td>';
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('run-meta').textContent = rows.length + ' of ' + s.labels.length + ' total';
+  }
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, function (ch) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+    });
+  }
+
+  // ---- Footer ----
+  var latest = runs[runs.length - 1];
+  document.getElementById('footer-build').innerHTML =
+    'Latest from <a href="' + latest.commit.url + '"><code>' + latest.commit.id.slice(0, 7) + '</code></a> &middot; ' +
+    new Date(latest.date).toUTCString();
+
+  renderShell();
+  renderDynamic();
+})();
+</script>
+
+</body>
+</html>
