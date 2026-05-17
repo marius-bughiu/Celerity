@@ -23,7 +23,7 @@ src/
 │   ├── Hashing/              IHashProvider<T> and built-in implementations.
 │   └── FastUtils.cs          Low-level helpers (e.g. NextPowerOfTwo).
 ├── Celerity.Tests/           xUnit test project. Mirrors the main project's layout.
-├── Celerity.Benchmarks/      BenchmarkDotNet project. Not built in CI by default.
+├── Celerity.Benchmarks/      BenchmarkDotNet project. Runs in CI on every PR and main push.
 └── Celerity.sln
 ```
 
@@ -56,14 +56,26 @@ These are enforced by review, not by an analyzer. Reading the existing code is t
 
 ## Benchmarks
 
-Benchmarks live in `src/Celerity.Benchmarks`. Run locally with:
+Benchmarks live in `src/Celerity.Benchmarks` and cover every public collection (`CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`) against its `.NET` BCL counterpart. Each operation (Insert/Add, Lookup/Contains, Remove) is grouped via `[BenchmarkCategory]` with the BCL method marked `Baseline = true`, so BenchmarkDotNet's output table includes a `Ratio` column showing the speedup directly.
+
+### Run locally
 
 ```bash
 cd src/Celerity.Benchmarks
-dotnet run -c Release
+dotnet run -c Release                 # interactive switcher — pick which class to run
+dotnet run -c Release -- --filter '*' # run everything with the default (slow, high-precision) job
 ```
 
-If a change is motivated by performance, include before/after numbers in the PR description. Numbers without `-c Release` are not useful — BenchmarkDotNet will refuse to run in Debug and the README benchmarks are all Release.
+### CI
+
+The `benchmarks` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the full suite on `ubuntu-latest` after `build-and-test` succeeds. It uses a faster `CiConfig` (3 warmup × 5 measurement iterations) so the whole suite completes in ~5 min.
+
+Results are parsed by [`benchmark-action/github-action-benchmark`](https://github.com/benchmark-action/github-action-benchmark) and:
+
+- **On a PR**: a comment is posted with the comparison vs the last `main` baseline. If any benchmark regresses by more than **200%** (i.e. is 2× slower or worse), the job fails red. The threshold is deliberately loose because GitHub-hosted runners are noisy — we'll tighten it once we have history to calibrate against.
+- **On a push to `main`**: the new measurement is appended to the `gh-pages`-stored history powering the dashboard at `https://marius-bughiu.github.io/Celerity/dev/bench/` (enable Pages on the `gh-pages` branch once the first run creates it).
+
+If a change is motivated by performance, include before/after numbers from a local Release run in the PR description — the CI job is a guardrail, not a precision instrument. Numbers without `-c Release` are not useful — BenchmarkDotNet refuses to run in Debug.
 
 ## Versioning
 

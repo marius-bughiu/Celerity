@@ -55,7 +55,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 
 ### Infrastructure
 
-- Set up `github-action-benchmark` for continuous performance tracking.
+- Set up `github-action-benchmark` for continuous performance tracking. Status: `done` — `benchmarks` job in `ci.yml` runs the full suite on every PR and pushes results to `gh-pages` on `main`, with PR comments and a 200% regression fail-threshold.
 - Create hash function evaluator for comparing distribution quality.
 - Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. Tracked in [#60](https://github.com/marius-bughiu/Celerity/issues/60).
 - Cross-platform testing (Windows, Linux, macOS). Status: `done`.
