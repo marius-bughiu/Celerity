@@ -4,6 +4,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- `LongSet<THasher>` and the `LongSet` convenience subclass — high-performance set of `long` values, mirroring the `IntSet` surface for 64-bit elements. Defaults to `Int64WangHasher` (matching `LongDictionary`'s default). Implements `IEnumerable<long>`, ships an allocation-free struct enumerator with `_version`-based concurrent-modification detection, the `IEnumerable<long>` constructor with `ICollection<long>` count sizing and silent dedupe per BCL `HashSet<T>` semantics, full `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` surface, and constructor validation matching `IntSet`. The zero element (`0L`) collides with the `EMPTY_SLOT` sentinel exactly as on `IntSet` and is stored out-of-band via a dedicated flag, so `set.Add(0L)` is round-trippable. Closes the last remaining dictionary-to-set parity gap (`IntDictionary` → `IntSet`, `CelerityDictionary` → `CeleritySet`, `LongDictionary` → `LongSet`).
+- `LongSetTests` — mirrors the `IntSetTests` coverage (CRUD, zero element, resize survival, remove-then-reinsert, `Clear` reuse, constructor validation, `IEnumerable<long>` ctor null/dedupe, struct-enumerator smoke test, enumerator-invalidation on mutation, `LongSet<THasher>` open-generic smoke) plus long-specific cases: extreme element values (`long.MaxValue`, `long.MinValue`, `int.MaxValue + 1L`, `int.MinValue - 1L`, `-1L`) and a regression test that two elements sharing the same lower 32 bits but differing in the upper 32 bits are kept distinct (guards against any accidental int-truncation on the probe path).
+- `LongSetCollisionTests` — mirrors `IntSetCollisionTests` for 64-bit elements via a `ConstantLongHasher` and covers insert, mid-chain `Remove` with cluster rehash, remove-then-reinsert, out-of-band zero (`0L`) coexistence with a colliding chain, multi-resize survival from a tiny capacity at load factor `0.5`, the resize-then-remove-sweep regression for the tightened Resize / RehashAfterRemove path, and a long-specific case that keys sharing lower 32 bits but differing in the upper 32 bits stay distinct under full collision.
+
 ## [1.2.1] - 2026-05-17
 
 ### Fixed

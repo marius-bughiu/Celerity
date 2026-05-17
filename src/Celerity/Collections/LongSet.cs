@@ -1,0 +1,488 @@
+using System.Collections;
+using Celerity.Hashing;
+
+namespace Celerity.Collections;
+
+/// <summary>
+/// A high-performance set of <see cref="long"/> values, using
+/// <see cref="Int64WangHasher"/> by default.
+/// </summary>
+public class LongSet : LongSet<Int64WangHasher>
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LongSet"/> class
+    /// with an optional capacity and load factor.
+    /// </summary>
+    /// <param name="capacity">
+    /// The initial capacity of the set. Automatically rounded up
+    /// to the next power of two.
+    /// </param>
+    /// <param name="loadFactor">
+    /// Determines the maximum ratio of count to capacity before resizing.
+    /// </param>
+    public LongSet(int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+        : base(capacity, loadFactor)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LongSet"/> class
+    /// containing the elements copied from the specified <paramref name="source"/>.
+    /// </summary>
+    /// <param name="source">
+    /// The collection whose elements are copied into the new set. Duplicate
+    /// elements in <paramref name="source"/> are silently deduplicated, matching
+    /// BCL <see cref="HashSet{T}"/> semantics.
+    /// </param>
+    /// <param name="capacity">
+    /// The minimum initial capacity. The final capacity is the larger of this
+    /// value and the source's count, rounded up to the next power of two.
+    /// </param>
+    /// <param name="loadFactor">
+    /// Determines the maximum ratio of count to capacity before resizing.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    public LongSet(
+        IEnumerable<long> source,
+        int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+        : base(source, capacity, loadFactor)
+    {
+    }
+}
+
+/// <summary>
+/// A high-performance set of <see cref="long"/> values, parameterized on a
+/// custom <see cref="IHashProvider{T}"/> implementation.
+/// </summary>
+/// <typeparam name="THasher">
+/// The hasher used to compute element hashes. Must be a value type implementing
+/// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
+/// </typeparam>
+public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashProvider<long>
+{
+    /// <summary>
+    /// The default initial capacity of the set if no capacity is specified.
+    /// </summary>
+    protected const int DEFAULT_CAPACITY = 16;
+
+    /// <summary>
+    /// The default load factor of the set if no load factor is specified.
+    /// </summary>
+    protected const float DEFAULT_LOAD_FACTOR = 0.75f;
+
+    private const long EMPTY_SLOT = 0L;
+
+    private int _count = 0;
+    private long[] _slots;
+    private readonly float _loadFactor;
+    private int _threshold;
+    private readonly THasher _hasher;
+
+    // The value 0 collides with EMPTY_SLOT, so it's stored out-of-band
+    // in a dedicated flag. _count includes this entry when _hasZero is true.
+    private bool _hasZero;
+
+    // Bumped on every entry-point structural mutation (Add / TryAdd / Remove /
+    // Clear). The struct enumerator captures this on construction and re-checks
+    // it from MoveNext / Reset, so any concurrent modification fast-fails with
+    // InvalidOperationException — matching BCL HashSet<long> semantics.
+    private int _version;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LongSet{THasher}"/> class
+    /// using the specified capacity and load factor.
+    /// </summary>
+    /// <param name="capacity">
+    /// The initial capacity of the set. Automatically rounded up
+    /// to the next power of two.
+    /// </param>
+    /// <param name="loadFactor">
+    /// Determines the maximum ratio of count to capacity before resizing.
+    /// </param>
+    public LongSet(
+        int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+    {
+        if (capacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
+        if (loadFactor <= 0f || loadFactor >= 1f)
+            throw new ArgumentOutOfRangeException(nameof(loadFactor), loadFactor, "Load factor must be between 0 (exclusive) and 1 (exclusive).");
+
+        int size = FastUtils.NextPowerOfTwo(capacity);
+
+        _slots = new long[size];
+        _loadFactor = loadFactor;
+        _threshold = (int)(size * _loadFactor);
+        _hasher = default;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LongSet{THasher}"/> class
+    /// containing the elements copied from the specified <paramref name="source"/>.
+    /// </summary>
+    /// <param name="source">
+    /// The collection whose elements are copied into the new set. If
+    /// <paramref name="source"/> implements <see cref="ICollection{T}"/>, its
+    /// <c>Count</c> is used to size the backing storage so the initial fill
+    /// avoids resize work. Duplicate elements are silently deduplicated,
+    /// matching BCL <see cref="HashSet{T}"/> semantics.
+    /// </param>
+    /// <param name="capacity">
+    /// The minimum initial capacity. The final capacity is the larger of this
+    /// value and the source's count, rounded up to the next power of two.
+    /// </param>
+    /// <param name="loadFactor">
+    /// Determines the maximum ratio of count to capacity before resizing.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    public LongSet(
+        IEnumerable<long> source,
+        int capacity = DEFAULT_CAPACITY,
+        float loadFactor = DEFAULT_LOAD_FACTOR)
+        : this(InitialCapacityForSource(source, capacity), loadFactor)
+    {
+        foreach (long item in source)
+        {
+            TryAdd(item);
+        }
+    }
+
+    // Runs as part of the chained-ctor argument expression so the null check
+    // beats the primary ctor's capacity / loadFactor validation: a null source
+    // must surface as ArgumentNullException, not ArgumentOutOfRangeException
+    // when the user also passed an invalid loadFactor.
+    private static int InitialCapacityForSource(IEnumerable<long> source, int capacity)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return Math.Max(capacity, (source as ICollection<long>)?.Count ?? 0);
+    }
+
+    /// <summary>
+    /// Gets the number of elements contained in the set.
+    /// </summary>
+    public int Count => _count;
+
+    /// <summary>
+    /// Adds the specified element to the set.
+    /// Throws <see cref="ArgumentException"/> if the element already exists.
+    /// </summary>
+    /// <param name="item">The element to add.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="item"/> already exists in the set.
+    /// </exception>
+    public void Add(long item)
+    {
+        if (!TryAdd(item))
+            throw new ArgumentException($"The element {item} already exists in the set.", nameof(item));
+    }
+
+    /// <summary>
+    /// Attempts to add the specified element to the set.
+    /// </summary>
+    /// <param name="item">The element to add.</param>
+    /// <returns>
+    /// <c>true</c> if the element was added successfully;
+    /// <c>false</c> if the element already exists (the set is unchanged).
+    /// </returns>
+    public bool TryAdd(long item)
+    {
+        if (item == EMPTY_SLOT)
+        {
+            if (_hasZero)
+                return false;
+            _hasZero = true;
+            _count++;
+            _version++;
+            return true;
+        }
+
+        // Probe the current table first: if the item already exists, we
+        // return without touching anything — no Resize, no _version bump,
+        // no array swap. The threshold check is deferred to after the
+        // duplicate check so a duplicate-at-threshold call cannot silently
+        // swap out the backing array under an active enumerator (see
+        // issue #92).
+        int size = _slots.Length;
+        int index = _hasher.Hash(item) & (size - 1);
+
+        while (_slots[index] != EMPTY_SLOT)
+        {
+            if (_slots[index] == item)
+                return false;
+            index = (index + 1) & (size - 1);
+        }
+
+        if (_count >= _threshold)
+        {
+            Resize();
+            size = _slots.Length;
+            index = _hasher.Hash(item) & (size - 1);
+            while (_slots[index] != EMPTY_SLOT)
+                index = (index + 1) & (size - 1);
+        }
+
+        _slots[index] = item;
+        _count++;
+        _version++;
+        return true;
+    }
+
+    /// <summary>
+    /// Determines whether the set contains the specified element.
+    /// </summary>
+    /// <param name="item">The element to locate.</param>
+    /// <returns><c>true</c> if the element is found; otherwise, <c>false</c>.</returns>
+    public bool Contains(long item)
+    {
+        if (item == EMPTY_SLOT)
+            return _hasZero;
+
+        return ProbeForItem(item) >= 0;
+    }
+
+    /// <summary>
+    /// Removes the specified element from the set.
+    /// </summary>
+    /// <param name="item">The element to remove.</param>
+    /// <returns>
+    /// <c>true</c> if the element was successfully removed; otherwise, <c>false</c>.
+    /// Also returns <c>false</c> if the element was not found.
+    /// </returns>
+    public bool Remove(long item)
+    {
+        if (item == EMPTY_SLOT)
+        {
+            if (!_hasZero)
+                return false;
+            _hasZero = false;
+            _count--;
+            _version++;
+            return true;
+        }
+
+        int index = ProbeForItem(item);
+        if (index < 0)
+            return false;
+
+        _slots[index] = EMPTY_SLOT;
+        _count--;
+
+        RehashAfterRemove(index);
+        _version++;
+        return true;
+    }
+
+    /// <summary>
+    /// Removes all elements from the set. The underlying capacity is preserved.
+    /// </summary>
+    public void Clear()
+    {
+        if (_count == 0)
+            return;
+
+        Array.Clear(_slots, 0, _slots.Length);
+        _hasZero = false;
+        _count = 0;
+        _version++;
+    }
+
+    /// <summary>
+    /// Returns an allocation-free enumerator that yields each element stored in
+    /// the set. The enumeration order is unspecified and may change across
+    /// versions; do not rely on it. The out-of-band zero entry (if present) is
+    /// yielded first. If the set is modified during enumeration,
+    /// <see cref="Enumerator.MoveNext"/> throws
+    /// <see cref="InvalidOperationException"/>.
+    /// </summary>
+    /// <returns>A struct enumerator over this set.</returns>
+    public Enumerator GetEnumerator() => new Enumerator(this);
+
+    IEnumerator<long> IEnumerable<long>.GetEnumerator() => GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    /// <summary>
+    /// A struct enumerator over a <see cref="LongSet{THasher}"/>. Because it is
+    /// a struct, iterating it via <c>foreach</c> avoids the allocation that a
+    /// compiler-generated <c>IEnumerator&lt;T&gt;</c> would incur. The
+    /// out-of-band zero entry (if present) is yielded first.
+    /// </summary>
+    public struct Enumerator : IEnumerator<long>
+    {
+        private readonly LongSet<THasher> _set;
+        private readonly int _version;
+        private int _index;
+        private long _current;
+        private State _state;
+
+        private enum State : byte
+        {
+            BeforeZero,
+            InArray,
+            Done
+        }
+
+        internal Enumerator(LongSet<THasher> set)
+        {
+            _set = set;
+            _version = set._version;
+            _index = -1;
+            _current = 0L;
+            _state = State.BeforeZero;
+        }
+
+        /// <summary>
+        /// Gets the element at the current position of the enumerator.
+        /// </summary>
+        public long Current => _current;
+
+        object IEnumerator.Current => _current;
+
+        /// <summary>
+        /// Advances the enumerator to the next element.
+        /// </summary>
+        /// <returns>
+        /// <c>true</c> if the enumerator advanced to a new entry; <c>false</c>
+        /// if it has passed the end of the set.
+        /// </returns>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the set was modified since the enumerator was created.
+        /// </exception>
+        public bool MoveNext()
+        {
+            if (_version != _set._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            if (_state == State.BeforeZero)
+            {
+                _state = State.InArray;
+                if (_set._hasZero)
+                {
+                    _current = 0L;
+                    return true;
+                }
+            }
+
+            if (_state == State.InArray)
+            {
+                long[] slots = _set._slots;
+                while (++_index < slots.Length)
+                {
+                    if (slots[_index] != EMPTY_SLOT)
+                    {
+                        _current = slots[_index];
+                        return true;
+                    }
+                }
+                _state = State.Done;
+            }
+
+            _current = 0L;
+            return false;
+        }
+
+        /// <summary>
+        /// Resets the enumerator to its initial position, before the first entry.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the set was modified since the enumerator was created.
+        /// </exception>
+        public void Reset()
+        {
+            if (_version != _set._version)
+                throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+            _index = -1;
+            _current = 0L;
+            _state = State.BeforeZero;
+        }
+
+        /// <summary>
+        /// Releases any resources held by the enumerator. No-op for this type.
+        /// </summary>
+        public void Dispose() { }
+    }
+
+    private int ProbeForItem(long item)
+    {
+        int size = _slots.Length;
+        int index = _hasher.Hash(item) & (size - 1);
+
+        while (_slots[index] != EMPTY_SLOT)
+        {
+            if (_slots[index] == item)
+                return index;
+            index = (index + 1) & (size - 1);
+        }
+
+        return -1;
+    }
+
+    private void Resize()
+    {
+        int newSize = _slots.Length * 2;
+        int mask = newSize - 1;
+        long[] oldSlots = _slots;
+
+        // Build into a fresh local array then swap it in at the end. The loop
+        // inlines a probe-for-empty-slot walk on purpose: every reinserted item
+        // is known to be unique in the new table (it came from the previous
+        // array which was itself a valid set), and _count / _version are
+        // conserved across a resize, so the equality check inside a general
+        // insert helper, the threshold check, and the per-call _count / _version
+        // bumps are all dead weight. The zero entry lives out-of-band and is
+        // not touched here.
+        long[] newSlots = new long[newSize];
+
+        for (int i = 0; i < oldSlots.Length; i++)
+        {
+            long item = oldSlots[i];
+            if (item == EMPTY_SLOT)
+                continue;
+
+            int index = _hasher.Hash(item) & mask;
+            while (newSlots[index] != EMPTY_SLOT)
+                index = (index + 1) & mask;
+
+            newSlots[index] = item;
+        }
+
+        _slots = newSlots;
+        _threshold = (int)(newSize * _loadFactor);
+    }
+
+    private void RehashAfterRemove(int startIndex)
+    {
+        int size = _slots.Length;
+        int mask = size - 1;
+        int index = (startIndex + 1) & mask;
+
+        while (_slots[index] != EMPTY_SLOT)
+        {
+            long rehashedItem = _slots[index];
+
+            _slots[index] = EMPTY_SLOT;
+
+            // Reinsert at the item's natural position. The item was just
+            // removed from its old slot, so it cannot match any remaining
+            // entry — we probe for an empty slot only, skipping the equality
+            // check a general insert helper would do. _count is a slot-shuffle
+            // invariant here and the caller (Remove) bumps _version exactly
+            // once for the user-visible operation, so neither is touched
+            // per rehash.
+            int target = _hasher.Hash(rehashedItem) & mask;
+            while (_slots[target] != EMPTY_SLOT)
+                target = (target + 1) & mask;
+
+            _slots[target] = rehashedItem;
+
+            index = (index + 1) & mask;
+        }
+    }
+}
