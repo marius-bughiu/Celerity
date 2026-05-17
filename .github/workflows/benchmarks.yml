@@ -1,0 +1,243 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/benchmarks.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/benchmarks.yml'
+
+jobs:
+  benchmarks:
+    name: benchmarks
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    defaults:
+      run:
+        working-directory: src
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: tree:0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run benchmarks
+        # working-directory must be the project folder, not src/. BenchmarkDotNet
+        # writes its artifacts to ./BenchmarkDotNet.Artifacts relative to the
+        # process CWD, and downstream steps look for them under Celerity.Benchmarks/.
+        working-directory: src/Celerity.Benchmarks
+        run: dotnet run --configuration Release -- --ci
+
+      - name: Stage benchmark report
+        # BenchmarkDotNet's joined-run JSON is named with a timestamp
+        # (BenchmarkRun-joined-<ts>-report-full.json). Copy it to a stable path
+        # so downstream steps can pick it up without a glob.
+        run: |
+          set -euo pipefail
+          report=$(ls Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/*-report-full.json | head -n 1)
+          echo "Found report: $report"
+          cp "$report" Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/**
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ----- PR path: post a custom comment, do NOT touch gh-pages -----
+
+      - name: Fetch baseline from gh-pages
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          if git fetch origin gh-pages --depth=1 2>/dev/null \
+            && git show origin/gh-pages:dev/bench/data.js > /tmp/baseline-data.js 2>/dev/null; then
+            echo "Baseline fetched ($(wc -c < /tmp/baseline-data.js) bytes)"
+          else
+            echo "// no baseline" > /tmp/baseline-data.js
+            echo "No baseline available — comment will show n/a for deltas"
+          fi
+
+      - name: Post benchmark comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          ALERT_THRESHOLD_RATIO: '1.10'
+          BENCHMARK_NAME: 'Celerity Benchmarks'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            const reportPath = 'src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json';
+            const current = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+
+            // Parse baseline data.js (assigns to window.BENCHMARK_DATA = {...})
+            let baselineEntry = null;
+            try {
+              const raw = fs.readFileSync('/tmp/baseline-data.js', 'utf8');
+              const m = raw.match(/window\.BENCHMARK_DATA\s*=\s*(\{[\s\S]*\})\s*;?\s*$/);
+              if (m) {
+                const data = JSON.parse(m[1]);
+                const entries = data.entries && data.entries[process.env.BENCHMARK_NAME];
+                if (entries && entries.length > 0) {
+                  baselineEntry = entries[entries.length - 1];
+                }
+              }
+            } catch (e) {
+              core.info(`No baseline available: ${e.message}`);
+            }
+
+            const baselineMap = new Map();
+            if (baselineEntry) {
+              for (const b of baselineEntry.benches) {
+                baselineMap.set(b.name, b.value);
+              }
+            }
+
+            const formatNs = (ns) => {
+              if (ns < 1000) return `${ns.toFixed(1)} ns`;
+              if (ns < 1_000_000) return `${(ns/1000).toFixed(2)} μs`;
+              if (ns < 1_000_000_000) return `${(ns/1_000_000).toFixed(2)} ms`;
+              return `${(ns/1_000_000_000).toFixed(2)} s`;
+            };
+
+            const threshold = parseFloat(process.env.ALERT_THRESHOLD_RATIO);
+            const rows = [];
+            let regressions = 0;
+            let compared = 0;
+
+            for (const b of current.Benchmarks) {
+              const name = b.FullName;
+              const meanNs = b.Statistics.Mean;
+              const stdDevNs = b.Statistics.StandardDeviation;
+              const baselineNs = baselineMap.get(name);
+              let deltaCell = 'n/a';
+              if (baselineNs !== undefined) {
+                compared++;
+                const ratio = meanNs / baselineNs;
+                const pct = (ratio - 1) * 100;
+                const sign = pct >= 0 ? '+' : '';
+                deltaCell = `${sign}${pct.toFixed(1)}%`;
+                if (ratio >= threshold) {
+                  deltaCell += ' ⚠️';
+                  regressions++;
+                }
+              }
+              rows.push(`| \`${name}\` | ${formatNs(meanNs)} | ${formatNs(stdDevNs)} | ${baselineNs !== undefined ? formatNs(baselineNs) : 'n/a'} | ${deltaCell} |`);
+            }
+
+            let subtitle;
+            if (!baselineEntry) {
+              subtitle = 'No baseline on `gh-pages` yet — showing absolute numbers only.';
+            } else if (regressions > 0) {
+              subtitle = `${regressions} regression${regressions === 1 ? '' : 's'} vs main (⚠️ rows exceed +${((threshold - 1) * 100).toFixed(0)}%). ${compared}/${current.Benchmarks.length} benchmarks matched baseline.`;
+            } else {
+              subtitle = `All ${compared} matched benchmark${compared === 1 ? '' : 's'} within ±${((threshold - 1) * 100).toFixed(0)}% of main.`;
+            }
+
+            const baselineSha = baselineEntry && baselineEntry.commit && baselineEntry.commit.id
+              ? baselineEntry.commit.id.slice(0, 7)
+              : null;
+
+            const footer = `<sub>Baseline = latest entry on \`gh-pages\` \`dev/bench/data.js\`${baselineSha ? ` (commit \`${baselineSha}\`)` : ''}. Threshold: +${((threshold - 1) * 100).toFixed(0)}% mean time vs baseline.</sub>`;
+
+            const marker = '<!-- celerity-benchmarks-comment -->';
+            const body = [
+              marker,
+              '## Benchmarks',
+              '',
+              subtitle,
+              '',
+              '| Benchmark | Mean | StdDev | Baseline (main) | Δ |',
+              '|---|---:|---:|---:|---:|',
+              ...rows,
+              '',
+              footer,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+              core.info(`Updated comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              core.info('Created new benchmarks comment');
+            }
+
+      # ----- Main path: publish to gh-pages, no comment -----
+
+      - name: Publish to gh-pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Celerity Benchmarks
+          tool: 'benchmarkdotnet'
+          output-file-path: src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: false
+          comment-always: false
+          summary-always: true
+          fail-on-alert: false
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+
+      - name: Sync custom dashboard to gh-pages
+        # Runs only on main push (same gate as the action's auto-push).
+        # Copies web/index.html + web/dev/bench/index.html into gh-pages,
+        # leaving the action-managed data.js untouched. Idempotent.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages
+          git worktree add /tmp/gh-pages gh-pages
+          cp web/index.html /tmp/gh-pages/index.html
+          mkdir -p /tmp/gh-pages/dev/bench
+          cp web/dev/bench/index.html /tmp/gh-pages/dev/bench/index.html
+          cd /tmp/gh-pages
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No dashboard changes to sync"
+            exit 0
+          fi
+          git -c user.name="github-actions" -c user.email="github-actions@github.com" \
+            add index.html dev/bench/index.html
+          git -c user.name="github-actions" -c user.email="github-actions@github.com" \
+            commit -m "Sync custom dashboard from ${GITHUB_SHA:0:7}"
+          git push origin gh-pages
