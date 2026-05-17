@@ -145,15 +145,22 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
         IEnumerable<int> source,
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
-        : this(Math.Max(capacity, (source as ICollection<int>)?.Count ?? 0), loadFactor)
+        : this(InitialCapacityForSource(source, capacity), loadFactor)
     {
-        if (source is null)
-            throw new ArgumentNullException(nameof(source));
-
         foreach (int item in source)
         {
             TryAdd(item);
         }
+    }
+
+    // Runs as part of the chained-ctor argument expression so the null check
+    // beats the primary ctor's capacity / loadFactor validation: a null source
+    // must surface as ArgumentNullException, not ArgumentOutOfRangeException
+    // when the user also passed an invalid loadFactor.
+    private static int InitialCapacityForSource(IEnumerable<int> source, int capacity)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return Math.Max(capacity, (source as ICollection<int>)?.Count ?? 0);
     }
 
     /// <summary>

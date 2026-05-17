@@ -157,15 +157,24 @@ public class IntDictionary<TValue, THasher>
         IEnumerable<KeyValuePair<int, TValue>> source,
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
-        : this(Math.Max(capacity, (source as ICollection<KeyValuePair<int, TValue>>)?.Count ?? 0), loadFactor)
+        : this(InitialCapacityForSource(source, capacity), loadFactor)
     {
-        if (source is null)
-            throw new ArgumentNullException(nameof(source));
-
         foreach (KeyValuePair<int, TValue> kvp in source)
         {
             Add(kvp.Key, kvp.Value);
         }
+    }
+
+    // Runs as part of the chained-ctor argument expression so the null check
+    // beats the primary ctor's capacity / loadFactor validation: a null source
+    // must surface as ArgumentNullException, not ArgumentOutOfRangeException
+    // when the user also passed an invalid loadFactor.
+    private static int InitialCapacityForSource(
+        IEnumerable<KeyValuePair<int, TValue>> source,
+        int capacity)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return Math.Max(capacity, (source as ICollection<KeyValuePair<int, TValue>>)?.Count ?? 0);
     }
 
     /// <summary>
