@@ -20,6 +20,18 @@ public class LongDictionaryCollisionTests
         public int Hash(long key) => 42;
     }
 
+    /// <summary>
+    /// A test-only hasher that truncates the key to <see cref="int"/>. Combined
+    /// with a power-of-two table size, the resulting <c>(int)key &amp; mask</c>
+    /// places each key at a predictable slot, which lets a test build a
+    /// wrapped cluster whose entries have different natural slots — the shape
+    /// needed to exercise every branch of the backward-shift cyclic comparison.
+    /// </summary>
+    private struct IdentityLongHasher : IHashProvider<long>
+    {
+        public int Hash(long key) => (int)key;
+    }
+
     [Fact]
     public void Insert_ShouldSucceed_UnderFullCollision()
     {
@@ -238,5 +250,35 @@ public class LongDictionaryCollisionTests
         // bits must remain distinct even when forced into the same chain.
         Assert.False(map.ContainsKey(int.MaxValue));
         Assert.False(map.ContainsKey(int.MinValue));
+    }
+
+    [Fact]
+    public void Remove_WrapAroundCluster_KeepsBypassEntriesPut_AndShiftsTheRest()
+    {
+        // Regression for the backward-shift deletion rewrite of
+        // RehashAfterRemove (replaced by BackwardShiftRemove). Mirrors the
+        // IntDictionary wrap-around test for 64-bit keys. With table size 8
+        // (mask = 7) and IdentityLongHasher (returns (int)key), keys 6, 7, 8,
+        // 14 build a cluster that crosses the array boundary:
+        //   slot 6 -> 6  (natural 6)
+        //   slot 7 -> 7  (natural 7)
+        //   slot 0 -> 8  (natural 0; collided through 6, 7)
+        //   slot 1 -> 14 (natural 6; displaced through 6, 7, 0)
+        // Removing key 6 must SKIP slots 7 and 0 (bypass cases for the
+        // `i <= j` and `i > j` branches respectively) and SHIFT slot 1 into
+        // the gap.
+        var map = new LongDictionary<int, IdentityLongHasher>(capacity: 8, loadFactor: 0.9f);
+        map[6L] = 60;
+        map[7L] = 70;
+        map[8L] = 80;
+        map[14L] = 140;
+
+        Assert.True(map.Remove(6L));
+
+        Assert.Equal(3, map.Count);
+        Assert.False(map.ContainsKey(6L));
+        Assert.Equal(70, map[7L]);
+        Assert.Equal(80, map[8L]);
+        Assert.Equal(140, map[14L]);
     }
 }

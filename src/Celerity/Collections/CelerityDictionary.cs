@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -170,11 +172,12 @@ public class CelerityDictionary<TKey, TValue, THasher>
                 Resize();
             }
 
-            int index = ProbeForInsert(key);
-            bool isNewEntry = EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey));
+            int index = ProbeForInsert(key, out bool isNewEntry);
 
-            _keys[index] = key;
-            _values[index] = value;
+            TKey?[] keys = _keys;
+            TValue?[] values = _values;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
 
             if (isNewEntry)
                 _count++;
@@ -313,11 +316,9 @@ public class CelerityDictionary<TKey, TValue, THasher>
         }
 
         value = _values[index];
-        _keys[index] = default(TKey);
-        _values[index] = default(TValue);
         _count--;
 
-        RehashAfterRemove(index);
+        BackwardShiftRemove(index);
         _version++;
         return true;
     }
@@ -365,18 +366,20 @@ public class CelerityDictionary<TKey, TValue, THasher>
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing arrays under an active enumerator (see
         // issue #92).
-        int index = ProbeForInsert(key);
-        if (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)))
+        int index = ProbeForInsert(key, out bool wasEmpty);
+        if (!wasEmpty)
             return false;
 
         if (_count >= _threshold)
         {
             Resize();
-            index = ProbeForInsert(key);
+            index = ProbeForInsert(key, out _);
         }
 
-        _keys[index] = key;
-        _values[index] = value;
+        TKey?[] keys = _keys;
+        TValue?[] values = _values;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
         _count++;
         _version++;
         return true;
@@ -648,35 +651,51 @@ public class CelerityDictionary<TKey, TValue, THasher>
     private static bool IsDefaultKey(TKey key) =>
         EqualityComparer<TKey>.Default.Equals(key, default(TKey));
 
-    private int ProbeForInsert(TKey key)
+    // Returns the slot the caller should write into. <paramref name="wasEmpty"/>
+    // tells the caller whether the slot was previously empty (true → new entry,
+    // bump _count) or already held the same key (false → overwrite). Hoisting
+    // that signal out of the probe lets the indexer setter and TryAdd skip a
+    // redundant `_keys[index]` re-read + comparer dispatch on the insert path.
+    //
+    // The probe walks `_keys` via `Unsafe.Add` against a single base reference
+    // grabbed at the top, so per-iteration bounds checks disappear. The
+    // bound is structural: `mask = keys.Length - 1` and `index = ... & mask`
+    // keep `index ∈ [0, keys.Length)` for every iteration. `(nint)(uint)index`
+    // gives the JIT the additional hint that `index` is non-negative.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int ProbeForInsert(TKey key, out bool wasEmpty)
     {
-        int size = _keys.Length;
+        TKey?[] keys = _keys;
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = keys.Length - 1;
+        var comparer = EqualityComparer<TKey>.Default;
+        int index = _hasher.Hash(key) & mask;
 
-        // Only works when size is a power of two
-        int index = _hasher.Hash(key) & (size - 1);
-
-        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)) &&
-               !EqualityComparer<TKey>.Default.Equals(_keys[index], key))
+        while (true)
         {
-            index = (index + 1) & (size - 1);
+            TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
+            if (comparer.Equals(slot, default(TKey))) { wasEmpty = true; return index; }
+            if (comparer.Equals(slot, key)) { wasEmpty = false; return index; }
+            index = (index + 1) & mask;
         }
-
-        return index;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForKey(TKey key)
     {
-        int size = _keys.Length;
-        int index = _hasher.Hash(key) & (size - 1);
+        TKey?[] keys = _keys;
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = keys.Length - 1;
+        var comparer = EqualityComparer<TKey>.Default;
+        int index = _hasher.Hash(key) & mask;
 
-        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)))
+        while (true)
         {
-            if (EqualityComparer<TKey>.Default.Equals(_keys[index], key))
-                return index;
-            index = (index + 1) & (size - 1);
+            TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
+            if (comparer.Equals(slot, default(TKey))) return -1;
+            if (comparer.Equals(slot, key)) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -716,35 +735,52 @@ public class CelerityDictionary<TKey, TValue, THasher>
         _threshold = (int)(newSize * _loadFactor);
     }
 
-    private void RehashAfterRemove(int startIndex)
+    // Backward-shift deletion (Knuth TAOCP Vol 3, §6.4 Algorithm R). The
+    // caller has captured the value at startIndex but has NOT cleared the
+    // slot; this helper writes the final empty entry itself once the gap
+    // settles. Compared to the previous rehash-and-reinsert pass, each
+    // surviving cluster entry is visited exactly once and most are not
+    // moved at all — the work-per-cluster collapses from quadratic to
+    // linear, which is the bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void BackwardShiftRemove(int startIndex)
     {
-        int size = _keys.Length;
-        int mask = size - 1;
-        int index = (startIndex + 1) & mask;
-
+        TKey?[] keys = _keys;
+        TValue?[] values = _values;
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
+        int mask = keys.Length - 1;
         var comparer = EqualityComparer<TKey>.Default;
-        while (!comparer.Equals(_keys[index], default(TKey)))
+        int i = startIndex;
+        int j = i;
+
+        while (true)
         {
-            TKey rehashedKey = _keys[index]!;
-            TValue? rehashedValue = _values[index];
+            j = (j + 1) & mask;
+            TKey? candidateKey = Unsafe.Add(ref keysRef, (nint)(uint)j);
+            if (comparer.Equals(candidateKey, default(TKey)))
+                break;
 
-            _keys[index] = default;
-            _values[index] = default;
+            int k = _hasher.Hash(candidateKey!) & mask;
 
-            // Reinsert at the key's natural position. The key was just removed
-            // from its old slot, so it cannot match any remaining entry — we
-            // probe for an empty slot only, skipping the equality check that
-            // ProbeForInsert would do. _count is a slot-shuffle invariant here
-            // and the caller (Remove) bumps _version exactly once for the
-            // user-visible operation, so neither is touched per rehash.
-            int target = _hasher.Hash(rehashedKey) & mask;
-            while (!comparer.Equals(_keys[target], default(TKey)))
-                target = (target + 1) & mask;
+            // Shift keys[j] into the gap at i iff the probe chain from its
+            // natural slot k to its current slot j passes through i (so
+            // leaving i empty would orphan the entry). When the scan has
+            // not wrapped (i <= j), that means k is outside the open
+            // interval (i, j]; when it has wrapped (i > j), the test
+            // mirrors across the array boundary.
+            bool bypassesGap = (i <= j)
+                ? (i < k && k <= j)
+                : (i < k || k <= j);
+            if (bypassesGap)
+                continue;
 
-            _keys[target] = rehashedKey;
-            _values[target] = rehashedValue;
-
-            index = (index + 1) & mask;
+            Unsafe.Add(ref keysRef, (nint)(uint)i) = candidateKey;
+            Unsafe.Add(ref valuesRef, (nint)(uint)i) = Unsafe.Add(ref valuesRef, (nint)(uint)j);
+            i = j;
         }
+
+        Unsafe.Add(ref keysRef, (nint)(uint)i) = default;
+        Unsafe.Add(ref valuesRef, (nint)(uint)i) = default;
     }
 }

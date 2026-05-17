@@ -1,13 +1,17 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance set of <see cref="long"/> values, using
-/// <see cref="Int64WangHasher"/> by default.
+/// <see cref="Int64WangNaiveHasher"/> by default. Switch to
+/// <see cref="Int64WangHasher"/> or <see cref="Int64Murmur3Hasher"/> via the
+/// generic overload when elements are adversarial or clustered.
 /// </summary>
-public class LongSet : LongSet<Int64WangHasher>
+public class LongSet : LongSet<Int64WangNaiveHasher>
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="LongSet"/> class
@@ -208,26 +212,31 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing array under an active enumerator (see
         // issue #92).
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        long[] slots = _slots;
+        ref long slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int index = _hasher.Hash(item) & mask;
 
-        while (_slots[index] != EMPTY_SLOT)
+        while (true)
         {
-            if (_slots[index] == item)
-                return false;
-            index = (index + 1) & (size - 1);
+            long slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (slot == EMPTY_SLOT) break;
+            if (slot == item) return false;
+            index = (index + 1) & mask;
         }
 
         if (_count >= _threshold)
         {
             Resize();
-            size = _slots.Length;
-            index = _hasher.Hash(item) & (size - 1);
-            while (_slots[index] != EMPTY_SLOT)
-                index = (index + 1) & (size - 1);
+            slots = _slots;
+            slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+            mask = slots.Length - 1;
+            index = _hasher.Hash(item) & mask;
+            while (Unsafe.Add(ref slotsRef, (nint)(uint)index) != EMPTY_SLOT)
+                index = (index + 1) & mask;
         }
 
-        _slots[index] = item;
+        Unsafe.Add(ref slotsRef, (nint)(uint)index) = item;
         _count++;
         _version++;
         return true;
@@ -270,10 +279,9 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         if (index < 0)
             return false;
 
-        _slots[index] = EMPTY_SLOT;
         _count--;
 
-        RehashAfterRemove(index);
+        BackwardShiftRemove(index);
         _version++;
         return true;
     }
@@ -409,19 +417,21 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         public void Dispose() { }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(long item)
     {
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        long[] slots = _slots;
+        ref long slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int index = _hasher.Hash(item) & mask;
 
-        while (_slots[index] != EMPTY_SLOT)
+        while (true)
         {
-            if (_slots[index] == item)
-                return index;
-            index = (index + 1) & (size - 1);
+            long slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (slot == EMPTY_SLOT) return -1;
+            if (slot == item) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -457,32 +467,47 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         _threshold = (int)(newSize * _loadFactor);
     }
 
-    private void RehashAfterRemove(int startIndex)
+    // Backward-shift deletion (Knuth TAOCP Vol 3, §6.4 Algorithm R). The
+    // caller has located the slot but has NOT cleared it; this helper
+    // writes the final empty entry itself once the gap settles. Compared
+    // to the previous rehash-and-reinsert pass, each surviving cluster
+    // entry is visited exactly once and most are not moved at all — the
+    // work-per-cluster collapses from quadratic to linear, which is the
+    // bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void BackwardShiftRemove(int startIndex)
     {
-        int size = _slots.Length;
-        int mask = size - 1;
-        int index = (startIndex + 1) & mask;
+        long[] slots = _slots;
+        ref long slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int i = startIndex;
+        int j = i;
 
-        while (_slots[index] != EMPTY_SLOT)
+        while (true)
         {
-            long rehashedItem = _slots[index];
+            j = (j + 1) & mask;
+            long candidate = Unsafe.Add(ref slotsRef, (nint)(uint)j);
+            if (candidate == EMPTY_SLOT)
+                break;
 
-            _slots[index] = EMPTY_SLOT;
+            int k = _hasher.Hash(candidate) & mask;
 
-            // Reinsert at the item's natural position. The item was just
-            // removed from its old slot, so it cannot match any remaining
-            // entry — we probe for an empty slot only, skipping the equality
-            // check a general insert helper would do. _count is a slot-shuffle
-            // invariant here and the caller (Remove) bumps _version exactly
-            // once for the user-visible operation, so neither is touched
-            // per rehash.
-            int target = _hasher.Hash(rehashedItem) & mask;
-            while (_slots[target] != EMPTY_SLOT)
-                target = (target + 1) & mask;
+            // Shift slots[j] into the gap at i iff the probe chain from
+            // its natural slot k to its current slot j passes through i
+            // (so leaving i empty would orphan the entry). When the scan
+            // has not wrapped (i <= j), that means k is outside the open
+            // interval (i, j]; when it has wrapped (i > j), the test
+            // mirrors across the array boundary.
+            bool bypassesGap = (i <= j)
+                ? (i < k && k <= j)
+                : (i < k || k <= j);
+            if (bypassesGap)
+                continue;
 
-            _slots[target] = rehashedItem;
-
-            index = (index + 1) & mask;
+            Unsafe.Add(ref slotsRef, (nint)(uint)i) = candidate;
+            i = j;
         }
+
+        Unsafe.Add(ref slotsRef, (nint)(uint)i) = EMPTY_SLOT;
     }
 }
