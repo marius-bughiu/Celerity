@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Celerity Benchmarks — live performance vs the .NET BCL</title>
+  <meta name="description" content="Continuous performance tracking for Celerity, a .NET library of high-performance collections. Live results from CI vs the .NET BCL.">
+  <style>
+    :root {
+      --fg: #1a1d1f;
+      --fg-muted: #5a6166;
+      --fg-faint: #8a9296;
+      --bg: #ffffff;
+      --bg-alt: #f7f8f8;
+      --border: #e5e8ea;
+      --border-strong: #cdd2d5;
+      --accent: #0d6e6e;
+      --accent-fg: #ffffff;
+      --bcl: #8a9296;
+      --celerity: #0d6e6e;
+      --win: #0d6e6e;
+      --loss: #b54545;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--fg);
+      background: var(--bg);
+      line-height: 1.55;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header.site {
+      border-bottom: 1px solid var(--border);
+      padding: 18px 0;
+      background: var(--bg);
+    }
+    header.site .wrap { display: flex; align-items: center; gap: 24px; }
+    header.site .brand {
+      font-weight: 600;
+      font-size: 17px;
+      color: var(--fg);
+      letter-spacing: -0.01em;
+    }
+    header.site .brand .dot { color: var(--accent); }
+    header.site nav { display: flex; gap: 18px; margin-left: auto; font-size: 14px; }
+    header.site nav a { color: var(--fg-muted); }
+    header.site nav a:hover { color: var(--fg); text-decoration: none; }
+    @media (max-width: 640px) {
+      header.site nav { gap: 12px; font-size: 13px; }
+      header.site nav a:nth-child(3) { display: none; }
+    }
+
+    /* Hero */
+    section.hero { padding: 48px 0 24px; }
+    .hero h1 {
+      font-size: 32px;
+      line-height: 1.2;
+      margin: 0 0 10px;
+      letter-spacing: -0.02em;
+      font-weight: 600;
+    }
+    .hero p.lead {
+      font-size: 16px;
+      color: var(--fg-muted);
+      max-width: 680px;
+      margin: 0 0 24px;
+    }
+    @media (max-width: 640px) {
+      section.hero { padding: 32px 0 16px; }
+      .hero h1 { font-size: 26px; }
+    }
+
+    /* Stat cards */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0 0 8px;
+    }
+    @media (max-width: 720px) { .stats { grid-template-columns: 1fr; } }
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      background: var(--bg);
+    }
+    .stat .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--fg-muted);
+      margin-bottom: 6px;
+    }
+    .stat .value {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--fg);
+    }
+    .stat .value .unit { font-size: 16px; color: var(--fg-muted); font-weight: 500; margin-left: 4px; }
+    .stat .sub { font-size: 13px; color: var(--fg-faint); margin-top: 4px; }
+
+    /* Section heads */
+    .section-head {
+      margin: 48px 0 12px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--fg-muted);
+      font-weight: 600;
+    }
+    .section-head .meta { font-size: 13px; color: var(--fg-faint); }
+
+    /* About */
+    .about {
+      border: 1px solid var(--border);
+      background: var(--bg-alt);
+      border-radius: 8px;
+      padding: 16px 18px;
+      font-size: 14px;
+      color: var(--fg-muted);
+      line-height: 1.6;
+    }
+    .about strong { color: var(--fg); font-weight: 600; }
+    .about code { font-family: var(--mono); font-size: 13px; background: var(--bg); padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border); }
+
+    /* Collection panel */
+    .collection {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .collection-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-alt);
+    }
+    .collection-head h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .collection-head .vs {
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    .collection-head .vs code {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg);
+    }
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+    }
+    @media (max-width: 980px) { .charts { grid-template-columns: 1fr; } }
+    .chart-cell {
+      padding: 16px 20px 20px;
+      border-right: 1px solid var(--border);
+    }
+    .chart-cell:last-child { border-right: none; }
+    @media (max-width: 980px) {
+      .chart-cell { border-right: none; border-bottom: 1px solid var(--border); }
+      .chart-cell:last-child { border-bottom: none; }
+    }
+    .chart-cell .op {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-muted);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .chart-cell .ratio {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-bottom: 2px;
+    }
+    .chart-cell .ratio.win { color: var(--win); }
+    .chart-cell .ratio.loss { color: var(--loss); }
+    .chart-cell .ratio.tie { color: var(--fg-muted); }
+    .chart-cell .detail { font-size: 12px; color: var(--fg-muted); margin-bottom: 10px; }
+    .chart-cell canvas { width: 100% !important; height: 140px !important; display: block; }
+    .chart-cell .empty {
+      height: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--fg-faint);
+      font-size: 13px;
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+    }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--fg-muted);
+      margin: 8px 0 0;
+    }
+    .legend .swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* Footer */
+    footer.site {
+      margin: 64px 0 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--fg-faint);
+    }
+    footer.site .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    footer.site code { font-family: var(--mono); font-size: 12px; }
+
+    /* Empty / error states */
+    .notice {
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      padding: 32px 24px;
+      text-align: center;
+      color: var(--fg-muted);
+      background: var(--bg-alt);
+    }
+  </style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a href="../../" class="brand">Celerity<span class="dot">.</span></a>
+    <nav>
+      <a href="../../">Home</a>
+      <a href="https://github.com/marius-bughiu/Celerity">GitHub</a>
+      <a href="https://www.nuget.org/packages/Celerity.Collections/">NuGet</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Benchmarks</h1>
+    <p class="lead">Live BenchmarkDotNet results for every collection in Celerity, measured on each <code>main</code> commit and compared against its .NET BCL counterpart. Hosted CI runners are noisy &mdash; treat trends as the signal, individual points as noise.</p>
+
+    <div class="stats" id="stats">
+      <div class="stat"><div class="label">Lookup</div><div class="value">&mdash;</div><div class="sub">vs Dictionary / HashSet</div></div>
+      <div class="stat"><div class="label">Insert</div><div class="value">&mdash;</div><div class="sub">vs Dictionary / HashSet</div></div>
+      <div class="stat"><div class="label">Remove</div><div class="value">&mdash;</div><div class="sub">vs Dictionary / HashSet</div></div>
+    </div>
+
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--bcl)"></span>.NET BCL baseline</span>
+      <span><span class="swatch" style="background:var(--celerity)"></span>Celerity</span>
+    </div>
+  </section>
+
+  <div class="section-head">
+    <h2>Methodology</h2>
+  </div>
+  <div class="about">
+    <strong>What you're looking at.</strong> Each chart plots one operation (e.g. <em>Lookup</em>) on one collection, with the BCL baseline and Celerity's implementation over time. Y-axis is nanoseconds per invocation (lower is better). Numbers come from <a href="https://benchmarkdotnet.org/">BenchmarkDotNet</a> running in GitHub Actions on <code>ubuntu-latest</code> with <code>WarmupCount=3</code>, <code>IterationCount=5</code>. The full source is in <a href="https://github.com/marius-bughiu/Celerity/tree/main/src/Celerity.Benchmarks"><code>src/Celerity.Benchmarks</code></a>. Local Release runs use the default BenchmarkDotNet job and produce more stable numbers &mdash; this dashboard exists to catch regressions and surface trends, not as a precision instrument.
+  </div>
+
+  <div class="section-head">
+    <h2>Per-collection results</h2>
+    <span class="meta" id="run-count"></span>
+  </div>
+  <div id="collections"></div>
+
+  <div id="empty-state" class="notice" style="display:none">
+    No benchmark data yet. The first measurement lands here after the next push to <code>main</code>.
+  </div>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <span id="footer-build">&mdash;</span>
+    <span>
+      <a href="data.js">Raw data (data.js)</a>
+      &middot;
+      <a href="https://github.com/marius-bughiu/Celerity">Source</a>
+    </span>
+  </div>
+</footer>
+
+<script src="data.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // Layout: ordered list of collections + the BCL counterpart label for the "vs" subtitle.
+  // The class prefix in benchmark names is "{prefix}Benchmark", and methods are
+  // named "{TypeName}_{Op}". BCL types: Dictionary, HashSet. Celerity types: the rest.
+  var COLLECTIONS = [
+    { key: 'IntDictionary',       title: 'IntDictionary<int>',                       vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
+    { key: 'LongDictionary',      title: 'LongDictionary<int>',                      vs: 'Dictionary<long, int>', ops: ['Insert', 'Lookup', 'Remove'] },
+    { key: 'CelerityDictionary',  title: 'CelerityDictionary<int, int, ...>',        vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
+    { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
+    { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] }
+  ];
+
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet']);
+  var ITEM_COUNT_FOR_HEADLINE = 100000;
+
+  var data = window.BENCHMARK_DATA;
+  if (!data || !data.entries || !data.entries['Celerity Benchmarks'] || data.entries['Celerity Benchmarks'].length === 0) {
+    document.getElementById('collections').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'block';
+    return;
+  }
+
+  var runs = data.entries['Celerity Benchmarks'];
+  var latest = runs[runs.length - 1];
+
+  // ---- Parse benchmark name into structured fields ----
+  function parseName(name) {
+    // "CelerityDictionaryBenchmark.CelerityDictionary_Lookup(ItemCount: 1000)"
+    var m = name.match(/^(\w+)Benchmark\.(\w+?)_(\w+)\(ItemCount:\s*(\d+)\)$/);
+    if (!m) return null;
+    var collection = m[1];
+    var typeName = m[2];
+    var op = m[3];
+    var itemCount = parseInt(m[4], 10);
+    var isBcl = BCL_TYPES.has(typeName);
+    return { collection: collection, typeName: typeName, op: op, itemCount: itemCount, isBcl: isBcl };
+  }
+
+  // ---- Build a quick-lookup index of latest values per (collection, op, itemCount, kind) ----
+  function indexBenches(benches) {
+    var idx = {};
+    benches.forEach(function (b) {
+      var p = parseName(b.name);
+      if (!p) return;
+      var key = p.collection + '|' + p.op + '|' + p.itemCount;
+      if (!idx[key]) idx[key] = {};
+      idx[key][p.isBcl ? 'bcl' : 'celerity'] = b.value;
+    });
+    return idx;
+  }
+  var latestIdx = indexBenches(latest.benches);
+
+  // ---- Headline stats: best speedup per logical op category, at 100k items ----
+  // Categories: Lookup (Lookup + Contains), Insert (Insert + Add), Remove.
+  function headlineFor(opAliases) {
+    var best = null;
+    Object.keys(latestIdx).forEach(function (key) {
+      var parts = key.split('|');
+      var op = parts[1];
+      var n = parseInt(parts[2], 10);
+      if (opAliases.indexOf(op) === -1) return;
+      if (n !== ITEM_COUNT_FOR_HEADLINE) return;
+      var pair = latestIdx[key];
+      if (pair.bcl == null || pair.celerity == null) return;
+      var ratio = pair.bcl / pair.celerity;
+      if (best == null || ratio > best.ratio) {
+        best = { ratio: ratio, collection: parts[0], op: op };
+      }
+    });
+    return best;
+  }
+
+  function fmtSpeedup(stat) {
+    if (!stat) return { value: '&mdash;', sub: 'no data' };
+    var r = stat.ratio;
+    var label, cls;
+    if (r >= 1.05) { label = r.toFixed(2) + '<span class="unit">&times; faster</span>'; cls = 'win'; }
+    else if (r <= 0.95) { label = (1 / r).toFixed(2) + '<span class="unit">&times; slower</span>'; cls = 'loss'; }
+    else { label = '~ parity'; cls = 'tie'; }
+    return { value: label, sub: 'best result: ' + stat.collection + ' &middot; ' + stat.op + ' &middot; ' + (ITEM_COUNT_FOR_HEADLINE / 1000) + 'k items', cls: cls };
+  }
+
+  var statDefs = [
+    { selector: 0, aliases: ['Lookup', 'Contains'] },
+    { selector: 1, aliases: ['Insert', 'Add'] },
+    { selector: 2, aliases: ['Remove'] }
+  ];
+  var statEls = document.querySelectorAll('#stats .stat');
+  statDefs.forEach(function (d) {
+    var s = fmtSpeedup(headlineFor(d.aliases));
+    var el = statEls[d.selector];
+    el.querySelector('.value').innerHTML = s.value;
+    el.querySelector('.sub').innerHTML = s.sub;
+  });
+
+  // ---- Charts per collection ----
+  function ratioFor(collection, op, itemCount) {
+    var key = collection + '|' + op + '|' + itemCount;
+    var pair = latestIdx[key];
+    if (!pair || pair.bcl == null || pair.celerity == null) return null;
+    return pair.bcl / pair.celerity;
+  }
+
+  // For each (collection, op), collect the time series across all runs.
+  function seriesFor(collection, op, itemCount) {
+    var labels = [];
+    var bcl = [];
+    var celerity = [];
+    runs.forEach(function (run) {
+      var pair = {};
+      run.benches.forEach(function (b) {
+        var p = parseName(b.name);
+        if (!p) return;
+        if (p.collection !== collection || p.op !== op || p.itemCount !== itemCount) return;
+        pair[p.isBcl ? 'bcl' : 'celerity'] = b.value;
+      });
+      labels.push({
+        date: new Date(run.date),
+        sha: run.commit.id,
+        message: run.commit.message.split('\n')[0]
+      });
+      bcl.push(pair.bcl == null ? null : pair.bcl);
+      celerity.push(pair.celerity == null ? null : pair.celerity);
+    });
+    return { labels: labels, bcl: bcl, celerity: celerity };
+  }
+
+  function fmtNs(v) {
+    if (v == null) return '&mdash;';
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + ' ms';
+    if (v >= 1e3) return (v / 1e3).toFixed(2) + ' &mu;s';
+    return Math.round(v) + ' ns';
+  }
+
+  function chartOptions() {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a1d1f',
+          padding: 10,
+          titleFont: { size: 12, weight: 'normal' },
+          bodyFont: { size: 12 },
+          callbacks: {
+            title: function (items) {
+              var i = items[0].dataIndex;
+              var lbl = items[0].chart.options.__labels[i];
+              return lbl.date.toISOString().slice(0, 10) + ' &middot; ' + lbl.sha.slice(0, 7);
+            },
+            label: function (item) {
+              var who = item.dataset.label;
+              return who + ': ' + Math.round(item.parsed.y).toLocaleString() + ' ns';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { display: false },
+          grid: { display: false, drawBorder: false }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#8a9296', font: { size: 10 }, maxTicksLimit: 4, callback: function (v) { return v.toLocaleString(); } },
+          grid: { color: '#eef0f1', drawBorder: false },
+          border: { display: false }
+        }
+      },
+      elements: {
+        point: { radius: 0, hoverRadius: 4 },
+        line: { borderWidth: 1.6, tension: 0.25 }
+      }
+    };
+  }
+
+  var collectionsEl = document.getElementById('collections');
+  COLLECTIONS.forEach(function (col) {
+    var panel = document.createElement('section');
+    panel.className = 'collection';
+    panel.innerHTML =
+      '<div class="collection-head">' +
+        '<h3>' + col.title + '</h3>' +
+        '<div class="vs">vs <code>' + col.vs + '</code></div>' +
+      '</div>' +
+      '<div class="charts" data-collection="' + col.key + '"></div>';
+    var chartsEl = panel.querySelector('.charts');
+
+    col.ops.forEach(function (op) {
+      var ratio100k = ratioFor(col.key, op, 100000);
+      var ratio1k = ratioFor(col.key, op, 1000);
+      var displayRatio = ratio100k != null ? ratio100k : ratio1k;
+
+      var ratioStr, ratioCls, detail;
+      if (displayRatio == null) {
+        ratioStr = '&mdash;'; ratioCls = 'tie';
+        detail = 'no data';
+      } else if (displayRatio >= 1.05) {
+        ratioStr = displayRatio.toFixed(2) + '<span class="unit" style="font-size:13px;color:var(--fg-muted)">&times;</span> faster';
+        ratioCls = 'win';
+      } else if (displayRatio <= 0.95) {
+        ratioStr = (1 / displayRatio).toFixed(2) + '<span class="unit" style="font-size:13px;color:var(--fg-muted)">&times;</span> slower';
+        ratioCls = 'loss';
+      } else {
+        ratioStr = '~ parity';
+        ratioCls = 'tie';
+      }
+
+      if (displayRatio != null) {
+        var pair100k = latestIdx[col.key + '|' + op + '|100000'];
+        if (pair100k && pair100k.bcl != null && pair100k.celerity != null) {
+          detail = fmtNs(pair100k.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pair100k.bcl).replace('&mu;', 'µ') + ' @ 100k items';
+        } else {
+          var pair1k = latestIdx[col.key + '|' + op + '|1000'];
+          detail = fmtNs(pair1k.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pair1k.bcl).replace('&mu;', 'µ') + ' @ 1k items';
+        }
+      }
+
+      var cell = document.createElement('div');
+      cell.className = 'chart-cell';
+      cell.innerHTML =
+        '<div class="op">' + op + '</div>' +
+        '<div class="ratio ' + ratioCls + '">' + ratioStr + '</div>' +
+        '<div class="detail">' + detail + '</div>' +
+        '<canvas></canvas>';
+      chartsEl.appendChild(cell);
+
+      var canvas = cell.querySelector('canvas');
+      var s = seriesFor(col.key, op, 100000);
+
+      if (s.labels.length === 0 || (s.bcl.every(function (v) { return v == null; }) && s.celerity.every(function (v) { return v == null; }))) {
+        canvas.outerHTML = '<div class="empty">awaiting data</div>';
+        return;
+      }
+
+      var ctx = canvas.getContext('2d');
+      var chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: s.labels.map(function () { return ''; }),
+          datasets: [
+            { label: '.NET BCL', data: s.bcl, borderColor: '#8a9296', backgroundColor: 'transparent', spanGaps: true },
+            { label: 'Celerity', data: s.celerity, borderColor: '#0d6e6e', backgroundColor: 'transparent', spanGaps: true }
+          ]
+        },
+        options: chartOptions()
+      });
+      chart.options.__labels = s.labels;
+    });
+
+    collectionsEl.appendChild(panel);
+  });
+
+  // ---- Header meta + footer ----
+  document.getElementById('run-count').textContent =
+    runs.length + ' run' + (runs.length === 1 ? '' : 's') + ' &middot; latest ' + new Date(latest.date).toISOString().slice(0, 10);
+
+  var sha = latest.commit.id.slice(0, 7);
+  document.getElementById('footer-build').innerHTML =
+    'Latest from <a href="' + latest.commit.url + '"><code>' + sha + '</code></a> &middot; ' +
+    new Date(latest.date).toUTCString();
+})();
+</script>
+
+</body>
+</html>

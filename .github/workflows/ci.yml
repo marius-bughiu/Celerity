@@ -113,3 +113,27 @@ jobs:
           summary-always: true
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: dev/bench
+
+      - name: Sync custom dashboard to gh-pages
+        # Runs only on main push (same gate as the action's auto-push).
+        # Copies web/index.html + web/dev/bench/index.html into gh-pages,
+        # leaving the action-managed data.js untouched. Idempotent.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages
+          git worktree add /tmp/gh-pages gh-pages
+          cp web/index.html /tmp/gh-pages/index.html
+          mkdir -p /tmp/gh-pages/dev/bench
+          cp web/dev/bench/index.html /tmp/gh-pages/dev/bench/index.html
+          cd /tmp/gh-pages
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No dashboard changes to sync"
+            exit 0
+          fi
+          git -c user.name="github-actions" -c user.email="github-actions@github.com" \
+            add index.html dev/bench/index.html
+          git -c user.name="github-actions" -c user.email="github-actions@github.com" \
+            commit -m "Sync custom dashboard from ${GITHUB_SHA:0:7}"
+          git push origin gh-pages
