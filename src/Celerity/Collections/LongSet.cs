@@ -1,13 +1,17 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance set of <see cref="long"/> values, using
-/// <see cref="Int64WangHasher"/> by default.
+/// <see cref="Int64WangNaiveHasher"/> by default. Switch to
+/// <see cref="Int64WangHasher"/> or <see cref="Int64Murmur3Hasher"/> via the
+/// generic overload when elements are adversarial or clustered.
 /// </summary>
-public class LongSet : LongSet<Int64WangHasher>
+public class LongSet : LongSet<Int64WangNaiveHasher>
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="LongSet"/> class
@@ -208,26 +212,31 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing array under an active enumerator (see
         // issue #92).
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        long[] slots = _slots;
+        ref long slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int index = _hasher.Hash(item) & mask;
 
-        while (_slots[index] != EMPTY_SLOT)
+        while (true)
         {
-            if (_slots[index] == item)
-                return false;
-            index = (index + 1) & (size - 1);
+            long slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (slot == EMPTY_SLOT) break;
+            if (slot == item) return false;
+            index = (index + 1) & mask;
         }
 
         if (_count >= _threshold)
         {
             Resize();
-            size = _slots.Length;
-            index = _hasher.Hash(item) & (size - 1);
-            while (_slots[index] != EMPTY_SLOT)
-                index = (index + 1) & (size - 1);
+            slots = _slots;
+            slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+            mask = slots.Length - 1;
+            index = _hasher.Hash(item) & mask;
+            while (Unsafe.Add(ref slotsRef, (nint)(uint)index) != EMPTY_SLOT)
+                index = (index + 1) & mask;
         }
 
-        _slots[index] = item;
+        Unsafe.Add(ref slotsRef, (nint)(uint)index) = item;
         _count++;
         _version++;
         return true;
@@ -408,19 +417,21 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         public void Dispose() { }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(long item)
     {
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        long[] slots = _slots;
+        ref long slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int index = _hasher.Hash(item) & mask;
 
-        while (_slots[index] != EMPTY_SLOT)
+        while (true)
         {
-            if (_slots[index] == item)
-                return index;
-            index = (index + 1) & (size - 1);
+            long slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (slot == EMPTY_SLOT) return -1;
+            if (slot == item) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -463,9 +474,11 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
     // entry is visited exactly once and most are not moved at all — the
     // work-per-cluster collapses from quadratic to linear, which is the
     // bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void BackwardShiftRemove(int startIndex)
     {
         long[] slots = _slots;
+        ref long slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;
         int i = startIndex;
         int j = i;
@@ -473,7 +486,7 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         while (true)
         {
             j = (j + 1) & mask;
-            long candidate = slots[j];
+            long candidate = Unsafe.Add(ref slotsRef, (nint)(uint)j);
             if (candidate == EMPTY_SLOT)
                 break;
 
@@ -491,10 +504,10 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
             if (bypassesGap)
                 continue;
 
-            slots[i] = candidate;
+            Unsafe.Add(ref slotsRef, (nint)(uint)i) = candidate;
             i = j;
         }
 
-        slots[i] = EMPTY_SLOT;
+        Unsafe.Add(ref slotsRef, (nint)(uint)i) = EMPTY_SLOT;
     }
 }

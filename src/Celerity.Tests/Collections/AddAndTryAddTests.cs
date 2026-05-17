@@ -339,4 +339,59 @@ public class AddAndTryAddTests
 
         Assert.Throws<ArgumentException>(() => map.Add("key", 3));
     }
+
+    [Fact]
+    public void LongDictionary_Add_ThenIndexerOverwrite_ShouldSucceed()
+    {
+        // Mirror of the Int / Celerity dictionary regression test. Pins down
+        // that the indexer setter, after the ProbeForInsert(out bool wasEmpty)
+        // refactor, does not bump _count when the slot was already occupied
+        // by the same key. The Long path was the only dictionary not covered
+        // in this file before.
+        var map = new LongDictionary<int>();
+        map.Add(3L, 30);
+        map[3L] = 300;
+
+        Assert.Equal(1, map.Count);
+        Assert.Equal(300, map[3L]);
+
+        Assert.Throws<ArgumentException>(() => map.Add(3L, 3000));
+    }
+
+    [Fact]
+    public void Dictionaries_RepeatedIndexerOverwrite_ShouldKeepCountStable()
+    {
+        // Issue a long sequence of overwrites on every dictionary shape and
+        // assert Count never drifts past the insert count. With the wasEmpty
+        // out-bool on ProbeForInsert, an overwrite must hit the `wasEmpty =
+        // false` branch every time after the first set; a regression that
+        // wired the wrong branch would inflate Count linearly.
+        var intDict = new IntDictionary<int>();
+        var longDict = new LongDictionary<int>();
+        var celDict = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+
+        const int Inserts = 32;
+        const int Overwrites = 100;
+
+        for (int i = 1; i <= Inserts; i++)
+        {
+            intDict[i] = i;
+            longDict[(long)i] = i;
+            celDict[i] = i;
+        }
+
+        for (int round = 0; round < Overwrites; round++)
+        {
+            for (int i = 1; i <= Inserts; i++)
+            {
+                intDict[i] = round;
+                longDict[(long)i] = round;
+                celDict[i] = round;
+            }
+        }
+
+        Assert.Equal(Inserts, intDict.Count);
+        Assert.Equal(Inserts, longDict.Count);
+        Assert.Equal(Inserts, celDict.Count);
+    }
 }

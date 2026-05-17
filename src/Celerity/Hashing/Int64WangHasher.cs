@@ -3,15 +3,18 @@ using System.Runtime.CompilerServices;
 namespace Celerity.Hashing;
 
 /// <summary>
-/// A fast hash provider for <see cref="long"/> keys using the Thomas Wang
+/// A hash provider for <see cref="long"/> keys using the Thomas Wang
 /// 64-bit integer hash function.
 /// </summary>
 /// <remarks>
-/// This is the <see cref="long"/> counterpart to <see cref="Int32WangNaiveHasher"/>:
-/// a non-cryptographic, invertible bit-mixer that is faster than a full Murmur3
-/// finalizer. It provides better avalanche than a simple XOR-fold while remaining
-/// cheaper than <see cref="Int64Murmur3Hasher"/>. Prefer it when throughput
-/// matters more than collision resistance on adversarial inputs.
+/// A non-cryptographic, invertible bit-mixer that provides excellent avalanche
+/// for adversarially or heavily-clustered keys. The full mixer is roughly 5x
+/// the per-call cost of <see cref="Int64WangNaiveHasher"/> (the default for
+/// <see cref="Celerity.Collections.LongDictionary{TValue}"/> and
+/// <see cref="Celerity.Collections.LongSet"/>), so switch to this hasher only
+/// when profiling shows the lighter mixer is producing measurable clustering.
+/// It still sits below <see cref="Int64Murmur3Hasher"/> on the
+/// cost-vs-avalanche curve.
 /// <para>
 /// Unlike the Murmur3 finalizer, this function does <em>not</em> map
 /// <c>0</c> to <c>0</c>. If your keys are heavily concentrated around zero,

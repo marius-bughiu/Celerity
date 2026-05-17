@@ -1,14 +1,18 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance dictionary keyed by <see cref="long"/>, using
-/// <see cref="Int64WangHasher"/> by default.
+/// <see cref="Int64WangNaiveHasher"/> by default. Switch to
+/// <see cref="Int64WangHasher"/> or <see cref="Int64Murmur3Hasher"/> via the
+/// generic overload when keys are adversarial or clustered.
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
-public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangHasher>
+public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangNaiveHasher>
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="LongDictionary{TValue}"/> class
@@ -225,11 +229,12 @@ public class LongDictionary<TValue, THasher>
                 Resize();
             }
 
-            int index = ProbeForInsert(key);
-            bool isNewEntry = _keys[index] == EMPTY_KEY;
+            int index = ProbeForInsert(key, out bool isNewEntry);
 
-            _keys[index] = key;
-            _values[index] = value;
+            long[] keys = _keys;
+            TValue?[] values = _values;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
 
             if (isNewEntry)
                 _count++;
@@ -414,18 +419,20 @@ public class LongDictionary<TValue, THasher>
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing arrays under an active enumerator (see
         // issue #92).
-        int index = ProbeForInsert(key);
-        if (_keys[index] != EMPTY_KEY)
+        int index = ProbeForInsert(key, out bool wasEmpty);
+        if (!wasEmpty)
             return false;
 
         if (_count >= _threshold)
         {
             Resize();
-            index = ProbeForInsert(key);
+            index = ProbeForInsert(key, out _);
         }
 
-        _keys[index] = key;
-        _values[index] = value;
+        long[] keys = _keys;
+        TValue?[] values = _values;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
         _count++;
         _version++;
         return true;
@@ -694,36 +701,49 @@ public class LongDictionary<TValue, THasher>
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    private int ProbeForInsert(long key)
+    // Returns the slot the caller should write into. <paramref name="wasEmpty"/>
+    // tells the caller whether the slot was previously empty (true → new entry,
+    // bump _count) or already held the same key (false → overwrite). Hoisting
+    // that signal out of the probe lets the indexer setter and TryAdd skip a
+    // redundant `_keys[index]` re-read on the insert path.
+    //
+    // The probe walks `_keys` via `Unsafe.Add` against a single base reference
+    // grabbed at the top, so per-iteration bounds checks disappear. The
+    // bound is structural: `mask = keys.Length - 1` and `index = ... & mask`
+    // keep `index ∈ [0, keys.Length)` for every iteration. `(nint)(uint)index`
+    // gives the JIT the additional hint that `index` is non-negative.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int ProbeForInsert(long key, out bool wasEmpty)
     {
-        int size = _keys.Length;
+        long[] keys = _keys;
+        ref long keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = keys.Length - 1;
+        int index = _hasher.Hash(key) & mask;
 
-        // Only works when size is a power of two
-        int index = _hasher.Hash(key) & (size - 1);
-
-        while (_keys[index] != EMPTY_KEY && _keys[index] != key)
+        while (true)
         {
-            index = (index + 1) & (size - 1);
+            long slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
+            if (slot == EMPTY_KEY) { wasEmpty = true; return index; }
+            if (slot == key) { wasEmpty = false; return index; }
+            index = (index + 1) & mask;
         }
-
-        return index;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForKey(long key)
     {
-        int size = _keys.Length;
+        long[] keys = _keys;
+        ref long keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = keys.Length - 1;
+        int index = _hasher.Hash(key) & mask;
 
-        // Only works when size is a power of two
-        int index = _hasher.Hash(key) & (size - 1);
-
-        while (_keys[index] != EMPTY_KEY)
+        while (true)
         {
-            if (_keys[index] == key)
-                return index;
-            index = (index + 1) & (size - 1);
+            long slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
+            if (slot == EMPTY_KEY) return -1;
+            if (slot == key) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -769,10 +789,13 @@ public class LongDictionary<TValue, THasher>
     // surviving cluster entry is visited exactly once and most are not
     // moved at all — the work-per-cluster collapses from quadratic to
     // linear, which is the bulk of the Remove speedup.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void BackwardShiftRemove(int startIndex)
     {
         long[] keys = _keys;
         TValue?[] values = _values;
+        ref long keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
         int mask = keys.Length - 1;
         int i = startIndex;
         int j = i;
@@ -780,7 +803,7 @@ public class LongDictionary<TValue, THasher>
         while (true)
         {
             j = (j + 1) & mask;
-            long candidateKey = keys[j];
+            long candidateKey = Unsafe.Add(ref keysRef, (nint)(uint)j);
             if (candidateKey == EMPTY_KEY)
                 break;
 
@@ -798,12 +821,12 @@ public class LongDictionary<TValue, THasher>
             if (bypassesGap)
                 continue;
 
-            keys[i] = candidateKey;
-            values[i] = values[j];
+            Unsafe.Add(ref keysRef, (nint)(uint)i) = candidateKey;
+            Unsafe.Add(ref valuesRef, (nint)(uint)i) = Unsafe.Add(ref valuesRef, (nint)(uint)j);
             i = j;
         }
 
-        keys[i] = EMPTY_KEY;
-        values[i] = EMPTY_VALUE;
+        Unsafe.Add(ref keysRef, (nint)(uint)i) = EMPTY_KEY;
+        Unsafe.Add(ref valuesRef, (nint)(uint)i) = EMPTY_VALUE;
     }
 }
