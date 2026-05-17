@@ -6,11 +6,11 @@ using Celerity.Hashing;
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
-public class CelerityDictionaryBenchmark
+public class CeleritySetBenchmark
 {
     private int[] keys = null!;
-    private Dictionary<int, int> dictionary = null!;
-    private CelerityDictionary<int, int, Int32WangNaiveHasher> celerityDictionary = null!;
+    private HashSet<int> hashSet = null!;
+    private CeleritySet<int, Int32WangNaiveHasher> celeritySet = null!;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -19,79 +19,83 @@ public class CelerityDictionaryBenchmark
     public void Setup()
     {
         keys = new int[ItemCount];
-        dictionary = new Dictionary<int, int>(ItemCount);
-        celerityDictionary = new CelerityDictionary<int, int, Int32WangNaiveHasher>(ItemCount);
+        hashSet = new HashSet<int>(ItemCount);
+        celeritySet = new CeleritySet<int, Int32WangNaiveHasher>(ItemCount);
 
         Random rand = new(42);
         for (int i = 0; i < ItemCount; i++)
         {
             keys[i] = rand.Next(1, int.MaxValue);
-            dictionary[keys[i]] = keys[i];
-            celerityDictionary[keys[i]] = keys[i];
+            hashSet.Add(keys[i]);
+            celeritySet.Add(keys[i]);
         }
     }
 
     [Benchmark(Baseline = true)]
-    [BenchmarkCategory("Insert")]
-    public void Dictionary_Insert()
+    [BenchmarkCategory("Add")]
+    public void HashSet_Add()
     {
-        var map = new Dictionary<int, int>();
+        var set = new HashSet<int>();
 
         foreach (var key in keys)
         {
-            map[key] = key;
+            set.Add(key);
         }
     }
 
     [Benchmark]
-    [BenchmarkCategory("Insert")]
-    public void CelerityDictionary_Insert()
+    [BenchmarkCategory("Add")]
+    public void CeleritySet_Add()
     {
-        var map = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+        var set = new CeleritySet<int, Int32WangNaiveHasher>();
 
         foreach (var key in keys)
         {
-            map[key] = key;
+            set.Add(key);
         }
     }
 
     [Benchmark(Baseline = true)]
-    [BenchmarkCategory("Lookup")]
-    public void Dictionary_Lookup()
+    [BenchmarkCategory("Contains")]
+    public bool HashSet_Contains()
     {
+        bool result = false;
         foreach (var key in keys)
         {
-            _ = dictionary[key];
+            result ^= hashSet.Contains(key);
         }
+        return result;
     }
 
     [Benchmark]
-    [BenchmarkCategory("Lookup")]
-    public void CelerityDictionary_Lookup()
+    [BenchmarkCategory("Contains")]
+    public bool CeleritySet_Contains()
     {
+        bool result = false;
         foreach (var key in keys)
         {
-            _ = celerityDictionary[key];
+            result ^= celeritySet.Contains(key);
         }
+        return result;
     }
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Remove")]
-    public void Dictionary_Remove()
+    public void HashSet_Remove()
     {
         foreach (var key in keys)
         {
-            dictionary.Remove(key);
+            hashSet.Remove(key);
         }
     }
 
     [Benchmark]
     [BenchmarkCategory("Remove")]
-    public void CelerityDictionary_Remove()
+    public void CeleritySet_Remove()
     {
         foreach (var key in keys)
         {
-            celerityDictionary.Remove(key);
+            celeritySet.Remove(key);
         }
     }
 }

@@ -5,11 +5,11 @@ using Celerity.Collections;
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
-public class IntDictionaryBenchmark
+public class IntSetBenchmark
 {
     private int[] keys = null!;
-    private Dictionary<int, int> dictionary = null!;
-    private IntDictionary<int> intDictionary = null!;
+    private HashSet<int> hashSet = null!;
+    private IntSet intSet = null!;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -18,79 +18,83 @@ public class IntDictionaryBenchmark
     public void Setup()
     {
         keys = new int[ItemCount];
-        dictionary = new Dictionary<int, int>(ItemCount);
-        intDictionary = new IntDictionary<int>(ItemCount);
+        hashSet = new HashSet<int>(ItemCount);
+        intSet = new IntSet(ItemCount);
 
         Random rand = new(42);
         for (int i = 0; i < ItemCount; i++)
         {
             keys[i] = rand.Next(1, int.MaxValue);
-            dictionary[keys[i]] = keys[i];
-            intDictionary[keys[i]] = keys[i];
+            hashSet.Add(keys[i]);
+            intSet.Add(keys[i]);
         }
     }
 
     [Benchmark(Baseline = true)]
-    [BenchmarkCategory("Insert")]
-    public void Dictionary_Insert()
+    [BenchmarkCategory("Add")]
+    public void HashSet_Add()
     {
-        var map = new Dictionary<int, int>();
+        var set = new HashSet<int>();
 
         foreach (var key in keys)
         {
-            map[key] = key;
+            set.Add(key);
         }
     }
 
     [Benchmark]
-    [BenchmarkCategory("Insert")]
-    public void IntDictionary_Insert()
+    [BenchmarkCategory("Add")]
+    public void IntSet_Add()
     {
-        var map = new IntDictionary<int>();
+        var set = new IntSet();
 
         foreach (var key in keys)
         {
-            map[key] = key;
+            set.Add(key);
         }
     }
 
     [Benchmark(Baseline = true)]
-    [BenchmarkCategory("Lookup")]
-    public void Dictionary_Lookup()
+    [BenchmarkCategory("Contains")]
+    public bool HashSet_Contains()
     {
+        bool result = false;
         foreach (var key in keys)
         {
-            _ = dictionary[key];
+            result ^= hashSet.Contains(key);
         }
+        return result;
     }
 
     [Benchmark]
-    [BenchmarkCategory("Lookup")]
-    public void IntDictionary_Lookup()
+    [BenchmarkCategory("Contains")]
+    public bool IntSet_Contains()
     {
+        bool result = false;
         foreach (var key in keys)
         {
-            _ = intDictionary[key];
+            result ^= intSet.Contains(key);
         }
+        return result;
     }
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Remove")]
-    public void Dictionary_Remove()
+    public void HashSet_Remove()
     {
         foreach (var key in keys)
         {
-            dictionary.Remove(key);
+            hashSet.Remove(key);
         }
     }
 
     [Benchmark]
     [BenchmarkCategory("Remove")]
-    public void IntDictionary_Remove()
+    public void IntSet_Remove()
     {
         foreach (var key in keys)
         {
-            intDictionary.Remove(key);
+            intSet.Remove(key);
         }
     }
 }

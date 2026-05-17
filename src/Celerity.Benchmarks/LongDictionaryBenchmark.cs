@@ -1,16 +1,15 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Collections;
-using Celerity.Hashing;
 
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
-public class CelerityDictionaryBenchmark
+public class LongDictionaryBenchmark
 {
-    private int[] keys = null!;
-    private Dictionary<int, int> dictionary = null!;
-    private CelerityDictionary<int, int, Int32WangNaiveHasher> celerityDictionary = null!;
+    private long[] keys = null!;
+    private Dictionary<long, int> dictionary = null!;
+    private LongDictionary<int> longDictionary = null!;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -18,16 +17,16 @@ public class CelerityDictionaryBenchmark
     [GlobalSetup]
     public void Setup()
     {
-        keys = new int[ItemCount];
-        dictionary = new Dictionary<int, int>(ItemCount);
-        celerityDictionary = new CelerityDictionary<int, int, Int32WangNaiveHasher>(ItemCount);
+        keys = new long[ItemCount];
+        dictionary = new Dictionary<long, int>(ItemCount);
+        longDictionary = new LongDictionary<int>(ItemCount);
 
         Random rand = new(42);
         for (int i = 0; i < ItemCount; i++)
         {
-            keys[i] = rand.Next(1, int.MaxValue);
-            dictionary[keys[i]] = keys[i];
-            celerityDictionary[keys[i]] = keys[i];
+            keys[i] = ((long)rand.Next(1, int.MaxValue) << 32) | (uint)rand.Next(1, int.MaxValue);
+            dictionary[keys[i]] = i;
+            longDictionary[keys[i]] = i;
         }
     }
 
@@ -35,23 +34,23 @@ public class CelerityDictionaryBenchmark
     [BenchmarkCategory("Insert")]
     public void Dictionary_Insert()
     {
-        var map = new Dictionary<int, int>();
+        var map = new Dictionary<long, int>();
 
-        foreach (var key in keys)
+        for (int i = 0; i < keys.Length; i++)
         {
-            map[key] = key;
+            map[keys[i]] = i;
         }
     }
 
     [Benchmark]
     [BenchmarkCategory("Insert")]
-    public void CelerityDictionary_Insert()
+    public void LongDictionary_Insert()
     {
-        var map = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+        var map = new LongDictionary<int>();
 
-        foreach (var key in keys)
+        for (int i = 0; i < keys.Length; i++)
         {
-            map[key] = key;
+            map[keys[i]] = i;
         }
     }
 
@@ -67,11 +66,11 @@ public class CelerityDictionaryBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Lookup")]
-    public void CelerityDictionary_Lookup()
+    public void LongDictionary_Lookup()
     {
         foreach (var key in keys)
         {
-            _ = celerityDictionary[key];
+            _ = longDictionary[key];
         }
     }
 
@@ -87,11 +86,11 @@ public class CelerityDictionaryBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Remove")]
-    public void CelerityDictionary_Remove()
+    public void LongDictionary_Remove()
     {
         foreach (var key in keys)
         {
-            celerityDictionary.Remove(key);
+            longDictionary.Remove(key);
         }
     }
 }
