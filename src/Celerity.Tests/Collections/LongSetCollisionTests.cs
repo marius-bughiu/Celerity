@@ -14,6 +14,18 @@ public class LongSetCollisionTests
         public int Hash(long key) => 42;
     }
 
+    /// <summary>
+    /// A test-only hasher that truncates the key to <see cref="int"/>. Combined
+    /// with a power-of-two table size, the resulting <c>(int)key &amp; mask</c>
+    /// places each key at a predictable slot, which lets a test build a
+    /// wrapped cluster whose entries have different natural slots — the shape
+    /// needed to exercise every branch of the backward-shift cyclic comparison.
+    /// </summary>
+    private struct IdentityLongHasher : IHashProvider<long>
+    {
+        public int Hash(long key) => (int)key;
+    }
+
     [Fact]
     public void Insert_ShouldSucceed_UnderFullCollision()
     {
@@ -158,5 +170,35 @@ public class LongSetCollisionTests
         Assert.True(set.Contains(a));
         Assert.False(set.Contains(b));
         Assert.True(set.Contains(c));
+    }
+
+    [Fact]
+    public void Remove_WrapAroundCluster_KeepsBypassEntriesPut_AndShiftsTheRest()
+    {
+        // Regression for the backward-shift deletion rewrite of
+        // RehashAfterRemove (replaced by BackwardShiftRemove). Mirrors the
+        // IntSet wrap-around test for 64-bit elements. With table size 8
+        // (mask = 7) and IdentityLongHasher (returns (int)key), items 6, 7,
+        // 8, 14 build a cluster that crosses the array boundary:
+        //   slot 6 -> 6  (natural 6)
+        //   slot 7 -> 7  (natural 7)
+        //   slot 0 -> 8  (natural 0; collided through 6, 7)
+        //   slot 1 -> 14 (natural 6; displaced through 6, 7, 0)
+        // Removing 6 must SKIP slots 7 and 0 (bypass cases for the
+        // `i <= j` and `i > j` branches respectively) and SHIFT slot 1 into
+        // the gap.
+        var set = new LongSet<IdentityLongHasher>(capacity: 8, loadFactor: 0.9f);
+        set.Add(6L);
+        set.Add(7L);
+        set.Add(8L);
+        set.Add(14L);
+
+        Assert.True(set.Remove(6L));
+
+        Assert.Equal(3, set.Count);
+        Assert.False(set.Contains(6L));
+        Assert.True(set.Contains(7L));
+        Assert.True(set.Contains(8L));
+        Assert.True(set.Contains(14L));
     }
 }
