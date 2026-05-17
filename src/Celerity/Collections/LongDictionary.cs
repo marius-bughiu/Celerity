@@ -228,8 +228,7 @@ public class LongDictionary<TValue, THasher>
                 Resize();
             }
 
-            int index = ProbeForInsert(key);
-            bool isNewEntry = _keys[index] == EMPTY_KEY;
+            int index = ProbeForInsert(key, out bool isNewEntry);
 
             _keys[index] = key;
             _values[index] = value;
@@ -417,14 +416,14 @@ public class LongDictionary<TValue, THasher>
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing arrays under an active enumerator (see
         // issue #92).
-        int index = ProbeForInsert(key);
-        if (_keys[index] != EMPTY_KEY)
+        int index = ProbeForInsert(key, out bool wasEmpty);
+        if (!wasEmpty)
             return false;
 
         if (_count >= _threshold)
         {
             Resize();
-            index = ProbeForInsert(key);
+            index = ProbeForInsert(key, out _);
         }
 
         _keys[index] = key;
@@ -697,20 +696,25 @@ public class LongDictionary<TValue, THasher>
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+    // Returns the slot the caller should write into. <paramref name="wasEmpty"/>
+    // tells the caller whether the slot was previously empty (true → new entry,
+    // bump _count) or already held the same key (false → overwrite). Hoisting
+    // that signal out of the probe lets the indexer setter and TryAdd skip a
+    // redundant `_keys[index]` re-read on the insert path.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int ProbeForInsert(long key)
+    private int ProbeForInsert(long key, out bool wasEmpty)
     {
-        int size = _keys.Length;
+        long[] keys = _keys;
+        int mask = keys.Length - 1;
+        int index = _hasher.Hash(key) & mask;
 
-        // Only works when size is a power of two
-        int index = _hasher.Hash(key) & (size - 1);
-
-        while (_keys[index] != EMPTY_KEY && _keys[index] != key)
+        while (true)
         {
-            index = (index + 1) & (size - 1);
+            long slot = keys[index];
+            if (slot == EMPTY_KEY) { wasEmpty = true; return index; }
+            if (slot == key) { wasEmpty = false; return index; }
+            index = (index + 1) & mask;
         }
-
-        return index;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

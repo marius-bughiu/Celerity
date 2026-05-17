@@ -171,8 +171,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
                 Resize();
             }
 
-            int index = ProbeForInsert(key);
-            bool isNewEntry = EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey));
+            int index = ProbeForInsert(key, out bool isNewEntry);
 
             _keys[index] = key;
             _values[index] = value;
@@ -364,14 +363,14 @@ public class CelerityDictionary<TKey, TValue, THasher>
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing arrays under an active enumerator (see
         // issue #92).
-        int index = ProbeForInsert(key);
-        if (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)))
+        int index = ProbeForInsert(key, out bool wasEmpty);
+        if (!wasEmpty)
             return false;
 
         if (_count >= _threshold)
         {
             Resize();
-            index = ProbeForInsert(key);
+            index = ProbeForInsert(key, out _);
         }
 
         _keys[index] = key;
@@ -647,21 +646,26 @@ public class CelerityDictionary<TKey, TValue, THasher>
     private static bool IsDefaultKey(TKey key) =>
         EqualityComparer<TKey>.Default.Equals(key, default(TKey));
 
+    // Returns the slot the caller should write into. <paramref name="wasEmpty"/>
+    // tells the caller whether the slot was previously empty (true → new entry,
+    // bump _count) or already held the same key (false → overwrite). Hoisting
+    // that signal out of the probe lets the indexer setter and TryAdd skip a
+    // redundant `_keys[index]` re-read + comparer dispatch on the insert path.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int ProbeForInsert(TKey key)
+    private int ProbeForInsert(TKey key, out bool wasEmpty)
     {
-        int size = _keys.Length;
+        TKey?[] keys = _keys;
+        int mask = keys.Length - 1;
+        var comparer = EqualityComparer<TKey>.Default;
+        int index = _hasher.Hash(key) & mask;
 
-        // Only works when size is a power of two
-        int index = _hasher.Hash(key) & (size - 1);
-
-        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)) &&
-               !EqualityComparer<TKey>.Default.Equals(_keys[index], key))
+        while (true)
         {
-            index = (index + 1) & (size - 1);
+            TKey? slot = keys[index];
+            if (comparer.Equals(slot, default(TKey))) { wasEmpty = true; return index; }
+            if (comparer.Equals(slot, key)) { wasEmpty = false; return index; }
+            index = (index + 1) & mask;
         }
-
-        return index;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
