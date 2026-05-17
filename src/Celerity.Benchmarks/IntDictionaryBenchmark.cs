@@ -74,6 +74,16 @@ public class IntDictionaryBenchmark
         }
     }
 
+    [IterationSetup(Target = nameof(Dictionary_Remove))]
+    public void SetupForDictionaryRemove()
+    {
+        dictionary = new Dictionary<int, int>(ItemCount);
+        foreach (var key in keys)
+        {
+            dictionary[key] = key;
+        }
+    }
+
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Remove")]
     public void Dictionary_Remove()
@@ -81,6 +91,16 @@ public class IntDictionaryBenchmark
         foreach (var key in keys)
         {
             dictionary.Remove(key);
+        }
+    }
+
+    [IterationSetup(Target = nameof(IntDictionary_Remove))]
+    public void SetupForIntDictionaryRemove()
+    {
+        intDictionary = new IntDictionary<int>(ItemCount);
+        foreach (var key in keys)
+        {
+            intDictionary[key] = key;
         }
     }
 
