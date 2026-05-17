@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -209,26 +210,31 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing array under an active enumerator (see
         // issue #92).
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        int[] slots = _slots;
+        ref int slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int index = _hasher.Hash(item) & mask;
 
-        while (_slots[index] != EMPTY_SLOT)
+        while (true)
         {
-            if (_slots[index] == item)
-                return false;
-            index = (index + 1) & (size - 1);
+            int slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (slot == EMPTY_SLOT) break;
+            if (slot == item) return false;
+            index = (index + 1) & mask;
         }
 
         if (_count >= _threshold)
         {
             Resize();
-            size = _slots.Length;
-            index = _hasher.Hash(item) & (size - 1);
-            while (_slots[index] != EMPTY_SLOT)
-                index = (index + 1) & (size - 1);
+            slots = _slots;
+            slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+            mask = slots.Length - 1;
+            index = _hasher.Hash(item) & mask;
+            while (Unsafe.Add(ref slotsRef, (nint)(uint)index) != EMPTY_SLOT)
+                index = (index + 1) & mask;
         }
 
-        _slots[index] = item;
+        Unsafe.Add(ref slotsRef, (nint)(uint)index) = item;
         _count++;
         _version++;
         return true;
@@ -412,17 +418,18 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(int item)
     {
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        int[] slots = _slots;
+        ref int slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int index = _hasher.Hash(item) & mask;
 
-        while (_slots[index] != EMPTY_SLOT)
+        while (true)
         {
-            if (_slots[index] == item)
-                return index;
-            index = (index + 1) & (size - 1);
+            int slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (slot == EMPTY_SLOT) return -1;
+            if (slot == item) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -469,6 +476,7 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
     private void BackwardShiftRemove(int startIndex)
     {
         int[] slots = _slots;
+        ref int slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;
         int i = startIndex;
         int j = i;
@@ -476,7 +484,7 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
         while (true)
         {
             j = (j + 1) & mask;
-            int candidate = slots[j];
+            int candidate = Unsafe.Add(ref slotsRef, (nint)(uint)j);
             if (candidate == EMPTY_SLOT)
                 break;
 
@@ -494,10 +502,10 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
             if (bypassesGap)
                 continue;
 
-            slots[i] = candidate;
+            Unsafe.Add(ref slotsRef, (nint)(uint)i) = candidate;
             i = j;
         }
 
-        slots[i] = EMPTY_SLOT;
+        Unsafe.Add(ref slotsRef, (nint)(uint)i) = EMPTY_SLOT;
     }
 }

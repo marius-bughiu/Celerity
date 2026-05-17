@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -228,8 +229,10 @@ public class IntDictionary<TValue, THasher>
 
             int index = ProbeForInsert(key, out bool isNewEntry);
 
-            _keys[index] = key;
-            _values[index] = value;
+            int[] keys = _keys;
+            TValue?[] values = _values;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
 
             if (isNewEntry)
                 _count++;
@@ -424,8 +427,10 @@ public class IntDictionary<TValue, THasher>
             index = ProbeForInsert(key, out _);
         }
 
-        _keys[index] = key;
-        _values[index] = value;
+        int[] keys = _keys;
+        TValue?[] values = _values;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
         _count++;
         _version++;
         return true;
@@ -699,16 +704,24 @@ public class IntDictionary<TValue, THasher>
     // bump _count) or already held the same key (false → overwrite). Hoisting
     // that signal out of the probe lets the indexer setter and TryAdd skip a
     // redundant `_keys[index]` re-read on the insert path.
+    //
+    // The probe walks `_keys` via `Unsafe.Add` against a single base reference
+    // grabbed at the top, so per-iteration bounds checks disappear. The
+    // bound is structural: `mask = keys.Length - 1` and `index = ... & mask`
+    // keep `index ∈ [0, keys.Length)` for every iteration. `(nint)(uint)index`
+    // gives the JIT the additional hint that `index` is non-negative, which
+    // unlocks a zero-extending load on x64.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForInsert(int key, out bool wasEmpty)
     {
         int[] keys = _keys;
+        ref int keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
         int mask = keys.Length - 1;
         int index = _hasher.Hash(key) & mask;
 
         while (true)
         {
-            int slot = keys[index];
+            int slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
             if (slot == EMPTY_KEY) { wasEmpty = true; return index; }
             if (slot == key) { wasEmpty = false; return index; }
             index = (index + 1) & mask;
@@ -718,19 +731,18 @@ public class IntDictionary<TValue, THasher>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForKey(int key)
     {
-        int size = _keys.Length;
+        int[] keys = _keys;
+        ref int keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = keys.Length - 1;
+        int index = _hasher.Hash(key) & mask;
 
-        // Only works when size is a power of two
-        int index = _hasher.Hash(key) & (size - 1);
-
-        while (_keys[index] != EMPTY_KEY)
+        while (true)
         {
-            if (_keys[index] == key)
-                return index;
-            index = (index + 1) & (size - 1);
+            int slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
+            if (slot == EMPTY_KEY) return -1;
+            if (slot == key) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -781,6 +793,8 @@ public class IntDictionary<TValue, THasher>
     {
         int[] keys = _keys;
         TValue?[] values = _values;
+        ref int keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
         int mask = keys.Length - 1;
         int i = startIndex;
         int j = i;
@@ -788,7 +802,7 @@ public class IntDictionary<TValue, THasher>
         while (true)
         {
             j = (j + 1) & mask;
-            int candidateKey = keys[j];
+            int candidateKey = Unsafe.Add(ref keysRef, (nint)(uint)j);
             if (candidateKey == EMPTY_KEY)
                 break;
 
@@ -806,12 +820,12 @@ public class IntDictionary<TValue, THasher>
             if (bypassesGap)
                 continue;
 
-            keys[i] = candidateKey;
-            values[i] = values[j];
+            Unsafe.Add(ref keysRef, (nint)(uint)i) = candidateKey;
+            Unsafe.Add(ref valuesRef, (nint)(uint)i) = Unsafe.Add(ref valuesRef, (nint)(uint)j);
             i = j;
         }
 
-        keys[i] = EMPTY_KEY;
-        values[i] = EMPTY_VALUE;
+        Unsafe.Add(ref keysRef, (nint)(uint)i) = EMPTY_KEY;
+        Unsafe.Add(ref valuesRef, (nint)(uint)i) = EMPTY_VALUE;
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -160,26 +161,32 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
         // duplicate check so a duplicate-at-threshold call cannot silently
         // swap out the backing array under an active enumerator (see
         // issue #92).
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        T?[] slots = _slots;
+        ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        var comparer = EqualityComparer<T>.Default;
+        int index = _hasher.Hash(item) & mask;
 
-        while (!EqualityComparer<T>.Default.Equals(_slots[index], default(T)))
+        while (true)
         {
-            if (EqualityComparer<T>.Default.Equals(_slots[index], item))
-                return false;
-            index = (index + 1) & (size - 1);
+            T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (comparer.Equals(slot, default(T))) break;
+            if (comparer.Equals(slot, item)) return false;
+            index = (index + 1) & mask;
         }
 
         if (_count >= _threshold)
         {
             Resize();
-            size = _slots.Length;
-            index = _hasher.Hash(item) & (size - 1);
-            while (!EqualityComparer<T>.Default.Equals(_slots[index], default(T)))
-                index = (index + 1) & (size - 1);
+            slots = _slots;
+            slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+            mask = slots.Length - 1;
+            index = _hasher.Hash(item) & mask;
+            while (!comparer.Equals(Unsafe.Add(ref slotsRef, (nint)(uint)index), default(T)))
+                index = (index + 1) & mask;
         }
 
-        _slots[index] = item;
+        Unsafe.Add(ref slotsRef, (nint)(uint)index) = item;
         _count++;
         _version++;
         return true;
@@ -367,17 +374,19 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(T item)
     {
-        int size = _slots.Length;
-        int index = _hasher.Hash(item) & (size - 1);
+        T?[] slots = _slots;
+        ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        var comparer = EqualityComparer<T>.Default;
+        int index = _hasher.Hash(item) & mask;
 
-        while (!EqualityComparer<T>.Default.Equals(_slots[index], default(T)))
+        while (true)
         {
-            if (EqualityComparer<T>.Default.Equals(_slots[index], item))
-                return index;
-            index = (index + 1) & (size - 1);
+            T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (comparer.Equals(slot, default(T))) return -1;
+            if (comparer.Equals(slot, item)) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -425,6 +434,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     private void BackwardShiftRemove(int startIndex)
     {
         T?[] slots = _slots;
+        ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;
         var comparer = EqualityComparer<T>.Default;
         int i = startIndex;
@@ -433,7 +443,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
         while (true)
         {
             j = (j + 1) & mask;
-            T? candidate = slots[j];
+            T? candidate = Unsafe.Add(ref slotsRef, (nint)(uint)j);
             if (comparer.Equals(candidate, default(T)))
                 break;
 
@@ -451,10 +461,10 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
             if (bypassesGap)
                 continue;
 
-            slots[i] = candidate;
+            Unsafe.Add(ref slotsRef, (nint)(uint)i) = candidate;
             i = j;
         }
 
-        slots[i] = default;
+        Unsafe.Add(ref slotsRef, (nint)(uint)i) = default;
     }
 }

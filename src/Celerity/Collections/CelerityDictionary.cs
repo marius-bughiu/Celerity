@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -173,8 +174,10 @@ public class CelerityDictionary<TKey, TValue, THasher>
 
             int index = ProbeForInsert(key, out bool isNewEntry);
 
-            _keys[index] = key;
-            _values[index] = value;
+            TKey?[] keys = _keys;
+            TValue?[] values = _values;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+            Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
 
             if (isNewEntry)
                 _count++;
@@ -373,8 +376,10 @@ public class CelerityDictionary<TKey, TValue, THasher>
             index = ProbeForInsert(key, out _);
         }
 
-        _keys[index] = key;
-        _values[index] = value;
+        TKey?[] keys = _keys;
+        TValue?[] values = _values;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
         _count++;
         _version++;
         return true;
@@ -651,17 +656,24 @@ public class CelerityDictionary<TKey, TValue, THasher>
     // bump _count) or already held the same key (false → overwrite). Hoisting
     // that signal out of the probe lets the indexer setter and TryAdd skip a
     // redundant `_keys[index]` re-read + comparer dispatch on the insert path.
+    //
+    // The probe walks `_keys` via `Unsafe.Add` against a single base reference
+    // grabbed at the top, so per-iteration bounds checks disappear. The
+    // bound is structural: `mask = keys.Length - 1` and `index = ... & mask`
+    // keep `index ∈ [0, keys.Length)` for every iteration. `(nint)(uint)index`
+    // gives the JIT the additional hint that `index` is non-negative.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForInsert(TKey key, out bool wasEmpty)
     {
         TKey?[] keys = _keys;
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
         int mask = keys.Length - 1;
         var comparer = EqualityComparer<TKey>.Default;
         int index = _hasher.Hash(key) & mask;
 
         while (true)
         {
-            TKey? slot = keys[index];
+            TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
             if (comparer.Equals(slot, default(TKey))) { wasEmpty = true; return index; }
             if (comparer.Equals(slot, key)) { wasEmpty = false; return index; }
             index = (index + 1) & mask;
@@ -671,17 +683,19 @@ public class CelerityDictionary<TKey, TValue, THasher>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForKey(TKey key)
     {
-        int size = _keys.Length;
-        int index = _hasher.Hash(key) & (size - 1);
+        TKey?[] keys = _keys;
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = keys.Length - 1;
+        var comparer = EqualityComparer<TKey>.Default;
+        int index = _hasher.Hash(key) & mask;
 
-        while (!EqualityComparer<TKey>.Default.Equals(_keys[index], default(TKey)))
+        while (true)
         {
-            if (EqualityComparer<TKey>.Default.Equals(_keys[index], key))
-                return index;
-            index = (index + 1) & (size - 1);
+            TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
+            if (comparer.Equals(slot, default(TKey))) return -1;
+            if (comparer.Equals(slot, key)) return index;
+            index = (index + 1) & mask;
         }
-
-        return -1;
     }
 
     private void Resize()
@@ -733,6 +747,8 @@ public class CelerityDictionary<TKey, TValue, THasher>
     {
         TKey?[] keys = _keys;
         TValue?[] values = _values;
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
         int mask = keys.Length - 1;
         var comparer = EqualityComparer<TKey>.Default;
         int i = startIndex;
@@ -741,7 +757,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
         while (true)
         {
             j = (j + 1) & mask;
-            TKey? candidateKey = keys[j];
+            TKey? candidateKey = Unsafe.Add(ref keysRef, (nint)(uint)j);
             if (comparer.Equals(candidateKey, default(TKey)))
                 break;
 
@@ -759,12 +775,12 @@ public class CelerityDictionary<TKey, TValue, THasher>
             if (bypassesGap)
                 continue;
 
-            keys[i] = candidateKey;
-            values[i] = values[j];
+            Unsafe.Add(ref keysRef, (nint)(uint)i) = candidateKey;
+            Unsafe.Add(ref valuesRef, (nint)(uint)i) = Unsafe.Add(ref valuesRef, (nint)(uint)j);
             i = j;
         }
 
-        keys[i] = default;
-        values[i] = default;
+        Unsafe.Add(ref keysRef, (nint)(uint)i) = default;
+        Unsafe.Add(ref valuesRef, (nint)(uint)i) = default;
     }
 }
