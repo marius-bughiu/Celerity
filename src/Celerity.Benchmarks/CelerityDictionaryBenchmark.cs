@@ -75,6 +75,16 @@ public class CelerityDictionaryBenchmark
         }
     }
 
+    [IterationSetup(Target = nameof(Dictionary_Remove))]
+    public void SetupForDictionaryRemove()
+    {
+        dictionary = new Dictionary<int, int>(ItemCount);
+        foreach (var key in keys)
+        {
+            dictionary[key] = key;
+        }
+    }
+
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Remove")]
     public void Dictionary_Remove()
@@ -82,6 +92,16 @@ public class CelerityDictionaryBenchmark
         foreach (var key in keys)
         {
             dictionary.Remove(key);
+        }
+    }
+
+    [IterationSetup(Target = nameof(CelerityDictionary_Remove))]
+    public void SetupForCelerityDictionaryRemove()
+    {
+        celerityDictionary = new CelerityDictionary<int, int, Int32WangNaiveHasher>(ItemCount);
+        foreach (var key in keys)
+        {
+            celerityDictionary[key] = key;
         }
     }
 

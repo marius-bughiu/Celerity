@@ -78,6 +78,16 @@ public class IntSetBenchmark
         return result;
     }
 
+    [IterationSetup(Target = nameof(HashSet_Remove))]
+    public void SetupForHashSetRemove()
+    {
+        hashSet = new HashSet<int>(ItemCount);
+        foreach (var key in keys)
+        {
+            hashSet.Add(key);
+        }
+    }
+
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Remove")]
     public void HashSet_Remove()
@@ -85,6 +95,16 @@ public class IntSetBenchmark
         foreach (var key in keys)
         {
             hashSet.Remove(key);
+        }
+    }
+
+    [IterationSetup(Target = nameof(IntSet_Remove))]
+    public void SetupForIntSetRemove()
+    {
+        intSet = new IntSet(ItemCount);
+        foreach (var key in keys)
+        {
+            intSet.Add(key);
         }
     }
 

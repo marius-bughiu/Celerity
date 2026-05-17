@@ -79,6 +79,16 @@ public class CeleritySetBenchmark
         return result;
     }
 
+    [IterationSetup(Target = nameof(HashSet_Remove))]
+    public void SetupForHashSetRemove()
+    {
+        hashSet = new HashSet<int>(ItemCount);
+        foreach (var key in keys)
+        {
+            hashSet.Add(key);
+        }
+    }
+
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Remove")]
     public void HashSet_Remove()
@@ -86,6 +96,16 @@ public class CeleritySetBenchmark
         foreach (var key in keys)
         {
             hashSet.Remove(key);
+        }
+    }
+
+    [IterationSetup(Target = nameof(CeleritySet_Remove))]
+    public void SetupForCeleritySetRemove()
+    {
+        celeritySet = new CeleritySet<int, Int32WangNaiveHasher>(ItemCount);
+        foreach (var key in keys)
+        {
+            celeritySet.Add(key);
         }
     }
 
