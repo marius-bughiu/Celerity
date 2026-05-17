@@ -10,8 +10,7 @@ public class CiConfig : ManualConfig
     public CiConfig()
     {
         AddJob(Job.Default
-            .WithWarmupCount(3)
-            .WithIterationCount(5));
+            .WithLaunchCount(2));
 
         AddExporter(JsonExporter.Full);
         AddLogger(ConsoleLogger.Default);
