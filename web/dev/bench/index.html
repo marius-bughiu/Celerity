@@ -181,8 +181,36 @@
     .chart-cell {
       padding: 16px 20px 20px;
       border-right: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.12s;
+      position: relative;
     }
     .chart-cell:last-child { border-right: none; }
+    .chart-cell:hover { background: var(--bg-alt); }
+    .chart-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .chart-cell.no-data { cursor: default; }
+    .chart-cell.no-data:hover { background: transparent; }
+    .chart-cell .axis-unit {
+      position: absolute;
+      bottom: 22px;
+      right: 22px;
+      font-size: 10px;
+      color: var(--fg-faint);
+      letter-spacing: 0.04em;
+      pointer-events: none;
+    }
+    .chart-cell .open-icon {
+      position: absolute;
+      top: 16px;
+      right: 20px;
+      width: 14px;
+      height: 14px;
+      color: var(--fg-faint);
+      opacity: 0;
+      transition: opacity 0.12s;
+    }
+    .chart-cell:hover .open-icon,
+    .chart-cell:focus-visible .open-icon { opacity: 1; }
     @media (max-width: 980px) {
       .chart-cell { border-right: none; border-bottom: 1px solid var(--border); }
       .chart-cell:last-child { border-bottom: none; }
@@ -290,7 +318,7 @@
     <h2>Methodology</h2>
   </div>
   <div class="about">
-    <strong>What you're looking at.</strong> Each chart plots one operation (e.g. <em>Lookup</em>) on one collection, with the BCL baseline and Celerity's implementation over time. Y-axis is nanoseconds per invocation (lower is better). Numbers come from <a href="https://benchmarkdotnet.org/">BenchmarkDotNet</a> running in GitHub Actions on <code>ubuntu-latest</code> with <code>WarmupCount=3</code>, <code>IterationCount=5</code>. The full source is in <a href="https://github.com/marius-bughiu/Celerity/tree/main/src/Celerity.Benchmarks"><code>src/Celerity.Benchmarks</code></a>. Local Release runs use the default BenchmarkDotNet job and produce more stable numbers &mdash; this dashboard exists to catch regressions and surface trends, not as a precision instrument.
+    <strong>What you're looking at.</strong> Each chart plots one operation (e.g. <em>Lookup</em>) on one collection, with the BCL baseline and Celerity's implementation over time at 100,000 items. Y-axis is milliseconds per invocation, lower is better &mdash; <strong>click any chart for a full-size view with nanosecond precision</strong>. Numbers come from <a href="https://benchmarkdotnet.org/">BenchmarkDotNet</a> running in GitHub Actions on <code>ubuntu-latest</code> with <code>WarmupCount=3</code>, <code>IterationCount=5</code>. The full source is in <a href="https://github.com/marius-bughiu/Celerity/tree/main/src/Celerity.Benchmarks"><code>src/Celerity.Benchmarks</code></a>. Local Release runs use the default BenchmarkDotNet job and produce more stable numbers &mdash; this dashboard exists to catch regressions and surface trends, not as a precision instrument.
   </div>
 
   <div class="section-head">
@@ -486,7 +514,20 @@
         },
         y: {
           beginAtZero: true,
-          ticks: { color: '#8a9296', font: { size: 10 }, maxTicksLimit: 4, callback: function (v) { return v.toLocaleString(); } },
+          ticks: {
+            color: '#8a9296',
+            font: { size: 10 },
+            maxTicksLimit: 4,
+            // Sparklines render in ms. Values on this dashboard range from
+            // ~0.1 ms (Remove at 100k) to ~6 ms (Insert at 100k). Tooltips
+            // keep raw ns for precision.
+            callback: function (v) {
+              var ms = v / 1e6;
+              if (ms >= 10)  return ms.toFixed(0);
+              if (ms >= 1)   return ms.toFixed(1);
+              return ms.toFixed(2);
+            }
+          },
           grid: { color: '#eef0f1', drawBorder: false },
           border: { display: false }
         }
@@ -542,10 +583,16 @@
 
       var cell = document.createElement('div');
       cell.className = 'chart-cell';
+      cell.dataset.collection = col.key;
+      cell.dataset.op = op;
+      cell.dataset.items = '100000';
       cell.innerHTML =
         '<div class="op">' + op + '</div>' +
         '<div class="ratio ' + ratioCls + '">' + ratioStr + '</div>' +
         '<div class="detail">' + detail + '</div>' +
+        '<svg class="open-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+          '<path d="M6 4h6v6"/><path d="M12 4l-7 7"/>' +
+        '</svg>' +
         '<canvas></canvas>';
       chartsEl.appendChild(cell);
 
@@ -554,8 +601,34 @@
 
       if (s.labels.length === 0 || (s.bcl.every(function (v) { return v == null; }) && s.celerity.every(function (v) { return v == null; }))) {
         canvas.outerHTML = '<div class="empty">awaiting data</div>';
+        cell.classList.add('no-data');
+        cell.querySelector('.open-icon').remove();
         return;
       }
+
+      // Cell is interactive: keyboard-focusable, click + Enter/Space navigate.
+      cell.setAttribute('tabindex', '0');
+      cell.setAttribute('role', 'link');
+      cell.setAttribute('aria-label',
+        col.title + ' ' + op + ' — open detail view');
+      function navigate() {
+        var qs = '?c=' + encodeURIComponent(cell.dataset.collection) +
+                 '&op=' + encodeURIComponent(cell.dataset.op) +
+                 '&n=' + cell.dataset.items;
+        window.location.href = 'detail.html' + qs;
+      }
+      cell.addEventListener('click', navigate);
+      cell.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          navigate();
+        }
+      });
+
+      var unitLabel = document.createElement('span');
+      unitLabel.className = 'axis-unit';
+      unitLabel.textContent = 'ms';
+      cell.appendChild(unitLabel);
 
       var ctx = canvas.getContext('2d');
       var chart = new Chart(ctx, {
