@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-17
+
 ### Fixed
 
 - `TryAdd` (and therefore `Add`) on `IntDictionary<TValue, THasher>`, `LongDictionary<TValue, THasher>`, `CelerityDictionary<TKey, TValue, THasher>`, `IntSet<THasher>`, and `CeleritySet<T, THasher>` no longer calls `Resize()` on the duplicate-key path. Previously, when the collection was exactly at the load-factor threshold and the caller supplied a duplicate key, `TryAdd` would hit the `if (_count >= _threshold) Resize();` check before the duplicate check, swap out the backing arrays, then walk the probe chain in the new table, detect the duplicate, and return `false` — all without bumping `_version`. An enumerator captured before that call would pass its `_version` check on the next `MoveNext` (because `_version` was unchanged) and silently read from the new arrays with an `_index` from the old coordinate system, yielding stale / duplicated / missing entries instead of throwing `InvalidOperationException`. This was a regression from the single-probe `TryAdd` rewrite in PR #53 — pre-#53 `TryAdd` was `if (ContainsKey(key)) return false; this[key] = value;` and `ContainsKey` does not mutate, so `Resize` only ran on the actual insert path (which bumps `_version`). The fix reorders all five `TryAdd` implementations so the duplicate-detection probe runs *before* the threshold check: a duplicate-at-threshold call now returns `false` without touching `_count`, `_version`, or the backing arrays, and a new-key-at-threshold call probes once in the current table to confirm the key is new, then `Resize()`s and re-probes in the doubled table to find an insert slot. Active enumerator invalidation now follows the visible-mutation rule again: `_version` bumps if and only if the collection actually changed. Pinned by `TryAddDuplicateResizeTests`, which on each of the five collections constructs the collection at exactly `capacity=4` (threshold = 3), fills it to threshold, captures an enumerator, and asserts that a duplicate `TryAdd` / `Add` leaves the enumerator valid (it can complete the enumeration) while a new-key `TryAdd` invalidates it. Closes #92.
@@ -108,7 +110,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.1
 [1.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.0
 [1.1.2]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.1.2
 [0.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v0.1.0
