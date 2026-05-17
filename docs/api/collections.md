@@ -475,3 +475,88 @@ Console.WriteLine(seen.Count);        // 2
 
 foreach (int n in seen) { /* ... */ }
 ```
+
+---
+
+## LongSet
+
+A convenience subclass of `LongSet<Int64WangHasher>` for the common case of 64-bit integer sets. Mirrors `IntSet` for `long` elements and defaults to the same `Int64WangHasher` `LongDictionary` uses.
+
+```csharp
+public class LongSet : LongSet<Int64WangHasher>
+```
+
+### Constructors
+
+```csharp
+public LongSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public LongSet(
+    IEnumerable<long> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics and validation as `LongSet<THasher>` (see below).
+
+---
+
+## LongSet&lt;THasher&gt;
+
+A high-performance set of `long` values, parameterized on a custom hash provider. Implements `IEnumerable<long>`.
+
+```csharp
+public class LongSet<THasher> : IEnumerable<long>
+    where THasher : struct, IHashProvider<long>
+```
+
+### Constructors
+
+```csharp
+public LongSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public LongSet(
+    IEnumerable<long> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+The `IEnumerable<long>` overload copies elements from `source`, following the same `ICollection<T>`-sizing rule as `IntSet`. Duplicate elements (including the out-of-band zero element appearing more than once) are silently deduplicated, matching BCL `HashSet<long>(IEnumerable<long>)` semantics.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+
+### Methods
+
+- `void Add(long item)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(long item)`
+- `bool Contains(long item)`
+- `bool Remove(long item)`
+- `void Clear()`
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — struct enumerator. The out-of-band zero entry is yielded first when present.
+
+### Zero-element handling
+
+The element `0L` collides with the `EMPTY_SLOT` sentinel and is stored out-of-band, same pattern as `LongDictionary`'s zero-key handling.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var seen = new LongSet();
+seen.Add(0L);            // zero is fine
+seen.Add(long.MaxValue); // full 64-bit range
+Console.WriteLine(seen.Contains(0L));  // True
+Console.WriteLine(seen.Count);         // 2
+
+foreach (long n in seen) { /* ... */ }
+```

@@ -10,7 +10,8 @@ namespace Celerity.Tests.Collections;
 /// Before the fix, <c>TryAdd</c> on <see cref="IntDictionary{TValue}"/>,
 /// <see cref="LongDictionary{TValue}"/>,
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>,
-/// <see cref="IntSet"/>, and <see cref="CeleritySet{T, THasher}"/> hoisted
+/// <see cref="IntSet"/>, <see cref="LongSet"/>, and
+/// <see cref="CeleritySet{T, THasher}"/> hoisted
 /// the <c>Resize</c> check ahead of the duplicate check. When the collection
 /// was exactly at the resize threshold and the caller supplied a duplicate
 /// key, <c>Resize</c> would run (swapping out the backing arrays) and then
@@ -195,6 +196,43 @@ public class TryAddDuplicateResizeTests
         Assert.True(enumerator.MoveNext());
 
         Assert.True(set.TryAdd(4));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void LongSet_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        var set = new LongSet(capacity: 4);
+        set.Add(1L);
+        set.Add(2L);
+        set.Add(3L);
+
+        var enumerator = set.GetEnumerator();
+        var seen = new List<long>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current);
+
+        Assert.False(set.TryAdd(2L));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(new[] { 1L, 2L, 3L }, seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void LongSet_TryAdd_NewItemAtThreshold_InvalidatesEnumerator()
+    {
+        var set = new LongSet(capacity: 4);
+        set.Add(1L);
+        set.Add(2L);
+        set.Add(3L);
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(set.TryAdd(4L));
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
