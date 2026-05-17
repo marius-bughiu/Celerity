@@ -5,10 +5,12 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance dictionary keyed by <see cref="long"/>, using
-/// <see cref="Int64WangHasher"/> by default.
+/// <see cref="Int64WangNaiveHasher"/> by default. Switch to
+/// <see cref="Int64WangHasher"/> or <see cref="Int64Murmur3Hasher"/> via the
+/// generic overload when keys are adversarial or clustered.
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
-public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangHasher>
+public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangNaiveHasher>
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="LongDictionary{TValue}"/> class

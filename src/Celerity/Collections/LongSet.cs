@@ -5,9 +5,11 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance set of <see cref="long"/> values, using
-/// <see cref="Int64WangHasher"/> by default.
+/// <see cref="Int64WangNaiveHasher"/> by default. Switch to
+/// <see cref="Int64WangHasher"/> or <see cref="Int64Murmur3Hasher"/> via the
+/// generic overload when elements are adversarial or clustered.
 /// </summary>
-public class LongSet : LongSet<Int64WangHasher>
+public class LongSet : LongSet<Int64WangNaiveHasher>
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="LongSet"/> class
