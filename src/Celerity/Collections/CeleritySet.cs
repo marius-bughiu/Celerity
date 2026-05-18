@@ -403,20 +403,28 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
         // insert helper, the threshold check, and the per-call _count / _version
         // bumps are all dead weight. The default-value entry lives out-of-band
         // and is not touched here.
+        //
+        // Reads from the old array and probe/writes on the new array both go
+        // through Unsafe.Add against a base reference grabbed at the top of the
+        // method, so every per-iteration bounds check disappears. The bounds
+        // are structural: `i < oldSlots.Length` is the for-loop condition, and
+        // `index = ... & mask` keeps `index ∈ [0, newSize)`.
         T?[] newSlots = new T?[newSize];
+        ref T? oldSlotsRef = ref MemoryMarshal.GetArrayDataReference(oldSlots);
+        ref T? newSlotsRef = ref MemoryMarshal.GetArrayDataReference(newSlots);
 
         var comparer = EqualityComparer<T>.Default;
         for (int i = 0; i < oldSlots.Length; i++)
         {
-            T? item = oldSlots[i];
+            T? item = Unsafe.Add(ref oldSlotsRef, (nint)(uint)i);
             if (comparer.Equals(item, default(T)))
                 continue;
 
             int index = _hasher.Hash(item!) & mask;
-            while (!comparer.Equals(newSlots[index], default(T)))
+            while (!comparer.Equals(Unsafe.Add(ref newSlotsRef, (nint)(uint)index), default(T)))
                 index = (index + 1) & mask;
 
-            newSlots[index] = item;
+            Unsafe.Add(ref newSlotsRef, (nint)(uint)index) = item;
         }
 
         _slots = newSlots;

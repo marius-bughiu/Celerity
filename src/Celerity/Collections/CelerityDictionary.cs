@@ -712,22 +712,32 @@ public class CelerityDictionary<TKey, TValue, THasher>
         // conserved across a resize, so the setter's equality check, threshold
         // check, isNewEntry test, _count++, and _version++ are all dead weight.
         // The default-key entry lives out-of-band and is not touched here.
+        //
+        // Reads from the old arrays and probe/writes on the new arrays both go
+        // through Unsafe.Add against a base reference grabbed at the top of the
+        // method, so every per-iteration bounds check disappears. The bounds
+        // are structural: `i < oldKeys.Length` is the for-loop condition, and
+        // `index = ... & mask` keeps `index ∈ [0, newSize)`.
         TKey?[] newKeys = new TKey?[newSize];
         TValue?[] newValues = new TValue?[newSize];
+        ref TKey? oldKeysRef = ref MemoryMarshal.GetArrayDataReference(oldKeys);
+        ref TValue? oldValuesRef = ref MemoryMarshal.GetArrayDataReference(oldValues);
+        ref TKey? newKeysRef = ref MemoryMarshal.GetArrayDataReference(newKeys);
+        ref TValue? newValuesRef = ref MemoryMarshal.GetArrayDataReference(newValues);
 
         var comparer = EqualityComparer<TKey>.Default;
         for (int i = 0; i < oldKeys.Length; i++)
         {
-            TKey? key = oldKeys[i];
+            TKey? key = Unsafe.Add(ref oldKeysRef, (nint)(uint)i);
             if (comparer.Equals(key, default(TKey)))
                 continue;
 
             int index = _hasher.Hash(key!) & mask;
-            while (!comparer.Equals(newKeys[index], default(TKey)))
+            while (!comparer.Equals(Unsafe.Add(ref newKeysRef, (nint)(uint)index), default(TKey)))
                 index = (index + 1) & mask;
 
-            newKeys[index] = key;
-            newValues[index] = oldValues[i];
+            Unsafe.Add(ref newKeysRef, (nint)(uint)index) = key;
+            Unsafe.Add(ref newValuesRef, (nint)(uint)index) = Unsafe.Add(ref oldValuesRef, (nint)(uint)i);
         }
 
         _keys = newKeys;
