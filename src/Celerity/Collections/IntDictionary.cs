@@ -545,11 +545,15 @@ public class IntDictionary<TValue, THasher>
             {
                 int[] keys = _dict._keys;
                 TValue?[] values = _dict._values;
-                while (++_index < keys.Length)
+                int length = keys.Length;
+                ref int keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+                ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
+                while (++_index < length)
                 {
-                    if (keys[_index] != EMPTY_KEY)
+                    int key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
+                    if (key != EMPTY_KEY)
                     {
-                        _current = new KeyValuePair<int, TValue?>(keys[_index], values[_index]);
+                        _current = new KeyValuePair<int, TValue?>(key, Unsafe.Add(ref valuesRef, (nint)(uint)_index));
                         return true;
                     }
                 }

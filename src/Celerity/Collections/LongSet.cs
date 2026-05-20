@@ -380,11 +380,14 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
             if (_state == State.InArray)
             {
                 long[] slots = _set._slots;
-                while (++_index < slots.Length)
+                int length = slots.Length;
+                ref long slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+                while (++_index < length)
                 {
-                    if (slots[_index] != EMPTY_SLOT)
+                    long slot = Unsafe.Add(ref slotsRef, (nint)(uint)_index);
+                    if (slot != EMPTY_SLOT)
                     {
-                        _current = slots[_index];
+                        _current = slot;
                         return true;
                     }
                 }

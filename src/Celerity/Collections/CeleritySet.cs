@@ -331,11 +331,15 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
             if (_state == State.InArray)
             {
                 T?[] slots = _set._slots;
-                while (++_index < slots.Length)
+                int length = slots.Length;
+                ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+                var comparer = EqualityComparer<T>.Default;
+                while (++_index < length)
                 {
-                    if (!EqualityComparer<T>.Default.Equals(slots[_index], default(T)))
+                    T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)_index);
+                    if (!comparer.Equals(slot, default(T)))
                     {
-                        _current = slots[_index];
+                        _current = slot;
                         return true;
                     }
                 }
