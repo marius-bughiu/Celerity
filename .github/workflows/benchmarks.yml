@@ -62,59 +62,57 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      # ----- PR path: post a custom comment, do NOT touch gh-pages -----
+      # ----- PR path: same-runner A/B vs main, then comment -----
+      # GitHub-hosted runners vary in hardware by 20-50% run-to-run, so
+      # comparing absolute timings against a stored gh-pages baseline produces
+      # noise-dominated false positives. Instead we build and benchmark BOTH
+      # the PR head and the main tip back-to-back on THIS runner, so hardware
+      # variance cancels out and the delta reflects the code change alone.
 
-      - name: Fetch baseline from gh-pages
+      - name: Stage PR report
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          cp Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json /tmp/pr-report-full.json
+          echo "PR report staged ($(wc -c < /tmp/pr-report-full.json) bytes)"
+
+      - name: Run base (main) benchmarks on the same runner
         if: github.event_name == 'pull_request'
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          if git fetch origin gh-pages --depth=1 2>/dev/null \
-            && git show origin/gh-pages:dev/bench/data.js > /tmp/baseline-data.js 2>/dev/null; then
-            echo "Baseline fetched ($(wc -c < /tmp/baseline-data.js) bytes)"
-          else
-            echo "// no baseline" > /tmp/baseline-data.js
-            echo "No baseline available — comment will show n/a for deltas"
-          fi
+          git fetch origin main
+          BASE_SHA=$(git rev-parse origin/main)
+          echo "BASE_SHA=$BASE_SHA" >> "$GITHUB_ENV"
+          echo "Benchmarking base (main) at $BASE_SHA"
+          git worktree add /tmp/base-tree "$BASE_SHA"
+          cd /tmp/base-tree/src/Celerity.Benchmarks
+          dotnet run --configuration Release -- --ci
+          report=$(ls BenchmarkDotNet.Artifacts/results/*-report-full.json | head -n 1)
+          cp "$report" /tmp/base-report-full.json
+          echo "Base report staged: $report"
 
       - name: Post benchmark comment
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         env:
           ALERT_THRESHOLD_RATIO: '1.10'
-          BENCHMARK_NAME: 'Celerity Benchmarks'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
 
-            const reportPath = 'src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json';
-            const current = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            const pr = JSON.parse(fs.readFileSync('/tmp/pr-report-full.json', 'utf8'));
+            const base = JSON.parse(fs.readFileSync('/tmp/base-report-full.json', 'utf8'));
 
-            // Parse baseline data.js (assigns to window.BENCHMARK_DATA = {...})
-            let baselineEntry = null;
-            try {
-              const raw = fs.readFileSync('/tmp/baseline-data.js', 'utf8');
-              const m = raw.match(/window\.BENCHMARK_DATA\s*=\s*(\{[\s\S]*\})\s*;?\s*$/);
-              if (m) {
-                const data = JSON.parse(m[1]);
-                const entries = data.entries && data.entries[process.env.BENCHMARK_NAME];
-                if (entries && entries.length > 0) {
-                  baselineEntry = entries[entries.length - 1];
-                }
-              }
-            } catch (e) {
-              core.info(`No baseline available: ${e.message}`);
-            }
-
-            const baselineMap = new Map();
-            if (baselineEntry) {
-              for (const b of baselineEntry.benches) {
-                baselineMap.set(b.name, b.value);
-              }
+            // Index base results by full benchmark name.
+            const baseMap = new Map();
+            for (const b of base.Benchmarks) {
+              baseMap.set(b.FullName, b.Statistics);
             }
 
             const formatNs = (ns) => {
+              if (ns == null) return 'n/a';
               if (ns < 1000) return `${ns.toFixed(1)} ns`;
               if (ns < 1_000_000) return `${(ns/1000).toFixed(2)} μs`;
               if (ns < 1_000_000_000) return `${(ns/1_000_000).toFixed(2)} ms`;
@@ -122,44 +120,54 @@ jobs:
             };
 
             const threshold = parseFloat(process.env.ALERT_THRESHOLD_RATIO);
+            const thresholdPct = ((threshold - 1) * 100).toFixed(0);
             const rows = [];
             let regressions = 0;
+            let improvements = 0;
             let compared = 0;
 
-            for (const b of current.Benchmarks) {
+            for (const b of pr.Benchmarks) {
               const name = b.FullName;
-              const meanNs = b.Statistics.Mean;
-              const stdDevNs = b.Statistics.StandardDeviation;
-              const baselineNs = baselineMap.get(name);
-              let deltaCell = 'n/a';
-              if (baselineNs !== undefined) {
+              const prMean = b.Statistics.Mean;
+              const prStdDev = b.Statistics.StandardDeviation;
+              const baseStats = baseMap.get(name);
+              let deltaCell = '🆕 new';
+              if (baseStats) {
                 compared++;
-                const ratio = meanNs / baselineNs;
+                const baseMean = baseStats.Mean;
+                const baseStdDev = baseStats.StandardDeviation;
+                const ratio = prMean / baseMean;
                 const pct = (ratio - 1) * 100;
                 const sign = pct >= 0 ? '+' : '';
                 deltaCell = `${sign}${pct.toFixed(1)}%`;
-                if (ratio >= threshold) {
+                // Flag only when the change clears the threshold AND exceeds the
+                // combined run-to-run noise of both measurements.
+                const beyondNoise = Math.abs(prMean - baseMean) > (prStdDev + baseStdDev);
+                if (ratio >= threshold && beyondNoise) {
                   deltaCell += ' ⚠️';
                   regressions++;
+                } else if (ratio <= (1 / threshold) && beyondNoise) {
+                  deltaCell += ' ✅';
+                  improvements++;
                 }
               }
-              rows.push(`| \`${name}\` | ${formatNs(meanNs)} | ${formatNs(stdDevNs)} | ${baselineNs !== undefined ? formatNs(baselineNs) : 'n/a'} | ${deltaCell} |`);
+              const baseMeanCell = baseStats ? formatNs(baseStats.Mean) : 'n/a';
+              rows.push(`| \`${name}\` | ${formatNs(prMean)} | ${formatNs(prStdDev)} | ${baseMeanCell} | ${deltaCell} |`);
             }
 
             let subtitle;
-            if (!baselineEntry) {
-              subtitle = 'No baseline on `gh-pages` yet — showing absolute numbers only.';
-            } else if (regressions > 0) {
-              subtitle = `${regressions} regression${regressions === 1 ? '' : 's'} vs main (⚠️ rows exceed +${((threshold - 1) * 100).toFixed(0)}%). ${compared}/${current.Benchmarks.length} benchmarks matched baseline.`;
+            if (regressions > 0) {
+              subtitle = `${regressions} regression${regressions === 1 ? '' : 's'} ⚠️ vs main` +
+                (improvements > 0 ? `, ${improvements} improvement${improvements === 1 ? '' : 's'} ✅` : '') +
+                ` (rows past ±${thresholdPct}% beyond noise). ${compared}/${pr.Benchmarks.length} benchmarks compared.`;
+            } else if (improvements > 0) {
+              subtitle = `No regressions — ${improvements} improvement${improvements === 1 ? '' : 's'} ✅ vs main. ${compared}/${pr.Benchmarks.length} benchmarks compared.`;
             } else {
-              subtitle = `All ${compared} matched benchmark${compared === 1 ? '' : 's'} within ±${((threshold - 1) * 100).toFixed(0)}% of main.`;
+              subtitle = `No significant change vs main (all within ±${thresholdPct}% or noise). ${compared}/${pr.Benchmarks.length} benchmarks compared.`;
             }
 
-            const baselineSha = baselineEntry && baselineEntry.commit && baselineEntry.commit.id
-              ? baselineEntry.commit.id.slice(0, 7)
-              : null;
-
-            const footer = `<sub>Baseline = latest entry on \`gh-pages\` \`dev/bench/data.js\`${baselineSha ? ` (commit \`${baselineSha}\`)` : ''}. Threshold: +${((threshold - 1) * 100).toFixed(0)}% mean time vs baseline.</sub>`;
+            const baseSha = (process.env.BASE_SHA || '').slice(0, 7);
+            const footer = `<sub>Same-runner A/B: main (\`${baseSha}\`) and this PR were built and benchmarked back-to-back on the same runner, so hardware variance cancels out. ⚠️ = PR mean ≥ +${thresholdPct}% slower than main and beyond combined std-dev; ✅ = correspondingly faster.</sub>`;
 
             const marker = '<!-- celerity-benchmarks-comment -->';
             const body = [
@@ -168,7 +176,7 @@ jobs:
               '',
               subtitle,
               '',
-              '| Benchmark | Mean | StdDev | Baseline (main) | Δ |',
+              '| Benchmark | This PR | StdDev | main | Δ |',
               '|---|---:|---:|---:|---:|',
               ...rows,
               '',
