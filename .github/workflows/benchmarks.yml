@@ -124,7 +124,6 @@ jobs:
             const rows = [];
             let regressions = 0;
             let improvements = 0;
-            let compared = 0;
 
             for (const b of pr.Benchmarks) {
               const name = b.FullName;
@@ -133,7 +132,6 @@ jobs:
               const baseStats = baseMap.get(name);
               let deltaCell = '🆕 new';
               if (baseStats) {
-                compared++;
                 const baseMean = baseStats.Mean;
                 const baseStdDev = baseStats.StandardDeviation;
                 const ratio = prMean / baseMean;
@@ -159,11 +157,11 @@ jobs:
             if (regressions > 0) {
               subtitle = `${regressions} regression${regressions === 1 ? '' : 's'} ⚠️ vs main` +
                 (improvements > 0 ? `, ${improvements} improvement${improvements === 1 ? '' : 's'} ✅` : '') +
-                ` (rows past ±${thresholdPct}% beyond noise). ${compared}/${pr.Benchmarks.length} benchmarks compared.`;
+                ` (rows past ±${thresholdPct}% beyond noise).`;
             } else if (improvements > 0) {
-              subtitle = `No regressions — ${improvements} improvement${improvements === 1 ? '' : 's'} ✅ vs main. ${compared}/${pr.Benchmarks.length} benchmarks compared.`;
+              subtitle = `No regressions — ${improvements} improvement${improvements === 1 ? '' : 's'} ✅ vs main.`;
             } else {
-              subtitle = `No significant change vs main (all within ±${thresholdPct}% or noise). ${compared}/${pr.Benchmarks.length} benchmarks compared.`;
+              subtitle = `No significant change vs main (all within ±${thresholdPct}% or noise).`;
             }
 
             const baseSha = (process.env.BASE_SHA || '').slice(0, 7);
