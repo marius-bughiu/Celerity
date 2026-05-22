@@ -50,6 +50,18 @@ A lightweight 32-bit integer hash that XORs the key with its upper 16 bits shift
 
 **Algorithm:** `key ^ (key >> 16)`
 
+### Int64WangNaiveHasher
+
+```csharp
+public struct Int64WangNaiveHasher : IHashProvider<long>
+```
+
+The 64-bit counterpart to `Int32WangNaiveHasher`: an extremely cheap XOR-fold over the upper 32 bits and the middle 16 bits of the key. Modest avalanche but very low latency — the cheapest hasher in the `long` family. This is the default hasher used by `LongDictionary<TValue>` and `LongSet`.
+
+**Algorithm:** `(int)key ^ (int)((ulong)key >> 32) ^ (int)((ulong)key >> 16)`
+
+The extra middle-16-bits fold over a naive `key.GetHashCode()` keeps a chunk of the high-half entropy in the result, which materially improves distribution on keys whose low 32 bits are sequential (e.g. monotonically allocated IDs whose upper bits carry type / shard). Prefer it when the key distribution is already reasonably uniform and latency matters more than collision resistance; for adversarial or heavily clustered keys, switch to `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher`.
+
 ### Int64Murmur3Hasher
 
 ```csharp
@@ -105,7 +117,7 @@ The MurmurHash3 32-bit finalizer (`fmix32`) applied to `int` keys. Better avalan
 public struct Int64WangHasher : IHashProvider<long>
 ```
 
-Thomas Wang's 64-bit integer hash for `long` keys. Faster than `Int64Murmur3Hasher` while still providing better avalanche than a simple XOR-fold. Bijective on `ulong`, so the only source of collisions is truncation to 32 bits when the result is returned. Default hasher for `LongDictionary<TValue>`.
+Thomas Wang's 64-bit integer hash for `long` keys. Faster than `Int64Murmur3Hasher` while still providing better avalanche than a simple XOR-fold. Bijective on `ulong`, so the only source of collisions is truncation to 32 bits when the result is returned. Prefer it over the default `Int64WangNaiveHasher` when the key distribution is clustered or adversarial and the XOR-fold's collision behaviour is no longer acceptable; prefer `Int64Murmur3Hasher` when even better avalanche is needed.
 
 ### UInt32Hasher
 
@@ -148,7 +160,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 | Key type | Default | Alternative |
 |---|---|---|
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32Murmur3Hasher` for clustered or adversarial keys |
-| `long` | `Int64WangHasher` (used by `LongDictionary`) | `Int64Murmur3Hasher` for clustered or adversarial keys |
+| `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered or adversarial keys |
 | `uint` | `UInt32Hasher` | — |
 | `ulong` | `UInt64Hasher` | — |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
