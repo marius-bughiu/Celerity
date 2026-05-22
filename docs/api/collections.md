@@ -262,11 +262,11 @@ foreach (var value in ids.Values) { /* ... */ }
 
 ## LongDictionary&lt;TValue&gt;
 
-A convenience subclass of `LongDictionary<TValue, Int64WangHasher>` for the common case of 64-bit integer-keyed dictionaries.
+A convenience subclass of `LongDictionary<TValue, Int64WangNaiveHasher>` for the common case of 64-bit integer-keyed dictionaries.
 
 ```csharp
 public class LongDictionary<TValue>
-    : LongDictionary<TValue, Int64WangHasher>
+    : LongDictionary<TValue, Int64WangNaiveHasher>
 ```
 
 ### Constructors
@@ -288,7 +288,7 @@ Same semantics and validation as `IntDictionary`.
 
 ## LongDictionary&lt;TValue, THasher&gt;
 
-A high-performance dictionary keyed by `long`, parameterized on a custom hash provider. Mirrors `IntDictionary` but for 64-bit keys. Defaults to `Int64WangHasher` when used through the convenience subclass. Implements `IReadOnlyDictionary<long, TValue?>`.
+A high-performance dictionary keyed by `long`, parameterized on a custom hash provider. Mirrors `IntDictionary` but for 64-bit keys. Defaults to `Int64WangNaiveHasher` when used through the convenience subclass. Implements `IReadOnlyDictionary<long, TValue?>`.
 
 ```csharp
 public class LongDictionary<TValue, THasher>
@@ -480,10 +480,10 @@ foreach (int n in seen) { /* ... */ }
 
 ## LongSet
 
-A convenience subclass of `LongSet<Int64WangHasher>` for the common case of 64-bit integer sets. Mirrors `IntSet` for `long` elements and defaults to the same `Int64WangHasher` `LongDictionary` uses.
+A convenience subclass of `LongSet<Int64WangNaiveHasher>` for the common case of 64-bit integer sets. Mirrors `IntSet` for `long` elements and defaults to the same `Int64WangNaiveHasher` `LongDictionary` uses.
 
 ```csharp
-public class LongSet : LongSet<Int64WangHasher>
+public class LongSet : LongSet<Int64WangNaiveHasher>
 ```
 
 ### Constructors

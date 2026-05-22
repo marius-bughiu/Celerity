@@ -7,10 +7,10 @@ Celerity is a .NET library that provides specialized high-performance collection
 
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
 - `IntDictionary<TValue>` / `IntDictionary<TValue, THasher>` — `int`-keyed specialization. Defaults to `Int32WangNaiveHasher`.
-- `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangHasher`.
+- `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangNaiveHasher`.
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
 - `IntSet` / `IntSet<THasher>` — `int`-keyed set specialization.
-- `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangHasher`.
+- `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangNaiveHasher`.
 
 All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. All collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel.
 
@@ -46,7 +46,7 @@ foreach (var kvp in counts)
     Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
 ```
 
-The zero key is a legitimate value, not the empty-slot sentinel — `counts[0] = 99` round-trips correctly. `LongDictionary<TValue>` follows the exact same surface for `long` keys (defaulting to `Int64WangHasher`).
+The zero key is a legitimate value, not the empty-slot sentinel — `counts[0] = 99` round-trips correctly. `LongDictionary<TValue>` follows the exact same surface for `long` keys (defaulting to `Int64WangNaiveHasher`).
 
 ### `CelerityDictionary` — generic keys with a struct hasher
 
@@ -116,16 +116,17 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Your workload | Use | Why |
 |---|---|---|
 | Dictionary keyed by `int` | `IntDictionary<TValue>` | Avoids generic boxing / `EqualityComparer<int>` dispatch; defaults to `Int32WangNaiveHasher`. |
-| Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangHasher`. |
+| Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangNaiveHasher`. |
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
-| Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangHasher`. |
+| Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
 | Need a stable iteration order, multi-threaded access, or a frozen / read-only post-build view | BCL `Dictionary<,>`, `ConcurrentDictionary<,>`, `FrozenDictionary<,>` | Celerity is single-threaded, iteration order is unspecified, and `FrozenCelerityDictionary` is still on the [1.2.0 roadmap](ROADMAP.md). |
 
 Notes on picking a hasher once the collection is settled:
 
-- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`, `LongSet`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case switch to `Int32Murmur3Hasher` / `Int64Murmur3Hasher`.
+- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`, `LongSet`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case switch to `Int32Murmur3Hasher` (for `int` keys) or `Int64WangHasher` / `Int64Murmur3Hasher` (for `long` keys).
+- For `string` keys, `StringFnV1AHasher` is the fast default for ASCII-dominated workloads. Switch to `StringMurmur3Hasher` for keys with significant non-ASCII content (it hashes the full UTF-16 character rather than just the low byte) or when key distribution is clustered or adversarial.
 - For arbitrary types, `DefaultHasher<T>` (which delegates to `EqualityComparer<T>.Default.GetHashCode()`) is a safe fallback. It still benefits from the struct-hasher devirtualisation; the inner `EqualityComparer<T>` dispatch is the only unavoidable cost. Replace it with a hand-written struct hasher if profiling shows `Hash` on the hot path.
 - The full hasher matrix lives in [`docs/api/hashing.md`](docs/api/hashing.md).
 
