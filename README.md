@@ -153,6 +153,16 @@ public interface IHashProvider<T>
 
 Hashers must be **structs** when used with Celerity collections (`where THasher : struct, IHashProvider<T>`) so the JIT can devirtualize and inline `Hash()`. The package ships built-in hashers for `int`, `long`, `uint`, `ulong`, `Guid`, and `string`, plus a `DefaultHasher<T>` fallback that delegates to `EqualityComparer<T>.Default.GetHashCode()`. See [`docs/api/hashing.md`](docs/api/hashing.md) for the full list.
 
+## Native AOT & trimming
+
+Celerity is **Native AOT and trimming compatible**. The library carries no reflection, runtime code generation, or dynamic type loading — every collection is a generic over a struct hasher, and the only BCL primitives on the hot paths are `MemoryMarshal`, `Unsafe`, and `EqualityComparer<T>.Default`, all of which are AOT-safe. The assembly is marked [`<IsAotCompatible>true</IsAotCompatible>`](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#aot-compatibility-analyzers), so consuming it from a `PublishAot` app produces **no trim or AOT warnings**.
+
+```bash
+dotnet publish -r linux-x64 -c Release   # in an app that references Celerity.Collections
+```
+
+Compatibility is enforced on every build: the trim and AOT Roslyn analyzers run as part of the library's compilation, and CI publishes a Native AOT smoke-test app that exercises every collection and hasher and runs the resulting native binary. See [`docs/aot.md`](docs/aot.md) for details.
+
 ## API overview
 
 The dictionaries (`CelerityDictionary`, `IntDictionary`, `LongDictionary`) expose a compact, allocation-conscious API that mirrors the parts of `Dictionary<TKey, TValue>` most users actually reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove` (both the `bool Remove(key)` and `bool Remove(key, out TValue?)` overloads), `Clear`, `Count`, `Keys`, `Values`, and `GetEnumerator()`. They implement `IReadOnlyDictionary<TKey, TValue?>` and accept an `IEnumerable<KeyValuePair<TKey, TValue>>` source at construction.

@@ -1,0 +1,140 @@
+// Native AOT smoke test for Celerity (#32).
+//
+// This console app exercises every collection shape and a representative spread
+// of hashers so that `dotnet publish /p:PublishAot=true` is forced to compile
+// each generic instantiation down to native code. It is run by the AOT CI job:
+// a non-zero exit code (any failed assertion) fails the build, proving the
+// library works end-to-end under Native AOT, not just that the static analyzers
+// are happy.
+
+using Celerity.Collections;
+using Celerity.Hashing;
+
+int failures = 0;
+
+void Check(bool condition, string message)
+{
+    if (!condition)
+    {
+        Console.Error.WriteLine($"FAIL: {message}");
+        failures++;
+    }
+}
+
+// IntDictionary (default Int32WangNaiveHasher) — indexer, TryAdd/Add, TryGetValue,
+// Remove, zero-key out-of-band slot, struct enumerator.
+{
+    var d = new IntDictionary<int>();
+    d[42] = 1;
+    d[42]++;
+    Check(d.TryAdd(7, 100), "IntDictionary.TryAdd new key");
+    Check(!d.TryAdd(7, 999), "IntDictionary.TryAdd duplicate");
+    d.Add(8, 200);
+    d[0] = 99; // zero key is a legitimate value, not the empty sentinel
+    Check(d.TryGetValue(42, out var v) && v == 2, "IntDictionary indexer round-trip");
+    Check(d[0] == 99, "IntDictionary zero-key round-trip");
+    Check(d.Remove(7), "IntDictionary.Remove");
+    var sum = 0;
+    foreach (var kvp in d) sum += kvp.Value;
+    Check(sum == 2 + 200 + 99, "IntDictionary enumeration");
+    Check(d.Count == 3, "IntDictionary count");
+}
+
+// LongDictionary (default Int64WangNaiveHasher) — upper-32-bits distinctness.
+{
+    var d = new LongDictionary<string>();
+    d[1L << 40] = "high";
+    d[1L] = "low";
+    Check(d.Count == 2, "LongDictionary distinct upper/lower bits");
+    Check(d.TryGetValue(1L << 40, out var v) && v == "high", "LongDictionary round-trip");
+}
+
+// CelerityDictionary with a spread of hashers.
+{
+    var byGuid = new CelerityDictionary<Guid, string, GuidHasher>();
+    var id = Guid.NewGuid();
+    byGuid[id] = "alice";
+    byGuid[Guid.Empty] = "empty"; // out-of-band default-key slot
+    Check(byGuid[id] == "alice", "CelerityDictionary<Guid> round-trip");
+    Check(byGuid[Guid.Empty] == "empty", "CelerityDictionary<Guid> empty-key slot");
+
+    var byStr = new CelerityDictionary<string, int, StringMurmur3Hasher>();
+    byStr["hello"] = 1;
+    byStr["Ł"] = 2; // non-ASCII, distinct from low-byte-equal chars
+    Check(byStr.TryGetValue("hello", out var hv) && hv == 1, "CelerityDictionary<string> round-trip");
+
+    var fnv = new CelerityDictionary<string, int, StringFnV1AHasher>();
+    fnv["a"] = 1;
+    Check(fnv.ContainsKey("a"), "CelerityDictionary<string, StringFnV1AHasher>");
+
+    // DefaultHasher<T> routes through EqualityComparer<T>.Default — the most
+    // AOT-sensitive path in the library.
+    var def = new CelerityDictionary<int, int, DefaultHasher<int>>();
+    def[5] = 50;
+    Check(def[5] == 50, "CelerityDictionary<int, DefaultHasher<int>>");
+
+    var u32 = new CelerityDictionary<uint, int, UInt32Hasher>();
+    u32[3000000000u] = 1;
+    Check(u32.ContainsKey(3000000000u), "CelerityDictionary<uint, UInt32Hasher>");
+
+    var u64 = new CelerityDictionary<ulong, int, UInt64Hasher>();
+    u64[ulong.MaxValue] = 1;
+    Check(u64.ContainsKey(ulong.MaxValue), "CelerityDictionary<ulong, UInt64Hasher>");
+
+    var murmurInt = new CelerityDictionary<int, int, Int32Murmur3Hasher>();
+    murmurInt[1] = 1;
+    Check(murmurInt.ContainsKey(1), "CelerityDictionary<int, Int32Murmur3Hasher>");
+
+    var wangLong = new CelerityDictionary<long, int, Int64WangHasher>();
+    wangLong[1L] = 1;
+    Check(wangLong.ContainsKey(1L), "CelerityDictionary<long, Int64WangHasher>");
+
+    var murmurLong = new CelerityDictionary<long, int, Int64Murmur3Hasher>();
+    murmurLong[1L] = 1;
+    Check(murmurLong.ContainsKey(1L), "CelerityDictionary<long, Int64Murmur3Hasher>");
+}
+
+// Sets — IntSet, LongSet, CeleritySet.
+{
+    var s = new IntSet();
+    s.Add(1);
+    Check(s.TryAdd(2), "IntSet.TryAdd new");
+    Check(!s.TryAdd(1), "IntSet.TryAdd duplicate");
+    s.Add(0); // zero element out-of-band
+    Check(s.Contains(0) && s.Contains(1), "IntSet.Contains");
+    Check(s.Remove(2), "IntSet.Remove");
+    var count = 0;
+    foreach (var _ in s) count++;
+    Check(count == s.Count && s.Count == 2, "IntSet enumeration/count");
+
+    var ls = new LongSet();
+    ls.Add(1L << 40);
+    ls.Add(1L);
+    Check(ls.Count == 2 && ls.Contains(1L << 40), "LongSet upper-bits distinctness");
+
+    var gs = new CeleritySet<Guid, GuidHasher>();
+    var g = Guid.NewGuid();
+    gs.Add(g);
+    gs.Add(Guid.Empty);
+    Check(gs.Contains(g) && gs.Contains(Guid.Empty), "CeleritySet<Guid>");
+}
+
+// IEnumerable constructors (collection-count sizing path).
+{
+    var source = new Dictionary<int, int> { [1] = 1, [2] = 2, [3] = 3 };
+    var d = new IntDictionary<int>(source);
+    Check(d.Count == 3, "IntDictionary IEnumerable ctor");
+
+    var setSource = new[] { 1, 2, 2, 3 };
+    var set = new IntSet(setSource);
+    Check(set.Count == 3, "IntSet IEnumerable ctor dedupe");
+}
+
+if (failures == 0)
+{
+    Console.WriteLine("Celerity AOT smoke test: all checks passed.");
+    return 0;
+}
+
+Console.Error.WriteLine($"Celerity AOT smoke test: {failures} check(s) failed.");
+return 1;

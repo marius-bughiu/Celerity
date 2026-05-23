@@ -7,6 +7,7 @@ This folder contains reference documentation for the Celerity high-performance c
 - [Collections](api/collections.md) — `CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`.
 - [Hashing](api/hashing.md) — `IHashProvider<T>` interface and built-in hashers (`Int32WangNaiveHasher`, `Int32Murmur3Hasher`, `Int64WangHasher`, `Int64Murmur3Hasher`, `UInt32Hasher`, `UInt64Hasher`, `GuidHasher`, `StringFnV1AHasher`, `DefaultHasher<T>`).
 - [Utilities](api/utilities.md) — `FastUtils` helper methods.
+- [Native AOT & trimming](aot.md) — AOT / trim compatibility and how it is enforced.
 
 ## Quick links
 
