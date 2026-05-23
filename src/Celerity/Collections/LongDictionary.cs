@@ -547,11 +547,15 @@ public class LongDictionary<TValue, THasher>
             {
                 long[] keys = _dict._keys;
                 TValue?[] values = _dict._values;
-                while (++_index < keys.Length)
+                int length = keys.Length;
+                ref long keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+                ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
+                while (++_index < length)
                 {
-                    if (keys[_index] != EMPTY_KEY)
+                    long key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
+                    if (key != EMPTY_KEY)
                     {
-                        _current = new KeyValuePair<long, TValue?>(keys[_index], values[_index]);
+                        _current = new KeyValuePair<long, TValue?>(key, Unsafe.Add(ref valuesRef, (nint)(uint)_index));
                         return true;
                     }
                 }
