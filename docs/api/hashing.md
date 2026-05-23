@@ -111,6 +111,18 @@ The MurmurHash3 32-bit finalizer (`fmix32`) applied to `int` keys. Better avalan
 
 **Note:** maps `0 → 0` (a fixed point of `fmix32`), so the dictionaries' out-of-band zero-key slot is engaged just as it is with the simpler hashers.
 
+### Int32WangHasher
+
+```csharp
+public struct Int32WangHasher : IHashProvider<int>
+```
+
+Thomas Wang's 32-bit integer hash (`hash32shift`) for `int` keys. The full-mixer middle tier of the `int` family: it sits between `Int32WangNaiveHasher` (the cheap XOR-fold default) and `Int32Murmur3Hasher` on the cost-vs-avalanche curve, mirroring the role `Int64WangHasher` plays for `long` keys. It uses a single (shift-add-encoded) multiply plus a chain of XOR-shift / shift-add rounds, so it is cheaper than the two-multiply `Int32Murmur3Hasher` finalizer while still giving every input bit influence over the result. Bijective on `uint`, so the only source of collisions is truncation-free key structure, not the mixer. Prefer it over the default `Int32WangNaiveHasher` when the cheap XOR-fold produces measurable clustering; escalate to `Int32Murmur3Hasher` when even better avalanche is needed.
+
+**Algorithm:** `~key + (key << 15)`, `^ (key >> 12)`, `+ (key << 2)`, `^ (key >> 4)`, `* 2057` (encoded as `+ (key << 3) + (key << 11)`), `^ (key >> 16)`, computed on the `uint` reinterpretation and truncated to `int`.
+
+**Note:** unlike the Murmur3 finalizer, this function does **not** map `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
 ### Int64WangHasher
 
 ```csharp
@@ -159,7 +171,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 
 | Key type | Default | Alternative |
 |---|---|---|
-| `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32Murmur3Hasher` for clustered or adversarial keys |
+| `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
 | `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered or adversarial keys |
 | `uint` | `UInt32Hasher` | — |
 | `ulong` | `UInt64Hasher` | — |

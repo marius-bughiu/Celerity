@@ -85,6 +85,10 @@ void Check(bool condition, string message)
     murmurInt[1] = 1;
     Check(murmurInt.ContainsKey(1), "CelerityDictionary<int, Int32Murmur3Hasher>");
 
+    var wangInt = new CelerityDictionary<int, int, Int32WangHasher>();
+    wangInt[1] = 1;
+    Check(wangInt.ContainsKey(1), "CelerityDictionary<int, Int32WangHasher>");
+
     var wangLong = new CelerityDictionary<long, int, Int64WangHasher>();
     wangLong[1L] = 1;
     Check(wangLong.ContainsKey(1L), "CelerityDictionary<long, Int64WangHasher>");
