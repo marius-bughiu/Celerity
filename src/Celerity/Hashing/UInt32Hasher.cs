@@ -11,8 +11,8 @@ namespace Celerity.Hashing;
 /// It folds the high bits of the value into the low bits (<c>key ^ (key &gt;&gt; 16)</c>),
 /// then reinterprets the 32-bit result as a signed integer. Prefer this when
 /// key distribution is already reasonably uniform and latency matters more than
-/// collision resistance; use a full Murmur3 finalizer for clustered or
-/// adversarial inputs.
+/// collision resistance; escalate to <see cref="UInt32Murmur3Hasher"/> (the
+/// Murmur3 <c>fmix32</c> finalizer) for clustered or adversarial inputs.
 /// </remarks>
 public struct UInt32Hasher : IHashProvider<uint>
 {

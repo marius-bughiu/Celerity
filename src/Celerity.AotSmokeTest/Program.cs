@@ -77,6 +77,10 @@ void Check(bool condition, string message)
     u32[3000000000u] = 1;
     Check(u32.ContainsKey(3000000000u), "CelerityDictionary<uint, UInt32Hasher>");
 
+    var u32m = new CelerityDictionary<uint, int, UInt32Murmur3Hasher>();
+    u32m[3000000000u] = 1;
+    Check(u32m.ContainsKey(3000000000u), "CelerityDictionary<uint, UInt32Murmur3Hasher>");
+
     var u64 = new CelerityDictionary<ulong, int, UInt64Hasher>();
     u64[ulong.MaxValue] = 1;
     Check(u64.ContainsKey(ulong.MaxValue), "CelerityDictionary<ulong, UInt64Hasher>");
