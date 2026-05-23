@@ -166,3 +166,69 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
 | `string` | `StringFnV1AHasher` | `StringMurmur3Hasher` for non-ASCII content or clustered / adversarial keys; `DefaultHasher<string>` (uses the BCL string hasher) |
 | anything else | `DefaultHasher<T>` | a struct hasher you write |
+
+---
+
+## Hash quality evaluation
+
+### HashQualityEvaluator
+
+```csharp
+public static class HashQualityEvaluator
+{
+    public static HashQualityReport Evaluate<T, THasher>(IEnumerable<T> keys, int bucketCount = 1024)
+        where THasher : struct, IHashProvider<T>;
+}
+```
+
+A diagnostic tool for comparing how well candidate hashers distribute a representative sample of keys *before* you commit one to a collection. It hashes every key with `THasher` (instantiated via `default` — the built-in hashers are stateless structs) and reports both the hasher's intrinsic collision behaviour and how the codes spread across power-of-two buckets.
+
+This is **not** a hot-path API: it allocates working buffers and walks an `IEnumerable<T>`, so call it offline — in a test, a benchmark, or a one-off analysis — not on a request path. Codes are masked into buckets with `code & (bucketCount - 1)`, exactly as the Celerity collections index their backing arrays, so the bucket metrics reflect the clustering a real table of that size would experience.
+
+`bucketCount` is rounded up to the next power of two (matching the collections' array sizing). `Evaluate` throws `ArgumentNullException` for a null `keys` sequence and `ArgumentOutOfRangeException` when `bucketCount < 1`.
+
+> Pass **distinct** keys to measure a hasher's intrinsic quality. Duplicate keys in the sample naturally hash to the same code and are counted as collisions.
+
+### HashQualityReport
+
+```csharp
+public readonly struct HashQualityReport
+```
+
+An immutable bag of metrics returned by `Evaluate`. Its `ToString()` renders a one-line summary.
+
+| Member | Meaning |
+|---|---|
+| `KeyCount` | Number of keys hashed. |
+| `DistinctHashCount` | Number of distinct 32-bit codes produced. |
+| `CollisionCount` | `KeyCount - DistinctHashCount` — raw-code collisions, independent of `BucketCount`. Measures the hasher's intrinsic injectivity. |
+| `CollisionRate` | `CollisionCount / KeyCount`, in `[0, 1)`. |
+| `BucketCount` | The power-of-two bucket count actually used. |
+| `OccupiedBucketCount` / `EmptyBucketCount` | Buckets that received at least one / no keys. |
+| `MaxBucketLoad` | Largest number of keys in any single bucket — the worst-case probe-chain seed. |
+| `MeanBucketLoad` | `KeyCount / BucketCount`. |
+| `ChiSquared` | Pearson's chi-squared of the bucket loads vs a uniform expectation. Lower is closer to uniform; ≈ `BucketCount - 1` for a good hash on a uniform sample. |
+| `DistributionScore` | Observed sum of squared bucket loads ÷ the value expected from an ideal uniform hash. **`1.0` = ideal uniform**; above `1.0` = clustering (worse, longer probe chains); below `1.0` = more even than random (e.g. near-perfect hashing). |
+
+### Example
+
+```csharp
+using Celerity.Hashing;
+
+// A representative sample of the keys your collection will actually hold.
+long[] keys = LoadProductionKeySample();
+
+HashQualityReport naive = HashQualityEvaluator.Evaluate<long, Int64WangNaiveHasher>(keys, bucketCount: 4096);
+HashQualityReport wang  = HashQualityEvaluator.Evaluate<long, Int64WangHasher>(keys, bucketCount: 4096);
+
+Console.WriteLine($"naive: {naive}");
+Console.WriteLine($"wang:  {wang}");
+
+// Pick the hasher whose DistributionScore is closest to 1.0 (and whose MaxBucketLoad is lowest)
+// for your key shape. If the cheap default already scores near 1.0, there's no reason to pay
+// for a stronger mixer.
+if (naive.DistributionScore <= wang.DistributionScore * 1.1)
+{
+    // The naive fold distributes these keys well enough — keep the cheaper default.
+}
+```
