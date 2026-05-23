@@ -77,7 +77,7 @@ Focus on raw performance and specialized collection types that serve more advanc
 
 - Robin Hood hashing experiment as alternative to linear probing. Tracked in [#63](https://github.com/marius-bughiu/Celerity/issues/63).
 - Performance optimizations across existing collections.
-- Native AOT support and trimming compatibility. Tracked in [#32](https://github.com/marius-bughiu/Celerity/issues/32).
+- Native AOT support and trimming compatibility. Status: `done` — the library is marked `<IsAotCompatible>true</IsAotCompatible>` (trim + AOT analyzers run on every build), and a Native AOT publish smoke test runs the full collection / hasher surface as a native binary in CI. See [`docs/aot.md`](docs/aot.md). An AOT-vs-JIT benchmark comparison remains a follow-up. Tracked in [#32](https://github.com/marius-bughiu/Celerity/issues/32).
 
 ## Milestone 2.0.0 — Multi-package restructure
 

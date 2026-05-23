@@ -9,6 +9,16 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<!--
+		  Native AOT / trimming compatibility (#32). On net8.0 this single switch
+		  marks the assembly trimmable and turns on the trim, AOT, and single-file
+		  Roslyn analyzers, so every build statically verifies the library stays
+		  free of reflection / trim hazards. The library uses no reflection — only
+		  MemoryMarshal / Unsafe and EqualityComparer<T>.Default, all AOT-safe — so
+		  the analyzers run clean. An AOT publish smoke test in CI proves the full
+		  pipeline end-to-end.
+		-->
+		<IsAotCompatible>true</IsAotCompatible>
+		<!--
 		  Promote CS1591 (missing XML comment for publicly visible type or member)
 		  from warning to error. Celerity is a public NuGet package; every public
 		  symbol must carry an XML doc comment so the generated .xml shipping in

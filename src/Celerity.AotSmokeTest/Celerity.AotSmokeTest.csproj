@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!--
+      Native AOT smoke test (#32). PublishAot turns on the trim/AOT analyzers for
+      the consumer side too and lets CI run `dotnet publish` to compile the whole
+      library + every generic instantiation this app forces down to a native
+      binary. If any Celerity code path were AOT-incompatible, the publish or the
+      native binary's runtime assertions would fail. Not packaged or tested as a
+      unit; it exists purely as a CI publish target.
+    -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Celerity\Celerity.csproj" />
+  </ItemGroup>
+
+</Project>
