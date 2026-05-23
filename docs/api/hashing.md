@@ -139,6 +139,18 @@ public struct UInt32Hasher : IHashProvider<uint>
 
 Wang/Jenkins-style bit-mixer for `uint` keys. Counterpart to `Int32WangNaiveHasher` for unsigned 32-bit integers.
 
+### UInt32Murmur3Hasher
+
+```csharp
+public struct UInt32Murmur3Hasher : IHashProvider<uint>
+```
+
+MurmurHash3 32-bit finalizer (`fmix32`) for `uint` keys. The `uint` counterpart to `Int32Murmur3Hasher`, and the strong-avalanche escalation option for `UInt32Hasher` (the cheap XOR-fold default) — every input bit affects every output bit. Prefer it over `UInt32Hasher` when the XOR-fold produces measurable clustering or collision resistance matters more than raw throughput.
+
+**Algorithm:** `h ^= h >> 16`, `h *= 0x85ebca6b`, `h ^= h >> 13`, `h *= 0xc2b2ae35`, `h ^= h >> 16`, computed on the `uint` directly and reinterpreted as `int`.
+
+**Note:** maps `0 → 0` (a fixed point of `fmix32`), so the dictionaries' out-of-band zero-key slot is engaged just as it is with the simpler `UInt32Hasher`.
+
 ### UInt64Hasher
 
 ```csharp
@@ -173,7 +185,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 |---|---|---|
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
 | `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered or adversarial keys |
-| `uint` | `UInt32Hasher` | — |
+| `uint` | `UInt32Hasher` | `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
 | `ulong` | `UInt64Hasher` | — |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
 | `string` | `StringFnV1AHasher` | `StringMurmur3Hasher` for non-ASCII content or clustered / adversarial keys; `DefaultHasher<string>` (uses the BCL string hasher) |
