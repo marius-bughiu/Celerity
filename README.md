@@ -154,6 +154,8 @@ public interface IHashProvider<T>
 
 Hashers must be **structs** when used with Celerity collections (`where THasher : struct, IHashProvider<T>`) so the JIT can devirtualize and inline `Hash()`. The package ships built-in hashers for `int`, `long`, `uint`, `ulong`, `Guid`, and `string`, plus a `DefaultHasher<T>` fallback that delegates to `EqualityComparer<T>.Default.GetHashCode()`. See [`docs/api/hashing.md`](docs/api/hashing.md) for the full list.
 
+Not sure which hasher to pick for your key shape? `HashQualityEvaluator.Evaluate<T, THasher>(keys)` runs a representative key sample through a hasher and returns a `HashQualityReport` of collision count, bucket occupancy, max bucket load, chi-squared, and a normalized distribution score (`1.0` = ideal uniform). It's a diagnostic tool — run it offline to compare candidate hashers before committing one. See the [hash quality evaluation](docs/api/hashing.md#hash-quality-evaluation) section.
+
 ## Native AOT & trimming
 
 Celerity is **Native AOT and trimming compatible**. The library carries no reflection, runtime code generation, or dynamic type loading — every collection is a generic over a struct hasher, and the only BCL primitives on the hot paths are `MemoryMarshal`, `Unsafe`, and `EqualityComparer<T>.Default`, all of which are AOT-safe. The assembly is marked [`<IsAotCompatible>true</IsAotCompatible>`](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#aot-compatibility-analyzers), so consuming it from a `PublishAot` app produces **no trim or AOT warnings**.

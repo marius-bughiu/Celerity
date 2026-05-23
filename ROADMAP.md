@@ -56,7 +56,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 ### Infrastructure
 
 - Set up `github-action-benchmark` for continuous performance tracking. Status: `done` — `benchmarks` job in `ci.yml` runs the full suite on every PR and pushes results to `gh-pages` on `main`, with PR comments and a 200% regression fail-threshold.
-- Create hash function evaluator for comparing distribution quality.
+- Create hash function evaluator for comparing distribution quality. Status: `done` — `HashQualityEvaluator.Evaluate<T, THasher>(keys, bucketCount)` returns a `HashQualityReport` (collision count / rate, bucket occupancy, max bucket load, chi-squared, and a normalized distribution score) so callers can compare candidate hashers for a given key shape offline. See [`docs/api/hashing.md`](docs/api/hashing.md#hash-quality-evaluation). Tracked in [#2](https://github.com/marius-bughiu/Celerity/issues/2).
 - Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. Tracked in [#60](https://github.com/marius-bughiu/Celerity/issues/60).
 - Cross-platform testing (Windows, Linux, macOS). Status: `done`.
 - Improve code coverage.
