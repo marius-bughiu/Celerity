@@ -151,7 +151,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
             if (index < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
 
-            return _values[index]!;
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), (nint)(uint)index)!;
         }
         set
         {
@@ -222,10 +222,13 @@ public class CelerityDictionary<TKey, TValue, THasher>
         var keyComparer = EqualityComparer<TKey>.Default;
         TKey?[] keys = _keys;
         TValue?[] values = _values;
-        for (int i = 0; i < keys.Length; i++)
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
+        int length = keys.Length;
+        for (int i = 0; i < length; i++)
         {
-            if (!keyComparer.Equals(keys[i], default(TKey)) &&
-                valueComparer.Equals(values[i], value))
+            if (!keyComparer.Equals(Unsafe.Add(ref keysRef, (nint)(uint)i), default(TKey)) &&
+                valueComparer.Equals(Unsafe.Add(ref valuesRef, (nint)(uint)i), value))
             {
                 return true;
             }
@@ -263,7 +266,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
             return false;
         }
 
-        value = _values[index];
+        value = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), (nint)(uint)index);
         return true;
     }
 
@@ -315,7 +318,7 @@ public class CelerityDictionary<TKey, TValue, THasher>
             return false;
         }
 
-        value = _values[index];
+        value = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), (nint)(uint)index);
         _count--;
 
         BackwardShiftRemove(index);

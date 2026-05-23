@@ -206,7 +206,7 @@ public class IntDictionary<TValue, THasher>
             if (index < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
 
-            return _values[index]!;
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), (nint)(uint)index)!;
         }
         set
         {
@@ -276,9 +276,13 @@ public class IntDictionary<TValue, THasher>
 
         int[] keys = _keys;
         TValue?[] values = _values;
-        for (int i = 0; i < keys.Length; i++)
+        ref int keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
+        int length = keys.Length;
+        for (int i = 0; i < length; i++)
         {
-            if (keys[i] != EMPTY_KEY && comparer.Equals(values[i], value))
+            if (Unsafe.Add(ref keysRef, (nint)(uint)i) != EMPTY_KEY
+                && comparer.Equals(Unsafe.Add(ref valuesRef, (nint)(uint)i), value))
                 return true;
         }
 
@@ -314,7 +318,7 @@ public class IntDictionary<TValue, THasher>
             return false;
         }
 
-        value = _values[index];
+        value = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), (nint)(uint)index);
         return true;
     }
 
@@ -366,7 +370,7 @@ public class IntDictionary<TValue, THasher>
             return false;
         }
 
-        value = _values[index];
+        value = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), (nint)(uint)index);
         _count--;
 
         BackwardShiftRemove(index);
