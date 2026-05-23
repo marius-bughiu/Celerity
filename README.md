@@ -125,7 +125,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 
 Notes on picking a hasher once the collection is settled:
 
-- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`, `LongSet`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case switch to `Int32Murmur3Hasher` (for `int` keys) or `Int64WangHasher` / `Int64Murmur3Hasher` (for `long` keys).
+- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`, `LongSet`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case escalate to `Int32WangHasher` then `Int32Murmur3Hasher` (for `int` keys) or `Int64WangHasher` then `Int64Murmur3Hasher` (for `long` keys). The Wang full-finalizer tier is a cheaper middle option than Murmur3 while still mixing every input bit.
 - For `string` keys, `StringFnV1AHasher` is the fast default for ASCII-dominated workloads. Switch to `StringMurmur3Hasher` for keys with significant non-ASCII content (it hashes the full UTF-16 character rather than just the low byte) or when key distribution is clustered or adversarial.
 - For arbitrary types, `DefaultHasher<T>` (which delegates to `EqualityComparer<T>.Default.GetHashCode()`) is a safe fallback. It still benefits from the struct-hasher devirtualisation; the inner `EqualityComparer<T>` dispatch is the only unavoidable cost. Replace it with a hand-written struct hasher if profiling shows `Hash` on the hot path.
 - The full hasher matrix lives in [`docs/api/hashing.md`](docs/api/hashing.md).
