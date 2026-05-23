@@ -493,11 +493,16 @@ public class CelerityDictionary<TKey, TValue, THasher>
             {
                 TKey?[] keys = _dict._keys;
                 TValue?[] values = _dict._values;
-                while (++_index < keys.Length)
+                int length = keys.Length;
+                ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+                ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
+                var comparer = EqualityComparer<TKey>.Default;
+                while (++_index < length)
                 {
-                    if (!EqualityComparer<TKey>.Default.Equals(keys[_index], default(TKey)))
+                    TKey? key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
+                    if (!comparer.Equals(key, default(TKey)))
                     {
-                        _current = new KeyValuePair<TKey, TValue?>(keys[_index]!, values[_index]);
+                        _current = new KeyValuePair<TKey, TValue?>(key!, Unsafe.Add(ref valuesRef, (nint)(uint)_index));
                         return true;
                     }
                 }

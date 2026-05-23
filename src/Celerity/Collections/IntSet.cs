@@ -378,11 +378,14 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
             if (_state == State.InArray)
             {
                 int[] slots = _set._slots;
-                while (++_index < slots.Length)
+                int length = slots.Length;
+                ref int slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+                while (++_index < length)
                 {
-                    if (slots[_index] != EMPTY_SLOT)
+                    int slot = Unsafe.Add(ref slotsRef, (nint)(uint)_index);
+                    if (slot != EMPTY_SLOT)
                     {
-                        _current = slots[_index];
+                        _current = slot;
                         return true;
                     }
                 }
