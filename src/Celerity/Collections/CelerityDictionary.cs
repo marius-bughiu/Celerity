@@ -167,12 +167,17 @@ public class CelerityDictionary<TKey, TValue, THasher>
                 return;
             }
 
-            if (_count >= _threshold)
+            // Probe before the threshold check so a pure overwrite of an
+            // existing key never resizes: only a new entry can push Count over
+            // the threshold. (Mirrors the TryAdd ordering fixed in #92, which
+            // this parallel path had missed.) On a new-key-at-threshold insert
+            // we resize and re-probe in the doubled table.
+            int index = ProbeForInsert(key, out bool isNewEntry);
+            if (isNewEntry && _count >= _threshold)
             {
                 Resize();
+                index = ProbeForInsert(key, out _);
             }
-
-            int index = ProbeForInsert(key, out bool isNewEntry);
 
             TKey?[] keys = _keys;
             TValue?[] values = _values;
