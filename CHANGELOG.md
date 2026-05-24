@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-24
+
 ### Changed
 
 - The default hasher on the `LongDictionary<TValue>` and `LongSet` convenience subclasses switched from `Int64WangHasher` (the 11-op Thomas-Wang finalizer) to the new `Int64WangNaiveHasher` (a 2-op XOR-fold of `(int)key ^ (int)(key >>> 32) ^ (int)(key >>> 16)`). The previous default was paying roughly 5x the per-call hash cost of the naive variant on every `Hash`, and that cost compounds across the resize chain (every entry is re-hashed on resize) and across the backward-shift cluster scans (every scanned slot is re-hashed for the cyclic comparison) — the live benchmark dashboard was showing the `Long*` collections losing to BCL across every shape (1.62x on `LongDict.Insert(100k)`, 1.48x on `LongSet.Add(100k)`, 1.29-1.32x on `LongDict` / `LongSet.Remove`) almost entirely because of that. The middle-16-bits fold in the new default keeps enough high-half entropy alive that keys whose low 32 bits are sequential but upper bits carry structure (type tags, shard IDs, monotonically allocated IDs) still distribute reasonably — `Int64WangNaiveHasher` is intended as the new common-case fast path, not as a uniform replacement. **This is a user-visible behavioural change** on the parameterless `new LongDictionary<TValue>()` / `new LongSet()` constructors: callers who picked the convenience subclasses for adversarial-key collision behaviour will silently get an XOR-fold instead of the full Wang finalizer. Opt back into the previous default with the open-generic shape: `new LongDictionary<TValue, Int64WangHasher>()` / `new LongSet<Int64WangHasher>()`, or escalate further to `Int64Murmur3Hasher` for better avalanche under adversarial workloads. `Int64WangHasher` stays in the box and remains the right answer for those workloads; the choosing-a-hasher table in `docs/api/hashing.md` documents the new selection axis. Pinned by the new `Int64WangNaiveHasherTests` coverage (theory inputs across zero / `1` / `-1` / `42` / `long.MaxValue` / `long.MinValue` / `1234567890123456789L` / 48-bit-set / alternating-nibble keys, determinism across calls and struct instances, high-bit and mid-bit influence regression guards, consecutive-small-input and single-high-bit-strided distinctness sweeps) plus the existing 16-file `LongDictionary` / `LongSet` test surface running green against the new default. Closes #108.
@@ -148,7 +150,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.3.0
 [1.2.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.1
 [1.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.0
 [1.1.2]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.1.2
