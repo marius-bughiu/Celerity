@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The `this[key] = value` indexer setter on `IntDictionary<TValue, THasher>`, `LongDictionary<TValue, THasher>`, and `CelerityDictionary<TKey, TValue, THasher>` no longer calls `Resize()` when overwriting an existing key while the table is sitting at its load-factor threshold. Previously the setter ran its `if (_count >= _threshold) Resize();` check *before* probing, so a pure value overwrite — which does not grow `Count` and therefore cannot push the table over its threshold — still doubled the backing arrays and re-hashed every entry. This is the same pre-probe-`Resize` anti-pattern that #92 fixed in `TryAdd`; the fix was applied there but the parallel indexer-setter path was missed (classic drift between two code paths that should behave identically). All three setters now mirror the `TryAdd` ordering: probe first, then `Resize()` only when `isNewEntry && _count >= _threshold`, re-probing in the doubled table. An overwrite-at-threshold now issues exactly one probe walk and zero rehashing; a *new* key that reaches the threshold still grows the table as before. Pure internal change — no public API or behavioural contract change beyond "overwrite no longer resizes". Pinned by the new `IndexerOverwriteResizeTests` (one counting-hasher fact per dictionary asserting an overwrite-at-threshold issues exactly one `Hash` call — i.e. no rehash — plus per-dictionary guards that a new key at the threshold still resizes, and a 100-round repeated-overwrite stress test holding `Count` stable). Closes #117.
+
 ## [1.3.0] - 2026-05-24
 
 ### Changed

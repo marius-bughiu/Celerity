@@ -167,12 +167,16 @@ public class CelerityDictionary<TKey, TValue, THasher>
                 return;
             }
 
-            if (_count >= _threshold)
+            // Probe before the load-factor check so a pure overwrite of an
+            // existing key never triggers a resize: only a new entry that
+            // pushes the table to its threshold grows the backing arrays
+            // (see issue #117, mirroring the #92 TryAdd ordering).
+            int index = ProbeForInsert(key, out bool isNewEntry);
+            if (isNewEntry && _count >= _threshold)
             {
                 Resize();
+                index = ProbeForInsert(key, out _);
             }
-
-            int index = ProbeForInsert(key, out bool isNewEntry);
 
             TKey?[] keys = _keys;
             TValue?[] values = _values;
