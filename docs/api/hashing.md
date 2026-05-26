@@ -139,6 +139,18 @@ public struct UInt32Hasher : IHashProvider<uint>
 
 Wang/Jenkins-style bit-mixer for `uint` keys. Counterpart to `Int32WangNaiveHasher` for unsigned 32-bit integers.
 
+### UInt32WangHasher
+
+```csharp
+public struct UInt32WangHasher : IHashProvider<uint>
+```
+
+Thomas Wang's 32-bit integer hash (`hash32shift`) for `uint` keys. The full-mixer middle tier of the `uint` family: it sits between `UInt32Hasher` (the cheap XOR-fold) and `UInt32Murmur3Hasher` on the cost-vs-avalanche curve, the `uint` counterpart to `Int32WangHasher` and mirroring the role `Int64WangHasher` plays for `long` keys. It uses a single (shift-add-encoded) multiply plus a chain of XOR-shift / shift-add rounds, so it is cheaper than the two-multiply `UInt32Murmur3Hasher` finalizer while still giving every input bit influence over the result. Bijective on `uint`, so the only source of collisions is key structure, not the mixer. Prefer it over `UInt32Hasher` when the cheap XOR-fold produces measurable clustering; escalate to `UInt32Murmur3Hasher` when even better avalanche is needed.
+
+**Algorithm:** `~key + (key << 15)`, `^ (key >> 12)`, `+ (key << 2)`, `^ (key >> 4)`, `* 2057` (encoded as `+ (key << 3) + (key << 11)`), `^ (key >> 16)`, computed on the `uint` directly and truncated to `int`. For any given 32-bit pattern it returns exactly what `Int32WangHasher` returns for the same bits.
+
+**Note:** unlike the Murmur3 finalizer, this function does **not** map `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
 ### UInt32Murmur3Hasher
 
 ```csharp
@@ -185,7 +197,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 |---|---|---|
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
 | `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered or adversarial keys |
-| `uint` | `UInt32Hasher` | `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
+| `uint` | `UInt32Hasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
 | `ulong` | `UInt64Hasher` | — |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
 | `string` | `StringFnV1AHasher` | `StringMurmur3Hasher` for non-ASCII content or clustered / adversarial keys; `DefaultHasher<string>` (uses the BCL string hasher) |
