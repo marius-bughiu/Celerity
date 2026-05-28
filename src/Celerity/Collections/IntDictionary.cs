@@ -7,7 +7,9 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance dictionary keyed by <see cref="int"/>, using
-/// <see cref="Int32WangNaiveHasher"/> by default.
+/// <see cref="Int32WangNaiveHasher"/> by default. Switch to
+/// <see cref="Int32WangHasher"/> or <see cref="Int32Murmur3Hasher"/> via the
+/// generic overload when keys are adversarial or clustered.
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
 public class IntDictionary<TValue> : IntDictionary<TValue, Int32WangNaiveHasher>
