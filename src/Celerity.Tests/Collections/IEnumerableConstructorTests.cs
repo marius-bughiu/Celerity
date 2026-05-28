@@ -65,7 +65,7 @@ public class IEnumerableConstructorTests
     {
         var map = new IntDictionary<string>(Array.Empty<KeyValuePair<int, string>>());
 
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
         Assert.False(map.ContainsKey(0));
         Assert.False(map.ContainsKey(1));
     }
@@ -199,7 +199,7 @@ public class IEnumerableConstructorTests
         // the caller-requested capacity dominates the source count.
         var map = new IntDictionary<int>(source, capacity: 1024);
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(1, map[1]);
     }
 
@@ -285,7 +285,7 @@ public class IEnumerableConstructorTests
         var map = new CelerityDictionary<int, string, Int32WangNaiveHasher>(
             Array.Empty<KeyValuePair<int, string>>());
 
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
         Assert.False(map.ContainsKey(0));
         Assert.False(map.ContainsKey(1));
     }

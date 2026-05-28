@@ -48,7 +48,7 @@ public class RemoveOutValueTests
         Assert.True(removed);
         Assert.Equal("seven", captured);
         Assert.False(map.ContainsKey(7));
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Null(captured);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1]);
     }
 
@@ -74,7 +74,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Equal(default, captured);
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class RemoveOutValueTests
         Assert.True(removed);
         Assert.Equal("zero", captured);
         Assert.False(map.ContainsKey(0));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1]);
     }
 
@@ -107,7 +107,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Null(captured);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public class RemoveOutValueTests
 
         Assert.True(removed);
         Assert.Equal(0, captured);
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class RemoveOutValueTests
 
         map[10] = 200;
         Assert.Equal(200, map[10]);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -199,7 +199,7 @@ public class RemoveOutValueTests
         Assert.True(removed);
         Assert.Equal("seven", captured);
         Assert.False(map.ContainsKey(7L));
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Null(captured);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1L]);
     }
 
@@ -225,7 +225,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Equal(default, captured);
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -244,7 +244,7 @@ public class RemoveOutValueTests
         Assert.True(removed);
         Assert.Equal("zero", captured);
         Assert.False(map.ContainsKey(0L));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1L]);
     }
 
@@ -258,7 +258,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Null(captured);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -273,7 +273,7 @@ public class RemoveOutValueTests
 
         Assert.True(removed);
         Assert.Equal(0, captured);
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -314,7 +314,7 @@ public class RemoveOutValueTests
 
         map[10L] = 200;
         Assert.Equal(200, map[10L]);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -346,7 +346,7 @@ public class RemoveOutValueTests
 
         Assert.True(map.Remove(1L));
         Assert.False(map.ContainsKey(1L));
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     // ---------------------------------------------------------------
@@ -364,7 +364,7 @@ public class RemoveOutValueTests
         Assert.True(removed);
         Assert.Equal("seven", captured);
         Assert.False(map.ContainsKey(7));
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -377,7 +377,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Null(captured);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1]);
     }
 
@@ -394,7 +394,7 @@ public class RemoveOutValueTests
         Assert.True(removed);
         Assert.Equal("zero", captured);
         Assert.False(map.ContainsKey(0));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1]);
     }
 
@@ -412,7 +412,7 @@ public class RemoveOutValueTests
         Assert.True(removed);
         Assert.Equal(42, captured);
         Assert.False(map.ContainsKey(null!));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(1, map["alpha"]);
     }
 
@@ -426,7 +426,7 @@ public class RemoveOutValueTests
 
         Assert.False(removed);
         Assert.Null(captured);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -483,7 +483,7 @@ public class RemoveOutValueTests
 
         Assert.True(map.Remove(1));
         Assert.False(map.ContainsKey(1));
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 
     [Fact]
@@ -494,6 +494,6 @@ public class RemoveOutValueTests
 
         Assert.True(map.Remove(1));
         Assert.False(map.ContainsKey(1));
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
     }
 }

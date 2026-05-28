@@ -118,7 +118,7 @@ public class LongDictionaryCollisionTests
         for (long i = 1; i <= 5; i++)
             Assert.True(map.Remove(i));
 
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
         for (long i = 1; i <= 5; i++)
             Assert.False(map.ContainsKey(i));
     }

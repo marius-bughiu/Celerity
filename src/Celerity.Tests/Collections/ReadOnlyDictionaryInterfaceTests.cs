@@ -33,7 +33,7 @@ public class ReadOnlyDictionaryInterfaceTests
 
         IReadOnlyDictionary<int, string?> ro = map;
 
-        Assert.Equal(1, ro.Count);
+        Assert.Single(ro);
         Assert.True(ro.ContainsKey(1));
         Assert.Equal("one", ro[1]);
     }
@@ -205,7 +205,7 @@ public class ReadOnlyDictionaryInterfaceTests
 
         IReadOnlyDictionary<int, string?> ro = map;
 
-        Assert.Equal(1, ro.Count);
+        Assert.Single(ro);
         Assert.True(ro.ContainsKey(1));
         Assert.Equal("one", ro[1]);
     }
