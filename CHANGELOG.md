@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-31
+
 ### Added
 
 - `UInt32WangHasher` in `Celerity.Hashing` — Thomas Wang's 32-bit integer hash (`hash32shift`) for `uint` keys, the `uint` counterpart to `Int32WangHasher`. Struct hasher, `[MethodImpl(MethodImplOptions.AggressiveInlining)]`. It fills the missing middle tier of the `uint` escalation ladder: the `int` family ships `Int32WangNaiveHasher` (cheap XOR-fold default) → `Int32WangHasher` (full Thomas-Wang finalizer) → `Int32Murmur3Hasher` (strongest avalanche), and `long` mirrors it, but `uint` jumped straight from the cheap XOR-fold `UInt32Hasher` to `UInt32Murmur3Hasher` with no full-Wang option in between — `UInt32Hasher`'s own remarks pointed at escalating to the Murmur3 finalizer with nothing in the middle. The mixer is `~u + (u << 15)`, `^ (u >> 12)`, `+ (u << 2)`, `^ (u >> 4)`, `* 2057` (encoded as `+ (u << 3) + (u << 11)` to avoid the multiply), `^ (u >> 16)`, computed on the `uint` directly. A single shift-add-encoded multiply plus XOR-shift / shift-add rounds make it cheaper than the two-multiply `UInt32Murmur3Hasher` finalizer while still mixing every input bit. It is bijective on `uint`, so it is collision-free on any contiguous key range — only key structure, not the mixer, produces collisions. Because `Int32WangHasher` already runs the same `hash32shift` over the `uint` reinterpretation of its `int` key, `UInt32WangHasher.Hash(u)` returns exactly `Int32WangHasher.Hash((int)u)` for any matching 32-bit pattern. Unlike the Murmur3 finalizer, it does **not** map `0 → 0` (`Hash(0u) == -895235421`); the dictionaries route the out-of-band zero key around the hasher so this never collides with the empty-slot sentinel. Prefer it over the default `UInt32Hasher` when profiling shows the cheap XOR-fold is clustering; escalate to `UInt32Murmur3Hasher` for adversarial keys that need maximum avalanche. Incremental progress on issue #24.
@@ -160,7 +162,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.4.0
 [1.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.3.0
 [1.2.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.1
 [1.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.0
