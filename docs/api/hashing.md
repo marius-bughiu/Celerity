@@ -62,6 +62,18 @@ The 64-bit counterpart to `Int32WangNaiveHasher`: an extremely cheap XOR-fold ov
 
 The extra middle-16-bits fold over a naive `key.GetHashCode()` keeps a chunk of the high-half entropy in the result, which materially improves distribution on keys whose low 32 bits are sequential (e.g. monotonically allocated IDs whose upper bits carry type / shard). Prefer it when the key distribution is already reasonably uniform and latency matters more than collision resistance; for adversarial or heavily clustered keys, switch to `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher`.
 
+### UInt64WangNaiveHasher
+
+```csharp
+public struct UInt64WangNaiveHasher : IHashProvider<ulong>
+```
+
+The unsigned counterpart to `Int64WangNaiveHasher`: an extremely cheap XOR-fold over the upper 32 bits and the middle 16 bits of the key. Modest avalanche but very low latency — the cheapest hasher in the `ulong` family. It fills the missing low-latency tier of the `ulong` family: both `UInt64Hasher` (the Murmur3 `fmix64` finalizer) and `UInt64WangHasher` (Thomas Wang's `hash64shift`) mix every input bit, while this hasher trades that mixing for three shift / XOR ops, matching the cheap default that `int`, `long`, and `uint` already offer.
+
+**Algorithm:** `(int)key ^ (int)(key >> 32) ^ (int)(key >> 16)`
+
+Because the formula operates on the raw 64-bit pattern, for any given 64-bit value it returns exactly what `Int64WangNaiveHasher` returns for the same bits. The extra middle-16-bits fold over a naive `key.GetHashCode()` keeps a chunk of the high-half entropy in the result, which materially improves distribution on keys whose low 32 bits are sequential (e.g. monotonically allocated IDs whose upper bits carry type / shard). Prefer it when the key distribution is already reasonably uniform and latency matters more than collision resistance; for adversarial or heavily clustered keys, switch to `UInt64WangHasher` (full Thomas-Wang finalizer) or `UInt64Hasher` (Murmur3 `fmix64`).
+
 ### Int64Murmur3Hasher
 
 ```csharp
@@ -210,7 +222,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
 | `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered or adversarial keys |
 | `uint` | `UInt32Hasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
-| `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform |
+| `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (cheap XOR-fold) for the lowest latency when keys are already uniform |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
 | `string` | `StringFnV1AHasher` | `StringMurmur3Hasher` for non-ASCII content or clustered / adversarial keys; `DefaultHasher<string>` (uses the BCL string hasher) |
 | anything else | `DefaultHasher<T>` | a struct hasher you write |
