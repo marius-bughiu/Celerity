@@ -222,7 +222,7 @@ public class CelerityDictionaryCollisionTests
 
         Assert.True(map.ContainsKey(null!));
         Assert.Equal(99, map[null!]);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -250,7 +250,7 @@ public class CelerityDictionaryCollisionTests
 
         Assert.True(map.Remove(null!));
         Assert.False(map.ContainsKey(null!));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("a-val", map["a"]);
     }
 
@@ -277,13 +277,13 @@ public class CelerityDictionaryCollisionTests
 
         map.Clear();
 
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
         Assert.False(map.ContainsKey(null!));
         Assert.False(map.ContainsKey("x"));
 
         // Reusable after clear.
         map[null!] = 10;
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(10, map[null!]);
     }
 

@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- All remaining `xUnit2013` warnings in `Celerity.Tests` are gone: `Assert.Equal(0, x.Count)` / `Assert.Equal(1, x.Count)` against a Celerity collection now use the xUnit-idiomatic `Assert.Empty(x)` / `Assert.Single(x)`, which produce better failure messages (`"The collection was expected to contain a single element, but it was empty"` instead of `"Expected: 1 / Actual: 0"`) and are also a strictly stronger assertion — `Assert.Single` enumerates and counts, so a collection whose `Count` property and enumerator disagree would now fail at this site instead of silently passing. The replacement is mechanical and spans 10 files: `RemoveOutValueTests.cs` (44 sites), `AddAndTryAddTests.cs` (28), `LongDictionaryTests.cs` / `IntDictionaryTests.cs` / `CelerityDictionaryTests.cs` / `CelerityDictionaryCollisionTests.cs` (8 each), `IEnumerableConstructorTests.cs` (6), `ReadOnlyDictionaryInterfaceTests.cs` (4), and `LongDictionaryCollisionTests.cs` / `IntDictionaryCollisionTests.cs` (2 each) — exactly the file list and call counts the weekly automated code-review sweep flagged. A clean `dotnet build --no-incremental` now produces zero `xUnit2013` warnings, so genuinely new warnings on a touched test file aren't drowned in 64 pre-existing ones. No test was added, removed, or weakened, and the full `Celerity.Tests` suite (818 tests) still passes locally on `net8.0`. Closes #123.
+
 ## [1.4.0] - 2026-05-31
 
 ### Added

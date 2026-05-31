@@ -118,7 +118,7 @@ public class IntDictionaryCollisionTests
         for (int i = 1; i <= 5; i++)
             Assert.True(map.Remove(i));
 
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
         for (int i = 1; i <= 5; i++)
             Assert.False(map.ContainsKey(i));
     }

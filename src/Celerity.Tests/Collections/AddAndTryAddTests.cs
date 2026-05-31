@@ -20,7 +20,7 @@ public class AddAndTryAddTests
         var map = new IntDictionary<string>();
         map.Add(1, "one");
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1]);
     }
 
@@ -43,7 +43,7 @@ public class AddAndTryAddTests
         Assert.Throws<ArgumentException>(() => map.Add(42, 999));
 
         // Map must be untouched after the failed Add.
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(100, map[42]);
     }
 
@@ -53,7 +53,7 @@ public class AddAndTryAddTests
         var map = new IntDictionary<string>();
         map.Add(0, "zero");
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("zero", map[0]);
     }
 
@@ -64,7 +64,7 @@ public class AddAndTryAddTests
         map.Add(0, "first");
 
         var ex = Assert.Throws<ArgumentException>(() => map.Add(0, "second"));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("first", map[0]);
     }
 
@@ -91,7 +91,7 @@ public class AddAndTryAddTests
         bool added = map.TryAdd(5, "five");
 
         Assert.True(added);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("five", map[5]);
     }
 
@@ -104,7 +104,7 @@ public class AddAndTryAddTests
         bool added = map.TryAdd(5, "FIVE");
 
         Assert.False(added);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("five", map[5]); // original value preserved
     }
 
@@ -154,7 +154,7 @@ public class AddAndTryAddTests
         var map = new CelerityDictionary<int, string, Int32WangNaiveHasher>();
         map.Add(1, "one");
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("one", map[1]);
     }
 
@@ -176,7 +176,7 @@ public class AddAndTryAddTests
 
         Assert.Throws<ArgumentException>(() => map.Add(42, 999));
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(100, map[42]);
     }
 
@@ -187,7 +187,7 @@ public class AddAndTryAddTests
         var map = new CelerityDictionary<int, string, Int32WangNaiveHasher>();
         map.Add(0, "zero");
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("zero", map[0]);
     }
 
@@ -198,7 +198,7 @@ public class AddAndTryAddTests
         map.Add(0, "first");
 
         Assert.Throws<ArgumentException>(() => map.Add(0, "second"));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("first", map[0]);
     }
 
@@ -208,7 +208,7 @@ public class AddAndTryAddTests
         var map = new CelerityDictionary<string, int, StringFnV1AHasher>();
         map.Add(null!, 99);
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(99, map[null!]);
     }
 
@@ -320,7 +320,7 @@ public class AddAndTryAddTests
         map.Add(3, 30);
         map[3] = 300;
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(300, map[3]);
 
         // A second Add must now throw again.
@@ -334,7 +334,7 @@ public class AddAndTryAddTests
         map.Add("key", 1);
         map["key"] = 2;
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(2, map["key"]);
 
         Assert.Throws<ArgumentException>(() => map.Add("key", 3));
@@ -352,7 +352,7 @@ public class AddAndTryAddTests
         map.Add(3L, 30);
         map[3L] = 300;
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal(300, map[3L]);
 
         Assert.Throws<ArgumentException>(() => map.Add(3L, 3000));

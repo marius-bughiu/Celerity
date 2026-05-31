@@ -98,7 +98,7 @@ public class IntDictionaryTests
 
         Assert.True(map.ContainsKey(0));
         Assert.Equal("zero", map[0]);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class IntDictionaryTests
         map[0] = "zero";
         map[0] = "still-zero";
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("still-zero", map[0]);
     }
 
@@ -122,7 +122,7 @@ public class IntDictionaryTests
         Assert.True(map.Remove(0));
         Assert.False(map.ContainsKey(0));
         Assert.True(map.ContainsKey(1));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.False(map.Remove(0));
     }
 
@@ -179,7 +179,7 @@ public class IntDictionaryTests
 
         map.Clear();
 
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
         for (int i = 0; i < 32; i++)
             Assert.False(map.ContainsKey(i));
 

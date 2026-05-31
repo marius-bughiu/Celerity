@@ -92,7 +92,7 @@ public class LongDictionaryTests
 
         Assert.True(map.ContainsKey(0L));
         Assert.Equal("zero", map[0L]);
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class LongDictionaryTests
         map[0L] = "zero";
         map[0L] = "still-zero";
 
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.Equal("still-zero", map[0L]);
     }
 
@@ -116,7 +116,7 @@ public class LongDictionaryTests
         Assert.True(map.Remove(0L));
         Assert.False(map.ContainsKey(0L));
         Assert.True(map.ContainsKey(1L));
-        Assert.Equal(1, map.Count);
+        Assert.Single(map);
         Assert.False(map.Remove(0L));
     }
 
@@ -170,7 +170,7 @@ public class LongDictionaryTests
 
         map.Clear();
 
-        Assert.Equal(0, map.Count);
+        Assert.Empty(map);
         for (int i = 0; i < 32; i++)
             Assert.False(map.ContainsKey(i));
 
