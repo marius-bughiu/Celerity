@@ -7,7 +7,9 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance set of <see cref="int"/> values, using
-/// <see cref="Int32WangNaiveHasher"/> by default.
+/// <see cref="Int32WangNaiveHasher"/> by default. Switch to
+/// <see cref="Int32WangHasher"/> or <see cref="Int32Murmur3Hasher"/> via the
+/// generic overload when elements are adversarial or clustered.
 /// </summary>
 public class IntSet : IntSet<Int32WangNaiveHasher>
 {
