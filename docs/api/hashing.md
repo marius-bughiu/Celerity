@@ -183,6 +183,18 @@ Thomas Wang's 64-bit integer hash (`hash64shift`) for `ulong` keys. The `ulong` 
 
 **Note:** unlike the Murmur3 finalizer, this function does **not** map `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
 
+### UInt64WangNaiveHasher
+
+```csharp
+public struct UInt64WangNaiveHasher : IHashProvider<ulong>
+```
+
+An extremely cheap XOR-fold for `ulong` keys — the cheap-default tier of the `ulong` family, and the `ulong` counterpart to `Int64WangNaiveHasher`. Until now the `ulong` ladder jumped straight from `UInt64WangHasher` (full Thomas-Wang `hash64shift`) to `UInt64Hasher` (Murmur3 `fmix64`) with no cheap XOR-fold option, even though `int`, `long`, and `uint` all ship one. The extra `(int)(key >> 16)` fold over a naive `key.GetHashCode()` keeps a chunk of the high-half entropy in the result, which materially improves distribution on keys whose low 32 bits are sequential (e.g. monotonically allocated IDs whose upper bits carry type / shard). Prefer it when the key distribution is already reasonably uniform and latency matters more than collision resistance; escalate to `UInt64WangHasher` (full Thomas-Wang finalizer) or `UInt64Hasher` (Murmur3 `fmix64`) for clustered or adversarial keys.
+
+**Algorithm:** `(int)key ^ (int)(key >> 32) ^ (int)(key >> 16)`. For any given 64-bit pattern it returns exactly what `Int64WangNaiveHasher` returns for the same bits.
+
+**Note:** the XOR-fold maps `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
 ### GuidHasher
 
 ```csharp
@@ -210,7 +222,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
 | `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered or adversarial keys |
 | `uint` | `UInt32Hasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
-| `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform |
+| `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
 | `string` | `StringFnV1AHasher` | `StringMurmur3Hasher` for non-ASCII content or clustered / adversarial keys; `DefaultHasher<string>` (uses the BCL string hasher) |
 | anything else | `DefaultHasher<T>` | a struct hasher you write |
