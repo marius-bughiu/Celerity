@@ -20,7 +20,8 @@ namespace Celerity.Hashing;
 /// the two 64-bit multiplies of <c>fmix64</c> are a hot-path cost and the
 /// keys are already reasonably uniform; escalate back to
 /// <see cref="UInt64Hasher"/> for adversarial workloads that need maximum
-/// avalanche.
+/// avalanche. For an even cheaper, lower-avalanche option on already-uniform
+/// keys, drop down to the XOR-fold <see cref="UInt64WangNaiveHasher"/>.
 /// </para>
 /// <para>
 /// Unlike the Murmur3 finalizer, this function does <em>not</em> map
