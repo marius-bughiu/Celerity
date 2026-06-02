@@ -67,6 +67,12 @@ void Check(bool condition, string message)
     fnv["a"] = 1;
     Check(fnv.ContainsKey("a"), "CelerityDictionary<string, StringFnV1AHasher>");
 
+    var fnvFull = new CelerityDictionary<string, int, StringFnV1AFullHasher>();
+    fnvFull["A"] = 1;
+    fnvFull["Ł"] = 2; // full-width fold keeps upper-byte-distinct keys separate
+    Check(fnvFull.ContainsKey("Ł") && fnvFull.Count == 2,
+        "CelerityDictionary<string, StringFnV1AFullHasher>");
+
     // DefaultHasher<T> routes through EqualityComparer<T>.Default — the most
     // AOT-sensitive path in the library.
     var def = new CelerityDictionary<int, int, DefaultHasher<int>>();
