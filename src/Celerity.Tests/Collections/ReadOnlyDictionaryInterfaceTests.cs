@@ -7,8 +7,8 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 // Milestone 1.1.0 — issue #9: IReadOnlyDictionary<TKey, TValue> implementation
-// on CelerityDictionary and IntDictionary. This test file exercises the
-// dictionaries through their IReadOnlyDictionary interface surface: the
+// on CelerityDictionary, IntDictionary, and LongDictionary. This test file
+// exercises the dictionaries through their IReadOnlyDictionary interface surface: the
 // indexer, ContainsKey, TryGetValue, Count, Keys / Values widened to
 // IEnumerable<T>, and both the generic and non-generic GetEnumerator paths.
 // The out-of-band default-key / zero-key entry is explicitly covered for each
@@ -345,6 +345,175 @@ public class ReadOnlyDictionaryInterfaceTests
         Assert.Equal(11, enumeratedCount);
     }
 
+    // -------- LongDictionary --------
+
+    [Fact]
+    public void LongDictionary_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        var map = new LongDictionary<string>();
+        map[1L] = "one";
+
+        IReadOnlyDictionary<long, string?> ro = map;
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1L));
+        Assert.Equal("one", ro[1L]);
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<long, string?> ro = new LongDictionary<string>();
+
+        Assert.Throws<KeyNotFoundException>(() => ro[42L]);
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<long, string?> ro = new LongDictionary<string>();
+
+        bool found = ro.TryGetValue(42L, out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        var map = new LongDictionary<string>();
+        map[7L] = "seven";
+        IReadOnlyDictionary<long, string?> ro = map;
+
+        bool found = ro.TryGetValue(7L, out string? value);
+
+        Assert.True(found);
+        Assert.Equal("seven", value);
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceKeys_ShouldYieldEveryKey_IncludingZero()
+    {
+        var map = new LongDictionary<int>();
+        map[0L] = 100;
+        for (int i = 1; i <= 5; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<long, int> ro = map;
+
+        var keys = new List<long>();
+        foreach (long key in ro.Keys)
+            keys.Add(key);
+
+        Assert.Equal(6, keys.Count);
+        Assert.Equal(new long[] { 0, 1, 2, 3, 4, 5 }, keys.OrderBy(k => k).ToArray());
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceValues_ShouldYieldEveryValue_IncludingZeroKeyValue()
+    {
+        var map = new LongDictionary<int>();
+        map[0L] = 100;
+        for (int i = 1; i <= 5; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<long, int> ro = map;
+
+        var values = new List<int>();
+        foreach (int v in ro.Values)
+            values.Add(v);
+
+        Assert.Equal(6, values.Count);
+        Assert.Equal(new[] { 10, 20, 30, 40, 50, 100 }, values.OrderBy(v => v).ToArray());
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceEnumeration_ShouldYieldEveryPair_IncludingZero()
+    {
+        var map = new LongDictionary<int>();
+        map[0L] = 100;
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable<KeyValuePair<long, int>> enumerable = map;
+
+        var pairs = new List<KeyValuePair<long, int>>();
+        foreach (var kvp in enumerable)
+            pairs.Add(kvp);
+
+        Assert.Equal(4, pairs.Count);
+        Assert.Contains(pairs, p => p.Key == 0L && p.Value == 100);
+        Assert.Contains(pairs, p => p.Key == 1L && p.Value == 10);
+        Assert.Contains(pairs, p => p.Key == 2L && p.Value == 20);
+        Assert.Contains(pairs, p => p.Key == 3L && p.Value == 30);
+    }
+
+    [Fact]
+    public void LongDictionary_NonGenericEnumeration_ShouldYieldEveryPair()
+    {
+        var map = new LongDictionary<int>();
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable enumerable = map;
+
+        var pairs = new List<KeyValuePair<long, int>>();
+        foreach (object kvp in enumerable)
+            pairs.Add((KeyValuePair<long, int>)kvp);
+
+        Assert.Equal(3, pairs.Count);
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceEnumeration_ShouldThrow_IfDictionaryMutated()
+    {
+        var map = new LongDictionary<int>();
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable<KeyValuePair<long, int>> enumerable = map;
+
+        using IEnumerator<KeyValuePair<long, int>> e = enumerable.GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        map[99L] = 990;
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceLinqCount_ShouldMatchDictionaryCount()
+    {
+        var map = new LongDictionary<int>();
+        map[0L] = 100;
+        for (int i = 1; i <= 10; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<long, int> ro = map;
+
+        // Enumerable.Count() forces IEnumerable<KeyValuePair<,>> dispatch, not
+        // the struct GetEnumerator fast path, so this is a boxing-path sanity
+        // check of the explicit interface implementation.
+        int enumeratedCount = ro.Count();
+
+        Assert.Equal(ro.Count, enumeratedCount);
+        Assert.Equal(11, enumeratedCount);
+    }
+
+    [Fact]
+    public void LongDictionary_InterfaceKeys_ShouldYieldEveryKey_IncludingExtreme64BitKeys()
+    {
+        // A signed-64-bit key set the interface Keys / Values projection must
+        // round-trip without 32-bit truncation on the boxed enumeration path.
+        var map = new LongDictionary<long>();
+        var keys = new[] { long.MinValue, -1L, 0L, int.MaxValue + 1L, long.MaxValue };
+        foreach (long k in keys)
+            map[k] = k;
+        IReadOnlyDictionary<long, long> ro = map;
+
+        var seen = new List<long>();
+        foreach (long key in ro.Keys)
+            seen.Add(key);
+
+        Assert.Equal(keys.Length, seen.Count);
+        Assert.Equal(keys.OrderBy(k => k).ToArray(), seen.OrderBy(k => k).ToArray());
+    }
+
     // -------- Polymorphic "accept any IReadOnlyDictionary" helper --------
 
     private static int SumValues(IReadOnlyDictionary<int, int> dict)
@@ -355,19 +524,30 @@ public class ReadOnlyDictionaryInterfaceTests
         return sum;
     }
 
+    private static long SumValues(IReadOnlyDictionary<long, long> dict)
+    {
+        long sum = 0;
+        foreach (var kvp in dict)
+            sum += kvp.Value;
+        return sum;
+    }
+
     [Fact]
-    public void BothDictionaries_ShouldFlowThroughGenericIReadOnlyDictionaryConsumer()
+    public void AllDictionaries_ShouldFlowThroughGenericIReadOnlyDictionaryConsumer()
     {
         var celerity = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
         var intDict = new IntDictionary<int>();
+        var longDict = new LongDictionary<long>();
         for (int i = 0; i <= 5; i++)
         {
             celerity[i] = i * 10;
             intDict[i] = i * 10;
+            longDict[i] = i * 10;
         }
 
         // 0 + 10 + 20 + 30 + 40 + 50 = 150
         Assert.Equal(150, SumValues(celerity));
         Assert.Equal(150, SumValues(intDict));
+        Assert.Equal(150L, SumValues(longDict));
     }
 }

@@ -235,6 +235,250 @@ public class IEnumerableConstructorTests
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  LongDictionary — source argument validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LongDictionary_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<long, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LongDictionary<string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<long, string>(1, "one"),
+            new KeyValuePair<long, string>(2, "two"),
+            new KeyValuePair<long, string>(1, "one-again"),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => new LongDictionary<string>(source));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldStillValidate_LoadFactor_WhenConstructedFromSource()
+    {
+        var source = new[] { new KeyValuePair<long, int>(1, 1) };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongDictionary<int>(source, loadFactor: 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongDictionary<int>(source, loadFactor: 0f));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LongDictionary — happy path
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LongDictionary_ShouldSupportEmptySource()
+    {
+        var map = new LongDictionary<string>(Array.Empty<KeyValuePair<long, string>>());
+
+        Assert.Empty(map);
+        Assert.False(map.ContainsKey(0L));
+        Assert.False(map.ContainsKey(1L));
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldCopyAllEntries_FromArraySource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<long, string>(1, "one"),
+            new KeyValuePair<long, string>(2, "two"),
+            new KeyValuePair<long, string>(3, "three"),
+        };
+
+        var map = new LongDictionary<string>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal("one", map[1L]);
+        Assert.Equal("two", map[2L]);
+        Assert.Equal("three", map[3L]);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldCopyAllEntries_FromListSource()
+    {
+        var source = new List<KeyValuePair<long, int>>
+        {
+            new(10, 100),
+            new(20, 200),
+            new(30, 300),
+        };
+
+        var map = new LongDictionary<int>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(100, map[10L]);
+        Assert.Equal(200, map[20L]);
+        Assert.Equal(300, map[30L]);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldCopyAllEntries_FromNonCollectionEnumerable()
+    {
+        // A deferred sequence is NOT an ICollection<T>, so the ctor's
+        // Count-based sizing fast path does not apply and it falls back to
+        // the capacity parameter.
+        IEnumerable<KeyValuePair<long, string>> NonCollectionSource()
+        {
+            yield return new KeyValuePair<long, string>(1, "one");
+            yield return new KeyValuePair<long, string>(2, "two");
+            yield return new KeyValuePair<long, string>(3, "three");
+        }
+
+        var map = new LongDictionary<string>(NonCollectionSource());
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal("one", map[1L]);
+        Assert.Equal("two", map[2L]);
+        Assert.Equal("three", map[3L]);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldCaptureZeroKey_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<long, string>(0, "zero"),
+            new KeyValuePair<long, string>(1, "one"),
+        };
+
+        var map = new LongDictionary<string>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.True(map.ContainsKey(0L));
+        Assert.Equal("zero", map[0L]);
+        Assert.Equal("one", map[1L]);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldDetectDuplicateZeroKey()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<long, string>(0, "zero"),
+            new KeyValuePair<long, string>(0, "zero-again"),
+        };
+
+        Assert.Throws<ArgumentException>(() => new LongDictionary<string>(source));
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldCopy_LargeSource_WithoutDataLoss()
+    {
+        var source = Enumerable.Range(1, 500)
+            .Select(i => new KeyValuePair<long, int>(i, i * 2))
+            .ToArray();
+
+        var map = new LongDictionary<int>(source);
+
+        Assert.Equal(500, map.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.Equal(i * 2, map[i]);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldCapture_ExtremeKeys_FromSource()
+    {
+        // A signed-64-bit key set the source ctor must copy without 32-bit
+        // truncation — including keys that share their low 32 bits.
+        var source = new[]
+        {
+            new KeyValuePair<long, long>(long.MinValue, 1),
+            new KeyValuePair<long, long>(-1L, 2),
+            new KeyValuePair<long, long>(0L, 3),
+            new KeyValuePair<long, long>(int.MaxValue + 1L, 4),
+            new KeyValuePair<long, long>(long.MaxValue, 5),
+            new KeyValuePair<long, long>(0x1_0000_0001L, 6), // shares low 32 bits with 1L (absent)
+        };
+
+        var map = new LongDictionary<long>(source);
+
+        Assert.Equal(6, map.Count);
+        Assert.Equal(1, map[long.MinValue]);
+        Assert.Equal(2, map[-1L]);
+        Assert.Equal(3, map[0L]);
+        Assert.Equal(4, map[int.MaxValue + 1L]);
+        Assert.Equal(5, map[long.MaxValue]);
+        Assert.Equal(6, map[0x1_0000_0001L]);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldBeIndependent_OfSourceAfterConstruction()
+    {
+        var source = new List<KeyValuePair<long, string>>
+        {
+            new(1, "one"),
+            new(2, "two"),
+        };
+
+        var map = new LongDictionary<string>(source);
+
+        // Mutating the source after construction should not affect the map.
+        source.Add(new KeyValuePair<long, string>(3, "three"));
+        source[0] = new KeyValuePair<long, string>(1, "MUTATED");
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal("one", map[1L]);
+        Assert.False(map.ContainsKey(3L));
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldHonor_Explicit_CapacityLargerThanSourceCount()
+    {
+        var source = new[] { new KeyValuePair<long, int>(1, 1) };
+
+        // Should not throw and should behave correctly regardless of whether
+        // the caller-requested capacity dominates the source count.
+        var map = new LongDictionary<int>(source, capacity: 1024);
+
+        Assert.Single(map);
+        Assert.Equal(1, map[1L]);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LongDictionary<TValue, THasher> base class — source ctor
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LongDictionary_Generic_ShouldCopyAllEntries_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<long, string>(10, "ten"),
+            new KeyValuePair<long, string>(20, "twenty"),
+        };
+
+        var map = new LongDictionary<string, Int64WangNaiveHasher>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal("ten", map[10L]);
+        Assert.Equal("twenty", map[20L]);
+    }
+
+    [Fact]
+    public void LongDictionary_Generic_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<long, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LongDictionary<string, Int64WangNaiveHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  CelerityDictionary — source argument validation
     // ──────────────────────────────────────────────────────────────
 
@@ -446,6 +690,25 @@ public class IEnumerableConstructorTests
         Assert.Equal(2, copy["beta"]);
     }
 
+    [Fact]
+    public void LongDictionary_ShouldCopy_FromAnotherLongDictionary()
+    {
+        // LongDictionary itself enumerates KeyValuePair<long, TValue?>, so a
+        // projection to the non-null KVP shape is required to round-trip.
+        var original = new LongDictionary<string>();
+        original.Add(0L, "zero");
+        original.Add(1L, "one");
+        original.Add(2L, "two");
+
+        var copy = new LongDictionary<string>(
+            original.Select(kvp => new KeyValuePair<long, string>(kvp.Key, kvp.Value!)));
+
+        Assert.Equal(3, copy.Count);
+        Assert.Equal("zero", copy[0L]);
+        Assert.Equal("one", copy[1L]);
+        Assert.Equal("two", copy[2L]);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  Readonly interface view
     // ──────────────────────────────────────────────────────────────
@@ -467,5 +730,24 @@ public class IEnumerableConstructorTests
         Assert.Equal(0, view[0]);
         Assert.Equal(10, view[1]);
         Assert.Equal(20, view[2]);
+    }
+
+    [Fact]
+    public void LongDictionary_Constructed_FromSource_ShouldFlow_Through_IReadOnlyDictionary()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<long, int>(0, 0),
+            new KeyValuePair<long, int>(1, 10),
+            new KeyValuePair<long, int>(2, 20),
+        };
+
+        IReadOnlyDictionary<long, int> view = new LongDictionary<int>(source);
+
+        Assert.Equal(3, view.Count);
+        Assert.True(view.ContainsKey(0L));
+        Assert.Equal(0, view[0L]);
+        Assert.Equal(10, view[1L]);
+        Assert.Equal(20, view[2L]);
     }
 }
