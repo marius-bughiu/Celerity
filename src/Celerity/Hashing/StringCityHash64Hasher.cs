@@ -49,7 +49,10 @@ namespace Celerity.Hashing;
 /// differ only in their upper byte (for example <c>'A'</c> (<c>U+0041</c>) and
 /// <c>'Ł'</c> (<c>U+0141</c>), which <see cref="StringFnV1AHasher"/> collides on).
 /// All are good answers when FNV-1a's weaker avalanche pushes clustered or
-/// adversarial keys into long probe chains.
+/// adversarial keys into long probe chains. When the keys themselves come from an
+/// untrusted source and an adversary could deliberately craft collisions,
+/// <see cref="StringSipHash24Hasher"/> steps beyond this throughput tier to a
+/// keyed, hash-flooding-resistant function at some cost in raw speed.
 /// </para>
 /// <para>
 /// <c>StringCityHash64Hasher.Hash(s)</c> equals canonical CityHash64 (v1.1) over
