@@ -127,6 +127,12 @@ void Check(bool condition, string message)
     Check(highway64.ContainsKey("Ł") && highway64.Count == 2,
         "CelerityDictionary<string, StringHighwayHash64Hasher>");
 
+    var xxh3 = new CelerityDictionary<string, int, StringXxHash3Hasher>();
+    xxh3["A"] = 1;
+    xxh3["Ł"] = 2; // XXH3 full-width fold keeps upper-byte-distinct keys separate
+    Check(xxh3.ContainsKey("Ł") && xxh3.Count == 2,
+        "CelerityDictionary<string, StringXxHash3Hasher>");
+
     // DefaultHasher<T> routes through EqualityComparer<T>.Default — the most
     // AOT-sensitive path in the library.
     var def = new CelerityDictionary<int, int, DefaultHasher<int>>();
