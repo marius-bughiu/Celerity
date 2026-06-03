@@ -24,13 +24,15 @@ namespace Celerity.Hashing;
 /// the returned value, exactly as <see cref="StringFnV1A64Hasher"/> does.
 /// <para>
 /// It sits at the strong-distribution top of the <see cref="string"/> escalation
-/// ladder alongside <see cref="StringMurmur3Hasher"/> and
-/// <see cref="StringXxHash32Hasher"/>:
+/// ladder alongside <see cref="StringMurmur3Hasher"/>,
+/// <see cref="StringXxHash32Hasher"/>, and <see cref="StringMetroHash64Hasher"/>:
 /// <see cref="StringFnV1AHasher"/> (cheapest, low-byte only) →
 /// <see cref="StringFnV1AFullHasher"/> (cheap, full Unicode width, 32-bit state) →
 /// <see cref="StringFnV1A64Hasher"/> (full Unicode width, 64-bit state) →
 /// <see cref="StringMurmur3Hasher"/> / <see cref="StringXxHash32Hasher"/> /
-/// <see cref="StringXxHash64Hasher"/> (strong avalanche). Like the other
+/// <see cref="StringXxHash64Hasher"/> / <see cref="StringMetroHash64Hasher"/>
+/// (strong avalanche). <see cref="StringMetroHash64Hasher"/> is a same-class
+/// 64-bit, four-accumulator peer worth profiling against on longer keys. Like the other
 /// full-width string hashers it consumes the <em>full</em> 16-bit value of every
 /// character — treating the string as its native little-endian UTF-16 byte
 /// stream — so it distinguishes characters that differ only in their upper byte
