@@ -4,7 +4,7 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Validates that both dictionaries reject invalid constructor arguments
+/// Validates that the dictionaries reject invalid constructor arguments
 /// (capacity and load factor) with clear exceptions, preventing subtle
 /// runtime bugs like infinite loops or resize-on-every-insert.
 /// </summary>
@@ -63,6 +63,61 @@ public class ConstructorValidationTests
         var map = new IntDictionary<int>(capacity: 16, loadFactor: loadFactor);
         map[1] = 10;
         Assert.Equal(10, map[1]);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LongDictionary — loadFactor validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-0.5f)]
+    [InlineData(-1f)]
+    public void LongDictionary_ShouldThrow_WhenLoadFactorIsZeroOrNegative(float loadFactor)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongDictionary<int>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    [InlineData(2f)]
+    public void LongDictionary_ShouldThrow_WhenLoadFactorIsOneOrGreater(float loadFactor)
+    {
+        // loadFactor >= 1.0 would cause an infinite loop in ProbeForInsert
+        // once every slot in the table is occupied.
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongDictionary<int>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongDictionary<int>(capacity: -1));
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldAcceptZeroCapacity()
+    {
+        // capacity = 0 is allowed; NextPowerOfTwo(0) returns 1.
+        var map = new LongDictionary<int>(capacity: 0);
+        map[42L] = 100;
+        Assert.Equal(100, map[42L]);
+    }
+
+    [Theory]
+    [InlineData(0.01f)]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.99f)]
+    public void LongDictionary_ShouldAcceptValidLoadFactor(float loadFactor)
+    {
+        var map = new LongDictionary<int>(capacity: 16, loadFactor: loadFactor);
+        map[1L] = 10;
+        Assert.Equal(10, map[1L]);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -133,5 +188,23 @@ public class ConstructorValidationTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new IntDictionary<string>(capacity: -10));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  Convenience subclass LongDictionary<TValue> inherits validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LongDictionary_ConvenienceSubclass_ShouldThrow_WhenLoadFactorIsOne()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongDictionary<string>(capacity: 16, loadFactor: 1.0f));
+    }
+
+    [Fact]
+    public void LongDictionary_ConvenienceSubclass_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LongDictionary<string>(capacity: -10));
     }
 }

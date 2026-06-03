@@ -5,7 +5,8 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// Tests for the <c>Add</c> and <c>TryAdd</c> methods on
-/// <see cref="IntDictionary{TValue, THasher}"/> and
+/// <see cref="IntDictionary{TValue, THasher}"/>,
+/// <see cref="LongDictionary{TValue, THasher}"/>, and
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>.
 /// </summary>
 public class AddAndTryAddTests
@@ -306,6 +307,159 @@ public class AddAndTryAddTests
 
         Assert.True(added);
         Assert.Equal(700, map[7]);
+    }
+
+    // ---------------------------------------------------------------
+    //  LongDictionary — Add
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void LongDictionary_Add_ShouldStoreValue_ForNewKey()
+    {
+        var map = new LongDictionary<string>();
+        map.Add(1L, "one");
+
+        Assert.Single(map);
+        Assert.Equal("one", map[1L]);
+    }
+
+    [Fact]
+    public void LongDictionary_Add_ShouldThrow_OnDuplicateKey()
+    {
+        var map = new LongDictionary<string>();
+        map.Add(1L, "first");
+
+        var ex = Assert.Throws<ArgumentException>(() => map.Add(1L, "second"));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void LongDictionary_Add_ShouldThrow_OnDuplicateKey_AndLeaveValueUnchanged()
+    {
+        var map = new LongDictionary<int>();
+        map.Add(42L, 100);
+
+        Assert.Throws<ArgumentException>(() => map.Add(42L, 999));
+
+        // Map must be untouched after the failed Add.
+        Assert.Single(map);
+        Assert.Equal(100, map[42L]);
+    }
+
+    [Fact]
+    public void LongDictionary_Add_ShouldStoreValue_ForZeroKey()
+    {
+        var map = new LongDictionary<string>();
+        map.Add(0L, "zero");
+
+        Assert.Single(map);
+        Assert.Equal("zero", map[0L]);
+    }
+
+    [Fact]
+    public void LongDictionary_Add_ShouldThrow_OnDuplicateZeroKey()
+    {
+        var map = new LongDictionary<string>();
+        map.Add(0L, "first");
+
+        var ex = Assert.Throws<ArgumentException>(() => map.Add(0L, "second"));
+        Assert.Single(map);
+        Assert.Equal("first", map[0L]);
+    }
+
+    [Fact]
+    public void LongDictionary_Add_ShouldStoreValue_ForExtremeKeys()
+    {
+        // Keys spanning the full 64-bit range, including a pair sharing their
+        // low 32 bits — a tripwire for accidental int-truncation on Add.
+        var map = new LongDictionary<long>(capacity: 4);
+        var keys = new[]
+        {
+            long.MinValue, -1L, 0L, 1L, int.MaxValue + 1L, long.MaxValue, 0x1_0000_0001L,
+        };
+
+        foreach (long k in keys)
+            map.Add(k, k);
+
+        Assert.Equal(keys.Length, map.Count);
+        foreach (long k in keys)
+            Assert.Equal(k, map[k]);
+    }
+
+    [Fact]
+    public void LongDictionary_Add_ShouldSupportManyKeys()
+    {
+        var map = new LongDictionary<int>(capacity: 8);
+        for (int i = 0; i <= 50; i++)
+            map.Add(i, i * 10);
+
+        Assert.Equal(51, map.Count);
+        for (int i = 0; i <= 50; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  LongDictionary — TryAdd
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void LongDictionary_TryAdd_ShouldReturnTrue_ForNewKey()
+    {
+        var map = new LongDictionary<string>();
+        bool added = map.TryAdd(5L, "five");
+
+        Assert.True(added);
+        Assert.Single(map);
+        Assert.Equal("five", map[5L]);
+    }
+
+    [Fact]
+    public void LongDictionary_TryAdd_ShouldReturnFalse_ForExistingKey()
+    {
+        var map = new LongDictionary<string>();
+        map.TryAdd(5L, "five");
+
+        bool added = map.TryAdd(5L, "FIVE");
+
+        Assert.False(added);
+        Assert.Single(map);
+        Assert.Equal("five", map[5L]); // original value preserved
+    }
+
+    [Fact]
+    public void LongDictionary_TryAdd_ShouldReturnTrue_ForZeroKey()
+    {
+        var map = new LongDictionary<string>();
+        bool added = map.TryAdd(0L, "zero");
+
+        Assert.True(added);
+        Assert.True(map.ContainsKey(0L));
+        Assert.Equal("zero", map[0L]);
+    }
+
+    [Fact]
+    public void LongDictionary_TryAdd_ShouldReturnFalse_ForExistingZeroKey()
+    {
+        var map = new LongDictionary<string>();
+        map.TryAdd(0L, "original");
+
+        bool added = map.TryAdd(0L, "replacement");
+
+        Assert.False(added);
+        Assert.Equal("original", map[0L]);
+    }
+
+    [Fact]
+    public void LongDictionary_TryAdd_AfterClear_ShouldSucceed()
+    {
+        var map = new LongDictionary<int>();
+        map.TryAdd(7L, 70);
+        map.Clear();
+
+        bool added = map.TryAdd(7L, 700);
+
+        Assert.True(added);
+        Assert.Equal(700, map[7L]);
     }
 
     // ---------------------------------------------------------------
