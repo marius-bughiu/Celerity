@@ -79,6 +79,12 @@ void Check(bool condition, string message)
     Check(fnv64.ContainsKey("Ł") && fnv64.Count == 2,
         "CelerityDictionary<string, StringFnV1A64Hasher>");
 
+    var xxh32 = new CelerityDictionary<string, int, StringXxHash32Hasher>();
+    xxh32["A"] = 1;
+    xxh32["Ł"] = 2; // xxHash32 full-width fold keeps upper-byte-distinct keys separate
+    Check(xxh32.ContainsKey("Ł") && xxh32.Count == 2,
+        "CelerityDictionary<string, StringXxHash32Hasher>");
+
     // DefaultHasher<T> routes through EqualityComparer<T>.Default — the most
     // AOT-sensitive path in the library.
     var def = new CelerityDictionary<int, int, DefaultHasher<int>>();
