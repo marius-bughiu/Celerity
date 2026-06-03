@@ -97,6 +97,12 @@ void Check(bool condition, string message)
     Check(metro64.ContainsKey("Ł") && metro64.Count == 2,
         "CelerityDictionary<string, StringMetroHash64Hasher>");
 
+    var city64 = new CelerityDictionary<string, int, StringCityHash64Hasher>();
+    city64["A"] = 1;
+    city64["Ł"] = 2; // CityHash64 full-width fold keeps upper-byte-distinct keys separate
+    Check(city64.ContainsKey("Ł") && city64.Count == 2,
+        "CelerityDictionary<string, StringCityHash64Hasher>");
+
     // DefaultHasher<T> routes through EqualityComparer<T>.Default — the most
     // AOT-sensitive path in the library.
     var def = new CelerityDictionary<int, int, DefaultHasher<int>>();
