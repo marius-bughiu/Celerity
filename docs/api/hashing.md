@@ -92,11 +92,25 @@ public struct StringFnV1AFullHasher : IHashProvider<string>
 
 FNV-1a 32-bit hash for string keys over the **full** UTF-16 representation — it folds both bytes of every character (low byte then high byte), which is exactly the FNV-1a of the string's native little-endian UTF-16 byte stream. This is the full-character-width counterpart to `StringFnV1AHasher`, and directly answers that hasher's "for keys with significant non-ASCII content, a full UTF-8 or UTF-16 hash is preferable" note. Where `StringFnV1AHasher` folds only the low byte and so collides characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`) — this hasher keeps them distinct, while still costing only a pair of XOR / multiply steps per character (no block reads, rotates, or `fmix32` finalizer).
 
-It sits in the middle of the `string` escalation ladder: `StringFnV1AHasher` (cheapest, low-byte only) → `StringFnV1AFullHasher` (cheap, full Unicode width) → `StringMurmur3Hasher` (strongest avalanche). Prefer it over `StringFnV1AHasher` whenever keys contain non-ASCII characters the low-byte fold would collide; escalate to `StringMurmur3Hasher` when FNV-1a's weaker avalanche pushes clustered or adversarial keys into long probe chains.
+It sits in the `string` escalation ladder: `StringFnV1AHasher` (cheapest, low-byte only) → `StringFnV1AFullHasher` (cheap, full Unicode width, 32-bit state) → `StringFnV1A64Hasher` (full Unicode width, 64-bit state) → `StringMurmur3Hasher` (strongest avalanche). Prefer it over `StringFnV1AHasher` whenever keys contain non-ASCII characters the low-byte fold would collide; step up to `StringFnV1A64Hasher` when keys are long or numerous enough that the 32-bit accumulator starts clustering; escalate to `StringMurmur3Hasher` when FNV-1a's weaker avalanche pushes clustered or adversarial keys into long probe chains.
 
 **Parameters:** offset basis = `2166136261`, prime = `16777619`.
 
 **Note:** maps the empty string `""` → the offset basis (`2166136261` unsigned, `-2128831035` signed) — no characters are folded — exactly as `StringFnV1AHasher` maps the empty string. The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
+### StringFnV1A64Hasher
+
+```csharp
+public struct StringFnV1A64Hasher : IHashProvider<string>
+```
+
+FNV-1a **64-bit** hash for string keys over the **full** UTF-16 representation — it folds the same little-endian UTF-16 byte stream as `StringFnV1AFullHasher` (low byte then high byte of every character), but accumulates into a 64-bit state using the FNV-1a 64-bit parameters, then xor-folds the result down to a signed 32-bit value. Carrying twice as many bits through the accumulation means intermediate values collide far less often, so for longer keys and larger key sets the distribution holds up better than the 32-bit FNV-1a hashers before the final fold. The fold (`h ^ (h >> 32)`) is the standard FNV retraction and keeps the extra high-half entropy in the returned value.
+
+It sits one rung above `StringFnV1AFullHasher` on the `string` escalation ladder: `StringFnV1AHasher` (cheapest, low-byte only) → `StringFnV1AFullHasher` (cheap, full Unicode width, 32-bit state) → `StringFnV1A64Hasher` (full Unicode width, 64-bit state) → `StringMurmur3Hasher` (strongest avalanche). Like `StringFnV1AFullHasher` it costs only a pair of XOR / multiply steps per character — but each multiply is 64-bit, which on 64-bit platforms is the same throughput as a 32-bit multiply, so the wider state is effectively free there. Prefer it over `StringFnV1AFullHasher` when keys are long or numerous enough that the narrower 32-bit accumulator starts clustering; escalate to `StringMurmur3Hasher` when FNV-1a's weaker per-bit avalanche pushes clustered or adversarial keys into long probe chains regardless of state width.
+
+**Parameters:** offset basis = `14695981039346656037`, prime = `1099511628211`.
+
+**Note:** maps the empty string `""` → the 64-bit offset basis xor-folded to 32 bits — no characters are folded. The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
 
 ### StringMurmur3Hasher
 
@@ -238,7 +252,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 | `uint` | `UInt32Hasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
 | `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
-| `string` | `StringFnV1AHasher` | `StringFnV1AFullHasher` (same FNV-1a cost, folds the full character) for non-ASCII content the low-byte fold would collide; `StringMurmur3Hasher` for clustered / adversarial keys that need strong avalanche; `DefaultHasher<string>` (uses the BCL string hasher) |
+| `string` | `StringFnV1AHasher` | `StringFnV1AFullHasher` (same FNV-1a cost, folds the full character) for non-ASCII content the low-byte fold would collide; `StringFnV1A64Hasher` (full-character fold into a 64-bit accumulator) when keys are long or numerous enough to cluster the 32-bit state; `StringMurmur3Hasher` for clustered / adversarial keys that need strong avalanche; `DefaultHasher<string>` (uses the BCL string hasher) |
 | anything else | `DefaultHasher<T>` | a struct hasher you write |
 
 ---

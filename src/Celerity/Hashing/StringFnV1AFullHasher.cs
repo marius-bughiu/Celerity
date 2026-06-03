@@ -20,15 +20,18 @@ namespace Celerity.Hashing;
 /// keeps those characters distinct while still costing only a pair of XOR /
 /// multiply steps per character.
 /// <para>
-/// It sits in the middle of the <see cref="string"/> escalation ladder:
+/// It sits in the <see cref="string"/> escalation ladder:
 /// <see cref="StringFnV1AHasher"/> (cheapest, but low-byte only) →
-/// <see cref="StringFnV1AFullHasher"/> (cheap, full Unicode width) →
+/// <see cref="StringFnV1AFullHasher"/> (cheap, full Unicode width, 32-bit state) →
+/// <see cref="StringFnV1A64Hasher"/> (full Unicode width, 64-bit state) →
 /// <see cref="StringMurmur3Hasher"/> (the <c>fmix32</c> finalizer gives every
 /// input bit influence over every output bit, holding distribution up on
 /// clustered or adversarial keys). Prefer it over <see cref="StringFnV1AHasher"/>
 /// whenever keys contain non-ASCII characters that the low-byte fold would
-/// collide; escalate to <see cref="StringMurmur3Hasher"/> when FNV-1a's weaker
-/// avalanche pushes clustered or adversarial keys into long probe chains.
+/// collide; step up to <see cref="StringFnV1A64Hasher"/> when keys are long or
+/// numerous enough that the 32-bit accumulator starts clustering; escalate to
+/// <see cref="StringMurmur3Hasher"/> when FNV-1a's weaker avalanche pushes
+/// clustered or adversarial keys into long probe chains.
 /// </para>
 /// <para>
 /// The empty string hashes to the FNV-1a offset basis (<c>2166136261</c>,
