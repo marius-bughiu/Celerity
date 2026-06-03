@@ -103,6 +103,12 @@ void Check(bool condition, string message)
     Check(city64.ContainsKey("Ł") && city64.Count == 2,
         "CelerityDictionary<string, StringCityHash64Hasher>");
 
+    var sip24 = new CelerityDictionary<string, int, StringSipHash24Hasher>();
+    sip24["A"] = 1;
+    sip24["Ł"] = 2; // SipHash-2-4 full-width fold keeps upper-byte-distinct keys separate
+    Check(sip24.ContainsKey("Ł") && sip24.Count == 2,
+        "CelerityDictionary<string, StringSipHash24Hasher>");
+
     // DefaultHasher<T> routes through EqualityComparer<T>.Default — the most
     // AOT-sensitive path in the library.
     var def = new CelerityDictionary<int, int, DefaultHasher<int>>();
