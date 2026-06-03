@@ -109,6 +109,12 @@ void Check(bool condition, string message)
     Check(sip24.ContainsKey("Ł") && sip24.Count == 2,
         "CelerityDictionary<string, StringSipHash24Hasher>");
 
+    var highway64 = new CelerityDictionary<string, int, StringHighwayHash64Hasher>();
+    highway64["A"] = 1;
+    highway64["Ł"] = 2; // HighwayHash64 full-width fold keeps upper-byte-distinct keys separate
+    Check(highway64.ContainsKey("Ł") && highway64.Count == 2,
+        "CelerityDictionary<string, StringHighwayHash64Hasher>");
+
     // DefaultHasher<T> routes through EqualityComparer<T>.Default — the most
     // AOT-sensitive path in the library.
     var def = new CelerityDictionary<int, int, DefaultHasher<int>>();
