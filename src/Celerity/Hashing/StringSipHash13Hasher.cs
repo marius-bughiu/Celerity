@@ -4,8 +4,8 @@ using System.Runtime.CompilerServices;
 namespace Celerity.Hashing;
 
 /// <summary>
-/// A keyed, cryptographic-quality hash provider for <see cref="string"/> keys
-/// using the SipHash-2-4 pseudorandom function over the string's native
+/// A keyed, hash-flooding-resistant hash provider for <see cref="string"/> keys
+/// using the SipHash-1-3 pseudorandom function over the string's native
 /// little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result.
 /// </summary>
 /// <remarks>
@@ -14,40 +14,46 @@ namespace Celerity.Hashing;
 /// <em>hash flooding</em>: an adversary who controls the keys cannot construct a
 /// flood of values that collide into the same bucket and degrade a hash table to
 /// O(n) probe chains, because doing so would require recovering the secret key —
-/// a problem SipHash is built to make infeasible. This is why it (or its
-/// reduced-round SipHash-1-3 variant, exposed here as
-/// <see cref="StringSipHash13Hasher"/>) is the default string hasher in Python,
-/// Ruby, Rust's <c>HashMap</c>, and many other runtimes whose tables are routinely
-/// fed untrusted input. The <c>2-4</c> suffix is the round count: two SipRounds of
-/// compression per 8-byte (four-char) message word and four SipRounds of
-/// finalization — the conservative choice, with more cryptographic margin than the
-/// faster <see cref="StringSipHash13Hasher"/> (<c>1-3</c>). Each SipRound is a
-/// fixed lattice of 64-bit
+/// a problem SipHash is built to make infeasible. The two-digit suffix is the
+/// round count: SipHash-<c>c</c>-<c>d</c> runs <c>c</c> SipRounds of compression
+/// per 8-byte (four-char) message word and <c>d</c> SipRounds of finalization.
+/// This type is the <c>1-3</c> variant — <strong>one</strong> compression round
+/// and <strong>three</strong> finalization rounds — the reduced-round sibling of
+/// <see cref="StringSipHash24Hasher"/> (the conservative <c>2-4</c> variant). It is
+/// the exact construction Rust's standard-library <c>HashMap</c> uses by default,
+/// chosen there as the sweet spot between throughput and flooding resistance:
+/// halving the compression work makes it materially faster than SipHash-2-4 on
+/// every word while keeping the keyed, well-distributed avalanche that defeats
+/// adversarial collision sets. Each SipRound is a fixed lattice of 64-bit
 /// add / rotate / xor steps over four words of state (<c>v0..v3</c>), so — unlike
 /// a cryptographic hash built on a compression function — it carries no large
 /// table and stays branch-light.
 /// <para>
-/// This places <see cref="StringSipHash24Hasher"/> at the strong-avalanche top of
-/// the <see cref="string"/> escalation ladder, but it is a different <em>kind</em>
-/// of answer from the throughput-oriented family there:
+/// This places <see cref="StringSipHash13Hasher"/> at the strong-avalanche top of
+/// the <see cref="string"/> escalation ladder, alongside
+/// <see cref="StringSipHash24Hasher"/> and <see cref="StringHighwayHash64Hasher"/>
+/// as the <em>keyed</em> options, but it is a different <em>kind</em> of answer
+/// from the throughput-oriented family there:
 /// <see cref="StringFnV1AHasher"/> (cheapest, low-byte only) →
 /// <see cref="StringFnV1AFullHasher"/> (cheap, full Unicode width, 32-bit state) →
 /// <see cref="StringFnV1A64Hasher"/> (full Unicode width, 64-bit state) →
 /// <see cref="StringMurmur3Hasher"/> / <see cref="StringXxHash32Hasher"/> /
 /// <see cref="StringXxHash64Hasher"/> / <see cref="StringMetroHash64Hasher"/> /
-/// <see cref="StringCityHash64Hasher"/> (strong avalanche, maximum throughput) →
-/// <see cref="StringSipHash13Hasher"/> / <see cref="StringSipHash24Hasher"/> /
+/// <see cref="StringCityHash64Hasher"/> (strong avalanche, maximum throughput,
+/// unkeyed) → <see cref="StringSipHash13Hasher"/> / <see cref="StringSipHash24Hasher"/> /
 /// <see cref="StringHighwayHash64Hasher"/> (strong avalanche, <em>keyed</em>
-/// hash-flooding resistance). The xxHash / MetroHash / CityHash peers are faster
-/// on trusted keys and should be preferred there; reach for
-/// <see cref="StringSipHash24Hasher"/> when the keys originate from an untrusted
-/// source (request paths, header names, user-supplied identifiers) and an
-/// adversary could otherwise deliberately drive worst-case collisions. Like the
-/// other full-width string hashers it consumes the <em>full</em> 16-bit value of
-/// every character — treating the string as its native little-endian UTF-16 byte
-/// stream — so it distinguishes characters that differ only in their upper byte
-/// (for example <c>'A'</c> (<c>U+0041</c>) and <c>'Ł'</c> (<c>U+0141</c>), which
-/// <see cref="StringFnV1AHasher"/> collides on).
+/// hash-flooding resistance). The unkeyed throughput peers are faster on trusted
+/// keys and should be preferred there; reach for a keyed option when the keys
+/// originate from an untrusted source (request paths, header names, user-supplied
+/// identifiers) and an adversary could otherwise deliberately drive worst-case
+/// collisions. Between the SipHash variants, prefer <see cref="StringSipHash13Hasher"/>
+/// (Rust's choice) when you want the keyed defense at the lowest cost, and
+/// <see cref="StringSipHash24Hasher"/> when you want the extra cryptographic margin
+/// of the conservative round counts. Like the other full-width string hashers it
+/// consumes the <em>full</em> 16-bit value of every character — treating the string
+/// as its native little-endian UTF-16 byte stream — so it distinguishes characters
+/// that differ only in their upper byte (for example <c>'A'</c> (<c>U+0041</c>) and
+/// <c>'Ł'</c> (<c>U+0141</c>), which <see cref="StringFnV1AHasher"/> collides on).
 /// </para>
 /// <para>
 /// Because Celerity hashers are zero-state structs that collections construct via
@@ -62,17 +68,17 @@ namespace Celerity.Hashing;
 /// standards-based mixing function with a clear upgrade path, not a turnkey secret.
 /// </para>
 /// <para>
-/// <c>StringSipHash24Hasher.Hash(s)</c> equals canonical SipHash-2-4 (with the
+/// <c>StringSipHash13Hasher.Hash(s)</c> equals canonical SipHash-1-3 (with the
 /// fixed key above) over <c>Encoding.Unicode.GetBytes(s)</c>, xor-folded to a
 /// signed 32-bit integer (<c>h ^ (h &gt;&gt; 32)</c>, keeping the high-half
-/// entropy in the result). The empty string maps to SipHash-2-4's length-<c>0</c>
-/// output for that key (the well-known reference vector
-/// <c>0x726FDB47DD0E0E31</c>) folded to 32 bits (its UTF-16 byte stream is zero
-/// bytes). The dictionaries store the out-of-band <c>null</c>-key entry without
-/// ever calling the hasher, so this does not collide with the empty-slot sentinel.
+/// entropy in the result). The empty string maps to SipHash-1-3's length-<c>0</c>
+/// output for that key (the reference vector <c>0xABAC0158050FC4DC</c>) folded to
+/// 32 bits (its UTF-16 byte stream is zero bytes). The dictionaries store the
+/// out-of-band <c>null</c>-key entry without ever calling the hasher, so this does
+/// not collide with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringSipHash24Hasher : IHashProvider<string>
+public struct StringSipHash13Hasher : IHashProvider<string>
 {
     // Canonical SipHash reference key (RFC-draft test-vector key, bytes 00..0f),
     // read as two little-endian 64-bit halves. Fixed because collections build the
@@ -87,12 +93,12 @@ public struct StringSipHash24Hasher : IHashProvider<string>
     private const ulong Init3 = 0x7465646279746573UL;
 
     /// <summary>
-    /// Computes the SipHash-2-4 hash of the specified string over its native
+    /// Computes the SipHash-1-3 hash of the specified string over its native
     /// little-endian UTF-16 byte stream (using this type's fixed built-in key),
     /// xor-folded to a signed 32-bit result.
     /// </summary>
     /// <param name="key">The string to hash. Must not be <c>null</c>.</param>
-    /// <returns>The signed 32-bit, xor-folded SipHash-2-4 hash of <paramref name="key"/>.</returns>
+    /// <returns>The signed 32-bit, xor-folded SipHash-1-3 hash of <paramref name="key"/>.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="key"/> is <c>null</c>. Celerity dictionaries store the
     /// out-of-band <c>null</c>-key entry without calling the hasher, so this
@@ -114,13 +120,13 @@ public struct StringSipHash24Hasher : IHashProvider<string>
 
         // Each 64-bit message word is eight bytes — four UTF-16 code units. The
         // byte stream is always even-length, so the tail is 0, 1, 2, or 3 chars.
+        // SipHash-1-3 runs a single compression SipRound per message word.
         int fullWords = charLen >> 2;           // charLen / 4 == byteLen / 8
         int p = 0;                              // char index of the current word
         for (int w = 0; w < fullWords; w++)
         {
             ulong m = Word(key, p);
             v3 ^= m;
-            SipRound(ref v0, ref v1, ref v2, ref v3);
             SipRound(ref v0, ref v1, ref v2, ref v3);
             v0 ^= m;
             p += 4;
@@ -136,12 +142,10 @@ public struct StringSipHash24Hasher : IHashProvider<string>
 
         v3 ^= b;
         SipRound(ref v0, ref v1, ref v2, ref v3);
-        SipRound(ref v0, ref v1, ref v2, ref v3);
         v0 ^= b;
 
-        // Finalization: four SipRounds after folding 0xFF into v2.
+        // Finalization: three SipRounds after folding 0xFF into v2.
         v2 ^= 0xFFUL;
-        SipRound(ref v0, ref v1, ref v2, ref v3);
         SipRound(ref v0, ref v1, ref v2, ref v3);
         SipRound(ref v0, ref v1, ref v2, ref v3);
         SipRound(ref v0, ref v1, ref v2, ref v3);
@@ -167,8 +171,8 @@ public struct StringSipHash24Hasher : IHashProvider<string>
 
     /// <summary>
     /// The SipHash round function: one fixed lattice of 64-bit add / rotate / xor
-    /// steps over the four state words. SipHash-2-4 runs it twice per message word
-    /// (compression) and four times at the end (finalization).
+    /// steps over the four state words. SipHash-1-3 runs it once per message word
+    /// (compression) and three times at the end (finalization).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void SipRound(ref ulong v0, ref ulong v1, ref ulong v2, ref ulong v3)
