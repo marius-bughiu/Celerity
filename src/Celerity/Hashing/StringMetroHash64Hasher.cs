@@ -28,14 +28,16 @@ namespace Celerity.Hashing;
 /// <see cref="StringFnV1AFullHasher"/> (cheap, full Unicode width, 32-bit state) →
 /// <see cref="StringFnV1A64Hasher"/> (full Unicode width, 64-bit state) →
 /// <see cref="StringMurmur3Hasher"/> / <see cref="StringXxHash32Hasher"/> /
-/// <see cref="StringXxHash64Hasher"/> / <see cref="StringMetroHash64Hasher"/>
+/// <see cref="StringXxHash64Hasher"/> / <see cref="StringMetroHash64Hasher"/> /
+/// <see cref="StringCityHash64Hasher"/>
 /// (strong avalanche). Like the other full-width string hashers it consumes the
 /// <em>full</em> 16-bit value of every character — treating the string as its
 /// native little-endian UTF-16 byte stream — so it distinguishes characters that
 /// differ only in their upper byte (for example <c>'A'</c> (<c>U+0041</c>) and
 /// <c>'Ł'</c> (<c>U+0141</c>), which <see cref="StringFnV1AHasher"/> collides on).
-/// <see cref="StringMetroHash64Hasher"/>, <see cref="StringXxHash64Hasher"/>, and
-/// <see cref="StringXxHash32Hasher"/> are peers at the throughput-oriented top of
+/// <see cref="StringMetroHash64Hasher"/>, <see cref="StringXxHash64Hasher"/>,
+/// <see cref="StringXxHash32Hasher"/>, and <see cref="StringCityHash64Hasher"/> are
+/// peers at the throughput-oriented top of
 /// the ladder — profile on your own key shape to pick between them; prefer
 /// <see cref="StringMurmur3Hasher"/> for very short keys, where its simpler
 /// single-accumulator loop has less fixed overhead. All are good answers when
