@@ -121,6 +121,12 @@ void Check(bool condition, string message)
     Check(sip24.ContainsKey("Ł") && sip24.Count == 2,
         "CelerityDictionary<string, StringSipHash24Hasher>");
 
+    var halfSip24 = new CelerityDictionary<string, int, StringHalfSipHash24Hasher>();
+    halfSip24["A"] = 1;
+    halfSip24["Ł"] = 2; // HalfSipHash-2-4 full-width fold keeps upper-byte-distinct keys separate
+    Check(halfSip24.ContainsKey("Ł") && halfSip24.Count == 2,
+        "CelerityDictionary<string, StringHalfSipHash24Hasher>");
+
     var highway64 = new CelerityDictionary<string, int, StringHighwayHash64Hasher>();
     highway64["A"] = 1;
     highway64["Ł"] = 2; // HighwayHash64 full-width fold keeps upper-byte-distinct keys separate
