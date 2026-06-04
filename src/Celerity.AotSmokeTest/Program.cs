@@ -85,6 +85,12 @@ void Check(bool condition, string message)
     Check(fnv64.ContainsKey("Ł") && fnv64.Count == 2,
         "CelerityDictionary<string, StringFnV1A64Hasher>");
 
+    var fnv1_64 = new CelerityDictionary<string, int, StringFnV164Hasher>();
+    fnv1_64["A"] = 1;
+    fnv1_64["Ł"] = 2; // FNV-1 64-bit full-width fold keeps upper-byte-distinct keys separate
+    Check(fnv1_64.ContainsKey("Ł") && fnv1_64.Count == 2,
+        "CelerityDictionary<string, StringFnV164Hasher>");
+
     var oaat = new CelerityDictionary<string, int, StringJenkinsOaatHasher>();
     oaat["A"] = 1;
     oaat["Ł"] = 2; // one-at-a-time full-width mix keeps upper-byte-distinct keys separate
