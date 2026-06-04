@@ -103,6 +103,12 @@ void Check(bool condition, string message)
     Check(sdbm.ContainsKey("Ł") && sdbm.Count == 2,
         "CelerityDictionary<string, StringSdbmHasher>");
 
+    var elf = new CelerityDictionary<string, int, StringElfHasher>();
+    elf["A"] = 1;
+    elf["Ł"] = 2; // ELF full-width fold keeps upper-byte-distinct keys separate
+    Check(elf.ContainsKey("Ł") && elf.Count == 2,
+        "CelerityDictionary<string, StringElfHasher>");
+
     var xxh32 = new CelerityDictionary<string, int, StringXxHash32Hasher>();
     xxh32["A"] = 1;
     xxh32["Ł"] = 2; // xxHash32 full-width fold keeps upper-byte-distinct keys separate
