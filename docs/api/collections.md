@@ -107,7 +107,7 @@ public bool Remove(TKey key)
 public bool Remove(TKey key, out TValue? value)
 ```
 
-Removes the entry for `key`. Returns `true` if the key was found and removed, `false` otherwise. After removal, adjacent entries are rehashed to maintain probe-chain correctness.
+Removes the entry for `key`. Returns `true` if the key was found and removed, `false` otherwise. After removal, the probe chain is repaired by back-shifting the following entries into the freed slot (backward-shift deletion), preserving lookup correctness without rehashing.
 
 The capture overload sets `value` to the value that was associated with the key immediately before removal, or to `default(TValue)` if the key was not found. The out-of-band default-key slot is surfaced through this path identically to the regular probe table.
 
