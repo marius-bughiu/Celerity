@@ -67,6 +67,12 @@ void Check(bool condition, string message)
     fnv["a"] = 1;
     Check(fnv.ContainsKey("a"), "CelerityDictionary<string, StringFnV1AHasher>");
 
+    var fnv1 = new CelerityDictionary<string, int, StringFnV1Hasher>();
+    fnv1["A"] = 1;
+    fnv1["Ł"] = 2; // FNV-1 full-width fold keeps upper-byte-distinct keys separate
+    Check(fnv1.ContainsKey("Ł") && fnv1.Count == 2,
+        "CelerityDictionary<string, StringFnV1Hasher>");
+
     var fnvFull = new CelerityDictionary<string, int, StringFnV1AFullHasher>();
     fnvFull["A"] = 1;
     fnvFull["Ł"] = 2; // full-width fold keeps upper-byte-distinct keys separate
