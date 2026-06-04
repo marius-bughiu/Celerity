@@ -85,6 +85,12 @@ void Check(bool condition, string message)
     Check(oaat.ContainsKey("Ł") && oaat.Count == 2,
         "CelerityDictionary<string, StringJenkinsOaatHasher>");
 
+    var djb2 = new CelerityDictionary<string, int, StringDjb2Hasher>();
+    djb2["A"] = 1;
+    djb2["Ł"] = 2; // djb2 full-width fold keeps upper-byte-distinct keys separate
+    Check(djb2.ContainsKey("Ł") && djb2.Count == 2,
+        "CelerityDictionary<string, StringDjb2Hasher>");
+
     var xxh32 = new CelerityDictionary<string, int, StringXxHash32Hasher>();
     xxh32["A"] = 1;
     xxh32["Ł"] = 2; // xxHash32 full-width fold keeps upper-byte-distinct keys separate
