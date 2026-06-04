@@ -97,6 +97,12 @@ void Check(bool condition, string message)
     Check(djb2.ContainsKey("Ł") && djb2.Count == 2,
         "CelerityDictionary<string, StringDjb2Hasher>");
 
+    var djb2a = new CelerityDictionary<string, int, StringDjb2AHasher>();
+    djb2a["A"] = 1;
+    djb2a["Ł"] = 2; // djb2a full-width fold keeps upper-byte-distinct keys separate
+    Check(djb2a.ContainsKey("Ł") && djb2a.Count == 2,
+        "CelerityDictionary<string, StringDjb2AHasher>");
+
     var sdbm = new CelerityDictionary<string, int, StringSdbmHasher>();
     sdbm["A"] = 1;
     sdbm["Ł"] = 2; // sdbm full-width fold keeps upper-byte-distinct keys separate
