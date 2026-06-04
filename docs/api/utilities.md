@@ -22,4 +22,4 @@ Returns the smallest power of two that is greater than or equal to `n`.
 - `n >= 2^30` returns `2^30` (1,073,741,824) to prevent integer overflow.
 - If `n` is already a power of two, it is returned unchanged.
 
-**Used by** `CelerityDictionary` and `IntDictionary` to round the user-supplied capacity to a power of two, which enables fast index computation via bitwise AND instead of modulo.
+**Used by** all the Celerity collections (`CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`, `LongSet`) to round the user-supplied capacity to a power of two, which enables fast index computation via bitwise AND instead of modulo.
