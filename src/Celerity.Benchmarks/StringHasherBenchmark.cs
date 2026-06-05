@@ -144,6 +144,10 @@ public class StringHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
+    public int Crc32() => HashAll<StringCrc32Hasher>();
+
+    [Benchmark]
+    [BenchmarkCategory("Hash")]
     public int FnV1() => HashAll<StringFnV1Hasher>();
 
     [Benchmark]
