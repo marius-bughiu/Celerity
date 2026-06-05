@@ -121,6 +121,12 @@ void Check(bool condition, string message)
     Check(elf.ContainsKey("Ł") && elf.Count == 2,
         "CelerityDictionary<string, StringElfHasher>");
 
+    var crc32 = new CelerityDictionary<string, int, StringCrc32Hasher>();
+    crc32["A"] = 1;
+    crc32["Ł"] = 2; // CRC-32 full-width fold keeps upper-byte-distinct keys separate
+    Check(crc32.ContainsKey("Ł") && crc32.Count == 2,
+        "CelerityDictionary<string, StringCrc32Hasher>");
+
     var murmur2 = new CelerityDictionary<string, int, StringMurmur2Hasher>();
     murmur2["A"] = 1;
     murmur2["Ł"] = 2; // MurmurHash2 full-width fold keeps upper-byte-distinct keys separate
