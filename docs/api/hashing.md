@@ -562,3 +562,19 @@ if (naive.DistributionScore <= wang.DistributionScore * 1.1)
     // The naive fold distributes these keys well enough — keep the cheaper default.
 }
 ```
+
+---
+
+## Benchmarking the string hashers
+
+The `Celerity.Benchmarks` project includes `StringHasherBenchmark`, a head-to-head BenchmarkDotNet comparison of every built-in `string` hasher. It hashes a deterministic sample of distinct keys through each hasher via the `where THasher : struct, IHashProvider<string>` constraint — so the JIT inlines `Hash` exactly as it does on a real collection's probe path — with the BCL `string.GetHashCode()` as the baseline, and sweeps three key shapes via its `Shape` parameter:
+
+| `Shape` | Keys |
+|---|---|
+| `ShortAscii` | Short lowercase-alphanumeric identifiers (6–12 chars) — the common map-key case. |
+| `LongAscii` | Long ASCII path / URL-like keys (48–80 chars). |
+| `NonAscii` | Shorter mixed Latin + CJK text (10–20 chars) that exercises the full-width fold. |
+
+The three shapes matter because the length-classed hashers (`StringCityHash64Hasher`, `StringXxHash3Hasher`) and the four-accumulator stripe hashers (`StringXxHash32Hasher`, `StringXxHash64Hasher`) behave very differently across lengths, and the full-width hashers do extra work on non-ASCII upper bytes. The benchmark is registered in `Program.cs` so it joins the CI report and the gh-pages benchmark history on every push to `main`.
+
+> `StringHasherBenchmark` measures **throughput only**. A fast hasher that clusters is not a win (see the ROADMAP guiding principles), so read the throughput numbers alongside the distribution metrics from [`HashQualityEvaluator`](#hashqualityevaluator) for the same key shape before committing a hasher: prefer the cheapest hasher whose `DistributionScore` stays near `1.0` and whose `MaxBucketLoad` is low on a representative sample of your keys.

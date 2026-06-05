@@ -142,6 +142,8 @@ A few cases where Celerity is **not** the right answer today:
 
 **Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks all five collections against their .NET BCL counterparts on every `main` push, with historical trends and per-PR regression comparisons. For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop and the dashboard reflects that.
 
+The suite also includes `StringHasherBenchmark`, a head-to-head throughput comparison of all built-in `string` hashers (baselined against `string.GetHashCode()`, swept across short-ASCII, long-ASCII, and non-ASCII key shapes). Run it locally with `dotnet run -c Release -- --filter "*StringHasherBenchmark*"`, and read its throughput numbers alongside the distribution metrics from `HashQualityEvaluator` when picking a hasher — a fast hasher that clusters is not a win. See [Benchmarking the string hashers](docs/api/hashing.md#benchmarking-the-string-hashers).
+
 ## Custom hashing
 
 You can bring your own custom hash provider by implementing the `IHashProvider<T>` interface.

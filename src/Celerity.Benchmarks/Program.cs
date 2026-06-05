@@ -13,6 +13,7 @@ internal class Program
             typeof(CeleritySetBenchmark),
             typeof(IntSetBenchmark),
             typeof(LongSetBenchmark),
+            typeof(StringHasherBenchmark),
         };
 
         bool ci = args.Contains("--ci");
