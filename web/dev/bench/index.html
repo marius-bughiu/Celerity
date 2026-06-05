@@ -282,6 +282,53 @@
       color: var(--fg-muted);
       background: var(--bg-alt);
     }
+
+    /* Hasher throughput section */
+    .hasher-group {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .hasher-group-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-alt);
+    }
+    .hasher-group-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+    .hasher-group-head .vs { font-size: 13px; color: var(--fg-muted); }
+    .hasher-group-head .vs code { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+    .hasher-rows { padding: 8px 20px 14px; }
+    .hasher-row {
+      display: grid;
+      grid-template-columns: 160px 1fr 96px 86px;
+      align-items: center;
+      gap: 12px;
+      padding: 5px 0;
+      font-size: 13px;
+    }
+    @media (max-width: 640px) {
+      .hasher-row { grid-template-columns: 120px 1fr 74px; }
+      .hasher-row .hasher-mean { display: none; }
+    }
+    .hasher-row .hasher-name { font-family: var(--mono); font-size: 12px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hasher-row.baseline .hasher-name { color: var(--fg-muted); font-weight: 600; }
+    .hasher-track { background: var(--bg-alt); border-radius: 3px; height: 14px; overflow: hidden; }
+    .hasher-bar { height: 100%; border-radius: 3px; }
+    .hasher-bar.win { background: var(--win); }
+    .hasher-bar.loss { background: var(--loss); }
+    .hasher-bar.tie { background: var(--fg-faint); }
+    .hasher-bar.baseline { background: var(--bcl); }
+    .hasher-ratio { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+    .hasher-ratio.win { color: var(--win); }
+    .hasher-ratio.loss { color: var(--loss); }
+    .hasher-ratio.tie { color: var(--fg-muted); }
+    .hasher-mean { text-align: right; font-family: var(--mono); font-size: 11px; color: var(--fg-faint); }
   </style>
 </head>
 <body>
@@ -330,6 +377,17 @@
   <div id="empty-state" class="notice" style="display:none">
     No benchmark data yet. The first measurement lands here after the next push to <code>main</code>.
   </div>
+
+  <section id="hasher-section" style="display:none">
+    <div class="section-head">
+      <h2>Hash function throughput</h2>
+      <span class="meta">latest run</span>
+    </div>
+    <div class="about" style="margin-bottom:16px">
+      <strong>Comparing the built-in hashers.</strong> Each bar is one hasher's <code>Hash</code> throughput over a fixed key sample, grouped by key type and (for <code>string</code>) by key shape, with the framework's <code>GetHashCode()</code> as the baseline. Shorter is faster. <strong>This is throughput only</strong> &mdash; a fast hasher that clusters is not a win, so weigh these against the distribution metrics from <code>HashQualityEvaluator</code> (see the <a href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/hashing.md#benchmarking-the-string-hashers">hashing docs</a>) before picking one. Source: <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/StringHasherBenchmark.cs"><code>StringHasherBenchmark</code></a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/IntegerHasherBenchmark.cs"><code>IntegerHasherBenchmark</code></a>.
+    </div>
+    <div id="hasher-groups"></div>
+  </section>
 </main>
 
 <footer class="site">
@@ -657,6 +715,112 @@
   document.getElementById('footer-build').innerHTML =
     'Latest from <a href="' + latest.commit.url + '"><code>' + sha + '</code></a> &middot; ' +
     new Date(latest.date).toUTCString();
+})();
+</script>
+
+<script>
+// ---- Hash function throughput section ----
+// Independent of the per-collection logic above: a bug here cannot break that, and vice versa.
+// Hidden unless the latest run actually contains hasher benchmarks (the section stays dormant
+// until StringHasherBenchmark / IntegerHasherBenchmark land in the joined report on main).
+(function () {
+  'use strict';
+
+  var data = window.BENCHMARK_DATA;
+  if (!data || !data.entries || !data.entries['Celerity Benchmarks']) return;
+  var runs = data.entries['Celerity Benchmarks'];
+  if (!runs.length) return;
+  var latest = runs[runs.length - 1];
+  if (!latest || !latest.benches) return;
+
+  // String:  StringHasherBenchmark.{Method}(Shape: {Shape})
+  // Integer: IntegerHasherBenchmark.{Type}_{Hasher}
+  function parseHasher(name, value) {
+    var m = name.match(/^StringHasherBenchmark\.(\w+)\(Shape:\s*(\w+)\)$/);
+    if (m) return { family: 'string', group: m[2], method: m[1], value: value, isBaseline: m[1] === 'Bcl_GetHashCode' };
+    m = name.match(/^IntegerHasherBenchmark\.(\w+?)_(\w+)$/);
+    if (m) return { family: 'integer', group: m[1], method: m[2], value: value, isBaseline: m[2] === 'Bcl' };
+    return null;
+  }
+
+  // Display order + human labels.
+  var GROUP_META = {
+    'string|ShortAscii': { title: 'string hashers', sub: 'short ASCII keys', vs: 'string.GetHashCode()' },
+    'string|LongAscii':  { title: 'string hashers', sub: 'long ASCII keys',  vs: 'string.GetHashCode()' },
+    'string|NonAscii':   { title: 'string hashers', sub: 'non-ASCII / CJK keys', vs: 'string.GetHashCode()' },
+    'integer|Int32':     { title: 'int hashers',    sub: '',  vs: 'int.GetHashCode()' },
+    'integer|Int64':     { title: 'long hashers',   sub: '',  vs: 'long.GetHashCode()' },
+    'integer|UInt32':    { title: 'uint hashers',   sub: '',  vs: 'uint.GetHashCode()' },
+    'integer|UInt64':    { title: 'ulong hashers',  sub: '',  vs: 'ulong.GetHashCode()' },
+    'integer|Guid':      { title: 'Guid hashers',   sub: '',  vs: 'Guid.GetHashCode()' }
+  };
+  var GROUP_ORDER = ['string|ShortAscii', 'string|LongAscii', 'string|NonAscii',
+                     'integer|Int32', 'integer|Int64', 'integer|UInt32', 'integer|UInt64', 'integer|Guid'];
+
+  var groups = {};
+  latest.benches.forEach(function (b) {
+    var p = parseHasher(b.name, b.value);
+    if (!p) return;
+    var key = p.family + '|' + p.group;
+    if (!groups[key]) groups[key] = { key: key, baseline: null, rows: [] };
+    if (p.isBaseline) groups[key].baseline = p.value;
+    groups[key].rows.push(p);
+  });
+
+  var ordered = GROUP_ORDER.filter(function (k) { return groups[k]; });
+  if (!ordered.length) return; // no hasher data yet — leave the section hidden
+
+  function fmtNs(v) {
+    if (v == null) return '&mdash;';
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + ' ms';
+    if (v >= 1e3) return (v / 1e3).toFixed(2) + ' &mu;s';
+    return Math.round(v) + ' ns';
+  }
+  function ratioLabel(value, baseline) {
+    if (baseline == null || value == null) return { txt: '&mdash;', cls: 'tie' };
+    var r = baseline / value; // > 1 => faster than the BCL baseline
+    if (r >= 1.05) return { txt: r.toFixed(2) + '&times; faster', cls: 'win' };
+    if (r <= 0.95) return { txt: (1 / r).toFixed(2) + '&times; slower', cls: 'loss' };
+    return { txt: '~ parity', cls: 'tie' };
+  }
+  function methodLabel(p) {
+    if (p.isBaseline) return '.NET GetHashCode';
+    if (p.family === 'integer' && p.method === 'Celerity') return 'GuidHasher';
+    return p.method;
+  }
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
+
+  var container = document.getElementById('hasher-groups');
+  ordered.forEach(function (key) {
+    var grp = groups[key];
+    var meta = GROUP_META[key];
+    grp.rows.sort(function (a, b) { return a.value - b.value; }); // fastest first
+    var max = grp.rows.reduce(function (acc, r) { return Math.max(acc, r.value); }, 0);
+
+    var rowsHtml = grp.rows.map(function (r) {
+      var rl = r.isBaseline ? { txt: 'baseline', cls: 'tie' } : ratioLabel(r.value, grp.baseline);
+      var barCls = r.isBaseline ? 'baseline' : rl.cls;
+      var pct = max > 0 ? Math.max(2, Math.round(100 * r.value / max)) : 0;
+      return '<div class="hasher-row' + (r.isBaseline ? ' baseline' : '') + '">' +
+               '<div class="hasher-name" title="' + esc(r.method) + '">' + esc(methodLabel(r)) + '</div>' +
+               '<div class="hasher-track"><div class="hasher-bar ' + barCls + '" style="width:' + pct + '%"></div></div>' +
+               '<div class="hasher-ratio ' + rl.cls + '">' + rl.txt + '</div>' +
+               '<div class="hasher-mean">' + fmtNs(r.value) + '</div>' +
+             '</div>';
+    }).join('');
+
+    var panel = document.createElement('section');
+    panel.className = 'hasher-group';
+    panel.innerHTML =
+      '<div class="hasher-group-head">' +
+        '<h3>' + meta.title + (meta.sub ? ' <span class="vs">&middot; ' + meta.sub + '</span>' : '') + '</h3>' +
+        '<div class="vs">vs <code>' + meta.vs + '</code></div>' +
+      '</div>' +
+      '<div class="hasher-rows">' + rowsHtml + '</div>';
+    container.appendChild(panel);
+  });
+
+  document.getElementById('hasher-section').style.display = 'block';
 })();
 </script>
 
