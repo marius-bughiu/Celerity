@@ -116,7 +116,7 @@ public struct StringElfHasher : IHashProvider<string>
 
 The classic **PJW** / **ELF** hash — Peter J. Weinberger's hash from the "Dragon Book" in the exact 32-bit form standardized as the `elf_hash` used by the System V ABI for ELF object-file symbol tables — applied to the string's native little-endian UTF-16 byte stream, folding both bytes of every character (low byte then high byte). The accumulator is seeded with `0`, and each byte `b` is folded with the step `hash = (hash << 4) + b; high = hash & 0xF0000000; if (high != 0) hash ^= high >> 24; hash &= ~high`. The shift-by-4 walks new bytes up through the accumulator; whenever data reaches the top nibble, those four bits are folded back down into bits 4–7 (`high >> 24`) and then cleared, so the state never grows past 28 bits and high-order entropy is recirculated instead of discarded. Like djb2 and sdbm it uses **no real multiply, no table, and no separate finalizer**. Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
 
-Its high-nibble feedback gives it a touch more diffusion than the pure shift-and-add classics — a changed byte that has climbed into the top nibble is XORed back across the low byte — but it still has no full avalanche step, so a single changed input byte propagates less thoroughly than under `StringJenkinsOaatHasher`. Because the top nibble is always cleared, the result occupies only 28 bits (always in `[0, 0x0FFFFFFF]`, never negative); this is immaterial once the dictionary masks the hash down to the table size. It sits at the cheapest, classic end of the `string` escalation ladder, a peer to `StringDjb2Hasher`, `StringDjb2AHasher`, `StringSdbmHasher`, the FNV-1a variants, and `StringJenkinsOaatHasher`: `StringDjb2Hasher` / `StringDjb2AHasher` / `StringSdbmHasher` / `StringElfHasher` (cheapest, multiply-free classics, weaker avalanche) / `StringFnV1AHasher` (low-byte only) → `StringFnV1AFullHasher` / `StringFnV1A64Hasher` (cheap FNV-1a, full Unicode width) → `StringJenkinsOaatHasher` (cheap, full Unicode width, multiply-free, stronger per-bit avalanche than the classics or FNV-1a) → `StringMurmur3Hasher` / `StringXxHash32Hasher` / `StringXxHash64Hasher` / `StringMetroHash64Hasher` / `StringCityHash64Hasher` / `StringXxHash3Hasher` (strong avalanche, maximum throughput). Prefer it when you want a simple, familiar cheap hash and your keys are short ASCII identifiers; step up to `StringJenkinsOaatHasher` (still cheap, but with proper shift/xor diffusion) or the FNV-1a variants when the ELF hash's weak avalanche starts clustering keys, and escalate to the throughput-oriented strong family for clustered or adversarial keys.
+Its high-nibble feedback gives it a touch more diffusion than the pure shift-and-add classics — a changed byte that has climbed into the top nibble is XORed back across the low byte — but it still has no full avalanche step, so a single changed input byte propagates less thoroughly than under `StringJenkinsOaatHasher`. Because the top nibble is always cleared, the result occupies only 28 bits (always in `[0, 0x0FFFFFFF]`, never negative); this is immaterial once the dictionary masks the hash down to the table size. It sits at the cheapest, classic end of the `string` escalation ladder, a peer to `StringDjb2Hasher`, `StringDjb2AHasher`, `StringSdbmHasher`, the FNV-1a variants, and `StringJenkinsOaatHasher`: `StringDjb2Hasher` / `StringDjb2AHasher` / `StringSdbmHasher` / `StringElfHasher` (cheapest, multiply-free classics, weaker avalanche) / `StringFnV1AHasher` (low-byte only) → `StringFnV1AFullHasher` / `StringFnV1A64Hasher` (cheap FNV-1a, full Unicode width) → `StringJenkinsOaatHasher` (cheap, full Unicode width, multiply-free, stronger per-bit avalanche than the classics or FNV-1a) → `StringMurmur3Hasher` / `StringXxHash32Hasher` / `StringXxHash64Hasher` / `StringMetroHash64Hasher` / `StringCityHash64Hasher` / `StringXxHash3Hasher` (strong avalanche, maximum throughput). Reach for it when you specifically want the familiar ELF/PJW hash; otherwise prefer one of the other cheap classics. **The measured [distribution report](#measured-distribution-quality) flags a real weakness here:** on short ASCII keys the ELF hash clusters badly (`DistributionScore` ≈ 11.4, max bucket load 31 versus ~4–5 for every other hasher), because its low output bits mix poorly for ASCII-range inputs and the dictionary masks the hash down to those bits — so for ASCII-dominated keys prefer the equally cheap `StringDjb2Hasher` / `StringDjb2AHasher` / `StringSdbmHasher`, or step up to `StringJenkinsOaatHasher` (still cheap, but with proper shift/xor diffusion) or the FNV-1a variants. The clustering eases on keys with significant non-ASCII content (score ≈ 2.27), but it is still the weakest distributor in the family there; escalate to the throughput-oriented strong family for clustered or adversarial keys.
 
 **Note:** maps the empty string `""` → the seed constant `0` — no characters are folded. The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
 
@@ -508,7 +508,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 | `uint` | `UInt32Hasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
 | `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
-| `string` | `StringFnV1AHasher` | `StringDjb2Hasher` (Bernstein's djb2 — the simplest, cheapest classic, shift-and-add with no real multiply, full-character fold) when you want a familiar minimal hash on short ASCII identifiers and djb2's weaker avalanche is acceptable; `StringDjb2AHasher` (the djb2a XOR-folding variant — same `* 33` cost, but XORs the byte instead of adding it, mirroring the FNV-1/FNV-1a split; avoids djb2's low-bit carry bias for slightly cleaner diffusion at the same cheapest cost class); `StringSdbmHasher` (the sdbm classic — same cheapest cost class, `* 65599` via two shifts and a subtract, full-character fold; its larger multiplier tends to distribute slightly better than djb2 on short keys, with the same weak avalanche); `StringElfHasher` (the PJW / ELF symbol-table hash — same cheapest cost class, a shift-and-add with a top-nibble fold-back that recirculates high-order bits, full-character fold, 28-bit non-negative result); `StringCrc32Hasher` (the standard CRC-32 / zlib / IEEE 802.3 checksum — the family's only table-driven member, full-character fold; a linear checksum with weaker avalanche than the designed mixers, provided primarily to reproduce a CRC-32-based key distribution exactly when matching an external system); `StringFnV1Hasher` (the original FNV-1 multiply-then-XOR ordering, full-character fold) when you specifically need FNV-1 rather than the generally preferred FNV-1a, or `StringFnV164Hasher` for that same FNV-1 ordering folded into a 64-bit accumulator when keys are long or numerous enough to cluster the 32-bit state; `StringFnV1AFullHasher` (same FNV-1a cost, folds the full character) for non-ASCII content the low-byte fold would collide; `StringFnV1A64Hasher` (full-character fold into a 64-bit accumulator) when keys are long or numerous enough to cluster the 32-bit state; `StringJenkinsOaatHasher` (Bob Jenkins' one-at-a-time hash — multiply-free, with stronger per-bit avalanche than FNV-1a at the same cheap cost class) when FNV-1a's single-multiply mixing clusters keys but a block hash is more than you want to pay; `StringMurmur3Hasher` (the `fmix32`-finalized MurmurHash3, with `StringMurmur2Hasher` as its older same-family sibling for MurmurHash2 compatibility), `StringXxHash32Hasher`, `StringXxHash64Hasher`, `StringMetroHash64Hasher`, `StringCityHash64Hasher`, or `StringXxHash3Hasher` (the throughput-oriented strong-avalanche options for longer keys — XXH64 widens the accumulators and stripe further for longer keys on 64-bit platforms, MetroHash64 is a peer worth profiling against on mid-length keys, CityHash64 is length-classed so it often edges ahead on short-to-mid keys, and XXH3 is the third-generation xxHash that is length-classed *and* runs an eight-lane bulk loop, typically the fastest across both short and long keys) for clustered / adversarial keys that need strong avalanche; `StringHalfSipHash24Hasher` (HalfSipHash-2-4, keyed — the cheaper 32-bit-word variant for short keys / 32-bit targets, with a native 32-bit output and no fold), `StringSipHash13Hasher` (SipHash-1-3, keyed — the faster reduced-round 64-bit variant Rust's `HashMap` uses by default), `StringSipHash24Hasher` (SipHash-2-4, keyed — the conservative variant), or `StringHighwayHash64Hasher` (HighwayHash64, keyed — the SIMD-oriented alternative, scalar today) when the keys are untrusted and you need hash-flooding resistance rather than maximum throughput; `DefaultHasher<string>` (uses the BCL string hasher) |
+| `string` | `StringFnV1AHasher` | `StringDjb2Hasher` (Bernstein's djb2 — the simplest, cheapest classic, shift-and-add with no real multiply, full-character fold) when you want a familiar minimal hash on short ASCII identifiers and djb2's weaker avalanche is acceptable; `StringDjb2AHasher` (the djb2a XOR-folding variant — same `* 33` cost, but XORs the byte instead of adding it, mirroring the FNV-1/FNV-1a split; avoids djb2's low-bit carry bias for slightly cleaner diffusion at the same cheapest cost class); `StringSdbmHasher` (the sdbm classic — same cheapest cost class, `* 65599` via two shifts and a subtract, full-character fold; its larger multiplier tends to distribute slightly better than djb2 on short keys, with the same weak avalanche); `StringElfHasher` (the PJW / ELF symbol-table hash — same cheapest cost class, a shift-and-add with a top-nibble fold-back that recirculates high-order bits, full-character fold, 28-bit non-negative result; **but the [measured distribution report](#measured-distribution-quality) shows it clusters badly on ASCII keys — prefer djb2 / sdbm over it there**); `StringCrc32Hasher` (the standard CRC-32 / zlib / IEEE 802.3 checksum — the family's only table-driven member, full-character fold; a linear checksum with weaker avalanche than the designed mixers, provided primarily to reproduce a CRC-32-based key distribution exactly when matching an external system); `StringFnV1Hasher` (the original FNV-1 multiply-then-XOR ordering, full-character fold) when you specifically need FNV-1 rather than the generally preferred FNV-1a, or `StringFnV164Hasher` for that same FNV-1 ordering folded into a 64-bit accumulator when keys are long or numerous enough to cluster the 32-bit state; `StringFnV1AFullHasher` (same FNV-1a cost, folds the full character) for non-ASCII content the low-byte fold would collide; `StringFnV1A64Hasher` (full-character fold into a 64-bit accumulator) when keys are long or numerous enough to cluster the 32-bit state; `StringJenkinsOaatHasher` (Bob Jenkins' one-at-a-time hash — multiply-free, with stronger per-bit avalanche than FNV-1a at the same cheap cost class) when FNV-1a's single-multiply mixing clusters keys but a block hash is more than you want to pay; `StringMurmur3Hasher` (the `fmix32`-finalized MurmurHash3, with `StringMurmur2Hasher` as its older same-family sibling for MurmurHash2 compatibility), `StringXxHash32Hasher`, `StringXxHash64Hasher`, `StringMetroHash64Hasher`, `StringCityHash64Hasher`, or `StringXxHash3Hasher` (the throughput-oriented strong-avalanche options for longer keys — XXH64 widens the accumulators and stripe further for longer keys on 64-bit platforms, MetroHash64 is a peer worth profiling against on mid-length keys, CityHash64 is length-classed so it often edges ahead on short-to-mid keys, and XXH3 is the third-generation xxHash that is length-classed *and* runs an eight-lane bulk loop, typically the fastest across both short and long keys) for clustered / adversarial keys that need strong avalanche; `StringHalfSipHash24Hasher` (HalfSipHash-2-4, keyed — the cheaper 32-bit-word variant for short keys / 32-bit targets, with a native 32-bit output and no fold), `StringSipHash13Hasher` (SipHash-1-3, keyed — the faster reduced-round 64-bit variant Rust's `HashMap` uses by default), `StringSipHash24Hasher` (SipHash-2-4, keyed — the conservative variant), or `StringHighwayHash64Hasher` (HighwayHash64, keyed — the SIMD-oriented alternative, scalar today) when the keys are untrusted and you need hash-flooding resistance rather than maximum throughput; `DefaultHasher<string>` (uses the BCL string hasher) |
 | anything else | `DefaultHasher<T>` | a struct hasher you write |
 
 ---
@@ -600,4 +600,135 @@ cd src/Celerity.Benchmarks
 dotnet run -c Release -- --filter "*HasherBenchmark*"
 ```
 
-> The hasher benchmarks measure **throughput only**. A fast hasher that clusters is not a win (see the ROADMAP guiding principles), so read the throughput numbers alongside the distribution metrics from [`HashQualityEvaluator`](#hashqualityevaluator) for the same key shape before committing a hasher: prefer the cheapest hasher whose `DistributionScore` stays near `1.0` and whose `MaxBucketLoad` is low on a representative sample of your keys.
+> The hasher benchmarks measure **throughput only**. A fast hasher that clusters is not a win (see the ROADMAP guiding principles), so read the throughput numbers alongside the distribution metrics below before committing a hasher: prefer the cheapest hasher whose `DistributionScore` stays near `1.0` and whose `MaxBucketLoad` is low on a representative sample of your keys.
+
+### Measured distribution quality
+
+Throughput is only half the picture. The companion `--hash-quality` report runs [`HashQualityEvaluator`](#hashqualityevaluator) over the **same** deterministic key samples the throughput benchmarks use (`HasherKeySamples`), so a hasher's speed and its distribution describe the same keys. Distribution quality is deterministic — it does not depend on CI hardware or timing noise — so unlike throughput these numbers are stable enough to cite directly. Reproduce them with:
+
+```bash
+cd src/Celerity.Benchmarks
+dotnet run -c Release -- --hash-quality
+```
+
+The numbers below are over **2000 distinct keys spread across 4096 buckets** (load factor ≈ 0.49, a representative healthy table). `Score` is `DistributionScore` (**1.00 = ideal uniform**, above 1.00 = clustering / longer probe chains); `Max load` is the worst-case bucket occupancy; `Collisions` counts raw 32-bit hash-code collisions.
+
+**The headline: on these samples almost every hasher distributes near-ideally (score ≈ 0.97–1.03), with one sharp outlier — `StringElfHasher` clusters hard on ASCII keys** (score **11.4**, max bucket load **31** on short ASCII, vs ~4–5 for everyone else). The PJW/ELF hash's low output bits are poorly mixed for ASCII-range inputs, so masking to a power-of-two table concentrates keys into a few buckets — a textbook case of "cheap to compute, but the clustering costs you far more on the probe path than the hash saved." It recovers on non-ASCII keys (score 2.27) once CJK code points feed the upper bytes. **Avoid `StringElfHasher` for ASCII-dominated keys**; reach for `StringDjb2Hasher` / `StringDjb2AHasher` / `StringSdbmHasher` (equally cheap, all near 1.0) or step up to `StringFnV1AFullHasher` / `StringJenkinsOaatHasher`.
+
+<details>
+<summary><strong>string hashers · ShortAscii</strong> (6–12-char identifiers)</summary>
+
+| Hasher | Score | Max load | Collisions |
+|---|---|---|---|
+| `StringFnV1AFullHasher` | 0.978 | 4 | 0 |
+| `StringXxHash3Hasher` | 0.980 | 4 | 0 |
+| `StringFnV1Hasher` | 0.983 | 4 | 0 |
+| `StringXxHash64Hasher` | 0.987 | 5 | 0 |
+| `StringHighwayHash64Hasher` | 0.987 | 4 | 0 |
+| `StringDjb2AHasher` | 0.988 | 4 | 0 |
+| `StringMetroHash64Hasher` | 0.992 | 4 | 0 |
+| `StringFnV1A64Hasher` | 0.992 | 4 | 0 |
+| `StringCityHash64Hasher` | 0.993 | 5 | 0 |
+| `StringFnV1AHasher` | 0.993 | 5 | 0 |
+| `DefaultHasher<string>` (BCL) | 0.995 | 5 | 0 |
+| `StringSdbmHasher` | 0.995 | 5 | 0 |
+| `StringDjb2Hasher` | 0.997 | 5 | 0 |
+| `StringXxHash32Hasher` | 0.998 | 4 | 0 |
+| `StringSipHash13Hasher` | 1.002 | 5 | 0 |
+| `StringSipHash24Hasher` | 1.003 | 4 | 0 |
+| `StringCrc32Hasher` | 1.004 | 5 | 0 |
+| `StringMurmur3Hasher` | 1.009 | 4 | 0 |
+| `StringFnV164Hasher` | 1.015 | 5 | 0 |
+| `StringHalfSipHash24Hasher` | 1.015 | 5 | 0 |
+| `StringMurmur2Hasher` | 1.015 | 4 | 0 |
+| `StringJenkinsOaatHasher` | 1.023 | 5 | 0 |
+| `StringElfHasher` | **11.387** | **31** | 0 |
+
+</details>
+
+<details>
+<summary><strong>string hashers · LongAscii</strong> (48–80-char path/URL-like keys)</summary>
+
+| Hasher | Score | Max load | Collisions |
+|---|---|---|---|
+| `StringFnV1A64Hasher` | 0.971 | 4 | 0 |
+| `StringMurmur3Hasher` | 0.974 | 4 | 0 |
+| `StringHalfSipHash24Hasher` | 0.977 | 4 | 0 |
+| `StringXxHash64Hasher` | 0.979 | 4 | 0 |
+| `StringJenkinsOaatHasher` | 0.980 | 4 | 0 |
+| `StringCityHash64Hasher` | 0.985 | 5 | 0 |
+| `StringXxHash3Hasher` | 0.987 | 5 | 0 |
+| `StringSipHash13Hasher` | 0.988 | 5 | 0 |
+| `StringSdbmHasher` | 0.989 | 4 | 0 |
+| `StringFnV1AHasher` | 0.995 | 3 | 0 |
+| `DefaultHasher<string>` (BCL) | 0.998 | 4 | 0 |
+| `StringSipHash24Hasher` | 0.999 | 5 | 0 |
+| `StringDjb2Hasher` | 1.000 | 4 | 0 |
+| `StringXxHash32Hasher` | 1.001 | 4 | 0 |
+| `StringFnV1AFullHasher` | 1.005 | 4 | 0 |
+| `StringCrc32Hasher` | 1.005 | 5 | 0 |
+| `StringMurmur2Hasher` | 1.005 | 5 | 0 |
+| `StringHighwayHash64Hasher` | 1.009 | 4 | 0 |
+| `StringFnV164Hasher` | 1.011 | 5 | 0 |
+| `StringFnV1Hasher` | 1.013 | 6 | 0 |
+| `StringMetroHash64Hasher` | 1.028 | 5 | 0 |
+| `StringDjb2AHasher` | 1.033 | 4 | 0 |
+| `StringElfHasher` | **11.125** | **26** | 2 |
+
+</details>
+
+<details>
+<summary><strong>string hashers · NonAscii</strong> (10–20-char Latin + CJK)</summary>
+
+| Hasher | Score | Max load | Collisions |
+|---|---|---|---|
+| `StringXxHash3Hasher` | 0.977 | 5 | 0 |
+| `StringSipHash13Hasher` | 0.980 | 5 | 0 |
+| `StringFnV1AHasher` | 0.980 | 6 | 0 |
+| `DefaultHasher<string>` (BCL) | 0.983 | 4 | 0 |
+| `StringFnV164Hasher` | 0.983 | 4 | 0 |
+| `StringMurmur3Hasher` | 0.989 | 4 | 0 |
+| `StringXxHash64Hasher` | 0.989 | 5 | 0 |
+| `StringSdbmHasher` | 0.990 | 4 | 0 |
+| `StringFnV1Hasher` | 0.994 | 4 | 0 |
+| `StringFnV1AFullHasher` | 0.997 | 4 | 0 |
+| `StringDjb2AHasher` | 1.000 | 4 | 0 |
+| `StringJenkinsOaatHasher` | 1.000 | 4 | 0 |
+| `StringCityHash64Hasher` | 1.001 | 5 | 0 |
+| `StringXxHash32Hasher` | 1.002 | 5 | 0 |
+| `StringHalfSipHash24Hasher` | 1.005 | 4 | 0 |
+| `StringMurmur2Hasher` | 1.005 | 4 | 0 |
+| `StringDjb2Hasher` | 1.009 | 4 | 0 |
+| `StringSipHash24Hasher` | 1.013 | 5 | 0 |
+| `StringMetroHash64Hasher` | 1.015 | 4 | 0 |
+| `StringCrc32Hasher` | 1.017 | 5 | 0 |
+| `StringFnV1A64Hasher` | 1.018 | 5 | 0 |
+| `StringHighwayHash64Hasher` | 1.029 | 5 | 0 |
+| `StringElfHasher` | **2.267** | **12** | 0 |
+
+</details>
+
+For the fixed-width integer and `Guid` hashers every option — including the cheap XOR-fold defaults and the BCL `GetHashCode()` — distributes near-ideally on a uniform random sample (all scores ≈ 0.98–1.03, max load 4–6), so the cheap default is the right call until you have evidence of clustered or adversarial keys:
+
+<details>
+<summary><strong>int / long / uint / ulong / Guid hashers</strong></summary>
+
+| Hasher | Score | Max load | Collisions |
+|---|---|---|---|
+| `Int32Murmur3Hasher` | 0.991 | 4 | 0 |
+| `Int32WangNaiveHasher` (default) | 1.020 | 5 | 0 |
+| `Int32WangHasher` | 1.027 | 5 | 0 |
+| `Int64WangNaiveHasher` (default) | 1.001 | 6 | 0 |
+| `Int64WangHasher` | 1.011 | 4 | 0 |
+| `Int64Murmur3Hasher` | 1.014 | 5 | 0 |
+| `UInt32Hasher` (default) | 1.020 | 5 | 0 |
+| `UInt32WangHasher` | 1.027 | 5 | 0 |
+| `UInt32Murmur3Hasher` | 0.991 | 4 | 0 |
+| `UInt64Hasher` (default) | 1.014 | 5 | 0 |
+| `UInt64WangHasher` | 1.011 | 4 | 0 |
+| `UInt64WangNaiveHasher` | 1.001 | 6 | 0 |
+| `GuidHasher` | 0.983 | 4 | 0 |
+
+</details>
+
+> These distribution numbers describe a uniform-ish random sample. They are a guide, not a guarantee: if your real keys are clustered or adversarial, re-run `--hash-quality` (or call `HashQualityEvaluator.Evaluate` directly) on **your** key sample, since that is exactly the case where the cheap hashers' weaker avalanche starts to matter.

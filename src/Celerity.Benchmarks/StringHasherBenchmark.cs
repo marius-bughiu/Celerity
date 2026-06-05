@@ -1,4 +1,3 @@
-using System.Text;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Hashing;
@@ -33,68 +32,13 @@ using Celerity.Hashing;
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
 public class StringHasherBenchmark
 {
-    /// <summary>The key shapes swept by <see cref="Shape"/>.</summary>
-    public enum KeyShape
-    {
-        /// <summary>Short lowercase-alphanumeric identifiers (6–12 chars), the common map-key case.</summary>
-        ShortAscii,
-
-        /// <summary>Long ASCII path / URL-like keys (48–80 chars).</summary>
-        LongAscii,
-
-        /// <summary>Shorter mixed Latin + CJK text (10–20 chars) that exercises the full-width fold.</summary>
-        NonAscii,
-    }
-
-    private const int KeyCount = 2_000;
-
     private string[] keys = null!;
 
     [Params(KeyShape.ShortAscii, KeyShape.LongAscii, KeyShape.NonAscii)]
     public KeyShape Shape;
 
     [GlobalSetup]
-    public void Setup()
-    {
-        // Deterministic seed so the key sample is identical across runs and across hashers.
-        Random rand = new(42);
-        keys = new string[KeyCount];
-        for (int i = 0; i < KeyCount; i++)
-        {
-            keys[i] = Shape switch
-            {
-                KeyShape.ShortAscii => MakeAscii(rand, rand.Next(6, 13)),
-                KeyShape.LongAscii => MakeAscii(rand, rand.Next(48, 81)),
-                KeyShape.NonAscii => MakeNonAscii(rand, rand.Next(10, 21)),
-                _ => throw new InvalidOperationException(),
-            };
-        }
-    }
-
-    private static string MakeAscii(Random rand, int length)
-    {
-        const string alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_/";
-        var sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++)
-        {
-            sb.Append(alphabet[rand.Next(alphabet.Length)]);
-        }
-        return sb.ToString();
-    }
-
-    private static string MakeNonAscii(Random rand, int length)
-    {
-        // Mix Latin letters with CJK code points (U+4E00–U+9FFF) so both bytes of the
-        // UTF-16 code unit vary — the case the full-width string hashers are built for.
-        var sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++)
-        {
-            sb.Append(rand.Next(2) == 0
-                ? (char)('a' + rand.Next(26))
-                : (char)(0x4E00 + rand.Next(0x9FFF - 0x4E00 + 1)));
-        }
-        return sb.ToString();
-    }
+    public void Setup() => keys = HasherKeySamples.Strings(Shape);
 
     /// <summary>
     /// Hashes every key through <typeparamref name="THasher"/>, XOR-folding the codes into a single
