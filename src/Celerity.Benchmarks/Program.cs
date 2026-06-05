@@ -14,6 +14,7 @@ internal class Program
             typeof(IntSetBenchmark),
             typeof(LongSetBenchmark),
             typeof(StringHasherBenchmark),
+            typeof(IntegerHasherBenchmark),
         };
 
         bool ci = args.Contains("--ci");

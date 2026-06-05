@@ -577,4 +577,13 @@ The `Celerity.Benchmarks` project includes `StringHasherBenchmark`, a head-to-he
 
 The three shapes matter because the length-classed hashers (`StringCityHash64Hasher`, `StringXxHash3Hasher`) and the four-accumulator stripe hashers (`StringXxHash32Hasher`, `StringXxHash64Hasher`) behave very differently across lengths, and the full-width hashers do extra work on non-ASCII upper bytes. The benchmark is registered in `Program.cs` so it joins the CI report and the gh-pages benchmark history on every push to `main`.
 
-> `StringHasherBenchmark` measures **throughput only**. A fast hasher that clusters is not a win (see the ROADMAP guiding principles), so read the throughput numbers alongside the distribution metrics from [`HashQualityEvaluator`](#hashqualityevaluator) for the same key shape before committing a hasher: prefer the cheapest hasher whose `DistributionScore` stays near `1.0` and whose `MaxBucketLoad` is low on a representative sample of your keys.
+A companion `IntegerHasherBenchmark` does the same for the fixed-width integer and `Guid` hashers, grouped by key type (`int` / `long` / `uint` / `ulong` / `Guid`), each baselined against that type's BCL `GetHashCode()`. It has no key-shape parameter: hashing a fixed-width integer is branch-free and constant-time regardless of the key's value, so the sample's distribution affects collision *quality* but not `Hash` throughput.
+
+Both benchmarks are rendered on the [live benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) under **Hash function throughput** — one ranked bar per hasher within each key type / shape group, relative to the framework `GetHashCode()` baseline, refreshed on every push to `main`. To run them locally:
+
+```bash
+cd src/Celerity.Benchmarks
+dotnet run -c Release -- --filter "*HasherBenchmark*"
+```
+
+> The hasher benchmarks measure **throughput only**. A fast hasher that clusters is not a win (see the ROADMAP guiding principles), so read the throughput numbers alongside the distribution metrics from [`HashQualityEvaluator`](#hashqualityevaluator) for the same key shape before committing a hasher: prefer the cheapest hasher whose `DistributionScore` stays near `1.0` and whose `MaxBucketLoad` is low on a representative sample of your keys.
