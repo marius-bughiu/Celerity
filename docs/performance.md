@@ -152,6 +152,29 @@ dotnet run -c Release -- --filter "*HasherBenchmark*"
 
 Read hasher throughput numbers **alongside** the `HashQualityReport` distribution metrics — the right hasher is the one that is both fast *and* uniform on your key shape. When you change `capacity`, `loadFactor`, or the hasher in production code, re-run the relevant benchmark; the README's published numbers are the contract, and a local benchmark is how you confirm a tuning change actually helped.
 
+## Extended benchmark suite
+
+The CI dashboard runs a deliberately **lean core suite** on every PR so the same-runner A/B regression comparison stays fast and low-variance. A second, heavier set of benchmarks lives in the same project but is **excluded from the CI run** — it exists to answer the questions a single random-key measurement can't, and you run it on demand. Each is a `*Benchmark` class you can target with `--filter`:
+
+| Benchmark | Filter | What it measures |
+|---|---|---|
+| `DistributionBenchmark` | `*Distribution*` | Insert/Lookup across **uniform / sequential / clustered** key shapes (1k + 100k). The cheap XOR-fold hashers win on uniform/sequential keys; this is where you confirm that for *your* shape. |
+| `AdversarialHasherBenchmark` | `*Adversarial*` | Keys engineered to collide under the naive hasher. Shows the probe chain degrading toward **O(n)** with `Int32WangNaiveHasher` and snapping back to O(1) with `Int32Murmur3Hasher` — the empirical case for choosing the right hasher. |
+| `LargeDatasetBenchmark` | `*LargeDataset*` | 1M and 5M items, where the working set spills out of cache and memory traffic dominates. |
+| `MemoryAllocationBenchmark` | `*MemoryAllocation*` | Allocated bytes + GC counts for **grow-from-empty** vs **pre-sized** construction — the cost of *not* passing a capacity. |
+| `ConcurrentAccessBenchmark` | `*ConcurrentAccess*` | Read scaling at 1/4/8 threads against `ConcurrentDictionary<,>`. Concurrent **reads** of a built-once, never-mutated Celerity map are safe and skip the concurrent-collection tax. |
+| `CacheLocalityBenchmark` | `*CacheLocality*` | Same keys probed **in order** vs **shuffled** — isolates the cache-miss penalty and contrasts the parallel-array layout against the BCL entry-struct layout. |
+| `LibraryComparisonBenchmark` | `*LibraryComparison*` | Lookups vs the BCL `FrozenDictionary<,>`, the strongest in-box read-optimized peer. (FASTER/Tsavorite is intentionally excluded — it's a log-structured store, not a drop-in dictionary.) |
+| `RealWorldWorkloadBenchmark` | `*RealWorldWorkload*` | A mixed **~80% read / ~12% write / ~8% remove** stream with a hot 10% of keys — closer to a real cache than any single-op micro-benchmark. |
+
+```bash
+cd src/Celerity.Benchmarks
+dotnet run -c Release -- --filter "*Distribution*"     # one class
+dotnet run -c Release -- --filter "*Adversarial*" "*CacheLocality*"   # several
+```
+
+The adversarial and large-dataset benchmarks are intentionally slow (they demonstrate degradation and out-of-cache behaviour respectively); expect them to take minutes.
+
 ## Checklist
 
 1. ☐ Using the type that matches the key (`IntDictionary` for `int`, etc.)?

@@ -193,6 +193,8 @@ A few cases where Celerity is **not** the right answer today:
 
 The suite also includes `StringHasherBenchmark` and `IntegerHasherBenchmark`, head-to-head throughput comparisons of every built-in `string` and integer/`Guid` hasher (each baselined against the framework `GetHashCode()`; the string benchmark sweeps short-ASCII, long-ASCII, and non-ASCII key shapes). They render on the dashboard under **Hash function throughput**, and run locally with `dotnet run -c Release -- --filter "*HasherBenchmark*"`. Read the throughput numbers alongside the distribution metrics from `HashQualityEvaluator` when picking a hasher — a fast hasher that clusters is not a win. See [Benchmarking the string hashers](docs/api/hashing.md#benchmarking-the-string-hashers).
 
+Beyond the CI-tracked core, an **extended local suite** exercises the harder questions a single random-key benchmark can't answer: multiple key distributions (uniform / sequential / clustered / adversarial), million-item scale tests, allocation profiling, concurrent read scaling, cache-locality effects, a mixed read-heavy workload, and a comparison against `FrozenDictionary<,>`. These are heavier and noisier, so they run on demand rather than on every PR — e.g. `dotnet run -c Release -- --filter "*Distribution*"`. See the [extended benchmark suite](docs/performance.md#extended-benchmark-suite) for what each one measures and how to read it.
+
 ## Custom hashing
 
 You can bring your own custom hash provider by implementing the `IHashProvider<T>` interface.
