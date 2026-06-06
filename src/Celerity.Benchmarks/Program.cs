@@ -17,6 +17,14 @@ internal class Program
             typeof(IntegerHasherBenchmark),
         };
 
+        if (args.Contains("--hash-quality"))
+        {
+            // Offline distribution-quality report (deterministic; no BenchmarkDotNet run).
+            // The throughput companion to this is the hasher benchmarks above.
+            HashQualityReportRunner.Run();
+            return;
+        }
+
         bool ci = args.Contains("--ci");
 
         if (ci)

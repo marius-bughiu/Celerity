@@ -32,8 +32,6 @@ using Celerity.Hashing;
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
 public class IntegerHasherBenchmark
 {
-    private const int KeyCount = 2_000;
-
     private int[] intKeys = null!;
     private long[] longKeys = null!;
     private uint[] uintKeys = null!;
@@ -43,24 +41,11 @@ public class IntegerHasherBenchmark
     [GlobalSetup]
     public void Setup()
     {
-        // Deterministic seed so the key sample is identical across runs and across hashers.
-        Random rand = new(42);
-        intKeys = new int[KeyCount];
-        longKeys = new long[KeyCount];
-        uintKeys = new uint[KeyCount];
-        ulongKeys = new ulong[KeyCount];
-        guidKeys = new Guid[KeyCount];
-
-        byte[] guidBytes = new byte[16];
-        for (int i = 0; i < KeyCount; i++)
-        {
-            intKeys[i] = rand.Next(1, int.MaxValue);
-            longKeys[i] = ((long)rand.Next() << 32) | (uint)rand.Next();
-            uintKeys[i] = (uint)rand.Next(1, int.MaxValue);
-            ulongKeys[i] = ((ulong)(uint)rand.Next() << 32) | (uint)rand.Next();
-            rand.NextBytes(guidBytes);
-            guidKeys[i] = new Guid(guidBytes);
-        }
+        intKeys = HasherKeySamples.Int32();
+        longKeys = HasherKeySamples.Int64();
+        uintKeys = HasherKeySamples.UInt32();
+        ulongKeys = HasherKeySamples.UInt64();
+        guidKeys = HasherKeySamples.Guids();
     }
 
     /// <summary>
