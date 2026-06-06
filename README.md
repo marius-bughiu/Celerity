@@ -230,7 +230,11 @@ For full API details — constructors, method signatures, parameters, exceptions
 
 ## Project docs
 
-- [`docs/`](docs/README.md) — API reference (collections, hashing, utilities).
+- [`docs/`](docs/README.md) — documentation index.
+- [Performance tuning guide](docs/performance.md) — capacity, load factor, hasher selection, and benchmarking.
+- [Migration guide](docs/migration.md) — moving from `Dictionary<,>`, `HashSet<>`, `ILookup<,>`, and `FrozenDictionary<,>`.
+- [Troubleshooting](docs/troubleshooting.md) and [FAQ](docs/faq.md).
+- [API reference](docs/README.md#api-reference) — collections, hashing, utilities.
 - [`ROADMAP.md`](ROADMAP.md) — planned milestones and long-term vision.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, test, PR conventions.
