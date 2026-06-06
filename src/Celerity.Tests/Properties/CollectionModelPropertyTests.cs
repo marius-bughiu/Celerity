@@ -1,0 +1,332 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Celerity.Collections;
+using Celerity.Hashing;
+using CsCheck;
+
+namespace Celerity.Tests.Properties;
+
+// Issue #29 — property-based / model-based testing.
+//
+// Every Celerity collection claims drop-in parity with a BCL counterpart
+// (Dictionary<,>, HashSet<>, a one-to-many lookup). These tests make that the
+// explicit contract: CsCheck generates randomized sequences of mutating
+// operations, applies the identical sequence to both the Celerity collection
+// and an oracle BCL collection, and asserts the two stay observably equal —
+// Count, per-key lookups across the whole key domain, and full enumeration.
+//
+// The key domains are deliberately tiny (and include 0 / negatives) so that
+// collisions, resizes, the out-of-band zero/default-key slot, and backward-shift
+// deletion all fire densely. CsCheck shrinks any failing sequence to a minimal
+// reproduction and prints the seed for replay.
+public class CollectionModelPropertyTests
+{
+    // A randomized mutation against a key/value dictionary.
+    private enum DictOp { Set, Remove, TryAdd, Clear }
+
+    private static readonly Gen<(DictOp op, int key, int val)> GenDictOp =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n => n < 45 ? DictOp.Set
+                                     : n < 80 ? DictOp.Remove
+                                     : n < 98 ? DictOp.TryAdd
+                                     : DictOp.Clear),
+            Gen.Int[-8, 24],   // key domain spans 0 and negatives for the special slots
+            Gen.Int[0, 1_000]);
+
+    private static readonly Gen<List<(DictOp, int, int)>> GenDictOps =
+        GenDictOp.List[0, 120];
+
+    // ---- Generic CelerityDictionary<int,int> vs Dictionary<int,int> ---------
+
+    [Fact]
+    public void CelerityDictionary_ShouldMatch_BclDictionary()
+    {
+        GenDictOps.Sample(ops =>
+        {
+            var sut = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+            var oracle = new Dictionary<int, int>();
+
+            foreach (var (op, key, val) in ops)
+            {
+                switch (op)
+                {
+                    case DictOp.Set:
+                        sut[key] = val;
+                        oracle[key] = val;
+                        break;
+                    case DictOp.Remove:
+                        Assert.Equal(oracle.Remove(key), sut.Remove(key));
+                        break;
+                    case DictOp.TryAdd:
+                        Assert.Equal(oracle.TryAdd(key, val), sut.TryAdd(key, val));
+                        break;
+                    case DictOp.Clear:
+                        sut.Clear();
+                        oracle.Clear();
+                        break;
+                }
+            }
+
+            AssertDictEquivalent(sut, oracle);
+        }, iter: 2000);
+    }
+
+    [Fact]
+    public void IntDictionary_ShouldMatch_BclDictionary()
+    {
+        GenDictOps.Sample(ops =>
+        {
+            var sut = new IntDictionary<int>();
+            var oracle = new Dictionary<int, int>();
+
+            foreach (var (op, key, val) in ops)
+            {
+                switch (op)
+                {
+                    case DictOp.Set: sut[key] = val; oracle[key] = val; break;
+                    case DictOp.Remove: Assert.Equal(oracle.Remove(key), sut.Remove(key)); break;
+                    case DictOp.TryAdd: Assert.Equal(oracle.TryAdd(key, val), sut.TryAdd(key, val)); break;
+                    case DictOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            for (int k = -8; k <= 24; k++)
+            {
+                bool expected = oracle.TryGetValue(k, out int ev);
+                bool actual = sut.TryGetValue(k, out int av);
+                Assert.Equal(expected, actual);
+                if (expected) Assert.Equal(ev, av);
+            }
+        }, iter: 2000);
+    }
+
+    [Fact]
+    public void LongDictionary_ShouldMatch_BclDictionary()
+    {
+        GenDictOps.Sample(ops =>
+        {
+            var sut = new LongDictionary<int>();
+            var oracle = new Dictionary<long, int>();
+
+            foreach (var (op, key, val) in ops)
+            {
+                long lk = (long)key << 33 | (uint)key; // spread across the 64-bit space
+                switch (op)
+                {
+                    case DictOp.Set: sut[lk] = val; oracle[lk] = val; break;
+                    case DictOp.Remove: Assert.Equal(oracle.Remove(lk), sut.Remove(lk)); break;
+                    case DictOp.TryAdd: Assert.Equal(oracle.TryAdd(lk, val), sut.TryAdd(lk, val)); break;
+                    case DictOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            foreach (var kv in oracle)
+            {
+                Assert.True(sut.TryGetValue(kv.Key, out int av));
+                Assert.Equal(kv.Value, av);
+            }
+        }, iter: 2000);
+    }
+
+    // ---- Sets vs HashSet ----------------------------------------------------
+
+    private enum SetOp { Add, Remove, Clear }
+
+    private static readonly Gen<List<(SetOp, int)>> GenSetOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n => n < 55 ? SetOp.Add : n < 97 ? SetOp.Remove : SetOp.Clear),
+            Gen.Int[-8, 24])
+        .List[0, 120];
+
+    [Fact]
+    public void CeleritySet_ShouldMatch_BclHashSet()
+    {
+        GenSetOps.Sample(ops =>
+        {
+            var sut = new CeleritySet<int, Int32WangNaiveHasher>();
+            var oracle = new HashSet<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case SetOp.Add: Assert.Equal(oracle.Add(item), sut.TryAdd(item)); break;
+                    case SetOp.Remove: Assert.Equal(oracle.Remove(item), sut.Remove(item)); break;
+                    case SetOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            for (int k = -8; k <= 24; k++)
+                Assert.Equal(oracle.Contains(k), sut.Contains(k));
+            Assert.True(oracle.SetEquals(sut.ToHashSet()));
+        }, iter: 2000);
+    }
+
+    [Fact]
+    public void IntSet_ShouldMatch_BclHashSet()
+    {
+        GenSetOps.Sample(ops =>
+        {
+            var sut = new IntSet();
+            var oracle = new HashSet<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case SetOp.Add: Assert.Equal(oracle.Add(item), sut.TryAdd(item)); break;
+                    case SetOp.Remove: Assert.Equal(oracle.Remove(item), sut.Remove(item)); break;
+                    case SetOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            for (int k = -8; k <= 24; k++)
+                Assert.Equal(oracle.Contains(k), sut.Contains(k));
+        }, iter: 2000);
+    }
+
+    [Fact]
+    public void LongSet_ShouldMatch_BclHashSet()
+    {
+        GenSetOps.Sample(ops =>
+        {
+            var sut = new LongSet();
+            var oracle = new HashSet<long>();
+
+            foreach (var (op, item) in ops)
+            {
+                long li = (long)item << 33 | (uint)item;
+                switch (op)
+                {
+                    case SetOp.Add: Assert.Equal(oracle.Add(li), sut.TryAdd(li)); break;
+                    case SetOp.Remove: Assert.Equal(oracle.Remove(li), sut.Remove(li)); break;
+                    case SetOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+        }, iter: 2000);
+    }
+
+    // ---- MultiMap vs Dictionary<int,List<int>> ------------------------------
+
+    private enum MultiOp { Add, RemoveValue, RemoveAll }
+
+    private static readonly Gen<List<(MultiOp, int, int)>> GenMultiOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n => n < 60 ? MultiOp.Add : n < 90 ? MultiOp.RemoveValue : MultiOp.RemoveAll),
+            Gen.Int[-4, 12],
+            Gen.Int[0, 30])
+        .List[0, 120];
+
+    [Fact]
+    public void CelerityMultiMap_ShouldMatch_ListOfValuesModel()
+    {
+        GenMultiOps.Sample(ops =>
+        {
+            var sut = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+            var oracle = new Dictionary<int, List<int>>();
+
+            foreach (var (op, key, val) in ops)
+            {
+                switch (op)
+                {
+                    case MultiOp.Add:
+                        sut.Add(key, val);
+                        if (!oracle.TryGetValue(key, out var list))
+                            oracle[key] = list = new List<int>();
+                        list.Add(val);
+                        break;
+                    case MultiOp.RemoveValue:
+                    {
+                        bool expected = oracle.TryGetValue(key, out var l) && l.Remove(val);
+                        if (expected && oracle[key].Count == 0)
+                            oracle.Remove(key);
+                        Assert.Equal(expected, sut.Remove(key, val));
+                        break;
+                    }
+                    case MultiOp.RemoveAll:
+                        Assert.Equal(oracle.Remove(key), sut.RemoveAll(key));
+                        break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            Assert.Equal(oracle.Values.Sum(l => l.Count), sut.ValueCount);
+            for (int k = -4; k <= 12; k++)
+            {
+                bool present = oracle.TryGetValue(k, out var expectedList);
+                Assert.Equal(present, sut.ContainsKey(k));
+                // Group order must match insertion order on both sides.
+                int[] actual = sut[k].ToArray();
+                Assert.Equal(present ? expectedList!.ToArray() : Array.Empty<int>(), actual);
+            }
+        }, iter: 2000);
+    }
+
+    // ---- FrozenCelerityDictionary (build-once) vs Dictionary<string,int> ----
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldMatch_BclDictionary()
+    {
+        // Distinct string keys (frozen rejects duplicates) paired with values.
+        Gen<Dictionary<string, int>> genSource =
+            Gen.Select(Gen.Int[0, 60], Gen.Int[0, 1_000])
+               .List[0, 40]
+               .Select(pairs =>
+               {
+                   var d = new Dictionary<string, int>();
+                   foreach (var (k, v) in pairs)
+                       d[$"key_{k}"] = v; // last-write-wins guarantees uniqueness
+                   return d;
+               });
+
+        genSource.Sample(source =>
+        {
+            var frozen = new FrozenCelerityDictionary<int>(source);
+
+            Assert.Equal(source.Count, frozen.Count);
+            foreach (var kv in source)
+            {
+                Assert.True(frozen.TryGetValue(kv.Key, out int av));
+                Assert.Equal(kv.Value, av);
+                Assert.True(frozen.ContainsKey(kv.Key));
+            }
+
+            // Absent keys must miss.
+            for (int k = 61; k <= 70; k++)
+                Assert.False(frozen.ContainsKey($"key_{k}"));
+
+            // Full enumeration round-trips to the same map.
+            var roundTrip = frozen.ToDictionary(p => p.Key, p => p.Value);
+            Assert.Equal(source.OrderBy(p => p.Key), roundTrip.OrderBy(p => p.Key));
+        }, iter: 2000);
+    }
+
+    // Asserts a CelerityDictionary is observably equal to a BCL oracle across the
+    // full key domain, Count, and enumeration.
+    private static void AssertDictEquivalent(
+        CelerityDictionary<int, int, Int32WangNaiveHasher> sut,
+        Dictionary<int, int> oracle)
+    {
+        Assert.Equal(oracle.Count, sut.Count);
+
+        for (int k = -8; k <= 24; k++)
+        {
+            bool expected = oracle.TryGetValue(k, out int ev);
+            bool actual = sut.TryGetValue(k, out int av);
+            Assert.Equal(expected, actual);
+            if (expected) Assert.Equal(ev, av);
+        }
+
+        var enumerated = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            enumerated[kv.Key] = kv.Value;
+        Assert.Equal(oracle.OrderBy(p => p.Key), enumerated.OrderBy(p => p.Key));
+    }
+}

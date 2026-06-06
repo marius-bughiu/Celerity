@@ -1,0 +1,310 @@
+using System.Text;
+using Celerity.Collections;
+using Celerity.Hashing;
+
+namespace Celerity.Fuzz;
+
+/// <summary>
+/// Raised the instant a Celerity collection's observable state diverges from its
+/// BCL oracle inside a fuzz case. The message captures what differed; the case
+/// seed (printed by the driver) reproduces the exact sequence.
+/// </summary>
+internal sealed class DivergenceException(string message) : Exception(message);
+
+/// <summary>
+/// The differential fuzz cases. Each takes a seeded <see cref="Random"/>, drives
+/// the same randomized operation sequence against a Celerity collection and an
+/// equivalent BCL collection, and throws <see cref="DivergenceException"/> the
+/// moment they disagree. A case is a pure function of its RNG, so a single seed
+/// reproduces it byte-for-byte.
+/// </summary>
+internal static class Differential
+{
+    /// <summary>Every registered fuzz target, keyed by name for <c>--target</c>.</summary>
+    public static readonly (string Name, Action<Random> Run)[] All =
+    [
+        ("CelerityDictionary", CelerityDictionaryCase),
+        ("IntDictionary", IntDictionaryCase),
+        ("LongDictionary", LongDictionaryCase),
+        ("CeleritySet", CeleritySetCase),
+        ("IntSet", IntSetCase),
+        ("LongSet", LongSetCase),
+        ("CelerityMultiMap", CelerityMultiMapCase),
+        ("FrozenCelerityDictionary", FrozenCase),
+    ];
+
+    private const int MinKey = -8;
+    private const int MaxKey = 24;
+
+    private static void Check(bool condition, string message)
+    {
+        if (!condition)
+            throw new DivergenceException(message);
+    }
+
+    private static int Key(Random rng) => rng.Next(MinKey, MaxKey + 1);
+    private static int Value(Random rng) => rng.Next(0, 1000);
+    private static int OpCount(Random rng) => rng.Next(0, 200);
+
+    // ---- key/value dictionaries --------------------------------------------
+
+    private static void CelerityDictionaryCase(Random rng)
+    {
+        var sut = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+        var oracle = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 5:
+                    int v = Value(rng);
+                    sut[key] = v;
+                    oracle[key] = v;
+                    break;
+                case < 8:
+                    Check(sut.Remove(key) == oracle.Remove(key), $"Remove({key}) disagreed");
+                    break;
+                case < 9:
+                    int v2 = Value(rng);
+                    Check(sut.TryAdd(key, v2) == oracle.TryAdd(key, v2), $"TryAdd({key}) disagreed");
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool e = oracle.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a, $"TryGetValue({k}) presence {a} != {e}");
+            Check(!e || ev == av, $"value[{k}] {av} != {ev}");
+        }
+
+        var seen = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            Check(seen.TryAdd(kv.Key, kv.Value), $"enumeration yielded duplicate key {kv.Key}");
+        Check(seen.Count == oracle.Count, $"enumeration count {seen.Count} != {oracle.Count}");
+        foreach (var kv in oracle)
+            Check(seen.TryGetValue(kv.Key, out int sv) && sv == kv.Value, $"enumeration missing/wrong {kv.Key}");
+    }
+
+    private static void IntDictionaryCase(Random rng)
+    {
+        var sut = new IntDictionary<int>();
+        var oracle = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 5: int v = Value(rng); sut[key] = v; oracle[key] = v; break;
+                case < 8: Check(sut.Remove(key) == oracle.Remove(key), $"Remove({key})"); break;
+                case < 9: int v2 = Value(rng); Check(sut.TryAdd(key, v2) == oracle.TryAdd(key, v2), $"TryAdd({key})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool e = oracle.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a && (!e || ev == av), $"lookup({k}) {a}/{av} != {e}/{ev}");
+        }
+    }
+
+    private static void LongDictionaryCase(Random rng)
+    {
+        var sut = new LongDictionary<int>();
+        var oracle = new Dictionary<long, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            long key = Spread(Key(rng));
+            switch (rng.Next(0, 10))
+            {
+                case < 5: int v = Value(rng); sut[key] = v; oracle[key] = v; break;
+                case < 8: Check(sut.Remove(key) == oracle.Remove(key), $"Remove({key})"); break;
+                case < 9: int v2 = Value(rng); Check(sut.TryAdd(key, v2) == oracle.TryAdd(key, v2), $"TryAdd({key})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        foreach (var kv in oracle)
+            Check(sut.TryGetValue(kv.Key, out int av) && av == kv.Value, $"lookup({kv.Key}) missing/wrong");
+    }
+
+    // ---- sets ---------------------------------------------------------------
+
+    private static void CeleritySetCase(Random rng)
+    {
+        var sut = new CeleritySet<int, Int32WangNaiveHasher>();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+        int enumerated = 0;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            enumerated++;
+        }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    private static void IntSetCase(Random rng)
+    {
+        var sut = new IntSet();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+    }
+
+    private static void LongSetCase(Random rng)
+    {
+        var sut = new LongSet();
+        var oracle = new HashSet<long>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            long item = Spread(Key(rng));
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+    }
+
+    // ---- multi-map ----------------------------------------------------------
+
+    private static void CelerityMultiMapCase(Random rng)
+    {
+        var sut = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        var oracle = new Dictionary<int, List<int>>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = rng.Next(-4, 13);
+            switch (rng.Next(0, 10))
+            {
+                case < 6:
+                    int v = rng.Next(0, 30);
+                    sut.Add(key, v);
+                    if (!oracle.TryGetValue(key, out var list))
+                        oracle[key] = list = new List<int>();
+                    list.Add(v);
+                    break;
+                case < 9:
+                    int rv = rng.Next(0, 30);
+                    bool expected = oracle.TryGetValue(key, out var l) && l.Remove(rv);
+                    if (expected && oracle[key].Count == 0)
+                        oracle.Remove(key);
+                    Check(sut.Remove(key, rv) == expected, $"Remove({key},{rv})");
+                    break;
+                default:
+                    Check(sut.RemoveAll(key) == oracle.Remove(key), $"RemoveAll({key})");
+                    break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        int valueCount = oracle.Values.Sum(x => x.Count);
+        Check(sut.ValueCount == valueCount, $"ValueCount {sut.ValueCount} != {valueCount}");
+        for (int k = -4; k <= 12; k++)
+        {
+            bool present = oracle.TryGetValue(k, out var expectedList);
+            Check(sut.ContainsKey(k) == present, $"ContainsKey({k})");
+            int[] actual = [.. sut[k]];
+            int[] want = present ? expectedList!.ToArray() : [];
+            Check(actual.Length == want.Length, $"group[{k}] length {actual.Length} != {want.Length}");
+            for (int j = 0; j < want.Length; j++)
+                Check(actual[j] == want[j], $"group[{k}][{j}] {actual[j]} != {want[j]}");
+        }
+    }
+
+    // ---- frozen (build-once) ------------------------------------------------
+
+    private static void FrozenCase(Random rng)
+    {
+        var oracle = new Dictionary<string, int>();
+        int entries = rng.Next(0, 40);
+        for (int i = 0; i < entries; i++)
+            oracle[$"key_{rng.Next(0, 60)}"] = Value(rng); // last write wins -> unique keys
+
+        var frozen = new FrozenCelerityDictionary<int>(oracle);
+
+        Check(frozen.Count == oracle.Count, $"Count {frozen.Count} != {oracle.Count}");
+        foreach (var kv in oracle)
+            Check(frozen.TryGetValue(kv.Key, out int av) && av == kv.Value, $"lookup({kv.Key}) missing/wrong");
+        for (int k = 60; k <= 70; k++)
+            Check(!frozen.ContainsKey($"key_{k}"), $"absent key_{k} reported present");
+
+        int seen = 0;
+        foreach (var kv in frozen)
+        {
+            Check(oracle.TryGetValue(kv.Key, out int ov) && ov == kv.Value, $"enumeration wrong for {kv.Key}");
+            seen++;
+        }
+        Check(seen == oracle.Count, $"enumeration count {seen} != {oracle.Count}");
+    }
+
+    // Spreads a small int across the 64-bit space so the long collections see
+    // high-bit-only differences, not just sign-extended small ints.
+    private static long Spread(int k) => (long)k << 33 | (uint)k;
+
+    /// <summary>Formats a one-line summary of the registered targets.</summary>
+    public static string TargetList()
+    {
+        var sb = new StringBuilder();
+        for (int i = 0; i < All.Length; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(All[i].Name);
+        }
+        return sb.ToString();
+    }
+}

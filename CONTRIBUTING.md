@@ -22,8 +22,10 @@ src/
 │   ├── Collections/          CelerityDictionary, IntDictionary, ...
 │   ├── Hashing/              IHashProvider<T> and built-in implementations.
 │   └── FastUtils.cs          Low-level helpers (e.g. NextPowerOfTwo).
-├── Celerity.Tests/           xUnit test project. Mirrors the main project's layout.
+├── Celerity.Tests/           xUnit tests (behavioural, edge-case, and property-based). Mirrors the main project's layout.
 ├── Celerity.Benchmarks/      BenchmarkDotNet project. Runs in CI on every PR and main push.
+├── Celerity.Fuzz/            Differential fuzz harness. Nightly soak; reproduces failures from a seed.
+├── Celerity.AotSmokeTest/    Native AOT publish + run target. Proves AOT/trim compatibility.
 └── Celerity.sln
 ```
 
@@ -53,6 +55,8 @@ These are enforced by review, not by an analyzer. Reading the existing code is t
 - Name tests `Method_ShouldExpectedBehavior_WhenCondition`.
 - Prefer `[Fact]` for a single case, `[Theory] + [InlineData]` for parameterized cases.
 - When fixing a bug, add a test that fails on `main` and passes on your branch. It's fine to reference the issue number in a comment.
+- New collections are expected to carry parity coverage at every layer: behavioural tests, a CsCheck property test against the closest BCL oracle, and a `Celerity.Fuzz` target. See the [Testing & coverage guide](docs/testing.md) for how each layer works and how to run them.
+- Coverage is gated in CI (`.github/workflows/coverage.yml`); keep line coverage ≥ 95% and branch ≥ 90%. The suite normally sits near 100%.
 
 ## Benchmarks
 

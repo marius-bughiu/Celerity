@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Celerity.Benchmarks", "Cele
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Celerity.AotSmokeTest", "Celerity.AotSmokeTest\Celerity.AotSmokeTest.csproj", "{D9255526-95B7-46C5-A15A-C6D9D7211CA7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Celerity.Fuzz", "Celerity.Fuzz\Celerity.Fuzz.csproj", "{882F92C5-0F10-4E28-A829-20E665CB6A50}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{D9255526-95B7-46C5-A15A-C6D9D7211CA7}.Release|x64.Build.0 = Release|Any CPU
 		{D9255526-95B7-46C5-A15A-C6D9D7211CA7}.Release|x86.ActiveCfg = Release|Any CPU
 		{D9255526-95B7-46C5-A15A-C6D9D7211CA7}.Release|x86.Build.0 = Release|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Debug|x64.Build.0 = Debug|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Debug|x86.Build.0 = Debug|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Release|Any CPU.Build.0 = Release|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Release|x64.ActiveCfg = Release|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Release|x64.Build.0 = Release|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Release|x86.ActiveCfg = Release|Any CPU
+		{882F92C5-0F10-4E28-A829-20E665CB6A50}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

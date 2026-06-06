@@ -1,5 +1,5 @@
 # Celerity
-[![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/v/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/vpre/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![Live benchmarks](https://img.shields.io/badge/benchmarks-live-0d6e6e?style=flat-square)](https://marius-bughiu.github.io/Celerity/dev/bench/)
+[![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/v/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/vpre/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![Live benchmarks](https://img.shields.io/badge/benchmarks-live-0d6e6e?style=flat-square)](https://marius-bughiu.github.io/Celerity/dev/bench/) [![Coverage](https://marius-bughiu.github.io/Celerity/coverage/badge_linecoverage.svg)](https://marius-bughiu.github.io/Celerity/coverage/)
 
 Celerity is a .NET library that provides specialized high-performance collections optimized for specific use cases. It includes data structures designed for better speed or memory efficiency compared to standard .NET collections. The package supports configurable load factors, multiple built-in hash functions, and allows users to define custom hash functions for fine-tuned performance.
 
@@ -236,6 +236,7 @@ For full API details — constructors, method signatures, parameters, exceptions
 - [Performance tuning guide](docs/performance.md) — capacity, load factor, hasher selection, and benchmarking.
 - [Migration guide](docs/migration.md) — moving from `Dictionary<,>`, `HashSet<>`, `ILookup<,>`, and `FrozenDictionary<,>`.
 - [Troubleshooting](docs/troubleshooting.md) and [FAQ](docs/faq.md).
+- [Testing & coverage guide](docs/testing.md) — test layers, property-based and fuzz harnesses, coverage gating.
 - [API reference](docs/README.md#api-reference) — collections, hashing, utilities.
 - [`ROADMAP.md`](ROADMAP.md) — planned milestones and long-term vision.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.

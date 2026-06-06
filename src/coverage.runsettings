@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverage collection settings for the coverlet "XPlat Code Coverage" collector.
+  Scopes coverage to the Celerity library only (the test, benchmark, fuzz, and
+  AOT-smoke assemblies are not the subject under measurement) and emits Cobertura
+  for ReportGenerator. See docs/testing.md and .github/workflows/coverage.yml.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <!-- Measure only the shipping library assembly. -->
+          <Include>[Celerity]*</Include>
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
+          <UseSourceLink>true</UseSourceLink>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

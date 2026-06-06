@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!--
+      Differential fuzz harness (#29). A long-running soak tool: it drives random
+      operation sequences against each Celerity collection and an equivalent BCL
+      collection in lock-step, failing the moment their observable state diverges.
+      Every case is fully determined by a single integer seed, so a CI failure
+      replays deterministically from that seed. Run on a nightly schedule and on
+      demand rather than per-PR; see .github/workflows/fuzz.yml.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Celerity\Celerity.csproj" />
+  </ItemGroup>
+
+</Project>
