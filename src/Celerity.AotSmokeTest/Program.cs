@@ -240,6 +240,33 @@ void Check(bool condition, string message)
     Check(murmurLong.ContainsKey(1L), "CelerityDictionary<long, Int64Murmur3Hasher>");
 }
 
+// PooledCelerityDictionary — ArrayPool-backed, disposable dictionary. Exercise the
+// full surface plus the rent/return lifecycle (Dispose) so the AOT publish compiles
+// the new generic instantiations and the ArrayPool<T?> code paths.
+{
+    using (var pooled = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>())
+    {
+        pooled[42] = 1;
+        pooled[42]++;
+        pooled[0] = 99; // out-of-band default key
+        Check(pooled.TryAdd(7, 100), "PooledCelerityDictionary.TryAdd new key");
+        Check(!pooled.TryAdd(7, 999), "PooledCelerityDictionary.TryAdd duplicate");
+        Check(pooled[42] == 2 && pooled[0] == 99, "PooledCelerityDictionary round-trip");
+        Check(pooled.Remove(7), "PooledCelerityDictionary.Remove");
+        var sum = 0;
+        foreach (var kvp in pooled) sum += kvp.Value;
+        Check(sum == 2 + 99, "PooledCelerityDictionary enumeration");
+        Check(pooled.Count == 2, "PooledCelerityDictionary count");
+    }
+
+    // Reference-type key/value instantiation exercises the clear-on-return path.
+    using var pooledStr = new PooledCelerityDictionary<string, string, StringFnV1AHasher>();
+    pooledStr[null!] = "null-key"; // out-of-band null key
+    pooledStr["a"] = "alpha";
+    Check(pooledStr[null!] == "null-key" && pooledStr["a"] == "alpha",
+        "PooledCelerityDictionary<string, string> null-key + round-trip");
+}
+
 // Sets — IntSet, LongSet, CeleritySet.
 {
     var s = new IntSet();

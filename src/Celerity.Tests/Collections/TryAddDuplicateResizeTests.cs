@@ -202,6 +202,43 @@ public class TryAddDuplicateResizeTests
     }
 
     [Fact]
+    public void PooledCelerityDictionary_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 4);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(3, 30);
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(2, 99));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        Assert.Equal(new[] { 1, 2, 3 }, seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_TryAdd_NewKeyAtThreshold_InvalidatesEnumerator()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 4);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(3, 30);
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.TryAdd(4, 40));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
     public void IntSet_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
     {
         var set = new IntSet(capacity: 4);

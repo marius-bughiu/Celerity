@@ -219,6 +219,74 @@ foreach (var kvp in dict)
 
 ---
 
+## PooledCelerityDictionary&lt;TKey, TValue, THasher&gt;
+
+An allocation-conscious peer of `CelerityDictionary` whose backing arrays are **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. The public surface is identical to `CelerityDictionary` — same indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — with one addition: it implements `IDisposable`.
+
+```csharp
+public class PooledCelerityDictionary<TKey, TValue, THasher>
+    : IReadOnlyDictionary<TKey, TValue?>, IDisposable
+    where THasher : struct, IHashProvider<TKey>
+```
+
+### Why pooled storage
+
+In high-throughput code that builds and tears down many short-lived dictionaries (per request, per frame, per batch), the backing arrays are a steady source of Gen 0 garbage and, once they cross the [85 KB Large Object Heap threshold](https://learn.microsoft.com/dotnet/standard/garbage-collection/large-object-heap), of LOH pressure that a normal `Dictionary<,>` or `CelerityDictionary` cannot avoid. `PooledCelerityDictionary` borrows its key/value arrays from the shared pool and returns them on `Dispose` (and on every internal resize), so a build/use/dispose cycle reuses buffers across iterations rather than allocating fresh ones each time. The `PooledCelerityDictionaryBenchmark` reports the difference in its `Allocated` column.
+
+### When to choose it over `CelerityDictionary`
+
+Reach for the pooled variant when the dictionary is **short-lived and rebuilt frequently on a hot path**, GC pressure is a measured concern, and you can guarantee a `Dispose` (e.g. a `using` scope). For a long-lived dictionary that lives for the life of the process, the pooling buys nothing and the disposal contract is pure overhead — stay on `CelerityDictionary`. Like every Celerity collection it is **not thread-safe**.
+
+### Lifecycle and pooling contract
+
+- **Dispose returns the buffers.** Call `Dispose` (ideally via `using`) when finished so the arrays return to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException`.
+- **Not disposing is not a leak.** If you forget to dispose, the rented arrays are simply garbage-collected like any other managed array — you just forfeit the pooling benefit.
+- **Pool exhaustion is handled for you.** `ArrayPool<T>.Shared` allocates a fresh buffer when it has none to hand out, so a "pool empty" condition never surfaces to the caller.
+- **Reference types are cleared on return** so the pool does not keep your keys / values reachable after disposal (memory-leak prevention); value-type buffers skip the clear for speed.
+- **Over-provisioned rents are handled.** `ArrayPool.Rent` may return an array larger than requested; the dictionary tracks its logical power-of-two capacity independently and only ever reads or writes the live region, so the (uncleared) tail of an oversized buffer never surfaces in `Count`, enumeration, or `ContainsValue`.
+
+### Constructors
+
+```csharp
+public PooledCelerityDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public PooledCelerityDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CelerityDictionary`.
+
+### Default-key handling
+
+Identical to `CelerityDictionary`: `default(TKey)` (`null` / `0` / `Guid.Empty` / …) is stored out-of-band so it never collides with the empty-slot sentinel. Transparent to callers.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A dictionary built fresh on a hot path and thrown away each iteration —
+// the rented buffers return to the pool instead of becoming GC garbage.
+using (var dict = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>())
+{
+    dict[42] = "hello";
+    dict[0]  = "zero is fine"; // out-of-band default key
+
+    if (dict.TryGetValue(42, out var val))
+        Console.WriteLine(val); // "hello"
+
+    foreach (var kvp in dict)
+        Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
+} // Dispose() returns the backing arrays to ArrayPool<T>.Shared here.
+```
+
+---
+
 ## IntDictionary&lt;TValue&gt;
 
 A convenience subclass of `IntDictionary<TValue, Int32WangNaiveHasher>` for the common case of integer-keyed dictionaries.
