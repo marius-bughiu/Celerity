@@ -19,6 +19,13 @@ using Celerity.Hashing;
 /// </list>
 /// The gap between the two rows is exactly what a caller saves by passing a
 /// capacity to the constructor.
+///
+/// A third <c>FromCollection</c> case builds each dictionary from a known-count
+/// <see cref="ICollection{T}"/> source via the <c>IEnumerable</c> constructor.
+/// That constructor sizes the backing store from the source's <c>Count</c>; the
+/// fix for issue #27 adds the load-factor headroom so the whole source fits below
+/// the resize threshold, eliminating the one rehash-and-copy a count-sized table
+/// would otherwise pay near the end of the bulk fill.
 /// </remarks>
 [MemoryDiagnoser]
 [CategoriesColumn]
@@ -26,12 +33,21 @@ using Celerity.Hashing;
 public class MemoryAllocationBenchmark
 {
     private int[] keys = null!;
+    private KeyValuePair<int, int>[] pairs = null!;
 
     [Params(100_000)]
     public int ItemCount;
 
     [GlobalSetup]
-    public void Setup() => keys = KeyDistributions.Int32(Distribution.Uniform, ItemCount);
+    public void Setup()
+    {
+        keys = KeyDistributions.Int32(Distribution.Uniform, ItemCount);
+        // Distinct sequential keys: the IEnumerable constructor uses Add, which
+        // rejects duplicates, so the source must be collision-free.
+        pairs = new KeyValuePair<int, int>[ItemCount];
+        for (int i = 0; i < ItemCount; i++)
+            pairs[i] = new KeyValuePair<int, int>(i, i);
+    }
 
     // ── Grow from default capacity (resize churn included) ──────────────────────
 
@@ -108,4 +124,19 @@ public class MemoryAllocationBenchmark
         }
         return map;
     }
+
+    // ── Bulk-built from a known-count collection (issue #27 sizing fix) ──────────
+
+    [Benchmark]
+    [BenchmarkCategory("FromCollection")]
+    public Dictionary<int, int> Dictionary_FromCollection() => new Dictionary<int, int>(pairs);
+
+    [Benchmark]
+    [BenchmarkCategory("FromCollection")]
+    public IntDictionary<int> IntDictionary_FromCollection() => new IntDictionary<int>(pairs);
+
+    [Benchmark]
+    [BenchmarkCategory("FromCollection")]
+    public CelerityDictionary<int, int, Int32WangNaiveHasher> CelerityDictionary_FromCollection()
+        => new CelerityDictionary<int, int, Int32WangNaiveHasher>(pairs);
 }

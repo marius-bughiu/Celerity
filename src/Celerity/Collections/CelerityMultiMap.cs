@@ -121,7 +121,9 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// The collection whose key/value pairs are grouped into the new map.
     /// </param>
     /// <param name="capacity">
-    /// The minimum initial key capacity, rounded up to the next power of two.
+    /// The minimum initial key capacity, rounded up to the next power of two. When
+    /// the source's count is larger, the key table is sized — including load-factor
+    /// headroom — to hold the whole source without resizing.
     /// </param>
     /// <param name="loadFactor">
     /// The fraction of the key table that can be filled before resizing.
@@ -133,7 +135,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         IEnumerable<KeyValuePair<TKey, TValue>> source,
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
-        : this(InitialCapacityForSource(source, capacity), loadFactor)
+        : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (KeyValuePair<TKey, TValue> kvp in source)
         {
@@ -147,10 +149,29 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     // when the user also passed an invalid loadFactor (issue #94).
     private static int InitialCapacityForSource(
         IEnumerable<KeyValuePair<TKey, TValue>> source,
-        int capacity)
+        int capacity,
+        float loadFactor)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return Math.Max(capacity, (source as ICollection<KeyValuePair<TKey, TValue>>)?.Count ?? 0);
+        int count = (source as ICollection<KeyValuePair<TKey, TValue>>)?.Count ?? 0;
+
+        // Size the key table for the source count *including* load-factor headroom:
+        // the resize threshold is size*loadFactor, so a table sized to the raw
+        // count would still rehash on the last inserts of the bulk fill. Scaling
+        // the count up by 1/loadFactor keeps a distinct-key bulk fill resize-free
+        // (issue #27); a source whose keys mostly duplicate just leaves slack,
+        // never a resize. A non-collection source (count 0) or an out-of-range
+        // loadFactor — left for the primary ctor to reject, so
+        // null-source-beats-bad-loadFactor ordering is preserved — falls through to
+        // the plain capacity.
+        if (count > 0 && loadFactor > 0f && loadFactor < 1f)
+        {
+            int withHeadroom = (int)Math.Ceiling(count / (double)loadFactor);
+            if (withHeadroom > count)
+                count = withHeadroom;
+        }
+
+        return Math.Max(capacity, count);
     }
 
     /// <summary>

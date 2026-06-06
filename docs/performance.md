@@ -66,10 +66,10 @@ for (int i = 0; i < 1000; i++) d[i] = Work(i);
 
 Account for the load factor when sizing: at the default `0.75`, a `capacity` of 1024 resizes once you pass 768 entries. To hold 1,000 entries without any resize, you need `capacity` ≥ ~1365 (which rounds to 2048), or a higher load factor.
 
-**Building from an existing collection sizes itself.** The `IEnumerable<KeyValuePair<TKey, TValue>>` constructor reads `ICollection<T>.Count` when the source exposes it and pre-sizes the backing storage, so bulk-filling from a `List<>`, array, or BCL `Dictionary<,>` avoids resize work for free:
+**Building from an existing collection sizes itself.** The `IEnumerable<KeyValuePair<TKey, TValue>>` constructor reads `ICollection<T>.Count` when the source exposes it and pre-sizes the backing storage — **including the load-factor headroom** — so bulk-filling from a `List<>`, array, or BCL `Dictionary<,>` avoids resize work for free. Unlike the plain `capacity` constructor (where you account for the load factor yourself, per the note above), the source constructor scales the count up by `1 / loadFactor` for you, so the whole source lands below the resize threshold in a single allocation:
 
 ```csharp
-var fast = new IntDictionary<string>(existingList);   // pre-sized from Count
+var fast = new IntDictionary<string>(existingList);   // pre-sized from Count, no resize
 ```
 
 For a non-`ICollection` enumerable (a LINQ query, a generator), `Count` is unknown — pass an explicit `capacity` if you can estimate the size.
