@@ -52,7 +52,15 @@ internal class Program
             return;
         }
 
-        if (args.Contains("--ci"))
+        if (args.Contains("--ci-extended"))
+        {
+            // Weekly extended mode: run the heavy extended suite and emit a joined
+            // JSON report for github-action-benchmark, published to the separate
+            // dev/bench-extended dashboard. Driven by benchmarks-extended.yml on a
+            // cron schedule — intentionally NOT part of the per-PR --ci gate.
+            new BenchmarkSwitcher(ExtendedBenchmarks).RunAllJoined(new ExtendedCiConfig());
+        }
+        else if (args.Contains("--ci"))
         {
             // CI mode: run the core suite and emit a single joined JSON report
             // that github-action-benchmark can consume (BenchmarkRun-joined-report-full.json).
