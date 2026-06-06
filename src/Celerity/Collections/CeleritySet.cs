@@ -85,8 +85,9 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     /// <see cref="HashSet{T}"/> semantics.
     /// </param>
     /// <param name="capacity">
-    /// The minimum initial capacity. The final capacity is the larger of this
-    /// value and the source's count, rounded up to the next power of two.
+    /// The minimum initial capacity, rounded up to the next power of two. When
+    /// the source's count is larger, the backing store is sized — including
+    /// load-factor headroom — to hold the whole source without resizing.
     /// </param>
     /// <param name="loadFactor">
     /// Determines the maximum ratio of count to capacity before resizing.
@@ -98,7 +99,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
         IEnumerable<T> source,
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
-        : this(InitialCapacityForSource(source, capacity), loadFactor)
+        : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (T item in source)
         {
@@ -110,10 +111,27 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
     // beats the primary ctor's capacity / loadFactor validation: a null source
     // must surface as ArgumentNullException, not ArgumentOutOfRangeException
     // when the user also passed an invalid loadFactor.
-    private static int InitialCapacityForSource(IEnumerable<T> source, int capacity)
+    private static int InitialCapacityForSource(IEnumerable<T> source, int capacity, float loadFactor)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return Math.Max(capacity, (source as ICollection<T>)?.Count ?? 0);
+        int count = (source as ICollection<T>)?.Count ?? 0;
+
+        // Size for the source count *including* load-factor headroom: the resize
+        // threshold is size*loadFactor, so a table sized to the raw count would
+        // still rehash on the last inserts of the bulk fill. Scaling the count up
+        // by 1/loadFactor makes the "Count is used to size the backing storage so
+        // the initial fill avoids resize work" contract actually hold (issue #27).
+        // A non-collection source (count 0) or an out-of-range loadFactor — left
+        // for the primary ctor to reject, so null-source-beats-bad-loadFactor
+        // ordering is preserved — falls through to the plain capacity.
+        if (count > 0 && loadFactor > 0f && loadFactor < 1f)
+        {
+            int withHeadroom = (int)Math.Ceiling(count / (double)loadFactor);
+            if (withHeadroom > count)
+                count = withHeadroom;
+        }
+
+        return Math.Max(capacity, count);
     }
 
     /// <summary>
