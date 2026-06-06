@@ -158,6 +158,67 @@ foreach (var value in dict.Values) { /* ... */ }
 
 ---
 
+## RobinHoodDictionary&lt;TKey, TValue, THasher&gt;
+
+A drop-in peer of `CelerityDictionary` that resolves collisions with **Robin Hood** open addressing instead of plain linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
+
+```csharp
+public class RobinHoodDictionary<TKey, TValue, THasher>
+    : IReadOnlyDictionary<TKey, TValue?>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+### What Robin Hood probing does
+
+For every occupied slot the table tracks how far the entry sits from its ideal (hash) slot — its **probe sequence length** (PSL). On insert, an incoming key that has travelled further than the key already occupying a slot *displaces* it ("robs from the rich"): the resident is evicted and re-inserted further along. This keeps probe-length variance low, so the worst-case probe is much closer to the average than under linear probing. Two consequences matter to callers:
+
+- **Bounded tail latency on clustered keys.** Where linear probing grows a single long run and degrades a lookup toward `O(n)`, Robin Hood spreads the cost evenly. The PSL invariant also lets a *negative* lookup stop early — as soon as the probe distance exceeds the resident slot's PSL, the key cannot be present.
+- **A small, predictable overhead.** Each slot carries an extra `int` of PSL bookkeeping, so the dictionary allocates more than `CelerityDictionary`, and inserts do a little extra work for the displacement swaps. On uniform key distributions Robin Hood is typically a wash or a slight loss versus linear probing.
+
+### When to choose it over `CelerityDictionary`
+
+Reach for `RobinHoodDictionary` when your keys are **clustered or adversarial** (hash codes that bunch up, attacker-influenced keys, or a weak/identity hasher) and you care about **worst-case lookup latency**, not just the average. For uniformly distributed keys with a good hasher, stay on `CelerityDictionary` — it has the smaller footprint and matches or beats Robin Hood there. Both are single-threaded and make no iteration-order guarantee.
+
+### Constructors
+
+```csharp
+public RobinHoodDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public RobinHoodDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CelerityDictionary`.
+
+### Default-key handling
+
+Identical to `CelerityDictionary`: `default(TKey)` (`null` / `0` / `Guid.Empty` / …) doubles as the empty-slot sentinel, so it is stored out-of-band via a `_hasDefaultKey` flag and a dedicated value slot. Transparent to callers.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Clustered keys where linear probing would build long runs — Robin Hood
+// keeps every lookup's probe length close to the average.
+var dict = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+dict[42] = "hello";
+dict[0]  = "zero is fine";
+
+if (dict.TryGetValue(42, out var val))
+    Console.WriteLine(val); // "hello"
+
+foreach (var kvp in dict)
+    Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
+```
+
+---
+
 ## IntDictionary&lt;TValue&gt;
 
 A convenience subclass of `IntDictionary<TValue, Int32WangNaiveHasher>` for the common case of integer-keyed dictionaries.

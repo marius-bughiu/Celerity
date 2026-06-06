@@ -7,6 +7,7 @@ namespace Celerity.Tests.Collections;
 /// Regression tests for the single-probe <c>TryAdd</c> rewrite (PR #53).
 /// <see cref="IntDictionary{TValue, THasher}.TryAdd"/>,
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}.TryAdd"/>,
+/// <see cref="RobinHoodDictionary{TKey, TValue, THasher}.TryAdd"/>,
 /// <see cref="IntSet{THasher}.TryAdd"/>, and
 /// <see cref="CeleritySet{T, THasher}.TryAdd"/> historically walked the probe chain
 /// twice on the new-key path: once via <c>ContainsKey</c>/<c>Contains</c>, then again
@@ -197,6 +198,39 @@ public class TryAddProbeCountTests
     }
 
     [Fact]
+    public void RobinHoodDictionary_TryAdd_NewKey_DoesExactlyOneProbeWalk()
+    {
+        // Robin Hood insertion may displace already-stored entries while it
+        // back-shifts, but displacement moves slots in place without re-hashing,
+        // so the new-key path still costs exactly one Hash call per insert (no
+        // resize fires at capacity 64).
+        var map = new RobinHoodDictionary<string, int, CountingStringHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 10; i++)
+            Assert.True(map.TryAdd($"k{i}", i));
+
+        Assert.Equal(10, _hashCallCount);
+        Assert.Equal(10, map.Count);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_DuplicateKey_DoesExactlyOneProbeWalk()
+    {
+        var map = new RobinHoodDictionary<string, int, CountingStringHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            map.TryAdd($"k{i}", i);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(map.TryAdd($"k{i}", -1));
+
+        Assert.Equal(5, _hashCallCount);
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
     public void IntSet_TryAdd_NewItem_DoesExactlyOneProbeWalk()
     {
         var set = new IntSet<CountingIntHasher>(capacity: 64);
@@ -298,6 +332,16 @@ public class TryAddProbeCountTests
     public void CelerityDictionary_TryAdd_PreservesExistingValueOnDuplicate()
     {
         var map = new CelerityDictionary<string, int, CountingStringHasher>(capacity: 64);
+        map.TryAdd("k7", 700);
+
+        Assert.False(map.TryAdd("k7", -1));
+        Assert.Equal(700, map["k7"]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_PreservesExistingValueOnDuplicate()
+    {
+        var map = new RobinHoodDictionary<string, int, CountingStringHasher>(capacity: 64);
         map.TryAdd("k7", 700);
 
         Assert.False(map.TryAdd("k7", -1));

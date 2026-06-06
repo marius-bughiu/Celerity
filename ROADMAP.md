@@ -77,7 +77,7 @@ Focus on raw performance and specialized collection types that serve more advanc
 
 ### Performance
 
-- Robin Hood hashing experiment as alternative to linear probing. Tracked in [#63](https://github.com/marius-bughiu/Celerity/issues/63).
+- Robin Hood hashing experiment as alternative to linear probing. Status: `done` — shipped as a new collection type, `RobinHoodDictionary<TKey, TValue, THasher>`, a drop-in peer of `CelerityDictionary` that uses Robin Hood open addressing (per-slot probe sequence length, displace-the-richer-resident inserts, backward-shift-with-PSL-decrement deletes) to bound probe-length variance and keep worst-case lookups close to the average on clustered / adversarial keys; negative lookups terminate early via the PSL invariant. The default is unchanged — this is an additional opt-in type for the clustered case, not a replacement (the per-slot PSL `int` and extra insert work make it a wash or a slight loss on uniform keys). Tracked in [#63](https://github.com/marius-bughiu/Celerity/issues/63).
 - Performance optimizations across existing collections.
 - Native AOT support and trimming compatibility. Status: `done` — the library is marked `<IsAotCompatible>true</IsAotCompatible>` (trim + AOT analyzers run on every build), and a Native AOT publish smoke test runs the full collection / hasher surface as a native binary in CI. See [`docs/aot.md`](docs/aot.md). An AOT-vs-JIT benchmark comparison remains a follow-up. Tracked in [#32](https://github.com/marius-bughiu/Celerity/issues/32).
 

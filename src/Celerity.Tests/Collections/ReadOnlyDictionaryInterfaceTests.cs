@@ -7,7 +7,8 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 // Milestone 1.1.0 — issue #9: IReadOnlyDictionary<TKey, TValue> implementation
-// on CelerityDictionary, IntDictionary, and LongDictionary. This test file
+// on CelerityDictionary, RobinHoodDictionary, IntDictionary, and LongDictionary.
+// This test file
 // exercises the dictionaries through their IReadOnlyDictionary interface surface: the
 // indexer, ContainsKey, TryGetValue, Count, Keys / Values widened to
 // IEnumerable<T>, and both the generic and non-generic GetEnumerator paths.
@@ -181,6 +182,178 @@ public class ReadOnlyDictionaryInterfaceTests
     public void CelerityDictionary_InterfaceLinqCount_ShouldMatchDictionaryCount()
     {
         var map = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 100;
+        for (int i = 1; i <= 10; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<int, int> ro = map;
+
+        // Enumerable.Count() forces IEnumerable<KeyValuePair<,>> dispatch, not
+        // the struct GetEnumerator fast path, so this is a boxing-path sanity
+        // check of the explicit interface implementation.
+        int enumeratedCount = ro.Count();
+
+        Assert.Equal(ro.Count, enumeratedCount);
+        Assert.Equal(11, enumeratedCount);
+    }
+
+    // -------- RobinHoodDictionary --------
+
+    [Fact]
+    public void RobinHoodDictionary_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map[1] = "one";
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1));
+        Assert.Equal("one", ro[1]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+
+        Assert.Throws<KeyNotFoundException>(() => ro[42]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+
+        bool found = ro.TryGetValue(42, out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map[7] = "seven";
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        bool found = ro.TryGetValue(7, out string? value);
+
+        Assert.True(found);
+        Assert.Equal("seven", value);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceKeys_ShouldYieldEveryKey_IncludingDefault()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 100;
+        for (int i = 1; i <= 5; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<int, int> ro = map;
+
+        var keys = new List<int>();
+        foreach (int key in ro.Keys)
+            keys.Add(key);
+
+        Assert.Equal(6, keys.Count);
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, keys.OrderBy(k => k).ToArray());
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceValues_ShouldYieldEveryValue_IncludingDefault()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 100;
+        for (int i = 1; i <= 5; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<int, int> ro = map;
+
+        var values = new List<int>();
+        foreach (int v in ro.Values)
+            values.Add(v);
+
+        Assert.Equal(6, values.Count);
+        Assert.Equal(new[] { 10, 20, 30, 40, 50, 100 }, values.OrderBy(v => v).ToArray());
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceEnumeration_ShouldYieldEveryPair_IncludingDefault()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 100;
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable<KeyValuePair<int, int>> enumerable = map;
+
+        var pairs = new List<KeyValuePair<int, int>>();
+        foreach (var kvp in enumerable)
+            pairs.Add(kvp);
+
+        Assert.Equal(4, pairs.Count);
+        Assert.Contains(pairs, p => p.Key == 0 && p.Value == 100);
+        Assert.Contains(pairs, p => p.Key == 1 && p.Value == 10);
+        Assert.Contains(pairs, p => p.Key == 2 && p.Value == 20);
+        Assert.Contains(pairs, p => p.Key == 3 && p.Value == 30);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_NonGenericEnumeration_ShouldYieldEveryPair()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable enumerable = map;
+
+        var pairs = new List<KeyValuePair<int, int>>();
+        foreach (object kvp in enumerable)
+            pairs.Add((KeyValuePair<int, int>)kvp);
+
+        Assert.Equal(3, pairs.Count);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceKeys_ShouldIncludeNullReferenceKey()
+    {
+        var map = new RobinHoodDictionary<string, int, StringFnV1AHasher>();
+        map[null!] = 999;
+        map["a"] = 1;
+        map["b"] = 2;
+        IReadOnlyDictionary<string, int> ro = map;
+
+        Assert.True(ro.ContainsKey(null!));
+        Assert.Equal(999, ro[null!]);
+
+        var keys = new List<string?>();
+        foreach (string key in ro.Keys)
+            keys.Add(key);
+
+        Assert.Equal(3, keys.Count);
+        Assert.Contains(null, keys);
+        Assert.Contains("a", keys);
+        Assert.Contains("b", keys);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceEnumeration_ShouldThrow_IfDictionaryMutated()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable<KeyValuePair<int, int>> enumerable = map;
+
+        using IEnumerator<KeyValuePair<int, int>> e = enumerable.GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        map[99] = 990;
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_InterfaceLinqCount_ShouldMatchDictionaryCount()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
         map[0] = 100;
         for (int i = 1; i <= 10; i++)
             map[i] = i * 10;
@@ -783,12 +956,14 @@ public class ReadOnlyDictionaryInterfaceTests
     public void AllDictionaries_ShouldFlowThroughGenericIReadOnlyDictionaryConsumer()
     {
         var celerity = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+        var robinHood = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
         var intDict = new IntDictionary<int>();
         var longDict = new LongDictionary<long>();
         var smallDict = new SmallDictionary<int, int>();
         for (int i = 0; i <= 5; i++)
         {
             celerity[i] = i * 10;
+            robinHood[i] = i * 10;
             intDict[i] = i * 10;
             longDict[i] = i * 10;
             smallDict[i] = i * 10;
@@ -796,6 +971,7 @@ public class ReadOnlyDictionaryInterfaceTests
 
         // 0 + 10 + 20 + 30 + 40 + 50 = 150
         Assert.Equal(150, SumValues(celerity));
+        Assert.Equal(150, SumValues(robinHood));
         Assert.Equal(150, SumValues(intDict));
         Assert.Equal(150L, SumValues(longDict));
         Assert.Equal(150, SumValues(smallDict));

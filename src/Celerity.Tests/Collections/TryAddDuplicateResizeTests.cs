@@ -10,6 +10,7 @@ namespace Celerity.Tests.Collections;
 /// Before the fix, <c>TryAdd</c> on <see cref="IntDictionary{TValue}"/>,
 /// <see cref="LongDictionary{TValue}"/>,
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>,
+/// <see cref="RobinHoodDictionary{TKey, TValue, THasher}"/>,
 /// <see cref="IntSet"/>, <see cref="LongSet"/>, and
 /// <see cref="CeleritySet{T, THasher}"/> hoisted
 /// the <c>Resize</c> check ahead of the duplicate check. When the collection
@@ -151,6 +152,43 @@ public class TryAddDuplicateResizeTests
     public void CelerityDictionary_TryAdd_NewKeyAtThreshold_InvalidatesEnumerator()
     {
         var map = new CelerityDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 4);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(3, 30);
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.TryAdd(4, 40));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        var map = new RobinHoodDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 4);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(3, 30);
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(2, 99));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        Assert.Equal(new[] { 1, 2, 3 }, seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_NewKeyAtThreshold_InvalidatesEnumerator()
+    {
+        var map = new RobinHoodDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 4);
         map.Add(1, 10);
         map.Add(2, 20);
         map.Add(3, 30);

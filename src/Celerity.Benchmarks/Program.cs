@@ -11,6 +11,7 @@ internal class Program
     private static readonly Type[] CoreBenchmarks =
     {
         typeof(CelerityDictionaryBenchmark),
+        typeof(RobinHoodDictionaryBenchmark),
         typeof(IntDictionaryBenchmark),
         typeof(LongDictionaryBenchmark),
         typeof(FrozenCelerityDictionaryBenchmark),

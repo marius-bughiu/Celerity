@@ -6,8 +6,9 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Tests for the <c>Add</c> and <c>TryAdd</c> methods on
 /// <see cref="IntDictionary{TValue, THasher}"/>,
-/// <see cref="LongDictionary{TValue, THasher}"/>, and
-/// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>.
+/// <see cref="LongDictionary{TValue, THasher}"/>,
+/// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>, and
+/// <see cref="RobinHoodDictionary{TKey, TValue, THasher}"/>.
 /// </summary>
 public class AddAndTryAddTests
 {
@@ -310,6 +311,145 @@ public class AddAndTryAddTests
     }
 
     // ---------------------------------------------------------------
+    //  RobinHoodDictionary — Add / TryAdd (mirror of CelerityDictionary)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void RobinHoodDictionary_Add_ShouldStoreValue_ForNewKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(1, "one");
+
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_Add_ShouldThrow_OnDuplicateKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(1, "first");
+
+        var ex = Assert.Throws<ArgumentException>(() => map.Add(1, "second"));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_Add_ShouldThrow_OnDuplicateKey_AndLeaveValueUnchanged()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        map.Add(42, 100);
+
+        Assert.Throws<ArgumentException>(() => map.Add(42, 999));
+
+        Assert.Single(map);
+        Assert.Equal(100, map[42]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_Add_ShouldStoreValue_ForDefaultKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(0, "zero");
+
+        Assert.Single(map);
+        Assert.Equal("zero", map[0]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_Add_ShouldThrow_OnDuplicateDefaultKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(0, "first");
+
+        Assert.Throws<ArgumentException>(() => map.Add(0, "second"));
+        Assert.Single(map);
+        Assert.Equal("first", map[0]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_Add_ShouldStoreValue_ForNullStringKey()
+    {
+        var map = new RobinHoodDictionary<string, int, StringFnV1AHasher>();
+        map.Add(null!, 99);
+
+        Assert.Single(map);
+        Assert.Equal(99, map[null!]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_Add_ShouldSupportManyKeys()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(capacity: 8);
+        for (int i = 0; i <= 50; i++)
+            map.Add(i, i * 10);
+
+        Assert.Equal(51, map.Count);
+        for (int i = 0; i <= 50; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_ShouldReturnTrue_ForNewKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        bool added = map.TryAdd(5, "five");
+
+        Assert.True(added);
+        Assert.Equal("five", map[5]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_ShouldReturnFalse_ForExistingKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map.TryAdd(5, "five");
+
+        bool added = map.TryAdd(5, "FIVE");
+
+        Assert.False(added);
+        Assert.Equal("five", map[5]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_ShouldReturnFalse_ForExistingDefaultKey()
+    {
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+        map.TryAdd(0, "original");
+
+        bool added = map.TryAdd(0, "replacement");
+
+        Assert.False(added);
+        Assert.Equal("original", map[0]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_ForNullStringKey_ShouldRoundTrip()
+    {
+        var map = new RobinHoodDictionary<string, string, StringFnV1AHasher>();
+        bool added = map.TryAdd(null!, "null-val");
+
+        Assert.True(added);
+
+        bool addedAgain = map.TryAdd(null!, "other");
+        Assert.False(addedAgain);
+        Assert.Equal("null-val", map[null!]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_TryAdd_AfterClear_ShouldSucceed()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        map.TryAdd(7, 70);
+        map.Clear();
+
+        bool added = map.TryAdd(7, 700);
+
+        Assert.True(added);
+        Assert.Equal(700, map[7]);
+    }
+
+    // ---------------------------------------------------------------
     //  LongDictionary — Add
     // ---------------------------------------------------------------
 
@@ -523,6 +663,7 @@ public class AddAndTryAddTests
         var intDict = new IntDictionary<int>();
         var longDict = new LongDictionary<int>();
         var celDict = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+        var rhDict = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
 
         const int Inserts = 32;
         const int Overwrites = 100;
@@ -532,6 +673,7 @@ public class AddAndTryAddTests
             intDict[i] = i;
             longDict[(long)i] = i;
             celDict[i] = i;
+            rhDict[i] = i;
         }
 
         for (int round = 0; round < Overwrites; round++)
@@ -541,12 +683,14 @@ public class AddAndTryAddTests
                 intDict[i] = round;
                 longDict[(long)i] = round;
                 celDict[i] = round;
+                rhDict[i] = round;
             }
         }
 
         Assert.Equal(Inserts, intDict.Count);
         Assert.Equal(Inserts, longDict.Count);
         Assert.Equal(Inserts, celDict.Count);
+        Assert.Equal(Inserts, rhDict.Count);
     }
 
     // ---------------------------------------------------------------
