@@ -424,4 +424,16 @@ public class CelerityMultiMapTests
         Assert.Empty(map.Keys);
         Assert.Equal(0, map.ValueCount);
     }
+
+    [Fact]
+    public void ValueGroup_ForAbsentKey_ShouldBeEmpty_AndThrowOnIndex()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+
+        // The indexer returns an empty group (null inner list) for an absent key.
+        var group = map[999];
+
+        Assert.Equal(0, group.Count); // _group?.Count ?? 0 — the null branch
+        Assert.Throws<ArgumentOutOfRangeException>(() => _ = group[0]); // _group is null branch
+    }
 }

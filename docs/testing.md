@@ -134,7 +134,7 @@ The report is rendered by [`scripts/coverage_report.py`](../scripts/coverage_rep
 The `coverage` workflow (`.github/workflows/coverage.yml`) runs on every PR and on `main`:
 
 - Collects coverage, renders the report + badge with `scripts/coverage_report.py`, and uploads it as a build artifact.
-- **Fails the build** if line coverage drops below `MIN_LINE_COVERAGE` (95%) or branch coverage below `MIN_BRANCH_COVERAGE` (90%). The suite sits far above these (100% line, ~99% branch) — the floor guards against silent regressions; it is not the target.
+- **Fails the build** if line coverage drops below `MIN_LINE_COVERAGE` (95%) or branch coverage below `MIN_BRANCH_COVERAGE` (90%). The suite sits far above these (100% line and branch) — the floor guards against silent regressions; it is not the target.
 - Posts a coverage summary comment on the PR.
 - On `main`, publishes the HTML report to `gh-pages` under [`/coverage`](https://marius-bughiu.github.io/Celerity/coverage/) and refreshes the README badge.
 

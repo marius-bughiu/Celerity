@@ -175,4 +175,31 @@ public class IntSetCollisionTests
         Assert.True(set.Contains(8));
         Assert.True(set.Contains(14));
     }
+
+    [Fact]
+    public void Remove_WrapAroundCluster_WithHomeAboveGap_ExercisesWrappedKeepBranch()
+    {
+        // Complements the test above. Table size 8 (mask = 7), identity hasher.
+        // Items 6, 7, 15, 23 land as:
+        //   slot 6 -> 6  (natural 6) — removed, becomes the gap at i = 6
+        //   slot 7 -> 7  (natural 7)
+        //   slot 0 -> 15 (natural 7; wrapped past 7)
+        //   slot 1 -> 23 (natural 7; wrapped past 7, 0)
+        // Removing 6 scans the wrapped slots 0 and 1, whose natural slot (7) is
+        // GREATER than the gap (6), so the `i > j` bypass takes its `i < k` ==
+        // true path — the branch the all-homes-below-the-gap cluster misses.
+        var set = new IntSet<IdentityIntHasher>(capacity: 8, loadFactor: 0.9f);
+        set.Add(6);
+        set.Add(7);
+        set.Add(15);
+        set.Add(23);
+
+        Assert.True(set.Remove(6));
+
+        Assert.Equal(3, set.Count);
+        Assert.False(set.Contains(6));
+        Assert.True(set.Contains(7));
+        Assert.True(set.Contains(15));
+        Assert.True(set.Contains(23));
+    }
 }

@@ -264,4 +264,32 @@ public class IntDictionaryCollisionTests
         Assert.Equal(80, map[8]);
         Assert.Equal(140, map[14]);
     }
+
+    [Fact]
+    public void Remove_WrapAroundCluster_WithHomeAboveGap_ExercisesWrappedKeepBranch()
+    {
+        // Complements the test above. Table size 8 (mask = 7), identity hasher.
+        // Keys 6, 7, 15, 23 land as:
+        //   slot 6 -> 6  (natural 6) — removed, becomes the gap at i = 6
+        //   slot 7 -> 7  (natural 7)
+        //   slot 0 -> 15 (natural 7; wrapped past 7)
+        //   slot 1 -> 23 (natural 7; wrapped past 7, 0)
+        // Removing key 6 scans the wrapped slots 0 and 1, whose natural slot (7)
+        // is GREATER than the gap (6). That makes the `i > j` bypass take its
+        // `i < k` == true path (6 < 7) — the one branch the cluster above, whose
+        // wrapped homes were all <= the gap, never reaches.
+        var map = new IntDictionary<int, IdentityIntHasher>(capacity: 8, loadFactor: 0.9f);
+        map[6] = 60;
+        map[7] = 70;
+        map[15] = 150;
+        map[23] = 230;
+
+        Assert.True(map.Remove(6));
+
+        Assert.Equal(3, map.Count);
+        Assert.False(map.ContainsKey(6));
+        Assert.Equal(70, map[7]);
+        Assert.Equal(150, map[15]);
+        Assert.Equal(230, map[23]);
+    }
 }
