@@ -1,3 +1,4 @@
+using System.Linq;
 using Celerity.Collections;
 using Celerity.Hashing;
 
@@ -206,5 +207,57 @@ public class ConstructorValidationTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new LongDictionary<string>(capacity: -10));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  CelerityMultiMap — same capacity / loadFactor validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-0.5f)]
+    [InlineData(-1f)]
+    public void CelerityMultiMap_ShouldThrow_WhenLoadFactorIsZeroOrNegative(float loadFactor)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CelerityMultiMap<int, int, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    [InlineData(2f)]
+    public void CelerityMultiMap_ShouldThrow_WhenLoadFactorIsOneOrGreater(float loadFactor)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CelerityMultiMap<int, int, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new CelerityMultiMap<int, int, Int32WangNaiveHasher>(capacity: -1));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldAcceptZeroCapacity()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>(capacity: 0);
+        map.Add(42, 100);
+        Assert.Equal(new[] { 100 }, map[42].ToArray());
+    }
+
+    [Theory]
+    [InlineData(0.01f)]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.99f)]
+    public void CelerityMultiMap_ShouldAcceptValidLoadFactor(float loadFactor)
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor);
+        map.Add(1, 10);
+        Assert.Equal(new[] { 10 }, map[1].ToArray());
     }
 }

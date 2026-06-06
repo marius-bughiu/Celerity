@@ -683,3 +683,130 @@ var byName = new FrozenCelerityDictionary<int, StringMurmur3Hasher>(new[]
 });
 Console.WriteLine(byName["alice"]); // 1
 ```
+
+## CelerityMultiMap&lt;TKey, TValue, THasher&gt;
+
+```csharp
+public class CelerityMultiMap<TKey, TValue, THasher>
+    : ILookup<TKey, TValue?>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+A **multi-map** (a.k.a. multi-dictionary or one-to-many map): each key maps to an
+ordered *group* of values rather than a single value. It is the one-to-many
+counterpart to [`CelerityDictionary`](#celeritydictionarytkey-tvalue-thasher) and
+shares its storage — keys live in the same open-addressed, linear-probing table,
+with the same struct-hasher constraint so the JIT devirtualizes and inlines the
+key hash. Alongside each key slot is a value group (a `List<TValue?>` of the values
+added under that key, in insertion order).
+
+`Add` **always appends**: adding the same key twice groups the values rather than
+rejecting the second add, and adding the same value twice under one key keeps both
+copies. This is what you reach for when modelling one-to-many relationships — event
+handlers per event, members per group, postings per term.
+
+Reads are allocation-free: the indexer and `TryGetValues` hand back a lightweight
+`ValueGroup` struct view over the live backing list, and the enumerator yields
+struct `Grouping` values. The map is **not** allocation-free on the write path —
+each *distinct* key allocates one backing list — which is inherent to storing a
+group per key.
+
+The map implements `ILookup<TKey, TValue?>`, so it flows through LINQ and any
+consumer that accepts an `ILookup`. The indexer returns an **empty group for an
+absent key** (matching `ILookup` semantics) rather than throwing.
+
+### Constructors
+
+```csharp
+CelerityMultiMap(int capacity = 16, float loadFactor = 0.75f)
+CelerityMultiMap(IEnumerable<KeyValuePair<TKey, TValue>> source,
+                 int capacity = 16, float loadFactor = 0.75f)
+```
+
+- `capacity` is the initial *key* capacity, rounded up to the next power of two.
+- Throws `ArgumentOutOfRangeException` for a negative `capacity` or a `loadFactor`
+  outside the open interval `(0, 1)`.
+- The `source` constructor groups pairs by key in source order; unlike a
+  dictionary, **duplicate keys are not an error** — they are grouped. Throws
+  `ArgumentNullException` if `source` is `null`.
+
+### Properties
+
+| Member | Description |
+|---|---|
+| `int Count` | Number of **distinct keys** (i.e. value groups), including the out-of-band default-key group if present. |
+| `int ValueCount` | Total number of values across all keys (a key with `n` values, counting duplicates, contributes `n`). |
+
+### Indexer
+
+```csharp
+ValueGroup this[TKey key] { get; }
+```
+
+Get-only. Returns a `ValueGroup` view over the values added under `key`, in
+insertion order; returns an **empty group** if the key is absent (no throw).
+
+### Methods
+
+| Member | Description |
+|---|---|
+| `void Add(TKey key, TValue value)` | Append a value to the key's group, creating the group if absent. Always succeeds. |
+| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`. |
+| `bool Remove(TKey key, TValue? value)` | Remove a single occurrence of `value` (first match, by `EqualityComparer<T>.Default`) from the key's group. If that empties the group, the key is removed. Returns `false` if the key or value is absent. |
+| `bool RemoveAll(TKey key)` | Remove the key and **all** of its values. Returns `false` if the key is absent. |
+| `bool ContainsKey(TKey key)` | Whether the key has at least one value. |
+| `bool Contains(TKey key, TValue? value)` | Whether `key` is present and its group contains `value`. |
+| `bool ContainsValue(TValue? value)` | `O(ValueCount)` scan for a value under any key (`EqualityComparer<T>.Default`). |
+| `int CountValues(TKey key)` | Number of values for the key, or `0` if absent. |
+| `bool TryGetValues(TKey key, out ValueGroup values)` | Non-throwing group lookup. |
+| `void Clear()` | Remove all keys and values; key capacity is preserved. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator yielding one `Grouping` per distinct key; the default-key group (if present) is yielded first. |
+| `KeyCollection Keys` | Allocation-free struct view over the distinct keys. |
+
+Implements `ILookup<TKey, TValue?>`: `Count` (distinct keys), `Contains(key)`,
+the `IEnumerable<TValue?> this[key]` indexer (empty for an absent key), and
+enumeration as `IGrouping<TKey, TValue?>`.
+
+### Nested view types
+
+- **`ValueGroup`** — a read-only struct view over one key's values. Implements
+  `IReadOnlyList<TValue?>` (so `Count`, `this[int]`, and allocation-free `foreach`).
+  It reflects the live backing group: mutating the map afterwards may change what a
+  previously-obtained view yields.
+- **`Grouping`** — a key together with its `ValueGroup`, yielded by the map's
+  enumerator. Implements `IGrouping<TKey, TValue?>`, so `foreach (var g in map)`
+  gives `g.Key` and `foreach (var v in g)` over the values.
+
+### Default-key handling
+
+`default(TKey)` (`null` for reference types, `0` for `int`, `Guid.Empty`, …)
+collides with the empty-slot sentinel used during probing, so its value group is
+stored **out-of-band** — the hasher is never invoked with the default key, so it
+never collides with the sentinel. The default key behaves as an ordinary key for
+`Add`, `Remove`, `RemoveAll`, the indexer, enumeration (yielded first), and `Keys`.
+
+### Usage example
+
+```csharp
+using System.Linq;
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Subscribers per topic.
+var subs = new CelerityMultiMap<string, string, StringFnV1AHasher>();
+subs.Add("orders",   "billing");
+subs.Add("orders",   "fulfilment");
+subs.Add("shipments","tracking");
+
+Console.WriteLine(subs.Count);                 // 2 distinct keys
+Console.WriteLine(subs.ValueCount);            // 3 values
+Console.WriteLine(subs["orders"].Count);       // 2
+foreach (string handler in subs["orders"]) { /* billing, fulfilment */ }
+
+subs.Remove("orders", "billing");              // drop one handler
+subs.RemoveAll("shipments");                   // drop a whole topic
+
+// Flows through LINQ as an ILookup<,>.
+ILookup<string, string> lookup = subs;
+var counts = lookup.ToDictionary(g => g.Key, g => g.Count());
+```

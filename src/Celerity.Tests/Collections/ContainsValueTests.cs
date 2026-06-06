@@ -351,4 +351,67 @@ public class ContainsValueTests
         var map = Frozen(("a", 42), ("b", 42), ("c", 42));
         Assert.True(map.ContainsValue(42));
     }
+
+    // ---------------- CelerityMultiMap ----------------
+    // ContainsValue scans every value group (plus the out-of-band default-key
+    // group), matching BCL ContainsValue semantics across the whole map.
+
+    [Fact]
+    public void CelerityMultiMap_EmptyMap_ReturnsFalse()
+    {
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_FindsValueInRegularGroup()
+    {
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.Add("a", 100);
+        map.Add("a", 200);
+        map.Add("b", 300);
+        Assert.True(map.ContainsValue(200));
+        Assert.True(map.ContainsValue(300));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ReturnsFalseForMissingValue()
+    {
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.Add("a", 100);
+        map.Add("b", 200);
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_FindsValueOnlyInDefaultKeyGroup()
+    {
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.Add(null!, 777);
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_NullValueLookup_ReferenceType()
+    {
+        var map = new CelerityMultiMap<string, string, StringFnV1AHasher>();
+        map.Add("a", "one");
+        map.Add("b", null!);
+        Assert.True(map.ContainsValue(null));
+
+        var noNulls = new CelerityMultiMap<string, string, StringFnV1AHasher>();
+        noNulls.Add("a", "one");
+        noNulls.Add("b", "two");
+        Assert.False(noNulls.ContainsValue(null));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_DuplicateValues_ReturnsTrue()
+    {
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.Add("a", 42);
+        map.Add("b", 42);
+        Assert.True(map.ContainsValue(42));
+    }
 }
