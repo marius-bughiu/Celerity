@@ -52,13 +52,16 @@ jobs:
           --settings coverage.runsettings
           --results-directory ./TestResults/coverage
 
-      - name: Generate report
-        uses: danielpalme/ReportGenerator-GitHub-Action@v5.5.10
-        with:
-          reports: 'src/TestResults/coverage/**/coverage.cobertura.xml'
-          targetdir: 'coveragereport'
-          reporttypes: 'Html;MarkdownSummaryGithub;Badges;Cobertura;TextSummary'
-          title: 'Celerity coverage'
+      # Renders the HTML report, badge, and PR summary, writes the run summary,
+      # and fails the job if coverage is below the floor — all in one script, so
+      # the report carries the project's own styling and no third-party upsell.
+      - name: Generate report and enforce floor
+        run: >
+          python3 scripts/coverage_report.py
+          --input "src/TestResults/coverage/**/coverage.cobertura.xml"
+          --outdir coveragereport
+          --min-line "$MIN_LINE_COVERAGE"
+          --min-branch "$MIN_BRANCH_COVERAGE"
 
       - name: Upload coverage artifact
         if: always()
@@ -69,39 +72,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Enforce coverage floor
-        run: |
-          python3 - <<'PY'
-          import os, sys, xml.etree.ElementTree as ET
-          root = ET.parse('coveragereport/Cobertura.xml').getroot()
-          line = float(root.get('line-rate')) * 100
-          branch = float(root.get('branch-rate')) * 100
-          min_line = float(os.environ['MIN_LINE_COVERAGE'])
-          min_branch = float(os.environ['MIN_BRANCH_COVERAGE'])
-          summary = (
-              f"### Coverage\n\n"
-              f"| Metric | Value | Floor |\n|---|---:|---:|\n"
-              f"| Line | {line:.2f}% | {min_line:.0f}% |\n"
-              f"| Branch | {branch:.2f}% | {min_branch:.0f}% |\n"
-          )
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
-              f.write(summary)
-          print(f"Line coverage:   {line:.2f}% (floor {min_line:.0f}%)")
-          print(f"Branch coverage: {branch:.2f}% (floor {min_branch:.0f}%)")
-          if line < min_line or branch < min_branch:
-              print("::error::Coverage dropped below the configured floor.")
-              sys.exit(1)
-          PY
-
       - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const marker = '<!-- celerity-coverage-comment -->';
-            const summary = fs.readFileSync('coveragereport/SummaryGithub.md', 'utf8');
+            const summary = fs.readFileSync('coveragereport/summary.md', 'utf8');
             const body = `${marker}\n${summary}`;
 
             const { data: comments } = await github.rest.issues.listComments({

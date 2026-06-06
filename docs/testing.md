@@ -119,21 +119,21 @@ dotnet test Celerity.Tests/Celerity.Tests.csproj \
   --settings coverage.runsettings \
   --results-directory ./TestResults/coverage
 
-# 2. render an HTML report (one-time tool install)
-dotnet tool install -g dotnet-reportgenerator-globaltool
-reportgenerator \
-  -reports:"./TestResults/coverage/**/coverage.cobertura.xml" \
-  -targetdir:coveragereport \
-  -reporttypes:"Html;TextSummary"
+# 2. render the HTML report + badge (pure Python, no extra tooling)
+python3 ../scripts/coverage_report.py \
+  --input "./TestResults/coverage/**/coverage.cobertura.xml" \
+  --outdir ../coveragereport --min-line 95 --min-branch 90
 
 # 3. open coveragereport/index.html
 ```
+
+The report is rendered by [`scripts/coverage_report.py`](../scripts/coverage_report.py) — a small generator that reads the Cobertura XML coverlet produces and emits an `index.html` styled like the rest of the Celerity site, a `badge.svg`, and a `summary.md`. It exists so the report carries the project's own look and no third-party "sponsors only" upsell; there is no dependency on ReportGenerator.
 
 ### CI gate
 
 The `coverage` workflow (`.github/workflows/coverage.yml`) runs on every PR and on `main`:
 
-- Collects coverage, renders the report with ReportGenerator, and uploads it as a build artifact.
+- Collects coverage, renders the report + badge with `scripts/coverage_report.py`, and uploads it as a build artifact.
 - **Fails the build** if line coverage drops below `MIN_LINE_COVERAGE` (95%) or branch coverage below `MIN_BRANCH_COVERAGE` (90%). The suite sits far above these (~99.9% line) — the floor guards against silent regressions; it is not the target.
 - Posts a coverage summary comment on the PR.
 - On `main`, publishes the HTML report to `gh-pages` under [`/coverage`](https://marius-bughiu.github.io/Celerity/coverage/) and refreshes the README badge.
