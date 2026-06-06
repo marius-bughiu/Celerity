@@ -5,8 +5,9 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// Tests for the <c>IEnumerable&lt;T&gt;</c> constructor on
-/// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>, and
-/// <see cref="CeleritySet{T, THasher}"/>.
+/// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>,
+/// <see cref="CeleritySet{T, THasher}"/>, and the build-once
+/// <see cref="FrozenCeleritySet{THasher}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
 /// equivalents, but follows BCL <see cref="HashSet{T}"/> semantics rather than
@@ -577,6 +578,157 @@ public class SetIEnumerableConstructorTests
 
         Assert.Equal(ints.Count, copy.Count);
         foreach (int item in ints)
+            Assert.True(copy.Contains(item));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  FrozenCeleritySet — source argument validation
+    // ──────────────────────────────────────────────────────────────
+    //
+    //  FrozenCeleritySet is immutable and string-only: its single constructor
+    //  takes an IEnumerable<string> and there is NO capacity / loadFactor (the
+    //  perfect-hash build sizes the table itself), so the loadFactor / capacity
+    //  rows above genuinely do not apply. The IEnumerable-source contract — null
+    //  rejection, dedupe, the out-of-band null element, large-source fidelity, and
+    //  source independence — does, and is mirrored here.
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        Assert.Throws<ArgumentNullException>(() => new FrozenCeleritySet(source!));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  FrozenCeleritySet — happy path
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldSupportEmptySource()
+    {
+        var set = new FrozenCeleritySet(Array.Empty<string>());
+
+        Assert.Empty(set);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldCopyAllElements_FromArraySource()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new FrozenCeleritySet(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Select is not an ICollection<string>; it forces the
+        // non-collection capacity-fallback path of the materialization.
+        IEnumerable<string> source = Enumerable.Range(1, 50).Select(i => "n" + i);
+
+        var set = new FrozenCeleritySet(source);
+
+        Assert.Equal(50, set.Count);
+        for (int i = 1; i <= 50; i++)
+            Assert.True(set.Contains("n" + i));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldSilentlyDedupe_DuplicateElements()
+    {
+        var source = new[] { "a", "b", "a", "c", "b", "a" };
+
+        var set = new FrozenCeleritySet(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldSilentlyDedupe_DuplicateNullElements()
+    {
+        // null is the out-of-band element — ensure dedupe covers it.
+        var source = new[] { "a", null!, "b", null!, "c", null! };
+
+        var set = new FrozenCeleritySet(source);
+
+        Assert.Equal(4, set.Count);
+        Assert.True(set.Contains(null!));
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldCaptureNullElement_FromSource()
+    {
+        var source = new[] { null!, "x", "y" };
+
+        var set = new FrozenCeleritySet(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(null!));
+        Assert.True(set.Contains("x"));
+        Assert.True(set.Contains("y"));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldHandleLargeSource()
+    {
+        IEnumerable<string> source = Enumerable.Range(1, 500).Select(i => "item-" + i);
+
+        var set = new FrozenCeleritySet(source);
+
+        Assert.Equal(500, set.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.True(set.Contains("item-" + i), $"missing element item-{i}");
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldBeIndependent_FromSourceArray()
+    {
+        var source = new[] { "a", "b", "c" };
+        var set = new FrozenCeleritySet(source);
+
+        // Mutating the source after construction must not affect the frozen set.
+        source[0] = "MUTATED";
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.False(set.Contains("MUTATED"));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_OpenGeneric_ShouldAcceptIEnumerableSource()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new FrozenCeleritySet<StringMurmur3Hasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldRoundtrip_FromAnotherFrozenSetEnumeration()
+    {
+        var original = new FrozenCeleritySet(new[] { "a", "b", "c", "d" });
+
+        var copy = new FrozenCeleritySet(original);
+
+        Assert.Equal(original.Count, copy.Count);
+        foreach (string item in original)
             Assert.True(copy.Contains(item));
     }
 }

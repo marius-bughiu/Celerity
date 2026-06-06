@@ -373,6 +373,39 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- FrozenCeleritySet (build-once) vs HashSet<string> ------------------
+
+    [Fact]
+    public void FrozenCeleritySet_ShouldMatch_BclHashSet()
+    {
+        // A duplicate-rich source over a tiny element universe; the frozen set must
+        // de-duplicate to the same distinct membership as the BCL HashSet oracle.
+        Gen<List<string>> genSource =
+            Gen.Int[0, 40].Select(k => $"item_{k}").List[0, 60];
+
+        genSource.Sample(source =>
+        {
+            var frozen = new FrozenCeleritySet(source);
+            var oracle = new HashSet<string>(source, StringComparer.Ordinal);
+
+            Assert.Equal(oracle.Count, frozen.Count);
+            foreach (string item in oracle)
+                Assert.True(frozen.Contains(item));
+
+            // Absent elements must miss.
+            for (int k = 41; k <= 50; k++)
+                Assert.False(frozen.Contains($"item_{k}"));
+
+            // Full enumeration round-trips to the same membership.
+            Assert.True(oracle.SetEquals(frozen.ToHashSet(StringComparer.Ordinal)));
+
+            // Set-algebra parity against the oracle.
+            Assert.True(frozen.SetEquals(oracle));
+            Assert.True(frozen.IsSubsetOf(oracle));
+            Assert.True(frozen.IsSupersetOf(oracle));
+        }, iter: 2000);
+    }
+
     // Asserts a CelerityDictionary is observably equal to a BCL oracle across the
     // full key domain, Count, and enumeration.
     private static void AssertDictEquivalent(

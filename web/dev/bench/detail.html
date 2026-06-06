@@ -358,9 +358,10 @@
     { key: 'SmallDictionary',     title: 'SmallDictionary<int, int>',             vs: 'Dictionary<int, int>', items: [8, 64] },
     { key: 'IntSet',              title: 'IntSet',                                vs: 'HashSet<int>' },
     { key: 'LongSet',             title: 'LongSet',                               vs: 'HashSet<long>' },
-    { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' }
+    { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' },
+    { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                     vs: 'FrozenSet<string>' }
   ];
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----

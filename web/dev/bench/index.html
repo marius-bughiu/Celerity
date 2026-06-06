@@ -423,10 +423,11 @@
     { key: 'SmallDictionary',     title: 'SmallDictionary<int, int>',                vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'], items: [8, 64] },
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
-    { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] }
+    { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
+    { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                        vs: 'FrozenSet<string>',     ops: ['Build', 'Contains'] }
   ];
 
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

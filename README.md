@@ -13,6 +13,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 - `IntDictionary<TValue>` / `IntDictionary<TValue, THasher>` — `int`-keyed specialization. Defaults to `Int32WangNaiveHasher`.
 - `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangNaiveHasher`.
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
+- `FrozenCeleritySet` / `FrozenCeleritySet<THasher>` — build-once, read-many `string` set that searches for a perfect (collision-free) hash so membership tests are single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Defaults to `StringFnV1AHasher`.
 - `IntSet` / `IntSet<THasher>` — `int`-keyed set specialization.
 - `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangNaiveHasher`.
 
@@ -176,6 +177,33 @@ var visitedIds = new CeleritySet<Guid, GuidHasher>();
 visitedIds.TryAdd(Guid.NewGuid()); // returns true on first add, false on duplicate
 ```
 
+### `FrozenCeleritySet` — build-once string membership
+
+When a `string`-keyed membership set is built once and then read many times (reserved-word
+tables, stop-word lists, allow/deny lists), `FrozenCeleritySet` searches at construction for a
+perfect (collision-free) hash so each `Contains` is a single hash, a single array index, and a
+single equality check. It is the set counterpart of `FrozenCelerityDictionary`.
+
+```csharp
+using Celerity.Collections;
+
+var reserved = new FrozenCeleritySet(new[]
+{
+    "select", "from", "where", "join", "group", "order",
+});
+
+Console.WriteLine(reserved.IsPerfectlyHashed);  // True (single-probe membership)
+Console.WriteLine(reserved.Contains("join"));   // True
+Console.WriteLine(reserved.Contains("celerity")); // False
+```
+
+It is immutable (no `Add` / `Remove`) and implements `IReadOnlySet<string>` (so `SetEquals`,
+`IsSubsetOf`, `Overlaps`, … are all available). Duplicate elements are silently deduplicated, as
+a set should. The default uses `StringFnV1AHasher`; supply a full-width or strong hasher via
+`FrozenCeleritySet<THasher>` (e.g. `StringFnV1AFullHasher` for non-ASCII elements) when you want
+the single-probe fast path for elements the default would collide. Membership tests stay correct
+regardless — colliding elements fall back to a short probe.
+
 ### Construct from an existing collection
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`. When the source implements `ICollection<T>`, its `Count` is used to pre-size the backing storage so the bulk fill avoids resize work.
@@ -214,6 +242,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
+| Build-once, read-many membership set keyed by `string` | `FrozenCeleritySet` | Immutable; searches for a perfect (collision-free) hash at build time so `Contains` is single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Tune the hasher via the `<THasher>` overload. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 Notes on picking a hasher once the collection is settled:
