@@ -286,6 +286,115 @@ public class ContainsValueTests
         Assert.False(map.ContainsValue(300));
     }
 
+    // ---------------- RobinHoodDictionary ----------------
+
+    [Fact]
+    public void RobinHoodDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_FindsValueInRegularSlot()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_FindsValueOnlyInDefaultKeySlot_IntKey()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_FindsValueOnlyInDefaultKeySlot_NullStringKey()
+    {
+        var map = new RobinHoodDictionary<string, int, StringFnV1AHasher>();
+        map[null!] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_DefaultValueLookup_ZeroValue()
+    {
+        // EMPTY_KEY slots in the probe array are populated with default(TKey)
+        // and default(TValue). ContainsValue must skip those.
+        var empty = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(empty.ContainsValue(0));
+
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_NullValueLookup_ReferenceType()
+    {
+        var map = new RobinHoodDictionary<int, string?, Int32WangNaiveHasher>();
+        map[1] = "one";
+        map[2] = null;
+        Assert.True(map.ContainsValue(null));
+
+        var noNulls = new RobinHoodDictionary<int, string, Int32WangNaiveHasher> { [1] = "one", [2] = "two" };
+        Assert.False(noNulls.ContainsValue(null));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_DuplicateValues_ReturnsTrue()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>
+        {
+            [1] = 42,
+            [2] = 42,
+            [3] = 42,
+        };
+        Assert.True(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_SurvivesResize()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(capacity: 4);
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 10;
+
+        Assert.True(map.ContainsValue(770));
+        Assert.False(map.ContainsValue(-1));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_AfterDefaultKeyRemove_ReturnsFalse()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 555;
+        map[1] = 100;
+        map.Remove(0);
+        Assert.False(map.ContainsValue(555));
+        Assert.True(map.ContainsValue(100));
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_AfterClear_ReturnsFalse()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map[0] = 300;
+        map.Clear();
+        Assert.False(map.ContainsValue(100));
+        Assert.False(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(300));
+    }
+
     // ---------------- FrozenCelerityDictionary ----------------
     // Read-only, so the resize / remove / clear variants do not apply.
 

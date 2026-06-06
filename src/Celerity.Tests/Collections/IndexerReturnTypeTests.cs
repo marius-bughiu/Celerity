@@ -9,7 +9,8 @@ namespace Celerity.Tests.Collections;
 /// non-nullable <c>TValue</c>. Closes the divergence flagged in issue #88 where
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>'s indexer returned
 /// <c>TValue?</c> while <see cref="IntDictionary{TValue}"/> and
-/// <see cref="LongDictionary{TValue}"/> already returned <c>TValue</c>.
+/// <see cref="LongDictionary{TValue}"/> already returned <c>TValue</c>. Also
+/// covers <see cref="RobinHoodDictionary{TKey, TValue, THasher}"/>.
 /// </summary>
 public class IndexerReturnTypeTests
 {
@@ -38,6 +39,28 @@ public class IndexerReturnTypeTests
         // ("Converting null literal or possible null value to non-nullable type")
         // if the indexer were still declared as TValue?.
         var map = new CelerityDictionary<int, string, Int32WangNaiveHasher>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(typeof(RobinHoodDictionary<string, int, StringFnV1AHasher>), keyType: typeof(string), valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        // Compile-time evidence of the fix: this assignment would emit CS8600
+        // ("Converting null literal or possible null value to non-nullable type")
+        // if the indexer were still declared as TValue?.
+        var map = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>
         {
             [1] = "hello",
         };

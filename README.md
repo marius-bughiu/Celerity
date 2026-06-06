@@ -6,6 +6,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 ## Collections
 
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
+- `RobinHoodDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Robin Hood open addressing: bounds probe-length variance so worst-case lookups stay close to average on clustered / adversarial keys (at the cost of a per-slot probe-distance `int`).
 - `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: each key groups multiple values (`Add` appends rather than overwrites). Implements `ILookup<TKey, TValue?>`.
 - `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary tuned for the very-small (`n <= ~16`) case. No hasher: it never hashes, so a `0` / `null` / default key is stored inline rather than out-of-band.
@@ -71,6 +72,23 @@ byKey[DateOnly.FromDateTime(DateTime.UtcNow)] = "today";
 ```
 
 The hasher is a `struct` and is supplied as a generic constraint, so the JIT devirtualizes and inlines the `Hash()` call on the probe path.
+
+### `RobinHoodDictionary` — bounded probe variance for clustered keys
+
+When keys bunch up (weak or identity hashers, attacker-influenced keys, naturally clustered IDs), linear probing grows long runs and worst-case lookups degrade. `RobinHoodDictionary` is a drop-in peer of `CelerityDictionary` — same API, same hashers — that uses Robin Hood open addressing to keep probe-length variance low, so tail-latency lookups stay close to the average. It also stops a *negative* lookup early using its probe-distance invariant.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var dict = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+dict[42] = "hello";
+
+if (dict.TryGetValue(42, out var val))
+    Console.WriteLine(val); // "hello"
+```
+
+The trade-off is a per-slot probe-distance `int` of bookkeeping (so it allocates more than `CelerityDictionary`); on uniformly distributed keys with a good hasher, `CelerityDictionary` matches or beats it, so prefer Robin Hood specifically for the clustered / adversarial case.
 
 ### `FrozenCelerityDictionary` — build-once string lookups
 
@@ -189,6 +207,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `int` | `IntDictionary<TValue>` | Avoids generic boxing / `EqualityComparer<int>` dispatch; defaults to `Int32WangNaiveHasher`. |
 | Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangNaiveHasher`. |
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
+| Dictionary with **clustered / adversarial** keys where worst-case lookup latency matters | `RobinHoodDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but Robin Hood probing bounds probe-length variance so tail-latency lookups don't degrade on bunched keys. Costs a per-slot probe-distance `int`; for uniform keys with a good hasher, prefer `CelerityDictionary`. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
 | Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |

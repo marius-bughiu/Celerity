@@ -6,8 +6,9 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// Load-factor boundary tests for <see cref="IntDictionary{TValue}"/>,
-/// <see cref="LongDictionary{TValue}"/>, and
-/// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>. Covers the remaining
+/// <see cref="LongDictionary{TValue}"/>,
+/// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>, and
+/// <see cref="RobinHoodDictionary{TKey, TValue, THasher}"/>. Covers the remaining
 /// gap from issue #7: load-factor boundary conditions were not exercised by the
 /// initial test suite.
 ///
@@ -413,6 +414,124 @@ public class LoadFactorBoundaryTests
     public void CelerityDictionary_VariousLoadFactors_AllDataSurvivesMultipleResizes(float loadFactor)
     {
         var map = new CelerityDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 4, loadFactor: loadFactor);
+
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 7;
+
+        Assert.Equal(100, map.Count);
+        for (int i = 1; i <= 100; i++)
+            Assert.Equal(i * 7, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  RobinHoodDictionary — low load factor
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void RobinHoodDictionary_LowLoadFactor_TriggersEarlyResize_AndPreservesAllData()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 8, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 20; i++)
+            map[i] = i * 10;
+
+        Assert.Equal(20, map.Count);
+        for (int i = 1; i <= 20; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  RobinHoodDictionary — high load factor
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void RobinHoodDictionary_HighLoadFactor_PermitsHighDensity_AndPreservesAllData()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.95f);
+
+        for (int i = 1; i <= 30; i++)
+            map[i] = i * 100;
+
+        Assert.Equal(30, map.Count);
+        for (int i = 1; i <= 30; i++)
+            Assert.Equal(i * 100, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  RobinHoodDictionary — multiple sequential resizes
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void RobinHoodDictionary_TinyInitialCapacity_MultipleResizes_PreserveAllEntries()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 2, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 200; i++)
+            map[i] = i;
+
+        Assert.Equal(200, map.Count);
+        for (int i = 1; i <= 200; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  RobinHoodDictionary — default key with load-factor boundary
+    // ---------------------------------------------------------------
+
+    // default(int) == 0 is stored out-of-band. Same accounting logic as
+    // IntDictionary; verify resize timing and data integrity.
+    [Fact]
+    public void RobinHoodDictionary_DefaultKey_InsertsBeforeThreshold_DoesNotCorruptResizeTiming()
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 8, loadFactor: 0.5f);
+        map[0] = -1;
+
+        for (int i = 1; i <= 20; i++)
+            map[i] = i;
+
+        Assert.Equal(21, map.Count);
+        Assert.Equal(-1, map[0]);
+        for (int i = 1; i <= 20; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_DefaultKey_InsertedAtThreshold_NonDefaultInsertsStillWork()
+    {
+        // capacity=4, loadFactor=0.5 → size=4, threshold=2.
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 4, loadFactor: 0.5f);
+        map[1] = 10;
+        map[2] = 20;
+        // count=2 == threshold. Insert default key out-of-band (no resize check).
+        map[0] = -1;
+        // count=3. Next non-default insert must fire a resize.
+        map[3] = 30;
+
+        Assert.Equal(4, map.Count);
+        Assert.Equal(-1, map[0]);
+        Assert.Equal(10, map[1]);
+        Assert.Equal(20, map[2]);
+        Assert.Equal(30, map[3]);
+    }
+
+    // ---------------------------------------------------------------
+    //  RobinHoodDictionary — parameterized across several load factors
+    // ---------------------------------------------------------------
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.95f)]
+    public void RobinHoodDictionary_VariousLoadFactors_AllDataSurvivesMultipleResizes(float loadFactor)
+    {
+        var map = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(
             capacity: 4, loadFactor: loadFactor);
 
         for (int i = 1; i <= 100; i++)

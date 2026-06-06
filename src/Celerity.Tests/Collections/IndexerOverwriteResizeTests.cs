@@ -6,8 +6,9 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Regression tests for issue #117: the <c>this[key] = value</c> indexer setter on
 /// <see cref="IntDictionary{TValue, THasher}"/>,
-/// <see cref="LongDictionary{TValue, THasher}"/>, and
-/// <see cref="CelerityDictionary{TKey, TValue, THasher}"/> historically ran its
+/// <see cref="LongDictionary{TValue, THasher}"/>,
+/// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>, and
+/// <see cref="RobinHoodDictionary{TKey, TValue, THasher}"/> historically ran its
 /// load-factor / <c>Resize</c> check <em>before</em> probing, so assigning to a key
 /// that already existed while the table sat at the load-factor threshold triggered a
 /// full <c>Resize</c> (rehashing every entry) even though a pure value overwrite does
@@ -103,6 +104,22 @@ public class IndexerOverwriteResizeTests
     public void CelerityDictionary_IndexerOverwriteAtThreshold_DoesNotResize()
     {
         var map = new CelerityDictionary<string, int, CountingStringHasher>(capacity: 4);
+        map["a"] = 1;
+        map["b"] = 2;
+        map["c"] = 3; // Count == 3 == threshold
+
+        _hashCallCount = 0;
+        map["b"] = 99; // overwrite existing key — must not resize
+
+        Assert.Equal(1, _hashCallCount);
+        Assert.Equal(3, map.Count);
+        Assert.Equal(99, map["b"]);
+    }
+
+    [Fact]
+    public void RobinHoodDictionary_IndexerOverwriteAtThreshold_DoesNotResize()
+    {
+        var map = new RobinHoodDictionary<string, int, CountingStringHasher>(capacity: 4);
         map["a"] = 1;
         map["b"] = 2;
         map["c"] = 3; // Count == 3 == threshold

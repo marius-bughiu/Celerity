@@ -124,6 +124,20 @@ public class BulkConstructorNoResizeTests
             Assert.Equal(i, map[$"k{i}"]);
     }
 
+    [Fact]
+    public void RobinHoodDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        KeyValuePair<string, int>[] src = StringPairs();
+        _hashCallCount = 0;
+
+        var map = new RobinHoodDictionary<string, int, CountingStringHasher>(src);
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, map.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
     // ── Sets ──────────────────────────────────────────────────────────────────────
 
     [Fact]
