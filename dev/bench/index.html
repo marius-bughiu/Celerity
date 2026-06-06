@@ -338,6 +338,7 @@
     <a href="../../" class="brand">Celerity<span class="dot">.</span></a>
     <nav>
       <a href="../../">Home</a>
+      <a href="../bench-extended/">Extended</a>
       <a href="https://github.com/marius-bughiu/Celerity">GitHub</a>
       <a href="https://www.nuget.org/packages/Celerity.Collections/">NuGet</a>
     </nav>
@@ -414,12 +415,14 @@
     { key: 'IntDictionary',       title: 'IntDictionary<int>',                       vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'LongDictionary',      title: 'LongDictionary<int>',                      vs: 'Dictionary<long, int>', ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'CelerityDictionary',  title: 'CelerityDictionary<int, int, ...>',        vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
+    { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup'] },
+    { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] }
   ];
 
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

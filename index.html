@@ -232,6 +232,8 @@
     <a href="./" class="brand">Celerity<span class="dot">.</span></a>
     <nav>
       <a href="dev/bench/">Benchmarks</a>
+      <a href="dev/bench-extended/">Extended</a>
+      <a href="coverage/">Coverage</a>
       <a href="https://github.com/marius-bughiu/Celerity">GitHub</a>
       <a href="https://www.nuget.org/packages/Celerity.Collections/">NuGet</a>
     </nav>
@@ -271,6 +273,8 @@
     <div class="ship"><code>IntDictionary&lt;TValue&gt;</code><div class="desc">int-keyed dictionary, default Wang hash.</div></div>
     <div class="ship"><code>LongDictionary&lt;TValue&gt;</code><div class="desc">long-keyed dictionary, default Wang hash.</div></div>
     <div class="ship"><code>CelerityDictionary&lt;K, V, H&gt;</code><div class="desc">Generic dictionary with a struct hasher constraint.</div></div>
+    <div class="ship"><code>FrozenCelerityDictionary&lt;V&gt;</code><div class="desc">Build-once string-keyed dictionary with perfect hashing for single-probe lookups.</div></div>
+    <div class="ship"><code>CelerityMultiMap&lt;K, V, H&gt;</code><div class="desc">One-to-many map: each key groups multiple values. Implements <code>ILookup</code>.</div></div>
     <div class="ship"><code>IntSet</code><div class="desc">int-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>LongSet</code><div class="desc">long-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>CeleritySet&lt;T, H&gt;</code><div class="desc">Generic set with a struct hasher constraint.</div></div>
@@ -288,7 +292,7 @@
 <footer class="site">
   <div class="wrap">
     <span id="footer-build">MIT-licensed &middot; Open source on <a href="https://github.com/marius-bughiu/Celerity">GitHub</a></span>
-    <span><a href="dev/bench/">Live benchmarks</a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/CHANGELOG.md">Changelog</a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/ROADMAP.md">Roadmap</a></span>
+    <span><a href="dev/bench/">Live benchmarks</a> &middot; <a href="coverage/">Coverage</a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/CHANGELOG.md">Changelog</a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/ROADMAP.md">Roadmap</a></span>
   </div>
 </footer>
 
