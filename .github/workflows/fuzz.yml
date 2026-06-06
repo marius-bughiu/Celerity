@@ -1,0 +1,63 @@
+name: Fuzz
+
+# Differential fuzzing of the collections (issue #29). This is a soak job, not a
+# per-PR gate: it runs nightly and on demand so a long random walk has time to
+# surface a divergence the bounded per-PR property tests might miss. A failure
+# prints a caseSeed that reproduces deterministically with
+# `dotnet run -c Release -- --seed <caseSeed> --iterations 1`.
+
+on:
+  schedule:
+    # 04:17 UTC daily (off the hour to dodge scheduler congestion).
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Base seed (blank = time-derived, printed in the log).'
+        required: false
+        default: ''
+      time:
+        description: 'Wall-clock budget in seconds.'
+        required: false
+        default: '300'
+      target:
+        description: 'Single target to focus (blank = all). See --list.'
+        required: false
+        default: ''
+
+jobs:
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: tree:0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build fuzzer
+        run: dotnet build Celerity.Fuzz/Celerity.Fuzz.csproj --configuration Release
+
+      - name: Run differential fuzzer
+        working-directory: src/Celerity.Fuzz
+        run: |
+          set -euo pipefail
+          ARGS="--iterations 100000000 --time ${{ github.event.inputs.time || '300' }}"
+          if [ -n "${{ github.event.inputs.seed }}" ]; then
+            ARGS="$ARGS --seed ${{ github.event.inputs.seed }}"
+          fi
+          if [ -n "${{ github.event.inputs.target }}" ]; then
+            ARGS="$ARGS --target ${{ github.event.inputs.target }}"
+          fi
+          echo "Fuzzer args: $ARGS"
+          dotnet run --configuration Release --no-build -- $ARGS

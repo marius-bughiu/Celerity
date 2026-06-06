@@ -199,6 +199,26 @@ public class CelerityDictionaryTests
         Assert.Equal(2, map.Count);
     }
 
+    [Fact]
+    public void Indexer_ShouldThrowKeyNotFound_ForAbsentDefaultKey()
+    {
+        // default(int) == 0 takes the out-of-band default-key path; with no
+        // default key stored the getter must throw, not return default(TValue).
+        var map = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+
+        Assert.Throws<KeyNotFoundException>(() => _ = map[0]);
+    }
+
+    [Fact]
+    public void Clear_ShouldBeNoOp_WhenAlreadyEmpty()
+    {
+        var map = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
+
+        map.Clear(); // _count == 0 early-return path
+
+        Assert.Empty(map);
+    }
+
     // A test-only hasher used to exercise the Guid path. Not part of the
     // public library — lives next to the tests that need it. Uses the low
     // 32 bits of the GUID's hash code.

@@ -152,4 +152,50 @@ public class CelerityMultiMapCollisionTests
         for (int i = 1; i <= 5; i++)
             Assert.Equal(new[] { i }, map[$"k{i}"].ToArray());
     }
+
+    [Fact]
+    public void RemoveAll_OnWrapAroundCluster_ShouldKeepHomedKey()
+    {
+        // With an identity hasher and capacity 8, keys 1, 2, 9 form one probe
+        // cluster: 1->slot1, 2->slot2, 9(home 1)->slot3. Removing key 1 forces the
+        // backward shift to *skip* key 2 (already at its home slot — the bypassesGap
+        // branch) while relocating key 9 into the freed slot.
+        var map = new CelerityMultiMap<int, int, IdentityIntHasher>(8);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(9, 90);
+
+        Assert.True(map.RemoveAll(1));
+
+        Assert.False(map.ContainsKey(1));
+        Assert.Equal(new[] { 20 }, map[2].ToArray());
+        Assert.Equal(new[] { 90 }, map[9].ToArray());
+        Assert.Equal(2, map.Count);
+    }
+
+    [Fact]
+    public void RemoveAll_OnWrapAroundCluster_WithHomeAboveGap_ExercisesWrappedKeepBranch()
+    {
+        // Table size 8 (mask = 7), identity hasher. Keys 6, 7, 15, 23 land as:
+        //   slot 6 -> 6  (natural 6) — removed, becomes the gap at i = 6
+        //   slot 7 -> 7  (natural 7)
+        //   slot 0 -> 15 (natural 7; wrapped past 7)
+        //   slot 1 -> 23 (natural 7; wrapped past 7, 0)
+        // Removing key 6 scans the wrapped slots 0 and 1, whose natural slot (7)
+        // is GREATER than the gap (6), so the `i > j` bypass takes its `i < k`
+        // == true path — the branch the homed-key cluster above never reaches.
+        var map = new CelerityMultiMap<int, int, IdentityIntHasher>(8);
+        map.Add(6, 60);
+        map.Add(7, 70);
+        map.Add(15, 150);
+        map.Add(23, 230);
+
+        Assert.True(map.RemoveAll(6));
+
+        Assert.False(map.ContainsKey(6));
+        Assert.Equal(new[] { 70 }, map[7].ToArray());
+        Assert.Equal(new[] { 150 }, map[15].ToArray());
+        Assert.Equal(new[] { 230 }, map[23].ToArray());
+        Assert.Equal(3, map.Count);
+    }
 }

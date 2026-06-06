@@ -406,10 +406,11 @@ public class FrozenCelerityDictionary<TValue, THasher>
         int n = keyList.Count;
 
         // Size with headroom so at least one slot stays empty — linear probing needs
-        // an empty slot to terminate a miss, and to keep chains short.
+        // an empty slot to terminate a miss, and to keep chains short. NextPowerOfTwo
+        // returns a power of two strictly greater than n for every constructible size
+        // (it caps at 2^30, the ceiling a frozen dictionary could ever reach), so the
+        // table always has a vacant slot.
         int size = FastUtils.NextPowerOfTwo(n + 1);
-        if (size <= n)
-            size <<= 1;
 
         int m = size - 1;
         var tableKeys = new string?[size];

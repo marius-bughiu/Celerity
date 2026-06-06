@@ -8,6 +8,7 @@ This folder contains reference documentation for the Celerity high-performance c
 - [Migration from BCL collections](migration.md) — mapping `Dictionary<,>`, `HashSet<>`, `ILookup<,>`, and `FrozenDictionary<,>` to Celerity types.
 - [Troubleshooting](troubleshooting.md) — common errors and behavioural surprises, with fixes.
 - [FAQ](faq.md) — conceptual questions about the design.
+- [Testing & coverage](testing.md) — the test layers, property-based and fuzz harnesses, and how coverage is measured and gated.
 
 ## API reference
 

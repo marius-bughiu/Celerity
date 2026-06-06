@@ -560,4 +560,47 @@ public class LongDictionaryEnumerationTests
             Assert.Equal(key ^ 0x5555_5555_5555_5555L, seen[key]);
         }
     }
+
+    [Fact]
+    public void KeyCollection_ShouldRoundTrip_ThroughNonGenericIEnumerable()
+    {
+        // The non-generic System.Collections.IEnumerable path (object Current,
+        // Reset) is distinct from the generic IEnumerable<long> path above.
+        var map = new LongDictionary<int>();
+        for (long i = 1; i <= 4; i++) map[i] = (int)(i * 10);
+
+        var (first, second) = DrainNonGenericTwice<long>(map.Keys);
+
+        first.Sort();
+        second.Sort();
+        Assert.Equal(new[] { 1L, 2L, 3L, 4L }, first);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void ValueCollection_ShouldRoundTrip_ThroughNonGenericIEnumerable()
+    {
+        var map = new LongDictionary<int>();
+        for (long i = 1; i <= 4; i++) map[i] = (int)(i * 10);
+
+        var (first, second) = DrainNonGenericTwice<int>(map.Values);
+
+        first.Sort();
+        second.Sort();
+        Assert.Equal(new[] { 10, 20, 30, 40 }, first);
+        Assert.Equal(first, second);
+    }
+
+    // Drives a struct view through its boxed non-generic IEnumerable/IEnumerator
+    // surface (GetEnumerator -> object Current), then Reset()s and drains again.
+    private static (List<T> first, List<T> second) DrainNonGenericTwice<T>(IEnumerable view)
+    {
+        IEnumerator e = view.GetEnumerator();
+        var first = new List<T>();
+        while (e.MoveNext()) first.Add((T)e.Current!);
+        e.Reset();
+        var second = new List<T>();
+        while (e.MoveNext()) second.Add((T)e.Current!);
+        return (first, second);
+    }
 }

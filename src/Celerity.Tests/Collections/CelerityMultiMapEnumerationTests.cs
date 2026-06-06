@@ -208,4 +208,110 @@ public class CelerityMultiMapEnumerationTests
 
         Assert.Equal(new[] { 1, 2 }, values.ToArray());
     }
+
+    [Fact]
+    public void Enumerator_ShouldRoundTrip_AfterReset()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(0, 100); // default key exercises the BeforeDefaultKey state
+        map.Add(1, 10);
+        map.Add(2, 20);
+
+        IEnumerator e = ((IEnumerable)map).GetEnumerator();
+        var firstKeys = new List<int>();
+        while (e.MoveNext()) firstKeys.Add(((IGrouping<int, int>)e.Current!).Key);
+        e.Reset();
+        var secondKeys = new List<int>();
+        while (e.MoveNext()) secondKeys.Add(((IGrouping<int, int>)e.Current!).Key);
+
+        firstKeys.Sort();
+        secondKeys.Sort();
+        Assert.Equal(new[] { 0, 1, 2 }, firstKeys);
+        Assert.Equal(firstKeys, secondKeys);
+    }
+
+    [Fact]
+    public void EnumeratorReset_ShouldThrow_WhenMapMutated()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var e = map.GetEnumerator();
+        e.MoveNext();
+        map.Add(2, 20); // bumps the version
+
+        Assert.Throws<InvalidOperationException>(() => e.Reset());
+    }
+
+    [Fact]
+    public void ValueGroup_ShouldEnumerate_ViaPublicStructEnumerator()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 11);
+
+        // foreach over the ValueGroup struct binds to its public GetEnumerator(),
+        // distinct from the boxed IEnumerable<TValue> path tested above.
+        int sum = 0;
+        foreach (int? v in map[1])
+            sum += v ?? 0;
+
+        Assert.Equal(21, sum);
+    }
+
+    [Fact]
+    public void ValueGroup_ShouldRoundTrip_ThroughNonGenericIEnumerable()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 11);
+
+        var (first, second) = DrainNonGenericTwice<int>(map[1]);
+
+        Assert.Equal(new[] { 10, 11 }, first);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void Grouping_ShouldRoundTrip_ThroughNonGenericIEnumerable()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(5, 50);
+        map.Add(5, 51);
+
+        foreach (var grouping in map)
+        {
+            var (first, second) = DrainNonGenericTwice<int>((IEnumerable)grouping);
+            Assert.Equal(new[] { 50, 51 }, first);
+            Assert.Equal(first, second);
+        }
+    }
+
+    [Fact]
+    public void Keys_ShouldRoundTrip_ThroughNonGenericIEnumerable()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(2, 20);
+
+        var (first, second) = DrainNonGenericTwice<int>(map.Keys);
+
+        first.Sort();
+        second.Sort();
+        Assert.Equal(new[] { 1, 2 }, first);
+        Assert.Equal(first, second);
+    }
+
+    // Drives a struct view through its boxed non-generic IEnumerable/IEnumerator
+    // surface (GetEnumerator -> object Current), then Reset()s and drains again.
+    private static (List<T> first, List<T> second) DrainNonGenericTwice<T>(IEnumerable view)
+    {
+        IEnumerator e = view.GetEnumerator();
+        var first = new List<T>();
+        while (e.MoveNext()) first.Add((T)e.Current!);
+        e.Reset();
+        var second = new List<T>();
+        while (e.MoveNext()) second.Add((T)e.Current!);
+        return (first, second);
+    }
 }
