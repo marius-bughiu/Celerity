@@ -352,8 +352,10 @@
     { key: 'IntDictionary',       title: 'IntDictionary<int>',                    vs: 'Dictionary<int, int>' },
     { key: 'LongDictionary',      title: 'LongDictionary<int>',                   vs: 'Dictionary<long, int>' },
     { key: 'CelerityDictionary',  title: 'CelerityDictionary<int, int, ...>',     vs: 'Dictionary<int, int>' },
+    { key: 'RobinHoodDictionary', title: 'RobinHoodDictionary<int, int, ...>',    vs: 'Dictionary<int, int>' },
     { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',     vs: 'FrozenDictionary<string, int>' },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',       vs: 'Dictionary<int, List<int>>' },
+    { key: 'SmallDictionary',     title: 'SmallDictionary<int, int>',             vs: 'Dictionary<int, int>', items: [8, 64] },
     { key: 'IntSet',              title: 'IntSet',                                vs: 'HashSet<int>' },
     { key: 'LongSet',             title: 'LongSet',                               vs: 'HashSet<long>' },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' }
@@ -367,7 +369,7 @@
     return {
       c:  u.searchParams.get('c')  || '',
       op: u.searchParams.get('op') || '',
-      n:  parseInt(u.searchParams.get('n'), 10) || 100000
+      n:  u.searchParams.get('n') !== null ? parseInt(u.searchParams.get('n'), 10) : null
     };
   }
   var params = getParams();
@@ -383,7 +385,13 @@
     showError('Unknown benchmark.');
     return;
   }
-  if (SUPPORTED_ITEM_COUNTS.indexOf(params.n) === -1) {
+  // Most collections use the default 1k / 100k counts; a small-n collection like
+  // SmallDictionary overrides them with collection.items.
+  var itemCounts = collection.items || SUPPORTED_ITEM_COUNTS;
+  if (params.n === null) {
+    params.n = itemCounts[itemCounts.length - 1];
+  }
+  if (itemCounts.indexOf(params.n) === -1) {
     showError('Unknown item count <code>' + params.n + '</code>.');
     return;
   }
@@ -515,7 +523,7 @@
 
     // Build the toggle buttons.
     var toggle = document.getElementById('n-toggle');
-    SUPPORTED_ITEM_COUNTS.forEach(function (n) {
+    itemCounts.forEach(function (n) {
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = n.toLocaleString() + ' items';
