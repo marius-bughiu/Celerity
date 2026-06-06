@@ -352,11 +352,12 @@
     { key: 'IntDictionary',       title: 'IntDictionary<int>',                    vs: 'Dictionary<int, int>' },
     { key: 'LongDictionary',      title: 'LongDictionary<int>',                   vs: 'Dictionary<long, int>' },
     { key: 'CelerityDictionary',  title: 'CelerityDictionary<int, int, ...>',     vs: 'Dictionary<int, int>' },
+    { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',     vs: 'FrozenDictionary<string, int>' },
     { key: 'IntSet',              title: 'IntSet',                                vs: 'HashSet<int>' },
     { key: 'LongSet',             title: 'LongSet',                               vs: 'HashSet<long>' },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' }
   ];
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----

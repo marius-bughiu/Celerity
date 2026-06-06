@@ -750,4 +750,161 @@ public class IEnumerableConstructorTests
         Assert.Equal(10, view[1L]);
         Assert.Equal(20, view[2L]);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  FrozenCelerityDictionary — IEnumerable source ctor (its only ctor)
+    //  No capacity / loadFactor parameters, so those validations do not apply.
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<string, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new FrozenCelerityDictionary<string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, string>("a", "one"),
+            new KeyValuePair<string, string>("b", "two"),
+            new KeyValuePair<string, string>("a", "dup"),
+        };
+
+        Assert.Throws<ArgumentException>(() => new FrozenCelerityDictionary<string>(source));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldSupportEmptySource()
+    {
+        var map = new FrozenCelerityDictionary<string>(
+            Array.Empty<KeyValuePair<string, string>>());
+
+        Assert.Empty(map);
+        Assert.False(map.ContainsKey("anything"));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldCopyAllEntries_FromArraySource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("ten", 10),
+            new KeyValuePair<string, int>("twenty", 20),
+            new KeyValuePair<string, int>("thirty", 30),
+        };
+
+        var map = new FrozenCelerityDictionary<int>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(10, map["ten"]);
+        Assert.Equal(20, map["twenty"]);
+        Assert.Equal(30, map["thirty"]);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldCopyAllEntries_FromNonCollectionEnumerable()
+    {
+        IEnumerable<KeyValuePair<string, string>> NonCollectionSource()
+        {
+            yield return new KeyValuePair<string, string>("1", "one");
+            yield return new KeyValuePair<string, string>("2", "two");
+            yield return new KeyValuePair<string, string>("3", "three");
+        }
+
+        var map = new FrozenCelerityDictionary<string>(NonCollectionSource());
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal("one", map["1"]);
+        Assert.Equal("two", map["2"]);
+        Assert.Equal("three", map["3"]);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldCaptureNullStringKey_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, string>(null!, "nullval"),
+            new KeyValuePair<string, string>("a", "one"),
+        };
+
+        var map = new FrozenCelerityDictionary<string>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.True(map.ContainsKey(null!));
+        Assert.Equal("nullval", map[null!]);
+        Assert.Equal("one", map["a"]);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldDetectDuplicateNullKey()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, string>(null!, "first"),
+            new KeyValuePair<string, string>(null!, "again"),
+        };
+
+        Assert.Throws<ArgumentException>(() => new FrozenCelerityDictionary<string>(source));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldCopy_LargeSource_WithoutDataLoss()
+    {
+        var source = Enumerable.Range(1, 500)
+            .Select(i => new KeyValuePair<string, int>("key-" + i, i * 2))
+            .ToArray();
+
+        var map = new FrozenCelerityDictionary<int>(source);
+
+        Assert.Equal(500, map.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.Equal(i * 2, map["key-" + i]);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldBeIndependent_OfSourceAfterConstruction()
+    {
+        var source = new List<KeyValuePair<string, string>>
+        {
+            new("1", "one"),
+            new("2", "two"),
+        };
+
+        var map = new FrozenCelerityDictionary<string>(source);
+
+        // Mutating the source after construction must not affect the frozen map.
+        source.Add(new KeyValuePair<string, string>("3", "three"));
+        source[0] = new KeyValuePair<string, string>("1", "MUTATED");
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal("one", map["1"]);
+        Assert.False(map.ContainsKey("3"));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_Constructed_FromSource_ShouldFlow_Through_IReadOnlyDictionary()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("a", 0),
+            new KeyValuePair<string, int>("b", 10),
+            new KeyValuePair<string, int>("c", 20),
+        };
+
+        IReadOnlyDictionary<string, int> view = new FrozenCelerityDictionary<int>(source);
+
+        Assert.Equal(3, view.Count);
+        Assert.True(view.ContainsKey("a"));
+        Assert.Equal(0, view["a"]);
+        Assert.Equal(10, view["b"]);
+        Assert.Equal(20, view["c"]);
+    }
 }

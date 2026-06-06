@@ -195,6 +195,126 @@ public class ReadOnlyDictionaryInterfaceTests
         Assert.Equal(11, enumeratedCount);
     }
 
+    // -------- FrozenCelerityDictionary --------
+    // Build-once / read-many, so the mutation-detection test does not apply (the
+    // type is immutable and its enumerator needs no version check).
+
+    private static FrozenCelerityDictionary<TValue> Frozen<TValue>(
+        params KeyValuePair<string, TValue>[] pairs)
+        => new FrozenCelerityDictionary<TValue>(pairs);
+
+    [Fact]
+    public void FrozenCelerityDictionary_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        IReadOnlyDictionary<string, string?> ro = Frozen(
+            new KeyValuePair<string, string>("one", "1"));
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey("one"));
+        Assert.Equal("1", ro["one"]);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<string, string?> ro = Frozen<string>();
+
+        Assert.Throws<KeyNotFoundException>(() => ro["missing"]);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<string, string?> ro = Frozen<string>();
+
+        bool found = ro.TryGetValue("missing", out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        IReadOnlyDictionary<string, string?> ro = Frozen(
+            new KeyValuePair<string, string>("seven", "7"));
+
+        bool found = ro.TryGetValue("seven", out string? value);
+
+        Assert.True(found);
+        Assert.Equal("7", value);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_InterfaceKeysAndValues_ShouldYieldEveryEntry()
+    {
+        IReadOnlyDictionary<string, int> ro = Frozen(
+            Enumerable.Range(1, 5)
+                .Select(i => new KeyValuePair<string, int>("k" + i, i * 10))
+                .ToArray());
+
+        var keys = new List<string>();
+        foreach (string key in ro.Keys)
+            keys.Add(key);
+        var values = new List<int>();
+        foreach (int v in ro.Values)
+            values.Add(v);
+
+        Assert.Equal(5, keys.Count);
+        Assert.Equal(new[] { "k1", "k2", "k3", "k4", "k5" }, keys.OrderBy(k => k).ToArray());
+        Assert.Equal(new[] { 10, 20, 30, 40, 50 }, values.OrderBy(v => v).ToArray());
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_InterfaceKeys_ShouldIncludeNullReferenceKey()
+    {
+        IReadOnlyDictionary<string, int> ro = Frozen(
+            new KeyValuePair<string, int>(null!, 999),
+            new KeyValuePair<string, int>("a", 1),
+            new KeyValuePair<string, int>("b", 2));
+
+        Assert.True(ro.ContainsKey(null!));
+        Assert.Equal(999, ro[null!]);
+
+        var keys = new List<string?>();
+        foreach (string key in ro.Keys)
+            keys.Add(key);
+
+        Assert.Equal(3, keys.Count);
+        Assert.Contains(null, keys);
+        Assert.Contains("a", keys);
+        Assert.Contains("b", keys);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_NonGenericEnumeration_ShouldYieldEveryPair()
+    {
+        IEnumerable enumerable = Frozen(
+            new KeyValuePair<string, int>("a", 1),
+            new KeyValuePair<string, int>("b", 2),
+            new KeyValuePair<string, int>("c", 3));
+
+        var pairs = new List<KeyValuePair<string, int>>();
+        foreach (object kvp in enumerable)
+            pairs.Add((KeyValuePair<string, int>)kvp);
+
+        Assert.Equal(3, pairs.Count);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_InterfaceLinqCount_ShouldMatchDictionaryCount()
+    {
+        IReadOnlyDictionary<string, int> ro = Frozen(
+            Enumerable.Range(0, 11)
+                .Select(i => new KeyValuePair<string, int>("k" + i, i))
+                .ToArray());
+
+        int enumeratedCount = ro.Count();
+
+        Assert.Equal(ro.Count, enumeratedCount);
+        Assert.Equal(11, enumeratedCount);
+    }
+
     // -------- IntDictionary --------
 
     [Fact]
