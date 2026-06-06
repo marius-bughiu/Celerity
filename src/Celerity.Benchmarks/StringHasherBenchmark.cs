@@ -92,6 +92,10 @@ public class StringHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
+    public int Adler32() => HashAll<StringAdler32Hasher>();
+
+    [Benchmark]
+    [BenchmarkCategory("Hash")]
     public int FnV1() => HashAll<StringFnV1Hasher>();
 
     [Benchmark]
