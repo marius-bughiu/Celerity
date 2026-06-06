@@ -329,6 +329,35 @@ void Check(bool condition, string message)
     Check(multiGuid[System.Guid.Empty][0] == 7, "CelerityMultiMap<Guid, int, GuidHasher>");
 }
 
+// SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
+// hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
+// path, the inline default/zero key, and the struct enumerator.
+{
+    var d = new SmallDictionary<int, int>();
+    d[42] = 1;
+    d[42]++;
+    Check(d.TryAdd(7, 100), "SmallDictionary.TryAdd new key");
+    Check(!d.TryAdd(7, 999), "SmallDictionary.TryAdd duplicate");
+    d.Add(8, 200);
+    d[0] = 99; // zero key is an ordinary inline entry, not a sentinel
+    Check(d.TryGetValue(42, out var v) && v == 2, "SmallDictionary indexer round-trip");
+    Check(d[0] == 99, "SmallDictionary zero-key round-trip");
+    Check(d.Remove(7), "SmallDictionary.Remove");
+    var sum = 0;
+    foreach (var kvp in d) sum += kvp.Value;
+    Check(sum == 2 + 200 + 99, "SmallDictionary enumeration");
+    Check(d.Count == 3, "SmallDictionary count");
+
+    var byStr = new SmallDictionary<string, int>(new[]
+    {
+        new KeyValuePair<string, int>("a", 1),
+        new KeyValuePair<string, int>("b", 2),
+    });
+    byStr[null!] = 99; // null key is an ordinary inline entry
+    Check(byStr["a"] == 1 && byStr[null!] == 99 && byStr.Count == 3,
+        "SmallDictionary<string, int> IEnumerable ctor + null key");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

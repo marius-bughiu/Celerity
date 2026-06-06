@@ -417,6 +417,9 @@
     { key: 'CelerityDictionary',  title: 'CelerityDictionary<int, int, ...>',        vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup'] },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
+    // SmallDictionary is a small-n collection: it is benchmarked at 8 / 64 items
+    // (not the 1k / 100k the hash tables use), so it carries its own item counts.
+    { key: 'SmallDictionary',     title: 'SmallDictionary<int, int>',                vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'], items: [8, 64] },
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] }
@@ -544,6 +547,11 @@
     return Math.round(v) + ' ns';
   }
 
+  // Compact item-count label: 100000 -> "100k", 1000 -> "1k", 64 -> "64".
+  function fmtCount(n) {
+    return n >= 1000 ? (n / 1000) + 'k' : String(n);
+  }
+
   function chartOptions() {
     return {
       responsive: true,
@@ -613,10 +621,15 @@
       '<div class="charts" data-collection="' + col.key + '"></div>';
     var chartsEl = panel.querySelector('.charts');
 
+    // Most collections are tracked at 100k (headline) with a 1k fallback; a
+    // small-n collection like SmallDictionary overrides this with col.items.
+    var primaryN = col.items ? col.items[col.items.length - 1] : 100000;
+    var fallbackN = col.items ? col.items[0] : 1000;
+
     col.ops.forEach(function (op) {
-      var ratio100k = ratioFor(col.key, op, 100000);
-      var ratio1k = ratioFor(col.key, op, 1000);
-      var displayRatio = ratio100k != null ? ratio100k : ratio1k;
+      var ratioPrimary = ratioFor(col.key, op, primaryN);
+      var ratioFallback = ratioFor(col.key, op, fallbackN);
+      var displayRatio = ratioPrimary != null ? ratioPrimary : ratioFallback;
 
       var ratioStr, ratioCls, detail;
       if (displayRatio == null) {
@@ -634,12 +647,12 @@
       }
 
       if (displayRatio != null) {
-        var pair100k = latestIdx[col.key + '|' + op + '|100000'];
-        if (pair100k && pair100k.bcl != null && pair100k.celerity != null) {
-          detail = fmtNs(pair100k.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pair100k.bcl).replace('&mu;', 'µ') + ' @ 100k items';
+        var pairPrimary = latestIdx[col.key + '|' + op + '|' + primaryN];
+        if (pairPrimary && pairPrimary.bcl != null && pairPrimary.celerity != null) {
+          detail = fmtNs(pairPrimary.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pairPrimary.bcl).replace('&mu;', 'µ') + ' @ ' + fmtCount(primaryN) + ' items';
         } else {
-          var pair1k = latestIdx[col.key + '|' + op + '|1000'];
-          detail = fmtNs(pair1k.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pair1k.bcl).replace('&mu;', 'µ') + ' @ 1k items';
+          var pairFallback = latestIdx[col.key + '|' + op + '|' + fallbackN];
+          detail = fmtNs(pairFallback.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pairFallback.bcl).replace('&mu;', 'µ') + ' @ ' + fmtCount(fallbackN) + ' items';
         }
       }
 
@@ -647,7 +660,7 @@
       cell.className = 'chart-cell';
       cell.dataset.collection = col.key;
       cell.dataset.op = op;
-      cell.dataset.items = '100000';
+      cell.dataset.items = String(primaryN);
       cell.innerHTML =
         '<div class="op">' + op + '</div>' +
         '<div class="ratio ' + ratioCls + '">' + ratioStr + '</div>' +
@@ -659,7 +672,7 @@
       chartsEl.appendChild(cell);
 
       var canvas = cell.querySelector('canvas');
-      var s = seriesFor(col.key, op, 100000);
+      var s = seriesFor(col.key, op, primaryN);
 
       if (s.labels.length === 0 || (s.bcl.every(function (v) { return v == null; }) && s.celerity.every(function (v) { return v == null; }))) {
         canvas.outerHTML = '<div class="empty">awaiting data</div>';

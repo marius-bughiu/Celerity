@@ -155,4 +155,21 @@ public class IEnumerableConstructorNullPriorityTests
 
         Assert.Equal("source", ex.ParamName);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  SmallDictionary — no loadFactor parameter, so the analogous check is
+    //  that a null source beats the only other ctor validation it has: a
+    //  negative capacity (which would otherwise throw ArgumentOutOfRangeException).
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SmallDictionary_NullSourceWithNegativeCapacity_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new SmallDictionary<int, string>(source!, capacity: -5));
+
+        Assert.Equal("source", ex.ParamName);
+    }
 }

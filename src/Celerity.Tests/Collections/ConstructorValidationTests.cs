@@ -260,4 +260,28 @@ public class ConstructorValidationTests
         map.Add(1, 10);
         Assert.Equal(new[] { 10 }, map[1].ToArray());
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  SmallDictionary — capacity validation only
+    //
+    //  SmallDictionary is a flat-array, linear-scan dictionary with no hash
+    //  table, so it has no loadFactor parameter: the loadFactor validation rows
+    //  above genuinely do not apply. Capacity is still validated (a negative
+    //  capacity is rejected; zero is accepted and defers allocation).
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SmallDictionary_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new SmallDictionary<int, int>(capacity: -1));
+    }
+
+    [Fact]
+    public void SmallDictionary_ShouldAcceptZeroCapacity()
+    {
+        var map = new SmallDictionary<int, int>(capacity: 0);
+        map[42] = 100;
+        Assert.Equal(100, map[42]);
+    }
 }

@@ -273,4 +273,47 @@ public class TryAddDuplicateResizeTests
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
+
+    // SmallDictionary has no hash table or load-factor threshold, but the same
+    // invariant applies at the point where its backing arrays are full: a
+    // duplicate TryAdd must be a true no-op (no grow, no _version bump) so an
+    // active enumerator stays valid, while a new-key TryAdd that grows the
+    // arrays must invalidate it.
+
+    [Fact]
+    public void SmallDictionary_TryAdd_DuplicateAtCapacity_KeepsEnumeratorValid()
+    {
+        var map = new SmallDictionary<int, int>(capacity: 3);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(3, 30); // arrays now exactly full
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(2, 99));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        Assert.Equal(new[] { 1, 2, 3 }, seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void SmallDictionary_TryAdd_NewKeyAtCapacity_InvalidatesEnumerator()
+    {
+        var map = new SmallDictionary<int, int>(capacity: 3);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(3, 30); // arrays now exactly full — the next new key grows them
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.TryAdd(4, 40));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
 }

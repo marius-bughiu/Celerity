@@ -634,6 +634,133 @@ public class ReadOnlyDictionaryInterfaceTests
         Assert.Equal(keys.OrderBy(k => k).ToArray(), seen.OrderBy(k => k).ToArray());
     }
 
+    // -------- SmallDictionary --------
+
+    [Fact]
+    public void SmallDictionary_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        var map = new SmallDictionary<int, string>();
+        map[1] = "one";
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1));
+        Assert.Equal("one", ro[1]);
+    }
+
+    [Fact]
+    public void SmallDictionary_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new SmallDictionary<int, string>();
+
+        Assert.Throws<KeyNotFoundException>(() => ro[42]);
+    }
+
+    [Fact]
+    public void SmallDictionary_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new SmallDictionary<int, string>();
+
+        bool found = ro.TryGetValue(42, out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void SmallDictionary_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        var map = new SmallDictionary<int, string>();
+        map[7] = "seven";
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        bool found = ro.TryGetValue(7, out string? value);
+
+        Assert.True(found);
+        Assert.Equal("seven", value);
+    }
+
+    [Fact]
+    public void SmallDictionary_InterfaceKeys_ShouldYieldEveryKey_IncludingZero()
+    {
+        var map = new SmallDictionary<int, int>();
+        map[0] = 100;
+        for (int i = 1; i <= 5; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<int, int> ro = map;
+
+        var keys = new List<int>();
+        foreach (int key in ro.Keys)
+            keys.Add(key);
+
+        Assert.Equal(6, keys.Count);
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, keys.OrderBy(k => k).ToArray());
+    }
+
+    [Fact]
+    public void SmallDictionary_InterfaceValues_ShouldYieldEveryValue()
+    {
+        var map = new SmallDictionary<int, int>();
+        map[0] = 100;
+        for (int i = 1; i <= 5; i++)
+            map[i] = i * 10;
+        IReadOnlyDictionary<int, int> ro = map;
+
+        var values = new List<int>();
+        foreach (int v in ro.Values)
+            values.Add(v);
+
+        Assert.Equal(6, values.Count);
+        Assert.Equal(new[] { 10, 20, 30, 40, 50, 100 }, values.OrderBy(v => v).ToArray());
+    }
+
+    [Fact]
+    public void SmallDictionary_InterfaceEnumeration_ShouldYieldEveryPair()
+    {
+        var map = new SmallDictionary<int, int>();
+        map[0] = 100;
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable<KeyValuePair<int, int>> enumerable = map;
+
+        var pairs = new List<KeyValuePair<int, int>>();
+        foreach (var kvp in enumerable)
+            pairs.Add(kvp);
+
+        Assert.Equal(4, pairs.Count);
+        Assert.Contains(pairs, p => p.Key == 0 && p.Value == 100);
+        Assert.Contains(pairs, p => p.Key == 1 && p.Value == 10);
+        Assert.Contains(pairs, p => p.Key == 2 && p.Value == 20);
+        Assert.Contains(pairs, p => p.Key == 3 && p.Value == 30);
+    }
+
+    [Fact]
+    public void SmallDictionary_NonGenericEnumeration_ShouldYieldEveryPair()
+    {
+        var map = new SmallDictionary<int, int>();
+        for (int i = 1; i <= 3; i++)
+            map[i] = i * 10;
+        IEnumerable enumerable = map;
+
+        var pairs = new List<KeyValuePair<int, int>>();
+        foreach (object kvp in enumerable)
+            pairs.Add((KeyValuePair<int, int>)kvp);
+
+        Assert.Equal(3, pairs.Count);
+    }
+
+    [Fact]
+    public void SmallDictionary_InterfaceLinqCount_ShouldMatchDictionaryCount()
+    {
+        var map = new SmallDictionary<int, int>();
+        for (int i = 1; i <= 7; i++)
+            map[i] = i;
+        IReadOnlyDictionary<int, int> ro = map;
+
+        Assert.Equal(7, ro.Count());
+    }
+
     // -------- Polymorphic "accept any IReadOnlyDictionary" helper --------
 
     private static int SumValues(IReadOnlyDictionary<int, int> dict)
@@ -658,16 +785,19 @@ public class ReadOnlyDictionaryInterfaceTests
         var celerity = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
         var intDict = new IntDictionary<int>();
         var longDict = new LongDictionary<long>();
+        var smallDict = new SmallDictionary<int, int>();
         for (int i = 0; i <= 5; i++)
         {
             celerity[i] = i * 10;
             intDict[i] = i * 10;
             longDict[i] = i * 10;
+            smallDict[i] = i * 10;
         }
 
         // 0 + 10 + 20 + 30 + 40 + 50 = 150
         Assert.Equal(150, SumValues(celerity));
         Assert.Equal(150, SumValues(intDict));
         Assert.Equal(150L, SumValues(longDict));
+        Assert.Equal(150, SumValues(smallDict));
     }
 }

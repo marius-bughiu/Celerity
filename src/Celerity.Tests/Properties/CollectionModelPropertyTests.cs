@@ -131,6 +131,36 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    [Fact]
+    public void SmallDictionary_ShouldMatch_BclDictionary()
+    {
+        GenDictOps.Sample(ops =>
+        {
+            var sut = new SmallDictionary<int, int>();
+            var oracle = new Dictionary<int, int>();
+
+            foreach (var (op, key, val) in ops)
+            {
+                switch (op)
+                {
+                    case DictOp.Set: sut[key] = val; oracle[key] = val; break;
+                    case DictOp.Remove: Assert.Equal(oracle.Remove(key), sut.Remove(key)); break;
+                    case DictOp.TryAdd: Assert.Equal(oracle.TryAdd(key, val), sut.TryAdd(key, val)); break;
+                    case DictOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            for (int k = -8; k <= 24; k++)
+            {
+                bool expected = oracle.TryGetValue(k, out int ev);
+                bool actual = sut.TryGetValue(k, out int av);
+                Assert.Equal(expected, actual);
+                if (expected) Assert.Equal(ev, av);
+            }
+        }, iter: 2000);
+    }
+
     // ---- Sets vs HashSet ----------------------------------------------------
 
     private enum SetOp { Add, Remove, Clear }

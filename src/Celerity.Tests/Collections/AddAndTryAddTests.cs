@@ -548,4 +548,70 @@ public class AddAndTryAddTests
         Assert.Equal(Inserts, longDict.Count);
         Assert.Equal(Inserts, celDict.Count);
     }
+
+    // ---------------------------------------------------------------
+    //  SmallDictionary — Add / TryAdd
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void SmallDictionary_Add_ShouldStoreValue_ForNewKey()
+    {
+        var map = new SmallDictionary<int, string>();
+        map.Add(1, "one");
+
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void SmallDictionary_Add_ShouldThrow_OnDuplicateKey()
+    {
+        var map = new SmallDictionary<int, string>();
+        map.Add(1, "first");
+
+        var ex = Assert.Throws<ArgumentException>(() => map.Add(1, "second"));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void SmallDictionary_Add_ShouldThrow_OnDuplicateKey_AndLeaveValueUnchanged()
+    {
+        var map = new SmallDictionary<int, int>();
+        map.Add(42, 100);
+
+        Assert.Throws<ArgumentException>(() => map.Add(42, 999));
+
+        Assert.Single(map);
+        Assert.Equal(100, map[42]);
+    }
+
+    [Fact]
+    public void SmallDictionary_Add_ShouldStoreValue_ForZeroKey()
+    {
+        var map = new SmallDictionary<int, string>();
+        map.Add(0, "zero");
+
+        Assert.Single(map);
+        Assert.Equal("zero", map[0]);
+    }
+
+    [Fact]
+    public void SmallDictionary_TryAdd_ShouldReturnTrue_ForNewKey()
+    {
+        var map = new SmallDictionary<int, string>();
+
+        Assert.True(map.TryAdd(1, "one"));
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void SmallDictionary_TryAdd_ShouldReturnFalse_OnDuplicateKey_AndNotOverwrite()
+    {
+        var map = new SmallDictionary<int, string>();
+        map.TryAdd(1, "first");
+
+        Assert.False(map.TryAdd(1, "second"));
+        Assert.Single(map);
+        Assert.Equal("first", map[1]);
+    }
 }
