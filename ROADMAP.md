@@ -70,7 +70,7 @@ Focus on raw performance and specialized collection types that serve more advanc
 
 ### Collections
 
-- `FrozenCelerityDictionary` — build-once, read-many variant with perfect hashing for string keys, comparable in spirit to `System.Collections.Frozen` but tunable via `IHashProvider<T>`. Tracked in [#62](https://github.com/marius-bughiu/Celerity/issues/62).
+- `FrozenCelerityDictionary` — build-once, read-many variant with perfect hashing for string keys, comparable in spirit to `System.Collections.Frozen` but tunable via `IHashProvider<T>`. Status: `done` — `FrozenCelerityDictionary<TValue>` / `<TValue, THasher>` search for a collision-free single-probe layout at construction and fall back to linear probing when the chosen hasher collides two keys' raw codes, so lookups are always correct. Tracked in [#62](https://github.com/marius-bughiu/Celerity/issues/62).
 - `CelerityMultiMap<TKey, TValue, THasher>` — multi-value dictionary.
 - `SmallDictionary<TKey, TValue>` — flat-array implementation optimized for `n <= ~16`. Tracked in [#61](https://github.com/marius-bughiu/Celerity/issues/61).
 

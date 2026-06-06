@@ -560,3 +560,126 @@ Console.WriteLine(seen.Count);         // 2
 
 foreach (long n in seen) { /* ... */ }
 ```
+
+## FrozenCelerityDictionary&lt;TValue&gt;
+
+```csharp
+public sealed class FrozenCelerityDictionary<TValue>
+    : FrozenCelerityDictionary<TValue, StringFnV1AHasher>
+```
+
+A build-once, read-many dictionary for `string` keys, in the spirit of the BCL
+`System.Collections.Frozen.FrozenDictionary<TKey, TValue>` but tunable through
+Celerity's `IHashProvider<T>`. The convenience type defaults to `StringFnV1AHasher`;
+use the [generic overload](#frozenceleritydictionarytvalue-thasher) to supply a
+different string hasher.
+
+The dictionary is **immutable**: every key/value pair is supplied at construction and
+there are no mutating members. In exchange the constructor searches a small parameter
+space (table size × a mixing seed) for a **perfect** — collision-free — placement of
+the keys. When one is found, a lookup is a single hash, a single array index, and a
+single equality check: no probing, no probe chains.
+
+### Constructors
+
+```csharp
+FrozenCelerityDictionary(IEnumerable<KeyValuePair<string, TValue>> source)
+```
+
+Freezes the supplied pairs. A single `null` key is allowed and stored out-of-band; the
+empty string `""` is an ordinary key.
+
+- Throws `ArgumentNullException` if `source` is `null`.
+- Throws `ArgumentException` on a duplicate key (including a duplicate `null` key),
+  matching BCL `FrozenDictionary` and the mutable Celerity dictionaries.
+
+### Properties
+
+| Member | Description |
+|---|---|
+| `int Count` | Number of pairs, including the out-of-band `null`-key entry if present. |
+| `bool IsPerfectlyHashed` | `true` when the build found a collision-free placement, so lookups take the single-probe fast path. `false` means it fell back to linear probing (see below). |
+
+### Indexer
+
+```csharp
+TValue this[string key] { get; }
+```
+
+Get-only. Throws `KeyNotFoundException` if the key is absent.
+
+### Methods
+
+| Member | Description |
+|---|---|
+| `bool ContainsKey(string key)` | Whether the key is present. |
+| `bool TryGetValue(string key, out TValue? value)` | Non-throwing lookup. |
+| `bool ContainsValue(TValue? value)` | `O(n)` scan for a value (`EqualityComparer<T>.Default`). |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator; the `null`-key entry (if present) is yielded first. |
+| `KeyCollection Keys` / `ValueCollection Values` | Allocation-free struct views. |
+
+Implements `IReadOnlyDictionary<string, TValue?>`.
+
+### The perfect-hash fast path and the fallback
+
+A perfect (single-probe) placement is impossible when two distinct keys collide on the
+chosen hasher's raw 32-bit hash code — for example `"A"` and `"Ł"` under the low-byte
+`StringFnV1AHasher`, which returns the same code for both — because the mixing seed is a
+pure function of that code and so cannot separate them. In that case the build falls
+back to an open-addressed linear-probing table (`IsPerfectlyHashed` is then `false`).
+**Lookups are always correct either way** — the equality check disambiguates colliding
+keys — they simply cost a short probe instead of a single index. Supply a full-width or
+strong hasher (`StringFnV1AFullHasher`, `StringMurmur3Hasher`, …) via the generic
+overload if you want the perfect fast path for keys the default collides.
+
+### Null-key handling
+
+The `null` key is stored out-of-band — the hasher is never invoked with `null`, so it
+never collides with the empty-slot sentinel. `ContainsKey(null)`, `this[null]`, and
+`TryGetValue(null, out _)` all work; an absent `null` key misses like any other.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var routes = new FrozenCelerityDictionary<int>(new[]
+{
+    new KeyValuePair<string, int>("/",        0),
+    new KeyValuePair<string, int>("/health",  1),
+    new KeyValuePair<string, int>("/metrics", 2),
+});
+
+Console.WriteLine(routes.IsPerfectlyHashed);   // True (single-probe lookups)
+Console.WriteLine(routes["/health"]);          // 1
+Console.WriteLine(routes.ContainsKey("/nope")); // False
+
+foreach (var kvp in routes) { /* ... */ }
+```
+
+## FrozenCelerityDictionary&lt;TValue, THasher&gt;
+
+```csharp
+public class FrozenCelerityDictionary<TValue, THasher>
+    : IReadOnlyDictionary<string, TValue?>
+    where THasher : struct, IHashProvider<string>
+```
+
+The hasher-parameterized base type of
+[`FrozenCelerityDictionary<TValue>`](#frozenceleritydictionarytvalue). Identical API and
+semantics; the only difference is that you choose the string hasher used to build and
+probe the frozen table. Pick a full-width hasher (`StringFnV1AFullHasher`) for keys with
+non-ASCII content, or a strong hasher (`StringMurmur3Hasher`, `StringXxHash3Hasher`) when
+you want the perfect fast path for keys a cheaper hasher would collide.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var byName = new FrozenCelerityDictionary<int, StringMurmur3Hasher>(new[]
+{
+    new KeyValuePair<string, int>("alice", 1),
+    new KeyValuePair<string, int>("bob",   2),
+});
+Console.WriteLine(byName["alice"]); // 1
+```

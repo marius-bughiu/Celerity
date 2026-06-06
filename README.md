@@ -6,6 +6,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 ## Collections
 
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
+- `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
 - `IntDictionary<TValue>` / `IntDictionary<TValue, THasher>` — `int`-keyed specialization. Defaults to `Int32WangNaiveHasher`.
 - `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangNaiveHasher`.
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
@@ -69,6 +70,27 @@ byKey[DateOnly.FromDateTime(DateTime.UtcNow)] = "today";
 
 The hasher is a `struct` and is supplied as a generic constraint, so the JIT devirtualizes and inlines the `Hash()` call on the probe path.
 
+### `FrozenCelerityDictionary` — build-once string lookups
+
+When a `string`-keyed table is built once and then read many times (route tables, config maps, interned vocabularies), `FrozenCelerityDictionary<TValue>` searches at construction for a perfect (collision-free) hash so each lookup is a single hash, a single array index, and a single equality check.
+
+```csharp
+using Celerity.Collections;
+
+var routes = new FrozenCelerityDictionary<int>(new[]
+{
+    new KeyValuePair<string, int>("/",        0),
+    new KeyValuePair<string, int>("/health",  1),
+    new KeyValuePair<string, int>("/metrics", 2),
+});
+
+Console.WriteLine(routes.IsPerfectlyHashed); // True — single-probe lookups
+Console.WriteLine(routes["/health"]);        // 1
+Console.WriteLine(routes.ContainsKey("/x")); // False
+```
+
+It is immutable (no `Add` / `Remove`) and implements `IReadOnlyDictionary<string, TValue?>`. The default uses `StringFnV1AHasher`; supply a full-width or strong hasher via `FrozenCelerityDictionary<TValue, THasher>` (e.g. `StringFnV1AFullHasher` for non-ASCII keys) when you want the single-probe fast path for keys the default would collide. Lookups stay correct regardless — colliding keys fall back to a short probe.
+
 ### Sets
 
 `IntSet` and `CeleritySet<T, THasher>` mirror the dictionary types for membership-only workloads.
@@ -118,10 +140,11 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `int` | `IntDictionary<TValue>` | Avoids generic boxing / `EqualityComparer<int>` dispatch; defaults to `Int32WangNaiveHasher`. |
 | Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangNaiveHasher`. |
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
+| Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
-| Need a stable iteration order, multi-threaded access, or a frozen / read-only post-build view | BCL `Dictionary<,>`, `ConcurrentDictionary<,>`, `FrozenDictionary<,>` | Celerity is single-threaded, iteration order is unspecified, and `FrozenCelerityDictionary` is still on the [1.2.0 roadmap](ROADMAP.md). |
+| Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 Notes on picking a hasher once the collection is settled:
 
@@ -136,7 +159,6 @@ A few cases where Celerity is **not** the right answer today:
 
 - **Concurrent reads/writes from multiple threads.** Celerity collections are single-threaded; use `ConcurrentDictionary<,>` or wrap a BCL `Dictionary<,>` in your own lock.
 - **You need `IDictionary<,>` (mutable interface), `LINQ`-heavy code that relies on `Count`-via-extension on the boxed surface, or anything that depends on a specific iteration order.** Celerity exposes `IReadOnlyDictionary<,>` only and does not guarantee iteration order across versions.
-- **Build-once / read-many lookup tables for string keys.** Today the BCL `FrozenDictionary<,>` will outperform `CelerityDictionary` on lookups; the Celerity equivalent (`FrozenCelerityDictionary`) is planned for 1.2.0 ([#62](https://github.com/marius-bughiu/Celerity/issues/62)).
 
 ## Benchmarks
 

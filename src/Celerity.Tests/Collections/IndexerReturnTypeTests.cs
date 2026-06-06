@@ -73,6 +73,25 @@ public class IndexerReturnTypeTests
         Assert.Equal("hello", value);
     }
 
+    [Fact]
+    public void FrozenCelerityDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(typeof(FrozenCelerityDictionary<int, StringFnV1AHasher>), keyType: typeof(string), valueGenericIndex: 0);
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        var map = new FrozenCelerityDictionary<string>(new[]
+        {
+            new KeyValuePair<string, string>("k", "hello"),
+        });
+
+        string value = map["k"];
+
+        Assert.Equal("hello", value);
+    }
+
     private static void AssertPrimaryIndexerReturnsTValue(Type closed, Type keyType, int valueGenericIndex)
     {
         PropertyInfo? indexer = closed

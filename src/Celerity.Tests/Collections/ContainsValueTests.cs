@@ -285,4 +285,70 @@ public class ContainsValueTests
         Assert.False(map.ContainsValue(200));
         Assert.False(map.ContainsValue(300));
     }
+
+    // ---------------- FrozenCelerityDictionary ----------------
+    // Read-only, so the resize / remove / clear variants do not apply.
+
+    private static FrozenCelerityDictionary<TValue> Frozen<TValue>(
+        params (string key, TValue value)[] pairs)
+        => new FrozenCelerityDictionary<TValue>(
+            pairs.Select(p => new KeyValuePair<string, TValue>(p.key, p.value)));
+
+    [Fact]
+    public void FrozenCelerityDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = Frozen<int>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_FindsValueInRegularSlot()
+    {
+        var map = Frozen(("a", 100), ("b", 200), ("c", 300));
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = Frozen(("a", 100), ("b", 200));
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_FindsValueOnlyInNullKeySlot()
+    {
+        var map = Frozen<int>((null!, 777));
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_DefaultValueLookup_ZeroValue()
+    {
+        // Empty slots in the frozen table hold default(TValue); ContainsValue must
+        // skip them and only report a real entry whose value is the default.
+        var empty = Frozen<int>();
+        Assert.False(empty.ContainsValue(0));
+
+        var map = Frozen(("a", 0), ("b", 1));
+        Assert.True(map.ContainsValue(0));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_NullValueLookup_ReferenceType()
+    {
+        var map = Frozen(("a", "one"), ("b", (string?)null));
+        Assert.True(map.ContainsValue(null));
+
+        var noNulls = Frozen(("a", "one"), ("b", "two"));
+        Assert.False(noNulls.ContainsValue(null));
+    }
+
+    [Fact]
+    public void FrozenCelerityDictionary_DuplicateValues_ReturnsTrue()
+    {
+        var map = Frozen(("a", 42), ("b", 42), ("c", 42));
+        Assert.True(map.ContainsValue(42));
+    }
 }

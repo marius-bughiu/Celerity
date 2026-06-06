@@ -276,6 +276,36 @@ void Check(bool condition, string message)
     Check(set.Count == 3, "IntSet IEnumerable ctor dedupe");
 }
 
+// FrozenCelerityDictionary — build-once perfect-hash dictionary (default and
+// custom-hasher generic instantiations), the out-of-band null key, and the
+// base-hash-collision fallback path ('A' / 'Ł' under the low-byte FNV-1a hasher).
+{
+    var frozen = new FrozenCelerityDictionary<int>(new[]
+    {
+        new KeyValuePair<string, int>("alice", 1),
+        new KeyValuePair<string, int>("bob", 2),
+        new KeyValuePair<string, int>(null!, 99),
+    });
+    Check(frozen.Count == 3 && frozen["alice"] == 1 && frozen[null!] == 99,
+        "FrozenCelerityDictionary<int> build + null key");
+
+    var frozenMurmur = new FrozenCelerityDictionary<int, StringMurmur3Hasher>(new[]
+    {
+        new KeyValuePair<string, int>("x", 10),
+        new KeyValuePair<string, int>("y", 20),
+    });
+    Check(frozenMurmur["y"] == 20 && !frozenMurmur.ContainsKey("z"),
+        "FrozenCelerityDictionary<int, StringMurmur3Hasher>");
+
+    var frozenFallback = new FrozenCelerityDictionary<int, StringFnV1AHasher>(new[]
+    {
+        new KeyValuePair<string, int>("A", 1),
+        new KeyValuePair<string, int>("Ł", 2),
+    });
+    Check(frozenFallback["A"] == 1 && frozenFallback["Ł"] == 2,
+        "FrozenCelerityDictionary fallback keeps base-hash-colliding keys distinct");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
