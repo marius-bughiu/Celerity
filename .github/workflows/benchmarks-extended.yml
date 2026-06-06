@@ -1,0 +1,82 @@
+name: Benchmarks (extended)
+
+# The heavy, exploratory benchmark suite (multi-distribution sweeps, million-item
+# scale tests, concurrency fan-out, allocation profiling, cache-locality, and mixed
+# workloads). It is deliberately kept OUT of the per-PR regression gate in
+# benchmarks.yml because it is slow and noisy. Instead it runs weekly (and on
+# demand) and publishes to its own dev/bench-extended dashboard on gh-pages, so its
+# trend never mixes with the per-commit core time series.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  extended:
+    name: extended benchmarks
+    # Scheduled runs fire on the default branch of every fork; guard so only the
+    # canonical repo actually runs and pushes to its gh-pages.
+    if: github.repository == 'marius-bughiu/Celerity'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        working-directory: src
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: tree:0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run extended benchmarks
+        # working-directory must be the project folder, not src/. BenchmarkDotNet
+        # writes its artifacts to ./BenchmarkDotNet.Artifacts relative to the
+        # process CWD, and downstream steps look for them under Celerity.Benchmarks/.
+        working-directory: src/Celerity.Benchmarks
+        run: dotnet run --configuration Release -- --ci-extended
+
+      - name: Stage benchmark report
+        # The joined-run JSON is named with a timestamp
+        # (BenchmarkRun-joined-<ts>-report-full.json). Copy it to a stable path.
+        run: |
+          set -euo pipefail
+          report=$(ls Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/*-report-full.json | head -n 1)
+          echo "Found report: $report"
+          cp "$report" Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/extended-report-full.json
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extended-benchmark-results
+          path: src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/**
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Publish to gh-pages (dev/bench-extended)
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Celerity Extended Benchmarks
+          tool: 'benchmarkdotnet'
+          output-file-path: src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/extended-report-full.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: false
+          comment-always: false
+          summary-always: true
+          # Exploratory weekly trend on noisy hosted runners — never fail the run.
+          fail-on-alert: false
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench-extended
