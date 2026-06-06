@@ -121,7 +121,9 @@ jobs:
 
             const threshold = parseFloat(process.env.ALERT_THRESHOLD_RATIO);
             const thresholdPct = ((threshold - 1) * 100).toFixed(0);
-            const rows = [];
+            // Each entry: { name, isHasher, prCell, stdCell, baseCell, deltaCell, flag }
+            // where flag is 'regression' | 'improvement' | null.
+            const entries = [];
             let regressions = 0;
             let improvements = 0;
 
@@ -131,6 +133,7 @@ jobs:
               const prStdDev = b.Statistics.StandardDeviation;
               const baseStats = baseMap.get(name);
               let deltaCell = '🆕 new';
+              let flag = null;
               if (baseStats) {
                 const baseMean = baseStats.Mean;
                 const baseStdDev = baseStats.StandardDeviation;
@@ -143,14 +146,26 @@ jobs:
                 const beyondNoise = Math.abs(prMean - baseMean) > (prStdDev + baseStdDev);
                 if (ratio >= threshold && beyondNoise) {
                   deltaCell += ' ⚠️';
+                  flag = 'regression';
                   regressions++;
                 } else if (ratio <= (1 / threshold) && beyondNoise) {
                   deltaCell += ' ✅';
+                  flag = 'improvement';
                   improvements++;
                 }
               }
-              const baseMeanCell = baseStats ? formatNs(baseStats.Mean) : 'n/a';
-              rows.push(`| \`${name}\` | ${formatNs(prMean)} | ${formatNs(prStdDev)} | ${baseMeanCell} | ${deltaCell} |`);
+              entries.push({
+                name,
+                // Hasher throughput benchmarks (StringHasherBenchmark,
+                // IntegerHasherBenchmark) get their own section; everything else
+                // is a collection benchmark.
+                isHasher: /Hasher/.test(name),
+                prCell: formatNs(prMean),
+                stdCell: formatNs(prStdDev),
+                baseCell: baseStats ? formatNs(baseStats.Mean) : 'n/a',
+                deltaCell,
+                flag,
+              });
             }
 
             let subtitle;
@@ -167,6 +182,38 @@ jobs:
             const baseSha = (process.env.BASE_SHA || '').slice(0, 7);
             const footer = `<sub>Same-runner A/B: main (\`${baseSha}\`) and this PR were built and benchmarked back-to-back on the same runner, so hardware variance cancels out. ⚠️ = PR mean ≥ +${thresholdPct}% slower than main and beyond combined std-dev; ✅ = correspondingly faster.</sub>`;
 
+            const header = ['| Benchmark | This PR | StdDev | main | Δ |', '|---|---:|---:|---:|---:|'];
+            const toRow = (e) => `| \`${e.name}\` | ${e.prCell} | ${e.stdCell} | ${e.baseCell} | ${e.deltaCell} |`;
+
+            // A collapsible section per benchmark family, collapsed by default so
+            // the (often large) tables stay below the fold.
+            const section = (title, list) => {
+              if (list.length === 0) return [];
+              return [
+                '<details>',
+                `<summary><b>${title}</b> (${list.length})</summary>`,
+                '',
+                ...header,
+                ...list.map(toRow),
+                '</details>',
+                '',
+              ];
+            };
+
+            // Highlights: only the flagged rows stay above the fold so reviewers
+            // see what actually moved without expanding either table.
+            const flagged = entries.filter(e => e.flag);
+            const highlights = flagged.length === 0 ? [] : [
+              '**Highlights**',
+              '',
+              ...header,
+              ...flagged.map(toRow),
+              '',
+            ];
+
+            const collections = entries.filter(e => !e.isHasher);
+            const hashers = entries.filter(e => e.isHasher);
+
             const marker = '<!-- celerity-benchmarks-comment -->';
             const body = [
               marker,
@@ -174,10 +221,9 @@ jobs:
               '',
               subtitle,
               '',
-              '| Benchmark | This PR | StdDev | main | Δ |',
-              '|---|---:|---:|---:|---:|',
-              ...rows,
-              '',
+              ...highlights,
+              ...section('Collections', collections),
+              ...section('Hashers', hashers),
               footer,
             ].join('\n');
 
