@@ -745,6 +745,120 @@ var byName = new FrozenCelerityDictionary<int, StringMurmur3Hasher>(new[]
 Console.WriteLine(byName["alice"]); // 1
 ```
 
+## FrozenCeleritySet
+
+```csharp
+public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
+```
+
+A build-once, read-many set of `string` elements — the set counterpart of
+[`FrozenCelerityDictionary`](#frozenceleritydictionarytvalue), in the spirit of the
+BCL `System.Collections.Frozen.FrozenSet<T>` but tunable through Celerity's
+`IHashProvider<T>`. The convenience type defaults to `StringFnV1AHasher`; use the
+[generic overload](#frozenceleritysetthasher) to supply a different string hasher.
+
+The set is **immutable**: every element is supplied at construction and there are no
+mutating members. In exchange the constructor searches a small parameter space (table
+size × a mixing seed) for a **perfect** — collision-free — placement of the elements.
+When one is found, a membership test is a single hash, a single array index, and a
+single equality check: no probing, no probe chains.
+
+### Constructors
+
+```csharp
+FrozenCeleritySet(IEnumerable<string> source)
+```
+
+Freezes the supplied elements. A single `null` element is allowed and stored
+out-of-band; the empty string `""` is an ordinary element.
+
+- Throws `ArgumentNullException` if `source` is `null`.
+- Duplicate elements (including a duplicate `null`) are **silently deduplicated** —
+  the defining property of a set, matching BCL `FrozenSet` and the mutable
+  `CeleritySet`. (This is the one contract difference from `FrozenCelerityDictionary`,
+  which *rejects* duplicate keys.)
+
+### Properties
+
+| Member | Description |
+|---|---|
+| `int Count` | Number of elements, including the out-of-band `null` element if present. |
+| `bool IsPerfectlyHashed` | `true` when the build found a collision-free placement, so membership tests take the single-probe fast path. `false` means it fell back to linear probing (see below). |
+
+### Methods
+
+| Member | Description |
+|---|---|
+| `bool Contains(string item)` | Whether the element is present. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator; the `null` element (if present) is yielded first. |
+
+Implements `IReadOnlySet<string>`, so the set-algebra members
+`SetEquals`, `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`,
+and `Overlaps` are all available (each throws `ArgumentNullException` on a `null`
+`other`). The superset / overlap shapes stream `other` directly against the `O(1)`
+membership test; the subset / equality shapes materialize `other`'s distinct elements
+once into an ordinal set, exactly as the BCL set types do internally.
+
+### The perfect-hash fast path and the fallback
+
+A perfect (single-probe) placement is impossible when two distinct elements collide on
+the chosen hasher's raw 32-bit hash code — for example `"A"` and `"Ł"` under the
+low-byte `StringFnV1AHasher`, which returns the same code for both — because the mixing
+seed is a pure function of that code and so cannot separate them. In that case the
+build falls back to an open-addressed linear-probing table (`IsPerfectlyHashed` is then
+`false`). **Membership tests are always correct either way** — the equality check
+disambiguates colliding elements — they simply cost a short probe instead of a single
+index. Supply a full-width or strong hasher (`StringFnV1AFullHasher`,
+`StringMurmur3Hasher`, …) via the generic overload if you want the perfect fast path
+for elements the default collides.
+
+### Null-element handling
+
+The `null` element is stored out-of-band — the hasher is never invoked with `null`, so
+it never collides with the empty-slot sentinel. `Contains(null)` works, and an absent
+`null` element misses like any other.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var reserved = new FrozenCeleritySet(new[]
+{
+    "select", "from", "where", "join", "group", "order",
+});
+
+Console.WriteLine(reserved.IsPerfectlyHashed);     // True (single-probe membership)
+Console.WriteLine(reserved.Contains("join"));      // True
+Console.WriteLine(reserved.Contains("celerity"));  // False
+Console.WriteLine(reserved.IsSupersetOf(new[] { "from", "where" })); // True
+
+foreach (var keyword in reserved) { /* ... */ }
+```
+
+## FrozenCeleritySet&lt;THasher&gt;
+
+```csharp
+public class FrozenCeleritySet<THasher>
+    : IReadOnlySet<string>
+    where THasher : struct, IHashProvider<string>
+```
+
+The hasher-parameterized base type of [`FrozenCeleritySet`](#frozencelerityset).
+Identical API and semantics; the only difference is that you choose the string hasher
+used to build and probe the frozen table. Pick a full-width hasher
+(`StringFnV1AFullHasher`) for elements with non-ASCII content, or a strong hasher
+(`StringMurmur3Hasher`, `StringXxHash3Hasher`) when you want the perfect fast path for
+elements a cheaper hasher would collide.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var tags = new FrozenCeleritySet<StringMurmur3Hasher>(new[] { "alice", "bob" });
+Console.WriteLine(tags.Contains("alice")); // True
+```
+
 ## CelerityMultiMap&lt;TKey, TValue, THasher&gt;
 
 ```csharp

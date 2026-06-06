@@ -33,6 +33,7 @@ internal static class Differential
         ("LongSet", LongSetCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
+        ("FrozenCeleritySet", FrozenSetCase),
     ];
 
     private const int MinKey = -8;
@@ -371,6 +372,41 @@ internal static class Differential
             seen++;
         }
         Check(seen == oracle.Count, $"enumeration count {seen} != {oracle.Count}");
+    }
+
+    private static void FrozenSetCase(Random rng)
+    {
+        // A deliberately tiny, duplicate-rich element universe so the build's dedupe
+        // and the perfect-hash / fallback paths fire densely.
+        var sourceList = new List<string>();
+        var oracle = new HashSet<string>();
+        int entries = rng.Next(0, 50);
+        for (int i = 0; i < entries; i++)
+        {
+            string item = $"item_{rng.Next(0, 30)}";
+            sourceList.Add(item); // duplicates allowed in the source
+            oracle.Add(item);
+        }
+
+        var frozen = new FrozenCeleritySet(sourceList);
+
+        Check(frozen.Count == oracle.Count, $"Count {frozen.Count} != {oracle.Count}");
+        foreach (string item in oracle)
+            Check(frozen.Contains(item), $"Contains({item}) missing");
+        for (int k = 30; k <= 40; k++)
+            Check(!frozen.Contains($"item_{k}"), $"absent item_{k} reported present");
+
+        int seen = 0;
+        foreach (string item in frozen)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            seen++;
+        }
+        Check(seen == oracle.Count, $"enumeration count {seen} != {oracle.Count}");
+
+        // Set-algebra parity against the BCL oracle.
+        Check(frozen.SetEquals(oracle) == oracle.SetEquals(oracle), "SetEquals(self)");
+        Check(frozen.IsSupersetOf(oracle) == oracle.IsSupersetOf(oracle), "IsSupersetOf(self)");
     }
 
     // Spreads a small int across the 64-bit space so the long collections see

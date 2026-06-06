@@ -306,6 +306,25 @@ void Check(bool condition, string message)
         "FrozenCelerityDictionary fallback keeps base-hash-colliding keys distinct");
 }
 
+// FrozenCeleritySet — build-once perfect-hash set (default and custom-hasher
+// generic instantiations), the out-of-band null element, the IReadOnlySet surface,
+// and the base-hash-collision fallback path ('A' / 'Ł' under the low-byte FNV-1a).
+{
+    var frozen = new FrozenCeleritySet(new[] { "alice", "bob", null! });
+    Check(frozen.Count == 3 && frozen.Contains("alice") && frozen.Contains(null!),
+        "FrozenCeleritySet build + null element");
+    Check(frozen.IsSupersetOf(new[] { "alice" }) && frozen.Overlaps(new[] { "bob", "z" }),
+        "FrozenCeleritySet IReadOnlySet surface");
+
+    var frozenMurmur = new FrozenCeleritySet<StringMurmur3Hasher>(new[] { "x", "y" });
+    Check(frozenMurmur.Contains("y") && !frozenMurmur.Contains("z"),
+        "FrozenCeleritySet<StringMurmur3Hasher>");
+
+    var frozenFallbackSet = new FrozenCeleritySet<StringFnV1AHasher>(new[] { "A", "Ł" });
+    Check(frozenFallbackSet.Contains("A") && frozenFallbackSet.Contains("Ł") && frozenFallbackSet.Count == 2,
+        "FrozenCeleritySet fallback keeps base-hash-colliding elements distinct");
+}
+
 // CelerityMultiMap — one-to-many map (default and custom-hasher generic
 // instantiations), grouping Adds, the out-of-band default-key group, the two
 // removal shapes, and the ILookup<,> surface.
