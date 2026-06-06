@@ -61,7 +61,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 - Comprehensive benchmark suite: uniform, clustered, and adversarial key distributions. Tracked in [#60](https://github.com/marius-bughiu/Celerity/issues/60).
 - Cross-platform testing (Windows, Linux, macOS). Status: `done`.
 - Improve code coverage.
-- Improve documentation.
+- Improve documentation. Status: `done` — added a performance tuning guide, a BCL migration guide, a troubleshooting guide, and a FAQ, alongside the existing README usage examples, "choosing a collection" table, and API reference. Tracked in [#15](https://github.com/marius-bughiu/Celerity/issues/15).
 - Bump XML doc coverage; treat missing docs as warning-as-error. Status: `done` — `Celerity.csproj` promotes CS1591 to error.
 
 ## Milestone 1.2.0 — Performance & advanced collections
