@@ -1,3 +1,4 @@
+using System.Linq;
 using Celerity.Collections;
 using Celerity.Hashing;
 
@@ -420,5 +421,61 @@ public class LoadFactorBoundaryTests
         Assert.Equal(100, map.Count);
         for (int i = 1; i <= 100; i++)
             Assert.Equal(i * 7, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  CelerityMultiMap — the key table resizes on the distinct-key
+    //  count exactly like the dictionaries; every group must survive,
+    //  and the out-of-band default-key group must not corrupt accounting.
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void CelerityMultiMap_LowLoadFactor_TriggersEarlyResize_AndPreservesAllGroups()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>(capacity: 8, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 20; i++)
+        {
+            map.Add(i, i * 10);
+            map.Add(i, i * 10 + 1);
+        }
+
+        Assert.Equal(20, map.Count);
+        Assert.Equal(40, map.ValueCount);
+        for (int i = 1; i <= 20; i++)
+            Assert.Equal(new[] { i * 10, i * 10 + 1 }, map[i].ToArray());
+    }
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.95f)]
+    public void CelerityMultiMap_VariousLoadFactors_AllGroupsSurviveMultipleResizes(float loadFactor)
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>(
+            capacity: 4, loadFactor: loadFactor);
+
+        for (int i = 1; i <= 100; i++)
+            map.Add(i, i * 7);
+
+        Assert.Equal(100, map.Count);
+        for (int i = 1; i <= 100; i++)
+            Assert.Equal(new[] { i * 7 }, map[i].ToArray());
+    }
+
+    [Fact]
+    public void CelerityMultiMap_DefaultKeyGroup_DoesNotCorruptResizeAccounting()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>(capacity: 4, loadFactor: 0.75f);
+        map.Add(0, 1);          // out-of-band default-key group
+        map.Add(0, 2);
+        for (int i = 1; i <= 50; i++)
+            map.Add(i, i);
+
+        Assert.Equal(51, map.Count);
+        Assert.Equal(new[] { 1, 2 }, map[0].ToArray());
+        for (int i = 1; i <= 50; i++)
+            Assert.Equal(new[] { i }, map[i].ToArray());
     }
 }

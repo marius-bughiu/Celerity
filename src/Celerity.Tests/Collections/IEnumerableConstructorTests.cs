@@ -907,4 +907,128 @@ public class IEnumerableConstructorTests
         Assert.Equal(10, view["b"]);
         Assert.Equal(20, view["c"]);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  CelerityMultiMap — the IEnumerable<KeyValuePair<,>> constructor.
+    //  Shares the null-source / sizing / copy-fidelity invariants with the
+    //  dictionaries, but DIFFERS on duplicate keys: a multi-map groups them
+    //  rather than throwing, so the duplicate-key-throws assertions do not
+    //  apply (the grouping behaviour is asserted instead).
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CelerityMultiMap_ShouldThrow_ForNullSource()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new CelerityMultiMap<int, string, Int32WangNaiveHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldGroupDuplicateKeys_InSourceOrder()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("a", 1),
+            new KeyValuePair<string, int>("b", 2),
+            new KeyValuePair<string, int>("a", 3),
+            new KeyValuePair<string, int>("a", 4),
+        };
+
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(4, map.ValueCount);
+        Assert.Equal(new[] { 1, 3, 4 }, map["a"].ToArray());
+        Assert.Equal(new[] { 2 }, map["b"].ToArray());
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldCopy_FromNonCollectionEnumerable()
+    {
+        IEnumerable<KeyValuePair<int, string>> NonCollectionSource()
+        {
+            yield return new KeyValuePair<int, string>(1, "one");
+            yield return new KeyValuePair<int, string>(2, "two");
+            yield return new KeyValuePair<int, string>(1, "uno");
+        }
+
+        var map = new CelerityMultiMap<int, string, Int32WangNaiveHasher>(NonCollectionSource());
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(new[] { "one", "uno" }, map[1].ToArray());
+        Assert.Equal(new[] { "two" }, map[2].ToArray());
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldCaptureNullStringKey_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, string>(null!, "nullval"),
+            new KeyValuePair<string, string>(null!, "again"),
+            new KeyValuePair<string, string>("a", "one"),
+        };
+
+        var map = new CelerityMultiMap<string, string, StringFnV1AHasher>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.True(map.ContainsKey(null!));
+        Assert.Equal(new[] { "nullval", "again" }, map[null!].ToArray());
+        Assert.Equal(new[] { "one" }, map["a"].ToArray());
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldCopy_LargeSource_WithoutDataLoss()
+    {
+        var source = Enumerable.Range(1, 500)
+            .Select(i => new KeyValuePair<string, int>("key-" + i, i * 2))
+            .ToArray();
+
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(500, map.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.Equal(new[] { i * 2 }, map["key-" + i].ToArray());
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldBeIndependent_OfSourceAfterConstruction()
+    {
+        var source = new List<KeyValuePair<string, string>>
+        {
+            new("1", "one"),
+            new("2", "two"),
+        };
+
+        var map = new CelerityMultiMap<string, string, StringFnV1AHasher>(source);
+
+        source.Add(new KeyValuePair<string, string>("3", "three"));
+        source[0] = new KeyValuePair<string, string>("1", "MUTATED");
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(new[] { "one" }, map["1"].ToArray());
+        Assert.False(map.ContainsKey("3"));
+    }
+
+    [Fact]
+    public void CelerityMultiMap_ShouldFlow_Through_ILookup()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("a", 1),
+            new KeyValuePair<string, int>("a", 2),
+            new KeyValuePair<string, int>("b", 10),
+        };
+
+        ILookup<string, int> view = new CelerityMultiMap<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(2, view.Count);
+        Assert.True(view.Contains("a"));
+        Assert.Equal(new[] { 1, 2 }, view["a"].ToArray());
+        Assert.Equal(new[] { 10 }, view["b"].ToArray());
+    }
 }

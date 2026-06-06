@@ -11,6 +11,7 @@ internal class Program
             typeof(IntDictionaryBenchmark),
             typeof(LongDictionaryBenchmark),
             typeof(FrozenCelerityDictionaryBenchmark),
+            typeof(CelerityMultiMapBenchmark),
             typeof(CeleritySetBenchmark),
             typeof(IntSetBenchmark),
             typeof(LongSetBenchmark),

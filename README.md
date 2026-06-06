@@ -7,6 +7,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
 - `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
+- `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: each key groups multiple values (`Add` appends rather than overwrites). Implements `ILookup<TKey, TValue?>`.
 - `IntDictionary<TValue>` / `IntDictionary<TValue, THasher>` — `int`-keyed specialization. Defaults to `Int32WangNaiveHasher`.
 - `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangNaiveHasher`.
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
@@ -91,6 +92,31 @@ Console.WriteLine(routes.ContainsKey("/x")); // False
 
 It is immutable (no `Add` / `Remove`) and implements `IReadOnlyDictionary<string, TValue?>`. The default uses `StringFnV1AHasher`; supply a full-width or strong hasher via `FrozenCelerityDictionary<TValue, THasher>` (e.g. `StringFnV1AFullHasher` for non-ASCII keys) when you want the single-probe fast path for keys the default would collide. Lookups stay correct regardless — colliding keys fall back to a short probe.
 
+### `CelerityMultiMap` — one key, many values
+
+When each key needs a *group* of values (event handlers per event, members per group, postings per term), `CelerityMultiMap<TKey, TValue, THasher>` appends on `Add` instead of overwriting, and hands back an allocation-free `ValueGroup` view on lookup.
+
+```csharp
+using System.Linq;
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var subs = new CelerityMultiMap<string, string, StringFnV1AHasher>();
+subs.Add("orders", "billing");
+subs.Add("orders", "fulfilment");
+subs.Add("shipments", "tracking");
+
+Console.WriteLine(subs.Count);            // 2 distinct keys
+Console.WriteLine(subs.ValueCount);       // 3 values
+Console.WriteLine(subs["orders"].Count);  // 2
+foreach (string handler in subs["orders"]) { /* billing, fulfilment */ }
+
+subs.Remove("orders", "billing");         // drop one value
+subs.RemoveAll("shipments");              // drop a whole key
+```
+
+The indexer returns an empty group for an absent key (it never throws), and the map implements `ILookup<TKey, TValue?>`, so it flows through LINQ (`subs.ToDictionary(g => g.Key, g => g.Count())`). `default(TKey)` (`null` / `0` / `Guid.Empty`) is an ordinary key, stored out-of-band.
+
 ### Sets
 
 `IntSet` and `CeleritySet<T, THasher>` mirror the dictionary types for membership-only workloads.
@@ -141,6 +167,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangNaiveHasher`. |
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
+| One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |

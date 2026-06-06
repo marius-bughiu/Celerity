@@ -306,6 +306,29 @@ void Check(bool condition, string message)
         "FrozenCelerityDictionary fallback keeps base-hash-colliding keys distinct");
 }
 
+// CelerityMultiMap — one-to-many map (default and custom-hasher generic
+// instantiations), grouping Adds, the out-of-band default-key group, the two
+// removal shapes, and the ILookup<,> surface.
+{
+    var multi = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+    multi.Add("a", 1);
+    multi.Add("a", 2);
+    multi.Add("b", 3);
+    multi.Add(null!, 99); // out-of-band default-key group
+    Check(multi.Count == 3 && multi.ValueCount == 4, "CelerityMultiMap counts");
+    Check(multi["a"].Count == 2 && multi[null!][0] == 99, "CelerityMultiMap group + null key");
+    Check(multi.Remove("a", 1) && multi["a"].Count == 1, "CelerityMultiMap.Remove single value");
+    Check(multi.RemoveAll("b") && !multi.ContainsKey("b"), "CelerityMultiMap.RemoveAll");
+
+    System.Linq.ILookup<string, int> lookup = multi;
+    Check(lookup.Contains("a") && System.Linq.Enumerable.Count(lookup["a"]) == 1,
+        "CelerityMultiMap ILookup surface");
+
+    var multiGuid = new CelerityMultiMap<System.Guid, int, GuidHasher>();
+    multiGuid.Add(System.Guid.Empty, 7);
+    Check(multiGuid[System.Guid.Empty][0] == 7, "CelerityMultiMap<Guid, int, GuidHasher>");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
