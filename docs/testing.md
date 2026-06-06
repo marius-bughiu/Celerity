@@ -7,7 +7,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Layer | Project / file | What it proves | Run locally |
 |---|---|---|---|
 | Behavioural unit tests | `Celerity.Tests` | Each public method does the right thing on hand-picked inputs, including collisions, resizes, and the out-of-band default/zero/null key. | `dotnet test` |
-| Edge-case coverage tests | `Celerity.Tests/Collections/EdgeCaseCoverageTests.cs` | The corners example tests skip: non-generic `IEnumerable`/`IEnumerator` paths, `Reset()`, indexer misses, `Clear()` on empty, wrap-around backward-shift. | `dotnet test` |
+| Edge-case coverage | alongside each type's tests (`*Tests.cs`, `*EnumerationTests.cs`, `*CollisionTests.cs`) | The corners example tests skip: non-generic `IEnumerable`/`IEnumerator` paths, `Reset()`, indexer misses, `Clear()` on empty, wrap-around backward-shift. | `dotnet test` |
 | Property-based tests | `Celerity.Tests/Properties/` | Across thousands of randomized operation sequences, every collection stays observably equal to its BCL oracle. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
@@ -30,9 +30,9 @@ Both compare against a BCL oracle (`Dictionary<,>`, `HashSet<>`, or a `Dictionar
 The bulk of the suite lives in `Celerity.Tests`, mirroring the library's folder layout. Test names follow `Method_ShouldExpectedBehavior_WhenCondition`. Notable categories:
 
 - **Collision tests** (`*CollisionTests.cs`) — force every key down one probe chain with a constant hasher, then verify lookups, removals, and backward-shift deletion keep every entry findable.
-- **Enumeration tests** (`*EnumerationTests.cs`) — the struct enumerators, `Keys`/`Values` views, and mid-enumeration mutation detection.
+- **Enumeration tests** (`*EnumerationTests.cs`) — the struct enumerators, `Keys`/`Values` views, mid-enumeration mutation detection, and the non-generic interface surface (`IEnumerable.GetEnumerator()`, `object IEnumerator.Current`, `IEnumerator.Reset()`).
 - **Load-factor / constructor validation** — boundary resizes and argument checking.
-- **Edge-case coverage** (`EdgeCaseCoverageTests.cs`) — the non-generic interface surface (`IEnumerable.GetEnumerator()`, `object IEnumerator.Current`, `IEnumerator.Reset()`), indexer misses on the out-of-band key, `Clear()` on an empty collection, and a hand-built wrap-around cluster that exercises the `bypassesGap` branch of backward-shift deletion.
+- **Edge cases** live next to the type they exercise rather than in a catch-all file: indexer misses on the out-of-band key and `Clear()` on an empty collection sit in `*Tests.cs`; the wrap-around cluster that exercises the `bypassesGap` branch of backward-shift deletion sits in `*CollisionTests.cs`.
 
 Run them with:
 
@@ -134,13 +134,9 @@ The report is rendered by [`scripts/coverage_report.py`](../scripts/coverage_rep
 The `coverage` workflow (`.github/workflows/coverage.yml`) runs on every PR and on `main`:
 
 - Collects coverage, renders the report + badge with `scripts/coverage_report.py`, and uploads it as a build artifact.
-- **Fails the build** if line coverage drops below `MIN_LINE_COVERAGE` (95%) or branch coverage below `MIN_BRANCH_COVERAGE` (90%). The suite sits far above these (~99.9% line) — the floor guards against silent regressions; it is not the target.
+- **Fails the build** if line coverage drops below `MIN_LINE_COVERAGE` (95%) or branch coverage below `MIN_BRANCH_COVERAGE` (90%). The suite sits far above these (100% line, ~99% branch) — the floor guards against silent regressions; it is not the target.
 - Posts a coverage summary comment on the PR.
 - On `main`, publishes the HTML report to `gh-pages` under [`/coverage`](https://marius-bughiu.github.io/Celerity/coverage/) and refreshes the README badge.
-
-### What is deliberately not covered
-
-A single line — the integer-overflow guard in `FrozenCelerityDictionary`'s table sizing (`if (size <= n) size <<= 1;`) — is unreachable without ~2³⁰ keys, so it is left uncovered by design rather than tested with an impractically large input. It is defensive code, kept for safety.
 
 ## Continuous integration summary
 

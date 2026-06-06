@@ -1,3 +1,4 @@
+using System.Collections;
 using Celerity.Collections;
 using Celerity.Hashing;
 
@@ -306,5 +307,64 @@ public class FrozenCelerityDictionaryTests
         Assert.Equal(1, dict["one"]);
         Assert.Equal(2, dict["two"]);
         Assert.Equal(3, dict["three"]);
+    }
+
+    // ── Non-generic enumeration surface ───────────────────────────────────────
+
+    [Fact]
+    public void Keys_ShouldRoundTrip_ThroughNonGenericIEnumerable()
+    {
+        var dict = Build(("a", 1), ("b", 2), ("c", 3));
+
+        var (first, second) = DrainNonGenericTwice<string>(dict.Keys);
+
+        first.Sort();
+        second.Sort();
+        Assert.Equal(new[] { "a", "b", "c" }, first);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void Values_ShouldRoundTrip_ThroughNonGenericIEnumerable()
+    {
+        var dict = Build(("a", 1), ("b", 2), ("c", 3));
+
+        var (first, second) = DrainNonGenericTwice<int>(dict.Values);
+
+        first.Sort();
+        second.Sort();
+        Assert.Equal(new[] { 1, 2, 3 }, first);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void Enumerator_ShouldRoundTrip_AfterReset()
+    {
+        var dict = Build(("a", 1), ("b", 2));
+
+        // The pair enumerator implements IEnumerator<KeyValuePair<,>>; drive it
+        // through the boxed IEnumerable surface to reach object Current and Reset.
+        IEnumerator e = ((IEnumerable)dict).GetEnumerator();
+        int first = 0;
+        while (e.MoveNext()) first++;
+        e.Reset();
+        int second = 0;
+        while (e.MoveNext()) second++;
+
+        Assert.Equal(2, first);
+        Assert.Equal(first, second);
+    }
+
+    // Drives a struct view through its boxed non-generic IEnumerable/IEnumerator
+    // surface (GetEnumerator -> object Current), then Reset()s and drains again.
+    private static (List<T> first, List<T> second) DrainNonGenericTwice<T>(IEnumerable view)
+    {
+        IEnumerator e = view.GetEnumerator();
+        var first = new List<T>();
+        while (e.MoveNext()) first.Add((T)e.Current!);
+        e.Reset();
+        var second = new List<T>();
+        while (e.MoveNext()) second.Add((T)e.Current!);
+        return (first, second);
     }
 }

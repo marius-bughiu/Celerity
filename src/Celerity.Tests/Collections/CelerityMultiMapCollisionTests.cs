@@ -152,4 +152,24 @@ public class CelerityMultiMapCollisionTests
         for (int i = 1; i <= 5; i++)
             Assert.Equal(new[] { i }, map[$"k{i}"].ToArray());
     }
+
+    [Fact]
+    public void RemoveAll_OnWrapAroundCluster_ShouldKeepHomedKey()
+    {
+        // With an identity hasher and capacity 8, keys 1, 2, 9 form one probe
+        // cluster: 1->slot1, 2->slot2, 9(home 1)->slot3. Removing key 1 forces the
+        // backward shift to *skip* key 2 (already at its home slot — the bypassesGap
+        // branch) while relocating key 9 into the freed slot.
+        var map = new CelerityMultiMap<int, int, IdentityIntHasher>(8);
+        map.Add(1, 10);
+        map.Add(2, 20);
+        map.Add(9, 90);
+
+        Assert.True(map.RemoveAll(1));
+
+        Assert.False(map.ContainsKey(1));
+        Assert.Equal(new[] { 20 }, map[2].ToArray());
+        Assert.Equal(new[] { 90 }, map[9].ToArray());
+        Assert.Equal(2, map.Count);
+    }
 }

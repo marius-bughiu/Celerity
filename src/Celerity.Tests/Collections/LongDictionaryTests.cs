@@ -452,4 +452,23 @@ public class LongDictionaryTests
         Assert.Equal(2, view.Values.Count());
         Assert.Equal(2, view.Count());
     }
+
+    [Fact]
+    public void Indexer_ShouldThrowKeyNotFound_ForAbsentZeroKey()
+    {
+        // The zero key is stored out-of-band; absent, the getter must throw.
+        var map = new LongDictionary<int>();
+
+        Assert.Throws<KeyNotFoundException>(() => _ = map[0L]);
+    }
+
+    [Fact]
+    public void Clear_ShouldBeNoOp_WhenAlreadyEmpty()
+    {
+        var map = new LongDictionary<int>();
+
+        map.Clear(); // _count == 0 early-return path
+
+        Assert.Empty(map.Keys);
+    }
 }

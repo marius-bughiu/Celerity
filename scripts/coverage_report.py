@@ -349,10 +349,10 @@ def render_summary(overall, files, min_line, min_branch, passed) -> str:
     lines = [
         "### Coverage",
         "",
-        "| Metric | Value | Floor |",
-        "|---|---:|---:|",
-        f'| Line | {pct(overall["line_rate"])} ({overall["lines_covered"]}/{overall["lines_valid"]}) | {min_line:.0f}% |',
-        f'| Branch | {pct(overall["branch_rate"])} ({overall["branches_covered"]}/{overall["branches_valid"]}) | {min_branch:.0f}% |',
+        "| Metric | Value |",
+        "|---|---:|",
+        f'| Line | {pct(overall["line_rate"])} ({overall["lines_covered"]}/{overall["lines_valid"]}) |',
+        f'| Branch | {pct(overall["branch_rate"])} ({overall["branches_covered"]}/{overall["branches_valid"]}) |',
         "",
     ]
     if not passed:

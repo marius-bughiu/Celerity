@@ -215,4 +215,23 @@ public class IntDictionaryTests
             Assert.Equal(expected, map[i]);
         }
     }
+
+    [Fact]
+    public void Indexer_ShouldThrowKeyNotFound_ForAbsentZeroKey()
+    {
+        // The zero key is stored out-of-band; absent, the getter must throw.
+        var map = new IntDictionary<int>();
+
+        Assert.Throws<KeyNotFoundException>(() => _ = map[0]);
+    }
+
+    [Fact]
+    public void Clear_ShouldBeNoOp_WhenAlreadyEmpty()
+    {
+        var map = new IntDictionary<int>();
+
+        map.Clear(); // _count == 0 early-return path
+
+        Assert.Empty(map.Keys);
+    }
 }

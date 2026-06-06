@@ -380,4 +380,48 @@ public class CelerityMultiMapTests
         for (int i = 0; i < 500; i++)
             Assert.Equal(new[] { i, i + 1000 }, map[i].ToArray());
     }
+
+    [Fact]
+    public void Remove_ShouldReturnFalse_ForAbsentDefaultKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+
+        // default key (0) group was never created.
+        Assert.False(map.Remove(0, 123));
+        Assert.False(map.RemoveAll(0));
+    }
+
+    [Fact]
+    public void Remove_ShouldReturnFalse_ForAbsentValue_UnderDefaultKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(0, 1);
+        map.Add(0, 2);
+
+        Assert.False(map.Remove(0, 999)); // value not in the default-key group
+        Assert.True(map.Remove(0, 1));
+        Assert.True(map.Remove(0, 2));    // empties the group -> drops the key
+        Assert.False(map.ContainsKey(0));
+    }
+
+    [Fact]
+    public void Remove_ShouldReturnFalse_ForAbsentValue_UnderPresentKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(7, 1);
+
+        Assert.False(map.Remove(7, 999)); // key present, value absent
+        Assert.True(map.ContainsKey(7));
+    }
+
+    [Fact]
+    public void Clear_ShouldBeNoOp_WhenAlreadyEmpty()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+
+        map.Clear(); // _count == 0 early-return path
+
+        Assert.Empty(map.Keys);
+        Assert.Equal(0, map.ValueCount);
+    }
 }
