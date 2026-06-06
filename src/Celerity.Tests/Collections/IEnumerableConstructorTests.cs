@@ -1031,4 +1031,84 @@ public class IEnumerableConstructorTests
         Assert.Equal(new[] { 1, 2 }, view["a"].ToArray());
         Assert.Equal(new[] { 10 }, view["b"].ToArray());
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  SmallDictionary — the IEnumerable<KeyValuePair<,>> constructor.
+    //  Shares the null-source / sizing / copy-fidelity / duplicate-key
+    //  invariants with the hash dictionaries. It has no loadFactor parameter,
+    //  so the loadFactor-validation variant does not apply.
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SmallDictionary_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new SmallDictionary<int, string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void SmallDictionary_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(1, "one"),
+            new KeyValuePair<int, string>(2, "two"),
+            new KeyValuePair<int, string>(1, "one-again"),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => new SmallDictionary<int, string>(source));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void SmallDictionary_ShouldCopyAllEntries_FromArraySource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, int>(1, 10),
+            new KeyValuePair<int, int>(2, 20),
+            new KeyValuePair<int, int>(0, 99), // zero key is an ordinary entry
+        };
+
+        var map = new SmallDictionary<int, int>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(10, map[1]);
+        Assert.Equal(20, map[2]);
+        Assert.Equal(99, map[0]);
+    }
+
+    [Fact]
+    public void SmallDictionary_ShouldCopyAllEntries_FromNonCollectionEnumerable()
+    {
+        IEnumerable<KeyValuePair<int, int>> Source()
+        {
+            for (int i = 1; i <= 5; i++)
+                yield return new KeyValuePair<int, int>(i, i * 10);
+        }
+
+        var map = new SmallDictionary<int, int>(Source());
+
+        Assert.Equal(5, map.Count);
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    [Fact]
+    public void SmallDictionary_ShouldCopy_LargeSource_WithoutDataLoss()
+    {
+        var source = Enumerable.Range(1, 500)
+            .Select(i => new KeyValuePair<int, int>(i, i * 3))
+            .ToArray();
+
+        var map = new SmallDictionary<int, int>(source);
+
+        Assert.Equal(500, map.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.Equal(i * 3, map[i]);
+    }
 }

@@ -8,13 +8,14 @@ Celerity is a .NET library that provides specialized high-performance collection
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
 - `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: each key groups multiple values (`Add` appends rather than overwrites). Implements `ILookup<TKey, TValue?>`.
+- `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary tuned for the very-small (`n <= ~16`) case. No hasher: it never hashes, so a `0` / `null` / default key is stored inline rather than out-of-band.
 - `IntDictionary<TValue>` / `IntDictionary<TValue, THasher>` — `int`-keyed specialization. Defaults to `Int32WangNaiveHasher`.
 - `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangNaiveHasher`.
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
 - `IntSet` / `IntSet<THasher>` — `int`-keyed set specialization.
 - `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangNaiveHasher`.
 
-All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. All collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel.
+All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. The hash-table collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel; `SmallDictionary` has no hash table and stores the default key inline.
 
 ## Quick start
 
@@ -117,6 +118,28 @@ subs.RemoveAll("shipments");              // drop a whole key
 
 The indexer returns an empty group for an absent key (it never throws), and the map implements `ILookup<TKey, TValue?>`, so it flows through LINQ (`subs.ToDictionary(g => g.Key, g => g.Count())`). `default(TKey)` (`null` / `0` / `Guid.Empty`) is an ordinary key, stored out-of-band.
 
+### `SmallDictionary` — the tiny-map fast path
+
+When a dictionary almost always holds a handful of entries (`n <= ~16`) — per-scope symbol tables, AST attribute bags, per-request maps — `SmallDictionary<TKey, TValue>` skips hashing entirely and linear-scans a flat array. At small `n` that beats a hash table: no hash to compute, no probe chain, and the whole key array fits in a cache line or two. There is no hasher to pick.
+
+```csharp
+using Celerity.Collections;
+
+var scope = new SmallDictionary<string, int>();
+scope["x"] = 1;
+scope["y"] = 2;
+scope.TryAdd("x", 99);            // false — already present, unchanged
+
+Console.WriteLine(scope["x"]);    // 1
+Console.WriteLine(scope.Count);   // 2
+if (scope.TryGetValue("y", out int y)) { /* y == 2 */ }
+
+scope.Remove("x");
+foreach (var kvp in scope) { /* ("y", 2) */ }
+```
+
+It implements `IReadOnlyDictionary<TKey, TValue?>` with the same surface as the other dictionaries. Because it never hashes, a `0` / `null` / default key is stored inline like any other — there is no out-of-band slot. Lookups are `O(n)`, so it is the wrong choice once instances grow large; reach for `IntDictionary` / `CelerityDictionary` then.
+
 ### Sets
 
 `IntSet` and `CeleritySet<T, THasher>` mirror the dictionary types for membership-only workloads.
@@ -168,6 +191,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
+| Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
@@ -189,7 +213,7 @@ A few cases where Celerity is **not** the right answer today:
 
 ## Benchmarks
 
-**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks all five collections against their .NET BCL counterparts on every `main` push, with historical trends and per-PR regression comparisons. For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop and the dashboard reflects that.
+**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its .NET BCL counterpart on every `main` push, with historical trends and per-PR regression comparisons. For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop and the dashboard reflects that.
 
 The suite also includes `StringHasherBenchmark` and `IntegerHasherBenchmark`, head-to-head throughput comparisons of every built-in `string` and integer/`Guid` hasher (each baselined against the framework `GetHashCode()`; the string benchmark sweeps short-ASCII, long-ASCII, and non-ASCII key shapes). They render on the dashboard under **Hash function throughput**, and run locally with `dotnet run -c Release -- --filter "*HasherBenchmark*"`. Read the throughput numbers alongside the distribution metrics from `HashQualityEvaluator` when picking a hasher — a fast hasher that clusters is not a win. See [Benchmarking the string hashers](docs/api/hashing.md#benchmarking-the-string-hashers).
 

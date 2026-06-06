@@ -810,3 +810,112 @@ subs.RemoveAll("shipments");                   // drop a whole topic
 ILookup<string, string> lookup = subs;
 var counts = lookup.ToDictionary(g => g.Key, g => g.Count());
 ```
+
+## SmallDictionary&lt;TKey, TValue&gt;
+
+```csharp
+public class SmallDictionary<TKey, TValue>
+    : IReadOnlyDictionary<TKey, TValue?>
+```
+
+A dictionary tuned for the **very-small** case (`n <= ~16`), where a linear scan
+over a flat backing array beats a probe-based hash table. This is the shape you
+hit constantly in compilers and IL emitters (per-scope symbol tables), AST
+attribute bags, and per-request maps — most instances stay tiny, and for a tiny
+`n` the cost of computing a hash, masking it, and chasing a probe chain is pure
+overhead next to a cache-friendly scan of a handful of keys.
+
+Unlike the hash-table dictionaries, `SmallDictionary` stores entries in
+insertion-dense parallel arrays and answers every query with a linear scan using
+`EqualityComparer<TKey>.Default`. There is **no hasher** (and so no `THasher` type
+parameter): you do not pick a hash function, because it never hashes. The
+trade-offs that follow directly from that:
+
+- Lookups, `Add`/`TryAdd` (duplicate detection), `ContainsKey`, and `Remove` are
+  `O(n)` rather than `O(1)`. The type is built for small `n` and **degrades for
+  large key sets** — keep it to the small-`n` workloads it is designed for. It does
+  *not* auto-promote to a hash table; it simply grows its arrays and keeps scanning.
+- Because nothing is hashed, there is **no empty-slot sentinel** and therefore no
+  special-casing of `default(TKey)`. A `0`, `null`, or `Guid.Empty` key is stored
+  inline like any other — a small simplification over the hash-table dictionaries,
+  which keep the default key out-of-band.
+- `Remove` moves the last entry into the vacated slot (an `O(1)` swap once the key
+  is found), so the relative order of the surviving entries is not preserved.
+  Enumeration order is unspecified in general.
+
+It implements `IReadOnlyDictionary<TKey, TValue?>`, ships allocation-free struct
+`Keys` / `Values` views and a struct enumerator, and accepts an
+`IEnumerable<KeyValuePair<TKey, TValue>>` source at construction — the same surface
+as the other Celerity dictionaries.
+
+### Constructors
+
+```csharp
+SmallDictionary(int capacity = 4)
+SmallDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source, int capacity = 4)
+```
+
+- `capacity` is the number of entries the backing arrays are sized for up front.
+  Unlike the hash-table dictionaries it is used **verbatim** (it is not rounded to
+  a power of two), since there is no probe mask. `0` defers allocation until the
+  first insert.
+- Throws `ArgumentOutOfRangeException` for a negative `capacity`. There is **no
+  `loadFactor`** parameter.
+- The `source` constructor copies pairs in order and throws `ArgumentException` on
+  a duplicate key (matching the other dictionaries), and `ArgumentNullException` if
+  `source` is `null` (the null check beats the capacity validation).
+
+### Properties
+
+| Member | Description |
+|---|---|
+| `int Count` | Number of key/value pairs. |
+
+### Indexer
+
+```csharp
+TValue this[TKey key] { get; set; }
+```
+
+Get throws `KeyNotFoundException` if the key is absent. Set overwrites an existing
+key or appends a new one; a pure overwrite never grows the backing arrays.
+
+### Methods
+
+| Member | Description |
+|---|---|
+| `bool ContainsKey(TKey key)` | `O(n)` scan for the key. |
+| `bool ContainsValue(TValue? value)` | `O(n)` scan for the value (`EqualityComparer<T>.Default`). |
+| `bool TryGetValue(TKey key, out TValue? value)` | Non-throwing lookup. |
+| `void Add(TKey key, TValue value)` | Add a new pair; throws `ArgumentException` if the key exists. |
+| `bool TryAdd(TKey key, TValue value)` | Add a new pair; returns `false` (no change) if the key exists. |
+| `bool Remove(TKey key)` | Remove by key; returns `false` if absent. |
+| `bool Remove(TKey key, out TValue? value)` | Remove by key, capturing the removed value. |
+| `void Clear()` | Remove all entries; capacity is preserved. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator over the pairs. |
+| `KeyCollection Keys` / `ValueCollection Values` | Allocation-free struct views. |
+
+### Default-key handling
+
+A `0`, `null`, or `Guid.Empty` key is an ordinary inline entry — store it, look it
+up, and remove it exactly like any other key. There is no out-of-band slot.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A tiny per-scope symbol table — almost always a handful of entries.
+var scope = new SmallDictionary<string, int>();
+scope["x"] = 1;
+scope["y"] = 2;
+scope.TryAdd("x", 99);            // false — already present, unchanged
+
+Console.WriteLine(scope["x"]);    // 1
+Console.WriteLine(scope.Count);   // 2
+
+if (scope.TryGetValue("y", out int y)) { /* y == 2 */ }
+
+scope.Remove("x");                // O(1) swap-removal after the scan
+foreach (var kvp in scope) { /* ("y", 2) */ }
+```

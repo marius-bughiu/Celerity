@@ -26,6 +26,7 @@ internal static class Differential
         ("CelerityDictionary", CelerityDictionaryCase),
         ("IntDictionary", IntDictionaryCase),
         ("LongDictionary", LongDictionaryCase),
+        ("SmallDictionary", SmallDictionaryCase),
         ("CeleritySet", CeleritySetCase),
         ("IntSet", IntSetCase),
         ("LongSet", LongSetCase),
@@ -120,6 +121,38 @@ internal static class Differential
             bool a = sut.TryGetValue(k, out int av);
             Check(e == a && (!e || ev == av), $"lookup({k}) {a}/{av} != {e}/{ev}");
         }
+    }
+
+    private static void SmallDictionaryCase(Random rng)
+    {
+        var sut = new SmallDictionary<int, int>();
+        var oracle = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 5: int v = Value(rng); sut[key] = v; oracle[key] = v; break;
+                case < 8: Check(sut.Remove(key) == oracle.Remove(key), $"Remove({key})"); break;
+                case < 9: int v2 = Value(rng); Check(sut.TryAdd(key, v2) == oracle.TryAdd(key, v2), $"TryAdd({key})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool e = oracle.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a && (!e || ev == av), $"lookup({k}) {a}/{av} != {e}/{ev}");
+        }
+
+        var seen = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            Check(seen.TryAdd(kv.Key, kv.Value), $"enumeration yielded duplicate key {kv.Key}");
+        Check(seen.Count == oracle.Count, $"enumeration count {seen.Count} != {oracle.Count}");
     }
 
     private static void LongDictionaryCase(Random rng)

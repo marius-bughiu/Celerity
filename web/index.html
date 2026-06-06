@@ -275,6 +275,7 @@
     <div class="ship"><code>CelerityDictionary&lt;K, V, H&gt;</code><div class="desc">Generic dictionary with a struct hasher constraint.</div></div>
     <div class="ship"><code>FrozenCelerityDictionary&lt;V&gt;</code><div class="desc">Build-once string-keyed dictionary with perfect hashing for single-probe lookups.</div></div>
     <div class="ship"><code>CelerityMultiMap&lt;K, V, H&gt;</code><div class="desc">One-to-many map: each key groups multiple values. Implements <code>ILookup</code>.</div></div>
+    <div class="ship"><code>SmallDictionary&lt;K, V&gt;</code><div class="desc">Flat-array, linear-scan dictionary tuned for the very-small (n &le; ~16) case.</div></div>
     <div class="ship"><code>IntSet</code><div class="desc">int-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>LongSet</code><div class="desc">long-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>CeleritySet&lt;T, H&gt;</code><div class="desc">Generic set with a struct hasher constraint.</div></div>

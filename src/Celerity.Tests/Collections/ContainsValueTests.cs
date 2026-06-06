@@ -63,7 +63,7 @@ public class ContainsValueTests
     [Fact]
     public void IntDictionary_NullValueLookup_ReferenceType()
     {
-        var map = new IntDictionary<string>();
+        var map = new IntDictionary<string?>();
         map[1] = "one";
         map[2] = null;
         Assert.True(map.ContainsValue(null));
@@ -160,7 +160,7 @@ public class ContainsValueTests
     [Fact]
     public void LongDictionary_NullValueLookup_ReferenceType()
     {
-        var map = new LongDictionary<string>();
+        var map = new LongDictionary<string?>();
         map[1L] = "one";
         map[2L] = null;
         Assert.True(map.ContainsValue(null));
@@ -232,7 +232,7 @@ public class ContainsValueTests
     [Fact]
     public void CelerityDictionary_NullValueLookup_ReferenceType()
     {
-        var map = new CelerityDictionary<int, string, Int32WangNaiveHasher>();
+        var map = new CelerityDictionary<int, string?, Int32WangNaiveHasher>();
         map[1] = "one";
         map[2] = null;
         Assert.True(map.ContainsValue(null));
@@ -413,5 +413,60 @@ public class ContainsValueTests
         map.Add("a", 42);
         map.Add("b", 42);
         Assert.True(map.ContainsValue(42));
+    }
+
+    // ---------------- SmallDictionary ----------------
+
+    [Fact]
+    public void SmallDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = new SmallDictionary<int, int>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void SmallDictionary_FindsValueInRegularSlot()
+    {
+        var map = new SmallDictionary<int, int> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void SmallDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = new SmallDictionary<int, int> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void SmallDictionary_DefaultValueLookup_ZeroValue()
+    {
+        // A stored value of 0 must be reachable; an empty map must NOT report 0
+        // (the unused tail of the backing array must be excluded from the scan).
+        var map = new SmallDictionary<int, int> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+
+        var empty = new SmallDictionary<int, int>();
+        Assert.False(empty.ContainsValue(0));
+    }
+
+    [Fact]
+    public void SmallDictionary_AfterRemove_DoesNotReportRemovedValue()
+    {
+        // Removal swaps the last entry into the gap and clears the freed tail
+        // slot, so a removed value must not linger in the scan range.
+        var map = new SmallDictionary<int, int> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.Remove(2));
+        Assert.False(map.ContainsValue(200));
+        Assert.True(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(300));
+    }
+
+    [Fact]
+    public void SmallDictionary_NullValue_ReturnsTrue_WhenPresent()
+    {
+        var map = new SmallDictionary<int, string?> { [1] = null, [2] = "x" };
+        Assert.True(map.ContainsValue(null));
     }
 }

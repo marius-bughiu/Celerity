@@ -496,4 +496,120 @@ public class RemoveOutValueTests
         Assert.False(map.ContainsKey(1));
         Assert.Empty(map);
     }
+
+    // ---------------------------------------------------------------
+    //  SmallDictionary
+    //
+    //  The flat-array dictionary has no hasher, so the rehash-after-collision
+    //  cases above do not apply; instead Remove swaps the last entry into the
+    //  vacated slot, which these tests exercise (including removing from the
+    //  middle of a cluster of entries).
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void SmallDictionary_RemoveOutValue_ReturnsTrueAndCapturedValue_ForExistingKey()
+    {
+        var map = new SmallDictionary<int, string>();
+        map[7] = "seven";
+
+        bool removed = map.Remove(7, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("seven", captured);
+        Assert.False(map.ContainsKey(7));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void SmallDictionary_RemoveOutValue_ReturnsFalseAndDefault_ForMissingKey()
+    {
+        var map = new SmallDictionary<int, string>();
+        map[1] = "one";
+
+        bool removed = map.Remove(99, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Single(map);
+    }
+
+    [Fact]
+    public void SmallDictionary_RemoveOutValue_ReturnsFalseAndDefault_OnEmptyMap()
+    {
+        var map = new SmallDictionary<int, string>();
+
+        Assert.False(map.Remove(1, out string? captured));
+        Assert.Null(captured);
+    }
+
+    [Fact]
+    public void SmallDictionary_RemoveOutValue_CapturesDefaultValueType_Correctly()
+    {
+        var map = new SmallDictionary<int, int>();
+        map[5] = 0; // a stored value equal to default(TValue)
+
+        Assert.True(map.Remove(5, out int captured));
+        Assert.Equal(0, captured);
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void SmallDictionary_RemoveOutValue_FromMiddle_CapturesValue_AndKeepsOthers()
+    {
+        var map = new SmallDictionary<int, string>();
+        for (int i = 0; i < 8; i++)
+            map[i] = $"v{i}";
+
+        Assert.True(map.Remove(3, out string? captured));
+        Assert.Equal("v3", captured);
+        Assert.Equal(7, map.Count);
+        for (int i = 0; i < 8; i++)
+        {
+            if (i == 3)
+                Assert.False(map.ContainsKey(i));
+            else
+                Assert.Equal($"v{i}", map[i]);
+        }
+    }
+
+    [Fact]
+    public void SmallDictionary_RemoveOutValue_AndReinsertSameKey_Works()
+    {
+        var map = new SmallDictionary<int, string>();
+        map[1] = "one";
+        map[2] = "two";
+
+        Assert.True(map.Remove(1, out string? captured));
+        Assert.Equal("one", captured);
+
+        map[1] = "uno";
+        Assert.Equal("uno", map[1]);
+        Assert.Equal(2, map.Count);
+    }
+
+    [Fact]
+    public void SmallDictionary_RemoveOutValue_BumpsVersion_AndInvalidatesEnumerator()
+    {
+        var map = new SmallDictionary<int, int>();
+        map[1] = 10;
+        map[2] = 20;
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.Remove(1, out _));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void SmallDictionary_VoidRemove_StillReturnsTrueForFoundKey()
+    {
+        var map = new SmallDictionary<int, string>();
+        map[1] = "one";
+
+        Assert.True(map.Remove(1));
+        Assert.False(map.ContainsKey(1));
+        Assert.Empty(map);
+    }
 }

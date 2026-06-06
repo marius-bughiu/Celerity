@@ -92,6 +92,25 @@ public class IndexerReturnTypeTests
         Assert.Equal("hello", value);
     }
 
+    [Fact]
+    public void SmallDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(typeof(SmallDictionary<string, int>), keyType: typeof(string), valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void SmallDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        var map = new SmallDictionary<int, string>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
     private static void AssertPrimaryIndexerReturnsTValue(Type closed, Type keyType, int valueGenericIndex)
     {
         PropertyInfo? indexer = closed
