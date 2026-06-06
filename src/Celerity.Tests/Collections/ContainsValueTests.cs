@@ -63,7 +63,7 @@ public class ContainsValueTests
     [Fact]
     public void IntDictionary_NullValueLookup_ReferenceType()
     {
-        var map = new IntDictionary<string>();
+        var map = new IntDictionary<string?>();
         map[1] = "one";
         map[2] = null;
         Assert.True(map.ContainsValue(null));
@@ -160,7 +160,7 @@ public class ContainsValueTests
     [Fact]
     public void LongDictionary_NullValueLookup_ReferenceType()
     {
-        var map = new LongDictionary<string>();
+        var map = new LongDictionary<string?>();
         map[1L] = "one";
         map[2L] = null;
         Assert.True(map.ContainsValue(null));
@@ -232,7 +232,7 @@ public class ContainsValueTests
     [Fact]
     public void CelerityDictionary_NullValueLookup_ReferenceType()
     {
-        var map = new CelerityDictionary<int, string, Int32WangNaiveHasher>();
+        var map = new CelerityDictionary<int, string?, Int32WangNaiveHasher>();
         map[1] = "one";
         map[2] = null;
         Assert.True(map.ContainsValue(null));
