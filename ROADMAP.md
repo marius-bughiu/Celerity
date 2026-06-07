@@ -17,8 +17,8 @@ Status legend: `planned`, `in-progress`, `done`, `deferred`.
 Celerity currently ships a single NuGet package (`Celerity.Collections`). Long-term, the project will expand into a family of focused packages — each targeting a specific area where specialized, high-performance implementations can outperform the BCL in niche scenarios. The package structure will mirror the .NET ecosystem's own organization:
 
 - `Celerity.Collections` — dictionaries, sets, and specialized collection types
-- `Celerity.Hashing` — hash providers, hash evaluation utilities
-- `Celerity.Primitives` — low-level utilities (e.g. fast math, bit manipulation)
+- `Celerity.Hashing` — hash providers, hash evaluation utilities (positioned on *distribution quality, determinism, and zero-cost devirtualization* — not on beating `GetHashCode()` for speed; see milestone 1.6.0)
+- `Celerity.Primitives` — low-level utilities that fill genuine BCL gaps: `FastMod`/`FastDiv`, struct PRNGs, span varint, integer digit-count, fast/compliant GUID, alignment/bit-packing (see milestone 2.1.0; we deliberately do not reimplement what `BitOperations`/`TensorPrimitives` already inline)
 
 Each package will remain narrowly scoped: if a type doesn't offer a measurable performance advantage over its BCL counterpart in at least one documented workload, it doesn't ship.
 
@@ -82,15 +82,28 @@ Focus on raw performance and specialized collection types that serve more advanc
 - Performance optimizations across existing collections.
 - Native AOT support and trimming compatibility. Status: `done` — the library is marked `<IsAotCompatible>true</IsAotCompatible>` (trim + AOT analyzers run on every build), and a Native AOT publish smoke test runs the full collection / hasher surface as a native binary in CI. See [`docs/aot.md`](docs/aot.md). An AOT-vs-JIT benchmark comparison remains a follow-up. Tracked in [#32](https://github.com/marius-bughiu/Celerity/issues/32).
 
+## Milestone 1.6.0 — Hasher performance audit & honest positioning
+
+A correctness-of-claims pass on the hashing layer, prompted by the observation that **the hashers are not necessarily faster than `GetHashCode()`** — and, for `int` keys, *cannot* be (`int.GetHashCode()` is identity, i.e. zero work). The real value of the struct hashers is **distribution quality (avalanche), determinism, adversarial resistance, and the zero-cost devirtualized generic** — not raw hashing speed. This milestone makes the benchmarks and the docs tell that honest story. It ships in the current single package, before the 2.0.0 restructure.
+
+- Benchmark hashers **end-to-end through the dictionaries** (insert/lookup across uniform / sequential / clustered / adversarial key distributions), reporting collision rate and avg/max probe length — not just an isolated `Hash()` loop. The clustered/adversarial cases are where a strong hasher wins end-to-end even though it "loses" the isolated microbench. Status: `planned`. Tracked in [#182](https://github.com/marius-bughiu/Celerity/issues/182).
+- Make the isolated microbenchmarks honest: consume results (the identity `int` hash is otherwise dead-code-eliminated), add an `EqualityComparer<T>.Default` baseline (the realistic thing a dev replaces), and label identity/`GetHashCode()` as the **zero-work floor** no mixing hasher can beat. Status: `planned`. Tracked in [#183](https://github.com/marius-bughiu/Celerity/issues/183).
+- Reposition the hasher docs/README away from "faster hashing" toward distribution/avalanche/determinism, with an honest "choosing a hasher" guide (the speed-vs-quality curve, the F14/ahash/FxHash framing, the Marvin32 string-determinism tradeoff, and the caveat that **fixed-seed hashers are not a HashDoS defence**). Status: `planned`. Tracked in [#184](https://github.com/marius-bughiu/Celerity/issues/184).
+- Add explicit identity/passthrough integer hashers (`Int32IdentityHasher` / `Int64IdentityHasher`) as the zero-work floor, and document the rule: uniform/trusted keys → skip mixing; clustered/adversarial keys → mix. Status: `planned`. Tracked in [#185](https://github.com/marius-bughiu/Celerity/issues/185).
+
 ## Milestone 2.0.0 — Multi-package restructure
 
-Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API).
+Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API). The *new collections* and *infrastructure* work below has shipped; the **package restructure itself is the remaining, defining work of this milestone** and is now tracked as issues.
 
 ### Package split
 
-- `Celerity.Collections` — dictionaries, sets, and specialized collections
-- `Celerity.Hashing` — `IHashProvider<T>`, built-in hashers, hash evaluation tools
-- `Celerity.Primitives` — low-level utilities (`FastUtils`, bit manipulation, etc.)
+Still a single `net8.0` assembly with `<PackageId>Celerity.Collections</PackageId>`; the hashers already live under the `Celerity.Hashing` namespace but ship inside the collections package. The split is a packaging breaking change (namespaces unchanged → source-compatible).
+
+- `Celerity.Collections` — dictionaries, sets, and specialized collections.
+- `Celerity.Hashing` — `IHashProvider<T>`, built-in hashers, `HashQualityEvaluator`. Status: `planned`. Tracked in [#186](https://github.com/marius-bughiu/Celerity/issues/186).
+- `Celerity.Primitives` — low-level utilities, seeded with `FastUtils`; content expansion is milestone 2.1.0. Status: `planned`. Tracked in [#187](https://github.com/marius-bughiu/Celerity/issues/187).
+- Preserve back-compat for existing `Celerity.Collections` consumers (meta-package and/or `[TypeForwardedTo]`). Status: `planned`. Tracked in [#188](https://github.com/marius-bughiu/Celerity/issues/188).
+- CI: build, pack, and publish three packages with shared MinVer versioning. Status: `planned`. Tracked in [#190](https://github.com/marius-bughiu/Celerity/issues/190).
 
 ### New collections
 
@@ -101,8 +114,30 @@ Split the monolithic `Celerity.Collections` into focused packages mirroring the 
 
 ### Infrastructure
 
-- Multi-target `net8.0;net9.0`.
-- Publish a results dashboard so users can track performance over time.
+- Multi-target `net8.0;net9.0` (evaluate `net10.0`) across all three packages, so newer-runtime consumers get TFM-gated optimizations (AVX-512 SIMD paths, JIT improvements). Status: `planned`. Tracked in [#189](https://github.com/marius-bughiu/Celerity/issues/189).
+- Publish a results dashboard so users can track performance over time. Status: `done` — the core per-commit dashboard and the weekly extended dashboard are published to `gh-pages` and linked from the site nav.
+
+## Milestone 2.1.0 — Celerity.Primitives: fast math & low-level utilities
+
+The "fast-utils" expansion that fills `Celerity.Primitives` with specialized BCL alternatives. Comprehensive research against the current .NET (8/9/10) surface shows the BCL has closed most classic gaps — `System.Numerics.BitOperations`, `System.Numerics.Tensors.TensorPrimitives`, `Convert.ToHexString`, `System.Buffers.Text.Base64`, and generic-math `Math` already inline to optimal/SIMD code. So this milestone ships only the **defensible white space**, each with a documented BCL-beating workload (the hard rule), and deliberately **does not** reinvent what the BCL already does well.
+
+### Ship — real gaps with a documented workload
+
+- `FastMod` / `FastDiv` — Lemire reciprocal modulo & division by a runtime-constant divisor (the BCL's `HashHelpers.FastMod` is `internal`-only); 2–4× over `%`/`/` for repeated mod by the same divisor (hash buckets, ring buffers, sharding). Status: `planned`. Tracked in [#191](https://github.com/marius-bughiu/Celerity/issues/191).
+- Struct PRNG suite — value-type, allocation-free, inlinable, seed-deterministic xoshiro256\*\* / xoroshiro128+ / SplitMix64 (+wyrand/PCG). `System.Random` is a heap class behind virtual dispatch and its **seeded** path falls back to the legacy Knuth algorithm. Curated, no marginal variants. Status: `planned`. Tracked in [#192](https://github.com/marius-bughiu/Celerity/issues/192).
+- Span-based varint codec — LEB128 + zig-zag `Try(Write|Read)` over spans (the BCL's 7-bit-encoded int is only on `BinaryReader`/`BinaryWriter`, stream-bound and allocating). Status: `planned`. Tracked in [#193](https://github.com/marius-bughiu/Celerity/issues/193).
+- Integer digit-count / `Log10` — public `CountDigits` (the BCL's LZCNT-based one is `internal`); for buffer sizing and column alignment. Status: `planned`. Tracked in [#194](https://github.com/marius-bughiu/Celerity/issues/194).
+- Fast non-crypto GUID v4 (from the struct PRNG) + RFC-9562 big-endian v7 (sortable, DB-friendly; the BCL's `CreateVersion7` uses a non-big-endian layout that bloats DB indexes). Status: `planned`. Tracked in [#195](https://github.com/marius-bughiu/Celerity/issues/195).
+- Alignment helpers + span bit-packing over caller-owned memory (`AlignUp`/`AlignDown`/`IsAligned`, span bit get/set/scan/popcount), distinct from the owning `BitSet` collection. Status: `planned` (low priority). Tracked in [#196](https://github.com/marius-bughiu/Celerity/issues/196).
+
+### Research — verify the win before shipping
+
+- Fused/specialized SIMD reductions **not** covered by `TensorPrimitives` (simultaneous min+max, integer histogram, overflow-checked sum) — spike, ship only the winners. Status: `planned`. Tracked in [#197](https://github.com/marius-bughiu/Celerity/issues/197).
+- Guaranteed-branchless conditional `Select` — verify the JIT actually branches (it already emits `cmov` for `Math.Min`/`Max`/`Abs`/`Clamp`) before shipping. Status: `planned`. Tracked in [#198](https://github.com/marius-bughiu/Celerity/issues/198).
+
+### Explicitly out of scope — the BCL already does these well
+
+Per the guiding rule, these are **not** worth shipping because they already inline to optimal/SIMD code: next-power-of-two / `IsPow2` / `Log2` / `PopCount` / `LeadingZeroCount` / `TrailingZeroCount` / `RotateLeft`/`Right` (`System.Numerics.BitOperations`); SIMD `Sum`/`Min`/`Max`/`Dot`/`IndexOf`/`Contains` (`TensorPrimitives`, generic over `INumber<T>`, + `MemoryExtensions`/`SearchValues`); hex and Base64 encode/decode (`Convert.ToHexString`, `System.Buffers.Text.Base64`, AVX-512); byte-swap/endianness (`BinaryPrimitives`); branchless `Min`/`Max`/`Abs`/`Clamp` (JIT `cmov`); and generic xxHash/CRC span hashing (`System.IO.Hashing` — depend on it rather than reimplement).
 
 ## Non-goals
 
