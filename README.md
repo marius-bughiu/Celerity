@@ -1,42 +1,48 @@
 # Celerity
 [![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/v/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![NuGet version (Celerity.Collections)](https://img.shields.io/nuget/vpre/Celerity.Collections.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Collections/) [![Live benchmarks](https://img.shields.io/badge/benchmarks-live-0d6e6e?style=flat-square)](https://marius-bughiu.github.io/Celerity/dev/bench/) [![Coverage](https://marius-bughiu.github.io/Celerity/coverage/badge.svg)](https://marius-bughiu.github.io/Celerity/coverage/)
 
-Celerity is a .NET library that provides specialized high-performance collections optimized for specific use cases. It includes data structures designed for better speed or memory efficiency compared to standard .NET collections. The package supports configurable load factors, multiple built-in hash functions, and allows users to define custom hash functions for fine-tuned performance.
-
-## Collections
-
-- `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
-- `RobinHoodDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Robin Hood open addressing: bounds probe-length variance so worst-case lookups stay close to average on clustered / adversarial keys (at the cost of a per-slot probe-distance `int`).
-- `SwissDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Swiss-table SIMD group probing: a parallel control-byte array lets one `Vector128` compare test 16 slots per lookup, filtering candidates by a 7-bit hash tag before any key comparison (at the cost of a one-byte control tag per slot).
-- `HashCachingDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer with a struct-of-arrays layout: a dense side array of 32-bit hash fingerprints lets probes scan metadata only and short-circuit expensive key equality on a single integer compare (at the cost of four bytes of metadata per slot). Best for lookup-heavy tables and costly-equality keys.
-- `PooledCelerityDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer whose backing arrays are rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
-- `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
-- `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: each key groups multiple values (`Add` appends rather than overwrites). Implements `ILookup<TKey, TValue?>`.
-- `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary tuned for the very-small (`n <= ~16`) case. No hasher: it never hashes, so a `0` / `null` / default key is stored inline rather than out-of-band.
-- `IntDictionary<TValue>` / `IntDictionary<TValue, THasher>` — `int`-keyed specialization. Defaults to `Int32WangNaiveHasher`.
-- `LongDictionary<TValue>` / `LongDictionary<TValue, THasher>` — `long`-keyed specialization. Defaults to `Int64WangNaiveHasher`.
-- `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
-- `FrozenCeleritySet` / `FrozenCeleritySet<THasher>` — build-once, read-many `string` set that searches for a perfect (collision-free) hash so membership tests are single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Defaults to `StringFnV1AHasher`.
-- `IntSet` / `IntSet<THasher>` — `int`-keyed set specialization.
-- `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangNaiveHasher`.
-- `BloomFilter<T, THasher>` — space-efficient **probabilistic** membership filter: bit-array storage with no false negatives and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory. Add-and-test only (no `Remove`); derives its `k` bit probes from a single hasher call by double hashing.
-- `BitSet` — dense, fixed-length **exact** bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD-accelerated bulk `And` / `Or` / `Xor` / `Not`. A faster, count-aware alternative to `System.Collections.BitArray` for dense small-integer index sets.
-- `HyperLogLog<T, THasher>` — space-efficient **probabilistic** cardinality estimator: counts the *distinct* elements in a stream of any size from a fixed array of registers (16&#160;KB by default) with a ~0.8% relative error, instead of a `HashSet<T>` that grows with the cardinality. Add-and-estimate only; mergeable with `UnionWith`.
-- `CountMinSketch<T, THasher>` — space-efficient **probabilistic** frequency estimator: estimates how many times each element occurs in a stream of any size from a fixed grid of counters, **never underestimating** (overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`), instead of a `Dictionary<TKey, int>` frequency table that grows with the distinct-key count. Add-and-estimate only; mergeable with `UnionWith`.
-
-All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. The hash-table collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel; `SmallDictionary` has no hash table and stores the default key inline.
-
-## Quick start
-
-Install from NuGet:
+Celerity is a .NET library of specialized, high-performance collections — drop-in alternatives to the BCL that trade flexibility for speed or memory on specific workloads. Hashers are structs supplied as generic constraints (so the JIT inlines them), load factors are configurable, and you can plug in your own hash functions.
 
 ```bash
 dotnet add package Celerity.Collections
 ```
 
-### `IntDictionary` — the int-keyed fast path
+> **New here?** Jump to [**Choosing a collection**](#choosing-a-collection) — the table maps your workload to the right type in one line.
 
-`IntDictionary<TValue>` defaults to `Int32WangNaiveHasher`, so most callers don't need to pick a hasher.
+## Collections
+
+**Dictionaries**
+
+- `CelerityDictionary<TKey, TValue, THasher>` — the generic baseline: open-addressed dictionary with a struct hasher constraint.
+- `RobinHoodDictionary<TKey, TValue, THasher>` — Robin Hood probing bounds probe-length variance, keeping worst-case lookups close to average on clustered / adversarial keys (cost: a per-slot probe-distance `int`).
+- `SwissDictionary<TKey, TValue, THasher>` — Swiss-table SIMD group probing: one `Vector128` compare tests 16 slots per lookup, filtered by a 7-bit hash tag (cost: one control byte per slot). For lookup-heavy tables.
+- `HashCachingDictionary<TKey, TValue, THasher>` — struct-of-arrays layout: a dense side array of 32-bit hash fingerprints lets probes scan metadata only and skip expensive key equality on a single integer compare (cost: four bytes per slot). For costly-equality keys.
+- `PooledCelerityDictionary<TKey, TValue, THasher>` — backing arrays rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
+- `FrozenCelerityDictionary<TValue>` / `<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe.
+- `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: `Add` appends instead of overwriting. Implements `ILookup<TKey, TValue?>`.
+- `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary for the very-small (`n <= ~16`) case. No hasher; the default key is stored inline.
+- `IntDictionary<TValue>` / `LongDictionary<TValue>` — `int` / `long`-keyed specializations (default to `Int32WangNaiveHasher` / `Int64WangNaiveHasher`).
+
+**Sets**
+
+- `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
+- `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with single-probe membership. Implements `IReadOnlySet<string>`.
+- `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
+
+**Probabilistic & bit-level**
+
+- `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
+- `BitSet` — dense, **exact** bit vector in 64-bit words: `O(n/64)` hardware popcount (`Count`) and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `BitArray`.
+- `HyperLogLog<T, THasher>` — **probabilistic** cardinality estimator: counts *distinct* elements from a fixed ~16&#160;KB of registers (~0.8% error), never growing with the data. Mergeable.
+- `CountMinSketch<T, THasher>` — **probabilistic** frequency estimator: estimates per-element counts from a fixed grid, **never underestimating** (overestimate bounded by `epsilon · TotalCount`). Mergeable.
+
+All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. The hash-table collections store `default(TKey)` (zero / `null`) out-of-band so it never collides with the empty-slot sentinel; `SmallDictionary` stores it inline.
+
+## Quick start
+
+Two examples cover the common surface; every other type has a runnable example in the [API reference](docs/api/collections.md) and in the collapsible sections below.
+
+`IntDictionary<TValue>` defaults to `Int32WangNaiveHasher`, so most callers don't pick a hasher:
 
 ```csharp
 using Celerity.Collections;
@@ -44,25 +50,20 @@ using Celerity.Collections;
 var counts = new IntDictionary<int>();
 counts[42] = 1;
 counts[42]++;            // indexer get/set
-counts.TryAdd(7, 100);   // returns false if key already present, no overwrite
-counts.Add(8, 200);      // throws ArgumentException if key already present
+counts.TryAdd(7, 100);   // false if present, no overwrite
+counts.Add(8, 200);      // throws if present
 
 if (counts.TryGetValue(42, out var hits))
     Console.WriteLine(hits); // 2
 
 counts.Remove(7);
-Console.WriteLine(counts.Count); // 2
-
-// foreach is allocation-free — Enumerator is a struct.
-foreach (var kvp in counts)
+foreach (var kvp in counts) // allocation-free struct enumerator
     Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
 ```
 
-The zero key is a legitimate value, not the empty-slot sentinel — `counts[0] = 99` round-trips correctly. `LongDictionary<TValue>` follows the exact same surface for `long` keys (defaulting to `Int64WangNaiveHasher`).
+The zero key is a legitimate value, not the sentinel — `counts[0] = 99` round-trips. `LongDictionary<TValue>` is the same surface for `long` keys.
 
-### `CelerityDictionary` — generic keys with a struct hasher
-
-For non-`int`/`long` keys, pick a hasher from `Celerity.Hashing` (or supply your own). `DefaultHasher<T>` falls back to `EqualityComparer<T>.Default.GetHashCode()` for arbitrary types.
+For non-`int`/`long` keys, pick a hasher from `Celerity.Hashing` (or supply your own); `DefaultHasher<T>` falls back to `EqualityComparer<T>.Default`:
 
 ```csharp
 using Celerity.Collections;
@@ -73,298 +74,149 @@ byId[Guid.NewGuid()] = "alice";
 
 var byName = new CelerityDictionary<string, int, StringFnV1AHasher>();
 byName["bob"] = 1;
-
-// DefaultHasher<T> works for any type but pays the EqualityComparer<T> dispatch.
-var byKey = new CelerityDictionary<DateOnly, string, DefaultHasher<DateOnly>>();
-byKey[DateOnly.FromDateTime(DateTime.UtcNow)] = "today";
 ```
 
-The hasher is a `struct` and is supplied as a generic constraint, so the JIT devirtualizes and inlines the `Hash()` call on the probe path.
+The hasher is a `struct` generic constraint, so the JIT devirtualizes and inlines `Hash()` on the probe path.
 
-### `RobinHoodDictionary` — bounded probe variance for clustered keys
+<details>
+<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Frozen, MultiMap, Small</summary>
 
-When keys bunch up (weak or identity hashers, attacker-influenced keys, naturally clustered IDs), linear probing grows long runs and worst-case lookups degrade. `RobinHoodDictionary` is a drop-in peer of `CelerityDictionary` — same API, same hashers — that uses Robin Hood open addressing to keep probe-length variance low, so tail-latency lookups stay close to the average. It also stops a *negative* lookup early using its probe-distance invariant.
+All four `CelerityDictionary` peers below are drop-in (same API, same hashers) and differ only in collision strategy / storage:
 
 ```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
+// RobinHood — bounds probe variance for clustered / adversarial keys (also ends
+// negative lookups early). Cost: a per-slot probe-distance int.
+var rh = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
+rh[42] = "hello";
 
-var dict = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();
-dict[42] = "hello";
+// Swiss — SIMD group probing for lookup-heavy tables (large tables, many negative
+// lookups). One Vector128 compare tests 16 slots, filtered by a 7-bit tag.
+var swiss = new SwissDictionary<int, string, Int32WangNaiveHasher>();
+swiss[42] = "hello";
 
-if (dict.TryGetValue(42, out var val))
-    Console.WriteLine(val); // "hello"
+// HashCaching — a 32-bit fingerprint side array skips costly key equality on a
+// single int compare. For long-string / large value-type keys, cache-cold tables.
+var hc = new HashCachingDictionary<string, int, StringFnV1AHasher>();
+hc["hello"] = 42;
+
+// Pooled — backing arrays rented from ArrayPool<T>.Shared. Dispose returns them;
+// forgetting is not a leak, just no pooling benefit. After Dispose, members throw.
+using var pooled = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>();
+pooled[42] = "hello";
 ```
 
-The trade-off is a per-slot probe-distance `int` of bookkeeping (so it allocates more than `CelerityDictionary`); on uniformly distributed keys with a good hasher, `CelerityDictionary` matches or beats it, so prefer Robin Hood specifically for the clustered / adversarial case.
-
-### `SwissDictionary` — SIMD group probing for lookup-heavy tables
-
-`SwissDictionary` is a drop-in peer of `CelerityDictionary` — same API, same hashers — that resolves collisions Swiss-table style. A parallel array of one-byte control tags lets a single `Vector128` compare test a whole 16-slot group per probe, and a 7-bit hash tag in each control byte filters out non-matching residents before any key comparison. The portable `Vector128` API JITs to SSE2 / AVX2 on x86, AdvSimd on Arm, and a scalar fallback elsewhere, so it is correct everywhere and fast where hardware SIMD is available.
+`FrozenCelerityDictionary<TValue>` is build-once, read-many and searches for a perfect (collision-free) hash at construction, so each lookup is single-probe. Immutable; implements `IReadOnlyDictionary<string, TValue?>`. Use the `<TValue, THasher>` overload (e.g. `StringFnV1AFullHasher` for non-ASCII keys) for the single-probe fast path on keys the default would collide — lookups stay correct regardless.
 
 ```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
-
-var dict = new SwissDictionary<int, string, Int32WangNaiveHasher>();
-dict[42] = "hello";
-
-if (dict.TryGetValue(42, out var val))
-    Console.WriteLine(val); // "hello"
-```
-
-The trade-off is a one-byte control tag per slot (so it allocates a little more than `CelerityDictionary`) plus tombstone deletion reclaimed by an occasional rehash; reach for it on lookup-heavy workloads — large tables, many negative lookups, or clustered keys — where the group compare and tag filtering pay off.
-
-### `HashCachingDictionary` — struct-of-arrays hash caching for costly-equality keys
-
-`HashCachingDictionary` is a drop-in peer of `CelerityDictionary` — same API, same hashers — that takes the struct-of-arrays layout one step further. Alongside the parallel `keys` / `values` arrays it keeps a dense side array of 32-bit hash fingerprints, one per slot. A linear probe scans only that compact metadata buffer, comparing the cached fingerprint first, and dereferences a key (running the full `EqualityComparer<TKey>` check) only on a fingerprint match — so cache-cold lookups stay inside one buffer and expensive key comparisons (long strings, large value-type keys) are filtered out by a single integer compare.
-
-```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
-
-var dict = new HashCachingDictionary<string, int, StringFnV1AHasher>();
-dict["hello"] = 42;
-
-if (dict.TryGetValue("hello", out var val))
-    Console.WriteLine(val); // 42
-```
-
-The trade-off is four bytes of metadata per slot (so it allocates a little more than `CelerityDictionary`); reach for it on lookup-dominated workloads, costly-equality keys, or large cache-cold tables. It is complementary to `SwissDictionary`: both keep a metadata side array, but this is a scalar, wider-fingerprint design with backward-shift (tombstone-free) deletion, whereas Swiss uses SIMD group probing over one-byte tags. For small tables of cheap (e.g. `int`) keys, `CelerityDictionary` has the smaller footprint and is roughly a wash.
-
-### `PooledCelerityDictionary` — pooled storage for short-lived dictionaries
-
-When you build and discard many dictionaries on a hot path (per request, per frame, per batch), their backing arrays are a steady source of Gen 0 — and eventually Large Object Heap — garbage. `PooledCelerityDictionary` is a drop-in peer of `CelerityDictionary` whose key/value arrays are rented from `ArrayPool<T>.Shared` and returned on `Dispose` (and on every internal resize), so a build/use/dispose cycle recycles buffers instead of allocating fresh ones.
-
-```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
-
-using (var dict = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>())
-{
-    dict[42] = "hello";
-
-    if (dict.TryGetValue(42, out var val))
-        Console.WriteLine(val); // "hello"
-} // backing arrays return to ArrayPool<T>.Shared here
-```
-
-Dispose it (a `using` scope is ideal) so the buffers return to the pool; forgetting to dispose is not a leak, you just lose the pooling benefit. After disposal every member throws `ObjectDisposedException`. For a long-lived dictionary the pooling buys nothing — stay on `CelerityDictionary`. Not thread-safe.
-
-### `FrozenCelerityDictionary` — build-once string lookups
-
-When a `string`-keyed table is built once and then read many times (route tables, config maps, interned vocabularies), `FrozenCelerityDictionary<TValue>` searches at construction for a perfect (collision-free) hash so each lookup is a single hash, a single array index, and a single equality check.
-
-```csharp
-using Celerity.Collections;
-
 var routes = new FrozenCelerityDictionary<int>(new[]
 {
     new KeyValuePair<string, int>("/",        0),
     new KeyValuePair<string, int>("/health",  1),
     new KeyValuePair<string, int>("/metrics", 2),
 });
-
-Console.WriteLine(routes.IsPerfectlyHashed); // True — single-probe lookups
+Console.WriteLine(routes.IsPerfectlyHashed); // True
 Console.WriteLine(routes["/health"]);        // 1
-Console.WriteLine(routes.ContainsKey("/x")); // False
 ```
 
-It is immutable (no `Add` / `Remove`) and implements `IReadOnlyDictionary<string, TValue?>`. The default uses `StringFnV1AHasher`; supply a full-width or strong hasher via `FrozenCelerityDictionary<TValue, THasher>` (e.g. `StringFnV1AFullHasher` for non-ASCII keys) when you want the single-probe fast path for keys the default would collide. Lookups stay correct regardless — colliding keys fall back to a short probe.
-
-### `CelerityMultiMap` — one key, many values
-
-When each key needs a *group* of values (event handlers per event, members per group, postings per term), `CelerityMultiMap<TKey, TValue, THasher>` appends on `Add` instead of overwriting, and hands back an allocation-free `ValueGroup` view on lookup.
+`CelerityMultiMap<TKey, TValue, THasher>` groups many values per key (`Add` appends), hands back an allocation-free `ValueGroup` on lookup, returns an empty group for absent keys, and implements `ILookup<TKey, TValue?>` (so it flows through LINQ):
 
 ```csharp
-using System.Linq;
-using Celerity.Collections;
-using Celerity.Hashing;
-
 var subs = new CelerityMultiMap<string, string, StringFnV1AHasher>();
 subs.Add("orders", "billing");
 subs.Add("orders", "fulfilment");
-subs.Add("shipments", "tracking");
-
-Console.WriteLine(subs.Count);            // 2 distinct keys
-Console.WriteLine(subs.ValueCount);       // 3 values
 Console.WriteLine(subs["orders"].Count);  // 2
-foreach (string handler in subs["orders"]) { /* billing, fulfilment */ }
-
 subs.Remove("orders", "billing");         // drop one value
-subs.RemoveAll("shipments");              // drop a whole key
+subs.RemoveAll("orders");                 // drop a whole key
 ```
 
-The indexer returns an empty group for an absent key (it never throws), and the map implements `ILookup<TKey, TValue?>`, so it flows through LINQ (`subs.ToDictionary(g => g.Key, g => g.Count())`). `default(TKey)` (`null` / `0` / `Guid.Empty`) is an ordinary key, stored out-of-band.
-
-### `SmallDictionary` — the tiny-map fast path
-
-When a dictionary almost always holds a handful of entries (`n <= ~16`) — per-scope symbol tables, AST attribute bags, per-request maps — `SmallDictionary<TKey, TValue>` skips hashing entirely and linear-scans a flat array. At small `n` that beats a hash table: no hash to compute, no probe chain, and the whole key array fits in a cache line or two. There is no hasher to pick.
+`SmallDictionary<TKey, TValue>` skips hashing and linear-scans a flat array — at `n <= ~16` that beats a hash table (no hash, no probe chain, great cache locality). No hasher to pick; a `0` / `null` / default key is stored inline. Lookups are `O(n)`, so move to `IntDictionary` / `CelerityDictionary` once instances grow.
 
 ```csharp
-using Celerity.Collections;
-
 var scope = new SmallDictionary<string, int>();
 scope["x"] = 1;
-scope["y"] = 2;
-scope.TryAdd("x", 99);            // false — already present, unchanged
-
-Console.WriteLine(scope["x"]);    // 1
-Console.WriteLine(scope.Count);   // 2
-if (scope.TryGetValue("y", out int y)) { /* y == 2 */ }
-
-scope.Remove("x");
-foreach (var kvp in scope) { /* ("y", 2) */ }
+scope.TryAdd("x", 99);          // false — already present
+Console.WriteLine(scope["x"]);  // 1
 ```
 
-It implements `IReadOnlyDictionary<TKey, TValue?>` with the same surface as the other dictionaries. Because it never hashes, a `0` / `null` / default key is stored inline like any other — there is no out-of-band slot. Lookups are `O(n)`, so it is the wrong choice once instances grow large; reach for `IntDictionary` / `CelerityDictionary` then.
+</details>
 
-### Sets
-
-`IntSet` and `CeleritySet<T, THasher>` mirror the dictionary types for membership-only workloads.
+<details>
+<summary><b>Sets</b> — IntSet, CeleritySet, FrozenCeleritySet</summary>
 
 ```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
-
 var seen = new IntSet();
 seen.Add(1);
-seen.Add(2);
 Console.WriteLine(seen.Contains(1)); // true
-seen.Remove(2);
 
-var visitedIds = new CeleritySet<Guid, GuidHasher>();
-visitedIds.TryAdd(Guid.NewGuid()); // returns true on first add, false on duplicate
+var visited = new CeleritySet<Guid, GuidHasher>();
+visited.TryAdd(Guid.NewGuid()); // true on first add, false on duplicate
 ```
 
-### `FrozenCeleritySet` — build-once string membership
-
-When a `string`-keyed membership set is built once and then read many times (reserved-word
-tables, stop-word lists, allow/deny lists), `FrozenCeleritySet` searches at construction for a
-perfect (collision-free) hash so each `Contains` is a single hash, a single array index, and a
-single equality check. It is the set counterpart of `FrozenCelerityDictionary`.
+`FrozenCeleritySet` is the build-once, read-many string set counterpart of `FrozenCelerityDictionary` — single-probe `Contains`, immutable, implements `IReadOnlySet<string>` (so `SetEquals`, `IsSubsetOf`, `Overlaps`, … are available), and silently dedupes. Use `FrozenCeleritySet<THasher>` (e.g. `StringFnV1AFullHasher`) for non-ASCII elements.
 
 ```csharp
-using Celerity.Collections;
-
-var reserved = new FrozenCeleritySet(new[]
-{
-    "select", "from", "where", "join", "group", "order",
-});
-
-Console.WriteLine(reserved.IsPerfectlyHashed);  // True (single-probe membership)
-Console.WriteLine(reserved.Contains("join"));   // True
-Console.WriteLine(reserved.Contains("celerity")); // False
+var reserved = new FrozenCeleritySet(new[] { "select", "from", "where", "join" });
+Console.WriteLine(reserved.IsPerfectlyHashed); // True
+Console.WriteLine(reserved.Contains("join"));  // True
 ```
 
-It is immutable (no `Add` / `Remove`) and implements `IReadOnlySet<string>` (so `SetEquals`,
-`IsSubsetOf`, `Overlaps`, … are all available). Duplicate elements are silently deduplicated, as
-a set should. The default uses `StringFnV1AHasher`; supply a full-width or strong hasher via
-`FrozenCeleritySet<THasher>` (e.g. `StringFnV1AFullHasher` for non-ASCII elements) when you want
-the single-probe fast path for elements the default would collide. Membership tests stay correct
-regardless — colliding elements fall back to a short probe.
+</details>
 
-### `BloomFilter` — probabilistic membership at a fraction of the memory
+<details>
+<summary><b>Probabilistic & bit-level</b> — BloomFilter, HyperLogLog, CountMinSketch</summary>
 
-When you only need a **membership gate** — "have I seen this before?" — and can tolerate a small,
-bounded false-positive rate, `BloomFilter` stores nothing but a bit array, so it uses a fraction of
-the memory of a `HashSet<T>` and never grows with element size. It guarantees **no false negatives**
-(a `false` is always correct), while a `true` may be a false positive with the rate you size it for.
+`BloomFilter` is a membership gate that stores nothing but a bit array: **no false negatives** (a `false` is always correct), with a tunable false-positive rate. Add-and-test only (no `Remove`, no enumeration); merge equally-sized filters with `UnionWith`.
 
 ```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
-
-// Sized for 1,000,000 expected items at a 0.1% false-positive rate.
-var seen = new BloomFilter<string, StringMurmur3Hasher>(1_000_000, 0.001);
-
+var seen = new BloomFilter<string, StringMurmur3Hasher>(1_000_000, 0.001); // n, fp-rate
 seen.Add("https://example.com/a");
-
-Console.WriteLine(seen.Contains("https://example.com/a")); // True  (definitely added)
-Console.WriteLine(seen.Contains("https://example.com/z")); // False (definitely not — no false negatives)
+Console.WriteLine(seen.Contains("https://example.com/a")); // True (definitely added)
+Console.WriteLine(seen.Contains("https://example.com/z")); // False (no false negatives)
 ```
 
-It is add-and-test only: there is no `Remove` (clearing one bit could erase an unrelated element),
-no enumeration, and no way to retrieve the stored elements — use `CeleritySet` / `FrozenCeleritySet`
-when you need exact membership or the elements back. The `k` bit probes are derived from a single
-hasher call by double hashing, so any `IHashProvider<T>` works; `Capacity`, `BitCount`, `HashCount`,
-and `CurrentFalsePositiveProbability` expose the sizing and current fill. Merge two equally-sized
-filters with `UnionWith`.
-
-### `HyperLogLog` — count distinct elements in a fixed few KB
-
-When you need to know **how many distinct elements** a (possibly huge) stream contains — unique
-visitors, distinct query values, deduplicated counts across shards — and can tolerate a small relative
-error, `HyperLogLog` estimates the cardinality from a fixed array of registers that never grows with
-the data, instead of a `HashSet<T>` that must store every distinct value.
+`HyperLogLog` estimates the **distinct count** of a stream from a fixed ~16&#160;KB of registers that never grow with the data (~0.8% error). Add-and-estimate only; `Precision` sets the accuracy trade-off (`StandardError` ≈ `1.04/√m`); merge equal-precision estimators with `UnionWith`.
 
 ```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
-
-var unique = new HyperLogLog<long, Int64Murmur3Hasher>(); // ~16 KB, precision 14
-
+var unique = new HyperLogLog<long, Int64Murmur3Hasher>();
 for (long id = 0; id < 10_000_000; id++)
-    unique.Add(id % 1_000_000);                // 1,000,000 distinct ids in a 10M stream
-
+    unique.Add(id % 1_000_000);
 Console.WriteLine(unique.EstimateCardinality()); // ≈ 1,000,000 (±~0.8%), from 16 KB
 ```
 
-It is add-and-estimate only: there is no `Remove`, no membership test for a specific element, and no
-way to retrieve the elements — use `HashSet<T>` / `CeleritySet` for an exact count or `BloomFilter` for
-approximate membership. `Precision` sets the memory/accuracy trade-off (`StandardError` ≈ `1.04/√m`),
-and two equal-precision estimators merge with `UnionWith` to count distinct across both streams.
-
-### `CountMinSketch` — estimate per-element frequencies in a fixed few KB
-
-When you need to know **how often each element occurs** in a (possibly huge) stream — heavy hitters,
-top-k, per-key request rates, deduplicated frequency counts across shards — and can tolerate a small,
-one-sided overestimate, `CountMinSketch` estimates frequencies from a fixed grid of counters that never
-grows with the data, instead of a `Dictionary<TKey, int>` frequency table that must store every distinct
-key.
+`CountMinSketch` estimates **per-element frequencies** from a fixed grid of counters that never grows with the distinct-key count, and **never underestimates** (overestimate bounded by `epsilon · TotalCount`). Add-and-estimate only; `epsilon` / `delta` set the trade-off; merge equally-sized sketches with `UnionWith`.
 
 ```csharp
-using Celerity.Collections;
-using Celerity.Hashing;
-
-var hits = new CountMinSketch<string, StringMurmur3Hasher>(epsilon: 0.001, delta: 0.001); // a few KB
-
+var hits = new CountMinSketch<string, StringMurmur3Hasher>(epsilon: 0.001, delta: 0.001);
 foreach (string url in requestStream)
     hits.Add(url);
-
-Console.WriteLine(hits.EstimateCount("/api/login")); // >= true count, over by <= 0.1% of the total
+Console.WriteLine(hits.EstimateCount("/api/login")); // >= true count, over by <= 0.1% of total
 ```
 
-It is add-and-estimate only: there is no `Remove` and no way to enumerate the keys — use a
-`Dictionary<TKey, int>` (or a Celerity dictionary) for exact counts you can iterate. The estimate
-**never underestimates** the true frequency; `epsilon` / `delta` set the memory/accuracy trade-off, and
-two equally-sized sketches merge with `UnionWith` to estimate frequencies across both streams.
+`BitSet` is a dense, exact bit vector — see [the API reference](docs/api/collections.md#bitset) for popcount, the SIMD bulk operators, and the set-bit enumerator.
 
-### Construct from an existing collection
+</details>
 
-The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`. When the source implements `ICollection<T>`, its `Count` is used to pre-size the backing storage so the bulk fill avoids resize work.
+<details>
+<summary><b>Construct from an existing collection</b></summary>
+
+The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
 
 ```csharp
 var bcl = new Dictionary<int, string> { [1] = "a", [2] = "b", [3] = "c" };
 var fast = new IntDictionary<string>(bcl);
 
-var fromKvps = new CelerityDictionary<string, int, StringFnV1AHasher>(
-    new[]
-    {
-        new KeyValuePair<string, int>("alice", 1),
-        new KeyValuePair<string, int>("bob",   2),
-    });
+var fromKvps = new CelerityDictionary<string, int, StringFnV1AHasher>(new[]
+{
+    new KeyValuePair<string, int>("alice", 1),
+    new KeyValuePair<string, int>("bob",   2),
+});
 ```
 
-Duplicate keys (including duplicate `default(TKey)` / zero-key entries) throw `ArgumentException`, matching BCL `Dictionary<,>` semantics.
-
-### Custom hasher
-
-Implement `IHashProvider<T>` as a `struct` to plug in your own hash function. See [Custom hashing](#custom-hashing) below for the contract and a worked example.
+</details>
 
 ## Choosing a collection
 
-Celerity ships specialised types because each one buys a different tradeoff. Use the table below to pick the right one; if your workload doesn't appear here, the BCL collection is usually the right starting point.
+Each type buys a different tradeoff. Find your workload below; if it isn't here, the BCL collection is usually the right starting point.
 
 | Your workload | Use | Why |
 |---|---|---|
@@ -388,31 +240,34 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | **Per-element frequency** over a large or unbounded stream (heavy hitters / top-k, approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
-Notes on picking a hasher once the collection is settled:
+**Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).
 
-- For `int` / `long` keys, the convenience subclasses (`IntDictionary<TValue>`, `IntSet`, `LongDictionary<TValue>`, `LongSet`) already pick a sensible default — only override when you have evidence of clustered or adversarial keys, in which case escalate to `Int32WangHasher` then `Int32Murmur3Hasher` (for `int` keys) or `Int64WangHasher` then `Int64Murmur3Hasher` (for `long` keys). The Wang full-finalizer tier is a cheaper middle option than Murmur3 while still mixing every input bit.
-- For `uint` keys, `UInt32Hasher` is the cheap XOR-fold default; escalate to `UInt32WangHasher` (the full Thomas-Wang finalizer) then `UInt32Murmur3Hasher` (the Murmur3 `fmix32` finalizer) when the fold produces clustering or you need strong avalanche on adversarial keys, mirroring the `int` family's two-step `Int32WangHasher` → `Int32Murmur3Hasher` escalation.
-- For `ulong` keys, `UInt64Hasher` (the Murmur3 `fmix64` finalizer) is the strong default; drop down to `UInt64WangHasher` (the full Thomas-Wang `hash64shift` finalizer — only shifts and adds, no multiplies) when profiling shows the two `fmix64` multiplies are a hot-path cost and the keys are already reasonably uniform, or all the way down to the cheap XOR-fold `UInt64WangNaiveHasher` (the `ulong` counterpart to `Int64WangNaiveHasher`) when the keys are uniform and latency matters most.
-- For `string` keys, `StringFnV1AHasher` is the fast default for ASCII-dominated workloads (it folds only the low byte of each character). When you want the simplest, most familiar cheap hash, `StringDjb2Hasher` (Bernstein's classic djb2) is the minimal option — a shift-and-add per byte with no real multiply, no table, and no finalizer, folding the full UTF-16 character so it still distinguishes upper-byte-distinct characters (e.g. `'A'` / `'Ł'`); its tradeoff is weaker avalanche than the FNV-1a or one-at-a-time hashers, so it shines on short ASCII identifiers but clusters sooner on adversarial keys. `StringDjb2AHasher` (the djb2a XOR-folding variant) is its sibling at the same cost — it XORs each byte into the accumulator instead of adding it (`* 33 ^ b` vs `* 33 + b`), exactly the FNV-1 → FNV-1a relationship, which sidesteps djb2's low-bit carry bias for slightly cleaner diffusion while keeping the same weak avalanche. `StringSdbmHasher` (the sdbm classic) is its peer in the same cheapest cost class — `hash * 65599` lowered to two shifts and a subtract, also a full-character fold with no finalizer; its larger multiplier tends to distribute slightly better than djb2 on short keys, sharing the same weak avalanche. `StringElfHasher` (the PJW / ELF symbol-table hash) is a third peer in that cheapest class — a shift-and-add whose top nibble is folded back into the low byte and cleared each step, so it recirculates high-order entropy (a touch more diffusion than the pure shift-and-add classics) while staying multiply-free, with a non-negative 28-bit result. `StringCrc32Hasher` (the standard CRC-32 / zlib / IEEE 802.3 checksum) rounds out the cheap tier as its only **table-driven** member — a 256-entry byte lookup table, full-character fold; being a linear checksum it has weaker avalanche than the designed mixers, so reach for it primarily when you need to reproduce a CRC-32-based key distribution exactly (e.g. to match an external sharding or storage scheme), the same compatibility role `StringMurmur2Hasher` and the FNV-1 hashers fill for their external systems. `StringAdler32Hasher` (the standard Adler-32 / zlib / RFC 1950 checksum) is its table-free checksum sibling — two running 16-bit sums modulo 65521, full-character fold; it is even weaker than CRC-32 as a hash (its low 16 bits are just the byte-sum, so unrelated short keys cluster badly), so reach for it only when you need to reproduce an Adler-32-based key distribution exactly (e.g. zlib, PNG, or rsync rolling-checksum compatibility), not as a general-purpose hash. If you specifically need the original **FNV-1** ordering (multiply-then-XOR) rather than the generally preferred FNV-1a — for example to match an external system — `StringFnV1Hasher` provides it with the same full-character fold, at the cost of slightly weaker avalanche on the trailing byte; `StringFnV164Hasher` is its 64-bit-accumulator counterpart, the same FNV-1 ordering carried through a wider state that clusters less on long or numerous keys (effectively free on 64-bit platforms). For keys with significant non-ASCII content, step up to `StringFnV1AFullHasher`, which folds the full UTF-16 character at the same FNV-1a cost class and so does not collide characters that differ only in their upper byte (e.g. `'A'` / `'Ł'`); for long or numerous keys where the 32-bit accumulator starts clustering, `StringFnV1A64Hasher` does the same full-character fold into a 64-bit state (effectively free on 64-bit platforms); when FNV-1a's single-multiply mixing clusters your keys but you don't want to pay for a block hash, `StringJenkinsOaatHasher` (Bob Jenkins' one-at-a-time hash) gives stronger per-bit avalanche at the same cheap, multiply-free cost class; escalate further to a strong-avalanche option when key distribution is clustered or adversarial — `StringMurmur3Hasher` (the `fmix32`-finalized MurmurHash3) for short keys (its older same-family sibling `StringMurmur2Hasher` provides Austin Appleby's original MurmurHash2 — one multiply per block and a lighter two-shift finalizer — for compatibility with external systems that hash with MurmurHash2, e.g. Hadoop or Cassandra; prefer MurmurHash3 otherwise, as its stronger finalizer avoids the known MurmurHash2 weaknesses), `StringXxHash32Hasher` (xxHash32, which keeps four accumulators in flight) when keys are long enough for its throughput-oriented stripe loop to pull ahead, `StringXxHash64Hasher` (xxHash64, folded to 32 bits) which widens those accumulators and the stripe further for longer keys on 64-bit platforms, `StringMetroHash64Hasher` (MetroHash64, folded to 32 bits) — a strong-avalanche option in the same throughput-oriented, four-accumulator class as the xxHash family that is often competitive on mid-length keys — `StringCityHash64Hasher` (CityHash64, folded to 32 bits), whose length-classed structure (dedicated branches for ≤ 16, 17–32, and 33–64 bytes before its 64-byte main loop) often edges ahead on the short-to-mid keys typical of identifiers, or `StringXxHash3Hasher` (XXH3, the third-generation xxHash folded to 32 bits), which is *both* length-classed for short keys and runs an eight-lane accumulator loop in bulk — typically the fastest of the strong options across both short and long keys; profile on your own key shape to choose between them. When the keys come from an untrusted source (request paths, header names, user-supplied identifiers) and an adversary could deliberately craft colliding keys, step beyond the throughput family to a keyed PRF: `StringHalfSipHash24Hasher` (HalfSipHash-2-4, the 32-bit-word SipHash sibling) is the cheapest keyed option on short keys and 32-bit targets, with a native 32-bit output and no fold; `StringSipHash13Hasher` (SipHash-1-3, the reduced-round 64-bit variant Rust's `HashMap` uses by default) is the fastest of the full 64-bit-state keyed options, `StringSipHash24Hasher` (SipHash-2-4, the conservative variant Python and Ruby use) trades a little throughput for extra cryptographic margin, and `StringHighwayHash64Hasher` (Google's HighwayHash64, the keyed hash designed as a SIMD-friendly successor to SipHash) is the wider-state alternative — all four trade some throughput for keyed collision resistance, with HighwayHash's edge realised once it is vectorized (the current implementation is a verified portable scalar one).
-- For arbitrary types, `DefaultHasher<T>` (which delegates to `EqualityComparer<T>.Default.GetHashCode()`) is a safe fallback. It still benefits from the struct-hasher devirtualisation; the inner `EqualityComparer<T>` dispatch is the only unavoidable cost. Replace it with a hand-written struct hasher if profiling shows `Hash` on the hot path.
-- The full hasher matrix lives in [`docs/api/hashing.md`](docs/api/hashing.md).
+## Choosing a hasher
 
-A few cases where Celerity is **not** the right answer today:
+Once the collection is settled, pick a hasher for your key shape. Defaults are good; escalate only with evidence (clustering, adversarial input). The [full hasher matrix](docs/api/hashing.md) documents every option and its tradeoff.
 
-- **Concurrent reads/writes from multiple threads.** Celerity collections are single-threaded; use `ConcurrentDictionary<,>` or wrap a BCL `Dictionary<,>` in your own lock.
-- **You need `IDictionary<,>` (mutable interface), `LINQ`-heavy code that relies on `Count`-via-extension on the boxed surface, or anything that depends on a specific iteration order.** Celerity exposes `IReadOnlyDictionary<,>` only and does not guarantee iteration order across versions.
+| Key type | Default | When to escalate |
+|---|---|---|
+| `int` / `long` | `Int32WangNaiveHasher` / `Int64WangNaiveHasher` (built into `IntDictionary` / `LongDictionary`) | Clustered keys → `Int32WangHasher` → `Int32Murmur3Hasher` (the Wang full finalizer is a cheaper middle tier than Murmur3). |
+| `uint` / `ulong` | `UInt32Hasher` (cheap XOR-fold) / `UInt64Hasher` (`fmix64`) | `uint`: → `UInt32WangHasher` → `UInt32Murmur3Hasher`. `ulong`: drop to `UInt64WangHasher` / `UInt64WangNaiveHasher` when the `fmix64` multiplies cost more than they buy on uniform keys. |
+| `string` (ASCII) | `StringFnV1AHasher` (folds the low byte per char) | Non-ASCII or long keys → `StringFnV1AFullHasher` / `StringFnV1A64Hasher`. Clustered keys → strong-avalanche `StringMurmur3Hasher`, `StringXxHash3Hasher`, etc. |
+| `string` (untrusted input) | — | Use a keyed PRF resistant to crafted collisions: `StringSipHash13Hasher` (Rust's default), `StringSipHash24Hasher`, `StringHalfSipHash24Hasher`, or `StringHighwayHash64Hasher`. |
+| `Guid` | `GuidHasher` | — |
+| Any other type | `DefaultHasher<T>` (delegates to `EqualityComparer<T>.Default`) | Replace with a hand-written struct hasher if profiling shows `Hash` on the hot path. |
+
+The hashing library also ships classic / compatibility hashes (djb2, sdbm, ELF/PJW, CRC-32, Adler-32, FNV-1, MurmurHash2, CityHash, MetroHash, xxHash32/64) for matching an external system's key distribution — see [`docs/api/hashing.md`](docs/api/hashing.md) for the complete list, costs, and avalanche notes, and use `HashQualityEvaluator` (below) to compare candidates on your own keys.
 
 ## Benchmarks
 
-**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its .NET BCL counterpart on every `main` push, with historical trends and per-PR regression comparisons. For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop and the dashboard reflects that.
+**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its BCL counterpart on every `main` push, with historical trends and per-PR regression comparisons. For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop.
 
-The suite also includes `StringHasherBenchmark` and `IntegerHasherBenchmark`, head-to-head throughput comparisons of every built-in `string` and integer/`Guid` hasher (each baselined against the framework `GetHashCode()`; the string benchmark sweeps short-ASCII, long-ASCII, and non-ASCII key shapes). They render on the dashboard under **Hash function throughput**, and run locally with `dotnet run -c Release -- --filter "*HasherBenchmark*"`. Read the throughput numbers alongside the distribution metrics from `HashQualityEvaluator` when picking a hasher — a fast hasher that clusters is not a win. See [Benchmarking the string hashers](docs/api/hashing.md#benchmarking-the-string-hashers).
+The suite also includes `StringHasherBenchmark` and `IntegerHasherBenchmark` (every built-in hasher vs the framework `GetHashCode()`, rendered under **Hash function throughput** on the dashboard; run locally with `--filter "*HasherBenchmark*"`). Read throughput alongside the distribution metrics from `HashQualityEvaluator` — a fast hasher that clusters is not a win.
 
-Beyond the CI-tracked core, an **extended local suite** exercises the harder questions a single random-key benchmark can't answer: multiple key distributions (uniform / sequential / clustered / adversarial), million-item scale tests, allocation profiling, concurrent read scaling, cache-locality effects, a mixed read-heavy workload, and a comparison against `FrozenDictionary<,>`. These are heavier and noisier, so they run on demand rather than on every PR — e.g. `dotnet run -c Release -- --filter "*Distribution*"`. See the [extended benchmark suite](docs/performance.md#extended-benchmark-suite) for what each one measures and how to read it.
+An **extended local suite** answers the harder questions a single random-key benchmark can't: multiple key distributions (uniform / sequential / clustered / adversarial), million-item scale, allocation profiling, concurrent read scaling, cache locality, mixed read-heavy workloads, and a `FrozenDictionary<,>` comparison. These run on demand — e.g. `dotnet run -c Release -- --filter "*Distribution*"`. See the [extended benchmark suite](docs/performance.md#extended-benchmark-suite).
 
 ## Custom hashing
 
-You can bring your own custom hash provider by implementing the `IHashProvider<T>` interface.
+Implement `IHashProvider<T>` as a **struct** (required by `where THasher : struct, IHashProvider<T>`) so the JIT can devirtualize and inline `Hash()`:
 
 ```csharp
 public interface IHashProvider<T>
@@ -421,39 +276,20 @@ public interface IHashProvider<T>
 }
 ```
 
-Hashers must be **structs** when used with Celerity collections (`where THasher : struct, IHashProvider<T>`) so the JIT can devirtualize and inline `Hash()`. The package ships built-in hashers for `int`, `long`, `uint`, `ulong`, `Guid`, and `string`, plus a `DefaultHasher<T>` fallback that delegates to `EqualityComparer<T>.Default.GetHashCode()`. See [`docs/api/hashing.md`](docs/api/hashing.md) for the full list.
-
-Not sure which hasher to pick for your key shape? `HashQualityEvaluator.Evaluate<T, THasher>(keys)` runs a representative key sample through a hasher and returns a `HashQualityReport` of collision count, bucket occupancy, max bucket load, chi-squared, and a normalized distribution score (`1.0` = ideal uniform). It's a diagnostic tool — run it offline to compare candidate hashers before committing one. See the [hash quality evaluation](docs/api/hashing.md#hash-quality-evaluation) section.
+The package ships built-in hashers for `int`, `long`, `uint`, `ulong`, `Guid`, and `string`, plus a `DefaultHasher<T>` fallback. Not sure which fits your key shape? `HashQualityEvaluator.Evaluate<T, THasher>(keys)` runs a key sample through a hasher and returns a `HashQualityReport` (collision count, bucket occupancy, max bucket load, chi-squared, and a normalized distribution score where `1.0` = ideal uniform) — a diagnostic to compare candidates offline before committing. See [`docs/api/hashing.md`](docs/api/hashing.md#hash-quality-evaluation).
 
 ## Native AOT & trimming
 
-Celerity is **Native AOT and trimming compatible**. The library carries no reflection, runtime code generation, or dynamic type loading — every collection is a generic over a struct hasher, and the only BCL primitives on the hot paths are `MemoryMarshal`, `Unsafe`, and `EqualityComparer<T>.Default`, all of which are AOT-safe. The assembly is marked [`<IsAotCompatible>true</IsAotCompatible>`](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#aot-compatibility-analyzers), so consuming it from a `PublishAot` app produces **no trim or AOT warnings**.
+Celerity is **Native AOT and trimming compatible** — no reflection, runtime code generation, or dynamic type loading. Every collection is a generic over a struct hasher, and the only BCL primitives on the hot paths (`MemoryMarshal`, `Unsafe`, `EqualityComparer<T>.Default`) are AOT-safe. The assembly is marked [`<IsAotCompatible>true</IsAotCompatible>`](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#aot-compatibility-analyzers), so a `PublishAot` app gets **no trim or AOT warnings**. Compatibility is enforced on every build (the trim/AOT analyzers run during compilation) and CI publishes a Native AOT smoke-test binary exercising every collection and hasher. See [`docs/aot.md`](docs/aot.md).
 
-```bash
-dotnet publish -r linux-x64 -c Release   # in an app that references Celerity.Collections
-```
+## API at a glance
 
-Compatibility is enforced on every build: the trim and AOT Roslyn analyzers run as part of the library's compilation, and CI publishes a Native AOT smoke-test app that exercises every collection and hasher and runs the resulting native binary. See [`docs/aot.md`](docs/aot.md) for details.
+The dictionaries mirror the parts of `Dictionary<TKey, TValue>` most callers reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove` (both overloads), `Clear`, `Count`, `Keys`, `Values`, `GetEnumerator()`. They implement `IReadOnlyDictionary<TKey, TValue?>` and accept an `IEnumerable<KeyValuePair<TKey, TValue>>` at construction. The sets expose `Add`, `TryAdd`, `Contains`, `Remove`, `Clear`, `Count`, and a struct enumerator. The zero / `default(TKey)` key (or element) is stored out-of-band so it never collides with the empty-slot sentinel.
 
-## API overview
-
-The dictionaries (`CelerityDictionary`, `IntDictionary`, `LongDictionary`) expose a compact, allocation-conscious API that mirrors the parts of `Dictionary<TKey, TValue>` most users actually reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove` (both the `bool Remove(key)` and `bool Remove(key, out TValue?)` overloads), `Clear`, `Count`, `Keys`, `Values`, and `GetEnumerator()`. They implement `IReadOnlyDictionary<TKey, TValue?>` and accept an `IEnumerable<KeyValuePair<TKey, TValue>>` source at construction.
-
-The sets (`CeleritySet`, `IntSet`, `LongSet`) expose `Add`, `TryAdd`, `Contains`, `Remove`, `Clear`, `Count`, and a struct enumerator.
-
-The zero / `default(TKey)` key (or element, for sets) is stored out-of-band so it never collides with the empty-slot sentinel used during probing. This includes `null` for reference-type keys.
-
-For full API details — constructors, method signatures, parameters, exceptions, and usage examples — see the **[API reference docs](docs/README.md)**.
+Full constructors, signatures, exceptions, and per-type examples: **[API reference](docs/README.md)**.
 
 ## Project docs
 
-- [`docs/`](docs/README.md) — documentation index.
-- [Performance tuning guide](docs/performance.md) — capacity, load factor, hasher selection, and benchmarking.
-- [Migration guide](docs/migration.md) — moving from `Dictionary<,>`, `HashSet<>`, `ILookup<,>`, and `FrozenDictionary<,>`.
-- [Troubleshooting](docs/troubleshooting.md) and [FAQ](docs/faq.md).
-- [Testing & coverage guide](docs/testing.md) — test layers, property-based and fuzz harnesses, coverage gating.
-- [API reference](docs/README.md#api-reference) — collections, hashing, utilities.
-- [`ROADMAP.md`](ROADMAP.md) — planned milestones and long-term vision.
-- [`CHANGELOG.md`](CHANGELOG.md) — release notes.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, test, PR conventions.
-- [GitHub Issues](https://github.com/marius-bughiu/Celerity/issues) — open backlog and bug reports.
+- [`docs/`](docs/README.md) — documentation index & [API reference](docs/README.md#api-reference).
+- [Performance tuning](docs/performance.md) · [Migration guide](docs/migration.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) · [Testing & coverage](docs/testing.md).
+- [`ROADMAP.md`](ROADMAP.md) · [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [GitHub Issues](https://github.com/marius-bughiu/Celerity/issues).
