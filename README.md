@@ -22,6 +22,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 - `BloomFilter<T, THasher>` — space-efficient **probabilistic** membership filter: bit-array storage with no false negatives and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory. Add-and-test only (no `Remove`); derives its `k` bit probes from a single hasher call by double hashing.
 - `BitSet` — dense, fixed-length **exact** bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD-accelerated bulk `And` / `Or` / `Xor` / `Not`. A faster, count-aware alternative to `System.Collections.BitArray` for dense small-integer index sets.
 - `HyperLogLog<T, THasher>` — space-efficient **probabilistic** cardinality estimator: counts the *distinct* elements in a stream of any size from a fixed array of registers (16&#160;KB by default) with a ~0.8% relative error, instead of a `HashSet<T>` that grows with the cardinality. Add-and-estimate only; mergeable with `UnionWith`.
+- `CountMinSketch<T, THasher>` — space-efficient **probabilistic** frequency estimator: estimates how many times each element occurs in a stream of any size from a fixed grid of counters, **never underestimating** (overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`), instead of a `Dictionary<TKey, int>` frequency table that grows with the distinct-key count. Add-and-estimate only; mergeable with `UnionWith`.
 
 All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. The hash-table collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel; `SmallDictionary` has no hash table and stores the default key inline.
 
@@ -314,6 +315,31 @@ way to retrieve the elements — use `HashSet<T>` / `CeleritySet` for an exact c
 approximate membership. `Precision` sets the memory/accuracy trade-off (`StandardError` ≈ `1.04/√m`),
 and two equal-precision estimators merge with `UnionWith` to count distinct across both streams.
 
+### `CountMinSketch` — estimate per-element frequencies in a fixed few KB
+
+When you need to know **how often each element occurs** in a (possibly huge) stream — heavy hitters,
+top-k, per-key request rates, deduplicated frequency counts across shards — and can tolerate a small,
+one-sided overestimate, `CountMinSketch` estimates frequencies from a fixed grid of counters that never
+grows with the data, instead of a `Dictionary<TKey, int>` frequency table that must store every distinct
+key.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var hits = new CountMinSketch<string, StringMurmur3Hasher>(epsilon: 0.001, delta: 0.001); // a few KB
+
+foreach (string url in requestStream)
+    hits.Add(url);
+
+Console.WriteLine(hits.EstimateCount("/api/login")); // >= true count, over by <= 0.1% of the total
+```
+
+It is add-and-estimate only: there is no `Remove` and no way to enumerate the keys — use a
+`Dictionary<TKey, int>` (or a Celerity dictionary) for exact counts you can iterate. The estimate
+**never underestimates** the true frequency; `epsilon` / `delta` set the memory/accuracy trade-off, and
+two equally-sized sketches merge with `UnionWith` to estimate frequencies across both streams.
+
 ### Construct from an existing collection
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`. When the source implements `ICollection<T>`, its `Count` is used to pre-size the backing storage so the bulk fill avoids resize work.
@@ -359,6 +385,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | **Membership gate** where a small, bounded false-positive rate is acceptable in exchange for a large memory saving (dedup pre-filters, "have I seen this before?" guards in front of an expensive exact lookup) | `BloomFilter<T, THasher>` | Probabilistic: bit-array storage with **no false negatives** and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory and never growing with element size. Add-and-test only — no `Remove`, no enumeration, no retrieval. If you need exact membership or to get the elements back, use `CeleritySet` / `FrozenCeleritySet`. |
 | **Dense set of small integer indices** (or a fixed universe of flags) where you count set bits or combine whole vectors — bitmaps, visited/presence masks, sieves | `BitSet` | Exact dense bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `System.Collections.BitArray`. For **sparse** indices over a huge/unbounded domain, `IntSet` / `LongSet` is more memory-efficient; for approximate membership over arbitrary elements, use `BloomFilter`. |
 | **Distinct count** over a large or unbounded stream (unique visitors / events, distinct-value cardinality, deduplicated counts across shards) where a small relative error is acceptable | `HyperLogLog<T, THasher>` | Probabilistic: estimates the distinct count from a fixed array of registers (16&#160;KB at the default precision) with a ~0.8% relative standard error, never growing with the cardinality — unlike a `HashSet<T>` that stores every distinct value. Add-and-estimate only; merge shard estimators with `UnionWith`. If you need an exact count or to test a specific element, use `HashSet<T>` / `CeleritySet`; for approximate *membership* rather than counting, use `BloomFilter`. |
+| **Per-element frequency** over a large or unbounded stream (heavy hitters / top-k, approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 Notes on picking a hasher once the collection is settled:

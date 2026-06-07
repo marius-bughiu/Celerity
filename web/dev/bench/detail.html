@@ -365,7 +365,8 @@
     { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                     vs: 'FrozenSet<string>' },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' },
     { key: 'BitSet',              title: 'BitSet',                                vs: 'BitArray', items: [1024, 1000000] },
-    { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                   vs: 'HashSet<int>' }
+    { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                   vs: 'HashSet<int>' },
+    { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                vs: 'Dictionary<int, int>' }
   ];
   var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];

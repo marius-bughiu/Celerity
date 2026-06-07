@@ -640,6 +640,57 @@ void Check(bool condition, string message)
     Check(guidHll.EstimateCardinality() == 1, "HyperLogLog<Guid> empty-guid element");
 }
 
+// CountMinSketch — probabilistic frequency estimator (no out-of-band slot; default(T)
+// is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
+// is never called with null). Exercise Add / Add(count) / EstimateCount / Clear /
+// UnionWith and the IEnumerable ctor across int / Guid / string instantiations so the
+// AOT publish compiles the SplitMix64 avalanche and the double-hashing column probe.
+{
+    var cms = new CountMinSketch<int, Int32WangNaiveHasher>();
+    cms.Add(42, 5);
+    cms.Add(0, 3); // zero is an ordinary element, not a sentinel
+    cms.Add(42);   // 42 now totals 6
+    Check(cms.EstimateCount(42) >= 6, "CountMinSketch never underestimates");
+    Check(cms.EstimateCount(0) >= 3, "CountMinSketch zero-element count");
+    Check(cms.TotalCount == 9, "CountMinSketch total count");
+    Check(cms.Width >= 4 && (cms.Width & (cms.Width - 1)) == 0, "CountMinSketch power-of-two width");
+    Check(cms.Depth >= 1, "CountMinSketch positive depth");
+
+    // No underestimates across a larger skewed fill.
+    var big = new CountMinSketch<int, Int32WangNaiveHasher>(0.001, 0.01);
+    var truth = new Dictionary<int, long>();
+    for (int i = 0; i < 50_000; i++)
+    {
+        int key = i % 500;
+        big.Add(key);
+        truth[key] = truth.GetValueOrDefault(key) + 1;
+    }
+    bool noUnderestimate = true;
+    foreach (var (key, count) in truth)
+        noUnderestimate &= big.EstimateCount(key) >= count;
+    Check(noUnderestimate, "CountMinSketch no underestimates over a large fill");
+
+    // UnionWith merges two equally-sized sketches.
+    var other = new CountMinSketch<int, Int32WangNaiveHasher>();
+    other.Add(99999, 4);
+    cms.UnionWith(other);
+    Check(cms.EstimateCount(99999) >= 4, "CountMinSketch UnionWith");
+
+    cms.Clear();
+    Check(cms.TotalCount == 0 && cms.EstimateCount(42) == 0, "CountMinSketch clear");
+
+    // String elements via the IEnumerable ctor, plus the out-of-band null reference
+    // (StringFnV1AHasher throws on null; CountMinSketch must not call it with null).
+    var strCms = new CountMinSketch<string, StringFnV1AHasher>(new[] { "alice", "alice", "bob" });
+    strCms.Add(null!);
+    Check(strCms.EstimateCount("alice") >= 2 && strCms.EstimateCount(null!) >= 1,
+        "CountMinSketch<string> ctor + null element");
+
+    var guidCms = new CountMinSketch<Guid, GuidHasher>();
+    guidCms.Add(Guid.Empty, 2); // ordinary element, no out-of-band slot
+    Check(guidCms.EstimateCount(Guid.Empty) >= 2, "CountMinSketch<Guid> empty-guid element");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

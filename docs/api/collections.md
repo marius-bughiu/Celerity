@@ -1647,3 +1647,137 @@ var shardB = new HyperLogLog<long, Int64Murmur3Hasher>(shardBIds);
 shardA.UnionWith(shardB);
 Console.WriteLine(shardA.EstimateCardinality());         // distinct across A ∪ B
 ```
+
+## CountMinSketch&lt;T, THasher&gt;
+
+A space-efficient **probabilistic frequency estimator** parameterized on a custom hash
+provider. It answers "roughly how many times have I seen this element?" from a fixed grid
+of counters whose size does **not** grow with the number of distinct elements, so it
+estimates per-element frequencies in a stream of any size from a few kilobytes of memory —
+where a `Dictionary<TKey, int>` frequency table must store every distinct key to count it.
+
+```csharp
+public class CountMinSketch<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+The contract is the defining Count-Min trade-off:
+
+- **Fixed, small memory.** The sketch allocates a `depth × width` grid of counters sized
+  from the error parameters and never grows, whether it counts a thousand distinct
+  elements or a billion.
+- **One-sided error.** `EstimateCount(item)` **never underestimates** an element's true
+  frequency. With probability at least `1 − delta` it overestimates by no more than
+  `epsilon · TotalCount` (collisions can only inflate counters, never deflate them).
+- **Add-and-estimate only.** Like a Bloom filter it has no `Remove` (decrementing a
+  counter could push an unrelated element's estimate below its true frequency, breaking the
+  never-underestimate guarantee). Use `Clear()` to reset, or `UnionWith` to combine two
+  sketches.
+
+### How it works
+
+The sketch is a grid of `depth` rows × `width` counters. Each element is mapped to one
+counter per row; `Add` increments those `depth` counters by the added amount, and
+`EstimateCount` returns the **minimum** across them. Because every counter an element
+touches accumulates that element's full count plus only non-negative contributions from
+colliding elements, the minimum is the tightest of the `depth` overestimates and can never
+fall below the truth (Cormode & Muthukrishnan, 2005).
+
+The grid is sized from two error parameters: the relative error factor `epsilon` drives the
+per-row counter count `w = ceil(e / epsilon)` (rounded up to a power of two so a column
+index is a mask, not a modulo), and the failure probability `delta` drives the row count
+`d = ceil(ln(1 / delta))`. The `d` counter columns for an element are derived from a
+**single** `IHashProvider<T>` call by double hashing (Kirsch–Mitzenmacher): the 32-bit base
+hash is avalanched into 64 bits whose two halves seed the recurrence `g_i = h1 + i·h2`
+(the stride forced odd so the rows spread out), so adding rows costs arithmetic, not more
+`Hash()` calls.
+
+### Constructors
+
+```csharp
+public CountMinSketch(
+    double epsilon = 0.01,
+    double delta = 0.01)
+
+public CountMinSketch(
+    IEnumerable<T> source,
+    double epsilon = 0.01,
+    double delta = 0.01)
+```
+
+The first overload creates an empty sketch sized for the given error parameters. The
+`IEnumerable<T>` overload pre-populates it by adding each element once (so duplicates in the
+source raise the estimated count).
+
+`epsilon` and `delta` must each be strictly between 0 and 1. Smaller `epsilon` widens each
+row (lowering the error); smaller `delta` adds rows (raising the confidence).
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `epsilon` or `delta` is not strictly between 0 and 1.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats the
+  error-parameter validation, so a `null` source with a bad `epsilon` surfaces as
+  `ArgumentNullException`.
+
+### Methods and properties
+
+- `void Add(T item)` — adds one occurrence, increasing the element's estimated frequency by
+  one.
+- `void Add(T item, long count)` — adds `count` occurrences. Throws
+  `ArgumentOutOfRangeException` if `count` is not positive.
+- `long EstimateCount(T item)` — the estimated frequency of an element. Never less than the
+  true count; with probability at least `1 − Delta` it exceeds it by no more than
+  `Epsilon · TotalCount`. An element never added returns `0` unless collisions inflate it.
+- `void UnionWith(CountMinSketch<T, THasher> other)` — merges another sketch in place
+  (elementwise counter addition), so this sketch afterwards estimates frequencies over the
+  combined streams. The result is exactly the counter state adding both streams to one
+  sketch would have produced. Throws `ArgumentNullException` on a `null` argument and
+  `ArgumentException` if the two sketches have a different `Width` or `Depth`.
+- `void Clear()` — resets every counter; preserves the grid dimensions.
+- `int Width { get; }` — the number of counters per row (`w`), a power of two.
+- `int Depth { get; }` — the number of rows (`d`), the number of estimates minimized over.
+- `double Epsilon { get; }` — the relative error factor the sketch was sized for.
+- `double Delta { get; }` — the failure probability the sketch was sized for.
+- `long TotalCount { get; }` — the total of all counts added (the `L1` norm the `Epsilon`
+  bound is relative to).
+
+### Default-element handling
+
+Because the sketch stores only counters there is no empty-slot sentinel, so unlike the
+hash-table collections it needs **no out-of-band handling** for `default(T)` — a zero
+`int`, `Guid.Empty`, or the empty string is hashed and counted like any other element. A
+`null` reference is mapped to a fixed base hash so the sketch never invokes the hasher with
+`null` (the string hashers throw on `null`), matching the library's out-of-band-`null`
+convention.
+
+### Choosing it
+
+Reach for `CountMinSketch` when you need **per-element frequency estimates over a large or
+unbounded stream** and can tolerate a small, bounded overestimate in exchange for fixed,
+small memory: heavy-hitter / top-k detection, approximate frequency counts in analytics and
+network telemetry, rate limiting, and deduplicated frequency counting across distributed
+shards (count locally, then `UnionWith` the partial sketches). If you need exact counts or
+to enumerate the keys, use a `Dictionary<TKey, int>` (or a Celerity dictionary) frequency
+table instead; for approximate *membership* use `BloomFilter<T, THasher>`, and for the
+distinct-element *count* use `HyperLogLog<T, THasher>`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Estimate per-URL request frequencies in a high-volume stream from a few KB of counters.
+var requests = new CountMinSketch<string, StringMurmur3Hasher>(epsilon: 0.001, delta: 0.001);
+
+foreach (string url in requestStream)
+    requests.Add(url);
+
+Console.WriteLine(requests.EstimateCount("/api/login")); // >= true count, +<=0.1% of total
+
+// Merge two shards' partial sketches to count frequencies across both.
+var shardA = new CountMinSketch<string, StringMurmur3Hasher>(shardAUrls);
+var shardB = new CountMinSketch<string, StringMurmur3Hasher>(shardBUrls);
+shardA.UnionWith(shardB);
+Console.WriteLine(shardA.EstimateCount("/api/login"));   // frequency across A ∪ B
+```
