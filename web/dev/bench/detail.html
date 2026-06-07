@@ -363,9 +363,10 @@
     { key: 'LongSet',             title: 'LongSet',                               vs: 'HashSet<long>' },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' },
     { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                     vs: 'FrozenSet<string>' },
-    { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' }
+    { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' },
+    { key: 'BitSet',              title: 'BitSet',                                vs: 'BitArray', items: [1024, 1000000] }
   ];
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----

@@ -38,6 +38,7 @@ internal static class Differential
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
         ("BloomFilter", BloomFilterCase),
+        ("BitSet", BitSetCase),
     ];
 
     private const int MinKey = -8;
@@ -469,6 +470,79 @@ internal static class Differential
 
         foreach (int k in oracle)
             Check(sut.Contains(k), $"false negative for {k}");
+    }
+
+    // ---- bit set (exact, two-directional) -----------------------------------
+
+    // A BitSet is exact, so it reconciles fully against a bool[] oracle after every
+    // single-bit op and after the bulk boolean operators. A length with a partial
+    // tail word is used so tail-bit masking (SetAll / Not) is exercised; the SIMD
+    // bulk paths kick in once the word count reaches the vector width.
+    private static void BitSetCase(Random rng)
+    {
+        int length = rng.Next(1, 320);
+        var sut = new BitSet(length);
+        var oracle = new bool[length];
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int index = rng.Next(0, length);
+            switch (rng.Next(0, 12))
+            {
+                case < 5: sut.Set(index, true); oracle[index] = true; break;
+                case < 8: sut.Set(index, false); oracle[index] = false; break;
+                case < 10: oracle[index] = sut.Flip(index); break;
+                case < 11:
+                    bool all = rng.Next(2) == 0;
+                    sut.SetAll(all);
+                    Array.Fill(oracle, all);
+                    break;
+                default:
+                    sut.Clear();
+                    Array.Clear(oracle);
+                    break;
+            }
+        }
+
+        int expectedCount = 0;
+        var expectedSetBits = new List<int>();
+        for (int i = 0; i < length; i++)
+        {
+            Check(sut[i] == oracle[i], $"bit {i} disagreed");
+            if (oracle[i]) { expectedCount++; expectedSetBits.Add(i); }
+        }
+        Check(sut.Count == expectedCount, "Count disagreed");
+
+        var actualSetBits = new List<int>();
+        foreach (int idx in sut.EnumerateSetBits())
+            actualSetBits.Add(idx);
+        Check(actualSetBits.SequenceEqual(expectedSetBits), "EnumerateSetBits disagreed");
+
+        // Bulk operators against a second random vector.
+        var otherBits = new bool[length];
+        for (int i = 0; i < length; i++)
+            otherBits[i] = rng.Next(2) == 0;
+        var other = new BitSet(otherBits);
+
+        bool[] FromBitSet(BitSet s)
+        {
+            var arr = new bool[length];
+            for (int i = 0; i < length; i++) arr[i] = s[i];
+            return arr;
+        }
+
+        var and = new BitSet(FromBitSet(sut)).And(other);
+        var or = new BitSet(FromBitSet(sut)).Or(other);
+        var xor = new BitSet(FromBitSet(sut)).Xor(other);
+        var not = new BitSet(FromBitSet(sut)).Not();
+        for (int i = 0; i < length; i++)
+        {
+            Check(and[i] == (oracle[i] && otherBits[i]), $"And bit {i}");
+            Check(or[i] == (oracle[i] || otherBits[i]), $"Or bit {i}");
+            Check(xor[i] == (oracle[i] ^ otherBits[i]), $"Xor bit {i}");
+            Check(not[i] == !oracle[i], $"Not bit {i}");
+        }
     }
 
     // ---- multi-map ----------------------------------------------------------

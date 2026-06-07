@@ -422,6 +422,89 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- BitSet (exact, deterministic) vs bool[] ----------------------------
+
+    // A BitSet is an exact dense bit vector, so it admits a full two-directional
+    // model: a bool[] of the same length is the oracle, and after any sequence of
+    // single-bit operations every bit and the population count must match exactly.
+    private enum BitOp { SetTrue, SetFalse, Flip, SetAllTrue, SetAllFalse, Clear }
+
+    private const int BitSetLength = 137; // > 2 words with a partial tail word
+
+    private static readonly Gen<List<(BitOp, int)>> GenBitOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n =>
+                n < 50 ? BitOp.SetTrue :
+                n < 80 ? BitOp.SetFalse :
+                n < 92 ? BitOp.Flip :
+                n < 95 ? BitOp.SetAllTrue :
+                n < 98 ? BitOp.SetAllFalse : BitOp.Clear),
+            Gen.Int[0, BitSetLength - 1])
+        .List[0, 160];
+
+    [Fact]
+    public void BitSet_ShouldMatch_BoolArrayModel()
+    {
+        GenBitOps.Sample(ops =>
+        {
+            var sut = new BitSet(BitSetLength);
+            var oracle = new bool[BitSetLength];
+
+            foreach (var (op, index) in ops)
+            {
+                switch (op)
+                {
+                    case BitOp.SetTrue: sut.Set(index, true); oracle[index] = true; break;
+                    case BitOp.SetFalse: sut.Set(index, false); oracle[index] = false; break;
+                    case BitOp.Flip: oracle[index] = sut.Flip(index); break;
+                    case BitOp.SetAllTrue: sut.SetAll(true); Array.Fill(oracle, true); break;
+                    case BitOp.SetAllFalse: sut.SetAll(false); Array.Fill(oracle, false); break;
+                    case BitOp.Clear: sut.Clear(); Array.Clear(oracle); break;
+                }
+            }
+
+            int expectedCount = 0;
+            for (int i = 0; i < BitSetLength; i++)
+            {
+                Assert.Equal(oracle[i], sut[i]);
+                if (oracle[i]) expectedCount++;
+            }
+            Assert.Equal(expectedCount, sut.Count);
+
+            // The set-bit walk must yield exactly the true indices, in order.
+            var expectedSetBits = new List<int>();
+            for (int i = 0; i < BitSetLength; i++)
+                if (oracle[i]) expectedSetBits.Add(i);
+            Assert.Equal(expectedSetBits, sut.EnumerateSetBits().ToList());
+        }, iter: 2000);
+    }
+
+    private static readonly Gen<(bool[], bool[])> GenBitPair =
+        Gen.Select(Gen.Bool.Array[BitSetLength], Gen.Bool.Array[BitSetLength]);
+
+    [Fact]
+    public void BitSet_BulkOps_ShouldMatch_ElementwiseModel()
+    {
+        GenBitPair.Sample(pair =>
+        {
+            var (aRef, bRef) = pair;
+            var b = new BitSet(bRef);
+
+            var and = new BitSet(aRef).And(b);
+            var or = new BitSet(aRef).Or(b);
+            var xor = new BitSet(aRef).Xor(b);
+            var not = new BitSet(aRef).Not();
+
+            for (int i = 0; i < BitSetLength; i++)
+            {
+                Assert.Equal(aRef[i] && bRef[i], and[i]);
+                Assert.Equal(aRef[i] || bRef[i], or[i]);
+                Assert.Equal(aRef[i] ^ bRef[i], xor[i]);
+                Assert.Equal(!aRef[i], not[i]);
+            }
+        }, iter: 1000);
+    }
+
     // ---- MultiMap vs Dictionary<int,List<int>> ------------------------------
 
     private enum MultiOp { Add, RemoveValue, RemoveAll }

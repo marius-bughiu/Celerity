@@ -540,6 +540,60 @@ void Check(bool condition, string message)
     Check(guidFilter.Contains(Guid.Empty), "BloomFilter<Guid> empty-guid element");
 }
 
+// BitSet — dense exact bit vector. Exercise Set / Get / Flip / SetAll / Count
+// (popcount), the SIMD-accelerated bulk And / Or / Xor / Not, the tail-bit masking
+// past Length, and both enumerators so the AOT publish compiles the Vector<ulong>
+// bulk paths and the TrailingZeroCount set-bit walk.
+{
+    var bits = new BitSet(130); // 3 words, 62 tail bits past Length
+    bits.Set(0, true);
+    bits[64] = true;
+    bits[129] = true;
+    Check(bits.Length == 130 && bits.Count == 3, "BitSet set + popcount");
+    Check(bits[0] && bits[64] && bits[129] && !bits[1], "BitSet get");
+    Check(bits.Flip(1) && bits[1], "BitSet flip");
+    bits.Set(1, false);
+
+    bits.SetAll(true);
+    Check(bits.Count == 130 && bits.All(), "BitSet SetAll + tail masking");
+    bits.Not();
+    Check(bits.Count == 0 && bits.None(), "BitSet Not");
+
+    var a = new BitSet(1000);
+    var b = new BitSet(1000);
+    for (int i = 0; i < 1000; i += 2) a[i] = true;     // evens
+    for (int i = 0; i < 1000; i += 3) b[i] = true;     // multiples of 3
+    var union = new BitSet(1000);
+    union.Or(a).Or(b);
+    bool orOk = true;
+    for (int i = 0; i < 1000; i++) orOk &= union[i] == (i % 2 == 0 || i % 3 == 0);
+    Check(orOk, "BitSet SIMD Or");
+
+    var inter = new BitSet((bool[])ToBoolArray(a));
+    inter.And(b);
+    bool andOk = true;
+    for (int i = 0; i < 1000; i++) andOk &= inter[i] == (i % 2 == 0 && i % 3 == 0);
+    Check(andOk, "BitSet SIMD And");
+
+    var sparse = new BitSet(300);
+    sparse[7] = true;
+    sparse[256] = true;
+    var setBits = new List<int>();
+    foreach (int idx in sparse.EnumerateSetBits()) setBits.Add(idx);
+    Check(setBits.Count == 2 && setBits[0] == 7 && setBits[1] == 256, "BitSet EnumerateSetBits");
+
+    int trueCount = 0;
+    foreach (bool bit in sparse) if (bit) trueCount++;
+    Check(trueCount == 2, "BitSet value enumerator");
+
+    static bool[] ToBoolArray(BitSet src)
+    {
+        var arr = new bool[src.Length];
+        for (int i = 0; i < src.Length; i++) arr[i] = src[i];
+        return arr;
+    }
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
