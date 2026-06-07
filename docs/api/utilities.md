@@ -139,3 +139,75 @@ static void Shuffle<TRng>(int[] a, ref TRng rng) where TRng : struct, IRandomSou
 - **Not thread-safe and not cryptographic.** Share one generator per thread; for security-sensitive randomness use `System.Security.Cryptography.RandomNumberGenerator`.
 
 All generators are AOT-safe (no reflection); `NextUInt64` and the derived helpers are `[MethodImpl(AggressiveInlining)]` and allocation-free.
+
+## VarInt (span varint codec)
+
+```csharp
+namespace Celerity.Primitives;
+
+public static class VarInt
+{
+    public const int MaxVarIntLength32 = 5;   // max bytes for a uint / zig-zagged int
+    public const int MaxVarIntLength64 = 10;  // max bytes for a ulong / zig-zagged long
+
+    // Size helpers
+    public static int VarIntLength(uint  value);
+    public static int VarIntLength(ulong value);
+    public static int VarIntLength(int   value);   // zig-zag length
+    public static int VarIntLength(long  value);   // zig-zag length
+
+    // Unsigned LEB128
+    public static bool TryWriteVarInt(Span<byte> destination, uint  value, out int bytesWritten);
+    public static bool TryWriteVarInt(Span<byte> destination, ulong value, out int bytesWritten);
+    public static bool TryReadVarInt(ReadOnlySpan<byte> source, out uint  value, out int bytesRead);
+    public static bool TryReadVarInt(ReadOnlySpan<byte> source, out ulong value, out int bytesRead);
+
+    // Signed (zig-zag + LEB128)
+    public static bool TryWriteVarInt(Span<byte> destination, int   value, out int bytesWritten);
+    public static bool TryWriteVarInt(Span<byte> destination, long  value, out int bytesWritten);
+    public static bool TryReadVarInt(ReadOnlySpan<byte> source, out int   value, out int bytesRead);
+    public static bool TryReadVarInt(ReadOnlySpan<byte> source, out long  value, out int bytesRead);
+
+    // Zig-zag transforms (public, usable standalone)
+    public static uint  ZigZagEncode(int  value);
+    public static int   ZigZagDecode(uint value);
+    public static ulong ZigZagEncode(long value);
+    public static long  ZigZagDecode(ulong value);
+}
+```
+
+A **span-based variable-length integer codec**: LEB128 for unsigned 32-/64-bit values and zig-zag + LEB128 for signed values, encoding directly over a caller-owned `Span<byte>` / `ReadOnlySpan<byte>` with **no stream and no allocation**.
+
+A varint stores a small magnitude in fewer bytes than its fixed width: each byte carries 7 payload bits in its low bits and a continuation flag (`0x80`) in its high bit, least-significant group first (LEB128). It is the wire format Protocol Buffers, the .NET metadata tables, and most custom binary serializers use for length prefixes and field tags. The BCL exposes this **only** as `BinaryWriter.Write7BitEncodedInt` / `BinaryReader.Read7BitEncodedInt` — bound to a `Stream` and allocating a writer/reader (see [runtime #24473](https://github.com/dotnet/runtime/issues/24473)). `VarInt` fills the span gap.
+
+**Workloads:** Protobuf-style wire codecs, custom binary serializers, packet builders, append-only logs, and no-stream / no-allocation encoding hot paths that own their byte buffer.
+
+**Usage** — write into a buffer and advance by `bytesWritten`; read back and advance by `bytesRead`:
+
+```csharp
+using Celerity.Primitives;
+
+Span<byte> buffer = stackalloc byte[VarInt.MaxVarIntLength64];
+
+VarInt.TryWriteVarInt(buffer, 300u, out int n);   // n == 2, bytes 0xAC 0x02
+VarInt.TryReadVarInt(buffer, out uint value, out int read);   // value == 300, read == 2
+
+// A length prefix followed by a packed sequence of signed deltas:
+int offset = 0;
+foreach (int delta in deltas)
+{
+    VarInt.TryWriteVarInt(scratch.AsSpan(offset), delta, out int w);  // signed ⇒ zig-zag
+    offset += w;
+}
+```
+
+**Signed values are zig-zag encoded.** Two's-complement makes every negative number occupy the full width (a naive LEB128 of `-1` is always 10 bytes); zig-zag maps signed values to unsigned so small magnitudes of either sign stay short — `0 → 0, -1 → 1, 1 → 2, -2 → 3, …`. The `int` / `long` overloads apply it automatically; the `uint` / `ulong` overloads are plain LEB128.
+
+**Contract and special cases:**
+
+- **Overload selection is by argument type.** An untyped integer literal binds to the **signed** (zig-zag) overload, and the four `TryReadVarInt` overloads differ only in their `out` value type — so use an explicit type (`out uint v`), not `out var`, at the call site, and add a `u` / `UL` suffix when you want plain unsigned LEB128 for a literal.
+- **Bounds-safe, never throws.** `TryWrite*` returns `false` and reports `0` bytes when the destination is too small (nothing partial is left behind); `TryRead*` returns `false` and reports `0` bytes when the source is truncated (a continuation bit with no further byte) or malformed (more than the maximum length for the width, or a final byte whose bits overflow the target width — e.g. an `int` whose 5th byte exceeds `0x0F`, or a `ulong` whose 10th byte exceeds `0x01`).
+- **Length is exact.** `VarIntLength(value)` returns the same byte count a `TryWrite*` of that value reports — use it (or the `MaxVarIntLength32` / `MaxVarIntLength64` ceilings) to size buffers up front.
+- **`0` encodes to a single `0x00` byte;** `uint.MaxValue` is 5 bytes, `ulong.MaxValue` is 10.
+
+All methods are allocation-free and AOT-safe (no reflection); the transforms and length helpers are `[MethodImpl(AggressiveInlining)]`.

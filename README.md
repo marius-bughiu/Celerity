@@ -301,6 +301,14 @@ double unit = rng.NextDouble();                  // [0, 1)
 int dieRoll = rng.NextInt(1, 7);                 // [1, 7), unbiased (Lemire)
 ```
 
+`Celerity.Primitives` also ships **`VarInt`**, a span-based variable-length integer codec: LEB128 for `uint` / `ulong` and zig-zag + LEB128 for `int` / `long`, encoding straight over a caller-owned `Span<byte>` with **no stream and no allocation**. The BCL exposes 7-bit-encoded integers only on `BinaryWriter` / `BinaryReader` (stream-bound and allocating); `VarInt` is the no-alloc span path custom wire codecs and serializers actually want. Every `TryWrite` / `TryRead` is bounds-safe (returns `false` on a short or truncated buffer, never throws).
+
+```csharp
+Span<byte> buffer = stackalloc byte[VarInt.MaxVarIntLength64];
+VarInt.TryWriteVarInt(buffer, 300u, out int n);              // n == 2
+VarInt.TryReadVarInt(buffer, out uint value, out int read);  // value == 300
+```
+
 See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.
 
 ## Native AOT & trimming
