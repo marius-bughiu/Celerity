@@ -133,6 +133,22 @@ public class IndexerOverwriteResizeTests
     }
 
     [Fact]
+    public void PooledCelerityDictionary_IndexerOverwriteAtThreshold_DoesNotResize()
+    {
+        using var map = new PooledCelerityDictionary<string, int, CountingStringHasher>(capacity: 4);
+        map["a"] = 1;
+        map["b"] = 2;
+        map["c"] = 3; // Count == 3 == threshold
+
+        _hashCallCount = 0;
+        map["b"] = 99; // overwrite existing key — must not resize
+
+        Assert.Equal(1, _hashCallCount);
+        Assert.Equal(3, map.Count);
+        Assert.Equal(99, map["b"]);
+    }
+
+    [Fact]
     public void IntDictionary_RepeatedOverwriteAtThreshold_NeverResizes()
     {
         var map = new IntDictionary<int, CountingIntHasher>(capacity: 4);

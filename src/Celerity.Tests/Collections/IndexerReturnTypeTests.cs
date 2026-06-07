@@ -71,6 +71,25 @@ public class IndexerReturnTypeTests
     }
 
     [Fact]
+    public void PooledCelerityDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(typeof(PooledCelerityDictionary<string, int, StringFnV1AHasher>), keyType: typeof(string), valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        using var map = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
     public void IntDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
     {
         var map = new IntDictionary<string>

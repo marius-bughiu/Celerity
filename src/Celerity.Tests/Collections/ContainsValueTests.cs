@@ -395,6 +395,113 @@ public class ContainsValueTests
         Assert.False(map.ContainsValue(300));
     }
 
+    // ---------------- PooledCelerityDictionary ----------------
+
+    [Fact]
+    public void PooledCelerityDictionary_EmptyMap_ReturnsFalse()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_FindsValueInRegularSlot()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ReturnsFalseForMissingValue()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_FindsValueOnlyInDefaultKeySlot_IntKey()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_FindsValueOnlyInDefaultKeySlot_NullStringKey()
+    {
+        using var map = new PooledCelerityDictionary<string, int, StringFnV1AHasher>();
+        map[null!] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_DefaultValueLookup_ZeroValue()
+    {
+        using var empty = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(empty.ContainsValue(0));
+
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_NullValueLookup_ReferenceType()
+    {
+        using var map = new PooledCelerityDictionary<int, string?, Int32WangNaiveHasher>();
+        map[1] = "one";
+        map[2] = null;
+        Assert.True(map.ContainsValue(null));
+
+        using var noNulls = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher> { [1] = "one", [2] = "two" };
+        Assert.False(noNulls.ContainsValue(null));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_DuplicateValues_ReturnsTrue()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>
+        {
+            [1] = 42,
+            [2] = 42,
+            [3] = 42,
+        };
+        Assert.True(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_SurvivesResize()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(capacity: 4);
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 10;
+
+        Assert.True(map.ContainsValue(770));
+        Assert.False(map.ContainsValue(-1));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_AfterDefaultKeyRemove_ReturnsFalse()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 555;
+        map[1] = 100;
+        map.Remove(0);
+        Assert.False(map.ContainsValue(555));
+        Assert.True(map.ContainsValue(100));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_AfterClear_ReturnsFalse()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map[0] = 300;
+        map.Clear();
+        Assert.False(map.ContainsValue(100));
+        Assert.False(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(300));
+    }
+
     // ---------------- FrozenCelerityDictionary ----------------
     // Read-only, so the resize / remove / clear variants do not apply.
 

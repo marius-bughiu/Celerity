@@ -7,6 +7,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
 - `RobinHoodDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Robin Hood open addressing: bounds probe-length variance so worst-case lookups stay close to average on clustered / adversarial keys (at the cost of a per-slot probe-distance `int`).
+- `PooledCelerityDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer whose backing arrays are rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
 - `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: each key groups multiple values (`Add` appends rather than overwrites). Implements `ILookup<TKey, TValue?>`.
 - `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary tuned for the very-small (`n <= ~16`) case. No hasher: it never hashes, so a `0` / `null` / default key is stored inline rather than out-of-band.
@@ -90,6 +91,25 @@ if (dict.TryGetValue(42, out var val))
 ```
 
 The trade-off is a per-slot probe-distance `int` of bookkeeping (so it allocates more than `CelerityDictionary`); on uniformly distributed keys with a good hasher, `CelerityDictionary` matches or beats it, so prefer Robin Hood specifically for the clustered / adversarial case.
+
+### `PooledCelerityDictionary` — pooled storage for short-lived dictionaries
+
+When you build and discard many dictionaries on a hot path (per request, per frame, per batch), their backing arrays are a steady source of Gen 0 — and eventually Large Object Heap — garbage. `PooledCelerityDictionary` is a drop-in peer of `CelerityDictionary` whose key/value arrays are rented from `ArrayPool<T>.Shared` and returned on `Dispose` (and on every internal resize), so a build/use/dispose cycle recycles buffers instead of allocating fresh ones.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+using (var dict = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>())
+{
+    dict[42] = "hello";
+
+    if (dict.TryGetValue(42, out var val))
+        Console.WriteLine(val); // "hello"
+} // backing arrays return to ArrayPool<T>.Shared here
+```
+
+Dispose it (a `using` scope is ideal) so the buffers return to the pool; forgetting to dispose is not a leak, you just lose the pooling benefit. After disposal every member throws `ObjectDisposedException`. For a long-lived dictionary the pooling buys nothing — stay on `CelerityDictionary`. Not thread-safe.
 
 ### `FrozenCelerityDictionary` — build-once string lookups
 
@@ -236,6 +256,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangNaiveHasher`. |
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
 | Dictionary with **clustered / adversarial** keys where worst-case lookup latency matters | `RobinHoodDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but Robin Hood probing bounds probe-length variance so tail-latency lookups don't degrade on bunched keys. Costs a per-slot probe-distance `int`; for uniform keys with a good hasher, prefer `CelerityDictionary`. |
+| **Short-lived** dictionary rebuilt frequently on a hot path where GC pressure matters | `PooledCelerityDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary` plus `IDisposable`; rents its backing arrays from `ArrayPool<T>.Shared` and returns them on `Dispose`, so build/use/dispose cycles recycle buffers instead of allocating. Dispose it (a `using` scope); for long-lived dictionaries the pooling buys nothing, so prefer `CelerityDictionary`. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
 | Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |

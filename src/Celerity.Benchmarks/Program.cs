@@ -12,6 +12,7 @@ internal class Program
     {
         typeof(CelerityDictionaryBenchmark),
         typeof(RobinHoodDictionaryBenchmark),
+        typeof(PooledCelerityDictionaryBenchmark),
         typeof(IntDictionaryBenchmark),
         typeof(LongDictionaryBenchmark),
         typeof(FrozenCelerityDictionaryBenchmark),

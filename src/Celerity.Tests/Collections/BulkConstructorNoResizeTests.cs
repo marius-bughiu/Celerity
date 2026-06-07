@@ -138,6 +138,20 @@ public class BulkConstructorNoResizeTests
             Assert.Equal(i, map[$"k{i}"]);
     }
 
+    [Fact]
+    public void PooledCelerityDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        KeyValuePair<string, int>[] src = StringPairs();
+        _hashCallCount = 0;
+
+        using var map = new PooledCelerityDictionary<string, int, CountingStringHasher>(src);
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, map.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
     // ── Sets ──────────────────────────────────────────────────────────────────────
 
     [Fact]

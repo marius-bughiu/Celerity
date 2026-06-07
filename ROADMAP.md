@@ -95,7 +95,7 @@ Split the monolithic `Celerity.Collections` into focused packages mirroring the 
 ### New collections
 
 - Specialized collections for domain-specific workloads (e.g. graph traversal, spatial indexing).
-- Memory-pooled collections for zero-allocation hot paths.
+- Memory-pooled collections for zero-allocation hot paths. Status: `done` — `PooledCelerityDictionary<TKey, TValue, THasher>` is a drop-in, `IDisposable` peer of `CelerityDictionary` whose backing key/value arrays are rented from `ArrayPool<T>.Shared` and returned on `Dispose` (and on every internal resize), recycling buffers across build/use/dispose cycles to cut Gen 0 / LOH pressure on hot paths that rebuild dictionaries frequently. It tracks its logical power-of-two capacity independently of the (possibly over-provisioned) rented array length, clears reference-type buffers on return to prevent leaks, and throws `ObjectDisposedException` after disposal. Tracked in [#21](https://github.com/marius-bughiu/Celerity/issues/21).
 - SIMD-accelerated probing (SSE2/AVX2) similar to Swiss Tables / `F14`. Tracked in [#64](https://github.com/marius-bughiu/Celerity/issues/64).
 - Struct-of-arrays layout experiment for cache-friendly memory access. Tracked in [#65](https://github.com/marius-bughiu/Celerity/issues/65).
 

@@ -93,6 +93,17 @@ public class IEnumerableConstructorNullPriorityTests
         Assert.Equal("source", ex.ParamName);
     }
 
+    [Fact]
+    public void PooledCelerityDictionary_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  Sets
     // ──────────────────────────────────────────────────────────────

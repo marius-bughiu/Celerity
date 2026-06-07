@@ -828,6 +828,176 @@ public class IEnumerableConstructorTests
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  PooledCelerityDictionary — source ctor (mirror of CelerityDictionary)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("a", 1),
+            new KeyValuePair<string, int>("b", 2),
+            new KeyValuePair<string, int>("a", 3),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new PooledCelerityDictionary<string, int, StringFnV1AHasher>(source));
+        Assert.Contains("a", ex.Message);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldStillValidate_LoadFactor_WhenConstructedFromSource()
+    {
+        var source = new[] { new KeyValuePair<int, int>(1, 1) };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(source, loadFactor: 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(source, loadFactor: 0f));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldSupportEmptySource()
+    {
+        using var map = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>(
+            Array.Empty<KeyValuePair<int, string>>());
+
+        Assert.Empty(map);
+        Assert.False(map.ContainsKey(0));
+        Assert.False(map.ContainsKey(1));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldCopyAllEntries_FromArraySource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("alpha", 1),
+            new KeyValuePair<string, int>("beta", 2),
+            new KeyValuePair<string, int>("gamma", 3),
+        };
+
+        using var map = new PooledCelerityDictionary<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(1, map["alpha"]);
+        Assert.Equal(2, map["beta"]);
+        Assert.Equal(3, map["gamma"]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldCopyAllEntries_FromNonCollectionEnumerable()
+    {
+        IEnumerable<KeyValuePair<int, string>> NonCollectionSource()
+        {
+            yield return new KeyValuePair<int, string>(1, "one");
+            yield return new KeyValuePair<int, string>(2, "two");
+            yield return new KeyValuePair<int, string>(3, "three");
+        }
+
+        using var map = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>(NonCollectionSource());
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal("one", map[1]);
+        Assert.Equal("two", map[2]);
+        Assert.Equal("three", map[3]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldCaptureDefaultIntKey_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(0, "zero"),
+            new KeyValuePair<int, string>(1, "one"),
+        };
+
+        using var map = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.True(map.ContainsKey(0));
+        Assert.Equal("zero", map[0]);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldCaptureNullStringKey_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>(null!, 0),
+            new KeyValuePair<string, int>("one", 1),
+            new KeyValuePair<string, int>("two", 2),
+        };
+
+        using var map = new PooledCelerityDictionary<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.True(map.ContainsKey(null!));
+        Assert.Equal(0, map[null!]);
+        Assert.Equal(1, map["one"]);
+        Assert.Equal(2, map["two"]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldDetectDuplicateDefaultKey()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(0, "zero"),
+            new KeyValuePair<int, string>(0, "zero-again"),
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>(source));
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldCopy_LargeSource_WithoutDataLoss()
+    {
+        var source = Enumerable.Range(1, 500)
+            .Select(i => new KeyValuePair<string, int>($"key-{i}", i))
+            .ToArray();
+
+        using var map = new PooledCelerityDictionary<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(500, map.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.Equal(i, map[$"key-{i}"]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_ShouldBeIndependent_OfSourceAfterConstruction()
+    {
+        var source = new List<KeyValuePair<int, string>>
+        {
+            new(1, "one"),
+            new(2, "two"),
+        };
+
+        using var map = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>(source);
+
+        source.Add(new KeyValuePair<int, string>(3, "three"));
+        source[0] = new KeyValuePair<int, string>(1, "MUTATED");
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal("one", map[1]);
+        Assert.False(map.ContainsKey(3));
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  Copy from existing Celerity dictionaries
     // ──────────────────────────────────────────────────────────────
 

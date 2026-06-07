@@ -543,6 +543,103 @@ public class LoadFactorBoundaryTests
     }
 
     // ---------------------------------------------------------------
+    //  PooledCelerityDictionary — load factor (mirror of CelerityDictionary)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void PooledCelerityDictionary_LowLoadFactor_TriggersEarlyResize_AndPreservesAllData()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 8, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 20; i++)
+            map[i] = i * 10;
+
+        Assert.Equal(20, map.Count);
+        for (int i = 1; i <= 20; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_HighLoadFactor_PermitsHighDensity_AndPreservesAllData()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.95f);
+
+        for (int i = 1; i <= 30; i++)
+            map[i] = i * 100;
+
+        Assert.Equal(30, map.Count);
+        for (int i = 1; i <= 30; i++)
+            Assert.Equal(i * 100, map[i]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_TinyInitialCapacity_MultipleResizes_PreserveAllEntries()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 2, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 200; i++)
+            map[i] = i;
+
+        Assert.Equal(200, map.Count);
+        for (int i = 1; i <= 200; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_DefaultKey_InsertsBeforeThreshold_DoesNotCorruptResizeTiming()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 8, loadFactor: 0.5f);
+        map[0] = -1;
+
+        for (int i = 1; i <= 20; i++)
+            map[i] = i;
+
+        Assert.Equal(21, map.Count);
+        Assert.Equal(-1, map[0]);
+        for (int i = 1; i <= 20; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    [Fact]
+    public void PooledCelerityDictionary_DefaultKey_InsertedAtThreshold_NonDefaultInsertsStillWork()
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 4, loadFactor: 0.5f);
+        map[1] = 10;
+        map[2] = 20;
+        map[0] = -1;
+        map[3] = 30;
+
+        Assert.Equal(4, map.Count);
+        Assert.Equal(-1, map[0]);
+        Assert.Equal(10, map[1]);
+        Assert.Equal(20, map[2]);
+        Assert.Equal(30, map[3]);
+    }
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.95f)]
+    public void PooledCelerityDictionary_VariousLoadFactors_AllDataSurvivesMultipleResizes(float loadFactor)
+    {
+        using var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 4, loadFactor: loadFactor);
+
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 7;
+
+        Assert.Equal(100, map.Count);
+        for (int i = 1; i <= 100; i++)
+            Assert.Equal(i * 7, map[i]);
+    }
+
+    // ---------------------------------------------------------------
     //  CelerityMultiMap — the key table resizes on the distinct-key
     //  count exactly like the dictionaries; every group must survive,
     //  and the out-of-band default-key group must not corrupt accounting.
