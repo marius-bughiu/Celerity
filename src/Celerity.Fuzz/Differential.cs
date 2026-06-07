@@ -39,6 +39,7 @@ internal static class Differential
         ("FrozenCeleritySet", FrozenSetCase),
         ("BloomFilter", BloomFilterCase),
         ("BitSet", BitSetCase),
+        ("HyperLogLog", HyperLogLogCase),
     ];
 
     private const int MinKey = -8;
@@ -543,6 +544,39 @@ internal static class Differential
             Check(xor[i] == (oracle[i] ^ otherBits[i]), $"Xor bit {i}");
             Check(not[i] == !oracle[i], $"Not bit {i}");
         }
+    }
+
+    // ---- cardinality estimator ----------------------------------------------
+
+    // HyperLogLog estimates a distinct count, so the oracle is a HashSet whose exact
+    // Count is the ground truth. The tiny key domain (<= 33 distinct values) sits deep
+    // in the linear-counting regime of a precision-14 estimator, where the estimate is
+    // exact apart from the rare register collision that can undercount by a register —
+    // so the estimate must equal the exact count within a small slack (never an
+    // overcount beyond rounding). A *collision-free* hasher (Murmur3's bijective fmix32)
+    // is required here: the estimator counts distinct hash values, so the naive xor-fold
+    // hasher — which maps distinct keys in this domain to the same code — would
+    // legitimately undercount, unlike the dictionaries that tolerate any hasher.
+    private static void HyperLogLogCase(Random rng)
+    {
+        var sut = new HyperLogLog<int, Int32Murmur3Hasher>();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 9: sut.Add(item); oracle.Add(item); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        long estimate = sut.EstimateCardinality();
+        int exact = oracle.Count;
+        Check(estimate >= exact - 3 && estimate <= exact + 1,
+            $"cardinality estimate {estimate} not within slack of exact {exact}");
     }
 
     // ---- multi-map ----------------------------------------------------------

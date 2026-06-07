@@ -594,6 +594,52 @@ void Check(bool condition, string message)
     }
 }
 
+// HyperLogLog — probabilistic cardinality estimator (no out-of-band slot; default(T)
+// is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
+// is never called with null). Exercise Add / EstimateCardinality / Clear / UnionWith
+// and the IEnumerable ctor across int / Guid / string instantiations so the AOT publish
+// compiles the SplitMix64 avalanche, the LeadingZeroCount rank path, and the harmonic-
+// mean estimate with linear-counting correction.
+{
+    var hll = new HyperLogLog<int, Int32WangNaiveHasher>();
+    hll.Add(42);
+    hll.Add(0); // zero is an ordinary element, not a sentinel
+    hll.Add(42); // duplicate collapses
+    Check(hll.EstimateCardinality() == 2, "HyperLogLog distinct count");
+    Check(hll.Precision == HyperLogLog<int, Int32WangNaiveHasher>.DEFAULT_PRECISION,
+        "HyperLogLog default precision");
+    Check(hll.RegisterCount == 1 << 14, "HyperLogLog register count");
+    Check(hll.StandardError > 0d, "HyperLogLog standard error");
+
+    // Larger fill: estimate must land within a few standard errors of the truth.
+    var big = new HyperLogLog<int, Int32WangNaiveHasher>();
+    for (int i = 0; i < 50_000; i++) big.Add(i);
+    long estimate = big.EstimateCardinality();
+    double relErr = Math.Abs(estimate - 50_000) / 50_000.0;
+    Check(relErr <= big.StandardError * 4 + 0.01, "HyperLogLog estimate within bound");
+
+    // UnionWith merges two equal-precision estimators (disjoint streams).
+    var other = new HyperLogLog<int, Int32WangNaiveHasher>();
+    for (int i = 50_000; i < 100_000; i++) other.Add(i);
+    big.UnionWith(other);
+    long union = big.EstimateCardinality();
+    Check(Math.Abs(union - 100_000) / 100_000.0 <= big.StandardError * 4 + 0.01,
+        "HyperLogLog UnionWith");
+
+    hll.Clear();
+    Check(hll.EstimateCardinality() == 0, "HyperLogLog clear");
+
+    // String elements via the IEnumerable ctor, plus the out-of-band null reference
+    // (StringFnV1AHasher throws on null; HyperLogLog must not call it with null).
+    var strHll = new HyperLogLog<string, StringFnV1AHasher>(new[] { "alice", "bob", "alice" });
+    strHll.Add(null!);
+    Check(strHll.EstimateCardinality() == 3, "HyperLogLog<string> ctor + null element");
+
+    var guidHll = new HyperLogLog<Guid, GuidHasher>();
+    guidHll.Add(Guid.Empty); // ordinary element, no out-of-band slot
+    Check(guidHll.EstimateCardinality() == 1, "HyperLogLog<Guid> empty-guid element");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

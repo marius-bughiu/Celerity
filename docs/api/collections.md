@@ -1522,3 +1522,128 @@ var aMask = new BitSet(n);
 var bMask = new BitSet(n);
 aMask.And(bMask);                     // SIMD over 64-bit words
 ```
+
+---
+
+## HyperLogLog&lt;T, THasher&gt;
+
+A space-efficient **probabilistic cardinality estimator** parameterized on a custom
+hash provider. It answers "roughly how many *distinct* elements have I seen?" from a
+fixed array of small registers whose size does **not** grow with the number of
+elements, so it counts the distinct values in a stream of any size from a few kilobytes
+of memory — where a `HashSet<T>` must store every distinct element to count them.
+
+```csharp
+public class HyperLogLog<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+The contract is the defining HyperLogLog trade-off:
+
+- **Fixed, tiny memory.** The estimator allocates `m = 2^precision` one-byte registers
+  (16&#160;KB at the default precision 14) and never grows, whether it counts a thousand
+  distinct elements or a billion.
+- **Bounded relative error.** `EstimateCardinality()` returns an *approximate* distinct
+  count with a relative standard error of about `1.04 / sqrt(m)` (≈ 0.8% at the default
+  precision), rather than an exact value.
+- **Add-and-estimate only.** Like a Bloom filter it cannot remove an element or report
+  whether a specific element was seen — it tracks only the aggregate distinct count. Use
+  `Clear()` to reset, or `UnionWith` to combine two estimators.
+
+### How it works
+
+Each element is hashed to 64 bits, routed to one of the `m` registers by its top
+`precision` bits, and the register records the largest "rank" — one plus the number of
+leading zeros — seen in the remaining bits. A stream of `n` distinct elements fills the
+registers with a predictable rank pattern, and the harmonic mean of `2^register` across
+all registers recovers an estimate of `n` (Flajolet et&#160;al., 2007). The estimate
+applies the standard small-range **linear counting** correction, so low cardinalities —
+where many registers are still zero — are estimated accurately rather than by the
+bias-prone raw formula. No large-range correction is needed because the 64-bit hash
+space dwarfs any realistic cardinality.
+
+The 64-bit hash is derived from a **single** `IHashProvider<T>` call by avalanching the
+32-bit base hash with the SplitMix64 finalizer (a bijection on 64 bits, so distinct base
+hashes stay distinct), so any existing hasher plugs in unchanged and `Add` costs one
+`Hash()` call.
+
+### Constructors
+
+```csharp
+public HyperLogLog(int precision = 14)
+
+public HyperLogLog(
+    IEnumerable<T> source,
+    int precision = 14)
+```
+
+The first overload creates an empty estimator with `2^precision` registers. The
+`IEnumerable<T>` overload pre-populates it with the source's distinct elements.
+
+`precision` must be between `MIN_PRECISION` (4, `m = 16`) and `MAX_PRECISION` (16,
+`m = 65536`) inclusive. Larger values cost more memory but lower the standard error.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `precision` is outside `[MIN_PRECISION, MAX_PRECISION]`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats
+  the precision validation, so a `null` source with a bad precision surfaces as
+  `ArgumentNullException`.
+
+### Methods and properties
+
+- `void Add(T item)` — adds an element, updating the register its hash routes to. Adding
+  an element already represented is a no-op for the estimate (a register only increases).
+- `long EstimateCardinality()` — the estimated number of distinct elements, rounded to
+  the nearest whole number. An `O(m)` pass over the registers; an empty estimator returns
+  `0` exactly.
+- `void UnionWith(HyperLogLog<T, THasher> other)` — merges another estimator in place
+  (per-register maximum), so this estimator afterwards estimates the cardinality of the
+  **union** of both input streams. Unlike a Bloom-filter union this introduces no error
+  beyond the usual estimate of the merged set. Throws `ArgumentNullException` on a `null`
+  argument and `ArgumentException` if the two estimators have a different `Precision`.
+- `void Clear()` — resets every register; preserves the precision and register count.
+- `int Precision { get; }` — the register-index precision (`p`).
+- `int RegisterCount { get; }` — the number of registers (`m = 2^precision`).
+- `double StandardError { get; }` — the relative standard error, ≈ `1.04 / sqrt(m)`.
+
+### Default-element handling
+
+Because the estimator stores only register ranks there is no empty-slot sentinel, so
+unlike the hash-table collections it needs **no out-of-band handling** for `default(T)` —
+a zero `int`, `Guid.Empty`, or the empty string is hashed and counted like any other
+element. A `null` reference is mapped to a fixed base hash so the estimator never invokes
+the hasher with `null` (the string hashers throw on `null`), matching the library's
+out-of-band-`null` convention.
+
+### Choosing it
+
+Reach for `HyperLogLog` when you need a **distinct count over a large or unbounded
+stream** and can tolerate a small, bounded relative error in exchange for fixed,
+tiny memory: unique-visitor / unique-event counting, distinct-value cardinality in
+analytics and query planners, and deduplicated counting across distributed shards (count
+locally, then `UnionWith` the partial estimators). If you need an exact count, to test
+membership of a specific element, or to retrieve the stored elements, use a
+`HashSet<T>` / `CeleritySet<T, THasher>` instead; for approximate *membership* (rather
+than counting), use `BloomFilter<T, THasher>`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Count distinct visitor ids in a high-volume stream from ~16 KB of registers.
+var uniqueVisitors = new HyperLogLog<long, Int64Murmur3Hasher>();
+
+foreach (long visitorId in eventStream)
+    uniqueVisitors.Add(visitorId);
+
+Console.WriteLine(uniqueVisitors.EstimateCardinality()); // ≈ distinct visitors (±0.8%)
+
+// Merge two shards' partial estimators to count distinct across both.
+var shardA = new HyperLogLog<long, Int64Murmur3Hasher>(shardAIds);
+var shardB = new HyperLogLog<long, Int64Murmur3Hasher>(shardBIds);
+shardA.UnionWith(shardB);
+Console.WriteLine(shardA.EstimateCardinality());         // distinct across A ∪ B
+```

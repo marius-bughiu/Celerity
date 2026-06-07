@@ -505,6 +505,48 @@ public class CollectionModelPropertyTests
         }, iter: 1000);
     }
 
+    // ---- HyperLogLog (probabilistic) vs HashSet<int> ------------------------
+
+    // HyperLogLog estimates a distinct count, so the model property pairs it against a
+    // HashSet whose exact Count is ground truth. Operating over a small key domain keeps
+    // the estimator deep in its linear-counting regime, where the estimate is exact
+    // apart from the rare register collision that can undercount by a register — so the
+    // estimate must match the exact distinct count within a small slack and never
+    // overcount beyond rounding. A *collision-free* hasher (Murmur3's bijective fmix32)
+    // is required: the estimator counts distinct hash values, so a hasher that maps two
+    // distinct keys to the same code (as the naive xor-fold hasher does on this domain)
+    // would legitimately undercount and is not an estimator bug.
+    private enum HllOp { Add, Clear }
+
+    private static readonly Gen<List<(HllOp, int)>> GenHllOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n => n < 92 ? HllOp.Add : HllOp.Clear),
+            Gen.Int[-8, 24])
+        .List[0, 120];
+
+    [Fact]
+    public void HyperLogLog_ShouldEstimateDistinctCount_VsBclHashSet()
+    {
+        GenHllOps.Sample(ops =>
+        {
+            var sut = new HyperLogLog<int, Int32Murmur3Hasher>();
+            var oracle = new HashSet<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case HllOp.Add: sut.Add(item); oracle.Add(item); break;
+                    case HllOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            long estimate = sut.EstimateCardinality();
+            int exact = oracle.Count;
+            Assert.InRange(estimate, exact - 3, exact + 1);
+        }, iter: 2000);
+    }
+
     // ---- MultiMap vs Dictionary<int,List<int>> ------------------------------
 
     private enum MultiOp { Add, RemoveValue, RemoveAll }

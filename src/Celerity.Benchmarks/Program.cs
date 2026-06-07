@@ -26,6 +26,7 @@ internal class Program
         typeof(LongSetBenchmark),
         typeof(BloomFilterBenchmark),
         typeof(BitSetBenchmark),
+        typeof(HyperLogLogBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };
