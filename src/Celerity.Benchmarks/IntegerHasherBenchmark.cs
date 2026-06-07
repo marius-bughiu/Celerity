@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Hashing;
@@ -13,6 +14,21 @@ using Celerity.Hashing;
 /// inlines <c>Hash</c> exactly as it does on a real Celerity collection's probe path. Within each
 /// <see cref="BenchmarkCategoryAttribute"/> (one per key type) the BCL <c>GetHashCode()</c> is the
 /// baseline, so each ratio reads as "this hasher relative to the framework hash for that type".
+/// </para>
+/// <para>
+/// This is a <strong>raw-mixing-cost diagnostic only</strong> — the headline metric for picking a hasher
+/// is end-to-end table throughput (<c>HasherEndToEndBenchmark</c>) and the deterministic probe-length
+/// report (<c>--probe-analysis</c>), because a hasher's real cost is the probe chains it produces, not the
+/// nanoseconds inside <c>Hash</c>. Two baselines bracket each key type: the direct <c>{Type}_Bcl</c>
+/// (<c>GetHashCode()</c>) and <c>{Type}_EqualityComparer</c>, which routes through
+/// <c>EqualityComparer&lt;T&gt;.Default.GetHashCode()</c> — the realistic thing a developer actually
+/// <em>replaces</em> when they swap a BCL <c>Dictionary&lt;,&gt;</c> for a struct hasher, since that is
+/// the call the BCL dictionary makes per probe.
+/// </para>
+/// <para>
+/// Every arm XOR-folds its codes into a single returned value, so BenchmarkDotNet consumes the result and
+/// the loop cannot be dead-code-eliminated — important for the identity / passthrough rows, whose "hash"
+/// is otherwise a no-op the JIT would fold to nothing, producing a misleading ~0&#160;ns measurement.
 /// </para>
 /// <para>
 /// Unlike <c>StringHasherBenchmark</c> there is no key-shape parameter: hashing a fixed-width integer is
@@ -71,6 +87,24 @@ public class IntegerHasherBenchmark
         return acc;
     }
 
+    /// <summary>
+    /// The realistic <strong>replaced</strong> baseline: hashes every key through
+    /// <see cref="EqualityComparer{T}.Default"/>, the exact call a BCL <c>Dictionary&lt;,&gt;</c> makes per
+    /// probe. The comparer is fetched once into a local — matching how the dictionary caches it — and the
+    /// per-call dispatch is left intact, because eliminating it is precisely the cost a struct hasher saves.
+    /// Results are XOR-folded and returned so the loop is not dead-code-eliminated.
+    /// </summary>
+    private static int HashAllEqualityComparer<T>(T[] keys)
+    {
+        EqualityComparer<T> comparer = EqualityComparer<T>.Default;
+        int acc = 0;
+        for (int i = 0; i < keys.Length; i++)
+        {
+            acc ^= comparer.GetHashCode(keys[i]!);
+        }
+        return acc;
+    }
+
     // ---- Int32 ----
 
     [Benchmark(Baseline = true)]
@@ -85,6 +119,10 @@ public class IntegerHasherBenchmark
         }
         return acc;
     }
+
+    [Benchmark]
+    [BenchmarkCategory("Int32")]
+    public int Int32_EqualityComparer() => HashAllEqualityComparer(intKeys);
 
     [Benchmark]
     [BenchmarkCategory("Int32")]
@@ -119,6 +157,10 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Int64")]
+    public int Int64_EqualityComparer() => HashAllEqualityComparer(longKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("Int64")]
     public int Int64_Identity() => HashAll<long, Int64IdentityHasher>(longKeys);
 
     [Benchmark]
@@ -150,6 +192,10 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("UInt32")]
+    public int UInt32_EqualityComparer() => HashAllEqualityComparer(uintKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("UInt32")]
     public int UInt32_Default() => HashAll<uint, UInt32Hasher>(uintKeys);
 
     [Benchmark]
@@ -177,6 +223,10 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("UInt64")]
+    public int UInt64_EqualityComparer() => HashAllEqualityComparer(ulongKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("UInt64")]
     public int UInt64_Default() => HashAll<ulong, UInt64Hasher>(ulongKeys);
 
     [Benchmark]
@@ -201,6 +251,10 @@ public class IntegerHasherBenchmark
         }
         return acc;
     }
+
+    [Benchmark]
+    [BenchmarkCategory("Guid")]
+    public int Guid_EqualityComparer() => HashAllEqualityComparer(guidKeys);
 
     [Benchmark]
     [BenchmarkCategory("Guid")]

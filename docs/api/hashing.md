@@ -541,6 +541,16 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 
 ### Choosing a hasher
 
+**Read this first — the hashers are not positioned on speed.** For `int` keys, `GetHashCode()` *is* the identity (zero work), so no mixing hasher can beat it on throughput; for `string` keys, `GetHashCode()` is already a purpose-built **Marvin32** with per-process random seeding. The value a Celerity struct hasher adds is **distribution quality (avalanche), determinism (reproducible across processes and runtimes), adversarial resistance, and the zero-cost devirtualized generic** — *not* raw hashing speed. Pick on those axes, not on the isolated `Hash()` microbench.
+
+The decision reduces to a **speed-vs-quality curve**, the same tradeoff F14 / ahash / FxHash document:
+
+- **Trusted, uniform keys** (dense sequential IDs, already-random hashes): a cheap, weak hash is fine — the input already carries entropy, so mixing only adds cost. *Drop* to the cheapest option (identity / XOR-fold).
+- **Clustered keys** (low-entropy, structured, or shared-prefix): a weak hash leaves the clustering in place, so probe chains lengthen and lookups pay it on every read. Escalate to a strong-avalanche mixer (Wang finalizer → Murmur3 / xxHash). This is the case where a hasher that "loses" the speed microbench *wins* end-to-end — see [end-to-end probe analysis](#end-to-end-probe-analysis).
+- **Untrusted / adversarial input**: see the HashDoS caveat below.
+
+> **Fixed-seed hashers are not a HashDoS defence.** A hardcoded-seed Murmur3 / FNV / xxHash is *not* more flood-resistant than `string.GetHashCode()` — usually **less**, because an attacker who knows the (fixed, public) algorithm and seed can precompute colliding keys offline, whereas the BCL's Marvin32 re-seeds per process so the collision set is not knowable ahead of time. What actually stops hash-flooding is a **keyed** PRF with a *secret, per-process-random* key. The keyed hashers here (`StringSipHash13Hasher`, `StringSipHash24Hasher`, `StringHalfSipHash24Hasher`, `StringHighwayHash64Hasher`) give you a strong PRF, but only resist flooding if you seed them with a secret the attacker can't observe; with their default fixed seed they are deterministic-but-not-secret, i.e. good for reproducibility, not for DoS resistance. When in doubt for untrusted string keys, the BCL `string.GetHashCode()` (`DefaultHasher<string>`) is the safe default.
+
 | Key type | Default | Alternative |
 |---|---|---|
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32IdentityHasher` (the zero-work floor — *drop* to it for uniform/trusted keys like dense sequential IDs, where any mixing is pure overhead); `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
@@ -688,7 +698,9 @@ The `Celerity.Benchmarks` project prints a full hasher × distribution probe tab
 
 ## Benchmarking the string hashers
 
-The `Celerity.Benchmarks` project includes `StringHasherBenchmark`, a head-to-head BenchmarkDotNet comparison of every built-in `string` hasher. It hashes a deterministic sample of distinct keys through each hasher via the `where THasher : struct, IHashProvider<string>` constraint — so the JIT inlines `Hash` exactly as it does on a real collection's probe path — with the BCL `string.GetHashCode()` as the baseline, and sweeps three key shapes via its `Shape` parameter:
+> **These are raw-mixing-cost diagnostics, not the headline metric.** An isolated `Hash()` loop ranks hashers by the nanoseconds spent mixing — which for `int` makes identity / `GetHashCode()` unbeatable and is *actively misleading*, because a hasher's real cost is the probe chains it produces, not the time inside `Hash`. Read these alongside the end-to-end numbers ([`HasherEndToEndBenchmark`](../performance.md#measure-probe-length-not-just-hash-speed) and the deterministic `--probe-analysis` report), where a strong hasher that "loses" here wins on clustered / adversarial keys.
+
+The `Celerity.Benchmarks` project includes `StringHasherBenchmark`, a head-to-head BenchmarkDotNet comparison of every built-in `string` hasher. It hashes a deterministic sample of distinct keys through each hasher via the `where THasher : struct, IHashProvider<string>` constraint — so the JIT inlines `Hash` exactly as it does on a real collection's probe path — and sweeps three key shapes via its `Shape` parameter. Two baselines bracket each run: the direct `string.GetHashCode()` (`Bcl_GetHashCode`) and `EqualityComparer<string>.Default.GetHashCode()` (`EqualityComparer_Default`) — the latter being the call a BCL `Dictionary<string,>` actually makes per probe, i.e. the realistic thing a developer replaces. Both are the speed floor of a *randomized, DoS-resistant* Marvin32 hash, not a zero-work one. The key shapes:
 
 | `Shape` | Keys |
 |---|---|
@@ -698,7 +710,7 @@ The `Celerity.Benchmarks` project includes `StringHasherBenchmark`, a head-to-he
 
 The three shapes matter because the length-classed hashers (`StringCityHash64Hasher`, `StringXxHash3Hasher`) and the four-accumulator stripe hashers (`StringXxHash32Hasher`, `StringXxHash64Hasher`) behave very differently across lengths, and the full-width hashers do extra work on non-ASCII upper bytes. The benchmark is registered in `Program.cs` so it joins the CI report and the gh-pages benchmark history on every push to `main`.
 
-A companion `IntegerHasherBenchmark` does the same for the fixed-width integer and `Guid` hashers, grouped by key type (`int` / `long` / `uint` / `ulong` / `Guid`), each baselined against that type's BCL `GetHashCode()`. It has no key-shape parameter: hashing a fixed-width integer is branch-free and constant-time regardless of the key's value, so the sample's distribution affects collision *quality* but not `Hash` throughput.
+A companion `IntegerHasherBenchmark` does the same for the fixed-width integer and `Guid` hashers, grouped by key type (`int` / `long` / `uint` / `ulong` / `Guid`), each bracketed by two baselines — the direct `GetHashCode()` (`{Type}_Bcl`) and `EqualityComparer<T>.Default.GetHashCode()` (`{Type}_EqualityComparer`, the per-probe call a BCL `Dictionary<,>` makes). For `int` / `long` the `{Type}_Identity` row is the explicit **zero-work floor**: a passthrough that does no mixing, which for `int` tracks the `_Bcl` baseline (since `int.GetHashCode()` is itself the identity), confirming that no mixing hasher beats it on raw throughput. It has no key-shape parameter: hashing a fixed-width integer is branch-free and constant-time regardless of the key's value, so the sample's distribution affects collision *quality* but not `Hash` throughput.
 
 Both benchmarks are rendered on the [live benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) under **Hash function throughput** — one ranked bar per hasher within each key type / shape group, relative to the framework `GetHashCode()` baseline, refreshed on every push to `main`. To run them locally:
 
@@ -707,7 +719,7 @@ cd src/Celerity.Benchmarks
 dotnet run -c Release -- --filter "*HasherBenchmark*"
 ```
 
-> The hasher benchmarks measure **throughput only**. A fast hasher that clusters is not a win (see the ROADMAP guiding principles), so read the throughput numbers alongside the distribution metrics below before committing a hasher: prefer the cheapest hasher whose `DistributionScore` stays near `1.0` and whose `MaxBucketLoad` is low on a representative sample of your keys.
+> The hasher benchmarks measure **raw mixing cost only** — they are a diagnostic, not the metric you choose a hasher by. A fast hasher that clusters is not a win (see the ROADMAP guiding principles), so read these numbers alongside the distribution metrics below *and* the [end-to-end probe analysis](#end-to-end-probe-analysis) before committing a hasher: prefer the cheapest hasher whose `DistributionScore` stays near `1.0` and whose `MaxBucketLoad` (and average probe length) is low on a representative sample of your keys.
 
 ### Measured distribution quality
 
