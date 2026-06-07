@@ -44,6 +44,7 @@ internal class Program
     {
         typeof(DistributionBenchmark),
         typeof(AdversarialHasherBenchmark),
+        typeof(HasherEndToEndBenchmark),
         typeof(LargeDatasetBenchmark),
         typeof(MemoryAllocationBenchmark),
         typeof(ConcurrentAccessBenchmark),
@@ -59,6 +60,15 @@ internal class Program
             // Offline distribution-quality report (deterministic; no BenchmarkDotNet run).
             // The throughput companion to this is the hasher benchmarks above.
             HashQualityReportRunner.Run();
+            return;
+        }
+
+        if (args.Contains("--probe-analysis"))
+        {
+            // Offline end-to-end probe-length / collision report (deterministic; no BenchmarkDotNet
+            // run). Drives each hasher through the real open-addressed linear-probing placement; the
+            // throughput companion is HasherEndToEndBenchmark in the extended suite.
+            ProbeAnalysisReportRunner.Run();
             return;
         }
 

@@ -121,6 +121,49 @@ Console.WriteLine(report.DistributionScore);   // 1.0 == ideal uniform
 
 Compare two candidate hashers on the same key sample and pick the one with the better distribution score *and* acceptable throughput — a fast hasher that clusters is not a win. See [hash quality evaluation](api/hashing.md#hash-quality-evaluation).
 
+### Measure probe length, not just `Hash()` speed
+
+`HashQualityEvaluator` scores the *distribution* of the codes; `ProbeStatisticsEvaluator` goes one step further and reports what a lookup actually pays inside Celerity's **open-addressed, linearly-probed** table — the **average and worst-case probe length** — by replaying the real placement (`index = hash & mask`, then linear probe on a collision):
+
+```csharp
+using Celerity.Hashing;
+
+int[] keys = LoadRepresentativeKeys();
+ProbeStatistics stats = ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(keys);
+
+Console.WriteLine(stats.AverageProbeLength); // ~1.0 is ideal; higher means clustering
+Console.WriteLine(stats.MaxProbeLength);     // the tail-latency driver
+Console.WriteLine(stats.CollisionRate);      // fraction of keys not in their natural slot
+```
+
+This is the metric that explains the throughput numbers: an isolated `Hash()` microbench says a mixing hasher can never beat identity (for `int`, `GetHashCode()` is identity — zero work), yet on clustered or adversarial keys the cheap hasher's probe chains blow up and the strong finalizer wins *end-to-end*. The `Celerity.Benchmarks` project makes both halves visible:
+
+```bash
+cd src/Celerity.Benchmarks
+dotnet run -c Release -- --probe-analysis              # deterministic probe table (no timing)
+dotnet run -c Release -- --filter "*HasherEndToEnd*"   # the same hashers timed through the dictionary
+```
+
+The probe table is deterministic (it does not depend on timing or CI hardware), so it is stable enough to cite directly. A representative run over 10,000 `int` keys at the default 0.75 load factor — each cell is **average (worst-case)** probe length, `1.00 (1)` is ideal:
+
+| Key shape | `Int32IdentityHasher` | `Int32WangNaiveHasher` | `Int32WangHasher` | `Int32Murmur3Hasher` |
+|---|---|---|---|---|
+| Uniform | 1.78 (29) | 1.76 (35) | 1.78 (39) | 1.78 (25) |
+| Sequential | **1.00 (1)** | **1.00 (1)** | 1.78 (31) | 1.78 (31) |
+| Clustered | 4891 (9892) | 103.6 (374) | **1.74 (33)** | 1.78 (36) |
+| Adversarial | 1.00 (1) † | 5000 (10000) | 1.78 (35) | 1.73 (38) |
+
+The story the numbers tell:
+
+- On **uniform** keys every hasher behaves the same (~1.78 avg) — the input already carries entropy, so mixing changes nothing. Pick the cheapest.
+- On **sequential** keys `Int32IdentityHasher` and `Int32WangNaiveHasher` are *perfect* (1.00 avg, 1 max — contiguous keys map to contiguous slots), while the strong finalizers **scatter** them and *add* collisions. Here mixing actively hurts: drop to identity/naive.
+- On **clustered** keys the cheap hashers fall apart (the naive fold to a 103-avg / 374-max chain, identity to a catastrophic 4891-avg) while `Int32WangHasher` / `Int32Murmur3Hasher` stay near 1.75 — this is where escalating earns its cost.
+- On **adversarial** keys the naive fold collapses completely (5000 avg, the whole table walked) and only the full finalizers survive.
+
+> † The adversarial set is hand-built to defeat the *naive XOR-fold specifically*, so `Int32IdentityHasher` happens to pass it through cleanly — that is an artifact of this construction, **not** evidence that identity resists adversarial input. A fixed identity (or any fixed-seed) hasher is not a HashDoS defence; an attacker who knows the hasher can craft keys for *it*.
+
+This is exactly why an isolated `Hash()` microbench is misleading: it would rank these hashers by raw speed (identity fastest, Murmur3 slowest), yet end-to-end the ranking *inverts* on clustered/adversarial keys. See [end-to-end probe analysis](api/hashing.md#end-to-end-probe-analysis).
+
 ## 6. Build-once, read-many → freeze it
 
 If a `string`-keyed table is constructed once and then read for the rest of the process (route tables, config maps, interned vocabularies, lookup dictionaries), `FrozenCelerityDictionary<TValue>` pays a one-time construction cost to search for a **perfect (collision-free) hash**, after which every lookup is a single hash, a single array index, and a single equality check:
@@ -160,6 +203,7 @@ The CI dashboard runs a deliberately **lean core suite** on every PR so the same
 |---|---|---|
 | `DistributionBenchmark` | `*Distribution*` | Insert/Lookup across **uniform / sequential / clustered** key shapes (1k + 100k). The cheap XOR-fold hashers win on uniform/sequential keys; this is where you confirm that for *your* shape. |
 | `AdversarialHasherBenchmark` | `*Adversarial*` | Keys engineered to collide under the naive hasher. Shows the probe chain degrading toward **O(n)** with `Int32WangNaiveHasher` and snapping back to O(1) with `Int32Murmur3Hasher` — the empirical case for choosing the right hasher. |
+| `HasherEndToEndBenchmark` | `*HasherEndToEnd*` | Each integer hasher (identity / naive / Wang / Murmur3) driven **through the dictionary** for insert + lookup across **all four** key shapes (uniform / sequential / clustered / adversarial), vs the BCL `Dictionary<int,int>`. The honest companion to the isolated-`Hash()` `IntegerHasherBenchmark`: it measures what users feel (probe length + cache behaviour), so the cheap hashers win on uniform/sequential keys while only the strong finalizers survive the adversarial shape. |
 | `LargeDatasetBenchmark` | `*LargeDataset*` | 1M and 5M items, where the working set spills out of cache and memory traffic dominates. |
 | `MemoryAllocationBenchmark` | `*MemoryAllocation*` | Allocated bytes + GC counts for **grow-from-empty** vs **pre-sized** construction — the cost of *not* passing a capacity. |
 | `ConcurrentAccessBenchmark` | `*ConcurrentAccess*` | Read scaling at 1/4/8 threads against `ConcurrentDictionary<,>`. Concurrent **reads** of a built-once, never-mutated Celerity map are safe and skip the concurrent-collection tax. |
