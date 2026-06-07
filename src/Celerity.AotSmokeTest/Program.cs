@@ -807,6 +807,43 @@ void Check(bool condition, string message)
     Check(pcgStreamA.NextUInt32() != pcgStreamB.NextUInt32(), "Pcg32 independent streams differ");
 }
 
+// VarInt codec (#193) — span-based LEB128 (uint/ulong) + zig-zag (int/long). Forces the
+// BitOperations length path, the bounds-safe write/read loops, and the zig-zag transforms to
+// compile under Native AOT and confirms they round-trip on the native runtime, including the
+// 10-byte ulong.MaxValue case and the short-buffer / truncated failure paths.
+{
+    Span<byte> buf = stackalloc byte[VarInt.MaxVarIntLength64];
+
+    // Unsigned round-trip across length classes.
+    ulong[] unsigned = { 0, 1, 127, 128, 300, uint.MaxValue, 1UL << 56, ulong.MaxValue };
+    bool uOk = true;
+    foreach (ulong value in unsigned)
+    {
+        if (!VarInt.TryWriteVarInt(buf, value, out int written)) { uOk = false; break; }
+        if (written != VarInt.VarIntLength(value)) { uOk = false; break; }
+        if (!VarInt.TryReadVarInt(buf, out ulong read, out int consumed) || read != value || consumed != written)
+        { uOk = false; break; }
+    }
+    Check(uOk, "VarInt unsigned LEB128 round-trip");
+
+    // Signed (zig-zag) round-trip including the extremes.
+    long[] signed = { 0, -1, 1, -2, 2, long.MaxValue, long.MinValue };
+    bool sOk = true;
+    foreach (long value in signed)
+    {
+        if (!VarInt.TryWriteVarInt(buf, value, out int written)) { sOk = false; break; }
+        if (!VarInt.TryReadVarInt(buf, out long read, out int consumed) || read != value || consumed != written)
+        { sOk = false; break; }
+    }
+    Check(sOk, "VarInt signed zig-zag round-trip");
+
+    // Bounds safety: a too-small destination and a truncated source both fail without throwing.
+    Span<byte> tiny = stackalloc byte[1];
+    Check(!VarInt.TryWriteVarInt(tiny, 300u, out int w) && w == 0, "VarInt short-buffer write fails");
+    ReadOnlySpan<byte> truncated = stackalloc byte[] { 0x80 };
+    Check(!VarInt.TryReadVarInt(truncated, out uint _, out int r) && r == 0, "VarInt truncated read fails");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

@@ -53,6 +53,7 @@ internal class Program
         typeof(RealWorldWorkloadBenchmark),
         typeof(FastModBenchmark),
         typeof(PrngBenchmark),
+        typeof(VarIntBenchmark),
     };
 
     static void Main(string[] args)
