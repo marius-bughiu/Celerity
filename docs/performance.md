@@ -193,7 +193,7 @@ Filter to the comparison you care about:
 dotnet run -c Release -- --filter "*HasherBenchmark*"
 ```
 
-Read hasher throughput numbers **alongside** the `HashQualityReport` distribution metrics — the right hasher is the one that is both fast *and* uniform on your key shape. When you change `capacity`, `loadFactor`, or the hasher in production code, re-run the relevant benchmark; the README's published numbers are the contract, and a local benchmark is how you confirm a tuning change actually helped.
+These hasher sweeps are a **raw-mixing-cost diagnostic**, not the headline metric — each is bracketed by two baselines, the direct `GetHashCode()` and `EqualityComparer<T>.Default.GetHashCode()` (the per-probe call a BCL `Dictionary<,>` makes, i.e. the realistic thing you replace), so you can see both the absolute floor and the cost you actually pay today. Read hasher throughput numbers **alongside** the `HashQualityReport` distribution metrics *and* the end-to-end probe length below — the right hasher is the one that is both fast *and* uniform on your key shape, and the isolated `Hash()` number alone is misleading (for `int`, `GetHashCode()` is identity, so no mixer can beat it). When you change `capacity`, `loadFactor`, or the hasher in production code, re-run the relevant benchmark; the README's published numbers are the contract, and a local benchmark is how you confirm a tuning change actually helped.
 
 ## Extended benchmark suite
 

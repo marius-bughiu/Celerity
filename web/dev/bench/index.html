@@ -813,6 +813,7 @@
   function methodLabel(p) {
     if (p.isBaseline) return '.NET GetHashCode';
     if (p.family === 'integer' && p.method === 'Celerity') return 'GuidHasher';
+    if (p.method === 'EqualityComparer' || p.method === 'EqualityComparer_Default') return 'EqualityComparer<T>.Default';
     return p.method;
   }
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
