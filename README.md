@@ -7,6 +7,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
 - `RobinHoodDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Robin Hood open addressing: bounds probe-length variance so worst-case lookups stay close to average on clustered / adversarial keys (at the cost of a per-slot probe-distance `int`).
+- `SwissDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Swiss-table SIMD group probing: a parallel control-byte array lets one `Vector128` compare test 16 slots per lookup, filtering candidates by a 7-bit hash tag before any key comparison (at the cost of a one-byte control tag per slot).
 - `PooledCelerityDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer whose backing arrays are rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
 - `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: each key groups multiple values (`Add` appends rather than overwrites). Implements `ILookup<TKey, TValue?>`.
@@ -91,6 +92,23 @@ if (dict.TryGetValue(42, out var val))
 ```
 
 The trade-off is a per-slot probe-distance `int` of bookkeeping (so it allocates more than `CelerityDictionary`); on uniformly distributed keys with a good hasher, `CelerityDictionary` matches or beats it, so prefer Robin Hood specifically for the clustered / adversarial case.
+
+### `SwissDictionary` — SIMD group probing for lookup-heavy tables
+
+`SwissDictionary` is a drop-in peer of `CelerityDictionary` — same API, same hashers — that resolves collisions Swiss-table style. A parallel array of one-byte control tags lets a single `Vector128` compare test a whole 16-slot group per probe, and a 7-bit hash tag in each control byte filters out non-matching residents before any key comparison. The portable `Vector128` API JITs to SSE2 / AVX2 on x86, AdvSimd on Arm, and a scalar fallback elsewhere, so it is correct everywhere and fast where hardware SIMD is available.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var dict = new SwissDictionary<int, string, Int32WangNaiveHasher>();
+dict[42] = "hello";
+
+if (dict.TryGetValue(42, out var val))
+    Console.WriteLine(val); // "hello"
+```
+
+The trade-off is a one-byte control tag per slot (so it allocates a little more than `CelerityDictionary`) plus tombstone deletion reclaimed by an occasional rehash; reach for it on lookup-heavy workloads — large tables, many negative lookups, or clustered keys — where the group compare and tag filtering pay off.
 
 ### `PooledCelerityDictionary` — pooled storage for short-lived dictionaries
 
@@ -256,6 +274,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `long` | `LongDictionary<TValue>` | 64-bit equivalent of `IntDictionary`; defaults to `Int64WangNaiveHasher`. |
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
 | Dictionary with **clustered / adversarial** keys where worst-case lookup latency matters | `RobinHoodDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but Robin Hood probing bounds probe-length variance so tail-latency lookups don't degrade on bunched keys. Costs a per-slot probe-distance `int`; for uniform keys with a good hasher, prefer `CelerityDictionary`. |
+| **Lookup-heavy** dictionary (large tables, many negative lookups) where SIMD pays off | `SwissDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but Swiss-table group probing tests 16 slots per `Vector128` compare and filters candidates by a 7-bit hash tag before any key comparison. Costs a one-byte control tag per slot; for small or write-dominated tables, `CelerityDictionary` is competitive. |
 | **Short-lived** dictionary rebuilt frequently on a hot path where GC pressure matters | `PooledCelerityDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary` plus `IDisposable`; rents its backing arrays from `ArrayPool<T>.Shared` and returns them on `Dispose`, so build/use/dispose cycles recycle buffers instead of allocating. Dispose it (a `using` scope); for long-lived dictionaries the pooling buys nothing, so prefer `CelerityDictionary`. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |

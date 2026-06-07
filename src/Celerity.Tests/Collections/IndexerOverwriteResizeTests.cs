@@ -149,6 +149,37 @@ public class IndexerOverwriteResizeTests
     }
 
     [Fact]
+    public void SwissDictionary_IndexerOverwriteAtThreshold_DoesNotResize()
+    {
+        // SwissDictionary's minimum table is one SIMD group (16 slots), so its
+        // default-capacity threshold is (int)(16 * 0.75) = 12.
+        var map = new SwissDictionary<string, int, CountingStringHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map[$"k{i}"] = i; // Count == 12 == threshold
+
+        _hashCallCount = 0;
+        map["k6"] = 99; // overwrite existing key — must not resize
+
+        Assert.Equal(1, _hashCallCount);
+        Assert.Equal(12, map.Count);
+        Assert.Equal(99, map["k6"]);
+    }
+
+    [Fact]
+    public void SwissDictionary_IndexerNewKeyAtThreshold_StillResizesAndKeepsAllEntries()
+    {
+        var map = new SwissDictionary<int, int, CountingIntHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map[i] = i; // Count == 12 == threshold
+
+        map[13] = 13; // new key — must resize
+
+        Assert.Equal(13, map.Count);
+        for (int i = 1; i <= 13; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    [Fact]
     public void IntDictionary_RepeatedOverwriteAtThreshold_NeverResizes()
     {
         var map = new IntDictionary<int, CountingIntHasher>(capacity: 4);

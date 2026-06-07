@@ -404,6 +404,51 @@ void Check(bool condition, string message)
         "SmallDictionary<string, int> IEnumerable ctor + null key");
 }
 
+// SwissDictionary — SIMD group-probing dictionary (default key out-of-band, like
+// the other hash-table dictionaries). Exercise the indexer, TryAdd/Add,
+// TryGetValue, Remove (tombstone path), the out-of-band zero / null key, resize
+// under collision, and the struct enumerator, across a spread of hashers so the
+// Vector128 group-compare path is compiled to native code under AOT.
+{
+    var d = new SwissDictionary<int, int, Int32WangNaiveHasher>();
+    d[42] = 1;
+    d[42]++;
+    Check(d.TryAdd(7, 100), "SwissDictionary.TryAdd new key");
+    Check(!d.TryAdd(7, 999), "SwissDictionary.TryAdd duplicate");
+    d.Add(8, 200);
+    d[0] = 99; // zero key stored out-of-band, never hashed
+    Check(d.TryGetValue(42, out var v) && v == 2, "SwissDictionary indexer round-trip");
+    Check(d[0] == 99, "SwissDictionary zero-key round-trip");
+    Check(d.Remove(7), "SwissDictionary.Remove (tombstone)");
+    var sum = 0;
+    foreach (var kvp in d) sum += kvp.Value;
+    Check(sum == 2 + 200 + 99, "SwissDictionary enumeration");
+    Check(d.Count == 3, "SwissDictionary count");
+
+    // Force several resizes / group overflows to compile the rehash + SIMD probe.
+    var grow = new SwissDictionary<int, int, Int32WangNaiveHasher>(capacity: 16);
+    for (int i = 1; i <= 500; i++) grow[i] = i * 3;
+    bool ok = true;
+    for (int i = 1; i <= 500; i++) ok &= grow[i] == i * 3;
+    Check(ok && grow.Count == 500, "SwissDictionary resize round-trip");
+
+    var byStr = new SwissDictionary<string, int, StringMurmur3Hasher>(new[]
+    {
+        new KeyValuePair<string, int>("alice", 1),
+        new KeyValuePair<string, int>("bob", 2),
+    });
+    byStr[null!] = 99; // null key stored out-of-band
+    Check(byStr["alice"] == 1 && byStr[null!] == 99 && byStr.Count == 3,
+        "SwissDictionary<string, int> IEnumerable ctor + null key");
+
+    var byGuid = new SwissDictionary<Guid, string, GuidHasher>();
+    byGuid[Guid.Empty] = "empty"; // out-of-band default-key slot
+    var gid = Guid.NewGuid();
+    byGuid[gid] = "alice";
+    Check(byGuid[gid] == "alice" && byGuid[Guid.Empty] == "empty",
+        "SwissDictionary<Guid> round-trip + empty-key slot");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
