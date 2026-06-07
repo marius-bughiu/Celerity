@@ -8,6 +8,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 - `CelerityDictionary<TKey, TValue, THasher>` — generic dictionary with a struct hasher constraint.
 - `RobinHoodDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Robin Hood open addressing: bounds probe-length variance so worst-case lookups stay close to average on clustered / adversarial keys (at the cost of a per-slot probe-distance `int`).
 - `SwissDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer using Swiss-table SIMD group probing: a parallel control-byte array lets one `Vector128` compare test 16 slots per lookup, filtering candidates by a 7-bit hash tag before any key comparison (at the cost of a one-byte control tag per slot).
+- `HashCachingDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer with a struct-of-arrays layout: a dense side array of 32-bit hash fingerprints lets probes scan metadata only and short-circuit expensive key equality on a single integer compare (at the cost of four bytes of metadata per slot). Best for lookup-heavy tables and costly-equality keys.
 - `PooledCelerityDictionary<TKey, TValue, THasher>` — `CelerityDictionary`'s peer whose backing arrays are rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
 - `FrozenCelerityDictionary<TValue>` / `FrozenCelerityDictionary<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe. Defaults to `StringFnV1AHasher`.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: each key groups multiple values (`Add` appends rather than overwrites). Implements `ILookup<TKey, TValue?>`.
@@ -109,6 +110,23 @@ if (dict.TryGetValue(42, out var val))
 ```
 
 The trade-off is a one-byte control tag per slot (so it allocates a little more than `CelerityDictionary`) plus tombstone deletion reclaimed by an occasional rehash; reach for it on lookup-heavy workloads — large tables, many negative lookups, or clustered keys — where the group compare and tag filtering pay off.
+
+### `HashCachingDictionary` — struct-of-arrays hash caching for costly-equality keys
+
+`HashCachingDictionary` is a drop-in peer of `CelerityDictionary` — same API, same hashers — that takes the struct-of-arrays layout one step further. Alongside the parallel `keys` / `values` arrays it keeps a dense side array of 32-bit hash fingerprints, one per slot. A linear probe scans only that compact metadata buffer, comparing the cached fingerprint first, and dereferences a key (running the full `EqualityComparer<TKey>` check) only on a fingerprint match — so cache-cold lookups stay inside one buffer and expensive key comparisons (long strings, large value-type keys) are filtered out by a single integer compare.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var dict = new HashCachingDictionary<string, int, StringFnV1AHasher>();
+dict["hello"] = 42;
+
+if (dict.TryGetValue("hello", out var val))
+    Console.WriteLine(val); // 42
+```
+
+The trade-off is four bytes of metadata per slot (so it allocates a little more than `CelerityDictionary`); reach for it on lookup-dominated workloads, costly-equality keys, or large cache-cold tables. It is complementary to `SwissDictionary`: both keep a metadata side array, but this is a scalar, wider-fingerprint design with backward-shift (tombstone-free) deletion, whereas Swiss uses SIMD group probing over one-byte tags. For small tables of cheap (e.g. `int`) keys, `CelerityDictionary` has the smaller footprint and is roughly a wash.
 
 ### `PooledCelerityDictionary` — pooled storage for short-lived dictionaries
 
@@ -275,6 +293,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Dictionary keyed by `Guid`, `string`, or any other type | `CelerityDictionary<TKey, TValue, THasher>` | Pick a struct hasher from `Celerity.Hashing` (e.g. `GuidHasher`, `StringFnV1AHasher`) so the JIT can inline `Hash()` on the probe path. |
 | Dictionary with **clustered / adversarial** keys where worst-case lookup latency matters | `RobinHoodDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but Robin Hood probing bounds probe-length variance so tail-latency lookups don't degrade on bunched keys. Costs a per-slot probe-distance `int`; for uniform keys with a good hasher, prefer `CelerityDictionary`. |
 | **Lookup-heavy** dictionary (large tables, many negative lookups) where SIMD pays off | `SwissDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but Swiss-table group probing tests 16 slots per `Vector128` compare and filters candidates by a 7-bit hash tag before any key comparison. Costs a one-byte control tag per slot; for small or write-dominated tables, `CelerityDictionary` is competitive. |
+| **Lookup-heavy** dictionary with **costly key equality** (long strings, large value-type keys) or large cache-cold tables | `HashCachingDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but a dense side array of 32-bit hash fingerprints lets probes scan metadata only and short-circuit the key comparison on a single integer compare. Costs four bytes of metadata per slot; complementary to `SwissDictionary` (scalar wide fingerprint vs SIMD one-byte tags). For small tables of cheap keys, `CelerityDictionary` is roughly a wash. |
 | **Short-lived** dictionary rebuilt frequently on a hot path where GC pressure matters | `PooledCelerityDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary` plus `IDisposable`; rents its backing arrays from `ArrayPool<T>.Shared` and returns them on `Dispose`, so build/use/dispose cycles recycle buffers instead of allocating. Dispose it (a `using` scope); for long-lived dictionaries the pooling buys nothing, so prefer `CelerityDictionary`. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |

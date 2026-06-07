@@ -819,6 +819,122 @@ public class RemoveOutValueTests
     }
 
     // ---------------------------------------------------------------
+    //  HashCachingDictionary
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void HashCachingDictionary_RemoveOutValue_ReturnsTrueAndCapturedValue_ForExistingKey()
+    {
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>();
+        map[7] = "seven";
+
+        bool removed = map.Remove(7, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("seven", captured);
+        Assert.False(map.ContainsKey(7));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_RemoveOutValue_ReturnsFalseAndDefault_ForMissingKey()
+    {
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>();
+        map[1] = "one";
+
+        bool removed = map.Remove(99, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_RemoveOutValue_CapturesDefaultIntKeyValue()
+    {
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>();
+        map[0] = "zero";
+        map[1] = "one";
+
+        bool removed = map.Remove(0, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("zero", captured);
+        Assert.False(map.ContainsKey(0));
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_RemoveOutValue_CapturesNullStringKeyValue()
+    {
+        var map = new HashCachingDictionary<string, int, StringFnV1AHasher>();
+        map[null!] = 42;
+        map["alpha"] = 1;
+
+        bool removed = map.Remove(null!, out int captured);
+
+        Assert.True(removed);
+        Assert.Equal(42, captured);
+        Assert.False(map.ContainsKey(null!));
+        Assert.Single(map);
+        Assert.Equal(1, map["alpha"]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_RemoveOutValue_ReturnsFalse_WhenDefaultKeyAbsent()
+    {
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>();
+        map[1] = "one";
+
+        bool removed = map.Remove(0, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Single(map);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_RemoveOutValue_RehashesCluster_UnderFullCollision()
+    {
+        var map = new HashCachingDictionary<string, int, ConstantStringHasher>(16);
+        map["a"] = 1;
+        map["b"] = 2;
+        map["c"] = 3;
+        map["d"] = 4;
+        map["e"] = 5;
+
+        bool removed = map.Remove("c", out int captured);
+
+        Assert.True(removed);
+        Assert.Equal(3, captured);
+        Assert.Equal(4, map.Count);
+        Assert.False(map.ContainsKey("c"));
+
+        Assert.Equal(1, map["a"]);
+        Assert.Equal(2, map["b"]);
+        Assert.Equal(4, map["d"]);
+        Assert.Equal(5, map["e"]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_RemoveOutValue_BumpsVersion_AndInvalidatesEnumerator()
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();
+        for (int i = 1; i <= 4; i++)
+            map[i] = i;
+
+        var e = map.GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        Assert.True(map.Remove(2, out int captured));
+        Assert.Equal(2, captured);
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    // ---------------------------------------------------------------
     //  Cross-cutting: void Remove still works the same
     // ---------------------------------------------------------------
 
@@ -862,6 +978,17 @@ public class RemoveOutValueTests
     public void SwissDictionary_VoidRemove_StillReturnsTrueForFoundKey()
     {
         var map = new SwissDictionary<int, string, Int32WangNaiveHasher>();
+        map[1] = "one";
+
+        Assert.True(map.Remove(1));
+        Assert.False(map.ContainsKey(1));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_VoidRemove_StillReturnsTrueForFoundKey()
+    {
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>();
         map[1] = "one";
 
         Assert.True(map.Remove(1));

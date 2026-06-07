@@ -112,6 +112,28 @@ public class IndexerReturnTypeTests
     }
 
     [Fact]
+    public void HashCachingDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(typeof(HashCachingDictionary<string, int, StringFnV1AHasher>), keyType: typeof(string), valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        // Compile-time evidence of the fix: this assignment would emit CS8600
+        // ("Converting null literal or possible null value to non-nullable type")
+        // if the indexer were still declared as TValue?.
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
     public void IntDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
     {
         var map = new IntDictionary<string>

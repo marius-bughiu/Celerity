@@ -330,6 +330,58 @@ public class ConstructorValidationTests
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  HashCachingDictionary — loadFactor validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-0.5f)]
+    [InlineData(-1f)]
+    public void HashCachingDictionary_ShouldThrow_WhenLoadFactorIsZeroOrNegative(float loadFactor)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new HashCachingDictionary<int, int, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    [InlineData(2f)]
+    public void HashCachingDictionary_ShouldThrow_WhenLoadFactorIsOneOrGreater(float loadFactor)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new HashCachingDictionary<int, int, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new HashCachingDictionary<int, int, Int32WangNaiveHasher>(capacity: -1));
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldAcceptZeroCapacity()
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(capacity: 0);
+        map[42] = 100;
+        Assert.Equal(100, map[42]);
+    }
+
+    [Theory]
+    [InlineData(0.01f)]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.99f)]
+    public void HashCachingDictionary_ShouldAcceptValidLoadFactor(float loadFactor)
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor);
+        map[1] = 10;
+        Assert.Equal(10, map[1]);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  Convenience subclass IntDictionary<TValue> inherits validation
     // ──────────────────────────────────────────────────────────────
 

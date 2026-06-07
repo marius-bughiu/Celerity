@@ -26,6 +26,7 @@ internal static class Differential
         ("CelerityDictionary", CelerityDictionaryCase),
         ("RobinHoodDictionary", RobinHoodDictionaryCase),
         ("SwissDictionary", SwissDictionaryCase),
+        ("HashCachingDictionary", HashCachingDictionaryCase),
         ("PooledCelerityDictionary", PooledCelerityDictionaryCase),
         ("IntDictionary", IntDictionaryCase),
         ("LongDictionary", LongDictionaryCase),
@@ -197,6 +198,53 @@ internal static class Differential
     private static void SwissDictionaryCase(Random rng)
     {
         var sut = new SwissDictionary<int, int, Int32WangNaiveHasher>();
+        var oracle = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 5:
+                    int v = Value(rng);
+                    sut[key] = v;
+                    oracle[key] = v;
+                    break;
+                case < 8:
+                    Check(sut.Remove(key) == oracle.Remove(key), $"Remove({key}) disagreed");
+                    break;
+                case < 9:
+                    int v2 = Value(rng);
+                    Check(sut.TryAdd(key, v2) == oracle.TryAdd(key, v2), $"TryAdd({key}) disagreed");
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool e = oracle.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a, $"TryGetValue({k}) presence {a} != {e}");
+            Check(!e || ev == av, $"value[{k}] {av} != {ev}");
+        }
+
+        var seen = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            Check(seen.TryAdd(kv.Key, kv.Value), $"enumeration yielded duplicate key {kv.Key}");
+        Check(seen.Count == oracle.Count, $"enumeration count {seen.Count} != {oracle.Count}");
+        foreach (var kv in oracle)
+            Check(seen.TryGetValue(kv.Key, out int sv) && sv == kv.Value, $"enumeration missing/wrong {kv.Key}");
+    }
+
+    private static void HashCachingDictionaryCase(Random rng)
+    {
+        var sut = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();
         var oracle = new Dictionary<int, int>();
         int ops = OpCount(rng);
 
