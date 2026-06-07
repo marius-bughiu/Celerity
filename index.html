@@ -274,12 +274,14 @@
     <div class="ship"><code>LongDictionary&lt;TValue&gt;</code><div class="desc">long-keyed dictionary, default Wang hash.</div></div>
     <div class="ship"><code>CelerityDictionary&lt;K, V, H&gt;</code><div class="desc">Generic dictionary with a struct hasher constraint.</div></div>
     <div class="ship"><code>RobinHoodDictionary&lt;K, V, H&gt;</code><div class="desc">Robin Hood open addressing: bounded probe variance for clustered keys.</div></div>
+    <div class="ship"><code>PooledCelerityDictionary&lt;K, V, H&gt;</code><div class="desc">ArrayPool-backed, disposable dictionary that recycles its buffers to cut GC pressure.</div></div>
     <div class="ship"><code>FrozenCelerityDictionary&lt;V&gt;</code><div class="desc">Build-once string-keyed dictionary with perfect hashing for single-probe lookups.</div></div>
     <div class="ship"><code>CelerityMultiMap&lt;K, V, H&gt;</code><div class="desc">One-to-many map: each key groups multiple values. Implements <code>ILookup</code>.</div></div>
     <div class="ship"><code>SmallDictionary&lt;K, V&gt;</code><div class="desc">Flat-array, linear-scan dictionary tuned for the very-small (n &le; ~16) case.</div></div>
     <div class="ship"><code>IntSet</code><div class="desc">int-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>LongSet</code><div class="desc">long-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>CeleritySet&lt;T, H&gt;</code><div class="desc">Generic set with a struct hasher constraint.</div></div>
+    <div class="ship"><code>FrozenCeleritySet&lt;H&gt;</code><div class="desc">Build-once string set with perfect hashing for single-probe membership tests. Implements <code>IReadOnlySet</code>.</div></div>
     <div class="ship"><code>Celerity.Hashing</code><div class="desc">Wang, Murmur3, FNV-1a, Guid, default fallback.</div></div>
   </div>
 
