@@ -26,6 +26,13 @@ using Celerity.Hashing;
 /// Method names follow the <c>{Type}_{Hasher}</c> convention (e.g. <c>Int32_WangNaive</c>) so the
 /// gh-pages dashboard can group hashers by key type.
 /// </para>
+/// <para>
+/// The <c>{Type}_Identity</c> rows (<see cref="Int32IdentityHasher"/> / <see cref="Int64IdentityHasher"/>)
+/// are the labelled <strong>zero-work floor</strong>: a pass-through that does no mixing. For <c>int</c>
+/// keys it should track the <c>{Type}_Bcl</c> baseline (since <c>int.GetHashCode()</c> is itself the
+/// identity), confirming that no mixing hasher can beat it on raw throughput — the honest framing of the
+/// hasher value proposition is distribution quality, not hashing speed.
+/// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
@@ -81,6 +88,10 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Int32")]
+    public int Int32_Identity() => HashAll<int, Int32IdentityHasher>(intKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("Int32")]
     public int Int32_WangNaive() => HashAll<int, Int32WangNaiveHasher>(intKeys);
 
     [Benchmark]
@@ -105,6 +116,10 @@ public class IntegerHasherBenchmark
         }
         return acc;
     }
+
+    [Benchmark]
+    [BenchmarkCategory("Int64")]
+    public int Int64_Identity() => HashAll<long, Int64IdentityHasher>(longKeys);
 
     [Benchmark]
     [BenchmarkCategory("Int64")]

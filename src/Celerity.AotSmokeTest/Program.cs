@@ -227,6 +227,33 @@ void Check(bool condition, string message)
     murmurInt[1] = 1;
     Check(murmurInt.ContainsKey(1), "CelerityDictionary<int, Int32Murmur3Hasher>");
 
+    // Identity hashers — the zero-work floor. Exercise the out-of-band zero-key
+    // slot (Hash(0) == 0 == EMPTY_KEY) plus a dense sequential fill, the shape
+    // identity is designed for.
+    var identInt = new IntDictionary<string, Int32IdentityHasher>();
+    identInt[0] = "zero";
+    identInt[1] = "one";
+    identInt[-1] = "neg-one";
+    Check(identInt[0] == "zero" && identInt[1] == "one" && identInt[-1] == "neg-one"
+        && !identInt.ContainsKey(999), "IntDictionary<string, Int32IdentityHasher>");
+
+    var identIntSet = new IntSet<Int32IdentityHasher>();
+    for (int i = 0; i < 256; i++) identIntSet.Add(i);
+    Check(identIntSet.Count == 256 && identIntSet.Contains(0) && identIntSet.Contains(255)
+        && !identIntSet.Contains(256), "IntSet<Int32IdentityHasher>");
+
+    var identLong = new LongDictionary<string, Int64IdentityHasher>();
+    identLong[0L] = "zero";
+    identLong[1L] = "one";
+    identLong[-1L] = "neg-one";
+    Check(identLong[0L] == "zero" && identLong[1L] == "one" && identLong[-1L] == "neg-one"
+        && !identLong.ContainsKey(999L), "LongDictionary<string, Int64IdentityHasher>");
+
+    var identLongSet = new LongSet<Int64IdentityHasher>();
+    for (long i = 0; i < 256; i++) identLongSet.Add(i);
+    Check(identLongSet.Count == 256 && identLongSet.Contains(0L) && identLongSet.Contains(255L)
+        && !identLongSet.Contains(256L), "LongSet<Int64IdentityHasher>");
+
     var wangInt = new CelerityDictionary<int, int, Int32WangHasher>();
     wangInt[1] = 1;
     Check(wangInt.ContainsKey(1), "CelerityDictionary<int, Int32WangHasher>");
