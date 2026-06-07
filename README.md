@@ -21,6 +21,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 - `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangNaiveHasher`.
 - `BloomFilter<T, THasher>` — space-efficient **probabilistic** membership filter: bit-array storage with no false negatives and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory. Add-and-test only (no `Remove`); derives its `k` bit probes from a single hasher call by double hashing.
 - `BitSet` — dense, fixed-length **exact** bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD-accelerated bulk `And` / `Or` / `Xor` / `Not`. A faster, count-aware alternative to `System.Collections.BitArray` for dense small-integer index sets.
+- `HyperLogLog<T, THasher>` — space-efficient **probabilistic** cardinality estimator: counts the *distinct* elements in a stream of any size from a fixed array of registers (16&#160;KB by default) with a ~0.8% relative error, instead of a `HashSet<T>` that grows with the cardinality. Add-and-estimate only; mergeable with `UnionWith`.
 
 All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. The hash-table collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel; `SmallDictionary` has no hash table and stores the default key inline.
 
@@ -289,6 +290,30 @@ hasher call by double hashing, so any `IHashProvider<T>` works; `Capacity`, `Bit
 and `CurrentFalsePositiveProbability` expose the sizing and current fill. Merge two equally-sized
 filters with `UnionWith`.
 
+### `HyperLogLog` — count distinct elements in a fixed few KB
+
+When you need to know **how many distinct elements** a (possibly huge) stream contains — unique
+visitors, distinct query values, deduplicated counts across shards — and can tolerate a small relative
+error, `HyperLogLog` estimates the cardinality from a fixed array of registers that never grows with
+the data, instead of a `HashSet<T>` that must store every distinct value.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var unique = new HyperLogLog<long, Int64Murmur3Hasher>(); // ~16 KB, precision 14
+
+for (long id = 0; id < 10_000_000; id++)
+    unique.Add(id % 1_000_000);                // 1,000,000 distinct ids in a 10M stream
+
+Console.WriteLine(unique.EstimateCardinality()); // ≈ 1,000,000 (±~0.8%), from 16 KB
+```
+
+It is add-and-estimate only: there is no `Remove`, no membership test for a specific element, and no
+way to retrieve the elements — use `HashSet<T>` / `CeleritySet` for an exact count or `BloomFilter` for
+approximate membership. `Precision` sets the memory/accuracy trade-off (`StandardError` ≈ `1.04/√m`),
+and two equal-precision estimators merge with `UnionWith` to count distinct across both streams.
+
 ### Construct from an existing collection
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`. When the source implements `ICollection<T>`, its `Count` is used to pre-size the backing storage so the bulk fill avoids resize work.
@@ -333,6 +358,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Build-once, read-many membership set keyed by `string` | `FrozenCeleritySet` | Immutable; searches for a perfect (collision-free) hash at build time so `Contains` is single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Tune the hasher via the `<THasher>` overload. |
 | **Membership gate** where a small, bounded false-positive rate is acceptable in exchange for a large memory saving (dedup pre-filters, "have I seen this before?" guards in front of an expensive exact lookup) | `BloomFilter<T, THasher>` | Probabilistic: bit-array storage with **no false negatives** and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory and never growing with element size. Add-and-test only — no `Remove`, no enumeration, no retrieval. If you need exact membership or to get the elements back, use `CeleritySet` / `FrozenCeleritySet`. |
 | **Dense set of small integer indices** (or a fixed universe of flags) where you count set bits or combine whole vectors — bitmaps, visited/presence masks, sieves | `BitSet` | Exact dense bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `System.Collections.BitArray`. For **sparse** indices over a huge/unbounded domain, `IntSet` / `LongSet` is more memory-efficient; for approximate membership over arbitrary elements, use `BloomFilter`. |
+| **Distinct count** over a large or unbounded stream (unique visitors / events, distinct-value cardinality, deduplicated counts across shards) where a small relative error is acceptable | `HyperLogLog<T, THasher>` | Probabilistic: estimates the distinct count from a fixed array of registers (16&#160;KB at the default precision) with a ~0.8% relative standard error, never growing with the cardinality — unlike a `HashSet<T>` that stores every distinct value. Add-and-estimate only; merge shard estimators with `UnionWith`. If you need an exact count or to test a specific element, use `HashSet<T>` / `CeleritySet`; for approximate *membership* rather than counting, use `BloomFilter`. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 Notes on picking a hasher once the collection is settled:
