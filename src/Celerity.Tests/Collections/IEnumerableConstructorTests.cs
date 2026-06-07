@@ -1172,6 +1172,180 @@ public class IEnumerableConstructorTests
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  HashCachingDictionary — source argument validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void HashCachingDictionary_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new HashCachingDictionary<int, string, Int32WangNaiveHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("a", 1),
+            new KeyValuePair<string, int>("b", 2),
+            new KeyValuePair<string, int>("a", 3),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new HashCachingDictionary<string, int, StringFnV1AHasher>(source));
+        Assert.Contains("a", ex.Message);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldStillValidate_LoadFactor_WhenConstructedFromSource()
+    {
+        var source = new[] { new KeyValuePair<int, int>(1, 1) };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new HashCachingDictionary<int, int, Int32WangNaiveHasher>(source, loadFactor: 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new HashCachingDictionary<int, int, Int32WangNaiveHasher>(source, loadFactor: 0f));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  HashCachingDictionary — happy path
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void HashCachingDictionary_ShouldSupportEmptySource()
+    {
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>(
+            Array.Empty<KeyValuePair<int, string>>());
+
+        Assert.Empty(map);
+        Assert.False(map.ContainsKey(0));
+        Assert.False(map.ContainsKey(1));
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldCopyAllEntries_FromArraySource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>("alpha", 1),
+            new KeyValuePair<string, int>("beta", 2),
+            new KeyValuePair<string, int>("gamma", 3),
+        };
+
+        var map = new HashCachingDictionary<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(1, map["alpha"]);
+        Assert.Equal(2, map["beta"]);
+        Assert.Equal(3, map["gamma"]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldCopyAllEntries_FromNonCollectionEnumerable()
+    {
+        IEnumerable<KeyValuePair<int, string>> NonCollectionSource()
+        {
+            yield return new KeyValuePair<int, string>(1, "one");
+            yield return new KeyValuePair<int, string>(2, "two");
+            yield return new KeyValuePair<int, string>(3, "three");
+        }
+
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>(NonCollectionSource());
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal("one", map[1]);
+        Assert.Equal("two", map[2]);
+        Assert.Equal("three", map[3]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldCaptureDefaultIntKey_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(0, "zero"),
+            new KeyValuePair<int, string>(1, "one"),
+        };
+
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.True(map.ContainsKey(0));
+        Assert.Equal("zero", map[0]);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldCaptureNullStringKey_FromSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<string, int>(null!, 0),
+            new KeyValuePair<string, int>("one", 1),
+            new KeyValuePair<string, int>("two", 2),
+        };
+
+        var map = new HashCachingDictionary<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.True(map.ContainsKey(null!));
+        Assert.Equal(0, map[null!]);
+        Assert.Equal(1, map["one"]);
+        Assert.Equal(2, map["two"]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldDetectDuplicateDefaultKey()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(0, "zero"),
+            new KeyValuePair<int, string>(0, "zero-again"),
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            new HashCachingDictionary<int, string, Int32WangNaiveHasher>(source));
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldCopy_LargeSource_WithoutDataLoss()
+    {
+        var source = Enumerable.Range(1, 500)
+            .Select(i => new KeyValuePair<string, int>($"key-{i}", i))
+            .ToArray();
+
+        var map = new HashCachingDictionary<string, int, StringFnV1AHasher>(source);
+
+        Assert.Equal(500, map.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.Equal(i, map[$"key-{i}"]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldBeIndependent_OfSourceAfterConstruction()
+    {
+        var source = new List<KeyValuePair<int, string>>
+        {
+            new(1, "one"),
+            new(2, "two"),
+        };
+
+        var map = new HashCachingDictionary<int, string, Int32WangNaiveHasher>(source);
+
+        source.Add(new KeyValuePair<int, string>(3, "three"));
+        source[0] = new KeyValuePair<int, string>(1, "MUTATED");
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal("one", map[1]);
+        Assert.False(map.ContainsKey(3));
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  Copy from existing Celerity dictionaries
     // ──────────────────────────────────────────────────────────────
 
@@ -1232,6 +1406,21 @@ public class IEnumerableConstructorTests
         original.Add("beta", 2);
 
         var copy = new SwissDictionary<string, int, StringFnV1AHasher>(
+            original.Select(kvp => new KeyValuePair<string, int>(kvp.Key, kvp.Value)));
+
+        Assert.Equal(2, copy.Count);
+        Assert.Equal(1, copy["alpha"]);
+        Assert.Equal(2, copy["beta"]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_ShouldCopy_FromAnotherHashCachingDictionary()
+    {
+        var original = new HashCachingDictionary<string, int, StringFnV1AHasher>();
+        original.Add("alpha", 1);
+        original.Add("beta", 2);
+
+        var copy = new HashCachingDictionary<string, int, StringFnV1AHasher>(
             original.Select(kvp => new KeyValuePair<string, int>(kvp.Key, kvp.Value)));
 
         Assert.Equal(2, copy.Count);

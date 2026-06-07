@@ -347,6 +347,67 @@ foreach (var kvp in dict)
 
 ---
 
+## HashCachingDictionary&lt;TKey, TValue, THasher&gt;
+
+A drop-in peer of `CelerityDictionary` that pushes the **struct-of-arrays layout** one step further: alongside the parallel `keys` / `values` arrays it keeps a dense side array of 32-bit hash **fingerprints**, one per slot. A probe scan touches only that compact metadata buffer — comparing the cached fingerprint before it ever reads a key — so cache-cold lookups and lookups with expensive key equality (long strings, large structs) short-circuit on a single integer compare. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probe metadata differs.
+
+```csharp
+public class HashCachingDictionary<TKey, TValue, THasher>
+    : IReadOnlyDictionary<TKey, TValue?>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+### What the cached-fingerprint side array does
+
+The fingerprint of an occupied slot is the key's hash with its top bit forced set (`hash | 0x80000000`), which makes it always non-zero; an empty slot is the array default of `0`. The fingerprint array therefore doubles as the occupancy bitmap — probing, enumeration, and `ContainsValue` test it rather than comparing keys against `default(TKey)`. Two consequences matter to callers:
+
+- **Metadata-only probe scans.** A linear probe walks the dense `int[]` fingerprint array and only dereferences a key (running the full, possibly expensive `EqualityComparer<TKey>` check) when the cached fingerprint matches. On a cache-cold table the probe stays inside one compact buffer, and on keys with costly equality the integer compare filters out almost every non-match — the win over scalar linear probing grows with key-equality cost and table size.
+- **Rehash without re-hashing.** Because the forced occupied bit sits above every power-of-two table mask, the cached fingerprint also yields the slot index directly (`fingerprint & mask`). A resize re-homes every entry straight from its stored fingerprint without invoking the hasher once, and backward-shift deletion reads each candidate's natural slot from its fingerprint too.
+
+### When to choose it over `CelerityDictionary`
+
+Reach for `HashCachingDictionary` for **lookup-dominated** workloads, **expensive-equality keys** (long strings, large value-type keys), or large cache-cold tables where the metadata-only scan pays off, and where four bytes of metadata per slot is an acceptable cost. For small tables of cheap (e.g. `int`) keys, `CelerityDictionary` has the smaller footprint and is roughly a wash. It is complementary to `SwissDictionary`: both keep a metadata side array, but `HashCachingDictionary` is a scalar, wider-fingerprint design with backward-shift (tombstone-free) deletion, while `SwissDictionary` uses SIMD group probing over one-byte tags. Both are single-threaded and make no iteration-order guarantee.
+
+### Constructors
+
+```csharp
+public HashCachingDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public HashCachingDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CelerityDictionary`. The backing table is always a power of two.
+
+### Default-key handling
+
+Identical to `CelerityDictionary`: `default(TKey)` (`null` / `0` / `Guid.Empty` / …) is stored out-of-band via a `_hasDefaultKey` flag and a dedicated value slot, so the hasher is never invoked with it (string hashers throw on `null`). Transparent to callers. The fingerprint array tracks occupancy, so the empty-slot sentinel (`0`) never collides with a real entry even when a key would hash to zero.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Lookup-heavy table of string keys: each probe compares cached hashes first,
+// so the costly string equality only runs on a genuine fingerprint match.
+var dict = new HashCachingDictionary<string, int, StringFnV1AHasher>();
+dict["hello"] = 42;
+dict[null!]   = 0; // null key stored out-of-band
+
+if (dict.TryGetValue("hello", out var val))
+    Console.WriteLine(val); // 42
+
+foreach (var kvp in dict)
+    Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
+```
+
+---
+
 ## IntDictionary&lt;TValue&gt;
 
 A convenience subclass of `IntDictionary<TValue, Int32WangNaiveHasher>` for the common case of integer-keyed dictionaries.

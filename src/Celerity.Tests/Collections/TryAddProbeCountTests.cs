@@ -312,6 +312,48 @@ public class TryAddProbeCountTests
     }
 
     [Fact]
+    public void HashCachingDictionary_TryAdd_NewKey_DoesExactlyOneProbeWalk()
+    {
+        // The combined probe both checks for an existing key and chooses the
+        // insertion slot in one walk, so a new-key insert costs exactly one
+        // Hash() call (no resize fires at capacity 64).
+        var map = new HashCachingDictionary<string, int, CountingStringHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 10; i++)
+            Assert.True(map.TryAdd($"k{i}", i));
+
+        Assert.Equal(10, _hashCallCount);
+        Assert.Equal(10, map.Count);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_TryAdd_DuplicateKey_DoesExactlyOneProbeWalk()
+    {
+        var map = new HashCachingDictionary<string, int, CountingStringHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            map.TryAdd($"k{i}", i);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(map.TryAdd($"k{i}", -1));
+
+        Assert.Equal(5, _hashCallCount);
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
+    public void HashCachingDictionary_TryAdd_PreservesExistingValueOnDuplicate()
+    {
+        var map = new HashCachingDictionary<string, int, CountingStringHasher>(capacity: 64);
+        map.TryAdd("k7", 700);
+
+        Assert.False(map.TryAdd("k7", -1));
+        Assert.Equal(700, map["k7"]);
+    }
+
+    [Fact]
     public void IntSet_TryAdd_NewItem_DoesExactlyOneProbeWalk()
     {
         var set = new IntSet<CountingIntHasher>(capacity: 64);

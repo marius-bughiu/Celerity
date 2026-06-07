@@ -449,6 +449,52 @@ void Check(bool condition, string message)
         "SwissDictionary<Guid> round-trip + empty-key slot");
 }
 
+// HashCachingDictionary — struct-of-arrays dictionary with a cached-fingerprint
+// side array (default key out-of-band, like the other hash-table dictionaries).
+// Exercise the indexer, TryAdd/Add, TryGetValue, Remove (backward-shift path),
+// the out-of-band zero / null key, resize under collision, and the struct
+// enumerator, across a spread of hashers so the fingerprint probe path is
+// compiled to native code under AOT.
+{
+    var d = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();
+    d[42] = 1;
+    d[42]++;
+    Check(d.TryAdd(7, 100), "HashCachingDictionary.TryAdd new key");
+    Check(!d.TryAdd(7, 999), "HashCachingDictionary.TryAdd duplicate");
+    d.Add(8, 200);
+    d[0] = 99; // zero key stored out-of-band, never hashed
+    Check(d.TryGetValue(42, out var v) && v == 2, "HashCachingDictionary indexer round-trip");
+    Check(d[0] == 99, "HashCachingDictionary zero-key round-trip");
+    Check(d.Remove(7), "HashCachingDictionary.Remove (backward-shift)");
+    var sum = 0;
+    foreach (var kvp in d) sum += kvp.Value;
+    Check(sum == 2 + 200 + 99, "HashCachingDictionary enumeration");
+    Check(d.Count == 3, "HashCachingDictionary count");
+
+    // Force several resizes / collision clusters to compile the rehash + probe.
+    var grow = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(capacity: 16);
+    for (int i = 1; i <= 500; i++) grow[i] = i * 3;
+    bool ok = true;
+    for (int i = 1; i <= 500; i++) ok &= grow[i] == i * 3;
+    Check(ok && grow.Count == 500, "HashCachingDictionary resize round-trip");
+
+    var byStr = new HashCachingDictionary<string, int, StringMurmur3Hasher>(new[]
+    {
+        new KeyValuePair<string, int>("alice", 1),
+        new KeyValuePair<string, int>("bob", 2),
+    });
+    byStr[null!] = 99; // null key stored out-of-band
+    Check(byStr["alice"] == 1 && byStr[null!] == 99 && byStr.Count == 3,
+        "HashCachingDictionary<string, int> IEnumerable ctor + null key");
+
+    var byGuid = new HashCachingDictionary<Guid, string, GuidHasher>();
+    byGuid[Guid.Empty] = "empty"; // out-of-band default-key slot
+    var gid = Guid.NewGuid();
+    byGuid[gid] = "alice";
+    Check(byGuid[gid] == "alice" && byGuid[Guid.Empty] == "empty",
+        "HashCachingDictionary<Guid> round-trip + empty-key slot");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

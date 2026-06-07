@@ -13,6 +13,7 @@ internal class Program
         typeof(CelerityDictionaryBenchmark),
         typeof(RobinHoodDictionaryBenchmark),
         typeof(SwissDictionaryBenchmark),
+        typeof(HashCachingDictionaryBenchmark),
         typeof(PooledCelerityDictionaryBenchmark),
         typeof(IntDictionaryBenchmark),
         typeof(LongDictionaryBenchmark),

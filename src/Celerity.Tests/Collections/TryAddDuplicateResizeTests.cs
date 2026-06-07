@@ -240,6 +240,45 @@ public class TryAddDuplicateResizeTests
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
 
+    // HashCachingDictionary's minimum table is one SIMD group (16 slots), so its
+    // default-capacity threshold is (int)(16 * 0.75) = 12. Fill to exactly that
+    // before exercising the at-threshold duplicate / new-key paths.
+
+    [Fact]
+    public void HashCachingDictionary_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        var map = new HashCachingDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map.Add(i, i * 10); // Count == 12 == threshold
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(2, 99));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        Assert.Equal(Enumerable.Range(1, 12).ToArray(), seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void HashCachingDictionary_TryAdd_NewKeyAtThreshold_InvalidatesEnumerator()
+    {
+        var map = new HashCachingDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map.Add(i, i * 10); // Count == 12 == threshold
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.TryAdd(13, 130));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
     [Fact]
     public void PooledCelerityDictionary_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
     {

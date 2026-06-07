@@ -734,6 +734,100 @@ public class LoadFactorBoundaryTests
     }
 
     // ---------------------------------------------------------------
+    //  HashCachingDictionary — low load factor
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void HashCachingDictionary_LowLoadFactor_TriggersEarlyResize_AndPreservesAllData()
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 40; i++)
+            map[i] = i * 10;
+
+        Assert.Equal(40, map.Count);
+        for (int i = 1; i <= 40; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  HashCachingDictionary — high load factor
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void HashCachingDictionary_HighLoadFactor_PermitsHighDensity_AndPreservesAllData()
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.95f);
+
+        for (int i = 1; i <= 60; i++)
+            map[i] = i * 100;
+
+        Assert.Equal(60, map.Count);
+        for (int i = 1; i <= 60; i++)
+            Assert.Equal(i * 100, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  HashCachingDictionary — multiple sequential resizes
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void HashCachingDictionary_TinyInitialCapacity_MultipleResizes_PreserveAllEntries()
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 200; i++)
+            map[i] = i;
+
+        Assert.Equal(200, map.Count);
+        for (int i = 1; i <= 200; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  HashCachingDictionary — default key with load-factor boundary
+    // ---------------------------------------------------------------
+
+    // default(int) == 0 is stored out-of-band and contributes to Count without
+    // consuming an array slot; verify resize timing and data integrity.
+    [Fact]
+    public void HashCachingDictionary_DefaultKey_InsertsBeforeThreshold_DoesNotCorruptResizeTiming()
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.5f);
+        map[0] = -1;
+
+        for (int i = 1; i <= 40; i++)
+            map[i] = i;
+
+        Assert.Equal(41, map.Count);
+        Assert.Equal(-1, map[0]);
+        for (int i = 1; i <= 40; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.95f)]
+    public void HashCachingDictionary_VariousLoadFactors_AllDataSurvivesMultipleResizes(float loadFactor)
+    {
+        var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: loadFactor);
+
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 7;
+
+        Assert.Equal(100, map.Count);
+        for (int i = 1; i <= 100; i++)
+            Assert.Equal(i * 7, map[i]);
+    }
+
+    // ---------------------------------------------------------------
     //  CelerityMultiMap — the key table resizes on the distinct-key
     //  count exactly like the dictionaries; every group must survive,
     //  and the out-of-band default-key group must not corrupt accounting.

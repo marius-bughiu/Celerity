@@ -94,6 +94,17 @@ public class IEnumerableConstructorNullPriorityTests
     }
 
     [Fact]
+    public void HashCachingDictionary_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new HashCachingDictionary<int, string, Int32WangNaiveHasher>(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
     public void CelerityMultiMap_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
     {
         IEnumerable<KeyValuePair<int, string>>? source = null;
