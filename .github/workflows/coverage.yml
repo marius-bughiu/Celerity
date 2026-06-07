@@ -113,15 +113,40 @@ jobs:
           set -euo pipefail
           git fetch origin gh-pages
           git worktree add /tmp/gh-pages gh-pages
-          rm -rf /tmp/gh-pages/coverage
-          mkdir -p /tmp/gh-pages/coverage
-          cp -r coveragereport/* /tmp/gh-pages/coverage/
           cd /tmp/gh-pages
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "No coverage changes to sync"
-            exit 0
+          # The benchmark workflow also pushes to gh-pages on a main push, so refresh
+          # and retry to tolerate a concurrent update. Each workflow owns a different
+          # subtree (coverage/ here, dev/ there), so re-applying on top of the latest
+          # gh-pages never clobbers the other's data.
+          published=0
+          for attempt in 1 2 3 4 5; do
+            git fetch origin gh-pages
+            git reset --hard origin/gh-pages
+            rm -rf coverage
+            mkdir -p coverage
+            cp -r "$GITHUB_WORKSPACE"/coveragereport/* coverage/
+            # Stage first, then diff the index against HEAD. The previous guard used
+            # `git diff --quiet`, which ignores *untracked* files — so on the very first
+            # run (no coverage/ committed yet) it always reported "no changes" and the
+            # report was never published. Staging first detects new files too, which
+            # both bootstraps the initial publish and stays a no-op on an unchanged rerun.
+            git -c user.name="github-actions" -c user.email="github-actions@github.com" add coverage
+            if git diff --cached --quiet; then
+              echo "No coverage changes to sync"
+              published=1
+              break
+            fi
+            git -c user.name="github-actions" -c user.email="github-actions@github.com" \
+              commit -m "Sync coverage report from ${GITHUB_SHA:0:7}"
+            if git push origin gh-pages; then
+              echo "Coverage report published."
+              published=1
+              break
+            fi
+            echo "Push rejected (attempt ${attempt}); refreshing gh-pages and retrying..."
+            sleep $((attempt * 3))
+          done
+          if [ "$published" -ne 1 ]; then
+            echo "Failed to publish coverage report after retries." >&2
+            exit 1
           fi
-          git -c user.name="github-actions" -c user.email="github-actions@github.com" add coverage
-          git -c user.name="github-actions" -c user.email="github-actions@github.com" \
-            commit -m "Sync coverage report from ${GITHUB_SHA:0:7}"
-          git push origin gh-pages
