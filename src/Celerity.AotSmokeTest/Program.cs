@@ -7,6 +7,7 @@
 // library works end-to-end under Native AOT, not just that the static analyzers
 // are happy.
 
+using Celerity;
 using Celerity.Collections;
 using Celerity.Hashing;
 
@@ -716,6 +717,32 @@ void Check(bool condition, string message)
     var guidCms = new CountMinSketch<Guid, GuidHasher>();
     guidCms.Add(Guid.Empty, 2); // ordinary element, no out-of-band slot
     Check(guidCms.EstimateCount(Guid.Empty) >= 2, "CountMinSketch<Guid> empty-guid element");
+}
+
+// FastUtils.FastMod / FastDiv (#191) — Lemire reciprocal modulo / division, 32- and 64-bit.
+// Forces the BigMul / UInt128 reciprocal paths to compile under Native AOT and confirms they
+// reproduce the built-in operators on the native runtime.
+{
+    const uint d32 = 1000u;
+    ulong m32 = FastUtils.GetFastModMultiplier(d32);
+    bool ok32 = true;
+    for (uint value = 0; value < 50_000; value++)
+    {
+        if (FastUtils.FastMod(value, d32, m32) != value % d32) { ok32 = false; break; }
+        if (FastUtils.FastDiv(value, m32) != value / d32) { ok32 = false; break; }
+    }
+    Check(ok32, "FastUtils.FastMod/FastDiv (32-bit) match operators");
+
+    const ulong d64 = 1_000_000_007UL;
+    UInt128 m64 = FastUtils.GetFastModMultiplier(d64);
+    ulong[] samples64 = { 0, 1, d64 - 1, d64, d64 + 1, 123_456_789_012_345UL, ulong.MaxValue };
+    bool ok64 = true;
+    foreach (ulong value in samples64)
+    {
+        if (FastUtils.FastMod(value, d64, m64) != value % d64) { ok64 = false; break; }
+        if (FastUtils.FastDiv(value, m64) != value / d64) { ok64 = false; break; }
+    }
+    Check(ok64, "FastUtils.FastMod/FastDiv (64-bit) match operators");
 }
 
 if (failures == 0)

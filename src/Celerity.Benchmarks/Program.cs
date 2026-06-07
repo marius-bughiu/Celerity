@@ -51,6 +51,7 @@ internal class Program
         typeof(CacheLocalityBenchmark),
         typeof(LibraryComparisonBenchmark),
         typeof(RealWorldWorkloadBenchmark),
+        typeof(FastModBenchmark),
     };
 
     static void Main(string[] args)
