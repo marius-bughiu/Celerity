@@ -40,6 +40,7 @@ internal static class Differential
         ("BloomFilter", BloomFilterCase),
         ("BitSet", BitSetCase),
         ("HyperLogLog", HyperLogLogCase),
+        ("CountMinSketch", CountMinSketchCase),
     ];
 
     private const int MinKey = -8;
@@ -577,6 +578,44 @@ internal static class Differential
         int exact = oracle.Count;
         Check(estimate >= exact - 3 && estimate <= exact + 1,
             $"cardinality estimate {estimate} not within slack of exact {exact}");
+    }
+
+    // ---- frequency estimator (one-directional) ------------------------------
+
+    // A Count-Min sketch never underestimates a frequency (collisions only inflate
+    // counters), so the oracle check is one-directional: every element's estimate must
+    // be at least its exact count in a Dictionary frequency table. Overestimates are not
+    // reconciled (a collision may legitimately inflate an estimate). Counts (including
+    // weighted Adds) accumulate, and Clear resets both.
+    private static void CountMinSketchCase(Random rng)
+    {
+        var sut = new CountMinSketch<int, Int32WangNaiveHasher>();
+        var oracle = new Dictionary<int, long>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 7:
+                    sut.Add(item);
+                    oracle[item] = oracle.GetValueOrDefault(item) + 1;
+                    break;
+                case < 9:
+                    long w = rng.Next(1, 10);
+                    sut.Add(item, w);
+                    oracle[item] = oracle.GetValueOrDefault(item) + w;
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        foreach (var (k, count) in oracle)
+            Check(sut.EstimateCount(k) >= count, $"underestimate for {k}: {sut.EstimateCount(k)} < {count}");
     }
 
     // ---- multi-map ----------------------------------------------------------

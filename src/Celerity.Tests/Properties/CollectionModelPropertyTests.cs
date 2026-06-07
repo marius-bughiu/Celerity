@@ -547,6 +547,56 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- CountMinSketch (probabilistic) vs Dictionary<int,long> -------------
+
+    // A Count-Min sketch never underestimates a frequency (counters only accumulate, and
+    // collisions only inflate them), so the model property is one-directional: every
+    // element's estimate must be at least its exact count in a Dictionary frequency table.
+    // Overestimates are not asserted (a collision may legitimately inflate an estimate).
+    private enum CmsOp { Add, AddWeighted, Clear }
+
+    private static readonly Gen<List<(CmsOp, int, int)>> GenCmsOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n =>
+                n < 70 ? CmsOp.Add :
+                n < 92 ? CmsOp.AddWeighted : CmsOp.Clear),
+            Gen.Int[-8, 24],
+            Gen.Int[1, 9])
+        .List[0, 120];
+
+    [Fact]
+    public void CountMinSketch_ShouldNeverUnderestimate_VsBclFrequencyTable()
+    {
+        GenCmsOps.Sample(ops =>
+        {
+            var sut = new CountMinSketch<int, Int32WangNaiveHasher>();
+            var oracle = new Dictionary<int, long>();
+
+            foreach (var (op, item, weight) in ops)
+            {
+                switch (op)
+                {
+                    case CmsOp.Add:
+                        sut.Add(item);
+                        oracle[item] = oracle.GetValueOrDefault(item) + 1;
+                        break;
+                    case CmsOp.AddWeighted:
+                        sut.Add(item, weight);
+                        oracle[item] = oracle.GetValueOrDefault(item) + weight;
+                        break;
+                    case CmsOp.Clear:
+                        sut.Clear();
+                        oracle.Clear();
+                        break;
+                }
+            }
+
+            // Never underestimates: every element's estimate is at least its true count.
+            foreach (var (k, count) in oracle)
+                Assert.True(sut.EstimateCount(k) >= count, $"underestimate for {k}");
+        }, iter: 2000);
+    }
+
     // ---- MultiMap vs Dictionary<int,List<int>> ------------------------------
 
     private enum MultiOp { Add, RemoveValue, RemoveAll }
