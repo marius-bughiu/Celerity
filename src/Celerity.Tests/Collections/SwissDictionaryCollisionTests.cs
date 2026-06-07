@@ -229,6 +229,51 @@ public class SwissDictionaryCollisionTests
             Assert.Equal(i, map[i]);
     }
 
+    [Fact]
+    public void TombstoneHeavyResize_ShouldRehashInPlace_NotDouble()
+    {
+        // Drives the same-size (tombstone-reclaiming) rehash branch of Resize:
+        // a resize triggered while the *live* count is below half the threshold
+        // must rehash at the current capacity rather than doubling, so churn that
+        // accumulates tombstones cannot grow the table without bound.
+        //
+        // With IdentityIntHasher and capacity 32 there are two SIMD groups
+        // (group = (key >> 7) & 1, threshold 24). Keys 128..143 all land in
+        // group 1; keys 1..9 all land in group 0.
+        var map = new SwissDictionary<int, int, IdentityIntHasher>(capacity: 32, loadFactor: 0.75f);
+
+        // Fill group 1 completely, then delete it all: because the group is full,
+        // every erase leaves a DELETED tombstone (16 of them), not an empty slot.
+        for (int k = 128; k <= 143; k++)
+            map[k] = k;
+        for (int k = 128; k <= 143; k++)
+            Assert.True(map.Remove(k));
+        Assert.Equal(0, map.Count);
+
+        // Now fill group 0 (no tombstones on its probe path, so these consume
+        // empty slots and drain the growth budget). The insert that finds the
+        // budget exhausted triggers a resize while only ~8 entries are live —
+        // below threshold/2 — so the in-place rehash path runs and reclaims the
+        // 16 group-1 tombstones instead of doubling to capacity 64.
+        for (int k = 1; k <= 9; k++)
+            map[k] = k * 10;
+
+        Assert.Equal(9, map.Count);
+        for (int k = 1; k <= 9; k++)
+            Assert.Equal(k * 10, map[k]);
+        for (int k = 128; k <= 143; k++)
+            Assert.False(map.ContainsKey(k));
+
+        // The reclaimed table still works: refill it past the original threshold.
+        for (int k = 200; k <= 240; k++)
+            map[k] = k;
+        Assert.Equal(50, map.Count);
+        for (int k = 1; k <= 9; k++)
+            Assert.Equal(k * 10, map[k]);
+        for (int k = 200; k <= 240; k++)
+            Assert.Equal(k, map[k]);
+    }
+
     // ---------------------------------------------------------------
     //  Group-straddling clusters (identity hasher)
     // ---------------------------------------------------------------
