@@ -619,6 +619,73 @@ if (naive.DistributionScore <= wang.DistributionScore * 1.1)
 
 ---
 
+## End-to-end probe analysis
+
+`HashQualityEvaluator` models a **separate-chaining** table: it counts how many keys land in each bucket, so its `MaxBucketLoad` tells you how many keys *share* a slot. That is the right model for a chained table, but the Celerity collections do not chain — they **linearly probe**. On a collision they walk to the next slot, which makes neighbouring clusters *merge* (primary clustering), so the cost a lookup actually pays is its **probe length**: the number of slots it reads, starting at the key's natural slot, before it finds the key. Two hashers with the same bucket-load profile can have very different probe lengths once you account for that merging.
+
+`ProbeStatisticsEvaluator` answers the question users actually feel — *how many slots does a lookup read on average and in the worst case?* — by replaying the **exact** open-addressed, power-of-two, linear-probing placement the collections use (`index = hash & (TableSize - 1)`, then `(index + 1) & mask` on a collision).
+
+### ProbeStatisticsEvaluator
+
+```csharp
+public static class ProbeStatisticsEvaluator
+{
+    public const float DefaultLoadFactor = 0.75f;
+
+    public static ProbeStatistics Evaluate<T, THasher>(
+        IEnumerable<T> keys,
+        int? capacity = null,
+        float loadFactor = DefaultLoadFactor)
+        where THasher : struct, IHashProvider<T>;
+}
+```
+
+Places every key into a linearly-probed table sized for the key count at `loadFactor` — including load-factor headroom, exactly as the collections' bulk constructors size their backing arrays — and reports the resulting probe-length distribution. Keys equal to an already-placed key (by `EqualityComparer<T>.Default`) are counted as duplicates and not inserted twice, matching the dictionaries' set semantics.
+
+Like `HashQualityEvaluator` this is a **diagnostic** API, not a hot path: it materializes the sequence and allocates a table-sized buffer, so call it offline. It throws `ArgumentNullException` for a null `keys`, and `ArgumentOutOfRangeException` for a negative `capacity` or a `loadFactor` outside `(0, 1)`.
+
+### ProbeStatistics
+
+```csharp
+public readonly struct ProbeStatistics
+```
+
+An immutable bag of metrics returned by `Evaluate`. Its `ToString()` renders a one-line summary.
+
+| Member | Meaning |
+|---|---|
+| `KeyCount` | Number of keys read from the input (duplicates included). |
+| `EntryCount` | Distinct entries actually placed (`KeyCount - DuplicateKeyCount`). Probe metrics are over these. |
+| `DuplicateKeyCount` | Input keys equal to an already-placed key, so not inserted again. |
+| `TableSize` | The power-of-two table size the entries were placed into (sized with load-factor headroom). |
+| `LoadFactor` | The achieved fill ratio, `EntryCount / TableSize`. Probe length climbs steeply as this nears `1.0`. |
+| `CollisionCount` | Entries that did **not** land in their natural slot (probe length > 1) — the open-addressing notion of a collision, which accounts for primary clustering. |
+| `CollisionRate` | `CollisionCount / EntryCount`, in `[0, 1]`. |
+| `TotalProbeLength` | Sum of every entry's probe length. |
+| `AverageProbeLength` | Mean probes for a successful lookup, `TotalProbeLength / EntryCount`. **`1.0` = every entry in its natural slot**; higher is worse. |
+| `MaxProbeLength` | Worst-case probe length — the longest run a single lookup walks, i.e. the tail-latency driver an adversarial key set inflates. |
+
+### Example
+
+```csharp
+using Celerity.Hashing;
+
+int[] keys = LoadProductionKeySample();
+
+ProbeStatistics naive  = ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(keys);
+ProbeStatistics murmur = ProbeStatisticsEvaluator.Evaluate<int, Int32Murmur3Hasher>(keys);
+
+Console.WriteLine(naive);   // e.g. AvgProbe=58.10, MaxProbe=4112 on clustered keys
+Console.WriteLine(murmur);  // e.g. AvgProbe=1.35,  MaxProbe=12
+
+// If the cheap default already keeps AverageProbeLength near 1, a stronger mixer buys nothing.
+// If MaxProbeLength is large, your keys cluster under this hasher — escalate.
+```
+
+The `Celerity.Benchmarks` project prints a full hasher × distribution probe table with `dotnet run -c Release -- --probe-analysis`, and times the same hashers end-to-end through the dictionaries in `HasherEndToEndBenchmark` (see [the performance guide](../performance.md#extended-benchmark-suite)). Read the deterministic probe numbers and the throughput numbers together: a strong hasher that "loses" the isolated `Hash()` microbench still **wins end-to-end** on clustered or adversarial keys because it collapses these probe chains.
+
+---
+
 ## Benchmarking the string hashers
 
 The `Celerity.Benchmarks` project includes `StringHasherBenchmark`, a head-to-head BenchmarkDotNet comparison of every built-in `string` hasher. It hashes a deterministic sample of distinct keys through each hasher via the `where THasher : struct, IHashProvider<string>` constraint — so the JIT inlines `Hash` exactly as it does on a real collection's probe path — with the BCL `string.GetHashCode()` as the baseline, and sweeps three key shapes via its `Shape` parameter:
