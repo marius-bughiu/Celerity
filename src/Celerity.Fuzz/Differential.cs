@@ -37,6 +37,7 @@ internal static class Differential
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
+        ("BloomFilter", BloomFilterCase),
     ];
 
     private const int MinKey = -8;
@@ -442,6 +443,32 @@ internal static class Differential
         }
 
         Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+    }
+
+    // ---- bloom filter (probabilistic, one-directional) ----------------------
+
+    // A Bloom filter permits false positives but never false negatives, so the
+    // oracle check is one-directional: every element the HashSet holds must test
+    // present. Absence is not reconciled (a true Contains may be a legitimate false
+    // positive). Sized for the tiny key domain so add / clear churn dominates.
+    private static void BloomFilterCase(Random rng)
+    {
+        var sut = new BloomFilter<int, Int32WangNaiveHasher>(64);
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 9: sut.Add(item); oracle.Add(item); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        foreach (int k in oracle)
+            Check(sut.Contains(k), $"false negative for {k}");
     }
 
     // ---- multi-map ----------------------------------------------------------

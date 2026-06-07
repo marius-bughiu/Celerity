@@ -427,7 +427,8 @@
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
-    { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                        vs: 'FrozenSet<string>',     ops: ['Build', 'Contains'] }
+    { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                        vs: 'FrozenSet<string>',     ops: ['Build', 'Contains'] },
+    { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] }
   ];
 
   var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet']);

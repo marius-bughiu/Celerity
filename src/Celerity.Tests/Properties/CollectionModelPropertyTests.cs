@@ -383,6 +383,45 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- BloomFilter (probabilistic) vs HashSet<int> ------------------------
+
+    // A Bloom filter has no Remove and may report false positives, so the model
+    // property is one-directional: every element ever added (and not cleared away)
+    // must still test present — the no-false-negatives guarantee. Absence is not
+    // asserted because a true Contains may be a legitimate false positive.
+    private enum BloomOp { Add, Clear }
+
+    private static readonly Gen<List<(BloomOp, int)>> GenBloomOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n => n < 92 ? BloomOp.Add : BloomOp.Clear),
+            Gen.Int[-8, 24])
+        .List[0, 120];
+
+    [Fact]
+    public void BloomFilter_ShouldHaveNoFalseNegatives_VsBclHashSet()
+    {
+        GenBloomOps.Sample(ops =>
+        {
+            // Sized comfortably for the tiny key domain so the test exercises the
+            // add/clear machinery rather than over-fill behaviour.
+            var sut = new BloomFilter<int, Int32WangNaiveHasher>(64);
+            var oracle = new HashSet<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case BloomOp.Add: sut.Add(item); oracle.Add(item); break;
+                    case BloomOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            // No false negatives: every present element is reported present.
+            foreach (int k in oracle)
+                Assert.True(sut.Contains(k), $"false negative for {k}");
+        }, iter: 2000);
+    }
+
     // ---- MultiMap vs Dictionary<int,List<int>> ------------------------------
 
     private enum MultiOp { Add, RemoveValue, RemoveAll }

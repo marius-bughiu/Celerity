@@ -19,6 +19,7 @@ Celerity is a .NET library that provides specialized high-performance collection
 - `FrozenCeleritySet` / `FrozenCeleritySet<THasher>` — build-once, read-many `string` set that searches for a perfect (collision-free) hash so membership tests are single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Defaults to `StringFnV1AHasher`.
 - `IntSet` / `IntSet<THasher>` — `int`-keyed set specialization.
 - `LongSet` / `LongSet<THasher>` — `long`-keyed set specialization. Defaults to `Int64WangNaiveHasher`.
+- `BloomFilter<T, THasher>` — space-efficient **probabilistic** membership filter: bit-array storage with no false negatives and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory. Add-and-test only (no `Remove`); derives its `k` bit probes from a single hasher call by double hashing.
 
 All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. The hash-table collections handle `default(TKey)` (or zero for `int` / `long` keys, `null` for reference-type keys) out-of-band so it never collides with the empty-slot sentinel; `SmallDictionary` has no hash table and stores the default key inline.
 
@@ -260,6 +261,33 @@ a set should. The default uses `StringFnV1AHasher`; supply a full-width or stron
 the single-probe fast path for elements the default would collide. Membership tests stay correct
 regardless — colliding elements fall back to a short probe.
 
+### `BloomFilter` — probabilistic membership at a fraction of the memory
+
+When you only need a **membership gate** — "have I seen this before?" — and can tolerate a small,
+bounded false-positive rate, `BloomFilter` stores nothing but a bit array, so it uses a fraction of
+the memory of a `HashSet<T>` and never grows with element size. It guarantees **no false negatives**
+(a `false` is always correct), while a `true` may be a false positive with the rate you size it for.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Sized for 1,000,000 expected items at a 0.1% false-positive rate.
+var seen = new BloomFilter<string, StringMurmur3Hasher>(1_000_000, 0.001);
+
+seen.Add("https://example.com/a");
+
+Console.WriteLine(seen.Contains("https://example.com/a")); // True  (definitely added)
+Console.WriteLine(seen.Contains("https://example.com/z")); // False (definitely not — no false negatives)
+```
+
+It is add-and-test only: there is no `Remove` (clearing one bit could erase an unrelated element),
+no enumeration, and no way to retrieve the stored elements — use `CeleritySet` / `FrozenCeleritySet`
+when you need exact membership or the elements back. The `k` bit probes are derived from a single
+hasher call by double hashing, so any `IHashProvider<T>` works; `Capacity`, `BitCount`, `HashCount`,
+and `CurrentFalsePositiveProbability` expose the sizing and current fill. Merge two equally-sized
+filters with `UnionWith`.
+
 ### Construct from an existing collection
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`. When the source implements `ICollection<T>`, its `Count` is used to pre-size the backing storage so the bulk fill avoids resize work.
@@ -302,6 +330,7 @@ Celerity ships specialised types because each one buys a different tradeoff. Use
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
 | Build-once, read-many membership set keyed by `string` | `FrozenCeleritySet` | Immutable; searches for a perfect (collision-free) hash at build time so `Contains` is single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Tune the hasher via the `<THasher>` overload. |
+| **Membership gate** where a small, bounded false-positive rate is acceptable in exchange for a large memory saving (dedup pre-filters, "have I seen this before?" guards in front of an expensive exact lookup) | `BloomFilter<T, THasher>` | Probabilistic: bit-array storage with **no false negatives** and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory and never growing with element size. Add-and-test only — no `Remove`, no enumeration, no retrieval. If you need exact membership or to get the elements back, use `CeleritySet` / `FrozenCeleritySet`. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 Notes on picking a hasher once the collection is settled:
