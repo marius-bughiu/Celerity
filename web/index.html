@@ -284,6 +284,7 @@
     <div class="ship"><code>LongSet</code><div class="desc">long-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>CeleritySet&lt;T, H&gt;</code><div class="desc">Generic set with a struct hasher constraint.</div></div>
     <div class="ship"><code>FrozenCeleritySet&lt;H&gt;</code><div class="desc">Build-once string set with perfect hashing for single-probe membership tests. Implements <code>IReadOnlySet</code>.</div></div>
+    <div class="ship"><code>BloomFilter&lt;T, H&gt;</code><div class="desc">Probabilistic membership filter: bit-array storage, no false negatives, tunable false-positive rate. A fraction of a HashSet's memory.</div></div>
     <div class="ship"><code>Celerity.Hashing</code><div class="desc">Wang, Murmur3, FNV-1a, Guid, default fallback.</div></div>
   </div>
 

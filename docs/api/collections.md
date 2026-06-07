@@ -1283,3 +1283,131 @@ if (scope.TryGetValue("y", out int y)) { /* y == 2 */ }
 scope.Remove("x");                // O(1) swap-removal after the scan
 foreach (var kvp in scope) { /* ("y", 2) */ }
 ```
+
+---
+
+## BloomFilter&lt;T, THasher&gt;
+
+A space-efficient **probabilistic** set membership filter parameterized on a custom
+hash provider. It answers "is this element *possibly* in the set?" using nothing but
+a bit array and a handful of hash functions, so for membership-only workloads it uses
+a small fraction of the memory of a `HashSet<T>` and never grows with element size.
+
+```csharp
+public class BloomFilter<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+The contract is the defining Bloom-filter trade-off:
+
+- **No false negatives.** `Contains` returning `false` is always correct — the element
+  was definitely never added.
+- **Bounded false positives.** `Contains` returning `true` is *probably* correct, with a
+  tunable probability of being a false positive once the filter holds its expected
+  element count.
+- **No `Remove`.** Clearing a single bit could erase membership for an unrelated element
+  that hashed onto it, introducing false negatives. Use `Clear()` to reset the whole
+  filter; reach for a counting-filter variant if per-element deletion is required.
+
+### Sizing
+
+The filter sizes itself at construction from the expected element count `n` and the
+target false-positive rate `p`, using the standard optimal formulas:
+
+- Bit count `m = ceil(-n·ln(p) / (ln 2)²)`, then rounded **up to a power of two** so a bit
+  index is computed with a mask rather than a modulo. The extra bits only lower the
+  realized false-positive rate, never raise it.
+- Hash count `k = round((m/n)·ln 2)`, at least one.
+
+The `k` bit positions for an element are derived from a **single** `IHashProvider<T>`
+call by double hashing (Kirsch–Mitzenmacher): the 32-bit base hash is avalanched into
+64 bits whose two halves seed the recurrence `g_i = h1 + i·h2`, so adding more hash
+functions costs arithmetic, not more `Hash()` calls.
+
+### Constructors
+
+```csharp
+public BloomFilter(
+    int expectedItems,
+    double falsePositiveRate = 0.01)
+
+public BloomFilter(
+    IEnumerable<T> source,
+    double falsePositiveRate = 0.01)
+```
+
+The first overload creates an empty filter sized for `expectedItems` elements at the
+target `falsePositiveRate`.
+
+The `IEnumerable<T>` overload pre-populates the filter and sizes it from the source's
+element count — taken from `ICollection<T>.Count` when available, otherwise from a single
+counting pass — so the realized false-positive rate honors `falsePositiveRate`.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `expectedItems <= 0`.
+- `ArgumentOutOfRangeException` if `falsePositiveRate <= 0`, `>= 1`, or `NaN`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats
+  the rate validation, so a `null` source with a bad rate surfaces as
+  `ArgumentNullException`.
+
+### Methods and properties
+
+- `void Add(T item)` — adds an element. Adding the same element twice is a no-op for
+  membership but still increments `Count`.
+- `bool Contains(T item)` — `false` ⇒ definitely absent; `true` ⇒ probably present.
+- `void UnionWith(BloomFilter<T, THasher> other)` — merges another filter in place (bitwise
+  OR), so this filter afterwards reports `true` for every element either held. Throws
+  `ArgumentNullException` on a `null` argument and `ArgumentException` if the two filters
+  have a different `BitCount` or `HashCount`.
+- `void Clear()` — resets every bit; preserves the bit-array size and hash count.
+- `int Count { get; }` — the number of `Add` calls since construction or the last `Clear`.
+  This is an **insertion counter, not a distinct-element count** — a Bloom filter cannot
+  tell whether an element was already present.
+- `int Capacity { get; }` — the expected element count the filter was sized for.
+- `int BitCount { get; }` — the number of bits in the backing array (`m`), a power of two.
+- `int HashCount { get; }` — the number of hash functions applied per element (`k`).
+- `double FalsePositiveRate { get; }` — the target rate the filter was sized for.
+- `double CurrentFalsePositiveProbability { get; }` — an estimate of the *current* false-positive
+  probability from how many bits are actually set (`(setBits / m)^k`). Climbs past
+  `FalsePositiveRate` once the filter is holding more than its expected element count.
+
+### Default-element handling
+
+Because the filter stores only bits there is no empty-slot sentinel, so unlike the
+hash-table collections it needs **no out-of-band handling** for `default(T)` — a zero
+`int`, `Guid.Empty`, or the empty string is hashed and added like any other element. A
+`null` reference is mapped to a fixed base hash so the filter never invokes the hasher
+with `null` (the string hashers throw on `null`), matching the library's
+out-of-band-`null` convention.
+
+### Choosing it
+
+Reach for `BloomFilter` when you need a **membership gate** and can tolerate a small,
+bounded false-positive rate in exchange for a large memory saving: deduplication
+pre-filters, "have I seen this URL / key / id before?" guards in front of an expensive
+exact lookup (a database, a cache, a disk index), and set-reconciliation sketches. If
+you need exact membership, enumeration, removal, or to retrieve the stored elements, use
+`CeleritySet<T, THasher>` (or `FrozenCeleritySet` for build-once string sets) instead.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Sized for 1,000,000 expected URLs at a 0.1% false-positive rate.
+var seen = new BloomFilter<string, StringMurmur3Hasher>(1_000_000, 0.001);
+
+foreach (var url in crawlFrontier)
+{
+    if (seen.Contains(url))
+        continue;              // probably already crawled — skip (0.1% may skip a new one)
+
+    seen.Add(url);
+    Crawl(url);                // definitely new — no false negatives
+}
+
+Console.WriteLine(seen.BitCount);    // power-of-two bit count, m
+Console.WriteLine(seen.HashCount);   // hash functions per element, k
+```

@@ -495,6 +495,51 @@ void Check(bool condition, string message)
         "HashCachingDictionary<Guid> round-trip + empty-key slot");
 }
 
+// BloomFilter — probabilistic membership filter (no out-of-band slot; default(T) is
+// an ordinary element, a null reference is mapped to a fixed base hash so the hasher
+// is never called with null). Exercise Add / Contains / Clear / Count / UnionWith and
+// the IEnumerable ctor across int / Guid / string instantiations so the AOT publish
+// compiles the double-hashing probe path and the popcount-based fill estimate.
+{
+    var filter = new BloomFilter<int, Int32WangNaiveHasher>(1000);
+    filter.Add(42);
+    filter.Add(0); // zero is an ordinary element, not a sentinel
+    Check(filter.Contains(42) && filter.Contains(0), "BloomFilter add/contains");
+    Check(!filter.Contains(7), "BloomFilter negative lookup");
+    Check(filter.Count == 2, "BloomFilter count");
+    Check(filter.BitCount >= 64 && (filter.BitCount & (filter.BitCount - 1)) == 0,
+        "BloomFilter power-of-two bit count");
+    Check(filter.HashCount >= 1, "BloomFilter hash count");
+
+    // No false negatives across a larger fill.
+    var big = new BloomFilter<int, Int32WangNaiveHasher>(1000);
+    for (int i = 1; i <= 500; i++) big.Add(i * 3);
+    bool noFalseNegatives = true;
+    for (int i = 1; i <= 500; i++) noFalseNegatives &= big.Contains(i * 3);
+    Check(noFalseNegatives, "BloomFilter no false negatives");
+    Check(big.CurrentFalsePositiveProbability > 0d, "BloomFilter current FP probability");
+
+    // UnionWith merges two equally-sized filters.
+    var other = new BloomFilter<int, Int32WangNaiveHasher>(1000);
+    other.Add(99999);
+    filter.UnionWith(other);
+    Check(filter.Contains(99999), "BloomFilter UnionWith");
+
+    filter.Clear();
+    Check(filter.Count == 0 && !filter.Contains(42), "BloomFilter clear");
+
+    // String elements via the IEnumerable ctor, plus the out-of-band null reference
+    // (StringFnV1AHasher throws on null; BloomFilter must not call it with null).
+    var strFilter = new BloomFilter<string, StringFnV1AHasher>(new[] { "alice", "bob" });
+    strFilter.Add(null!);
+    Check(strFilter.Contains("alice") && strFilter.Contains("bob") && strFilter.Contains(null!),
+        "BloomFilter<string> ctor + null element");
+
+    var guidFilter = new BloomFilter<Guid, GuidHasher>(100);
+    guidFilter.Add(Guid.Empty); // ordinary element, no out-of-band slot
+    Check(guidFilter.Contains(Guid.Empty), "BloomFilter<Guid> empty-guid element");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
