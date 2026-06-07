@@ -1411,3 +1411,114 @@ foreach (var url in crawlFrontier)
 Console.WriteLine(seen.BitCount);    // power-of-two bit count, m
 Console.WriteLine(seen.HashCount);   // hash functions per element, k
 ```
+
+---
+
+## BitSet
+
+A dense, fixed-length array of bits packed into 64-bit words. It is the **exact,
+deterministic** counterpart to the probabilistic `BloomFilter<T, THasher>`: where a
+Bloom filter trades exactness for memory, a `BitSet` stores one bit per index with no
+error. It is a drop-in alternative to `System.Collections.BitArray` tuned for two
+operations the BCL type does not offer directly:
+
+```csharp
+public sealed class BitSet : IEnumerable<bool>
+```
+
+- **Population count.** `Count` returns the number of set bits in `O(Length / 64)` using
+  a hardware population count per 64-bit word (`BitOperations.PopCount`). `BitArray`
+  exposes no cardinality at all, forcing callers into a bit-by-bit loop.
+- **SIMD-accelerated bulk boolean ops.** `And` / `Or` / `Xor` / `Not` combine the whole
+  vector a `Vector<ulong>` at a time when the hardware accelerates it (falling back to a
+  scalar 64-bit-word loop otherwise), where `BitArray` walks 32-bit words.
+
+Bit `i` lives in word `i / 64` at bit position `i % 64`. Any bits in the final word
+beyond `Length` are kept clear at all times — after `SetAll`, `Not`, and the bulk
+operators — so `Count`, `Any`, and `All` never observe a stray out-of-range bit.
+
+### Constructors
+
+```csharp
+public BitSet(int length)
+public BitSet(int length, bool defaultValue)
+public BitSet(bool[] values)
+```
+
+- `BitSet(int length)` — a set of `length` bits, all clear. `length` of `0` is a valid
+  empty set.
+- `BitSet(int length, bool defaultValue)` — every bit initialized to `defaultValue`.
+- `BitSet(bool[] values)` — bit `i` is set iff `values[i]` is `true`; the set's length
+  is the array's length.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `length` is negative.
+- `ArgumentNullException` if `values` is `null`.
+
+### Methods and properties
+
+- `int Length { get; }` — the number of bits in the set.
+- `int Count { get; }` — the number of set bits (population count), in `O(Length / 64)`.
+- `bool this[int index] { get; set; }` — gets or sets a single bit.
+- `bool Get(int index)` / `void Set(int index, bool value)` — single-bit access; both
+  throw `ArgumentOutOfRangeException` for an index outside `[0, Length)`.
+- `bool Flip(int index)` — toggles a bit and returns its new value.
+- `void SetAll(bool value)` — sets every bit to `value`.
+- `void Clear()` — clears every bit (equivalent to `SetAll(false)`).
+- `BitSet And(BitSet other)` / `Or` / `Xor` — in-place bitwise combine with another
+  equal-length set, returning `this` for chaining. Throw `ArgumentNullException` on a
+  `null` argument and `ArgumentException` if the lengths differ.
+- `BitSet Not()` — inverts every bit in place (one's complement), returning `this`.
+- `bool Any()` — `true` if any bit is set.
+- `bool All()` — `true` if every bit is set (an empty set is vacuously `true`).
+- `bool None()` — the negation of `Any()`.
+- `SetBitEnumerable EnumerateSetBits()` — an allocation-free enumerable over the indices
+  of the set bits in ascending order, skipping clear words a whole word at a time and
+  locating set bits within a word via `BitOperations.TrailingZeroCount`.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator yielding each bit's
+  *value* (`bool`) from index `0` to `Length - 1`, mirroring `BitArray`'s `IEnumerable`.
+
+Both enumerators are invalidated by any structural mutation and throw
+`InvalidOperationException` if the set is modified mid-iteration.
+
+### Choosing it
+
+Reach for `BitSet` when you have a **dense set of small integer indices** or a fixed
+universe of flags and you care about counting set bits or combining whole vectors:
+bitmap indexes, presence/visited masks over a contiguous id space, sieve-style
+algorithms, and feature/permission flag sets. If your indices are sparse over a huge or
+unbounded domain, a hash-based `IntSet` / `LongSet` is more memory-efficient; if you
+only need approximate membership over arbitrary elements at a fraction of the memory,
+use `BloomFilter<T, THasher>`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Sieve of Eratosthenes over [0, n): composite[i] == true means i is composite.
+int n = 1_000_000;
+var composite = new BitSet(n);
+for (int p = 2; (long)p * p < n; p++)
+{
+    if (composite[p]) continue;
+    for (int m = p * p; m < n; m += p)
+        composite[m] = true;
+}
+
+// Flip to "is prime", clear 0 and 1, and count — all without a per-bit loop.
+composite.Not();
+composite[0] = false;
+composite[1] = false;
+Console.WriteLine(composite.Count);   // number of primes below n
+
+// Walk the primes directly via the set-bit enumerator (skips runs of composites).
+foreach (int prime in composite.EnumerateSetBits())
+    Process(prime);
+
+// Bulk set algebra: intersect two equal-length masks in place.
+var aMask = new BitSet(n);
+var bMask = new BitSet(n);
+aMask.And(bMask);                     // SIMD over 64-bit words
+```
