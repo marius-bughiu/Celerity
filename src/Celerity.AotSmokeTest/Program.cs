@@ -10,6 +10,7 @@
 using Celerity;
 using Celerity.Collections;
 using Celerity.Hashing;
+using Celerity.Primitives;
 
 int failures = 0;
 
@@ -743,6 +744,67 @@ void Check(bool condition, string message)
         if (FastUtils.FastDiv(value, m64) != value / d64) { ok64 = false; break; }
     }
     Check(ok64, "FastUtils.FastMod/FastDiv (64-bit) match operators");
+}
+
+// Struct PRNG suite (#192) — value-type, allocation-free, seed-deterministic generators. Exercise every
+// generator's NextUInt64 plus the constrained-generic RandomSourceExtensions surface (NextUInt32 /
+// NextDouble / NextSingle / NextBool / bounded NextInt / NextInt64 / NextBytes) and a generic algorithm
+// driven through the `where TRng : struct, IRandomSource` path, so the Native AOT publish compiles each
+// generic instantiation (the SplitMix64 seeding, the UInt128 wyrand fold, and the Lemire bounded range).
+{
+    static void ExerciseRng<TRng>(TRng seeded, string name, ref int fails) where TRng : struct, IRandomSource
+    {
+        // Determinism: a fresh copy from the same state reproduces the stream.
+        var a = seeded;
+        var b = seeded;
+        bool deterministic = true;
+        for (int i = 0; i < 100; i++)
+            if (a.NextUInt64() != b.NextUInt64()) deterministic = false;
+        if (!deterministic) { Console.Error.WriteLine($"FAIL: {name} NextUInt64 determinism"); fails++; }
+
+        var rng = seeded;
+        bool ranges = true;
+        for (int i = 0; i < 10_000; i++)
+        {
+            if (rng.NextDouble() is < 0.0 or >= 1.0) ranges = false;
+            if (rng.NextSingle() is < 0.0f or >= 1.0f) ranges = false;
+            int bounded = rng.NextInt(1, 7);
+            if (bounded is < 1 or > 6) ranges = false;
+            long bounded64 = rng.NextInt64(-1_000_000_000L, 1_000_000_000L);
+            if (bounded64 is < -1_000_000_000L or >= 1_000_000_000L) ranges = false;
+            rng.NextBool();
+            rng.NextUInt32();
+        }
+        if (!ranges) { Console.Error.WriteLine($"FAIL: {name} derived-range"); fails++; }
+
+        Span<byte> buf = stackalloc byte[21];
+        rng.NextBytes(buf);
+
+        // Generic Fisher-Yates shuffle through the constrained-generic path yields a permutation.
+        var shuffleRng = seeded;
+        var arr = new int[64];
+        for (int i = 0; i < arr.Length; i++) arr[i] = i;
+        for (int i = arr.Length - 1; i > 0; i--)
+        {
+            int j = shuffleRng.NextInt(i + 1);
+            (arr[i], arr[j]) = (arr[j], arr[i]);
+        }
+        Array.Sort(arr);
+        bool permutation = true;
+        for (int i = 0; i < arr.Length; i++) if (arr[i] != i) permutation = false;
+        if (!permutation) { Console.Error.WriteLine($"FAIL: {name} generic shuffle permutation"); fails++; }
+    }
+
+    ExerciseRng(new SplitMix64(0xABCDEF), nameof(SplitMix64), ref failures);
+    ExerciseRng(new Xoshiro256StarStar(0xABCDEF), nameof(Xoshiro256StarStar), ref failures);
+    ExerciseRng(new Xoroshiro128Plus(0xABCDEF), nameof(Xoroshiro128Plus), ref failures);
+    ExerciseRng(new WyRand(0xABCDEF), nameof(WyRand), ref failures);
+    ExerciseRng(new Pcg32(0xABCDEF), nameof(Pcg32), ref failures);
+
+    // Pcg32's native 32-bit output and independent-stream feature.
+    var pcgStreamA = new Pcg32(42, 1);
+    var pcgStreamB = new Pcg32(42, 2);
+    Check(pcgStreamA.NextUInt32() != pcgStreamB.NextUInt32(), "Pcg32 independent streams differ");
 }
 
 if (failures == 0)
