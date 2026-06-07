@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-07
+
 ### Added
 
 - `FrozenCeleritySet` / `FrozenCeleritySet<THasher>` in `Celerity.Collections` — a build-once, read-many set of `string` elements, the **set counterpart of `FrozenCelerityDictionary`** and the second half of the 1.2.0 frozen-collections work ([#22](https://github.com/marius-bughiu/Celerity/issues/22)). Like the frozen dictionary it is immutable (constructed once from an `IEnumerable<string>`, no mutating members) and at construction searches a small parameter space — candidate power-of-two table sizes × a per-build mixing seed — for a **perfect** (collision-free) placement of the elements; when found (`IsPerfectlyHashed == true`) a `Contains` is a single hash, a single array index, and a single equality check, with no probing. When two distinct elements collide on the chosen hasher's raw 32-bit code (e.g. `"A"` / `"Ł"` under the low-byte `StringFnV1AHasher`), a perfect placement is impossible, so the build falls back to an open-addressed linear-probing table (`IsPerfectlyHashed == false`); membership tests stay correct (the equality check disambiguates), just not single-probe. The one contract difference from the frozen *dictionary* is intentional and idiomatic for a set: **duplicate elements are silently deduplicated** (matching BCL `FrozenSet<T>` and the mutable `CeleritySet`) rather than throwing. Read API: `Contains`, `Count`, `IsPerfectlyHashed`, an allocation-free struct `Enumerator` (the out-of-band `null` element, if present, is yielded first), and the full `IReadOnlySet<string>` surface (`SetEquals`, `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps` — the superset/overlap shapes stream `other` against the `O(1)` membership test, the subset/equality shapes materialize `other`'s distinct elements once into an ordinal set, and each throws `ArgumentNullException` on a `null` `other`). The `null` element is stored out-of-band (the hasher is never invoked with `null`) and the empty string is an ordinary element. The convenience `FrozenCeleritySet` defaults to `StringFnV1AHasher`; the `<THasher>` overload accepts any string hasher. AOT-safe (no reflection); hot-path membership is allocation-free.
@@ -293,7 +295,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.5.0
 [1.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.4.0
 [1.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.3.0
 [1.2.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.2.1
