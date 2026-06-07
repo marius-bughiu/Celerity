@@ -287,6 +287,66 @@ using (var dict = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher
 
 ---
 
+## SwissDictionary&lt;TKey, TValue, THasher&gt;
+
+A drop-in peer of `CelerityDictionary` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
+
+```csharp
+public class SwissDictionary<TKey, TValue, THasher>
+    : IReadOnlyDictionary<TKey, TValue?>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+### What SIMD group probing does
+
+The table keeps a parallel array of one-byte **control** tags — one per slot — separate from the key/value arrays. Each control byte is either `EMPTY`, `DELETED` (a tombstone), or, for an occupied slot, the low 7 bits of the key's hash (its *h2* fragment). Slots are grouped into aligned blocks of 16, so a single `Vector128<sbyte>` compare tests all 16 control bytes in a group at once: a lookup loads the 16 tags, compares them against the broadcast h2, and turns the result into a 16-bit candidate mask via `Vector128.ExtractMostSignificantBits`. Only the (usually one) candidate slots then pay a full key comparison; a group with any `EMPTY` slot ends the probe. Two consequences matter to callers:
+
+- **One compare per group, not per slot.** The group compare amortizes the per-slot tag test across 16 slots, and the h2 tag filters out non-matching residents before any (potentially expensive) key comparison — so negative lookups and lookups on clustered keys stay cheap. The portable `Vector128` API JITs to SSE2 / AVX2 on x86, AdvSimd on Arm, and a scalar software fallback elsewhere, so the type is correct everywhere and fast where hardware SIMD is available.
+- **A small, predictable overhead.** Each slot carries a one-byte control tag (so the dictionary allocates a little more than `CelerityDictionary`), and deletion uses tombstones that are reclaimed by a rehash once they accumulate, so a churn of insert/delete cycles cannot grow the table without bound.
+
+### When to choose it over `CelerityDictionary`
+
+Reach for `SwissDictionary` for **lookup-heavy** workloads where the group compare and h2 filtering pay off — large tables, many negative lookups, or clustered keys — and where one extra control byte per slot is an acceptable cost. For small tables or write-dominated workloads with a good hasher, `CelerityDictionary` has the smaller footprint and is competitive. Both are single-threaded and make no iteration-order guarantee.
+
+### Constructors
+
+```csharp
+public SwissDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public SwissDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CelerityDictionary`. The backing table is always a power of two and at least one SIMD group (16 slots), so a requested capacity below 16 is rounded up.
+
+### Default-key handling
+
+Identical to `CelerityDictionary`: `default(TKey)` (`null` / `0` / `Guid.Empty` / …) is stored out-of-band via a `_hasDefaultKey` flag and a dedicated value slot, so the hasher is never invoked with it (string hashers throw on `null`). Transparent to callers. Note that, unlike linear-probing tables, the Swiss layout tracks occupancy in the control bytes rather than by sentinel key value — the out-of-band slot is kept purely to honour the hasher contract.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Lookup-heavy table: each probe tests a whole 16-slot group with one SIMD compare.
+var dict = new SwissDictionary<int, string, Int32WangNaiveHasher>();
+dict[42] = "hello";
+dict[0]  = "zero is fine";
+
+if (dict.TryGetValue(42, out var val))
+    Console.WriteLine(val); // "hello"
+
+foreach (var kvp in dict)
+    Console.WriteLine($"{kvp.Key} -> {kvp.Value}");
+```
+
+---
+
 ## IntDictionary&lt;TValue&gt;
 
 A convenience subclass of `IntDictionary<TValue, Int32WangNaiveHasher>` for the common case of integer-keyed dictionaries.

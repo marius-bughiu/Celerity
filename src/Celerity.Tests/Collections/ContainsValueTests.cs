@@ -502,6 +502,126 @@ public class ContainsValueTests
         Assert.False(map.ContainsValue(300));
     }
 
+    // ---------------- SwissDictionary ----------------
+
+    [Fact]
+    public void SwissDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void SwissDictionary_FindsValueInRegularSlot()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void SwissDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void SwissDictionary_FindsValueOnlyInDefaultKeySlot_IntKey()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void SwissDictionary_FindsValueOnlyInDefaultKeySlot_NullStringKey()
+    {
+        var map = new SwissDictionary<string, int, StringFnV1AHasher>();
+        map[null!] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void SwissDictionary_DefaultValueLookup_ZeroValue()
+    {
+        // EMPTY / DELETED slots in the table hold default(TValue); ContainsValue
+        // must skip them via the control bytes.
+        var empty = new SwissDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(empty.ContainsValue(0));
+
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+    }
+
+    [Fact]
+    public void SwissDictionary_NullValueLookup_ReferenceType()
+    {
+        var map = new SwissDictionary<int, string?, Int32WangNaiveHasher>();
+        map[1] = "one";
+        map[2] = null;
+        Assert.True(map.ContainsValue(null));
+
+        var noNulls = new SwissDictionary<int, string, Int32WangNaiveHasher> { [1] = "one", [2] = "two" };
+        Assert.False(noNulls.ContainsValue(null));
+    }
+
+    [Fact]
+    public void SwissDictionary_DuplicateValues_ReturnsTrue()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher>
+        {
+            [1] = 42,
+            [2] = 42,
+            [3] = 42,
+        };
+        Assert.True(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void SwissDictionary_SurvivesResize()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 10;
+
+        Assert.True(map.ContainsValue(770));
+        Assert.False(map.ContainsValue(-1));
+    }
+
+    [Fact]
+    public void SwissDictionary_AfterDefaultKeyRemove_ReturnsFalse()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 555;
+        map[1] = 100;
+        map.Remove(0);
+        Assert.False(map.ContainsValue(555));
+        Assert.True(map.ContainsValue(100));
+    }
+
+    [Fact]
+    public void SwissDictionary_AfterRemove_ReturnsFalse()
+    {
+        // After a tombstone delete the freed slot's value is cleared, so a removed
+        // value must not linger in the control-byte scan.
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map.Remove(1);
+        Assert.False(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void SwissDictionary_AfterClear_ReturnsFalse()
+    {
+        var map = new SwissDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map[0] = 300;
+        map.Clear();
+        Assert.False(map.ContainsValue(100));
+        Assert.False(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(300));
+    }
+
     // ---------------- FrozenCelerityDictionary ----------------
     // Read-only, so the resize / remove / clear variants do not apply.
 
