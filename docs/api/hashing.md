@@ -40,6 +40,32 @@ Use `[MethodImpl(MethodImplOptions.AggressiveInlining)]` to hint the JIT. All bu
 
 ## Built-in Hashers
 
+### Int32IdentityHasher
+
+```csharp
+public struct Int32IdentityHasher : IHashProvider<int>
+```
+
+The **zero-work floor** of the `int` family: a pass-through that returns the key unchanged with no mixing at all. Because `int.GetHashCode()` is itself the identity function, this hasher reproduces the framework's own `int` hash exactly — and since it does *no* work, **no mixing hasher can beat it on raw throughput.** It exists as an explicit opt-out from mixing (the F14 / ahash / FxHash position): when keys are already uniform and trusted, any avalanche step is pure overhead.
+
+**Algorithm:** `key` (identity)
+
+**Decision rule:** uniform / trusted keys (dense sequential IDs, contiguous indices) → *skip* mixing with this hasher; clustered or adversarial keys → *mix* with `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher`. Celerity's open-addressed, power-of-two-masked tables are **more** sensitive to a weak integer hash than the prime-bucketed BCL `Dictionary<,>` — because the table masks off the low bits, keys whose low bits collide (e.g. all multiples of the capacity) cluster into long probe chains. Identity is the right call only when the *low bits* of the keys are themselves well distributed (which they are for `0, 1, 2, …`).
+
+**Not a HashDoS defence:** a fixed identity (or any fixed-seed) hasher lets an attacker who can choose keys force collisions. For untrusted integer keys, prefer a strong mixer.
+
+### Int64IdentityHasher
+
+```csharp
+public struct Int64IdentityHasher : IHashProvider<long>
+```
+
+The **zero-work floor** of the `long` family and the 64-bit counterpart to `Int32IdentityHasher`: a pass-through that returns the key's low 32 bits with no mixing, strictly cheaper than even the XOR-fold `Int64WangNaiveHasher`.
+
+**Algorithm:** `(int)key` — keeps only the low 32 bits.
+
+Because it keeps only the low half, two keys that differ **only** in their upper 32 bits collide — unlike `Int64WangNaiveHasher`, which folds the high half back in. That makes it the right call only when the discriminating entropy lives in the low 32 bits (dense sequential `long` IDs), and the wrong call when the upper bits carry the distinguishing information (type / shard tags, a timestamp in the high word). For those, escalate to `Int64WangNaiveHasher` (cheap XOR-fold that keeps high-half entropy), `Int64WangHasher` (full Thomas-Wang finalizer), or `Int64Murmur3Hasher`. The same open-addressed-table sensitivity and the same "not a HashDoS defence" caveat as `Int32IdentityHasher` apply.
+
 ### Int32WangNaiveHasher
 
 ```csharp
@@ -517,8 +543,8 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 
 | Key type | Default | Alternative |
 |---|---|---|
-| `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
-| `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered or adversarial keys |
+| `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32IdentityHasher` (the zero-work floor — *drop* to it for uniform/trusted keys like dense sequential IDs, where any mixing is pure overhead); `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
+| `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64IdentityHasher` (the zero-work floor — *drop* to it for keys whose low 32 bits are well distributed, e.g. dense sequential IDs; note it ignores the upper 32 bits); `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered, high-half-distinct, or adversarial keys |
 | `uint` | `UInt32Hasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
 | `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |

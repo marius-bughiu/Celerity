@@ -248,12 +248,14 @@ Once the collection is settled, pick a hasher for your key shape. Defaults are g
 
 | Key type | Default | When to escalate |
 |---|---|---|
-| `int` / `long` | `Int32WangNaiveHasher` / `Int64WangNaiveHasher` (built into `IntDictionary` / `LongDictionary`) | Clustered keys → `Int32WangHasher` → `Int32Murmur3Hasher` (the Wang full finalizer is a cheaper middle tier than Murmur3). |
+| `int` / `long` | `Int32WangNaiveHasher` / `Int64WangNaiveHasher` (built into `IntDictionary` / `LongDictionary`) | Uniform / trusted keys (dense sequential IDs) → *drop* to `Int32IdentityHasher` / `Int64IdentityHasher` (the zero-work floor — no mixing, nothing beats it on speed). Clustered keys → `Int32WangHasher` → `Int32Murmur3Hasher` (the Wang full finalizer is a cheaper middle tier than Murmur3). |
 | `uint` / `ulong` | `UInt32Hasher` (cheap XOR-fold) / `UInt64Hasher` (`fmix64`) | `uint`: → `UInt32WangHasher` → `UInt32Murmur3Hasher`. `ulong`: drop to `UInt64WangHasher` / `UInt64WangNaiveHasher` when the `fmix64` multiplies cost more than they buy on uniform keys. |
 | `string` (ASCII) | `StringFnV1AHasher` (folds the low byte per char) | Non-ASCII or long keys → `StringFnV1AFullHasher` / `StringFnV1A64Hasher`. Clustered keys → strong-avalanche `StringMurmur3Hasher`, `StringXxHash3Hasher`, etc. |
 | `string` (untrusted input) | — | Use a keyed PRF resistant to crafted collisions: `StringSipHash13Hasher` (Rust's default), `StringSipHash24Hasher`, `StringHalfSipHash24Hasher`, or `StringHighwayHash64Hasher`. |
 | `Guid` | `GuidHasher` | — |
 | Any other type | `DefaultHasher<T>` (delegates to `EqualityComparer<T>.Default`) | Replace with a hand-written struct hasher if profiling shows `Hash` on the hot path. |
+
+The value of a struct hasher is **distribution quality, determinism, and the zero-cost devirtualized generic** — *not* raw hashing speed. For `int` keys especially, `GetHashCode()` is already the identity (zero work), so no mixing hasher beats it on speed; `Int32IdentityHasher` / `Int64IdentityHasher` expose that zero-work floor explicitly so you can *skip* mixing when keys are already uniform, and you escalate to a mixer only when distribution (not speed) demands it.
 
 The hashing library also ships classic / compatibility hashes (djb2, sdbm, ELF/PJW, CRC-32, Adler-32, FNV-1, MurmurHash2, CityHash, MetroHash, xxHash32/64) for matching an external system's key distribution — see [`docs/api/hashing.md`](docs/api/hashing.md) for the complete list, costs, and avalanche notes, and use `HashQualityEvaluator` (below) to compare candidates on your own keys.
 
