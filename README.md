@@ -280,6 +280,17 @@ public interface IHashProvider<T>
 
 The package ships built-in hashers for `int`, `long`, `uint`, `ulong`, `Guid`, and `string`, plus a `DefaultHasher<T>` fallback. Not sure which fits your key shape? `HashQualityEvaluator.Evaluate<T, THasher>(keys)` runs a key sample through a hasher and returns a `HashQualityReport` (collision count, bucket occupancy, max bucket load, chi-squared, and a normalized distribution score where `1.0` = ideal uniform) — a diagnostic to compare candidates offline before committing. For the metric a lookup actually pays, `ProbeStatisticsEvaluator.Evaluate<T, THasher>(keys)` replays the real open-addressed linear-probing placement and returns a `ProbeStatistics` (average / worst-case **probe length** and the open-addressing collision rate). See [`docs/api/hashing.md`](docs/api/hashing.md#hash-quality-evaluation).
 
+## Primitives
+
+`FastUtils` exposes low-level math helpers that fill genuine BCL gaps. `FastMod` / `FastDiv` are Lemire's reciprocal modulo and division: when a **divisor is fixed at run time** and reused across a hot loop (hash buckets, ring buffers, sharding, rate limiting), precompute a reciprocal once and each `value % divisor` / `value / divisor` becomes a multiply-and-shift — **2–4× faster** than the long-latency hardware `DIV` (the same trick the BCL uses internally but keeps `private`). 32- and 64-bit overloads; both reproduce the built-in operators bit-for-bit.
+
+```csharp
+ulong multiplier = FastUtils.GetFastModMultiplier(shardCount);   // once
+uint shard = FastUtils.FastMod(key, shardCount, multiplier);     // == key % shardCount, per item
+```
+
+See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv).
+
 ## Native AOT & trimming
 
 Celerity is **Native AOT and trimming compatible** — no reflection, runtime code generation, or dynamic type loading. Every collection is a generic over a struct hasher, and the only BCL primitives on the hot paths (`MemoryMarshal`, `Unsafe`, `EqualityComparer<T>.Default`) are AOT-safe. The assembly is marked [`<IsAotCompatible>true</IsAotCompatible>`](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#aot-compatibility-analyzers), so a `PublishAot` app gets **no trim or AOT warnings**. Compatibility is enforced on every build (the trim/AOT analyzers run during compilation) and CI publishes a Native AOT smoke-test binary exercising every collection and hasher. See [`docs/aot.md`](docs/aot.md).
