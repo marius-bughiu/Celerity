@@ -289,7 +289,17 @@ ulong multiplier = FastUtils.GetFastModMultiplier(shardCount);   // once
 uint shard = FastUtils.FastMod(key, shardCount, multiplier);     // == key % shardCount, per item
 ```
 
-See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv).
+The `Celerity.Primitives` namespace also ships a curated suite of **struct PRNGs** — `Xoshiro256StarStar` (general-purpose default), `Xoroshiro128Plus` (fast doubles), `WyRand` (raw throughput), `SplitMix64` (seed expander), and `Pcg32` (statistical reputation + independent streams). `System.Random` is a heap class behind virtual dispatch whose **seeded** path falls back to the legacy Knuth algorithm; these are value types with no allocation and no virtual dispatch, and the shared `NextDouble` / `NextSingle` / bounded-and-unbiased `NextInt` / `NextBytes` surface inlines through a `where TRng : struct, IRandomSource` constraint, so they work generically (a zero-cost shuffle) and reproducibly from an explicit seed.
+
+```csharp
+using Celerity.Primitives;
+
+var rng = new Xoshiro256StarStar(seed: 12345);   // deterministic
+double unit = rng.NextDouble();                  // [0, 1)
+int dieRoll = rng.NextInt(1, 7);                 // [1, 7), unbiased (Lemire)
+```
+
+See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.
 
 ## Native AOT & trimming
 
