@@ -309,6 +309,14 @@ VarInt.TryWriteVarInt(buffer, 300u, out int n);              // n == 2
 VarInt.TryReadVarInt(buffer, out uint value, out int read);  // value == 300
 ```
 
+`FastUtils` also exposes **`CountDigits`** — the base-10 digit count of an integer, for sizing a buffer before `TryFormat`, aligning fixed-width numeric columns, or pre-measuring log / CSV / JSON output. The BCL's fast LZCNT-based counter is `internal`, and the only public base-10 log is the floating-point `Math.Log10`, which is slower and **mis-rounds at exact powers of ten**. `CountDigits` is exact and branch-lean (the 32-bit path is a single `Log2`/LZCNT plus a table lookup); the companion integer `Log10` is `CountDigits - 1`. 32- and 64-bit unsigned overloads, plus signed overloads that count the magnitude (sign excluded, `MinValue` handled without overflow).
+
+```csharp
+int width = FastUtils.CountDigits(1234u);   // 4
+Span<char> buf = stackalloc char[width];
+(1234u).TryFormat(buf, out _);
+```
+
 See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.
 
 ## Native AOT & trimming

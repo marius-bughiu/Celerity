@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace Celerity;
@@ -190,4 +191,165 @@ public static class FastUtils
         UInt128 mid = (low >> 64) + high;          // value of (a*b) >> 64, bits [64, 192)
         return (ulong)(mid >> 64);                 // (a*b) >> 128
     }
+
+    // ── CountDigits / Log10 (base-10 digit count) ───────────────────────────────────────
+    //
+    // The number of decimal digits of an integer — what you need to size a buffer before
+    // `TryFormat`, align a fixed-width numeric column, or pre-measure log / CSV / JSON output.
+    // The BCL has a fast LZCNT-based counter (`System.Buffers.Text.FormattingHelpers.CountDigits`)
+    // but it is `internal`; the only public base-10 log is `Math.Log10`, which is floating-point
+    // (slow, and prone to off-by-one at exact powers of ten because of rounding). These methods
+    // expose an exact, branch-lean integer digit count and its companion integer `Log10`.
+    //
+    // The 32-bit path uses Lemire's "computing the number of digits of an integer even faster"
+    // (2021): `Log2(value)` (one LZCNT) indexes a 32-entry magic table whose value, added to
+    // `value` and shifted right by 32, yields the digit count with no branches and no division.
+    // The 64-bit path falls back to a short comparison ladder (at most a divide by 10^14 and a
+    // 7-way compare), which beats a naive divide-by-10 loop while staying obviously correct.
+    //
+    // We deliberately do not try to beat `int.ToString` / `TryFormat` itself — those are already
+    // optimized — only the digit-count primitive that the BCL keeps internal.
+
+    // Lemire's magic table: indexed by Log2(value) in [0, 31]. For each i, the entry is
+    // `(10^d << 32) - 10^d_lo` packed so that `(value + table[i]) >> 32` is the digit count
+    // `d` of `value` for every `value` whose high set bit is at position `i`.
+    private static readonly long[] DigitCountTable =
+    {
+        4294967296L,  8589934582L,  8589934582L,  8589934582L,  12884901788L, 12884901788L,
+        12884901788L, 17179868184L, 17179868184L, 17179868184L, 21474826480L, 21474826480L,
+        21474826480L, 21474826480L, 25769703776L, 25769703776L, 25769703776L, 30063771072L,
+        30063771072L, 30063771072L, 34349738368L, 34349738368L, 34349738368L, 34349738368L,
+        38554705664L, 38554705664L, 38554705664L, 41949672960L, 41949672960L, 41949672960L,
+        42949672960L, 42949672960L,
+    };
+
+    /// <summary>
+    /// Returns the number of decimal digits in <paramref name="value"/> — i.e.
+    /// <c>value.ToString().Length</c> — using a single <c>Log2</c> (LZCNT) and a table lookup,
+    /// with no branches and no division.
+    /// </summary>
+    /// <param name="value">The value to measure.</param>
+    /// <returns>The decimal digit count, from <c>1</c> (for <c>0</c>) to <c>10</c> (for <see cref="uint.MaxValue"/>).</returns>
+    /// <remarks>
+    /// <c>0</c> counts as a single digit (<c>"0"</c> has length 1). Use this to size a buffer before
+    /// <c>TryFormat</c> or to align fixed-width numeric columns.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int CountDigits(uint value)
+    {
+        // Algorithm: https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster.
+        // Log2(0) is 0, so table[0] = 2^32 yields a digit count of 1 for value 0.
+        long tableValue = DigitCountTable[BitOperations.Log2(value)];
+        return (int)((value + tableValue) >> 32);
+    }
+
+    /// <summary>
+    /// Returns the number of decimal digits in <paramref name="value"/> — i.e.
+    /// <c>value.ToString().Length</c> — for 64-bit unsigned values.
+    /// </summary>
+    /// <param name="value">The value to measure.</param>
+    /// <returns>The decimal digit count, from <c>1</c> (for <c>0</c>) to <c>20</c> (for <see cref="ulong.MaxValue"/>).</returns>
+    /// <remarks>
+    /// <c>0</c> counts as a single digit. The implementation reduces the value to its top decimal
+    /// group with at most one division and finishes with a short comparison ladder, so it is exact
+    /// across the whole range and far cheaper than a repeated divide-by-ten loop.
+    /// </remarks>
+    public static int CountDigits(ulong value)
+    {
+        int digits = 1;
+        uint part;
+        if (value >= 10_000_000UL)
+        {
+            if (value >= 100_000_000_000_000UL)
+            {
+                part = (uint)(value / 100_000_000_000_000UL);
+                digits += 14;
+            }
+            else
+            {
+                part = (uint)(value / 10_000_000UL);
+                digits += 7;
+            }
+        }
+        else
+        {
+            part = (uint)value;
+        }
+
+        if (part >= 10)
+        {
+            if (part < 100) digits += 1;
+            else if (part < 1_000) digits += 2;
+            else if (part < 10_000) digits += 3;
+            else if (part < 100_000) digits += 4;
+            else if (part < 1_000_000) digits += 5;
+            else digits += 6;
+        }
+
+        return digits;
+    }
+
+    /// <summary>
+    /// Returns the number of decimal digits in the <strong>magnitude</strong> of <paramref name="value"/>,
+    /// excluding any sign.
+    /// </summary>
+    /// <param name="value">The value whose magnitude is measured.</param>
+    /// <returns>The decimal digit count of <c>|value|</c>, from <c>1</c> (for <c>0</c>) to <c>10</c>.</returns>
+    /// <remarks>
+    /// The sign is <strong>not</strong> counted (so <c>CountDigits(-5)</c> is <c>1</c>, not <c>2</c>). To size a
+    /// buffer for the full signed text, add one for the minus sign when negative:
+    /// <c>CountDigits(value) + (value &lt; 0 ? 1 : 0)</c>. <see cref="int.MinValue"/> is handled without overflow.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int CountDigits(int value)
+    {
+        // Magnitude via unsigned two's-complement negation: ~value + 1 never overflows (int.MinValue maps
+        // to its correct 2^31 magnitude), unlike Math.Abs which throws / overflows at int.MinValue.
+        uint magnitude = value < 0 ? (uint)(~value) + 1U : (uint)value;
+        return CountDigits(magnitude);
+    }
+
+    /// <summary>
+    /// Returns the number of decimal digits in the <strong>magnitude</strong> of <paramref name="value"/>,
+    /// excluding any sign.
+    /// </summary>
+    /// <param name="value">The value whose magnitude is measured.</param>
+    /// <returns>The decimal digit count of <c>|value|</c>, from <c>1</c> (for <c>0</c>) to <c>19</c>.</returns>
+    /// <remarks>
+    /// The sign is <strong>not</strong> counted. To size a buffer for the full signed text, add one for the
+    /// minus sign when negative. <see cref="long.MinValue"/> is handled without overflow.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int CountDigits(long value)
+    {
+        ulong magnitude = value < 0 ? (ulong)(~value) + 1UL : (ulong)value;
+        return CountDigits(magnitude);
+    }
+
+    /// <summary>
+    /// Returns the integer base-10 logarithm of <paramref name="value"/> — i.e. <c>floor(log10(value))</c>
+    /// — computed exactly via <see cref="CountDigits(uint)"/> with no floating-point.
+    /// </summary>
+    /// <param name="value">The value to take the log of.</param>
+    /// <returns><c>floor(log10(value))</c> for <c>value &gt;= 1</c>; <c>0</c> for <c>value == 0</c>.</returns>
+    /// <remarks>
+    /// Defined as <c>CountDigits(value) - 1</c>, so it is exact at every power of ten (where the
+    /// floating-point <see cref="Math.Log10(double)"/> can round to the wrong side). <c>log10(0)</c> is
+    /// mathematically undefined; this method returns <c>0</c> there (treating <c>0</c> as a one-digit value).
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int Log10(uint value) => CountDigits(value) - 1;
+
+    /// <summary>
+    /// Returns the integer base-10 logarithm of <paramref name="value"/> — i.e. <c>floor(log10(value))</c>
+    /// — for 64-bit unsigned values, computed exactly with no floating-point.
+    /// </summary>
+    /// <param name="value">The value to take the log of.</param>
+    /// <returns><c>floor(log10(value))</c> for <c>value &gt;= 1</c>; <c>0</c> for <c>value == 0</c>.</returns>
+    /// <remarks>
+    /// Defined as <c>CountDigits(value) - 1</c>; exact at every power of ten. <c>log10(0)</c> is
+    /// mathematically undefined; this method returns <c>0</c> there.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int Log10(ulong value) => CountDigits(value) - 1;
 }
