@@ -54,6 +54,7 @@ internal class Program
         typeof(FastModBenchmark),
         typeof(PrngBenchmark),
         typeof(VarIntBenchmark),
+        typeof(GuidBenchmark),
     };
 
     static void Main(string[] args)

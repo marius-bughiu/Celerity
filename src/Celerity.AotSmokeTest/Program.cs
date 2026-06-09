@@ -844,6 +844,45 @@ void Check(bool condition, string message)
     Check(!VarInt.TryReadVarInt(truncated, out uint _, out int r) && r == 0, "VarInt truncated read fails");
 }
 
+// FastGuid (#195) — non-crypto v4 + RFC 9562 big-endian v7 from a struct PRNG, and the strictly monotonic
+// GuidV7Generator. Forces the ref-generic CreateVersion4 / CreateVersion7 instantiations and the mutable
+// monotonic-counter struct to compile under Native AOT, and confirms version / variant bits, the big-endian
+// timestamp placement, and same-millisecond monotonicity hold on the native runtime.
+{
+    // ToString("N") renders the GUID fields most-significant-first, so its 32 hex digits are the big-endian
+    // byte sequence — the lens used to read the version / variant nibbles and the timestamp prefix.
+    static int VersionNibble(Guid g) => Convert.ToInt32(g.ToString("N").Substring(12, 1), 16);
+    static int VariantNibble(Guid g) => Convert.ToInt32(g.ToString("N").Substring(16, 1), 16);
+
+    var rng = new Xoshiro256StarStar(0xABCDEF);
+
+    Guid v4 = FastGuid.CreateVersion4(ref rng);
+    Check(VersionNibble(v4) == 4 && (VariantNibble(v4) & 0xC) == 0x8, "FastGuid v4 version/variant bits");
+
+    const long ms = 0x010203040506L;
+    Guid v7 = FastGuid.CreateVersion7(ref rng, ms);
+    Check(VersionNibble(v7) == 7 && (VariantNibble(v7) & 0xC) == 0x8, "FastGuid v7 version/variant bits");
+    Check(v7.ToString("N").StartsWith("010203040506"), "FastGuid v7 big-endian timestamp prefix");
+
+    // Distinctness across a v4 burst.
+    var v4Seen = new HashSet<Guid>();
+    bool v4Distinct = true;
+    for (int i = 0; i < 1000; i++) v4Distinct &= v4Seen.Add(FastGuid.CreateVersion4(ref rng));
+    Check(v4Distinct, "FastGuid v4 distinct over a burst");
+
+    // Strict monotonicity of the generator within a single millisecond and across counter overflow.
+    var gen = new GuidV7Generator<WyRand>(new WyRand(0xABCDEF));
+    Guid prev = gen.Next(ms);
+    bool monotonic = true;
+    for (int i = 0; i < 20_000; i++)
+    {
+        Guid cur = gen.Next(ms);
+        if (string.CompareOrdinal(prev.ToString("N"), cur.ToString("N")) >= 0) { monotonic = false; break; }
+        prev = cur;
+    }
+    Check(monotonic, "GuidV7Generator strictly monotonic within one millisecond (incl. counter overflow)");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
