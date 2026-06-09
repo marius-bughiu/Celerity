@@ -211,3 +211,47 @@ foreach (int delta in deltas)
 - **`0` encodes to a single `0x00` byte;** `uint.MaxValue` is 5 bytes, `ulong.MaxValue` is 10.
 
 All methods are allocation-free and AOT-safe (no reflection); the transforms and length helpers are `[MethodImpl(AggressiveInlining)]`.
+
+## CountDigits / Log10 (base-10 digit count)
+
+```csharp
+namespace Celerity;
+
+public static class FastUtils
+{
+    public static int CountDigits(uint  value);   // 1 .. 10
+    public static int CountDigits(ulong value);   // 1 .. 20
+    public static int CountDigits(int   value);   // magnitude, sign excluded (1 .. 10)
+    public static int CountDigits(long  value);   // magnitude, sign excluded (1 .. 19)
+
+    public static int Log10(uint  value);         // floor(log10(value)); 0 for value 0
+    public static int Log10(ulong value);
+}
+```
+
+The number of **decimal digits** of an integer — exactly what you need to size a buffer before `TryFormat`, align a fixed-width numeric column, or pre-measure log / CSV / JSON output. The BCL has a fast LZCNT-based counter (`System.Buffers.Text.FormattingHelpers.CountDigits`) but it is `internal`; the only public base-10 log is the floating-point `Math.Log10`, which is slower and **mis-rounds at exact powers of ten** (rounding can make `(int)Math.Log10(1000)` come out as `2`). `FastUtils.CountDigits` exposes an exact integer counter and `Log10` its companion.
+
+The 32-bit path is Lemire's [digit-count algorithm](https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/): a single `Log2` (one LZCNT) indexes a 32-entry magic table whose value, added to `value` and shifted right by 32, is the digit count — **no branches, no division**. The 64-bit path reduces the value to its top decimal group with at most one division and finishes with a short comparison ladder. (We deliberately do not try to beat `int.ToString` / `TryFormat` itself — those are already optimized — only the digit-count primitive the BCL keeps internal.)
+
+**Workloads:** buffer sizing before `TryFormat`, fixed-width column alignment, log / CSV / JSON number formatting.
+
+**Usage** — size a span, then format into it:
+
+```csharp
+using Celerity;
+
+int width = FastUtils.CountDigits(value);             // e.g. 4 for 1234
+Span<char> buffer = stackalloc char[width];
+value.TryFormat(buffer, out _);
+
+// Signed: the sign is not counted, so add one for the minus when negative.
+int signedWidth = FastUtils.CountDigits(n) + (n < 0 ? 1 : 0);
+```
+
+**Contract and special cases:**
+
+- **`0` counts as one digit** (`"0"` has length 1), so `CountDigits` returns `1` for `0` across every overload.
+- **The signed overloads count the magnitude only** — the sign is excluded (`CountDigits(-5) == 1`). `int.MinValue` / `long.MinValue` are handled without overflow (the magnitude is computed by unsigned two's-complement negation, not `Math.Abs`).
+- **`Log10(value)` is `CountDigits(value) - 1`** — exact at every power of ten, where the floating-point `Math.Log10` can round to the wrong side. `log10(0)` is mathematically undefined; `Log10(0)` returns `0` (treating `0` as a one-digit value). `Log10` is provided for the unsigned widths only.
+
+All methods are allocation-free and AOT-safe (no reflection); the 32-bit and signed counters and both `Log10` overloads are `[MethodImpl(AggressiveInlining)]`.
