@@ -883,6 +883,35 @@ void Check(bool condition, string message)
     Check(monotonic, "GuidV7Generator strictly monotonic within one millisecond (incl. counter overflow)");
 }
 
+// FastUtils.CountDigits / Log10 (#194) — base-10 digit count via Log2 (LZCNT) + magic table (32-bit)
+// and a comparison ladder (64-bit), plus magnitude-only signed overloads and the integer Log10. Forces
+// the BitOperations.Log2 / table-lookup paths to compile under Native AOT and confirms they reproduce
+// value.ToString().Length on the native runtime, including the int/long MinValue magnitude edge cases.
+{
+    bool ok32 = true;
+    for (uint value = 0; value < 50_000; value++)
+        if (FastUtils.CountDigits(value) != value.ToString().Length) { ok32 = false; break; }
+    Check(ok32, "FastUtils.CountDigits(uint) matches ToString().Length");
+    Check(FastUtils.CountDigits(uint.MaxValue) == 10, "FastUtils.CountDigits(uint.MaxValue) == 10");
+
+    ulong[] samples64 = { 0, 9, 10, 9_999_999, 10_000_000, 99_999_999_999_999, 100_000_000_000_000,
+        9_999_999_999_999_999_999UL, ulong.MaxValue };
+    bool ok64 = true;
+    foreach (ulong value in samples64)
+        if (FastUtils.CountDigits(value) != value.ToString().Length) { ok64 = false; break; }
+    Check(ok64, "FastUtils.CountDigits(ulong) matches ToString().Length");
+
+    // Signed overloads count the magnitude only (sign excluded), and MinValue must not overflow.
+    Check(FastUtils.CountDigits(-5) == 1 && FastUtils.CountDigits(int.MinValue) == 10,
+        "FastUtils.CountDigits(int) magnitude-only + MinValue");
+    Check(FastUtils.CountDigits(-7L) == 1 && FastUtils.CountDigits(long.MinValue) == 19,
+        "FastUtils.CountDigits(long) magnitude-only + MinValue");
+
+    // Integer Log10 == digit count - 1, exact at powers of ten.
+    Check(FastUtils.Log10(0u) == 0 && FastUtils.Log10(999u) == 2 && FastUtils.Log10(1000u) == 3
+        && FastUtils.Log10(ulong.MaxValue) == 19, "FastUtils.Log10 exact at powers of ten");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

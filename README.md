@@ -309,6 +309,14 @@ VarInt.TryWriteVarInt(buffer, 300u, out int n);              // n == 2
 VarInt.TryReadVarInt(buffer, out uint value, out int read);  // value == 300
 ```
 
+`FastUtils` also exposes **`CountDigits`** — the base-10 digit count of an integer, for sizing a buffer before `TryFormat`, aligning fixed-width numeric columns, or pre-measuring log / CSV / JSON output. The BCL's fast LZCNT-based counter is `internal`, and the only public base-10 log is the floating-point `Math.Log10`, which is slower and **mis-rounds at exact powers of ten**. `CountDigits` is exact and branch-lean (the 32-bit path is a single `Log2`/LZCNT plus a table lookup); the companion integer `Log10` is `CountDigits - 1`. 32- and 64-bit unsigned overloads, plus signed overloads that count the magnitude (sign excluded, `MinValue` handled without overflow).
+
+```csharp
+int width = FastUtils.CountDigits(1234u);   // 4
+Span<char> buf = stackalloc char[width];
+(1234u).TryFormat(buf, out _);
+```
+
 Finally, **`FastGuid`** generates GUIDs from a struct PRNG instead of the OS cryptographic RNG: a **non-cryptographic version 4** (random) and an RFC 9562 **version 7** (Unix-millisecond time-ordered). The version 7 layout is **big-endian**, so — unlike .NET 9's `Guid.CreateVersion7`, whose mixed-endian storage scrambles the sort order — the canonical string sorts in creation order, keeping database indexes compact; `GuidV7Generator<TRng>` adds a monotonic counter so a same-millisecond burst is still strictly increasing. Both run several times faster than RNG-backed `Guid.NewGuid()`. **Not for unguessable IDs** (security tokens etc.) — use `Guid.NewGuid()` there.
 
 ```csharp
