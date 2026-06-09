@@ -317,6 +317,14 @@ Span<char> buf = stackalloc char[width];
 (1234u).TryFormat(buf, out _);
 ```
 
+Finally, **`FastGuid`** generates GUIDs from a struct PRNG instead of the OS cryptographic RNG: a **non-cryptographic version 4** (random) and an RFC 9562 **version 7** (Unix-millisecond time-ordered). The version 7 layout is **big-endian**, so — unlike .NET 9's `Guid.CreateVersion7`, whose mixed-endian storage scrambles the sort order — the canonical string sorts in creation order, keeping database indexes compact; `GuidV7Generator<TRng>` adds a monotonic counter so a same-millisecond burst is still strictly increasing. Both run several times faster than RNG-backed `Guid.NewGuid()`. **Not for unguessable IDs** (security tokens etc.) — use `Guid.NewGuid()` there.
+
+```csharp
+var rng = new Xoshiro256StarStar(seed: 12345);
+Guid traceId = FastGuid.CreateVersion4(ref rng);                                  // fast random id
+Guid dbKey   = FastGuid.CreateVersion7(ref rng, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()); // sortable
+```
+
 See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.
 
 ## Native AOT & trimming

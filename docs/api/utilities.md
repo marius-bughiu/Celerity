@@ -255,3 +255,68 @@ int signedWidth = FastUtils.CountDigits(n) + (n < 0 ? 1 : 0);
 - **`Log10(value)` is `CountDigits(value) - 1`** — exact at every power of ten, where the floating-point `Math.Log10` can round to the wrong side. `log10(0)` is mathematically undefined; `Log10(0)` returns `0` (treating `0` as a one-digit value). `Log10` is provided for the unsigned widths only.
 
 All methods are allocation-free and AOT-safe (no reflection); the 32-bit and signed counters and both `Log10` overloads are `[MethodImpl(AggressiveInlining)]`.
+
+## FastGuid (fast non-crypto GUID v4 / v7)
+
+```csharp
+namespace Celerity.Primitives;
+
+public static class FastGuid
+{
+    // Non-cryptographic random version 4 (122 random bits), filled from a struct PRNG.
+    public static Guid CreateVersion4<TRng>(ref TRng rng)                              where TRng : struct, IRandomSource;
+
+    // RFC 9562 version 7: 48-bit Unix-ms timestamp (big-endian) + 74 random bits. Sortable.
+    public static Guid CreateVersion7<TRng>(ref TRng rng, long unixTimeMilliseconds)   where TRng : struct, IRandomSource;
+}
+
+// Strictly monotonic version 7 — each call > the last, even within one millisecond.
+public struct GuidV7Generator<TRng> where TRng : struct, IRandomSource
+{
+    public GuidV7Generator(TRng rng);
+    public Guid Next();                              // stamps DateTimeOffset.UtcNow
+    public Guid Next(long unixTimeMilliseconds);     // explicit / testable clock
+}
+```
+
+Fast, allocation-free GUID generation that fills the random bits from a [struct PRNG](#struct-prngs) rather than the OS cryptographic RNG: a non-cryptographic **version 4** (fully random) and an RFC 9562 **version 7** (Unix-millisecond time-ordered, big-endian, sortable).
+
+> [!WARNING]
+> **`FastGuid` is NOT cryptographically secure.** Both versions draw from the supplied PRNG, not from `RandomNumberGenerator`. Use them for high-rate **trace / correlation / ephemeral IDs** where uniqueness — not unpredictability — matters. When an identifier must be **unguessable** (security tokens, password-reset links, session IDs), use `Guid.NewGuid()` or `System.Security.Cryptography.RandomNumberGenerator` instead.
+
+**Workloads:** high-rate ID generation (distributed tracing, correlation IDs, ephemeral keys) and **sortable database primary keys** (version 7), where `Guid.NewGuid()`'s RNG-backed cost dominates and the IDs need not be unpredictable.
+
+### Why version 7 is big-endian
+
+RFC 9562 lays out version 7 with the 48-bit timestamp in the **most-significant bytes, network byte order**, so the GUID's canonical string form sorts in creation order — which keeps database B-tree indexes compact and inserts local (the whole point of a time-ordered UUID). .NET 9's `Guid.CreateVersion7` stores the timestamp in the mixed-endian in-memory `Guid` layout, which **scrambles the lexical / database sort order** versus the spec (community analysis measured ~35% larger indexes). `FastGuid.CreateVersion7` emits the on-the-wire big-endian layout, so `ToString()` ordering matches time ordering:
+
+```csharp
+using Celerity.Primitives;
+
+var rng = new Xoshiro256StarStar(seed: 12345);
+
+Guid trace = FastGuid.CreateVersion4(ref rng);              // random, non-crypto
+Guid key   = FastGuid.CreateVersion7(ref rng, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+// key.ToString() begins with the hex of the timestamp → lexical sort == time sort
+```
+
+### Strict monotonicity within a millisecond
+
+The stateless `CreateVersion7` orders by timestamp **across** milliseconds, but within a single millisecond it orders only by random bits — so a rapid burst is sortable but not strictly increasing. `GuidV7Generator<TRng>` closes that gap with RFC 9562's monotonic-counter method: it keeps the last timestamp and a 12-bit counter in the `rand_a` field, advancing the counter when the clock has not moved so every GUID in a same-millisecond run is **strictly greater** than the previous one. If the counter is exhausted inside one millisecond (more than ~4096 IDs) it borrows from the next millisecond, preserving monotonicity at the cost of letting the embedded timestamp run a hair ahead of the wall clock. The 62-bit `rand_b` tail stays random on every draw, so independent generators do not collide.
+
+```csharp
+var gen = new GuidV7Generator<Xoshiro256StarStar>(new Xoshiro256StarStar(seed: 1));
+
+Guid a = gen.Next();   // ↘ strictly increasing
+Guid b = gen.Next();   //   even if a and b land in the same millisecond,
+Guid c = gen.Next();   //   string.CompareOrdinal(a, b) < 0 < c
+```
+
+**Contract and special cases:**
+
+- **Not cryptographically secure; not thread-safe.** Like the [struct PRNGs](#struct-prngs), `GuidV7Generator` is a mutable `struct` — call `Next` on a variable or field, use one generator per thread, and do not copy it (a copy forks both the PRNG stream and the monotonic counter).
+- **Version / variant bits are always correct.** Version 4 sets the version nibble to `4`; version 7 to `7`; both set the RFC 4122 variant (`10xx`) in the high bits of byte 8.
+- **The version 7 timestamp uses the low 48 bits** of the supplied `unixTimeMilliseconds` (valid through year 10889). The big-endian placement is what makes the canonical string sortable.
+- **Deterministic from the seed.** A seeded PRNG makes `CreateVersion4` / `CreateVersion7` (and the generator, for a fixed timestamp stream) reproduce the same GUID sequence — useful for tests and golden fixtures.
+
+All methods are allocation-free and AOT-safe (no reflection); `CreateVersion4` / `CreateVersion7` are `[MethodImpl(AggressiveInlining)]`.
