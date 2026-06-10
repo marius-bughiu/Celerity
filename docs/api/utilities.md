@@ -324,3 +324,98 @@ Guid c = gen.Next();   //   string.CompareOrdinal(a, b) < 0 < c
 - **Deterministic from the seed.** A seeded PRNG makes `CreateVersion4` / `CreateVersion7` (and the generator, for a fixed timestamp stream) reproduce the same GUID sequence — useful for tests and golden fixtures.
 
 All methods are allocation-free and AOT-safe (no reflection); `CreateVersion4` / `CreateVersion7` are `[MethodImpl(AggressiveInlining)]`.
+
+## Alignment helpers (AlignUp / AlignDown / IsAligned)
+
+```csharp
+namespace Celerity;
+
+public static class FastUtils
+{
+    public static int   AlignUp  (int   value, int   alignment);
+    public static int   AlignDown(int   value, int   alignment);
+    public static bool  IsAligned(int   value, int   alignment);
+
+    public static long  AlignUp  (long  value, long  alignment);
+    public static long  AlignDown(long  value, long  alignment);
+    public static bool  IsAligned(long  value, long  alignment);
+
+    public static nuint AlignUp  (nuint value, nuint alignment);   // pointer-sized (addresses)
+    public static nuint AlignDown(nuint value, nuint alignment);
+    public static bool  IsAligned(nuint value, nuint alignment);
+}
+```
+
+Round a size or a (pointer-sized) address to a **power-of-two boundary** — what you need when sub-allocating from a buffer, padding a struct stride to a SIMD width, finding the start of the cache line / page a pointer sits in, or sizing a backing array in machine words. The arithmetic is the classic mask trick (`(v + (a - 1)) & ~(a - 1)`), which the BCL keeps in an `internal` `Align` helper rather than expose; `FastUtils` exposes it for the common widths (`int` / `long` for sizes and offsets, `nuint` for raw addresses).
+
+**Workloads:** buffer sub-allocation, SIMD / cache-line / page alignment, struct-stride padding, machine-word array sizing.
+
+**Usage:**
+
+```csharp
+using Celerity.Primitives;
+
+int padded   = FastUtils.AlignUp(length, 16);          // round a byte count up to a 16-byte boundary
+nuint lineStart = FastUtils.AlignDown(address, 64);    // start of the cache line containing `address`
+if (FastUtils.IsAligned(ptr, 32)) { /* AVX2-safe load */ }
+```
+
+**Contract and special cases:**
+
+- **`alignment` must be a power of two** (`1, 2, 4, 8, …`). A non-power-of-two — including `0` and (for the signed overloads) a negative — throws `ArgumentOutOfRangeException`. The check is `BitOperations.IsPow2`.
+- **An already-aligned value is returned unchanged** by both `AlignUp` and `AlignDown`; `AlignDown <= value <= AlignUp` always holds, and both results satisfy `IsAligned`.
+- **`AlignUp` can overflow** when `value` is within `alignment - 1` of the type's maximum (wrapping for `nuint`, going negative for the signed widths), exactly as the underlying `+` would — guard at the call site if that range is reachable.
+
+All methods are allocation-free, `[MethodImpl(AggressiveInlining)]`, and AOT-safe.
+
+## SpanBits (span bit-packing)
+
+```csharp
+namespace Celerity.Primitives;
+
+public static class SpanBits
+{
+    public static int  WordCount(int bitCount);                            // ceil(bitCount / 64)
+
+    public static bool Get  (ReadOnlySpan<ulong> bits, int index);
+    public static void Set  (Span<ulong> bits, int index);                 // → 1
+    public static void Clear(Span<ulong> bits, int index);                 // → 0
+    public static bool Flip (Span<ulong> bits, int index);                 // toggles; returns new value
+
+    public static int  PopCount  (ReadOnlySpan<ulong> bits);               // total set bits (POPCNT)
+    public static int  NextSetBit(ReadOnlySpan<ulong> bits, int fromIndex); // forward scan; -1 if none
+}
+```
+
+Bit get / set / clear / flip / population-count / next-set-bit **scan** over **caller-owned** bit storage — a `Span<ulong>` / `ReadOnlySpan<ulong>` of 64-bit words — with no allocation and no heap object. Each bit lives in word `index / 64` at position `index % 64` (least-significant bit first), so a span of length `n` holds `64·n` bits indexed `[0, 64·n)`; size the span from a bit count with `WordCount`. `PopCount` / `NextSetBit` use the hardware `POPCNT` / `TZCNT` (via `BitOperations`) and skip whole empty words.
+
+**`SpanBits` is the non-owning counterpart to [`BitSet`](collections.md#bitset).** `BitSet` is a length-tracking collection that **owns** its backing array and offers bulk boolean ops and enumeration; `SpanBits` owns nothing — it is a thin set of static operations over memory you already manage (a `stackalloc` buffer, a slice of a larger array, a pooled / rented buffer, or memory mapped from elsewhere). Reach for `SpanBits` when you are already managing the storage and only need the bit arithmetic; reach for `BitSet` when you want a self-contained bit vector. (`System.Collections.BitArray`, the other BCL option, is a heap class with no span access, no population count, and no set-bit scan.)
+
+**Workloads:** bitmaps over a `stackalloc` / pooled buffer, free-slot tracking in an allocator, visited-set / marker bits during a traversal, packed flags inside a larger structure.
+
+**Usage** — a 200-bit scratch bitmap on the stack:
+
+```csharp
+using Celerity.Primitives;
+
+Span<ulong> bits = stackalloc ulong[SpanBits.WordCount(200)];  // 4 words = 256 bits of capacity
+
+SpanBits.Set(bits, 5);
+SpanBits.Set(bits, 130);
+
+int set = SpanBits.PopCount(bits);                            // 2
+
+for (int i = SpanBits.NextSetBit(bits, 0); i >= 0; i = SpanBits.NextSetBit(bits, i + 1))
+{
+    // visits 5, then 130
+}
+```
+
+**Contract and special cases:**
+
+- **`WordCount(bitCount)` is `ceil(bitCount / 64)`** (`0` for `0`); it throws `ArgumentOutOfRangeException` for a negative count.
+- **The single-bit operations index the span directly**, so an `index` outside `[0, 64·bits.Length)` throws `IndexOutOfRangeException` from the underlying span access — these helpers do not silently mask or grow the storage.
+- **`NextSetBit` is inclusive of `fromIndex`** and returns `-1` when no bit at or after it is set. A `fromIndex < 0` is treated as `0`; a `fromIndex` at or beyond the end yields `-1`. Feed the previous result `+ 1` back in to iterate set bits in order.
+- **`Flip` returns the bit's new value** after toggling (matching `BitSet.Flip`).
+
+All methods are allocation-free; the single-bit operations and `WordCount` are `[MethodImpl(AggressiveInlining)]`, and the whole type is AOT-safe.
