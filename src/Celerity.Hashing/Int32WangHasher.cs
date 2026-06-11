@@ -10,8 +10,8 @@ namespace Celerity.Hashing;
 /// A non-cryptographic, invertible bit-mixer (Thomas Wang's <c>hash32shift</c>)
 /// that provides strong avalanche for adversarially or heavily-clustered keys.
 /// It sits between <see cref="Int32WangNaiveHasher"/> (the default for
-/// <see cref="Celerity.Collections.IntDictionary{TValue}"/> and
-/// <see cref="Celerity.Collections.IntSet"/>) and
+/// <c>Celerity.Collections.IntDictionary&lt;TValue&gt;</c> and
+/// <c>Celerity.Collections.IntSet</c>) and
 /// <see cref="Int32Murmur3Hasher"/> on the cost-vs-avalanche curve, mirroring
 /// the role that <see cref="Int64WangHasher"/> plays in the <see cref="long"/>
 /// family. The mixer uses a single (shift-add-encoded) multiply and a chain of

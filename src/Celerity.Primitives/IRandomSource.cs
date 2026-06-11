@@ -11,7 +11,8 @@ namespace Celerity.Primitives;
 /// provided once by <see cref="RandomSourceExtensions"/> as <c>ref this</c> extension methods constrained to
 /// <c>where TRng : struct, IRandomSource</c>, so the JIT devirtualizes and inlines the
 /// <see cref="NextUInt64"/> call per concrete generator — exactly the zero-cost-abstraction pattern the
-/// <see cref="Celerity.Hashing.IHashProvider{T}"/> hashers use.
+/// <c>Celerity.Hashing.IHashProvider&lt;T&gt;</c> hashers use (Celerity.Primitives is the lowest layer and
+/// does not reference Celerity.Hashing, so this is a prose reference rather than a doc link).
 /// </para>
 /// <para>
 /// Implementations are deliberately <strong>not thread-safe</strong> (a generator is a small mutable struct;

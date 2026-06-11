@@ -2,7 +2,7 @@ using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
-namespace Celerity;
+namespace Celerity.Primitives;
 
 /// <summary>
 /// Provides fast utility methods for common math and system operations.

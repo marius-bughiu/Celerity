@@ -93,17 +93,17 @@ A correctness-of-claims pass on the hashing layer, prompted by the observation t
 
 ## Milestone 2.0.0 — Multi-package restructure
 
-Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API). The *new collections* and *infrastructure* work below has shipped; the **package restructure itself is the remaining, defining work of this milestone** and is now tracked as issues.
+Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API). The *new collections* and *infrastructure* work below has shipped, and the **package restructure itself — the defining work of this milestone — has now landed**: the library builds and packs as three packages. What remains is the multi-target (#189) and the release-pipeline push (#190).
 
 ### Package split
 
-Still a single `net8.0` assembly with `<PackageId>Celerity.Collections</PackageId>`; the hashers already live under the `Celerity.Hashing` namespace but ship inside the collections package. The split is a packaging breaking change (namespaces unchanged → source-compatible).
+Shipped: three projects under `src/` form an acyclic layer — `Celerity.Primitives` (`FastUtils`, struct PRNGs, `VarInt`, `FastGuid`) ← `Celerity.Hashing` (`IHashProvider<T>`, the hashers, the evaluators) ← `Celerity.Collections` (the `Celerity` assembly: dictionaries, sets, frozen/sketch types). Namespaces are unchanged except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives` (#187). `dotnet pack` produces three `.nupkg`s with the correct transitive dependency graph and shared MinVer versioning.
 
 - `Celerity.Collections` — dictionaries, sets, and specialized collections.
-- `Celerity.Hashing` — `IHashProvider<T>`, built-in hashers, `HashQualityEvaluator`. Status: `planned`. Tracked in [#186](https://github.com/marius-bughiu/Celerity/issues/186).
-- `Celerity.Primitives` — low-level utilities, seeded with `FastUtils`; content expansion is milestone 2.1.0. Status: `planned`. Tracked in [#187](https://github.com/marius-bughiu/Celerity/issues/187).
-- Preserve back-compat for existing `Celerity.Collections` consumers (meta-package and/or `[TypeForwardedTo]`). Status: `planned`. Tracked in [#188](https://github.com/marius-bughiu/Celerity/issues/188).
-- CI: build, pack, and publish three packages with shared MinVer versioning. Status: `planned`. Tracked in [#190](https://github.com/marius-bughiu/Celerity/issues/190).
+- `Celerity.Hashing` — `IHashProvider<T>`, built-in hashers, `HashQualityEvaluator`. Status: `done` — extracted into `src/Celerity.Hashing` (depends on `Celerity.Primitives` for `FastUtils.NextPowerOfTwo`), packs independently, AOT analyzers + CS1591-as-error preserved. Tracked in [#186](https://github.com/marius-bughiu/Celerity/issues/186).
+- `Celerity.Primitives` — low-level utilities, seeded with `FastUtils`; content expansion is milestone 2.1.0. Status: `done` — extracted into `src/Celerity.Primitives` with no package dependencies; `FastUtils` moved to the `Celerity.Primitives` namespace. Tracked in [#187](https://github.com/marius-bughiu/Celerity/issues/187).
+- Preserve back-compat for existing `Celerity.Collections` consumers (meta-package and/or `[TypeForwardedTo]`). Status: `done` — `Celerity.Collections` carries non-private NuGet dependencies on the two lower packages (source/meta-package back-compat) **and** a full `[TypeForwardedTo]` set in `TypeForwarders.cs` for every moved type (binary back-compat); migration written up in [`docs/migration.md`](docs/migration.md#200--the-package-split). Tracked in [#188](https://github.com/marius-bughiu/Celerity/issues/188).
+- CI: build, pack, and publish three packages with shared MinVer versioning. Status: `in-progress` — per-package metadata (id, description, tags, icon, README) and shared MinVer lockstep are in place; `dotnet pack` on the solution now produces all three `.nupkg`s, and the existing `release.yml` / `nightly-preview.yml` already glob-push **every** `*.nupkg` (and attach them to the GitHub release), so the three-package publish works without a workflow change. The remaining work is symbol packages (`.snupkg`), SourceLink, and deterministic-build flags across the three packages. Tracked in [#190](https://github.com/marius-bughiu/Celerity/issues/190).
 
 ### New collections
 

@@ -3,10 +3,14 @@
 ## FastUtils
 
 ```csharp
+namespace Celerity.Primitives;
+
 public static class FastUtils
 ```
 
-Lives in the `Celerity` namespace. Provides low-level helper methods used internally by the collection implementations. Public so that advanced users can reuse them.
+Lives in the `Celerity.Primitives` namespace and ships in the **`Celerity.Primitives`** NuGet package. Provides low-level helper methods used internally by the collection implementations. Public so that advanced users can reuse them.
+
+> **Moved in 2.0.0:** `FastUtils` was in the root `Celerity` namespace before the package split. Add `using Celerity.Primitives;` (or qualify as `Celerity.Primitives.FastUtils`). See the [migration guide](../migration.md#200--the-package-split).
 
 ### NextPowerOfTwo
 
@@ -215,7 +219,7 @@ All methods are allocation-free and AOT-safe (no reflection); the transforms and
 ## CountDigits / Log10 (base-10 digit count)
 
 ```csharp
-namespace Celerity;
+namespace Celerity.Primitives;
 
 public static class FastUtils
 {

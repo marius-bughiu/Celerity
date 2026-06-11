@@ -1,0 +1,57 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PackageProjectUrl>https://github.com/marius-bughiu/Celerity</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
+		<Authors>Marius Bughiu</Authors>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!--
+		  Native AOT / trimming compatibility (#32). See Celerity.Collections for
+		  the full rationale; every package in the family carries the same switch so
+		  the trim / AOT / single-file analyzers verify the whole graph on every build.
+		-->
+		<IsAotCompatible>true</IsAotCompatible>
+		<!--
+		  Promote CS1591 (missing XML comment) to error. Every public symbol in the
+		  package must carry an XML doc comment so the shipped .xml is complete.
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<PackageId>Celerity.Hashing</PackageId>
+		<Description>Zero-cost struct hash providers and hash-quality tooling: IHashProvider&lt;T&gt;, integer/string/Guid hashers (identity, Wang, Murmur3, xxHash, SipHash, ...), DefaultHasher&lt;T&gt;, and the HashQualityEvaluator / ProbeStatisticsEvaluator offline analysis utilities. Positioned on distribution quality, determinism, and devirtualization — not on beating GetHashCode() for speed. Part of the Celerity family.</Description>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>celerity;hashing;hash;murmur3;xxhash;siphash;wang;distribution;performance</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
+		<None Include="README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- HashQualityEvaluator / ProbeStatisticsEvaluator use FastUtils.NextPowerOfTwo. -->
+		<ProjectReference Include="..\Celerity.Primitives\Celerity.Primitives.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- FastUtils moved to the Celerity.Primitives namespace (#187); make it
+		     globally visible to this assembly so the evaluators resolve it. -->
+		<Using Include="Celerity.Primitives" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="MinVer" Version="6.0.0">
+	    <PrivateAssets>all</PrivateAssets>
+	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+	</ItemGroup>
+</Project>
