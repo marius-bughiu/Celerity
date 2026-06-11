@@ -204,6 +204,34 @@ Keep the BCL type when any of these hold — Celerity explicitly does not target
 6. ☐ For sets, switch first-insertion checks from `Add` to `TryAdd`.
 7. ☐ Pre-size `capacity` and validate the swap with a benchmark — see the [performance guide](performance.md).
 
+## 2.0.0 — the package split
+
+Separate from migrating *off* the BCL, the **2.0.0 release splits the single `Celerity.Collections` assembly into three NuGet packages**. This is a packaging breaking change; it is *almost* source-compatible.
+
+**The layered packages:**
+
+| Package | Contains | Depends on |
+|---|---|---|
+| `Celerity.Primitives` | `FastUtils`, the struct PRNGs (`SplitMix64`, `Xoshiro256StarStar`, …), `VarInt`, `FastGuid`, `IRandomSource` | — |
+| `Celerity.Hashing` | `IHashProvider<T>`, every built-in hasher, `DefaultHasher<T>`, `HashQualityEvaluator`, `ProbeStatisticsEvaluator` | `Celerity.Primitives` |
+| `Celerity.Collections` | the dictionaries, sets, frozen/perfect-hash collections, and streaming sketches | `Celerity.Hashing`, `Celerity.Primitives` |
+
+**If you reference `Celerity.Collections`, you don't have to do anything.** It declares NuGet dependencies on the other two, so they are restored transitively — you keep using the hashers with no new package references or `using`s. Already-compiled binaries also keep working: every type that moved out of `Celerity.dll` is re-exported via `[TypeForwardedTo]`, so old assemblies that bound `Celerity.Hashing.*` in the single assembly still resolve. You only need to add an explicit `<PackageReference>` if you want to depend on `Celerity.Hashing` or `Celerity.Primitives` *without* the collections.
+
+**The one source change:** `FastUtils` moved from the root `Celerity` namespace to `Celerity.Primitives` (so all primitives share one namespace). If you call `FastUtils.FastMod` / `FastDiv` / `CountDigits` / `Log10` / `NextPowerOfTwo`:
+
+```csharp
+// Before (≤ 1.x)
+using Celerity;
+int slots = FastUtils.NextPowerOfTwo(n);
+
+// After (2.0.0)
+using Celerity.Primitives;
+int slots = FastUtils.NextPowerOfTwo(n);
+```
+
+Everything else — the hashers, `VarInt`, `FastGuid`, the PRNGs — keeps its namespace, so no other `using` changes are required.
+
 ## See also
 
 - [Choosing a collection](../README.md#choosing-a-collection)

@@ -27,8 +27,10 @@
 		-->
 		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
 		<PackageId>Celerity.Collections</PackageId>
+		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
+		<Description>High-performance .NET dictionaries, sets, frozen/perfect-hash collections, and probabilistic sketches (Bloom, HyperLogLog, Count-Min) built on zero-cost struct hashers. As of the 2.0.0 split this package transitively pulls in Celerity.Hashing and Celerity.Primitives, so existing consumers keep working unchanged.</Description>
 		<PackageIcon>icon.png</PackageIcon>
-		<PackageTags>celerity;collections</PackageTags>
+		<PackageTags>celerity;collections;dictionary;set;frozen;simd;performance</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 
@@ -40,6 +42,27 @@
 	<ItemGroup>
 		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
 		<None Include="..\..\README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+		  2.0.0 package split (#186, #187, #188). The hashers live in Celerity.Hashing
+		  and the low-level utilities in Celerity.Primitives. These are non-private
+		  ProjectReferences, so they flow as NuGet <dependency> entries: a consumer
+		  that references only Celerity.Collections transitively restores all three
+		  packages and keeps compiling against the hashers / FastUtils with no new
+		  package refs (source back-compat). TypeForwarders.cs additionally forwards
+		  every moved public type so already-compiled binaries that bound the types
+		  in the old single Celerity.dll keep resolving (binary back-compat).
+		-->
+		<ProjectReference Include="..\Celerity.Hashing\Celerity.Hashing.csproj" />
+		<ProjectReference Include="..\Celerity.Primitives\Celerity.Primitives.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- FastUtils moved to the Celerity.Primitives namespace (#187); make it
+		     globally visible so the collections resolve it without per-file usings. -->
+		<Using Include="Celerity.Primitives" />
 	</ItemGroup>
 
 	<ItemGroup>

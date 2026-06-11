@@ -10,8 +10,8 @@ namespace Celerity.Hashing;
 /// A non-cryptographic, invertible bit-mixer that provides excellent avalanche
 /// for adversarially or heavily-clustered keys. The full mixer is roughly 5x
 /// the per-call cost of <see cref="Int64WangNaiveHasher"/> (the default for
-/// <see cref="Celerity.Collections.LongDictionary{TValue}"/> and
-/// <see cref="Celerity.Collections.LongSet"/>), so switch to this hasher only
+/// <c>Celerity.Collections.LongDictionary&lt;TValue&gt;</c> and
+/// <c>Celerity.Collections.LongSet</c>), so switch to this hasher only
 /// when profiling shows the lighter mixer is producing measurable clustering.
 /// It still sits below <see cref="Int64Murmur3Hasher"/> on the
 /// cost-vs-avalanche curve.

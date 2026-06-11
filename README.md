@@ -9,6 +9,18 @@ dotnet add package Celerity.Collections
 
 > **New here?** Jump to [**Choosing a collection**](#choosing-a-collection) — the table maps your workload to the right type in one line.
 
+### Packages
+
+As of 2.0.0 Celerity ships as three layered NuGet packages. **`Celerity.Collections` pulls in the other two transitively, so a single `dotnet add package Celerity.Collections` still gives you everything** — add the lower packages directly only if you want the hashers or primitives *without* the collections.
+
+| Package | What it adds | Depends on |
+|---|---|---|
+| [`Celerity.Collections`](https://www.nuget.org/packages/Celerity.Collections/) | dictionaries, sets, frozen/perfect-hash collections, streaming sketches | `Celerity.Hashing`, `Celerity.Primitives` |
+| `Celerity.Hashing` | `IHashProvider<T>`, the struct hashers, `HashQualityEvaluator` | `Celerity.Primitives` |
+| `Celerity.Primitives` | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid` | — |
+
+> **Upgrading from 1.x?** Namespaces are unchanged except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives`. See the [migration guide](docs/migration.md#200--the-package-split).
+
 ## Collections
 
 **Dictionaries**
@@ -284,9 +296,11 @@ The package ships built-in hashers for `int`, `long`, `uint`, `ulong`, `Guid`, a
 
 ## Primitives
 
-`FastUtils` exposes low-level math helpers that fill genuine BCL gaps. `FastMod` / `FastDiv` are Lemire's reciprocal modulo and division: when a **divisor is fixed at run time** and reused across a hot loop (hash buckets, ring buffers, sharding, rate limiting), precompute a reciprocal once and each `value % divisor` / `value / divisor` becomes a multiply-and-shift — **2–4× faster** than the long-latency hardware `DIV` (the same trick the BCL uses internally but keeps `private`). 32- and 64-bit overloads; both reproduce the built-in operators bit-for-bit.
+The **`Celerity.Primitives`** package exposes low-level helpers that fill genuine BCL gaps. `FastUtils.FastMod` / `FastDiv` are Lemire's reciprocal modulo and division: when a **divisor is fixed at run time** and reused across a hot loop (hash buckets, ring buffers, sharding, rate limiting), precompute a reciprocal once and each `value % divisor` / `value / divisor` becomes a multiply-and-shift — **2–4× faster** than the long-latency hardware `DIV` (the same trick the BCL uses internally but keeps `private`). 32- and 64-bit overloads; both reproduce the built-in operators bit-for-bit.
 
 ```csharp
+using Celerity.Primitives;
+
 ulong multiplier = FastUtils.GetFastModMultiplier(shardCount);   // once
 uint shard = FastUtils.FastMod(key, shardCount, multiplier);     // == key % shardCount, per item
 ```

@@ -19,7 +19,7 @@ namespace Celerity.Hashing;
 /// allocates a table-sized working buffer, so call it offline (in tests, benchmarks, or a one-off
 /// analysis) to compare candidate hashers for a given key shape. The placement uses
 /// <c>index = hash &amp; (TableSize - 1)</c> and linear <c>(index + 1) &amp; mask</c> probing, byte-for-byte
-/// the scheme in <see cref="Collections.IntDictionary{TValue}"/> and friends, so the reported numbers
+/// the scheme in <c>Celerity.Collections.IntDictionary&lt;TValue&gt;</c> and friends, so the reported numbers
 /// are the probe lengths a real table of that size would exhibit.
 /// </para>
 /// </remarks>

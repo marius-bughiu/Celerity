@@ -29,6 +29,8 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- FastUtils moved to the Celerity.Primitives namespace in the 2.0.0 split (#187). -->
+    <Using Include="Celerity.Primitives" />
   </ItemGroup>
 
 </Project>

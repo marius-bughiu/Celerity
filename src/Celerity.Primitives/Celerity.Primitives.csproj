@@ -1,0 +1,46 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PackageProjectUrl>https://github.com/marius-bughiu/Celerity</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
+		<Authors>Marius Bughiu</Authors>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!--
+		  Native AOT / trimming compatibility (#32). See Celerity.Collections for
+		  the full rationale; every package in the family carries the same switch so
+		  the trim / AOT / single-file analyzers verify the whole graph on every build.
+		-->
+		<IsAotCompatible>true</IsAotCompatible>
+		<!--
+		  Promote CS1591 (missing XML comment) to error. Every public symbol in the
+		  package must carry an XML doc comment so the shipped .xml is complete.
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<PackageId>Celerity.Primitives</PackageId>
+		<Description>Low-level, allocation-free primitives that fill genuine BCL gaps: Lemire FastMod/FastDiv, struct PRNGs (xoshiro/xoroshiro/SplitMix64/wyrand/PCG), span LEB128/zig-zag varint codec, integer digit-count/Log10, and fast non-crypto GUID v4 / RFC 9562 big-endian v7. Part of the Celerity family.</Description>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>celerity;primitives;fastmod;prng;varint;guid;simd;low-level;performance</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
+		<None Include="README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="MinVer" Version="6.0.0">
+	    <PrivateAssets>all</PrivateAssets>
+	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+	</ItemGroup>
+</Project>
