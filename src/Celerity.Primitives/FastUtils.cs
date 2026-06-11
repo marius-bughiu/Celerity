@@ -352,4 +352,160 @@ public static class FastUtils
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Log10(ulong value) => CountDigits(value) - 1;
+
+    // ── Alignment helpers (AlignUp / AlignDown / IsAligned) ──────────────────────────────
+    //
+    // Rounding a size or a (pointer-sized) address to a power-of-two boundary — what you need
+    // when sub-allocating from a buffer, padding a struct stride to a SIMD width, computing the
+    // start of the cache line / page a pointer sits in, or sizing a backing array in machine
+    // words. The arithmetic is a one-liner (`(v + (a - 1)) & ~(a - 1)`), but it is fiddly to get
+    // right at the boundary and easy to fumble the mask, so the BCL keeps an internal `Align`
+    // helper rather than expose one. These methods expose it publicly for the common widths.
+    //
+    // The alignment must be a power of two — that is the precondition for the mask trick. It is
+    // validated (`BitOperations.IsPow2`) and a non-power-of-two (including 0) throws. `AlignUp`
+    // can overflow when `value` is within `alignment - 1` of the type's maximum; that wraps
+    // (unsigned) or goes negative (signed), exactly as the underlying `+` would, and is a
+    // documented call-site concern, not something these helpers guard.
+
+    /// <summary>
+    /// Rounds <paramref name="value"/> up to the nearest multiple of <paramref name="alignment"/>
+    /// (a power of two), returning <paramref name="value"/> unchanged when it is already aligned.
+    /// </summary>
+    /// <param name="value">The non-negative value to align. Typically a byte size or an offset.</param>
+    /// <param name="alignment">The alignment boundary. Must be a power of two (<c>1, 2, 4, 8, …</c>).</param>
+    /// <returns>The smallest multiple of <paramref name="alignment"/> that is <c>&gt;= value</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alignment"/> is not a power of two (including <c>0</c>).</exception>
+    /// <remarks>
+    /// Overflows (wrapping to a value below <paramref name="value"/>) when <paramref name="value"/> is within
+    /// <c>alignment - 1</c> of <see cref="int.MaxValue"/> — guard at the call site if that is reachable.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int AlignUp(int value, int alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return (value + (alignment - 1)) & ~(alignment - 1);
+    }
+
+    /// <summary>
+    /// Rounds <paramref name="value"/> down to the nearest multiple of <paramref name="alignment"/>
+    /// (a power of two), returning <paramref name="value"/> unchanged when it is already aligned.
+    /// </summary>
+    /// <param name="value">The non-negative value to align.</param>
+    /// <param name="alignment">The alignment boundary. Must be a power of two.</param>
+    /// <returns>The largest multiple of <paramref name="alignment"/> that is <c>&lt;= value</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alignment"/> is not a power of two (including <c>0</c>).</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int AlignDown(int value, int alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return value & ~(alignment - 1);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="value"/> is an exact multiple of
+    /// <paramref name="alignment"/> (a power of two).
+    /// </summary>
+    /// <param name="value">The value to test.</param>
+    /// <param name="alignment">The alignment boundary. Must be a power of two.</param>
+    /// <returns><see langword="true"/> if <c>value % alignment == 0</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alignment"/> is not a power of two (including <c>0</c>).</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsAligned(int value, int alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return (value & (alignment - 1)) == 0;
+    }
+
+    /// <inheritdoc cref="AlignUp(int, int)"/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long AlignUp(long value, long alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return (value + (alignment - 1)) & ~(alignment - 1);
+    }
+
+    /// <inheritdoc cref="AlignDown(int, int)"/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long AlignDown(long value, long alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return value & ~(alignment - 1);
+    }
+
+    /// <inheritdoc cref="IsAligned(int, int)"/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsAligned(long value, long alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return (value & (alignment - 1)) == 0;
+    }
+
+    /// <summary>
+    /// Rounds a pointer-sized <paramref name="value"/> (e.g. an address or a native byte count) up to the
+    /// nearest multiple of <paramref name="alignment"/> (a power of two).
+    /// </summary>
+    /// <param name="value">The pointer-sized value to align — an address or a native-sized length.</param>
+    /// <param name="alignment">The alignment boundary. Must be a power of two.</param>
+    /// <returns>The smallest multiple of <paramref name="alignment"/> that is <c>&gt;= value</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alignment"/> is not a power of two (including <c>0</c>).</exception>
+    /// <remarks>Use this overload to align raw pointers / addresses; it wraps to <c>0</c> on overflow near <see cref="nuint.MaxValue"/>.</remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static nuint AlignUp(nuint value, nuint alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return (value + (alignment - 1)) & ~(alignment - 1);
+    }
+
+    /// <summary>
+    /// Rounds a pointer-sized <paramref name="value"/> down to the nearest multiple of
+    /// <paramref name="alignment"/> (a power of two) — e.g. the start of the cache line or page it sits in.
+    /// </summary>
+    /// <param name="value">The pointer-sized value to align.</param>
+    /// <param name="alignment">The alignment boundary. Must be a power of two.</param>
+    /// <returns>The largest multiple of <paramref name="alignment"/> that is <c>&lt;= value</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alignment"/> is not a power of two (including <c>0</c>).</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static nuint AlignDown(nuint value, nuint alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return value & ~(alignment - 1);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when a pointer-sized <paramref name="value"/> is an exact multiple of
+    /// <paramref name="alignment"/> (a power of two) — i.e. it lies on the boundary.
+    /// </summary>
+    /// <param name="value">The pointer-sized value to test.</param>
+    /// <param name="alignment">The alignment boundary. Must be a power of two.</param>
+    /// <returns><see langword="true"/> if <c>value</c> is a multiple of <paramref name="alignment"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alignment"/> is not a power of two (including <c>0</c>).</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsAligned(nuint value, nuint alignment)
+    {
+        ThrowIfNotPowerOfTwo(alignment);
+        return (value & (alignment - 1)) == 0;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ThrowIfNotPowerOfTwo(int alignment)
+    {
+        // IsPow2 is false for 0 and for negatives, so this also rejects non-positive alignments.
+        if (!BitOperations.IsPow2(alignment))
+            throw new ArgumentOutOfRangeException(nameof(alignment), alignment, "Alignment must be a power of two.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ThrowIfNotPowerOfTwo(long alignment)
+    {
+        if (!BitOperations.IsPow2(alignment))
+            throw new ArgumentOutOfRangeException(nameof(alignment), alignment, "Alignment must be a power of two.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ThrowIfNotPowerOfTwo(nuint alignment)
+    {
+        if (!BitOperations.IsPow2(alignment))
+            throw new ArgumentOutOfRangeException(nameof(alignment), "Alignment must be a power of two.");
+    }
 }

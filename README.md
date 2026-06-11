@@ -339,6 +339,21 @@ Guid traceId = FastGuid.CreateVersion4(ref rng);                                
 Guid dbKey   = FastGuid.CreateVersion7(ref rng, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()); // sortable
 ```
 
+`FastUtils` also exposes **alignment helpers** — `AlignUp` / `AlignDown` / `IsAligned` for `int` / `long` sizes and pointer-sized `nuint` addresses — that round to a power-of-two boundary (the `internal` BCL `Align` trick, exposed): sub-allocating from a buffer, padding a stride to a SIMD width, or finding the start of the cache line a pointer sits in.
+
+```csharp
+int padded     = FastUtils.AlignUp(length, 16);       // round a byte count up to 16
+nuint lineStart = FastUtils.AlignDown(address, 64);   // start of the containing cache line
+```
+
+And **`SpanBits`** is the **non-owning** counterpart to `BitSet`: bit `Get` / `Set` / `Clear` / `Flip`, hardware-`POPCNT` `PopCount`, and a `TZCNT` `NextSetBit` scan over a caller-owned `Span<ulong>` — a `stackalloc` buffer, a slice, or a pooled array — with **no heap object**. (`System.Collections.BitArray` is a heap class with no span access, no popcount, and no scan.) Use `BitSet` when you want an owning bit vector; use `SpanBits` when you already manage the storage.
+
+```csharp
+Span<ulong> bits = stackalloc ulong[SpanBits.WordCount(200)];   // 200-bit scratch bitmap, no allocation
+SpanBits.Set(bits, 5);
+for (int i = SpanBits.NextSetBit(bits, 0); i >= 0; i = SpanBits.NextSetBit(bits, i + 1)) { /* ... */ }
+```
+
 See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.
 
 ## Native AOT & trimming

@@ -912,6 +912,32 @@ void Check(bool condition, string message)
         && FastUtils.Log10(ulong.MaxValue) == 19, "FastUtils.Log10 exact at powers of ten");
 }
 
+// FastUtils alignment helpers + SpanBits (#196) — AlignUp/AlignDown/IsAligned over int/long/nuint and the
+// non-owning span bit-packing helpers (Get/Set/Clear/Flip/PopCount/NextSetBit). Forces the
+// BitOperations.IsPow2 validation and the POPCNT/TZCNT bit paths to compile under Native AOT.
+{
+    bool alignOk = FastUtils.AlignUp(7, 8) == 8 && FastUtils.AlignDown(7, 8) == 0 && FastUtils.IsAligned(16, 8)
+        && FastUtils.AlignUp(5_000_000_001L, 4096L) == 5_000_003_584L
+        && FastUtils.AlignUp((nuint)13, (nuint)16) == (nuint)16 && FastUtils.IsAligned((nuint)64, (nuint)64);
+    Check(alignOk, "FastUtils alignment helpers (int/long/nuint)");
+
+    bool alignThrows = false;
+    try { FastUtils.AlignUp(0, 6); } catch (ArgumentOutOfRangeException) { alignThrows = true; }
+    Check(alignThrows, "FastUtils.AlignUp rejects non-power-of-two alignment");
+
+    Span<ulong> bits = stackalloc ulong[SpanBits.WordCount(192)];
+    SpanBits.Set(bits, 5);
+    SpanBits.Set(bits, 64);
+    SpanBits.Set(bits, 130);
+    bool spanOk = SpanBits.Get(bits, 5) && SpanBits.Get(bits, 64) && !SpanBits.Get(bits, 6)
+        && SpanBits.PopCount(bits) == 3
+        && SpanBits.NextSetBit(bits, 0) == 5 && SpanBits.NextSetBit(bits, 6) == 64
+        && SpanBits.NextSetBit(bits, 131) == -1;
+    SpanBits.Clear(bits, 64);
+    spanOk &= !SpanBits.Get(bits, 64) && SpanBits.Flip(bits, 64) && SpanBits.PopCount(bits) == 3;
+    Check(spanOk, "SpanBits get/set/clear/flip/popcount/scan");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
