@@ -1,0 +1,31 @@
+<Project>
+
+  <!--
+    Shared multi-target framework list (#189).
+
+    The three shipped packages (Celerity.Collections / Celerity.Hashing /
+    Celerity.Primitives), the test project, and the Native AOT smoke test all
+    build for this same set of TFMs so they stay in lockstep — bump the list in
+    one place and every shipped assembly and its verification follow.
+
+    Why these three:
+      - net8.0  — the prior single target; LTS (Nov 2023). Kept so existing
+                  consumers are never dropped.
+      - net9.0  — required by #189; STS (Nov 2024). Included for consumers still
+                  on the 9.x line during the transition, even though its support
+                  window is short.
+      - net10.0 — GA Nov 2025, LTS, and the SDK the family already builds with.
+                  Folded in now (the issue's "evaluate net10.0" decision) so
+                  newer-runtime consumers get an assembly compiled against their
+                  own reference pack, ready for future TFM-gated (#if) paths.
+
+    Newer-runtime-only optimizations are guarded with #if NET9_0_OR_GREATER /
+    NET10_0_OR_GREATER; the trim / AOT analyzers and the CS1591 doc gate run on
+    every TFM. Dev-only, non-shipped projects (Celerity.Benchmarks,
+    Celerity.Fuzz) deliberately stay single-TFM — they are tools, not packages.
+  -->
+  <PropertyGroup>
+    <CelerityTargetFrameworks>net8.0;net9.0;net10.0</CelerityTargetFrameworks>
+  </PropertyGroup>
+
+</Project>

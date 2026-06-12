@@ -115,7 +115,7 @@ Yes — the assembly is marked `<IsAotCompatible>true</IsAotCompatible>`, carrie
 
 ### What target frameworks are supported?
 
-Install from NuGet with `dotnet add package Celerity.Collections`. Multi-targeting `net8.0;net9.0` is on the [roadmap](../ROADMAP.md) for the 2.0 restructure; check the package page for the current target.
+All three packages multi-target **`net8.0`, `net9.0`, and `net10.0`**, so NuGet restores the assembly compiled against your project's own runtime. Install with `dotnet add package Celerity.Collections` (it transitively pulls in `Celerity.Hashing` and `Celerity.Primitives`). `net8.0` (LTS) remains the floor, so the library runs anywhere from .NET 8 upward; net9/net10 consumers additionally get an assembly built against their reference pack, ready for future runtime-gated optimizations.
 
 ### Is it one package or several?
 

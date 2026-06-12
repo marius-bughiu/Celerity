@@ -122,7 +122,8 @@ public static class FastGuid
     /// <c>Data3</c> <see cref="short"/>) in native byte order but <em>renders</em> them most-significant-first.
     /// Passing the big-endian reads of bytes 0–7 makes <c>ToString()</c> / <c>ToString("N")</c> emit the bytes
     /// in the given order — the RFC&#160;9562 on-the-wire ordering — without needing the .NET&#160;9
-    /// <c>Guid(ReadOnlySpan&lt;byte&gt;, bool bigEndian)</c> constructor (this library targets net8.0).
+    /// <c>Guid(ReadOnlySpan&lt;byte&gt;, bool bigEndian)</c> constructor (the library's lowest target is net8.0,
+    /// so shared code stays on the field constructor rather than gating a net9+ path here).
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Guid FromBigEndian(ReadOnlySpan<byte> b)

@@ -93,7 +93,7 @@ A correctness-of-claims pass on the hashing layer, prompted by the observation t
 
 ## Milestone 2.0.0 — Multi-package restructure
 
-Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API). The *new collections* and *infrastructure* work below has shipped, and the **package restructure itself — the defining work of this milestone — has now landed**: the library builds and packs as three packages. What remains is the multi-target (#189) and the release-pipeline push (#190).
+Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API). The *new collections* and *infrastructure* work below has shipped, and the **package restructure itself — the defining work of this milestone — has now landed**: the library builds and packs as three packages, each multi-targeting `net8.0;net9.0;net10.0` (#189). What remains is the release-pipeline push (#190).
 
 ### Package split
 
@@ -114,7 +114,7 @@ Shipped: three projects under `src/` form an acyclic layer — `Celerity.Primiti
 
 ### Infrastructure
 
-- Multi-target `net8.0;net9.0` (evaluate `net10.0`) across all three packages, so newer-runtime consumers get TFM-gated optimizations (AVX-512 SIMD paths, JIT improvements). Status: `planned`. Tracked in [#189](https://github.com/marius-bughiu/Celerity/issues/189).
+- Multi-target `net8.0;net9.0` (evaluate `net10.0`) across all three packages, so newer-runtime consumers get TFM-gated optimizations (AVX-512 SIMD paths, JIT improvements). Status: `done` — all three packages now multi-target **`net8.0;net9.0;net10.0`** (the "evaluate net10.0" decision: **included now**, since net10.0 is GA/LTS and the SDK the family already builds with; net9.0 kept as required though it is STS; net8.0 LTS stays the floor). `dotnet pack` emits `lib/net8.0` + `lib/net9.0` + `lib/net10.0` in each `.nupkg` with the per-TFM transitive dependency graph intact, the shared TFM list lives once in [`src/Directory.Build.props`](src/Directory.Build.props), and CI provisions all three SDKs so `dotnet test` runs the suite per-TFM and the `aot-publish` job matrixes the Native AOT smoke test over every framework. No `#if`-gated code paths today (the source compiles identically on every TFM); multi-targeting is the enabling step for later runtime-gated optimizations, and `CONTRIBUTING.md` records the `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` + net8.0-fallback convention. Tracked in [#189](https://github.com/marius-bughiu/Celerity/issues/189).
 - Publish a results dashboard so users can track performance over time. Status: `done` — the core per-commit dashboard and the weekly extended dashboard are published to `gh-pages` and linked from the site nav.
 
 ## Milestone 2.1.0 — Celerity.Primitives: fast math & low-level utilities

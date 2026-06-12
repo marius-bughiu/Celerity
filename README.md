@@ -21,6 +21,8 @@ As of 2.0.0 Celerity ships as three layered NuGet packages. **`Celerity.Collecti
 
 > **Upgrading from 1.x?** Namespaces are unchanged except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives`. See the [migration guide](docs/migration.md#200--the-package-split).
 
+All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet hands your project the assembly built against its own runtime. `net8.0` (LTS) is the floor — Celerity runs anywhere from .NET 8 upward.
+
 ## Collections
 
 **Dictionaries**

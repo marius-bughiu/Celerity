@@ -43,10 +43,15 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      # Coverage is collected on net8.0 only. The library source is identical
+      # across the multi-targeted TFMs (#189) — no #if-gated code paths today —
+      # so one TFM fully covers the line/branch surface, keeps the merged report
+      # deterministic, and avoids provisioning the net9/net10 SDKs in this job.
       - name: Collect coverage
         working-directory: src
         run: >
           dotnet test Celerity.Tests/Celerity.Tests.csproj
+          --framework net8.0
           --configuration Release
           --collect:"XPlat Code Coverage"
           --settings coverage.runsettings
