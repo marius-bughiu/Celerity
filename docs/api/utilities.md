@@ -419,3 +419,45 @@ for (int i = SpanBits.NextSetBit(bits, 0); i >= 0; i = SpanBits.NextSetBit(bits,
 - **`Flip` returns the bit's new value** after toggling (matching `BitSet.Flip`).
 
 All methods are allocation-free; the single-bit operations and `WordCount` are `[MethodImpl(AggressiveInlining)]`, and the whole type is AOT-safe.
+
+## SimdReductions (fused / specialized SIMD reductions)
+
+```csharp
+namespace Celerity.Primitives;
+
+public static class SimdReductions
+{
+    public static (int    Min, int    Max) MinMax(ReadOnlySpan<int>    values);
+    public static (long   Min, long   Max) MinMax(ReadOnlySpan<long>   values);
+    public static (uint   Min, uint   Max) MinMax(ReadOnlySpan<uint>   values);
+    public static (ulong  Min, ulong  Max) MinMax(ReadOnlySpan<ulong>  values);
+
+    public static int CheckedSum(ReadOnlySpan<int> values);   // throws OverflowException on overflow
+}
+```
+
+`System.Numerics.Tensors.TensorPrimitives` is now generic over `INumber<T>` and SIMD/AVX-512 accelerated for `Sum` / `Min` / `Max` / `Dot` / `IndexOfMax` and friends — **use it for those.** `SimdReductions` ships only the two reductions that fill a genuine gap **TensorPrimitives does not cover**, each with a measured BCL-beating workload (the guiding rule):
+
+- **`MinMax` — the fused single pass.** Computing both extrema as `TensorPrimitives.Min(s)` *and* `TensorPrimitives.Max(s)` reads the span **twice**; `MinMax` folds two running vectors in a **single pass**, so it does the same work for roughly half the memory traffic. This is a **memory-bandwidth win, not a per-element-kernel win**: on a large, out-of-cache span (1,000,000 `int`) the fused pass measures **~1.8× faster** than the two-pass composition, while on a small in-cache span (1,024 `int`) the BCL's heavily-tuned AVX-512 kernels make the two passes a wash (the fused pass is ~15% slower). Reach for it when the span is large enough to spill out of cache.
+- **`CheckedSum` — the safe, fast integer sum.** `TensorPrimitives.Sum` **wraps silently** on integer overflow, and the only safe BCL alternative — a scalar `checked` loop — cannot vectorize (the per-element overflow check has a side effect). `CheckedSum` widens each `int` lane to `long` so the SIMD accumulation provably cannot overflow for any reachable span, and range-checks **only the final narrowing** to `int`, throwing `OverflowException` on a true overflow. It measures **~4.6× faster** than the scalar `checked` loop at 1,024 elements (~3.2× at 1,000,000) — i.e. it sits between the slow-but-safe scalar loop and the fast-but-unsafe `TensorPrimitives.Sum`, beating the only *correct* option on speed.
+
+**Workloads:** min+max range scans over large numeric arrays (audio/sensor sample ranges, bounding intervals, normalization passes); overflow-safe summation of untrusted or large integer data where a silent wrap would be a correctness bug.
+
+**Usage:**
+
+```csharp
+using Celerity.Primitives;
+
+ReadOnlySpan<int> samples = GetSensorWindow();
+
+var (lo, hi) = SimdReductions.MinMax(samples);   // both extrema, one pass over the data
+int total    = SimdReductions.CheckedSum(samples); // throws OverflowException rather than wrapping
+```
+
+**Contract and special cases:**
+
+- **`MinMax` throws `ArgumentException` on an empty span** — a minimum and maximum are undefined with no elements. It is exact for all four integer element types (no NaN ambiguity); `float` / `double` are intentionally out of scope because correct NaN-propagation semantics deserve an explicit policy rather than whatever `Vector.Min` / `Vector.Max` happen to do (use `TensorPrimitives.Min` / `Max`, which define their NaN behaviour, and pay the second pass).
+- **`CheckedSum` returns `0` for an empty span** (the sum of no elements), and returns the **exact** mathematical sum whenever it does not throw — the widened SIMD accumulation never overflows, so a returned value is never a wrapped one.
+- Both use portable `Vector<T>` with a scalar tail, so they accelerate where SIMD is available and stay correct (and allocation-free) everywhere else.
+
+All methods are allocation-free and AOT-safe. (The #197 spike's third candidate, an integer **histogram / bincount**, was evaluated and **not** shipped: its only BCL alternative is LINQ `GroupBy().Count()`, the win is purely allocation avoidance, and a one-line `counts[values[i]]++` loop covers it without a named primitive — the scatter pattern does not vectorize portably.)

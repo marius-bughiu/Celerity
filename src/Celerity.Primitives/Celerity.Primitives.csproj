@@ -21,7 +21,7 @@
 		-->
 		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
 		<PackageId>Celerity.Primitives</PackageId>
-		<Description>Low-level, allocation-free primitives that fill genuine BCL gaps: Lemire FastMod/FastDiv, struct PRNGs (xoshiro/xoroshiro/SplitMix64/wyrand/PCG), span LEB128/zig-zag varint codec, integer digit-count/Log10, and fast non-crypto GUID v4 / RFC 9562 big-endian v7. Part of the Celerity family.</Description>
+		<Description>Low-level, allocation-free primitives that fill genuine BCL gaps: Lemire FastMod/FastDiv, struct PRNGs (xoshiro/xoroshiro/SplitMix64/wyrand/PCG), span LEB128/zig-zag varint codec, integer digit-count/Log10, fast non-crypto GUID v4 / RFC 9562 big-endian v7, and fused/specialized SIMD reductions (single-pass MinMax, overflow-checked sum). Part of the Celerity family.</Description>
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageTags>celerity;primitives;fastmod;prng;varint;guid;simd;low-level;performance</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>

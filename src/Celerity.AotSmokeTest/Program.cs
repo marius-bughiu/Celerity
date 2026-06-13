@@ -938,6 +938,33 @@ void Check(bool condition, string message)
     Check(spanOk, "SpanBits get/set/clear/flip/popcount/scan");
 }
 
+// SimdReductions (#197) — fused single-pass MinMax (int/long/uint/ulong) and the overflow-checked, int-widening
+// CheckedSum. Forces the Vector<T> Min/Max fold, the Vector.Widen accumulation, and the checked narrowing to
+// compile under Native AOT.
+{
+    var data = new int[40];
+    for (int i = 0; i < data.Length; i++) data[i] = i - 20; // -20..19
+    data[0] = int.MinValue;
+    data[^1] = int.MaxValue;
+    var (min, max) = SimdReductions.MinMax(data);
+    Check(min == int.MinValue && max == int.MaxValue, "SimdReductions.MinMax(int) extrema");
+
+    var (lmin, lmax) = SimdReductions.MinMax(new[] { 5L, long.MinValue, 100L, long.MaxValue });
+    Check(lmin == long.MinValue && lmax == long.MaxValue, "SimdReductions.MinMax(long) extrema");
+
+    var (umin, umax) = SimdReductions.MinMax(new[] { 5u, 0u, uint.MaxValue, 7u });
+    Check(umin == 0u && umax == uint.MaxValue, "SimdReductions.MinMax(uint) extrema");
+
+    var sumData = new int[33];
+    for (int i = 0; i < sumData.Length; i++) sumData[i] = i + 1; // 1..33 => 561
+    Check(SimdReductions.CheckedSum(sumData) == 561, "SimdReductions.CheckedSum matches arithmetic");
+
+    bool sumThrows = false;
+    try { _ = SimdReductions.CheckedSum(new[] { int.MaxValue, int.MaxValue }); }
+    catch (OverflowException) { sumThrows = true; }
+    Check(sumThrows, "SimdReductions.CheckedSum throws on overflow");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

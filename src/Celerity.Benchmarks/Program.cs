@@ -57,6 +57,7 @@ internal class Program
         typeof(CountDigitsBenchmark),
         typeof(GuidBenchmark),
         typeof(SpanBitsBenchmark),
+        typeof(SimdReductionsBenchmark),
     };
 
     static void Main(string[] args)
