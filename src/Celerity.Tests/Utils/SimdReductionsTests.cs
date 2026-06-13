@@ -63,17 +63,31 @@ public class SimdReductionsTests
     }
 
     [Fact]
-    public void MinMax_UInt_FindsExtrema()
+    public void MinMax_UInt_ExtremaAtVectorBoundaries()
     {
-        var (min, max) = SimdReductions.MinMax(new[] { 5u, 0u, uint.MaxValue, 7u });
+        // Longer than any SIMD vector width, with the extrema at the very ends so the horizontal lane
+        // reduction (not just the scalar path) must surface a first- and last-lane value.
+        var data = new uint[40];
+        for (int i = 0; i < data.Length; i++)
+            data[i] = (uint)(i + 10);
+        data[0] = uint.MaxValue;
+        data[^1] = 0u;
+
+        var (min, max) = SimdReductions.MinMax(data);
         Assert.Equal(0u, min);
         Assert.Equal(uint.MaxValue, max);
     }
 
     [Fact]
-    public void MinMax_ULong_FindsExtrema()
+    public void MinMax_ULong_ExtremaAtVectorBoundaries()
     {
-        var (min, max) = SimdReductions.MinMax(new[] { 5ul, 0ul, ulong.MaxValue, 7ul });
+        var data = new ulong[40];
+        for (int i = 0; i < data.Length; i++)
+            data[i] = (ulong)(i + 10);
+        data[0] = ulong.MaxValue;
+        data[^1] = 0ul;
+
+        var (min, max) = SimdReductions.MinMax(data);
         Assert.Equal(0ul, min);
         Assert.Equal(ulong.MaxValue, max);
     }
@@ -123,10 +137,64 @@ public class SimdReductionsTests
         var rng = new Random(0x6197 + length);
         var data = new long[length];
         for (int i = 0; i < length; i++)
-            data[i] = ((long)rng.Next() << 32) ^ (uint)rng.Next();
+            // Full-range, including negatives: a non-negative high word would never set the sign bit and
+            // would leave the signed Vector<long> comparison path untested.
+            data[i] = ((long)rng.Next(int.MinValue, int.MaxValue) << 32) | (uint)rng.Next();
 
         long expectedMin = data[0], expectedMax = data[0];
         foreach (long v in data)
+        {
+            if (v < expectedMin) expectedMin = v;
+            if (v > expectedMax) expectedMax = v;
+        }
+
+        var (min, max) = SimdReductions.MinMax(data);
+        Assert.Equal(expectedMin, min);
+        Assert.Equal(expectedMax, max);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(8)]
+    [InlineData(31)]
+    [InlineData(512)]
+    public void MinMax_UInt_MatchesScalarOracle(int length)
+    {
+        var rng = new Random(0x8197 + length);
+        var data = new uint[length];
+        for (int i = 0; i < length; i++)
+            data[i] = (uint)rng.NextInt64(0, uint.MaxValue + 1L);
+
+        uint expectedMin = data[0], expectedMax = data[0];
+        foreach (uint v in data)
+        {
+            if (v < expectedMin) expectedMin = v;
+            if (v > expectedMax) expectedMax = v;
+        }
+
+        var (min, max) = SimdReductions.MinMax(data);
+        Assert.Equal(expectedMin, min);
+        Assert.Equal(expectedMax, max);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(8)]
+    [InlineData(31)]
+    [InlineData(512)]
+    public void MinMax_ULong_MatchesScalarOracle(int length)
+    {
+        var rng = new Random(0x9197 + length);
+        var data = new ulong[length];
+        for (int i = 0; i < length; i++)
+            // Full unsigned range: casting a full-range (possibly negative) int to uint spans all 32 bits,
+            // so the high word's top bit is set ~half the time rather than never.
+            data[i] = ((ulong)(uint)rng.Next(int.MinValue, int.MaxValue) << 32) | (uint)rng.Next(int.MinValue, int.MaxValue);
+
+        ulong expectedMin = data[0], expectedMax = data[0];
+        foreach (ulong v in data)
         {
             if (v < expectedMin) expectedMin = v;
             if (v > expectedMax) expectedMax = v;
