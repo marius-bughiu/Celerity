@@ -26,10 +26,16 @@ jobs:
           fetch-depth: 0
           filter: tree:0
 
+      # All three target frameworks (#189). The SDKs provide the down-level
+      # reference packs and the matching runtimes, so `dotnet test` exercises the
+      # multi-targeted test project on net8.0, net9.0, and net10.0 in one pass.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
 
       - name: Restore dependencies
         run: dotnet restore
@@ -37,6 +43,8 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
+      # The test project multi-targets net8.0;net9.0;net10.0, so a single
+      # `dotnet test` run executes the full suite once per TFM on its own runtime.
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
 
@@ -50,8 +58,16 @@ jobs:
           retention-days: 7
 
   aot-publish:
-    name: aot-publish (linux-x64)
+    name: aot-publish (linux-x64, ${{ matrix.tfm }})
     runs-on: ubuntu-latest
+
+    # Native-AOT-publish and run the smoke test on every shipped TFM (#189), so
+    # the AOT/trim verification covers net8.0, net9.0, and net10.0 — not just the
+    # lowest target.
+    strategy:
+      fail-fast: false
+      matrix:
+        tfm: [ net8.0, net9.0, net10.0 ]
 
     defaults:
       run:
@@ -66,7 +82,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
 
       # Native AOT needs a platform linker; ubuntu-latest ships gcc/clang but the
       # ILCompiler links against clang + zlib, so install them explicitly.
@@ -74,11 +93,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
 
       # Publishes the library + every generic instantiation the smoke test forces
-      # down to a native binary. Fails the build on any AOT/trim incompatibility.
+      # down to a native binary, for this TFM. Fails on any AOT/trim incompatibility.
       - name: Publish AOT smoke test
-        run: dotnet publish Celerity.AotSmokeTest/Celerity.AotSmokeTest.csproj -r linux-x64 -c Release
+        run: dotnet publish Celerity.AotSmokeTest/Celerity.AotSmokeTest.csproj -f ${{ matrix.tfm }} -r linux-x64 -c Release
 
       # Runs the native binary; its assertions exit non-zero on any behavioural
       # regression under AOT, so a green run proves the collections work end-to-end.
       - name: Run native AOT binary
-        run: ./Celerity.AotSmokeTest/bin/Release/net8.0/linux-x64/publish/Celerity.AotSmokeTest
+        run: ./Celerity.AotSmokeTest/bin/Release/${{ matrix.tfm }}/linux-x64/publish/Celerity.AotSmokeTest

@@ -44,7 +44,7 @@ src/
 
 These are enforced by review, not by an analyzer. Reading the existing code is the fastest way to get a feel for the style.
 
-- Target framework is `net8.0`. Nullable reference types are enabled.
+- The packages multi-target `net8.0;net9.0;net10.0` (the shared list lives in [`src/Directory.Build.props`](src/Directory.Build.props); bump it there). `net8.0` is the lowest target, so shared code must not use net9/net10-only APIs unguarded — gate any newer-runtime path with `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` and keep a net8.0 fallback. Nullable reference types are enabled.
 - File-scoped namespaces (`namespace Celerity.Hashing;`).
 - `PascalCase` for public members, `_camelCase` for private fields, `UPPER_CASE` for constants.
 - Every public type and member has an XML doc comment. `GenerateDocumentationFile` is on, so missing docs produce warnings.
