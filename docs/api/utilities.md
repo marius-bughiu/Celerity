@@ -461,3 +461,53 @@ int total    = SimdReductions.CheckedSum(samples); // throws OverflowException r
 - Both use portable `Vector<T>` with a scalar tail, so they accelerate where SIMD is available and stay correct (and allocation-free) everywhere else.
 
 All methods are allocation-free and AOT-safe. (The #197 spike's third candidate, an integer **histogram / bincount**, was evaluated and **not** shipped: its only BCL alternative is LINQ `GroupBy().Count()`, the win is purely allocation avoidance, and a one-line `counts[values[i]]++` loop covers it without a named primitive — the scatter pattern does not vectorize portably.)
+
+## Branchless (guaranteed branch-free conditional select)
+
+```csharp
+namespace Celerity.Primitives;
+
+public static class Branchless
+{
+    // scalar: condition ? whenTrue : whenFalse, with no conditional jump
+    public static int    Select(bool condition, int    whenTrue, int    whenFalse);
+    public static long   Select(bool condition, long   whenTrue, long   whenFalse);
+    public static uint   Select(bool condition, uint   whenTrue, uint   whenFalse);
+    public static ulong  Select(bool condition, ulong  whenTrue, ulong  whenFalse);
+    public static float  Select(bool condition, float  whenTrue, float  whenFalse);   // bit-exact (signed zero / NaN)
+    public static double Select(bool condition, double whenTrue, double whenFalse);   // bit-exact
+
+    // bulk per-element blend: destination[i] = condition[i] ? whenTrue[i] : whenFalse[i]
+    public static void Select(ReadOnlySpan<bool> condition, ReadOnlySpan<int>    whenTrue, ReadOnlySpan<int>    whenFalse, Span<int>    destination);
+    public static void Select(ReadOnlySpan<bool> condition, ReadOnlySpan<long>   whenTrue, ReadOnlySpan<long>   whenFalse, Span<long>   destination);
+    public static void Select(ReadOnlySpan<bool> condition, ReadOnlySpan<float>  whenTrue, ReadOnlySpan<float>  whenFalse, Span<float>  destination);
+    public static void Select(ReadOnlySpan<bool> condition, ReadOnlySpan<double> whenTrue, ReadOnlySpan<double> whenFalse, Span<double> destination);
+}
+```
+
+The JIT already lowers the recognised `cmov` idioms — `Math.Min` / `Max` / `Abs` / `Clamp` on integers — to branchless instructions, so **use those when they fit.** What it does *not* reliably do is "if-convert" a general data-dependent `condition ? a : b`: in a loop over an **unpredictable** `bool`, RyuJIT emits a real conditional branch, and on data the CPU cannot predict the misprediction penalty dominates the loop. `Branchless.Select` removes the branch.
+
+- **The mechanism.** A `bool` is reinterpreted to its `0`/`1` byte and negated to an all-zero / all-one mask, then `whenFalse ^ ((whenTrue ^ whenFalse) & mask)` picks a value with pure arithmetic — no comparison, no jump, a fixed data dependency the CPU never mispredicts. The float/double overloads reinterpret to integer bit-patterns, select, and reinterpret back, so the chosen value is returned **bit-exactly** (signed zero and `NaN` payloads are preserved verbatim). The bulk span overloads apply the same straight-line arithmetic per element; because the body has no branch, the JIT **auto-vectorises** it, so the blend wins at array scale too.
+- **The measured win.** The #198 spike timed a per-element blend over a 1,000,000-element `int` array with a 50/50 **unpredictable** condition: the branchy ternary ran at ~3.0 ms while the branch-free blend ran at ~0.5 ms — **~6× faster**, the textbook branch-misprediction signature. That reproducible end-to-end win is why this primitive ships (the spike's "ship only if it wins" bar).
+
+**Workloads:** tight numeric / data-processing loops where a per-element decision depends on **unpredictable** data — masking / blending two arrays, conditional accumulation, sorting-network compare-exchange, clamping with a data-dependent bound, branch-free state machines.
+
+**Usage:**
+
+```csharp
+using Celerity.Primitives;
+
+// scalar — inlines branch-free into the caller's loop
+int clamped = Branchless.Select(value > limit, limit, value);
+
+// bulk blend — destination[i] = mask[i] ? a[i] : b[i], no per-element branch
+Branchless.Select(mask, a, b, destination);
+```
+
+**Contract and special cases:**
+
+- **Branchless select is for the *unpredictable-condition* case only.** When the branch is well-predicted (a loop-invariant flag, a monotone threshold), the predicted branch is essentially free and a plain ternary is just as fast or faster — reach for `Branchless.Select` only when the condition is genuinely data-dependent and random. The benchmark's `Predictable` arm is the documented control where the branchless version wins little or nothing.
+- **`condition` must be an ordinary `bool`** — value `0` (`false`) or `1` (`true`), as produced by every C# comparison and the runtime. A `bool` forged from an out-of-range byte via unsafe reinterpretation is outside the contract.
+- **The bulk overloads throw `ArgumentException`** unless `condition`, `whenTrue`, `whenFalse`, and `destination` all have the same length; `destination` may alias `whenTrue` or `whenFalse` (each element is read before it is written).
+
+The scalar overloads are aggressively inlined so they stay branch-free at the call site. Every overload is allocation-free and AOT-safe. (The #198 spike's premise — that `Math.Min`/`Max`/`Abs`/`Clamp` already get `cmov` — is why those are deliberately **not** re-shipped here: use the BCL for them.)

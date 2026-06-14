@@ -356,11 +356,18 @@ SpanBits.Set(bits, 5);
 for (int i = SpanBits.NextSetBit(bits, 0); i >= 0; i = SpanBits.NextSetBit(bits, i + 1)) { /* ... */ }
 ```
 
-Finally, **`SimdReductions`** ships the two span reductions that `System.Numerics.Tensors.TensorPrimitives` (which you should use for plain `Sum` / `Min` / `Max`) **doesn't** cover: a **fused single-pass `MinMax`** that computes both extrema in one pass instead of the two passes `TensorPrimitives.Min` + `TensorPrimitives.Max` cost (**~1.8× faster on large, out-of-cache `int` arrays** — a memory-bandwidth win; a wash for small in-cache spans), and an overflow-checked **`CheckedSum`** that widens `int` lanes to `long` so the SIMD accumulation can't overflow and throws `OverflowException` rather than wrapping like `TensorPrimitives.Sum` (**~4.6× faster than the only safe alternative, a scalar `checked` loop**).
+Then, **`SimdReductions`** ships the two span reductions that `System.Numerics.Tensors.TensorPrimitives` (which you should use for plain `Sum` / `Min` / `Max`) **doesn't** cover: a **fused single-pass `MinMax`** that computes both extrema in one pass instead of the two passes `TensorPrimitives.Min` + `TensorPrimitives.Max` cost (**~1.8× faster on large, out-of-cache `int` arrays** — a memory-bandwidth win; a wash for small in-cache spans), and an overflow-checked **`CheckedSum`** that widens `int` lanes to `long` so the SIMD accumulation can't overflow and throws `OverflowException` rather than wrapping like `TensorPrimitives.Sum` (**~4.6× faster than the only safe alternative, a scalar `checked` loop**).
 
 ```csharp
 var (lo, hi) = SimdReductions.MinMax(samples);    // both extrema, one pass
 int total    = SimdReductions.CheckedSum(samples); // throws on overflow instead of wrapping
+```
+
+Finally, **`Branchless`** is a guaranteed branch-free conditional select. The JIT already emits `cmov` for `Math.Min` / `Max` / `Abs` / `Clamp`, but it does **not** reliably if-convert a general data-dependent `condition ? a : b` — in a loop over an **unpredictable** `bool` it emits a real branch, and the misprediction penalty dominates. `Branchless.Select` picks a value with pure mask arithmetic (`whenFalse ^ ((whenTrue ^ whenFalse) & mask)`), so there is no jump to mispredict: the #198 spike measured a per-element blend over a 1,000,000-element array with a 50/50 unpredictable condition at **~6× faster** than the branchy ternary. Scalar overloads cover `int` / `long` / `uint` / `ulong` / `float` / `double` (floats bit-exact, signed zero and `NaN` preserved); bulk span overloads blend two arrays branch-free (and auto-vectorise). Reach for it only when the condition is genuinely unpredictable — a well-predicted branch is already free.
+
+```csharp
+int clamped = Branchless.Select(value > limit, limit, value); // no branch to mispredict
+Branchless.Select(mask, a, b, destination);                   // destination[i] = mask[i] ? a[i] : b[i]
 ```
 
 See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.

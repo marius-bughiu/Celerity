@@ -965,6 +965,27 @@ void Check(bool condition, string message)
     Check(sumThrows, "SimdReductions.CheckedSum throws on overflow");
 }
 
+// Branchless (#198) — guaranteed branch-free conditional select. Forces the mask-trick scalar overloads
+// (int/long/float/double) and the bulk per-element span blend to compile under Native AOT.
+{
+    Check(Branchless.Select(true, 7, -3) == 7 && Branchless.Select(false, 7, -3) == -3, "Branchless.Select(int) both polarities");
+    Check(Branchless.Select(true, long.MinValue, long.MaxValue) == long.MinValue, "Branchless.Select(long)");
+    Check(Branchless.Select(false, 3.5f, -2.25f) == -2.25f, "Branchless.Select(float)");
+    Check(Branchless.Select(true, double.NegativeInfinity, 1d) == double.NegativeInfinity, "Branchless.Select(double)");
+
+    var cond = new[] { true, false, true, false };
+    var t = new[] { 1, 2, 3, 4 };
+    var f = new[] { 10, 20, 30, 40 };
+    var dst = new int[4];
+    Branchless.Select(cond, t, f, dst);
+    Check(dst[0] == 1 && dst[1] == 20 && dst[2] == 3 && dst[3] == 40, "Branchless.Select span blend");
+
+    bool blendThrows = false;
+    try { Branchless.Select(new[] { true, false }, new[] { 1, 2, 3 }, new[] { 4, 5, 6 }, new int[3]); }
+    catch (ArgumentException) { blendThrows = true; }
+    Check(blendThrows, "Branchless.Select throws on length mismatch");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
