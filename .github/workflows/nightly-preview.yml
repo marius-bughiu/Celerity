@@ -45,15 +45,25 @@ jobs:
       - name: Build
         run: dotnet build --no-restore
 
+      # Deterministic build + .snupkg symbol packages come from the shared props
+      # (#190); -p:ContinuousIntegrationBuild=true is passed explicitly so the
+      # preview build is reproducible without relying on the CI env var.
       - name: Create nuget package
-        run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }}
+        run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }} -p:ContinuousIntegrationBuild=true
+
+      - name: Validate packages
+        shell: pwsh
+        run: ./.github/scripts/validate-packages.ps1 -NuGetDirectory "${{ env.NuGetDirectory }}"
+        working-directory: ${{ github.workspace }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: nuget
           if-no-files-found: error
           retention-days: 7
-          path: ${{ env.NuGetDirectory }}/*.nupkg
+          path: |
+            ${{ env.NuGetDirectory }}/*.nupkg
+            ${{ env.NuGetDirectory }}/*.snupkg
 
   deploy:
     runs-on: ubuntu-latest
@@ -79,6 +89,8 @@ jobs:
         with:
           user: marius.bughiu
 
+      # Push only the .nupkg files: `dotnet nuget push` automatically uploads the
+      # adjacent .snupkg symbol package, so the snupkgs must not be pushed again.
       - name: Publish NuGet package
         run: |
           foreach($file in (Get-ChildItem "${{ env.NuGetDirectory }}" -Recurse -Include *.nupkg)) {
