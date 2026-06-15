@@ -46,15 +46,31 @@ jobs:
     - name: Build
       run: dotnet build --no-restore
 
+    # ContinuousIntegrationBuild normalizes the embedded source paths so the
+    # build is deterministic / byte-reproducible (#190); the shared props turn
+    # it on automatically in CI, but we pass it explicitly on the release path
+    # so a reproducible build never depends on an env var. IncludeSymbols +
+    # SymbolPackageFormat=snupkg (also from the shared props) emit a .snupkg
+    # next to every .nupkg.
     - name: Create nuget package
-      run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }}
+      run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }} -p:ContinuousIntegrationBuild=true
+
+    # Fail loudly if any of the three packages is missing a symbol package or
+    # the required NuGet metadata (license, README, icon, repository URL), so a
+    # mis-packed release never reaches NuGet.org.
+    - name: Validate packages
+      shell: pwsh
+      run: ./.github/scripts/validate-packages.ps1 -NuGetDirectory "${{ env.NuGetDirectory }}"
+      working-directory: ${{ github.workspace }}
 
     - uses: actions/upload-artifact@v4
       with:
         name: nuget
         if-no-files-found: error
         retention-days: 7
-        path: ${{ env.NuGetDirectory }}/*.nupkg
+        path: |
+          ${{ env.NuGetDirectory }}/*.nupkg
+          ${{ env.NuGetDirectory }}/*.snupkg
 
   deploy:
     runs-on: ubuntu-latest
@@ -80,6 +96,9 @@ jobs:
         with:
           user: marius.bughiu
 
+      # Push only the .nupkg files: `dotnet nuget push` automatically uploads the
+      # adjacent .snupkg symbol package to the NuGet.org symbol server, so the
+      # snupkgs must NOT be pushed a second time on their own.
       - name: Publish NuGet package
         run: |
           foreach($file in (Get-ChildItem "${{ env.NuGetDirectory }}" -Recurse -Include *.nupkg)) {
@@ -134,4 +153,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md \
-            ${{ env.NuGetDirectory }}/*.nupkg
+            ${{ env.NuGetDirectory }}/*.nupkg \
+            ${{ env.NuGetDirectory }}/*.snupkg

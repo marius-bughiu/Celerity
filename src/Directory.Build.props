@@ -28,4 +28,51 @@
     <CelerityTargetFrameworks>net8.0;net9.0;net10.0</CelerityTargetFrameworks>
   </PropertyGroup>
 
+  <!--
+    Shared package-publishing settings (#190).
+
+    These apply to every project under src/, but only the three shipped packages
+    (Celerity.Collections / Celerity.Hashing / Celerity.Primitives) are
+    <IsPackable>true</IsPackable> — the test / benchmark / fuzz / AOT-smoke
+    projects all set IsPackable=false, so the symbol-package and SourceLink
+    settings below are no-ops there and only take effect on the three packages.
+    Keeping them here (rather than duplicated in three .csproj files) is what
+    makes the family release in lockstep: change a publishing rule once and all
+    three packages follow.
+
+    Symbol packages (.snupkg):
+      IncludeSymbols + the snupkg format produce a separate symbol package per
+      package next to each .nupkg, so `dotnet pack` emits Celerity.*.snupkg
+      alongside Celerity.*.nupkg. Portable PDBs (the SDK default, pinned here for
+      clarity) are required for the snupkg format and for SourceLink.
+
+    SourceLink (debug-into-source):
+      Since .NET 8 the SDK bundles the SourceLink host packages and enables them
+      by default, so no explicit Microsoft.SourceLink.GitHub PackageReference is
+      needed — it auto-detects the GitHub remote from the repo's git metadata.
+      PublishRepositoryUrl stamps the repo URL into the package and the PDB;
+      EmbedUntrackedSources embeds any generated/untracked sources so a stepping
+      debugger can always resolve them.
+
+    Deterministic builds:
+      Deterministic is already the SDK default. ContinuousIntegrationBuild
+      additionally normalizes embedded source paths (so the PDB/SourceLink paths
+      are machine-independent and the build is byte-reproducible) — but it is
+      turned on ONLY in CI, because normalized paths make a local F5 debugging
+      experience worse. GitHub Actions sets both CI=true and GITHUB_ACTIONS=true.
+  -->
+  <PropertyGroup>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <DebugType>portable</DebugType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <RepositoryType>git</RepositoryType>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(ContinuousIntegrationBuild)' == '' and ('$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true')">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
 </Project>
