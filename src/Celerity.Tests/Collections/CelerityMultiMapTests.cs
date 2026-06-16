@@ -256,6 +256,50 @@ public class CelerityMultiMapTests
         Assert.Throws<ArgumentNullException>(() => map.AddRange("a", null!));
     }
 
+    [Fact]
+    public void AddRange_WithEmptySequence_ShouldNotRegisterKey()
+    {
+        // Regression for #215: AddRange must not register a phantom key (or bump
+        // Count) when the supplied sequence is empty — a present key must always
+        // have at least one value.
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.AddRange("ghost", Enumerable.Empty<int>());
+
+        Assert.Equal(0, map.Count);
+        Assert.Equal(0, map.ValueCount);
+        Assert.False(map.ContainsKey("ghost"));
+        Assert.Equal(0, map.CountValues("ghost"));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void AddRange_WithEmptySequence_ShouldNotRegisterDefaultKey()
+    {
+        // Regression for #215: the out-of-band default-key path must also stay
+        // unregistered when the supplied sequence is empty.
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.AddRange(null!, Array.Empty<int>());
+
+        Assert.Equal(0, map.Count);
+        Assert.Equal(0, map.ValueCount);
+        Assert.False(map.ContainsKey(null!));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void AddRange_WithEmptySequence_ShouldNotDisturbExistingKey()
+    {
+        // An empty AddRange on a key that already exists is a no-op: the existing
+        // group, Count, and ValueCount are unchanged.
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.Add("a", 1);
+        map.AddRange("a", Enumerable.Empty<int>());
+
+        Assert.Equal(1, map.Count);
+        Assert.Equal(1, map.ValueCount);
+        Assert.Equal(new[] { 1 }, map["a"].ToArray());
+    }
+
     // ---------------- default-key (out-of-band) handling ----------------
 
     [Fact]
