@@ -315,17 +315,27 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     {
         ArgumentNullException.ThrowIfNull(values);
 
-        List<TValue?> group = GroupForAdd(key);
-        int before = group.Count;
-        foreach (TValue value in values)
-            group.Add(value);
+        // Peek the first element before registering the key. GroupForAdd eagerly
+        // creates the group, inserts the key, and bumps _count, so calling it for
+        // an empty sequence would leave a phantom key with an empty group and an
+        // inflated _count — breaking the "present key ⇒ at least one value"
+        // invariant that Add / Remove / RemoveAll maintain. Touch the table only
+        // once we know at least one value will actually be added.
+        using IEnumerator<TValue> enumerator = values.GetEnumerator();
+        if (!enumerator.MoveNext())
+            return;
 
-        int added = group.Count - before;
-        if (added > 0)
+        List<TValue?> group = GroupForAdd(key);
+        int added = 0;
+        do
         {
-            _valueCount += added;
-            _version++;
+            group.Add(enumerator.Current);
+            added++;
         }
+        while (enumerator.MoveNext());
+
+        _valueCount += added;
+        _version++;
     }
 
     /// <summary>
