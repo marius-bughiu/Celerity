@@ -30,10 +30,13 @@ jobs:
         working-directory: src
 
     steps:
+      # NOTE: do NOT add `filter: tree:0` here. A blobless partial clone breaks
+      # github-action-benchmark's own `git fetch origin gh-pages:gh-pages` with
+      # "missing blob object … did not send all necessary objects" and aborts the
+      # gh-pages publish (#217), exactly as it did in benchmarks.yml.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          filter: tree:0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4

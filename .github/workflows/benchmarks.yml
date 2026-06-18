@@ -16,6 +16,13 @@ jobs:
   benchmarks:
     name: benchmarks
     runs-on: ubuntu-latest
+    # Guard against the suite silently ballooning again: fail fast instead of
+    # burning the full 6h GitHub ceiling. The PR path runs the leaned core suite
+    # twice (PR head + main base, same-runner A/B) in ~75 min; this ~2x budget
+    # tolerates hosted-runner variance while still catching a real regression
+    # (the old Job.Default x2 suite took ~3h per pass and the PR A/B was cancelled
+    # at the 6h ceiling on every run — #217).
+    timeout-minutes: 150
 
     permissions:
       contents: write
@@ -26,10 +33,15 @@ jobs:
         working-directory: src
 
     steps:
+      # NOTE: do NOT add `filter: tree:0` here. A blobless partial clone makes the
+      # repo advertise every commit as "have" while missing the underlying objects,
+      # which breaks github-action-benchmark's own `git fetch origin gh-pages:gh-pages`
+      # with "missing blob object … did not send all necessary objects" and aborts the
+      # gh-pages publish (#217). fetch-depth: 0 (full history) is required for the PR
+      # path's `git worktree add <base-sha>` and for the action's gh-pages handling.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          filter: tree:0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
