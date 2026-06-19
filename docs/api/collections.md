@@ -1673,6 +1673,10 @@ The contract is the defining Count-Min trade-off:
   counter could push an unrelated element's estimate below its true frequency, breaking the
   never-underestimate guarantee). Use `Clear()` to reset, or `UnionWith` to combine two
   sketches.
+- **Saturating counters.** A counter (and `TotalCount`) that would exceed `long.MaxValue`
+  clamps there rather than wrapping to a negative value, so the never-underestimate
+  guarantee holds even under counts larger than an in-memory sketch could otherwise
+  represent (whether reached via `Add(item, count)` or `UnionWith`).
 
 ### How it works
 
@@ -1724,7 +1728,8 @@ row (lowering the error); smaller `delta` adds rows (raising the confidence).
 - `void Add(T item)` — adds one occurrence, increasing the element's estimated frequency by
   one.
 - `void Add(T item, long count)` — adds `count` occurrences. Throws
-  `ArgumentOutOfRangeException` if `count` is not positive.
+  `ArgumentOutOfRangeException` if `count` is not positive. A counter (and `TotalCount`)
+  saturates at `long.MaxValue` rather than overflowing to a negative value.
 - `long EstimateCount(T item)` — the estimated frequency of an element. Never less than the
   true count; with probability at least `1 − Delta` it exceeds it by no more than
   `Epsilon · TotalCount`. An element never added returns `0` unless collisions inflate it.
