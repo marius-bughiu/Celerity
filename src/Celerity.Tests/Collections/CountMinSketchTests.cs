@@ -391,4 +391,67 @@ public class CountMinSketchTests
         var b = new CountMinSketch<int, Int32Murmur3Hasher>(0.01, 0.0001); // more rows
         Assert.Throws<ArgumentException>(() => a.UnionWith(b));
     }
+
+    // ---------------------------------------------------------------
+    //  Counter overflow saturation (regression for #219)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Add_CounterOverflow_SaturatesInsteadOfWrappingNegative()
+    {
+        var sketch = new CountMinSketch<int, Int32Murmur3Hasher>();
+
+        sketch.Add(7, long.MaxValue);
+        sketch.Add(7, 1); // would wrap a touched counter to long.MinValue if unchecked
+
+        long estimate = sketch.EstimateCount(7);
+        Assert.True(estimate >= 0, "estimate underflowed to a negative value");
+        Assert.Equal(long.MaxValue, estimate);
+    }
+
+    [Fact]
+    public void Add_TotalCountOverflow_SaturatesInsteadOfWrappingNegative()
+    {
+        var sketch = new CountMinSketch<int, Int32Murmur3Hasher>();
+
+        sketch.Add(1, long.MaxValue);
+        sketch.Add(2, long.MaxValue); // distinct element, so TotalCount itself overflows
+
+        Assert.True(sketch.TotalCount >= 0, "TotalCount wrapped negative");
+        Assert.Equal(long.MaxValue, sketch.TotalCount);
+    }
+
+    [Fact]
+    public void Add_NeverUnderestimates_AfterSaturation()
+    {
+        // After a counter saturates, every subsequent estimate for that element must still
+        // be >= its true (clamped) count — the never-underestimate guarantee must survive
+        // the clamp.
+        var sketch = new CountMinSketch<int, Int32Murmur3Hasher>();
+
+        sketch.Add(99, long.MaxValue - 10);
+        for (int i = 0; i < 100; i++)
+            sketch.Add(99, 1); // pushes the counter past the ceiling
+
+        Assert.Equal(long.MaxValue, sketch.EstimateCount(99));
+    }
+
+    [Fact]
+    public void UnionWith_CounterOverflow_SaturatesInsteadOfWrappingNegative()
+    {
+        var a = new CountMinSketch<int, Int32Murmur3Hasher>();
+        var b = new CountMinSketch<int, Int32Murmur3Hasher>();
+
+        // Two aligned counters each holding more than half of long.MaxValue overflow when
+        // summed during the merge.
+        a.Add(5, long.MaxValue - 1);
+        b.Add(5, long.MaxValue - 1);
+
+        a.UnionWith(b);
+
+        Assert.True(a.EstimateCount(5) >= 0, "merged estimate wrapped negative");
+        Assert.Equal(long.MaxValue, a.EstimateCount(5));
+        Assert.True(a.TotalCount >= 0, "merged TotalCount wrapped negative");
+        Assert.Equal(long.MaxValue, a.TotalCount);
+    }
 }

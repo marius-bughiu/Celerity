@@ -204,6 +204,12 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// <param name="item">The element to count.</param>
     /// <param name="count">The number of occurrences to add. Must be positive.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is not positive.</exception>
+    /// <remarks>
+    /// A counter (and <see cref="TotalCount"/>) that would exceed <see cref="long.MaxValue"/>
+    /// saturates at <see cref="long.MaxValue"/> rather than wrapping to a negative value, so
+    /// the never-underestimate guarantee holds even under counts no in-memory sketch could
+    /// otherwise represent.
+    /// </remarks>
     public void Add(T item, long count)
     {
         if (count <= 0)
@@ -218,11 +224,12 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         for (int row = 0; row < _depth; row++)
         {
             int column = (int)(combined & (uint)mask);
-            counters[row * width + column] += count;
+            ref long counter = ref counters[row * width + column];
+            counter = SaturatingAdd(counter, count);
             combined += h2;
         }
 
-        _totalCount += count;
+        _totalCount = SaturatingAdd(_totalCount, count);
     }
 
     /// <summary>
@@ -296,9 +303,9 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         long[] counters = _counters;
         long[] otherCounters = other._counters;
         for (int i = 0; i < counters.Length; i++)
-            counters[i] += otherCounters[i];
+            counters[i] = SaturatingAdd(counters[i], otherCounters[i]);
 
-        _totalCount += other._totalCount;
+        _totalCount = SaturatingAdd(_totalCount, other._totalCount);
     }
 
     // Derives two independent 32-bit hash lanes from a single IHashProvider call by
@@ -319,6 +326,21 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         // h2 is the stride of the g_i = h1 + i·h2 recurrence; a zero stride would map every
         // row to the same column. Force it odd (and non-zero) so the d rows spread out.
         h2 |= 1u;
+    }
+
+    // Adds two non-negative longs, clamping to long.MaxValue instead of wrapping past it.
+    // Counters and _totalCount are only ever increased by validated-positive counts (and by
+    // each other in UnionWith), so both operands are always >= 0 — which means a sum that
+    // comes back negative can only be an overflow of long.MaxValue. Clamping there keeps the
+    // estimate at or above the true frequency: an unchecked wrap to a negative value would
+    // make EstimateCount return less than the truth, breaking the never-underestimate
+    // guarantee. A counter saturated at long.MaxValue is a count no in-memory sketch can
+    // represent anyway, so the clamp loses no recoverable information.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static long SaturatingAdd(long a, long b)
+    {
+        long sum = unchecked(a + b);
+        return sum < 0 ? long.MaxValue : sum;
     }
 
     // SplitMix64 finalizer seeded with the 32-bit base hash widened by the golden-ratio
