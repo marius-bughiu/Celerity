@@ -60,6 +60,7 @@ internal class Program
         typeof(GuidBenchmark),
         typeof(SpanBitsBenchmark),
         typeof(SimdReductionsBenchmark),
+        typeof(BranchlessBenchmark),
     };
 
     static void Main(string[] args)
