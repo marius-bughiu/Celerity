@@ -12,88 +12,178 @@ on:
       - 'src/**'
       - '.github/workflows/benchmarks.yml'
 
+# The core suite is ~300 cases and, at full BenchmarkDotNet accuracy (Job.Default x2
+# launches, see CiConfig.cs), one pass takes ~3h. The PR path runs it TWICE on one
+# runner (PR head + main base, same-runner A/B, so hardware variance cancels), which
+# blew past GitHub's 6h job ceiling and was cancelled on every PR (#217). Rather than
+# trade away measurement accuracy, we shard the suite across a parallel matrix: each
+# shard measures only its slice (head + base) on its own runner, so wall time is
+# ~3h / SHARD_TOTAL at full accuracy, and an aggregate job stitches the per-shard JSON
+# back together for the regression comment / gh-pages publish.
+#
+# The same-runner A/B invariant is preserved because sharding is by benchmark *class*
+# (Program.cs `--shard`): a class's PR-head and main-base measurements always run
+# together on the one shard runner, so the per-benchmark delta still cancels hardware.
+env:
+  # Keep in sync with the matrix.shard list below.
+  SHARD_TOTAL: '6'
+
 jobs:
-  benchmarks:
-    name: benchmarks
+  benchmark-shard:
+    name: benchmark (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
+    # Steady state: head slice (~30 min) + base slice (~30 min) ~= 60 min. The one
+    # transitional run of THIS PR is slower (see the base step) and may be cancelled
+    # here — that is no worse than the status quo (the gate is cancelled on every PR
+    # today) and self-heals the moment `--shard` lands on main.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # Must enumerate 0 .. SHARD_TOTAL-1.
+        shard: [0, 1, 2, 3, 4, 5]
 
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
 
     defaults:
       run:
         working-directory: src
 
     steps:
+      # NOTE: do NOT add `filter: tree:0` here. A blobless partial clone makes the repo
+      # advertise every commit as "have" while missing the underlying objects, which
+      # breaks the base `git worktree add <base-sha>` below (and, in the aggregate job,
+      # github-action-benchmark's own gh-pages fetch) with "missing blob object … did
+      # not send all necessary objects" (#217). fetch-depth: 0 is required for the
+      # base worktree.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          filter: tree:0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Run benchmarks
-        # working-directory must be the project folder, not src/. BenchmarkDotNet
-        # writes its artifacts to ./BenchmarkDotNet.Artifacts relative to the
-        # process CWD, and downstream steps look for them under Celerity.Benchmarks/.
+      - name: Run head benchmarks (shard ${{ matrix.shard }})
+        # working-directory must be the project folder, not src/. BenchmarkDotNet writes
+        # its artifacts to ./BenchmarkDotNet.Artifacts relative to the process CWD.
         working-directory: src/Celerity.Benchmarks
-        run: dotnet run --configuration Release -- --ci
+        run: dotnet run --configuration Release -- --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}"
 
-      - name: Stage benchmark report
-        # BenchmarkDotNet's joined-run JSON is named with a timestamp
-        # (BenchmarkRun-joined-<ts>-report-full.json). Copy it to a stable path
-        # so downstream steps can pick it up without a glob.
+      - name: Stage head report
         run: |
           set -euo pipefail
+          mkdir -p /tmp/reports
           report=$(ls Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/*-report-full.json | head -n 1)
-          echo "Found report: $report"
-          cp "$report" Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json
+          cp "$report" "/tmp/reports/head-shard-${{ matrix.shard }}.json"
+          echo "Staged head shard ${{ matrix.shard }}: $report"
 
-      - name: Upload benchmark artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/**
-          if-no-files-found: warn
-          retention-days: 30
-
-      # ----- PR path: same-runner A/B vs main, then comment -----
-      # GitHub-hosted runners vary in hardware by 20-50% run-to-run, so
-      # comparing absolute timings against a stored gh-pages baseline produces
-      # noise-dominated false positives. Instead we build and benchmark BOTH
-      # the PR head and the main tip back-to-back on THIS runner, so hardware
-      # variance cancels out and the delta reflects the code change alone.
-
-      - name: Stage PR report
-        if: github.event_name == 'pull_request'
-        run: |
-          set -euo pipefail
-          cp Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json /tmp/pr-report-full.json
-          echo "PR report staged ($(wc -c < /tmp/pr-report-full.json) bytes)"
-
-      - name: Run base (main) benchmarks on the same runner
+      - name: Run base (main) benchmarks for this shard on the same runner
+        # Same-runner A/B: build and benchmark the main tip back-to-back with the PR head
+        # on THIS runner so hardware variance cancels (hosted runners vary 20-50%
+        # run-to-run, so a stored cross-runner baseline would be noise-dominated).
+        #
+        # TRANSITIONAL: until this PR's `--shard` support lands on main, the base tip's
+        # `--ci` does not understand `--shard` and runs the FULL ~3h suite here, so these
+        # base steps will exceed the job timeout and be cancelled on THIS PR only. That
+        # matches today's behaviour (the gate is already cancelled on every PR) and the
+        # workflow self-heals once merged — every later PR's base honours `--shard`.
         if: github.event_name == 'pull_request'
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
           git fetch origin main
           BASE_SHA=$(git rev-parse origin/main)
-          echo "BASE_SHA=$BASE_SHA" >> "$GITHUB_ENV"
-          echo "Benchmarking base (main) at $BASE_SHA"
+          echo "Benchmarking base (main) at $BASE_SHA, shard ${{ matrix.shard }}"
           git worktree add /tmp/base-tree "$BASE_SHA"
           cd /tmp/base-tree/src/Celerity.Benchmarks
-          dotnet run --configuration Release -- --ci
+          dotnet run --configuration Release -- --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}"
           report=$(ls BenchmarkDotNet.Artifacts/results/*-report-full.json | head -n 1)
-          cp "$report" /tmp/base-report-full.json
-          echo "Base report staged: $report"
+          cp "$report" "/tmp/reports/base-shard-${{ matrix.shard }}.json"
+          echo "Staged base shard ${{ matrix.shard }}: $report"
 
+      - name: Upload shard reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-shard-${{ matrix.shard }}
+          path: /tmp/reports/**
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    name: aggregate & report
+    needs: benchmark-shard
+    # Run even if some shards were cancelled/failed (e.g. the transitional base run
+    # above) so partial results are still reported where possible.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-shard-*
+          merge-multiple: true
+          path: /tmp/reports
+
+      - name: Merge shard reports
+        id: merge
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          head_files=(/tmp/reports/head-shard-*.json)
+          if [ ${#head_files[@]} -eq 0 ]; then
+            echo "No head shard reports found (all shards cancelled/failed) — nothing to report."
+            echo "have_head=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "have_head=true" >> "$GITHUB_OUTPUT"
+
+          # Stitch every shard's joined report back into one: keep shard 0's metadata,
+          # concatenate all shards' Benchmarks arrays.
+          jq -s '.[0] * {Benchmarks: ([.[].Benchmarks] | add)}' "${head_files[@]}" > /tmp/pr-report-full.json
+          echo "Merged $(jq '.Benchmarks | length' /tmp/pr-report-full.json) head benchmarks from ${#head_files[@]} shard(s)."
+
+          base_files=(/tmp/reports/base-shard-*.json)
+          if [ ${#base_files[@]} -gt 0 ]; then
+            jq -s '.[0] * {Benchmarks: ([.[].Benchmarks] | add)}' "${base_files[@]}" > /tmp/base-report-full.json
+            echo "have_base=true" >> "$GITHUB_OUTPUT"
+            echo "Merged $(jq '.Benchmarks | length' /tmp/base-report-full.json) base benchmarks from ${#base_files[@]} shard(s)."
+          else
+            echo "have_base=false" >> "$GITHUB_OUTPUT"
+            echo "No base shard reports (main push, or base run cancelled)."
+          fi
+
+      - name: Resolve base SHA (for the comment footer)
+        if: github.event_name == 'pull_request' && steps.merge.outputs.have_head == 'true'
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          echo "BASE_SHA=$(git rev-parse origin/main)" >> "$GITHUB_ENV"
+
+      - name: Upload merged reports
+        if: steps.merge.outputs.have_head == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: /tmp/*-report-full.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ----- PR path: post the same-runner A/B comment -----
       - name: Post benchmark comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.merge.outputs.have_head == 'true' && steps.merge.outputs.have_base == 'true'
         uses: actions/github-script@v7
         env:
           ALERT_THRESHOLD_RATIO: '1.10'
@@ -180,7 +270,7 @@ jobs:
             }
 
             const baseSha = (process.env.BASE_SHA || '').slice(0, 7);
-            const footer = `<sub>Same-runner A/B: main (\`${baseSha}\`) and this PR were built and benchmarked back-to-back on the same runner, so hardware variance cancels out. ⚠️ = PR mean ≥ +${thresholdPct}% slower than main and beyond combined std-dev; ✅ = correspondingly faster.</sub>`;
+            const footer = `<sub>Same-runner A/B (sharded ${process.env.SHARD_TOTAL || ''}-way): main (\`${baseSha}\`) and this PR were built and benchmarked back-to-back on the same runner per shard, so hardware variance cancels out. ⚠️ = PR mean ≥ +${thresholdPct}% slower than main and beyond combined std-dev; ✅ = correspondingly faster.</sub>`;
 
             const header = ['| Benchmark | This PR | StdDev | main | Δ |', '|---|---:|---:|---:|---:|'];
             const toRow = (e) => `| \`${e.name}\` | ${e.prCell} | ${e.stdCell} | ${e.baseCell} | ${e.deltaCell} |`;
@@ -252,10 +342,16 @@ jobs:
               core.info('Created new benchmarks comment');
             }
 
-      # ----- Main path: publish to gh-pages, no comment -----
+      # ----- Main path: publish merged report to gh-pages -----
+      - name: Stage merged report for publish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.merge.outputs.have_head == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results
+          cp /tmp/pr-report-full.json src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json
 
       - name: Publish to gh-pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.merge.outputs.have_head == 'true'
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: Celerity Benchmarks
@@ -272,10 +368,9 @@ jobs:
 
       - name: Sync custom dashboard to gh-pages
         # Runs only on main push (same gate as the action's auto-push).
-        # Copies web/index.html + web/dev/bench/index.html into gh-pages,
+        # Copies web/index.html + web/dev/bench/*.html into gh-pages,
         # leaving the action-managed data.js untouched. Idempotent.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        working-directory: ${{ github.workspace }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.merge.outputs.have_head == 'true'
         run: |
           set -euo pipefail
           git fetch origin gh-pages
