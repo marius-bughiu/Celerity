@@ -417,6 +417,7 @@
     { key: 'CelerityDictionary',  title: 'CelerityDictionary<int, int, ...>',        vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'RobinHoodDictionary', title: 'RobinHoodDictionary<int, int, ...>',       vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'SwissDictionary',     title: 'SwissDictionary<int, int, ...>',           vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
+    { key: 'HashCachingDictionary', title: 'HashCachingDictionary<int, int, ...>',    vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'PooledCelerityDictionary', title: 'PooledCelerityDictionary<int, int, ...>', vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup'] },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
@@ -426,10 +427,16 @@
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
-    { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                        vs: 'FrozenSet<string>',     ops: ['Build', 'Contains'] }
+    { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                        vs: 'FrozenSet<string>',     ops: ['Build', 'Contains'] },
+    { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
+    // BitSet is a dense bit vector benchmarked at 1024 / 1,000,000 bits (not the 1k /
+    // 100k the hash tables use), so it carries its own item counts.
+    { key: 'BitSet',              title: 'BitSet',                                   vs: 'BitArray',              ops: ['PopCount', 'And', 'Or', 'Xor'], items: [1024, 1000000] },
+    { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                      vs: 'HashSet<int>',          ops: ['Add', 'Estimate'] },
+    { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                   vs: 'Dictionary<int, int>',  ops: ['Add', 'Estimate'] }
   ];
 
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
@@ -806,6 +813,7 @@
   function methodLabel(p) {
     if (p.isBaseline) return '.NET GetHashCode';
     if (p.family === 'integer' && p.method === 'Celerity') return 'GuidHasher';
+    if (p.method === 'EqualityComparer' || p.method === 'EqualityComparer_Default') return 'EqualityComparer<T>.Default';
     return p.method;
   }
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
