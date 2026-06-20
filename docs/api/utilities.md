@@ -28,6 +28,25 @@ Returns the smallest power of two that is greater than or equal to `n`.
 
 **Used by** all the Celerity collections (`CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`, `LongSet`) to round the user-supplied capacity to a power of two, which enables fast index computation via bitwise AND instead of modulo.
 
+### MaxPowerOfTwoCapacity / DoubleCapacity
+
+```csharp
+public const int MaxPowerOfTwoCapacity = 1 << 30;   // 1,073,741,824
+public static int DoubleCapacity(int currentCapacity)
+```
+
+`MaxPowerOfTwoCapacity` is the hard ceiling on the backing-array size of every open-addressed Celerity collection: the next power of two (`2^31`) overflows a signed `int`, so a table can never grow past `2^30` slots. `NextPowerOfTwo` already caps its result here.
+
+`DoubleCapacity` is the guarded `* 2` the collections use in their `Resize()` paths. It returns `currentCapacity * 2`, but throws `InvalidOperationException` when `currentCapacity` is already at or above `MaxPowerOfTwoCapacity` rather than computing `2^31` and overflowing to a negative size (which would corrupt the `newSize - 1` slot mask). This mirrors the `size <= MaxPowerOfTwoCapacity` guard the frozen-collection build loops already use.
+
+**Special cases:**
+
+- `currentCapacity < 2^30` returns `currentCapacity * 2`.
+- `currentCapacity == 2^29` returns exactly `2^30` (the last legal growth).
+- `currentCapacity >= 2^30` throws `InvalidOperationException` ("cannot grow beyond its maximum capacity").
+
+**Capacity limit.** In practice this ceiling is only reached by a single collection holding on the order of ~800M live entries (8+ GB of backing arrays at the default 0.75 load factor). At that point the collection throws a clear capacity error on the *next* growth instead of silently corrupting its state — Celerity collections are not designed to hold more than `2^30` slots; partition across multiple instances if you need more.
+
 ### FastMod / FastDiv
 
 ```csharp

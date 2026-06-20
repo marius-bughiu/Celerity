@@ -457,7 +457,7 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
 
     private void Resize()
     {
-        int newSize = _slots.Length * 2;
+        int newSize = FastUtils.DoubleCapacity(_slots.Length);
         int mask = newSize - 1;
         long[] oldSlots = _slots;
 

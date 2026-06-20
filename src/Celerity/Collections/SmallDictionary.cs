@@ -346,7 +346,7 @@ public class SmallDictionary<TKey, TValue> : IReadOnlyDictionary<TKey, TValue?>
 
     private void Grow()
     {
-        int newCapacity = _keys.Length == 0 ? DEFAULT_CAPACITY : _keys.Length * 2;
+        int newCapacity = _keys.Length == 0 ? DEFAULT_CAPACITY : FastUtils.DoubleCapacity(_keys.Length);
         Array.Resize(ref _keys, newCapacity);
         Array.Resize(ref _values, newCapacity);
     }

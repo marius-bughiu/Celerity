@@ -891,7 +891,7 @@ public class SwissDictionary<TKey, TValue, THasher>
     private void Resize()
     {
         int newCapacity = _count - (_hasDefaultKey ? 1 : 0) >= (_threshold >> 1)
-            ? _capacity * 2
+            ? FastUtils.DoubleCapacity(_capacity)
             : _capacity;
 
         sbyte[] oldControls = _controls;

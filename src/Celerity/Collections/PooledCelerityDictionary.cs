@@ -845,7 +845,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
 
     private void Resize()
     {
-        int newSize = _size * 2;
+        int newSize = FastUtils.DoubleCapacity(_size);
         int mask = newSize - 1;
         int oldSize = _size;
         TKey?[] oldKeys = _keys;

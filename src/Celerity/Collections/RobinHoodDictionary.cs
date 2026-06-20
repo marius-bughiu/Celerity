@@ -813,7 +813,7 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
 
     private void Resize()
     {
-        int newSize = _keys.Length * 2;
+        int newSize = FastUtils.DoubleCapacity(_keys.Length);
         TKey?[] oldKeys = _keys;
         TValue?[] oldValues = _values;
 
