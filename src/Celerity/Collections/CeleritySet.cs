@@ -413,7 +413,7 @@ public class CeleritySet<T, THasher> : IEnumerable<T> where THasher : struct, IH
 
     private void Resize()
     {
-        int newSize = _slots.Length * 2;
+        int newSize = FastUtils.DoubleCapacity(_slots.Length);
         int mask = newSize - 1;
         T?[] oldSlots = _slots;
 

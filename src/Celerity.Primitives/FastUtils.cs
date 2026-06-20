@@ -10,6 +10,15 @@ namespace Celerity.Primitives;
 public static class FastUtils
 {
     /// <summary>
+    /// The largest power-of-two capacity a Celerity open-addressed collection can reach:
+    /// <c>2^30</c> (1,073,741,824). The next power of two (<c>2^31</c>) overflows a signed
+    /// <see cref="int"/>, so this is the hard ceiling on the backing-array size.
+    /// <see cref="NextPowerOfTwo"/> caps its result here, and the collections' resize paths
+    /// refuse to grow past it via <see cref="DoubleCapacity"/> rather than overflowing.
+    /// </summary>
+    public const int MaxPowerOfTwoCapacity = 1 << 30;
+
+    /// <summary>
     /// Returns the smallest power of two greater than or equal to the specified number.
     /// If <paramref name="n"/> is 0 or negative, 1 is returned.
     /// If <paramref name="n"/> is very large, the method caps the result to avoid overflow.
@@ -19,7 +28,7 @@ public static class FastUtils
     public static int NextPowerOfTwo(int n)
     {
         if (n <= 0) return 1;
-        if (n >= (1 << 30)) return 1 << 30; // Prevent overflow
+        if (n >= MaxPowerOfTwoCapacity) return MaxPowerOfTwoCapacity; // Prevent overflow
 
         // Decrement n to ensure that exact powers of two aren't mistakenly doubled
         n--;
@@ -30,6 +39,30 @@ public static class FastUtils
         n |= n >> 8;
         n |= n >> 16;
         return n + 1;
+    }
+
+    /// <summary>
+    /// Doubles a power-of-two collection capacity for a resize, throwing when the table has
+    /// already reached <see cref="MaxPowerOfTwoCapacity"/>. The naive <c>capacity * 2</c> at
+    /// that point computes <c>2^31</c>, which overflows a signed <see cref="int"/> to a
+    /// negative value and corrupts the slot mask (<c>newSize - 1</c>); this method fails fast
+    /// with a clear error instead. Mirrors the <c>size &lt;= MaxPowerOfTwoCapacity</c> guard in
+    /// the frozen-collection build loops.
+    /// </summary>
+    /// <param name="currentCapacity">The current power-of-two capacity to double.</param>
+    /// <returns><c>currentCapacity * 2</c>.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="currentCapacity"/> is already at or above <see cref="MaxPowerOfTwoCapacity"/>,
+    /// so the collection cannot grow any further without overflowing <see cref="int"/>.
+    /// </exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int DoubleCapacity(int currentCapacity)
+    {
+        if (currentCapacity >= MaxPowerOfTwoCapacity)
+            throw new InvalidOperationException(
+                $"Collection cannot grow beyond its maximum capacity of {MaxPowerOfTwoCapacity} slots.");
+
+        return currentCapacity * 2;
     }
 
     // ── FastMod / FastDiv (Lemire reciprocal modulo & division) ─────────────────────────

@@ -781,7 +781,7 @@ public class IntDictionary<TValue, THasher>
 
     private void Resize()
     {
-        int newSize = _keys.Length * 2;
+        int newSize = FastUtils.DoubleCapacity(_keys.Length);
         int mask = newSize - 1;
         int[] oldKeys = _keys;
         TValue?[] oldValues = _values;
