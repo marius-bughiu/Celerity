@@ -27,6 +27,7 @@ internal class Program
         typeof(IntSetBenchmark),
         typeof(LongSetBenchmark),
         typeof(BloomFilterBenchmark),
+        typeof(CuckooFilterBenchmark),
         typeof(BitSetBenchmark),
         typeof(HyperLogLogBenchmark),
         typeof(CountMinSketchBenchmark),

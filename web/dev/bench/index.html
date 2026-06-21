@@ -429,6 +429,7 @@
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                        vs: 'FrozenSet<string>',     ops: ['Build', 'Contains'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
+    { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     // BitSet is a dense bit vector benchmarked at 1024 / 1,000,000 bits (not the 1k /
     // 100k the hash tables use), so it carries its own item counts.
     { key: 'BitSet',              title: 'BitSet',                                   vs: 'BitArray',              ops: ['PopCount', 'And', 'Or', 'Xor'], items: [1024, 1000000] },
