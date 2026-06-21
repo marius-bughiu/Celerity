@@ -422,6 +422,63 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- CuckooFilter (probabilistic, deletable) vs multiset ----------------
+
+    // A cuckoo filter supports Remove and may report false positives, so the model is a
+    // multiset (per-key copy counts) and the property is one-directional: every element
+    // with a positive copy count must still test present — the no-false-negatives
+    // guarantee, which holds across deletions provided we only remove copies we added.
+    // Inserts go through TryAdd so the oracle only records successfully stored copies
+    // (the filter can refuse an insert once it is full); a Remove of a present element
+    // must succeed.
+    private enum CuckooOp { Add, Remove, Clear }
+
+    private static readonly Gen<List<(CuckooOp, int)>> GenCuckooOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n => n < 70 ? CuckooOp.Add : n < 92 ? CuckooOp.Remove : CuckooOp.Clear),
+            Gen.Int[-8, 24])
+        .List[0, 120];
+
+    [Fact]
+    public void CuckooFilter_ShouldHaveNoFalseNegatives_AcrossDeletions_VsMultiset()
+    {
+        GenCuckooOps.Sample(ops =>
+        {
+            // Sized generously for the tiny key domain so the add/remove machinery is
+            // exercised rather than over-fill behaviour.
+            var sut = new CuckooFilter<int, Int32WangNaiveHasher>(512);
+            var oracle = new Dictionary<int, int>(); // key -> live copy count
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case CuckooOp.Add:
+                        if (sut.TryAdd(item)) // only record copies the filter actually stored
+                            oracle[item] = oracle.TryGetValue(item, out int c) ? c + 1 : 1;
+                        break;
+                    case CuckooOp.Remove:
+                        if (oracle.TryGetValue(item, out int n) && n > 0)
+                        {
+                            Assert.True(sut.Remove(item), $"present element {item} failed to remove");
+                            if (n == 1) oracle.Remove(item);
+                            else oracle[item] = n - 1;
+                        }
+                        break;
+                    case CuckooOp.Clear:
+                        sut.Clear();
+                        oracle.Clear();
+                        break;
+                }
+            }
+
+            // No false negatives: every element with a live copy is reported present.
+            foreach (var kv in oracle)
+                if (kv.Value > 0)
+                    Assert.True(sut.Contains(kv.Key), $"false negative for {kv.Key}");
+        }, iter: 2000);
+    }
+
     // ---- BitSet (exact, deterministic) vs bool[] ----------------------------
 
     // A BitSet is an exact dense bit vector, so it admits a full two-directional

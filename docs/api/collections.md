@@ -1414,6 +1414,147 @@ Console.WriteLine(seen.HashCount);   // hash functions per element, k
 
 ---
 
+## CuckooFilter&lt;T, THasher&gt;
+
+A space-efficient **probabilistic** set membership filter that — unlike `BloomFilter` —
+**supports deletion**, parameterized on a custom hash provider. Like a Bloom filter it
+answers "is this element *possibly* in the set?" with **no false negatives** and a tunable,
+bounded false-positive rate, but instead of a bit array it stores a short *fingerprint* of
+each element in a table of fixed-size buckets — which is what lets it answer the one
+question a Bloom filter cannot: `Remove` deletes a single element without introducing false
+negatives for the others. The BCL ships no probabilistic membership filter, so for
+membership-only workloads this uses a small fraction of the memory of a `HashSet<T>`.
+
+```csharp
+public class CuckooFilter<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+### How it works
+
+The structure is **partial-key cuckoo hashing** (Fan, Andersen, Kaminsky, Mitzenmacher —
+*"Cuckoo Filter: Practically Better Than Bloom"*, CoNEXT 2014). Each element has two
+candidate buckets, `i1 = h(x)` and `i2 = i1 XOR h(fingerprint)`; because the bucket count
+is a power of two the XOR is an involution, so `i1` can be recovered from `i2` and the
+stored fingerprint alone — no need to keep the original key. An insert places the
+fingerprint in either candidate bucket; when both are full it evicts a resident fingerprint
+and re-homes it in *its* alternate bucket, repeating up to a bounded number of "kicks". The
+fingerprint and the primary index both come from a **single** `IHashProvider<T>.Hash` call
+avalanched into 64 bits (the SplitMix64 finalizer). A lookup or delete touches at most two
+buckets (≈ two cache lines) regardless of fill.
+
+### Cuckoo vs. Bloom
+
+| | `BloomFilter` | `CuckooFilter` |
+|---|---|---|
+| No false negatives | ✅ | ✅ |
+| Tunable false-positive rate | ✅ | ✅ |
+| **Delete individual elements** | ❌ | ✅ |
+| Lookup cost | `k` bit probes | ≤ 2 buckets (≈ 2 cache lines) |
+| Insertion can fail when very full | ❌ (never) | ✅ (at high load — reports *full*) |
+| Storage | bit array | `f`-bit fingerprints (one `ushort` each) |
+
+Reach for `CuckooFilter` when you need **deletable** approximate membership — a sliding
+window of "seen" keys, a cache-admission filter, a set that shrinks as items expire. If your
+working set only ever grows (or you reset it wholesale), `BloomFilter` is simpler and can be
+more compact at high target false-positive rates.
+
+### Sizing
+
+The filter sizes itself at construction from the expected element count `n` and the target
+false-positive rate `p`:
+
+- **Fingerprint width** `f = ceil(log2(2·4 / p))` bits (four slots per bucket, two candidate
+  buckets), clamped to `[1, 16]`. A lower target rate widens the fingerprint. The achievable
+  minimum rate is bounded by the 16-bit ceiling (≈ `8 / 2¹⁶ ≈ 1.2e-4`); a stricter request is
+  clamped to that floor.
+- **Bucket count**, rounded **up to a power of two** from `n / (4 · 0.94)`, so the alternate-bucket
+  XOR stays in range and the realized table runs below full.
+
+### Constructors
+
+```csharp
+public CuckooFilter(
+    int expectedItems,
+    double falsePositiveRate = 0.01)
+
+public CuckooFilter(
+    IEnumerable<T> source,
+    double falsePositiveRate = 0.01)
+```
+
+The first overload creates an empty filter sized for `expectedItems` elements. The
+`IEnumerable<T>` overload pre-populates the filter and sizes it from the source's element
+count — taken from `ICollection<T>.Count` when available, otherwise from a single counting
+pass.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `expectedItems <= 0`.
+- `ArgumentOutOfRangeException` if `falsePositiveRate <= 0`, `>= 1`, or `NaN`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats the
+  rate validation, so a `null` source with a bad rate surfaces as `ArgumentNullException`.
+- `InvalidOperationException` (enumerable overload) if the filter becomes full before every
+  element is added.
+
+### Methods and properties
+
+- `void Add(T item)` — adds an element. Adding the same element twice stores a second
+  fingerprint copy and counts twice; a matching `Remove` removes one copy. **Throws
+  `InvalidOperationException`** if the filter is full (an insertion exhausted its eviction
+  budget) — only when loaded well beyond `Capacity`.
+- `bool TryAdd(T item)` — the non-throwing form: returns `false` (leaving the filter
+  unchanged) when full.
+- `bool Contains(T item)` — `false` ⇒ definitely absent; `true` ⇒ probably present.
+- `bool Remove(T item)` — removes one matching copy; returns `true` if found. **Only remove
+  elements you know were added** — removing a never-added element can, with the false-positive
+  probability, delete a different element that shares its fingerprint and bucket.
+- `void UnionWith(CuckooFilter<T, THasher> other)` — merges another filter in place; both must
+  have identical `BucketCount` and `FingerprintBits`. Throws `ArgumentNullException` on `null`,
+  `ArgumentException` on incompatible geometry, and `InvalidOperationException` if this filter
+  fills before absorbing all of `other`.
+- `void Clear()` — resets to empty; preserves the bucket count and fingerprint width.
+- `int Count { get; }` — the number of stored fingerprints (a **live** count: `Add` increments,
+  `Remove` decrements).
+- `int Capacity { get; }` — the expected element count the filter was sized for.
+- `int BucketCount { get; }` — the number of buckets (a power of two; the table holds
+  `BucketCount · 4` slots).
+- `int FingerprintBits { get; }` — the fingerprint width in bits (`f`), in `[1, 16]`.
+- `double FalsePositiveRate { get; }` — the target rate the filter was sized for.
+- `double LoadFactor { get; }` — the fraction of slots occupied; insertions begin to risk
+  failure as this approaches ~0.95.
+- `bool IsFull { get; }` — whether an insertion has exhausted its eviction budget (a fingerprint
+  is parked in the single-entry victim cache); a successful `Remove` clears it.
+
+### Default-element handling
+
+Because the filter stores fingerprints, not keys, it needs **no out-of-band handling** for
+`default(T)` — a zero `int`, `Guid.Empty`, or the empty string is hashed and added like any
+other element. A `null` reference is mapped to a fixed base hash so the filter never invokes
+the hasher with `null` (the string hashers throw on `null`).
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A sliding window of recently-seen request ids, sized for ~100k live entries.
+var recent = new CuckooFilter<long, Int64WangHasher>(100_000, 0.001);
+
+void OnRequest(long id)
+{
+    if (recent.Contains(id))
+        return;                 // probably a retry — drop it
+    recent.Add(id);
+    Process(id);
+}
+
+void OnExpire(long id) => recent.Remove(id);   // shrink the window — Bloom cannot do this
+```
+
+---
+
 ## BitSet
 
 A dense, fixed-length array of bits packed into 64-bit words. It is the **exact,

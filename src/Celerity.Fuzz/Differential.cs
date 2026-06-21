@@ -38,6 +38,7 @@ internal static class Differential
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
         ("BloomFilter", BloomFilterCase),
+        ("CuckooFilter", CuckooFilterCase),
         ("BitSet", BitSetCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -472,6 +473,49 @@ internal static class Differential
 
         foreach (int k in oracle)
             Check(sut.Contains(k), $"false negative for {k}");
+    }
+
+    // ---- cuckoo filter (probabilistic, deletable, one-directional) ----------
+
+    // A cuckoo filter permits false positives but never false negatives, and unlike a
+    // Bloom filter it supports Remove, so the oracle is a multiset (per-key copy counts).
+    // The check is one-directional: every key with a live copy must test present. Inserts
+    // go through TryAdd so the oracle only records stored copies (the filter can refuse an
+    // insert once full); a Remove of a present key must succeed. Sized generously so the
+    // add / remove / clear churn dominates over fill behaviour.
+    private static void CuckooFilterCase(Random rng)
+    {
+        var sut = new CuckooFilter<int, Int32WangNaiveHasher>(512);
+        var oracle = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 7:
+                    if (sut.TryAdd(item))
+                        oracle[item] = oracle.TryGetValue(item, out int c) ? c + 1 : 1;
+                    break;
+                case < 9:
+                    if (oracle.TryGetValue(item, out int n) && n > 0)
+                    {
+                        Check(sut.Remove(item), $"present element {item} failed to remove");
+                        if (n == 1) oracle.Remove(item);
+                        else oracle[item] = n - 1;
+                    }
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        foreach (var kv in oracle)
+            if (kv.Value > 0)
+                Check(sut.Contains(kv.Key), $"false negative for {kv.Key}");
     }
 
     // ---- bit set (exact, two-directional) -----------------------------------

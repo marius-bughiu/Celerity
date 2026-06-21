@@ -569,6 +569,56 @@ void Check(bool condition, string message)
     Check(guidFilter.Contains(Guid.Empty), "BloomFilter<Guid> empty-guid element");
 }
 
+// CuckooFilter — probabilistic membership filter that, unlike BloomFilter, supports
+// deletion. Exercise Add / TryAdd / Contains / Remove / Clear / Count / UnionWith and
+// the IEnumerable ctor across int / Guid / string instantiations so the AOT publish
+// compiles the partial-key cuckoo probe + eviction path and the fingerprint masking.
+{
+    var filter = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+    filter.Add(42);
+    filter.Add(0); // zero is an ordinary element, not a sentinel
+    Check(filter.Contains(42) && filter.Contains(0), "CuckooFilter add/contains");
+    Check(!filter.Contains(7), "CuckooFilter negative lookup");
+    Check(filter.Count == 2, "CuckooFilter count");
+    Check(filter.BucketCount >= 1 && (filter.BucketCount & (filter.BucketCount - 1)) == 0,
+        "CuckooFilter power-of-two bucket count");
+    Check(filter.FingerprintBits is >= 1 and <= 16, "CuckooFilter fingerprint width");
+
+    // Remove — the differentiator from BloomFilter — deletes without false negatives.
+    Check(filter.Remove(42) && !filter.Contains(42), "CuckooFilter remove");
+    Check(filter.Count == 1, "CuckooFilter count after remove");
+
+    // No false negatives across a larger fill.
+    var big = new CuckooFilter<int, Int32Murmur3Hasher>(2000);
+    for (int i = 1; i <= 500; i++) big.Add(i * 3);
+    bool noFalseNegatives = true;
+    for (int i = 1; i <= 500; i++) noFalseNegatives &= big.Contains(i * 3);
+    Check(noFalseNegatives, "CuckooFilter no false negatives");
+    Check(big.LoadFactor > 0d, "CuckooFilter load factor");
+
+    // UnionWith merges two equally-sized filters.
+    var other = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+    other.Add(99999);
+    filter.UnionWith(other);
+    Check(filter.Contains(99999), "CuckooFilter UnionWith");
+
+    filter.Clear();
+    Check(filter.Count == 0 && !filter.Contains(0), "CuckooFilter clear");
+
+    // String elements via the IEnumerable ctor, plus the out-of-band null reference
+    // (StringFnV1AHasher throws on null; CuckooFilter must not call it with null).
+    var strFilter = new CuckooFilter<string, StringFnV1AHasher>(new[] { "alice", "bob" });
+    strFilter.Add(null!);
+    Check(strFilter.Contains("alice") && strFilter.Contains("bob") && strFilter.Contains(null!),
+        "CuckooFilter<string> ctor + null element");
+    Check(strFilter.Remove(null!) && !strFilter.Contains(null!),
+        "CuckooFilter<string> remove null element");
+
+    var guidFilter = new CuckooFilter<Guid, GuidHasher>(100);
+    guidFilter.Add(Guid.Empty); // ordinary element, no out-of-band slot
+    Check(guidFilter.Contains(Guid.Empty), "CuckooFilter<Guid> empty-guid element");
+}
+
 // BitSet — dense exact bit vector. Exercise Set / Get / Flip / SetAll / Count
 // (popcount), the SIMD-accelerated bulk And / Or / Xor / Not, the tail-bit masking
 // past Length, and both enumerators so the AOT publish compiles the Vector<ulong>
