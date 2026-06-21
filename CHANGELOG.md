@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-21
+
 ### Changed
 
 - **The release pipeline now ships symbol packages, SourceLink, and deterministic builds** ([#190](https://github.com/marius-bughiu/Celerity/issues/190)), completing the milestone 2.0.0 multi-package CI work (the per-package metadata + shared-MinVer half had already shipped with the [#186](https://github.com/marius-bughiu/Celerity/issues/186)–[#188](https://github.com/marius-bughiu/Celerity/issues/188) split). The shared publishing settings now live once in [`src/Directory.Build.props`](src/Directory.Build.props) so all three packages stay in lockstep — they apply to every project under `src/` but only the three `IsPackable=true` packages act on them (the test / benchmark / fuzz / AOT-smoke projects set `IsPackable=false`). `release.yml` and `nightly-preview.yml` now pack with `-p:ContinuousIntegrationBuild=true`, upload **both** `*.nupkg` and `*.snupkg` as the build artifact, and the GitHub release attaches the `.snupkg`s alongside the `.nupkg`s; the existing `dotnet nuget push *.nupkg` loop is unchanged because it already auto-pushes each adjacent `.snupkg` to the NuGet.org symbol server (a clarifying comment now records that, so the snupkgs are not double-pushed).
@@ -413,7 +415,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.0.0
 [1.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.5.0
 [1.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.4.0
 [1.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.3.0
