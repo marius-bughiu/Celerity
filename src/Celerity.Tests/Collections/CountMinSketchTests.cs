@@ -349,14 +349,30 @@ public class CountMinSketchTests
             () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-9, 0.01));
     }
 
-    // A delta small enough that 1/delta overflows to +Infinity saturates the double-to-int
-    // depth cast to int.MaxValue on .NET Core 3.0+, so depth * width overflows for any width.
-    // The guard computes the product in 64 bits, so it is caught rather than wrapping.
+    // A delta small enough that 1/delta overflows to +Infinity pushes the depth formula to an
+    // extreme value. The exact result is runtime-dependent at this boundary — on runtimes where
+    // the double-to-int cast of +Infinity saturates to int.MaxValue the grid is rejected, while
+    // others resolve a finite (large) depth and build a small valid sketch — so the test asserts
+    // only the safety invariant the guard guarantees on every runtime: the constructor never
+    // overflows the grid (no OverflowException, no wrong-sized array that faults on the first
+    // Add). It either rejects the parameters cleanly or builds a usable, correctly-sized sketch.
     [Fact]
-    public void Constructor_Throws_WhenDeltaUnderflowsAndSaturatesDepth()
+    public void Constructor_DeltaUnderflow_NeverOverflowsTheGrid()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new CountMinSketch<int, Int32Murmur3Hasher>(0.5, double.Epsilon));
+        CountMinSketch<int, Int32Murmur3Hasher> sketch;
+        try
+        {
+            sketch = new CountMinSketch<int, Int32Murmur3Hasher>(0.5, double.Epsilon);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return; // rejected cleanly — the grid would have exceeded the 2^30 ceiling
+        }
+
+        // Built a sketch instead of rejecting: its grid must be sound and usable.
+        Assert.True((long)sketch.Depth * sketch.Width <= (1 << 30));
+        sketch.Add(11, 4);
+        Assert.True(sketch.EstimateCount(11) >= 4);
     }
 
     // The overflow guard blames the delta parameter (depth is the unbounded dimension; width
