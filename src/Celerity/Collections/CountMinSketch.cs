@@ -74,6 +74,12 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// </summary>
     public const double DEFAULT_DELTA = 0.01;
 
+    // Upper bound on the total counter grid (depth * width). Mirrors the 2^30 element ceiling
+    // the open-addressed collections cap their backing arrays at, and keeps the grid index
+    // representable as a 32-bit array length so a pathologically small epsilon/delta cannot
+    // overflow the allocation.
+    private const int MAX_GRID = 1 << 30;
+
     private readonly long[] _counters;     // depth * width, row-major
     private readonly int _width;           // w, a power of two
     private readonly int _widthMask;       // w - 1
@@ -101,7 +107,9 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="epsilon"/> or <paramref name="delta"/> is not strictly between 0
-    /// and 1 (or is <see cref="double.NaN"/>).
+    /// and 1 (or is <see cref="double.NaN"/>); or the two together demand a counter grid
+    /// (<c>depth × width</c>) larger than the maximum of <c>2^30</c> counters — pass a
+    /// larger <paramref name="epsilon"/> and/or <paramref name="delta"/>.
     /// </exception>
     public CountMinSketch(double epsilon = DEFAULT_EPSILON, double delta = DEFAULT_DELTA)
     {
@@ -121,10 +129,25 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         _widthMask = _width - 1;
 
         // Depth d = ceil(ln(1 / delta)), at least one row. Math.Max keeps it >= 1 even when
-        // delta is so close to 1 that 1/delta rounds to exactly 1.0 (ln 1 = 0).
+        // delta is so close to 1 that 1/delta rounds to exactly 1.0 (ln 1 = 0). Depth is
+        // otherwise unbounded: a tiny delta drives ceil(ln(1/delta)) arbitrarily high, and a
+        // delta small enough that 1/delta overflows to +Infinity saturates this double-to-int
+        // cast to int.MaxValue on .NET Core 3.0+.
         _depth = Math.Max(1, (int)Math.Ceiling(Math.Log(1.0 / delta)));
 
-        _counters = new long[_depth * _width];
+        // Guard the counter grid against integer overflow. _width is clamped to <= 2^30, but
+        // an unbounded _depth means _depth * _width can overflow a 32-bit array length and
+        // silently allocate a wrong-sized grid (a negative length throws, a wrap to zero or a
+        // small positive value yields a too-small grid that then indexes out of bounds on the
+        // first Add). Compute the product in 64 bits and reject the parameter combination up
+        // front rather than corrupt the sketch — mirroring the open-addressed collections'
+        // 2^30 size ceiling.
+        long grid = (long)_depth * _width;
+        if (grid > MAX_GRID)
+            throw new ArgumentOutOfRangeException(nameof(delta), delta,
+                $"The requested epsilon/delta need a {_depth}×{_width} counter grid ({grid} counters), which exceeds the maximum of {MAX_GRID}. Increase epsilon and/or delta.");
+
+        _counters = new long[(int)grid];
         _hasher = default;
     }
 
@@ -142,7 +165,7 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="epsilon"/> or <paramref name="delta"/> is not strictly between 0
-    /// and 1.
+    /// and 1, or the two together demand a counter grid larger than <c>2^30</c> counters.
     /// </exception>
     public CountMinSketch(IEnumerable<T> source, double epsilon = DEFAULT_EPSILON, double delta = DEFAULT_DELTA)
         : this(NullCheckedEpsilon(source, epsilon), delta)

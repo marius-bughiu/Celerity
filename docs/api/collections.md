@@ -1855,11 +1855,17 @@ The first overload creates an empty sketch sized for the given error parameters.
 source raise the estimated count).
 
 `epsilon` and `delta` must each be strictly between 0 and 1. Smaller `epsilon` widens each
-row (lowering the error); smaller `delta` adds rows (raising the confidence).
+row (lowering the error); smaller `delta` adds rows (raising the confidence). The width is
+capped at `2^30` counters per row, and the **total** grid (`depth × width`) is capped at
+`2^30` counters — a combination of `epsilon` and `delta` that would need a larger grid (for
+example `epsilon = 1e-9` with `delta = 0.01`, which clamps the width to `2^30` and still asks
+for several rows) is rejected rather than silently overflowing the allocation. Realistic
+parameters stay far below this ceiling; if you hit it, relax `epsilon` and/or `delta`.
 
 **Throws:**
 
-- `ArgumentOutOfRangeException` if `epsilon` or `delta` is not strictly between 0 and 1.
+- `ArgumentOutOfRangeException` if `epsilon` or `delta` is not strictly between 0 and 1, or if
+  the two together demand a counter grid larger than `2^30` counters.
 - `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats the
   error-parameter validation, so a `null` source with a bad `epsilon` surfaces as
   `ArgumentNullException`.

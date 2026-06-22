@@ -335,6 +335,52 @@ public class CountMinSketchTests
     }
 
     // ---------------------------------------------------------------
+    //  Grid-overflow guard (regression for the depth*width int overflow)
+    // ---------------------------------------------------------------
+
+    // A tiny epsilon clamps the width to 2^30; combined with an ordinary delta the row count
+    // is >= 2, so depth * width overflows a 32-bit array length. Before the guard this threw a
+    // confusing OverflowException (or allocated a wrong-sized grid); now it is a clear
+    // ArgumentOutOfRangeException raised before any allocation.
+    [Fact]
+    public void Constructor_Throws_WhenTinyEpsilonAndDeltaOverflowTheGrid()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-9, 0.01));
+    }
+
+    // A delta small enough that 1/delta overflows to +Infinity saturates the double-to-int
+    // depth cast to int.MaxValue on .NET Core 3.0+, so depth * width overflows for any width.
+    // The guard computes the product in 64 bits, so it is caught rather than wrapping.
+    [Fact]
+    public void Constructor_Throws_WhenDeltaUnderflowsAndSaturatesDepth()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(0.5, double.Epsilon));
+    }
+
+    // The overflow guard blames the delta parameter (depth is the unbounded dimension; width
+    // is already individually capped at 2^30).
+    [Fact]
+    public void Constructor_GridOverflow_NamesDeltaParameter()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-9, 0.01));
+        Assert.Equal("delta", ex.ParamName);
+    }
+
+    // Aggressive-but-representable parameters that stay under the 2^30 grid ceiling must still
+    // build a working sketch — the guard rejects only genuinely oversized grids.
+    [Fact]
+    public void Constructor_AggressiveButValidParameters_BuildUsableSketch()
+    {
+        var sketch = new CountMinSketch<int, Int32Murmur3Hasher>(1e-4, 1e-6);
+        Assert.True((long)sketch.Depth * sketch.Width <= (1 << 30));
+        sketch.Add(7, 3);
+        Assert.True(sketch.EstimateCount(7) >= 3);
+    }
+
+    // ---------------------------------------------------------------
     //  UnionWith
     // ---------------------------------------------------------------
 
