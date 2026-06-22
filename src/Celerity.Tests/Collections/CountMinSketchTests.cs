@@ -335,6 +335,68 @@ public class CountMinSketchTests
     }
 
     // ---------------------------------------------------------------
+    //  Grid-overflow guard (regression for the depth*width int overflow)
+    // ---------------------------------------------------------------
+
+    // A tiny epsilon clamps the width to 2^30; combined with an ordinary delta the row count
+    // is >= 2, so depth * width overflows a 32-bit array length. Before the guard this threw a
+    // confusing OverflowException (or allocated a wrong-sized grid); now it is a clear
+    // ArgumentOutOfRangeException raised before any allocation.
+    [Fact]
+    public void Constructor_Throws_WhenTinyEpsilonAndDeltaOverflowTheGrid()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-9, 0.01));
+    }
+
+    // A delta small enough that 1/delta overflows to +Infinity pushes the depth formula to an
+    // extreme value. The exact result is runtime-dependent at this boundary — on runtimes where
+    // the double-to-int cast of +Infinity saturates to int.MaxValue the grid is rejected, while
+    // others resolve a finite (large) depth and build a small valid sketch — so the test asserts
+    // only the safety invariant the guard guarantees on every runtime: the constructor never
+    // overflows the grid (no OverflowException, no wrong-sized array that faults on the first
+    // Add). It either rejects the parameters cleanly or builds a usable, correctly-sized sketch.
+    [Fact]
+    public void Constructor_DeltaUnderflow_NeverOverflowsTheGrid()
+    {
+        CountMinSketch<int, Int32Murmur3Hasher> sketch;
+        try
+        {
+            sketch = new CountMinSketch<int, Int32Murmur3Hasher>(0.5, double.Epsilon);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return; // rejected cleanly — the grid would have exceeded the 2^30 ceiling
+        }
+
+        // Built a sketch instead of rejecting: its grid must be sound and usable.
+        Assert.True((long)sketch.Depth * sketch.Width <= (1 << 30));
+        sketch.Add(11, 4);
+        Assert.True(sketch.EstimateCount(11) >= 4);
+    }
+
+    // The overflow guard blames the delta parameter (depth is the unbounded dimension; width
+    // is already individually capped at 2^30).
+    [Fact]
+    public void Constructor_GridOverflow_NamesDeltaParameter()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-9, 0.01));
+        Assert.Equal("delta", ex.ParamName);
+    }
+
+    // Aggressive-but-representable parameters that stay under the 2^30 grid ceiling must still
+    // build a working sketch — the guard rejects only genuinely oversized grids.
+    [Fact]
+    public void Constructor_AggressiveButValidParameters_BuildUsableSketch()
+    {
+        var sketch = new CountMinSketch<int, Int32Murmur3Hasher>(1e-4, 1e-6);
+        Assert.True((long)sketch.Depth * sketch.Width <= (1 << 30));
+        sketch.Add(7, 3);
+        Assert.True(sketch.EstimateCount(7) >= 3);
+    }
+
+    // ---------------------------------------------------------------
     //  UnionWith
     // ---------------------------------------------------------------
 
