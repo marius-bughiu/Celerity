@@ -114,6 +114,10 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     /// <see cref="CeleritySet{T, THasher}"/>.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="source"/> holds <c>2^30</c> or more distinct non-<c>null</c> elements,
+    /// which a power-of-two frozen table cannot represent.
+    /// </exception>
     public FrozenCeleritySet(IEnumerable<string> source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -139,6 +143,16 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
 
         int n = itemList.Count;
         _count = n + (_hasNull ? 1 : 0);
+
+        // A frozen table is a power-of-two array indexed by a mask; the linear-probing
+        // fallback additionally needs at least one empty slot to terminate a miss. Both
+        // require the non-null element count to stay strictly below the 2^30 power-of-two
+        // ceiling (NextPowerOfTwo caps there), so reject an impossible count up front with
+        // a clear error rather than overflow the build search or hang the fallback probe.
+        if (n >= FastUtils.MaxPowerOfTwoCapacity)
+            throw new ArgumentException(
+                $"A frozen set can hold at most {FastUtils.MaxPowerOfTwoCapacity - 1} non-null elements; got {n}.",
+                nameof(source));
 
         // Precompute the raw hash code of every element once; the perfect-hash search
         // re-mixes these with each candidate seed rather than re-hashing the strings.
@@ -361,9 +375,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         int n = itemList.Count;
         int minSize = FastUtils.NextPowerOfTwo(n == 0 ? 1 : n);
 
-        for (int size = minSize, mult = 1;
-             mult <= MAX_SIZE_MULTIPLIER && size <= (1 << 30);
-             size <<= 1, mult <<= 1)
+        // Probe candidate table sizes minSize, 2·minSize, … up to MAX_SIZE_MULTIPLIER·minSize.
+        // Advance via the overflow-safe TryDoubleCapacity rather than a bare `size <<= 1`: once
+        // a candidate reaches the 2^30 ceiling the shift would wrap negative and the next
+        // `new string?[size]` would throw OverflowException instead of cleanly falling back.
+        for (int size = minSize, mult = 1; mult <= MAX_SIZE_MULTIPLIER; mult <<= 1)
         {
             int m = size - 1;
             for (int s = 0; s <= SEED_BUDGET; s++)
@@ -375,6 +391,9 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
                     return true;
                 }
             }
+
+            if (!FastUtils.TryDoubleCapacity(size, out size))
+                break; // reached the 2^30 table ceiling; fall back to linear probing
         }
 
         items = null!;
@@ -420,10 +439,10 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         int n = itemList.Count;
 
         // Size with headroom so at least one slot stays empty — linear probing needs
-        // an empty slot to terminate a miss, and to keep chains short. NextPowerOfTwo
-        // returns a power of two strictly greater than n for every constructible size
-        // (it caps at 2^30, the ceiling a frozen set could ever reach), so the table
-        // always has a vacant slot.
+        // an empty slot to terminate a miss, and to keep chains short. The constructor
+        // rejects n >= 2^30, so n + 1 <= 2^30 and NextPowerOfTwo(n + 1) is a power of two
+        // strictly greater than n (it never has to cap below n + 1), guaranteeing a vacant
+        // slot.
         int size = FastUtils.NextPowerOfTwo(n + 1);
 
         int m = size - 1;

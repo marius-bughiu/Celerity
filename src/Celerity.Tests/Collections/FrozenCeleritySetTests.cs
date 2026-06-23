@@ -150,6 +150,37 @@ public class FrozenCeleritySetTests
             Assert.False(set.Contains("absent-" + i));
     }
 
+    // Every element hashes to the same raw code, so no (size, seed) the perfect-hash
+    // search tries can ever be collision-free. The search exhausts all candidate sizes —
+    // exercising the #228 overflow-safe TryDoubleCapacity advance through the loop — and
+    // then falls back to linear probing.
+    private struct ConstantStringHasher : IHashProvider<string>
+    {
+        public int Hash(string key) => 7;
+    }
+
+    [Fact]
+    public void AllElementsBaseHashColliding_ExhaustSearchThenFallBackCorrectly()
+    {
+        // A degenerate constant hasher forces the perfect-hash search to fail at every
+        // candidate size, so the refactored size-doubling loop runs to completion and the
+        // build falls back. The fallback table must still terminate (a missing element's
+        // probe walks to a guaranteed-empty slot) and answer membership exactly.
+        var items = Enumerable.Range(0, 200).Select(i => "item-" + i).ToArray();
+
+        var set = new FrozenCeleritySet<ConstantStringHasher>(items);
+
+        Assert.False(set.IsPerfectlyHashed);
+        Assert.Equal(200, set.Count);
+        foreach (var item in items)
+            Assert.True(set.Contains(item));
+
+        // Absent elements that mix into the densely-clustered table must still miss
+        // (the probe terminates at the vacant slot the fallback sizing guarantees).
+        for (int i = 200; i < 400; i++)
+            Assert.False(set.Contains("item-" + i));
+    }
+
     // ── Larger random sweep ───────────────────────────────────────────────────
 
     [Fact]
