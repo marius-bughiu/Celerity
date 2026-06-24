@@ -42,6 +42,10 @@ internal static class Differential
         ("BitSet", BitSetCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
+        ("BloomFilterMerge", BloomFilterMergeCase),
+        ("CuckooFilterMerge", CuckooFilterMergeCase),
+        ("HyperLogLogMerge", HyperLogLogMergeCase),
+        ("CountMinSketchMerge", CountMinSketchMergeCase),
     ];
 
     private const int MinKey = -8;
@@ -660,6 +664,124 @@ internal static class Differential
 
         foreach (var (k, count) in oracle)
             Check(sut.EstimateCount(k) >= count, $"underestimate for {k}: {sut.EstimateCount(k)} < {count}");
+    }
+
+    // ---- probabilistic merges (UnionWith) -----------------------------------
+
+    // The four probabilistic types each merge two equally-parameterised siblings with
+    // UnionWith. The merge is the least-exercised correctness path — it touches the raw
+    // bit/counter/register state directly rather than going through Add — so each case
+    // builds two independent filters from separate random streams, merges, and checks the
+    // type's defining invariant survives the merge: a merged filter must report everything
+    // either operand held, exactly as a single filter fed both streams would.
+
+    // Bloom: merge is a bitwise OR, so the no-false-negative guarantee extends to the union —
+    // every element added to either filter must still test present in the merged filter.
+    private static void BloomFilterMergeCase(Random rng)
+    {
+        var a = new BloomFilter<int, Int32WangNaiveHasher>(256);
+        var b = new BloomFilter<int, Int32WangNaiveHasher>(256);
+        var inA = new HashSet<int>();
+        var inB = new HashSet<int>();
+
+        int opsA = OpCount(rng);
+        for (int i = 0; i < opsA; i++) { int k = Key(rng); a.Add(k); inA.Add(k); }
+        int opsB = OpCount(rng);
+        for (int i = 0; i < opsB; i++) { int k = Key(rng); b.Add(k); inB.Add(k); }
+
+        long expectedCount = a.Count + (long)b.Count;
+        a.UnionWith(b);
+
+        foreach (int k in inA) Check(a.Contains(k), $"false negative for {k} (from A) after merge");
+        foreach (int k in inB) Check(a.Contains(k), $"false negative for {k} (from B) after merge");
+        Check(a.Count == expectedCount, $"merged Count {a.Count} != {expectedCount}");
+    }
+
+    // Cuckoo: merge re-homes every stored fingerprint into the destination. The destination's
+    // own elements are never lost even when the merge overflows (it throws part-way), so their
+    // presence is checked unconditionally; the source's elements are guaranteed present only on
+    // a merge that ran to completion. Inserts go through TryAdd so the presence sets only record
+    // fingerprints the filter actually stored (it can refuse once a hot bucket pair saturates).
+    private static void CuckooFilterMergeCase(Random rng)
+    {
+        var a = new CuckooFilter<int, Int32WangNaiveHasher>(512);
+        var b = new CuckooFilter<int, Int32WangNaiveHasher>(512);
+        var inA = new HashSet<int>();
+        var inB = new HashSet<int>();
+
+        int opsA = OpCount(rng);
+        for (int i = 0; i < opsA; i++) { int k = Key(rng); if (a.TryAdd(k)) inA.Add(k); }
+        int opsB = OpCount(rng);
+        for (int i = 0; i < opsB; i++) { int k = Key(rng); if (b.TryAdd(k)) inB.Add(k); }
+
+        bool completed;
+        try { a.UnionWith(b); completed = true; }
+        catch (InvalidOperationException) { completed = false; }
+
+        foreach (int k in inA) Check(a.Contains(k), $"false negative for {k} (from A) after merge");
+        if (completed)
+            foreach (int k in inB) Check(a.Contains(k), $"false negative for {k} (from B) after merge");
+    }
+
+    // HyperLogLog: merge takes the per-register maximum, which is exactly the register state the
+    // combined stream would have produced, so the merged estimate must sit within the same small
+    // linear-counting slack of the exact union cardinality as a single estimator does. The tiny
+    // key domain (<= 33 distinct values) keeps the union deep in the linear-counting regime, and
+    // the collision-free Murmur3 hasher (as in the single-estimator case) keeps the estimate exact
+    // apart from the rare register collision that can undercount by a register.
+    private static void HyperLogLogMergeCase(Random rng)
+    {
+        var a = new HyperLogLog<int, Int32Murmur3Hasher>();
+        var b = new HyperLogLog<int, Int32Murmur3Hasher>();
+        var union = new HashSet<int>();
+
+        int opsA = OpCount(rng);
+        for (int i = 0; i < opsA; i++) { int k = Key(rng); a.Add(k); union.Add(k); }
+        int opsB = OpCount(rng);
+        for (int i = 0; i < opsB; i++) { int k = Key(rng); b.Add(k); union.Add(k); }
+
+        a.UnionWith(b);
+
+        long estimate = a.EstimateCardinality();
+        int exact = union.Count;
+        Check(estimate >= exact - 3 && estimate <= exact + 1,
+            $"merged cardinality estimate {estimate} not within slack of exact {exact}");
+    }
+
+    // Count-Min: merge adds counters elementwise, so the never-underestimate guarantee extends to
+    // the combined stream — every element's merged estimate must be at least its summed exact
+    // frequency — and the total count is exactly the sum of the two operands' totals.
+    private static void CountMinSketchMergeCase(Random rng)
+    {
+        var a = new CountMinSketch<int, Int32WangNaiveHasher>();
+        var b = new CountMinSketch<int, Int32WangNaiveHasher>();
+        var oracle = new Dictionary<int, long>();
+        long totalA = 0, totalB = 0;
+
+        int opsA = OpCount(rng);
+        for (int i = 0; i < opsA; i++)
+        {
+            int k = Key(rng);
+            long w = rng.Next(1, 10);
+            a.Add(k, w);
+            oracle[k] = oracle.GetValueOrDefault(k) + w;
+            totalA += w;
+        }
+        int opsB = OpCount(rng);
+        for (int i = 0; i < opsB; i++)
+        {
+            int k = Key(rng);
+            long w = rng.Next(1, 10);
+            b.Add(k, w);
+            oracle[k] = oracle.GetValueOrDefault(k) + w;
+            totalB += w;
+        }
+
+        a.UnionWith(b);
+
+        foreach (var (k, count) in oracle)
+            Check(a.EstimateCount(k) >= count, $"underestimate for {k} after merge: {a.EstimateCount(k)} < {count}");
+        Check(a.TotalCount == totalA + totalB, $"merged TotalCount {a.TotalCount} != {totalA + totalB}");
     }
 
     // ---- multi-map ----------------------------------------------------------
