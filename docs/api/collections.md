@@ -119,6 +119,23 @@ public void Clear()
 
 Removes all entries. The underlying array capacity is preserved.
 
+#### EnsureCapacity
+
+```csharp
+public int EnsureCapacity(int capacity)
+```
+
+Grows the backing table in a single rehash so it can hold at least `capacity` entries without resizing, and returns the number of entries it can now hold before the next resize. Pre-sizing before a bulk insert of a known size avoids the `O(log n)` incremental rehashes an unsized dictionary pays as it doubles — matching BCL `Dictionary<TKey, TValue>.EnsureCapacity`. The dictionary is never shrunk by this call; if it already has room, no rehash occurs. Throws `ArgumentOutOfRangeException` if `capacity` is negative.
+
+#### TrimExcess
+
+```csharp
+public void TrimExcess()
+public void TrimExcess(int capacity)
+```
+
+Rehashes the entries into the smallest power-of-two table that still holds the current `Count` (the parameterless overload) or at least `capacity` entries (the parameterized overload), reclaiming memory after the dictionary has shrunk via `Remove` / `Clear`. The out-of-band default-key entry is preserved. `TrimExcess(capacity)` throws `ArgumentOutOfRangeException` if `capacity` is less than the current `Count`.
+
 #### GetEnumerator
 
 ```csharp
@@ -160,7 +177,7 @@ foreach (var value in dict.Values) { /* ... */ }
 
 ## RobinHoodDictionary&lt;TKey, TValue, THasher&gt;
 
-A drop-in peer of `CelerityDictionary` that resolves collisions with **Robin Hood** open addressing instead of plain linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
+A drop-in peer of `CelerityDictionary` that resolves collisions with **Robin Hood** open addressing instead of plain linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
 
 ```csharp
 public class RobinHoodDictionary<TKey, TValue, THasher>
@@ -221,7 +238,7 @@ foreach (var kvp in dict)
 
 ## PooledCelerityDictionary&lt;TKey, TValue, THasher&gt;
 
-An allocation-conscious peer of `CelerityDictionary` whose backing arrays are **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. The public surface is identical to `CelerityDictionary` — same indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — with one addition: it implements `IDisposable`.
+An allocation-conscious peer of `CelerityDictionary` whose backing arrays are **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. The public surface is identical to `CelerityDictionary` — same indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — with one addition: it implements `IDisposable`.
 
 ```csharp
 public class PooledCelerityDictionary<TKey, TValue, THasher>
@@ -289,7 +306,7 @@ using (var dict = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher
 
 ## SwissDictionary&lt;TKey, TValue, THasher&gt;
 
-A drop-in peer of `CelerityDictionary` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
+A drop-in peer of `CelerityDictionary` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
 
 ```csharp
 public class SwissDictionary<TKey, TValue, THasher>
@@ -349,7 +366,7 @@ foreach (var kvp in dict)
 
 ## HashCachingDictionary&lt;TKey, TValue, THasher&gt;
 
-A drop-in peer of `CelerityDictionary` that pushes the **struct-of-arrays layout** one step further: alongside the parallel `keys` / `values` arrays it keeps a dense side array of 32-bit hash **fingerprints**, one per slot. A probe scan touches only that compact metadata buffer — comparing the cached fingerprint before it ever reads a key — so cache-cold lookups and lookups with expensive key equality (long strings, large structs) short-circuit on a single integer compare. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probe metadata differs.
+A drop-in peer of `CelerityDictionary` that pushes the **struct-of-arrays layout** one step further: alongside the parallel `keys` / `values` arrays it keeps a dense side array of 32-bit hash **fingerprints**, one per slot. A probe scan touches only that compact metadata buffer — comparing the cached fingerprint before it ever reads a key — so cache-cold lookups and lookups with expensive key equality (long strings, large structs) short-circuit on a single integer compare. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probe metadata differs.
 
 ```csharp
 public class HashCachingDictionary<TKey, TValue, THasher>
@@ -479,6 +496,7 @@ The method signatures and semantics match `CelerityDictionary`:
 - `bool Remove(int key)`
 - `bool Remove(int key, out TValue? value)` — capture overload; `value` is the previous value or `default` if the key was absent.
 - `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management, identical in semantics to `CelerityDictionary` (and to BCL `Dictionary<,>`): `EnsureCapacity` pre-grows the table to hold `capacity` entries without resizing; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`).
 - `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<int, TValue?>`. The out-of-band zero-key entry is yielded first if present. Mutating the dictionary during enumeration throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Iteration order is unspecified and may change between versions.
 
 `IntDictionary<TValue, THasher>` also implements `IReadOnlyDictionary<int, TValue?>` with the same explicit-interface forwarding pattern as `CelerityDictionary`.
@@ -559,6 +577,7 @@ The public surface and semantics match `IntDictionary`:
 - `bool Remove(long key)`
 - `bool Remove(long key, out TValue? value)`
 - `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management, identical in semantics to `CelerityDictionary`.
 - `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<long, TValue?>`.
 - `KeyCollection Keys`, `ValueCollection Values` — allocation-free struct views.
 
@@ -620,6 +639,7 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 - `bool Contains(T item)`
 - `bool Remove(T item)`
 - `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring BCL `HashSet<T>`: `EnsureCapacity` pre-grows the table to hold `capacity` elements without resizing and returns the resulting capacity; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`). The out-of-band `default(T)` slot is preserved. `EnsureCapacity` throws `ArgumentOutOfRangeException` on a negative capacity; `TrimExcess(capacity)` throws if `capacity < Count`.
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty`, `null` for reference types) is yielded first when present.
 
@@ -705,6 +725,7 @@ The `IEnumerable<int>` overload copies elements from `source`, following the sam
 - `bool Contains(int item)`
 - `bool Remove(int item)`
 - `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring BCL `HashSet<T>` (the out-of-band zero element is preserved).
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band zero entry is yielded first when present.
 
@@ -790,6 +811,7 @@ The `IEnumerable<long>` overload copies elements from `source`, following the sa
 - `bool Contains(long item)`
 - `bool Remove(long item)`
 - `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring BCL `HashSet<T>` (the out-of-band zero element is preserved).
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band zero entry is yielded first when present.
 
@@ -1124,6 +1146,8 @@ insertion order; returns an **empty group** if the key is absent (no throw).
 | `int CountValues(TKey key)` | Number of values for the key, or `0` if absent. |
 | `bool TryGetValues(TKey key, out ValueGroup values)` | Non-throwing group lookup. |
 | `void Clear()` | Remove all keys and values; key capacity is preserved. |
+| `int EnsureCapacity(int capacity)` | Pre-grow the **key** table to hold at least `capacity` distinct keys without resizing, returning the resulting key capacity. Only the key table is affected; value groups are untouched. Throws `ArgumentOutOfRangeException` on a negative capacity. |
+| `void TrimExcess()` / `void TrimExcess(int capacity)` | Rehash the key table down to the smallest size that still holds the current distinct-key `Count` (or `capacity`). The out-of-band default-key group and the per-key value groups are preserved. `TrimExcess(capacity)` throws if `capacity < Count`. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator yielding one `Grouping` per distinct key; the default-key group (if present) is yielded first. |
 | `KeyCollection Keys` | Allocation-free struct view over the distinct keys. |
 
@@ -1256,6 +1280,8 @@ key or appends a new one; a pure overwrite never grows the backing arrays.
 | `bool Remove(TKey key)` | Remove by key; returns `false` if absent. |
 | `bool Remove(TKey key, out TValue? value)` | Remove by key, capturing the removed value. |
 | `void Clear()` | Remove all entries; capacity is preserved. |
+| `int EnsureCapacity(int capacity)` | Grow the backing arrays to hold at least `capacity` entries, returning the resulting array length. Like the constructor, the length is **verbatim** (not rounded to a power of two), since there is no probe mask. Throws `ArgumentOutOfRangeException` on a negative capacity. |
+| `void TrimExcess()` / `void TrimExcess(int capacity)` | Shrink the backing arrays to exactly the current `Count` (or `capacity`), reclaiming memory. `TrimExcess(capacity)` throws if `capacity < Count`. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator over the pairs. |
 | `KeyCollection Keys` / `ValueCollection Values` | Allocation-free struct views. |
 

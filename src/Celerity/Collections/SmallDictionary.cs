@@ -309,6 +309,60 @@ public class SmallDictionary<TKey, TValue> : IReadOnlyDictionary<TKey, TValue?>
     }
 
     /// <summary>
+    /// Ensures that the dictionary's backing arrays can hold at least <paramref name="capacity"/>
+    /// entries without growing, enlarging them in a single copy if they are currently smaller.
+    /// Pre-sizing before a bulk insert of a known size avoids the incremental array doublings an
+    /// unsized dictionary would otherwise pay. The dictionary is never shrunk by this call.
+    /// </summary>
+    /// <param name="capacity">The minimum number of entries the backing arrays must hold.</param>
+    /// <returns>The capacity (backing-array length) the dictionary can now hold before it grows.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    public int EnsureCapacity(int capacity)
+    {
+        if (capacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
+
+        if (capacity > _keys.Length)
+        {
+            // Sized verbatim, mirroring the constructor: SmallDictionary has no probe mask, so the
+            // backing arrays need no power-of-two length.
+            Array.Resize(ref _keys, capacity);
+            Array.Resize(ref _values, capacity);
+            _version++;
+        }
+
+        return _keys.Length;
+    }
+
+    /// <summary>
+    /// Reduces the backing arrays to exactly the current <see cref="Count"/>, reclaiming memory after
+    /// the dictionary has shrunk.
+    /// </summary>
+    public void TrimExcess() => TrimExcess(_count);
+
+    /// <summary>
+    /// Reduces (or grows) the backing arrays to hold exactly <paramref name="capacity"/> entries.
+    /// </summary>
+    /// <param name="capacity">
+    /// The number of entries to size the arrays for. Must be at least the current <see cref="Count"/>.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>.
+    /// </exception>
+    public void TrimExcess(int capacity)
+    {
+        if (capacity < _count)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
+
+        if (capacity != _keys.Length)
+        {
+            Array.Resize(ref _keys, capacity);
+            Array.Resize(ref _values, capacity);
+            _version++;
+        }
+    }
+
+    /// <summary>
     /// Returns an allocation-free enumerator that yields each key/value pair
     /// stored in the dictionary. The enumeration order is unspecified and may
     /// change across versions; do not rely on it. If the dictionary is modified

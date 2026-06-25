@@ -65,6 +65,51 @@ public static class FastUtils
         return currentCapacity * 2;
     }
 
+    /// <summary>
+    /// Computes the smallest power-of-two hash-table size whose load-factor threshold admits
+    /// <paramref name="entryCount"/> entries without triggering a resize — i.e. the smallest
+    /// power of two <c>s</c> for which <c>(int)(s * loadFactor) &gt;= entryCount</c>, capped at
+    /// <see cref="MaxPowerOfTwoCapacity"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is the sizing primitive behind <c>EnsureCapacity</c> / <c>TrimExcess</c> on the
+    /// open-addressed collections: a table resizes once its live count reaches
+    /// <c>(int)(size * loadFactor)</c>, so holding <paramref name="entryCount"/> entries without a
+    /// rehash requires a table whose truncated threshold is at least that count. Because
+    /// <see cref="NextPowerOfTwo"/> alone only guarantees <c>size &gt;= entryCount</c> (not
+    /// <c>threshold &gt;= entryCount</c>), this doubles past the rounding shortfall until the
+    /// threshold admits the count or the capacity ceiling is hit. For a strictly positive
+    /// <paramref name="loadFactor"/> below 1 the returned size always strictly exceeds
+    /// <paramref name="entryCount"/>, so the table is guaranteed at least one vacant slot.
+    /// </remarks>
+    /// <param name="entryCount">
+    /// The number of entries the table must hold without resizing. Values <c>&lt;= 0</c> return the
+    /// minimum table size of <c>1</c>.
+    /// </param>
+    /// <param name="loadFactor">
+    /// The table's load factor, strictly between 0 and 1. Values outside that range are clamped
+    /// into it so the helper never divides by a non-positive or &gt;= 1 factor.
+    /// </param>
+    /// <returns>
+    /// The smallest power-of-two size satisfying the threshold, never exceeding
+    /// <see cref="MaxPowerOfTwoCapacity"/> (which it returns when no power-of-two table can hold the
+    /// requested count).
+    /// </returns>
+    public static int MinTableSizeFor(int entryCount, float loadFactor)
+    {
+        if (entryCount <= 0)
+            return 1;
+        if (loadFactor <= 0f)
+            loadFactor = 0.0001f;
+        else if (loadFactor >= 1f)
+            loadFactor = 0.9999f;
+
+        int size = NextPowerOfTwo(entryCount);
+        while (size < MaxPowerOfTwoCapacity && (int)(size * loadFactor) < entryCount)
+            size <<= 1;
+        return size;
+    }
+
     // ── FastMod / FastDiv (Lemire reciprocal modulo & division) ─────────────────────────
     //
     // Daniel Lemire's "Faster Remainder by Direct Computation" (Lemire, Kaser, Kurz, 2019):

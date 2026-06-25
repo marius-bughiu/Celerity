@@ -476,6 +476,63 @@ public class SwissDictionary<TKey, TValue, THasher>
     }
 
     /// <summary>
+    /// Ensures that the dictionary can hold at least <paramref name="capacity"/> entries without
+    /// resizing, growing the backing table in a single rebuild if it is currently smaller. Pre-sizing
+    /// before a bulk insert of a known size avoids the incremental rehashes an unsized dictionary
+    /// would otherwise pay as it grows. The dictionary is never shrunk by this call.
+    /// </summary>
+    /// <param name="capacity">The minimum number of entries the dictionary must hold without resizing.</param>
+    /// <returns>The number of entries the dictionary can now hold before the next resize.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    public int EnsureCapacity(int capacity)
+    {
+        if (capacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
+
+        if (_threshold < capacity)
+        {
+            int newCapacity = Math.Max(GROUP_WIDTH, FastUtils.MinTableSizeFor(capacity, _loadFactor));
+            if (newCapacity > _capacity)
+            {
+                Resize(newCapacity);
+                _version++;
+            }
+        }
+
+        return _threshold;
+    }
+
+    /// <summary>
+    /// Reduces the backing table to the smallest valid size (a power of two, at least one SIMD group)
+    /// that still holds the current <see cref="Count"/> without resizing, dropping accumulated
+    /// tombstones and reclaiming memory. The out-of-band default-key entry is preserved.
+    /// </summary>
+    public void TrimExcess() => TrimExcess(_count);
+
+    /// <summary>
+    /// Reduces (or grows) the backing table to the smallest valid size that holds at least
+    /// <paramref name="capacity"/> entries without resizing.
+    /// </summary>
+    /// <param name="capacity">
+    /// The number of entries to size the table for. Must be at least the current <see cref="Count"/>.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>.
+    /// </exception>
+    public void TrimExcess(int capacity)
+    {
+        if (capacity < _count)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
+
+        int newCapacity = Math.Max(GROUP_WIDTH, FastUtils.MinTableSizeFor(capacity, _loadFactor));
+        if (newCapacity != _capacity)
+        {
+            Resize(newCapacity);
+            _version++;
+        }
+    }
+
+    /// <summary>
     /// Returns an allocation-free enumerator that yields each key/value pair
     /// stored in the dictionary. The enumeration order is unspecified and may
     /// change across versions; do not rely on it. If the dictionary is modified
@@ -888,12 +945,18 @@ public class SwissDictionary<TKey, TValue, THasher>
     // live load justifies real growth; otherwise rehashes at the same size to
     // reclaim tombstones (so a churn of insert/delete cycles cannot grow the table
     // without bound). The out-of-band default-key entry is untouched.
-    private void Resize()
-    {
-        int newCapacity = _count - (_hasDefaultKey ? 1 : 0) >= (_threshold >> 1)
+    private void Resize() => Resize(
+        _count - (_hasDefaultKey ? 1 : 0) >= (_threshold >> 1)
             ? FastUtils.DoubleCapacity(_capacity)
-            : _capacity;
+            : _capacity);
 
+    // Rebuilds the table at the given power-of-two capacity, dropping all tombstones and recomputing
+    // the group mask, threshold, and growth budget. Shared by the doubling/rehash growth path and
+    // the EnsureCapacity / TrimExcess re-sizers, which pass an explicit target. The caller guarantees
+    // newCapacity is a power of two no smaller than GROUP_WIDTH and strictly greater than the live
+    // (non-default) entry count, so every PlaceFresh terminates.
+    private void Resize(int newCapacity)
+    {
         sbyte[] oldControls = _controls;
         TKey?[] oldKeys = _keys;
         TValue?[] oldValues = _values;

@@ -319,6 +319,63 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
     }
 
     /// <summary>
+    /// Ensures that the set can hold at least <paramref name="capacity"/> elements without resizing,
+    /// growing the backing table in a single rehash if it is currently smaller. Pre-sizing before a
+    /// bulk insert of a known size avoids the incremental rehashes an unsized set would otherwise pay
+    /// as it grows. The set is never shrunk by this call.
+    /// </summary>
+    /// <param name="capacity">The minimum number of elements the set must hold without resizing.</param>
+    /// <returns>The number of elements the set can now hold before the next resize.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    public int EnsureCapacity(int capacity)
+    {
+        if (capacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
+
+        if (_threshold < capacity)
+        {
+            int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+            if (newSize > _slots.Length)
+            {
+                Resize(newSize);
+                _version++;
+            }
+        }
+
+        return _threshold;
+    }
+
+    /// <summary>
+    /// Reduces the backing table to the smallest power-of-two size that still holds the current
+    /// <see cref="Count"/> without resizing, reclaiming memory after the set has shrunk. The
+    /// out-of-band zero entry is preserved.
+    /// </summary>
+    public void TrimExcess() => TrimExcess(_count);
+
+    /// <summary>
+    /// Reduces (or grows) the backing table to the smallest power-of-two size that holds at least
+    /// <paramref name="capacity"/> elements without resizing.
+    /// </summary>
+    /// <param name="capacity">
+    /// The number of elements to size the table for. Must be at least the current <see cref="Count"/>.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>.
+    /// </exception>
+    public void TrimExcess(int capacity)
+    {
+        if (capacity < _count)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
+
+        int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+        if (newSize != _slots.Length)
+        {
+            Resize(newSize);
+            _version++;
+        }
+    }
+
+    /// <summary>
     /// Returns an allocation-free enumerator that yields each element stored in
     /// the set. The enumeration order is unspecified and may change across
     /// versions; do not rely on it. The out-of-band zero entry (if present) is
@@ -455,9 +512,14 @@ public class LongSet<THasher> : IEnumerable<long> where THasher : struct, IHashP
         }
     }
 
-    private void Resize()
+    private void Resize() => Resize(FastUtils.DoubleCapacity(_slots.Length));
+
+    // Rehashes every live element into a freshly allocated table of the given power-of-two size.
+    // Shared by the doubling growth path and the EnsureCapacity / TrimExcess re-sizers, which pass
+    // an explicit target. The caller guarantees newSize is a power of two strictly greater than the
+    // in-table live count (so the probe loop always finds a vacant slot).
+    private void Resize(int newSize)
     {
-        int newSize = FastUtils.DoubleCapacity(_slots.Length);
         int mask = newSize - 1;
         long[] oldSlots = _slots;
 
