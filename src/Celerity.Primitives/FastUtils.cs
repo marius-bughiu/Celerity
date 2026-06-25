@@ -46,8 +46,9 @@ public static class FastUtils
     /// already reached <see cref="MaxPowerOfTwoCapacity"/>. The naive <c>capacity * 2</c> at
     /// that point computes <c>2^31</c>, which overflows a signed <see cref="int"/> to a
     /// negative value and corrupts the slot mask (<c>newSize - 1</c>); this method fails fast
-    /// with a clear error instead. Mirrors the <c>size &lt;= MaxPowerOfTwoCapacity</c> guard in
-    /// the frozen-collection build loops.
+    /// with a clear error instead. The non-throwing <see cref="TryDoubleCapacity"/> is the
+    /// loop-friendly sibling used by the frozen-collection build search, which probes a series
+    /// of candidate sizes and must stop cleanly at the ceiling rather than throw.
     /// </summary>
     /// <param name="currentCapacity">The current power-of-two capacity to double.</param>
     /// <returns><c>currentCapacity * 2</c>.</returns>
@@ -63,6 +64,39 @@ public static class FastUtils
                 $"Collection cannot grow beyond its maximum capacity of {MaxPowerOfTwoCapacity} slots.");
 
         return currentCapacity * 2;
+    }
+
+    /// <summary>
+    /// Attempts to double a power-of-two capacity without overflowing, returning <c>false</c>
+    /// when the table has already reached <see cref="MaxPowerOfTwoCapacity"/> (the largest
+    /// power of two representable as a signed <see cref="int"/>). This is the non-throwing
+    /// counterpart of <see cref="DoubleCapacity"/>, intended for loops that probe a sequence of
+    /// candidate sizes and need to halt cleanly at the ceiling — for example the frozen
+    /// collections' perfect-hash build search. Using a bare <c>size &lt;&lt;= 1</c> there is
+    /// unsafe: once <c>size</c> reaches <c>2^30</c> the shift wraps to a negative value that
+    /// still passes a <c>size &lt;= 2^30</c> guard, so the next iteration allocates a
+    /// negative-length array and throws <see cref="OverflowException"/>.
+    /// </summary>
+    /// <param name="currentCapacity">The current power-of-two capacity to double.</param>
+    /// <param name="doubled">
+    /// When this method returns <c>true</c>, the doubled capacity (<c>currentCapacity * 2</c>);
+    /// when it returns <c>false</c>, <paramref name="currentCapacity"/> unchanged.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> if the capacity was doubled without exceeding <see cref="MaxPowerOfTwoCapacity"/>;
+    /// <c>false</c> if <paramref name="currentCapacity"/> is already at or above the ceiling.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryDoubleCapacity(int currentCapacity, out int doubled)
+    {
+        if (currentCapacity >= MaxPowerOfTwoCapacity)
+        {
+            doubled = currentCapacity;
+            return false;
+        }
+
+        doubled = currentCapacity * 2;
+        return true;
     }
 
     // ── FastMod / FastDiv (Lemire reciprocal modulo & division) ─────────────────────────
