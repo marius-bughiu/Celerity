@@ -186,6 +186,42 @@ public class FrozenCelerityDictionaryTests
             Assert.False(dict.ContainsKey("absent-" + i));
     }
 
+    // Every key hashes to the same raw code, so no (size, seed) the perfect-hash search
+    // tries can ever be collision-free. The search exhausts all candidate sizes —
+    // exercising the #228 overflow-safe TryDoubleCapacity advance through the loop — and
+    // then falls back to linear probing.
+    private struct ConstantStringHasher : IHashProvider<string>
+    {
+        public int Hash(string key) => 7;
+    }
+
+    [Fact]
+    public void AllKeysBaseHashColliding_ExhaustSearchThenFallBackCorrectly()
+    {
+        // A degenerate constant hasher forces the perfect-hash search to fail at every
+        // candidate size, so the refactored size-doubling loop runs to completion and the
+        // build falls back. The fallback table must still terminate (a missing key's probe
+        // walks to a guaranteed-empty slot) and look up every key exactly.
+        var pairs = Enumerable.Range(0, 200)
+            .Select(i => new KeyValuePair<string, int>("key-" + i, i))
+            .ToArray();
+
+        var dict = new FrozenCelerityDictionary<int, ConstantStringHasher>(pairs);
+
+        Assert.False(dict.IsPerfectlyHashed);
+        Assert.Equal(200, dict.Count);
+        foreach (var p in pairs)
+        {
+            Assert.True(dict.TryGetValue(p.Key, out int v));
+            Assert.Equal(p.Value, v);
+        }
+
+        // Absent keys that mix into the densely-clustered table must still miss
+        // (the probe terminates at the vacant slot the fallback sizing guarantees).
+        for (int i = 200; i < 400; i++)
+            Assert.False(dict.ContainsKey("key-" + i));
+    }
+
     // ── Larger random sweep: every key round-trips, all absent keys miss ───────
 
     [Fact]

@@ -864,6 +864,11 @@ empty string `""` is an ordinary key.
 - Throws `ArgumentNullException` if `source` is `null`.
 - Throws `ArgumentException` on a duplicate key (including a duplicate `null` key),
   matching BCL `FrozenDictionary` and the mutable Celerity dictionaries.
+- Throws `ArgumentException` if `source` holds `2^30` or more distinct non-`null` keys —
+  the frozen table is a power-of-two array and a fallback build needs at least one empty
+  slot, so the non-`null` key count must stay below the `2^30` ceiling (`NextPowerOfTwo`
+  caps there). In practice this is unreachable (a billion distinct string keys is tens of
+  GB); the guard fails fast with a clear error rather than overflowing the build search.
 
 ### Properties
 
@@ -988,6 +993,9 @@ out-of-band; the empty string `""` is an ordinary element.
   the defining property of a set, matching BCL `FrozenSet` and the mutable
   `CeleritySet`. (This is the one contract difference from `FrozenCelerityDictionary`,
   which *rejects* duplicate keys.)
+- Throws `ArgumentException` if `source` holds `2^30` or more distinct non-`null`
+  elements (the same power-of-two-table ceiling as `FrozenCelerityDictionary`;
+  unreachable in practice, guarded for robustness).
 
 ### Properties
 

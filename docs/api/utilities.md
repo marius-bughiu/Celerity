@@ -28,22 +28,25 @@ Returns the smallest power of two that is greater than or equal to `n`.
 
 **Used by** all the Celerity collections (`CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`, `LongSet`) to round the user-supplied capacity to a power of two, which enables fast index computation via bitwise AND instead of modulo.
 
-### MaxPowerOfTwoCapacity / DoubleCapacity
+### MaxPowerOfTwoCapacity / DoubleCapacity / TryDoubleCapacity
 
 ```csharp
 public const int MaxPowerOfTwoCapacity = 1 << 30;   // 1,073,741,824
-public static int DoubleCapacity(int currentCapacity)
+public static int  DoubleCapacity(int currentCapacity);
+public static bool TryDoubleCapacity(int currentCapacity, out int doubled);
 ```
 
 `MaxPowerOfTwoCapacity` is the hard ceiling on the backing-array size of every open-addressed Celerity collection: the next power of two (`2^31`) overflows a signed `int`, so a table can never grow past `2^30` slots. `NextPowerOfTwo` already caps its result here.
 
-`DoubleCapacity` is the guarded `* 2` the collections use in their `Resize()` paths. It returns `currentCapacity * 2`, but throws `InvalidOperationException` when `currentCapacity` is already at or above `MaxPowerOfTwoCapacity` rather than computing `2^31` and overflowing to a negative size (which would corrupt the `newSize - 1` slot mask). This mirrors the `size <= MaxPowerOfTwoCapacity` guard the frozen-collection build loops already use.
+`DoubleCapacity` is the guarded `* 2` the collections use in their `Resize()` paths. It returns `currentCapacity * 2`, but throws `InvalidOperationException` when `currentCapacity` is already at or above `MaxPowerOfTwoCapacity` rather than computing `2^31` and overflowing to a negative size (which would corrupt the `newSize - 1` slot mask).
+
+`TryDoubleCapacity` is the non-throwing sibling for loops that *probe* a sequence of candidate sizes and need to halt cleanly at the ceiling rather than throw — for example the frozen collections' perfect-hash build search. It sets `doubled = currentCapacity * 2` and returns `true` below the ceiling, or leaves `doubled` unchanged and returns `false` at/above it. Advancing such a loop with a bare `size <<= 1` is unsafe: once `size` reaches `2^30` the shift wraps to a negative value that still passes a `size <= 2^30` guard, so the next iteration allocates a negative-length array and throws `OverflowException` (the bug fixed in #228).
 
 **Special cases:**
 
-- `currentCapacity < 2^30` returns `currentCapacity * 2`.
+- `currentCapacity < 2^30` returns `currentCapacity * 2` (`TryDoubleCapacity` returns `true`).
 - `currentCapacity == 2^29` returns exactly `2^30` (the last legal growth).
-- `currentCapacity >= 2^30` throws `InvalidOperationException` ("cannot grow beyond its maximum capacity").
+- `currentCapacity >= 2^30`: `DoubleCapacity` throws `InvalidOperationException` ("cannot grow beyond its maximum capacity"); `TryDoubleCapacity` returns `false` and leaves `doubled` at `currentCapacity`.
 
 **Capacity limit.** In practice this ceiling is only reached by a single collection holding on the order of ~800M live entries (8+ GB of backing arrays at the default 0.75 load factor). At that point the collection throws a clear capacity error on the *next* growth instead of silently corrupting its state — Celerity collections are not designed to hold more than `2^30` slots; partition across multiple instances if you need more.
 
