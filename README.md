@@ -390,7 +390,7 @@ Celerity is **Native AOT and trimming compatible** — no reflection, runtime co
 
 ## API at a glance
 
-The dictionaries mirror the parts of `Dictionary<TKey, TValue>` most callers reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove` (both overloads), `Clear`, `Count`, `Keys`, `Values`, `GetEnumerator()`. They implement `IReadOnlyDictionary<TKey, TValue?>` and accept an `IEnumerable<KeyValuePair<TKey, TValue>>` at construction. The sets expose `Add`, `TryAdd`, `Contains`, `Remove`, `Clear`, `Count`, and a struct enumerator. The zero / `default(TKey)` key (or element) is stored out-of-band so it never collides with the empty-slot sentinel.
+The dictionaries mirror the parts of `Dictionary<TKey, TValue>` most callers reach for: indexer get/set, `ContainsKey`, `TryGetValue`, `Add`, `TryAdd`, `Remove` (both overloads), `Clear`, `EnsureCapacity` / `TrimExcess`, `Count`, `Keys`, `Values`, `GetEnumerator()`. They implement `IReadOnlyDictionary<TKey, TValue?>` and accept an `IEnumerable<KeyValuePair<TKey, TValue>>` at construction. The sets expose `Add`, `TryAdd`, `Contains`, `Remove`, `Clear`, `EnsureCapacity` / `TrimExcess`, `Count`, and a struct enumerator. `EnsureCapacity(n)` pre-grows the table once for a known-size bulk insert (no incremental rehashes); `TrimExcess()` rehashes back down to fit `Count`. The zero / `default(TKey)` key (or element) is stored out-of-band so it never collides with the empty-slot sentinel.
 
 Full constructors, signatures, exceptions, and per-type examples: **[API reference](docs/README.md)**.
 

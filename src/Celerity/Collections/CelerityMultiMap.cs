@@ -441,6 +441,65 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     }
 
     /// <summary>
+    /// Ensures that the key table can hold at least <paramref name="capacity"/> distinct keys without
+    /// resizing, growing it in a single rehash if it is currently smaller. Pre-sizing before bulk
+    /// population with a known number of distinct keys avoids the incremental rehashes an unsized map
+    /// would otherwise pay. Only the key table is affected; the per-key value groups are untouched.
+    /// The map is never shrunk by this call.
+    /// </summary>
+    /// <param name="capacity">The minimum number of distinct keys the key table must hold without resizing.</param>
+    /// <returns>The number of distinct keys the map can now hold before the next resize.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    public int EnsureCapacity(int capacity)
+    {
+        if (capacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
+
+        if (_threshold < capacity)
+        {
+            int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+            if (newSize > _keys.Length)
+            {
+                Resize(newSize);
+                _version++;
+            }
+        }
+
+        return _threshold;
+    }
+
+    /// <summary>
+    /// Reduces the key table to the smallest power-of-two size that still holds the current distinct
+    /// key <see cref="Count"/> without resizing, reclaiming memory after keys have been removed. The
+    /// out-of-band default-key group and the per-key value groups are preserved.
+    /// </summary>
+    public void TrimExcess() => TrimExcess(_count);
+
+    /// <summary>
+    /// Reduces (or grows) the key table to the smallest power-of-two size that holds at least
+    /// <paramref name="capacity"/> distinct keys without resizing.
+    /// </summary>
+    /// <param name="capacity">
+    /// The number of distinct keys to size the table for. Must be at least the current distinct key
+    /// <see cref="Count"/>.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is less than the current distinct key <see cref="Count"/>.
+    /// </exception>
+    public void TrimExcess(int capacity)
+    {
+        if (capacity < _count)
+            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
+
+        int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+        if (newSize != _keys.Length)
+        {
+            Resize(newSize);
+            _version++;
+        }
+    }
+
+    /// <summary>
     /// Returns an allocation-free enumerator that yields one
     /// <see cref="Grouping"/> per distinct key. The enumeration order is
     /// unspecified and may change across versions; do not rely on it. If the map
@@ -558,9 +617,14 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         }
     }
 
-    private void Resize()
+    private void Resize() => Resize(FastUtils.DoubleCapacity(_keys.Length));
+
+    // Rehashes every live key (and its value-group reference) into a freshly allocated key table of
+    // the given power-of-two size. Shared by the doubling growth path and the EnsureCapacity /
+    // TrimExcess re-sizers, which pass an explicit target. The caller guarantees newSize is a power
+    // of two strictly greater than the in-table distinct-key count (so the probe loop terminates).
+    private void Resize(int newSize)
     {
-        int newSize = FastUtils.DoubleCapacity(_keys.Length);
         int mask = newSize - 1;
         TKey?[] oldKeys = _keys;
         List<TValue?>?[] oldGroups = _groups;

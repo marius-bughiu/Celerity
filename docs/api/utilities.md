@@ -50,6 +50,24 @@ public static bool TryDoubleCapacity(int currentCapacity, out int doubled);
 
 **Capacity limit.** In practice this ceiling is only reached by a single collection holding on the order of ~800M live entries (8+ GB of backing arrays at the default 0.75 load factor). At that point the collection throws a clear capacity error on the *next* growth instead of silently corrupting its state — Celerity collections are not designed to hold more than `2^30` slots; partition across multiple instances if you need more.
 
+### MinTableSizeFor
+
+```csharp
+public static int MinTableSizeFor(int entryCount, float loadFactor)
+```
+
+The sizing primitive behind the collections' `EnsureCapacity` / `TrimExcess` methods: it returns the smallest power-of-two table size whose truncated load-factor threshold (`(int)(size * loadFactor)`) admits `entryCount` entries — i.e. the size a hash table must reach to hold that many entries without resizing. `NextPowerOfTwo(entryCount)` alone only guarantees `size >= entryCount`, not `threshold >= entryCount`, so this doubles past the rounding shortfall until the threshold fits. For a load factor strictly between 0 and 1 the result always strictly exceeds `entryCount`, so the table is guaranteed at least one vacant slot.
+
+**Special cases:**
+
+- `entryCount <= 0` returns the minimum table size of `1`.
+- A `loadFactor` outside `(0, 1)` is clamped into that range rather than dividing by a non-positive or `>= 1` factor (so the helper never loops forever or throws).
+- An `entryCount` too large for any power-of-two table at the given load factor saturates at `MaxPowerOfTwoCapacity` rather than overflowing.
+
+```csharp
+int size = FastUtils.MinTableSizeFor(1000, 0.75f);   // 2048: (int)(2048 * 0.75) == 1536 >= 1000
+```
+
 ### FastMod / FastDiv
 
 ```csharp

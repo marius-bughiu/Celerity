@@ -796,6 +796,30 @@ void Check(bool condition, string message)
     Check(ok64, "FastUtils.FastMod/FastDiv (64-bit) match operators");
 }
 
+// FastUtils.MinTableSizeFor + EnsureCapacity / TrimExcess (#231) — the capacity-management surface.
+// Compiles the new sizing primitive and the shared Resize(int) re-size paths under Native AOT.
+{
+    Check(FastUtils.MinTableSizeFor(0, 0.75f) == 1, "MinTableSizeFor(0) == 1");
+    int sized = FastUtils.MinTableSizeFor(1000, 0.75f);
+    Check((sized & (sized - 1)) == 0 && (int)(sized * 0.75f) >= 1000, "MinTableSizeFor(1000) admits 1000");
+
+    var dict = new IntDictionary<int>();
+    int reported = dict.EnsureCapacity(500);
+    Check(reported >= 500, "IntDictionary.EnsureCapacity grows");
+    for (int i = 1; i <= 500; i++) dict[i] = i * 2;
+    for (int i = 11; i <= 500; i++) dict.Remove(i);
+    dict.TrimExcess();
+    bool dictOk = dict.Count == 10;
+    for (int i = 1; i <= 10; i++) if (!dict.TryGetValue(i, out int dv) || dv != i * 2) dictOk = false;
+    Check(dictOk, "IntDictionary EnsureCapacity/TrimExcess round-trip");
+
+    var set = new CeleritySet<string, StringFnV1AHasher>();
+    set.EnsureCapacity(200);
+    for (int i = 0; i < 200; i++) set.Add($"s{i}");
+    set.TrimExcess();
+    Check(set.Count == 200 && set.Contains("s199"), "CeleritySet EnsureCapacity/TrimExcess round-trip");
+}
+
 // Struct PRNG suite (#192) — value-type, allocation-free, seed-deterministic generators. Exercise every
 // generator's NextUInt64 plus the constrained-generic RandomSourceExtensions surface (NextUInt32 /
 // NextDouble / NextSingle / NextBool / bounded NextInt / NextInt64 / NextBytes) and a generic algorithm
