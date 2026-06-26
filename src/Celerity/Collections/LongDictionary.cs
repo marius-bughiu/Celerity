@@ -237,9 +237,9 @@ public class LongDictionary<TValue, THasher>
                 {
                     _hasZeroKey = true;
                     _count++;
+                    _version++;
                 }
                 _zeroValue = value;
-                _version++;
                 return;
             }
 
@@ -260,9 +260,14 @@ public class LongDictionary<TValue, THasher>
             Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
             Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
 
+            // Only a structural change (a genuinely new entry) invalidates active
+            // enumerators; a pure value overwrite of an existing key leaves
+            // _version untouched, matching BCL Dictionary<,>. See #233.
             if (isNewEntry)
+            {
                 _count++;
-            _version++;
+                _version++;
+            }
         }
     }
 

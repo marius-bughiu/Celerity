@@ -233,9 +233,9 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
                 {
                     _hasDefaultKey = true;
                     _count++;
+                    _version++;
                 }
                 _defaultKeyValue = value;
-                _version++;
                 return;
             }
 
@@ -255,9 +255,14 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
             Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(keys), (nint)(uint)index) = key;
             Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(values), (nint)(uint)index) = value;
 
+            // Only a structural change (a genuinely new entry) invalidates active
+            // enumerators; a pure value overwrite of an existing key leaves
+            // _version untouched, matching BCL Dictionary<,>. See #233.
             if (isNewEntry)
+            {
                 _count++;
-            _version++;
+                _version++;
+            }
         }
     }
 
