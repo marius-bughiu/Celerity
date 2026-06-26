@@ -245,9 +245,9 @@ public class SwissDictionary<TKey, TValue, THasher>
                 {
                     _hasDefaultKey = true;
                     _count++;
+                    _version++;
                 }
                 _defaultKeyValue = value;
-                _version++;
                 return;
             }
 
@@ -258,8 +258,10 @@ public class SwissDictionary<TKey, TValue, THasher>
             ProbeForInsert(key, hash, out int slot, out bool existing);
             if (existing)
             {
+                // Pure value overwrite of an existing key: no structural change,
+                // so _version is left untouched and active enumerators stay
+                // valid, matching BCL Dictionary<,>. See #233.
                 Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), (nint)(uint)slot) = value;
-                _version++;
                 return;
             }
 

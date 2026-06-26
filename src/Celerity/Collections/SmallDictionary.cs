@@ -147,8 +147,10 @@ public class SmallDictionary<TKey, TValue> : IReadOnlyDictionary<TKey, TValue?>
             int index = IndexOfKey(key);
             if (index >= 0)
             {
+                // Pure value overwrite of an existing key: no structural change,
+                // so _version is left untouched and active enumerators stay
+                // valid, matching BCL Dictionary<,>. See #233.
                 _values[index] = value;
-                _version++;
                 return;
             }
 

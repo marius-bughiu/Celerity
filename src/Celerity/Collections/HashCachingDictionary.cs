@@ -222,9 +222,9 @@ public class HashCachingDictionary<TKey, TValue, THasher>
                 {
                     _hasDefaultKey = true;
                     _count++;
+                    _version++;
                 }
                 _defaultKeyValue = value;
-                _version++;
                 return;
             }
 
@@ -242,9 +242,14 @@ public class HashCachingDictionary<TKey, TValue, THasher>
 
             WriteSlot(index, fingerprint, key, value);
 
+            // Only a structural change (a genuinely new entry) invalidates active
+            // enumerators; a pure value overwrite of an existing key leaves
+            // _version untouched, matching BCL Dictionary<,>. See #233.
             if (isNewEntry)
+            {
                 _count++;
-            _version++;
+                _version++;
+            }
         }
     }
 

@@ -142,7 +142,7 @@ Rehashes the entries into the smallest power-of-two table that still holds the c
 public Enumerator GetEnumerator()
 ```
 
-Returns a struct enumerator that yields `KeyValuePair<TKey, TValue?>`. The out-of-band default-key entry is yielded first if present. Mutating the dictionary during enumeration throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Iteration order is unspecified and may change between versions.
+Returns a struct enumerator that yields `KeyValuePair<TKey, TValue?>`. The out-of-band default-key entry is yielded first if present. *Structurally* mutating the dictionary during enumeration — adding a new key, removing a key, or `Clear` — throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Overwriting the value of an existing key via the indexer (`dict[existingKey] = newValue`) is *not* a structural change and does not invalidate an active enumerator, so the common "iterate and update values in place" pattern is legal. Iteration order is unspecified and may change between versions.
 
 ### IReadOnlyDictionary&lt;TKey, TValue?&gt;
 
@@ -497,7 +497,7 @@ The method signatures and semantics match `CelerityDictionary`:
 - `bool Remove(int key, out TValue? value)` — capture overload; `value` is the previous value or `default` if the key was absent.
 - `void Clear()`
 - `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management, identical in semantics to `CelerityDictionary` (and to BCL `Dictionary<,>`): `EnsureCapacity` pre-grows the table to hold `capacity` entries without resizing; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`).
-- `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<int, TValue?>`. The out-of-band zero-key entry is yielded first if present. Mutating the dictionary during enumeration throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Iteration order is unspecified and may change between versions.
+- `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<int, TValue?>`. The out-of-band zero-key entry is yielded first if present. *Structurally* mutating the dictionary during enumeration — adding a new key, removing a key, or `Clear` — throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Overwriting the value of an existing key via the indexer is *not* a structural change and does not invalidate an active enumerator. Iteration order is unspecified and may change between versions.
 
 `IntDictionary<TValue, THasher>` also implements `IReadOnlyDictionary<int, TValue?>` with the same explicit-interface forwarding pattern as `CelerityDictionary`.
 
