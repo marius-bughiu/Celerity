@@ -404,6 +404,30 @@ void Check(bool condition, string message)
     Check(multiGuid[System.Guid.Empty][0] == 7, "CelerityMultiMap<Guid, int, GuidHasher>");
 }
 
+// CelerityMultiSet — counting multiset (element -> multiplicity): counting Adds,
+// the out-of-band default/null element, the two removal shapes, SetCount, and the
+// (element, count) enumeration.
+{
+    var bag = new CelerityMultiSet<string, StringFnV1AHasher>();
+    bag.Add("a");
+    bag.Add("a");
+    bag.Add("b", 3);
+    bag.Add(null!, 2); // out-of-band default element
+    Check(bag.Count == 3 && bag.TotalCount == 7, "CelerityMultiSet counts");
+    Check(bag["a"] == 2 && bag[null!] == 2, "CelerityMultiSet multiplicity + null element");
+    Check(bag.Remove("a") && bag["a"] == 1, "CelerityMultiSet.Remove decrements");
+    Check(bag.RemoveAll("b") && !bag.Contains("b"), "CelerityMultiSet.RemoveAll");
+    Check(bag.SetCount("c", 5) == 0 && bag["c"] == 5, "CelerityMultiSet.SetCount creates");
+    Check(bag.SetCount("c", 0) == 5 && !bag.Contains("c"), "CelerityMultiSet.SetCount removes");
+
+    int distinct = 0;
+    foreach (var pair in bag) distinct += pair.Value > 0 ? 1 : 0;
+    Check(distinct == bag.Count, "CelerityMultiSet enumeration");
+
+    var bagFromSeq = new CelerityMultiSet<int, Int32WangNaiveHasher>(new[] { 1, 1, 2 });
+    Check(bagFromSeq[1] == 2 && bagFromSeq[2] == 1, "CelerityMultiSet IEnumerable<T> counting ctor");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.

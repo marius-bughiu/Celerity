@@ -1849,4 +1849,93 @@ public class IEnumerableConstructorTests
         for (int i = 1; i <= 500; i++)
             Assert.Equal(i * 3, map[i]);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  CelerityMultiSet — the IEnumerable<T> counting constructor.
+    //  Shares the null-source / sizing / copy-fidelity invariants with the
+    //  sets, but DIFFERS on duplicate elements: a multiset counts them rather
+    //  than deduplicating, so the duplicate occurrences raise the multiplicity
+    //  (the counting behaviour is asserted instead of set-style dedup).
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CelerityMultiSet_ShouldThrow_ForNullSource()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new CelerityMultiSet<int, Int32WangNaiveHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void CelerityMultiSet_ShouldCountDuplicateElements()
+    {
+        var source = new[] { "a", "b", "a", "a" };
+
+        var set = new CelerityMultiSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(2, set.Count);
+        Assert.Equal(4L, set.TotalCount);
+        Assert.Equal(3, set["a"]);
+        Assert.Equal(1, set["b"]);
+    }
+
+    [Fact]
+    public void CelerityMultiSet_ShouldCount_FromNonCollectionEnumerable()
+    {
+        IEnumerable<int> NonCollectionSource()
+        {
+            yield return 1;
+            yield return 2;
+            yield return 1;
+        }
+
+        var set = new CelerityMultiSet<int, Int32WangNaiveHasher>(NonCollectionSource());
+
+        Assert.Equal(2, set.Count);
+        Assert.Equal(2, set[1]);
+        Assert.Equal(1, set[2]);
+    }
+
+    [Fact]
+    public void CelerityMultiSet_ShouldCaptureNullStringElement_FromSource()
+    {
+        var source = new string?[] { null, null, "a" };
+
+        var set = new CelerityMultiSet<string, StringFnV1AHasher>(source!);
+
+        Assert.Equal(2, set.Count);
+        Assert.True(set.Contains(null!));
+        Assert.Equal(2, set[null!]);
+        Assert.Equal(1, set["a"]);
+    }
+
+    [Fact]
+    public void CelerityMultiSet_ShouldCount_LargeSource_WithoutDataLoss()
+    {
+        var source = Enumerable.Range(1, 500).Select(i => "key-" + i).ToArray();
+
+        var set = new CelerityMultiSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(500, set.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.Equal(1, set["key-" + i]);
+    }
+
+    [Fact]
+    public void CelerityMultiSet_ShouldBeIndependent_OfSourceAfterConstruction()
+    {
+        var source = new List<string> { "1", "2" };
+
+        var set = new CelerityMultiSet<string, StringFnV1AHasher>(source);
+
+        source.Add("3");
+        source[0] = "MUTATED";
+
+        Assert.Equal(2, set.Count);
+        Assert.Equal(1, set["1"]);
+        Assert.False(set.Contains("3"));
+    }
 }

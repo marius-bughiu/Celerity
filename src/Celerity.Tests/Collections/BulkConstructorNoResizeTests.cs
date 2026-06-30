@@ -240,6 +240,22 @@ public class BulkConstructorNoResizeTests
             Assert.Equal(new[] { i * 10 }, map[i].ToArray());
     }
 
+    // ── MultiSet ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CelerityMultiSet_BulkConstruct_FromKnownDistinctCount_DoesNotResize()
+    {
+        int[] src = Enumerable.Range(1, N).ToArray();
+        _hashCallCount = 0;
+
+        var set = new CelerityMultiSet<int, CountingIntHasher>(src);
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(1, set[i]);
+    }
+
     // ── Load-factor scaling: the headroom must track a non-default load factor ────
 
     [Theory]

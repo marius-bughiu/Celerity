@@ -1207,6 +1207,122 @@ ILookup<string, string> lookup = subs;
 var counts = lookup.ToDictionary(g => g.Key, g => g.Count());
 ```
 
+## CelerityMultiSet&lt;T, THasher&gt;
+
+```csharp
+public class CelerityMultiSet<T, THasher>
+    : IEnumerable<KeyValuePair<T, int>>
+    where THasher : struct, IHashProvider<T>
+```
+
+A **counting multiset** (a.k.a. *bag* or *counter*): each distinct element maps to
+its occurrence *count* (multiplicity) rather than being simply present or absent. It
+is the natural sibling of [`CelerityMultiMap`](#celeritymultimaptkey-tvalue-thasher)
+— where the multi-map maps one key to many values, the multiset maps one element to
+a count — and shares the same open-addressed, linear-probing table and struct-hasher
+constraint as [`CelerityDictionary`](#celeritydictionarytkey-tvalue-thasher).
+Alongside each element slot is its multiplicity (a strictly positive `int`; an
+element whose count would drop to zero is removed).
+
+The headline workload is **frequency / histogram counting**. The idiomatic BCL
+approach is `Dictionary<T,int>` with `d[x] = d.GetValueOrDefault(x) + 1`, which
+performs *two* hash probes per item (one to read, one to write); `Add` does it in a
+*single* probe-and-increment and runs the element hash through the devirtualized
+struct hasher, so it also holds up on clustered / adversarial key shapes. The BCL
+has no multiset / `Counter` type at all.
+
+`Count` is the number of **distinct elements** (the number of entries you
+enumerate); `TotalCount` is the sum of all multiplicities — mirroring
+`CelerityMultiMap`'s `Count` / `ValueCount` split.
+
+### Constructors
+
+```csharp
+CelerityMultiSet(int capacity = 16, float loadFactor = 0.75f)
+CelerityMultiSet(IEnumerable<T> source, int capacity = 16, float loadFactor = 0.75f)
+```
+
+- `capacity` is the initial *distinct-element* capacity, rounded up to the next
+  power of two.
+- Throws `ArgumentOutOfRangeException` for a negative `capacity` or a `loadFactor`
+  outside the open interval `(0, 1)`.
+- The `source` constructor **counts occurrences**: each occurrence of an element
+  increments its multiplicity, so a source with duplicate elements yields counts
+  greater than one (it does **not** deduplicate). Throws `ArgumentNullException` if
+  `source` is `null`.
+
+### Properties
+
+| Member | Description |
+|---|---|
+| `int Count` | Number of **distinct elements**, including the out-of-band default element if present. |
+| `long TotalCount` | Sum of every element's multiplicity (an element added `n` times contributes `n`). |
+
+### Indexer
+
+```csharp
+int this[T element] { get; set; }
+```
+
+Get returns the element's multiplicity (`0` if absent). Set is equivalent to
+`SetCount(element, value)` — a value of `0` removes the element; a negative value
+throws `ArgumentOutOfRangeException`.
+
+### Methods
+
+| Member | Description |
+|---|---|
+| `void Add(T element)` | Increment the element's multiplicity by one (creating it with count one if absent). Throws `OverflowException` if the count would exceed `int.MaxValue`. |
+| `void Add(T element, int count)` | Add `count` occurrences. A `count` of `0` is a no-op (the element is not registered); a negative `count` throws `ArgumentOutOfRangeException`. |
+| `bool Remove(T element)` | Remove one occurrence (decrement). If that empties the element, it is removed. Returns `false` if the element is absent. |
+| `bool RemoveAll(T element)` | Remove the element entirely, discarding all occurrences. Returns `false` if the element is absent. |
+| `int SetCount(T element, int count)` | Set the exact multiplicity (`0` removes; positive creates/overwrites), returning the **previous** count. Negative `count` throws. |
+| `int GetCount(T element)` | The element's multiplicity, or `0` if absent (same as the indexer get). |
+| `bool Contains(T element)` | Whether the element has a multiplicity of at least one. |
+| `void Clear()` | Remove all elements; element capacity is preserved. |
+| `int EnsureCapacity(int capacity)` | Pre-grow the element table to hold at least `capacity` distinct elements without resizing, returning the resulting capacity. Throws `ArgumentOutOfRangeException` on a negative capacity. |
+| `void TrimExcess()` / `void TrimExcess(int capacity)` | Rehash the element table down to the smallest size that still holds the current distinct-element `Count` (or `capacity`). The out-of-band default element and every multiplicity are preserved. `TrimExcess(capacity)` throws if `capacity < Count`. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator yielding one `KeyValuePair<T,int>` (element → count) per distinct element; the default element (if present) is yielded first. |
+| `ElementCollection Elements` | Allocation-free struct view over the distinct elements (each yielded once, regardless of multiplicity). |
+
+### Default-element handling
+
+`default(T)` (`null` for reference types, `0` for `int`, `Guid.Empty`, …) collides
+with the empty-slot sentinel used during probing, so its count is stored
+**out-of-band** — the hasher is never invoked with the default element, so it never
+collides with the sentinel. The default element behaves as an ordinary element for
+`Add`, `Remove`, `RemoveAll`, `SetCount`, the indexer, enumeration (yielded first),
+and `Elements`.
+
+### Usage example
+
+```csharp
+using System.Linq;
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Word-frequency histogram.
+var counts = new CelerityMultiSet<string, StringFnV1AHasher>();
+foreach (string word in "the cat sat on the mat the".Split(' '))
+    counts.Add(word);
+
+Console.WriteLine(counts.Count);        // 5 distinct words
+Console.WriteLine(counts.TotalCount);   // 7 total occurrences
+Console.WriteLine(counts["the"]);       // 3
+
+counts.Remove("the");                   // 2 left
+counts.SetCount("cat", 0);              // remove "cat" entirely
+counts["dog"] = 4;                      // set an exact multiplicity
+
+// Enumerate (element, count) pairs, e.g. the top entry.
+var top = counts.OrderByDescending(p => p.Value).First();
+Console.WriteLine($"{top.Key}: {top.Value}");
+
+// Count straight from a sequence.
+var fromSeq = new CelerityMultiSet<int, Int32WangNaiveHasher>(new[] { 1, 1, 2, 3, 3, 3 });
+Console.WriteLine(fromSeq[3]);          // 3
+```
+
 ## SmallDictionary&lt;TKey, TValue&gt;
 
 ```csharp

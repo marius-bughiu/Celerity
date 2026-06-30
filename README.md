@@ -34,6 +34,7 @@ All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet 
 - `PooledCelerityDictionary<TKey, TValue, THasher>` — backing arrays rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
 - `FrozenCelerityDictionary<TValue>` / `<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: `Add` appends instead of overwriting. Implements `ILookup<TKey, TValue?>`.
+- `CelerityMultiSet<T, THasher>` — counting multiset (bag): each element maps to its multiplicity. Single-probe `Add`-increment for frequency counting, vs the two-probe `Dictionary<T,int>` idiom. `Count` (distinct) / `TotalCount` (occurrences).
 - `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary for the very-small (`n <= ~16`) case. No hasher; the default key is stored inline.
 - `IntDictionary<TValue>` / `LongDictionary<TValue>` — `int` / `long`-keyed specializations (default to `Int32WangNaiveHasher` / `Int64WangNaiveHasher`).
 
@@ -94,7 +95,7 @@ byName["bob"] = 1;
 The hasher is a `struct` generic constraint, so the JIT devirtualizes and inlines `Hash()` on the probe path.
 
 <details>
-<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Frozen, MultiMap, Small</summary>
+<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Frozen, MultiMap, MultiSet, Small</summary>
 
 All four `CelerityDictionary` peers below are drop-in (same API, same hashers) and differ only in collision strategy / storage:
 
@@ -142,6 +143,18 @@ subs.Add("orders", "fulfilment");
 Console.WriteLine(subs["orders"].Count);  // 2
 subs.Remove("orders", "billing");         // drop one value
 subs.RemoveAll("orders");                 // drop a whole key
+```
+
+`CelerityMultiSet<T, THasher>` is the counting sibling — each element maps to its multiplicity. It's the type to reach for when building a frequency histogram: `Add` is a single probe-and-increment, where the idiomatic `Dictionary<T,int>` counting pattern (`d[x] = d.GetValueOrDefault(x) + 1`) costs two probes per item. `Count` is the distinct-element count; `TotalCount` is the sum of all occurrences:
+
+```csharp
+var freq = new CelerityMultiSet<string, StringFnV1AHasher>();
+foreach (string w in "the cat sat on the mat the".Split(' '))
+    freq.Add(w);
+Console.WriteLine(freq["the"]);       // 3
+Console.WriteLine(freq.Count);        // 5 distinct words
+Console.WriteLine(freq.TotalCount);   // 7 occurrences
+freq.SetCount("cat", 0);              // remove an element entirely
 ```
 
 `SmallDictionary<TKey, TValue>` skips hashing and linear-scans a flat array — at `n <= ~16` that beats a hash table (no hash, no probe chain, great cache locality). No hasher to pick; a `0` / `null` / default key is stored inline. Lookups are `O(n)`, so move to `IntDictionary` / `CelerityDictionary` once instances grow.
@@ -254,6 +267,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Short-lived** dictionary rebuilt frequently on a hot path where GC pressure matters | `PooledCelerityDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary` plus `IDisposable`; rents its backing arrays from `ArrayPool<T>.Shared` and returns them on `Dispose`, so build/use/dispose cycles recycle buffers instead of allocating. Dispose it (a `using` scope); for long-lived dictionaries the pooling buys nothing, so prefer `CelerityDictionary`. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
+| **Counting** occurrences / frequency histogram (element → count) | `CelerityMultiSet<T, THasher>` | `Add` is a single probe-and-increment vs the two-probe `Dictionary<T,int>` counting idiom; `SetCount` / `Remove` / `RemoveAll` manage multiplicities, `Count` is distinct elements and `TotalCount` the sum. Pick the struct hasher for your element type. |
 | Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
