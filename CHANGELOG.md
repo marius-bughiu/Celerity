@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-30
+
 ### Added
 
 - **`EnsureCapacity` / `TrimExcess` capacity management across the whole mutable hash-table family** ([#231](https://github.com/marius-bughiu/Celerity/issues/231)) — closing a BCL-parity gap (guiding principle #3: "users should be able to drop Celerity in wherever they use `Dictionary<,>`"): the collections could be pre-sized only through their `IEnumerable` constructor, with no way to pre-grow or shrink an existing instance, even though `Dictionary<,>` and `HashSet<T>` ship both methods. Every mutable type now exposes `int EnsureCapacity(int capacity)` (grow once so a known-size bulk insert pays zero incremental rehashes — the `O(log n)` re-hashes an unsized table accumulates as it doubles — returning the resulting capacity) and `void TrimExcess()` / `void TrimExcess(int capacity)` (rehash down to the smallest table that still holds `Count` / `capacity`, reclaiming memory after a shrink). Covered: `IntDictionary`, `LongDictionary`, `CelerityDictionary`, the four `CelerityDictionary` peers (`RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`), `IntSet`, `LongSet`, `CeleritySet`, `CelerityMultiMap` (key-table capacity; value groups untouched), and `SmallDictionary` (verbatim array length, no probe mask). Each type's existing private `Resize()` was refactored into a `Resize(int newSize)` that the doubling-growth path and the two new re-sizers share, so the rehash logic is not duplicated; the out-of-band zero / `default` key/element slot is preserved across both operations, `EnsureCapacity` throws `ArgumentOutOfRangeException` on a negative capacity, and `TrimExcess(capacity)` throws when `capacity < Count`. `PooledCelerityDictionary` returns the larger rented buffers to `ArrayPool` on trim and throws `ObjectDisposedException` after disposal. The frozen collections and the fixed-size probabilistic sketches (`BloomFilter`, `CuckooFilter`, `CountMinSketch`, `HyperLogLog`, `BitSet`) are immutable / fixed-capacity, so the surface does not apply to them.
@@ -437,7 +439,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.1.0
 [2.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.0.0
 [1.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.5.0
 [1.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.4.0
