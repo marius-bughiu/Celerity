@@ -258,6 +258,22 @@ public class EnsureCapacityAndTrimExcessTests
     }
 
     [Fact]
+    public void CelerityMultiSet_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
+    {
+        var set = new CelerityMultiSet<int, CountingIntHasher>();
+        Assert.True(set.EnsureCapacity(N) >= N);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= N; i++)
+            set.Add(i, i * 10);
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i * 10, set[i]);
+    }
+
+    [Fact]
     public void SmallDictionary_EnsureCapacity_GrowsBackingArray()
     {
         var map = new SmallDictionary<int, int>();
@@ -441,6 +457,22 @@ public class EnsureCapacityAndTrimExcessTests
         Assert.Equal(5, map.Count);
         for (int i = 1; i <= 5; i++)
             Assert.Equal(new[] { i * 10, i * 10 + 1 }, map[i].ToArray());
+    }
+
+    [Fact]
+    public void CelerityMultiSet_TrimExcess_AfterShrink_PreservesContents()
+    {
+        var set = new CelerityMultiSet<int, CountingIntHasher>();
+        for (int i = 1; i <= N; i++)
+            set.Add(i, i * 10);
+        for (int i = 6; i <= N; i++)
+            set.RemoveAll(i);
+
+        set.TrimExcess();
+
+        Assert.Equal(5, set.Count);
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(i * 10, set[i]);
     }
 
     [Fact]

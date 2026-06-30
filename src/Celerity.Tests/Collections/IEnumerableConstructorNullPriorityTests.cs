@@ -185,6 +185,17 @@ public class IEnumerableConstructorNullPriorityTests
         Assert.Equal("source", ex.ParamName);
     }
 
+    [Fact]
+    public void CelerityMultiSet_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new CelerityMultiSet<int, Int32WangNaiveHasher>(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  Boundary: invalid loadFactor = 0f still surfaces null-source first
     // ──────────────────────────────────────────────────────────────

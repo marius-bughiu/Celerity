@@ -383,6 +383,85 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- CelerityMultiSet vs a Dictionary<int,int> count model --------------
+
+    // A multiset is a counting collection, so the oracle is a Dictionary<int,int>
+    // mapping each element to its multiplicity (entries with count 0 are removed,
+    // preserving the "present element ⇒ multiplicity >= 1" invariant). The op mix
+    // exercises both increment shapes, both removal shapes, exact SetCount, and
+    // Clear against the small, collision-dense element domain.
+    private enum MultiSetOp { Add, AddCount, Remove, RemoveAll, SetCount, Clear }
+
+    private static readonly Gen<List<(MultiSetOp op, int item, int count)>> GenMultiSetOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n => n < 35 ? MultiSetOp.Add
+                                     : n < 55 ? MultiSetOp.AddCount
+                                     : n < 75 ? MultiSetOp.Remove
+                                     : n < 85 ? MultiSetOp.RemoveAll
+                                     : n < 97 ? MultiSetOp.SetCount
+                                     : MultiSetOp.Clear),
+            Gen.Int[-8, 24],   // element domain spans 0 and negatives for the special slot
+            Gen.Int[0, 5])     // count argument for AddCount / SetCount
+        .Select((op, item, count) => (op, item, count))
+        .List[0, 120];
+
+    [Fact]
+    public void CelerityMultiSet_ShouldMatch_DictionaryCountModel()
+    {
+        GenMultiSetOps.Sample(ops =>
+        {
+            var sut = new CelerityMultiSet<int, Int32WangNaiveHasher>();
+            var oracle = new Dictionary<int, int>();
+
+            foreach (var (op, item, count) in ops)
+            {
+                switch (op)
+                {
+                    case MultiSetOp.Add:
+                        sut.Add(item);
+                        oracle[item] = oracle.GetValueOrDefault(item) + 1;
+                        break;
+                    case MultiSetOp.AddCount:
+                        sut.Add(item, count);
+                        if (count > 0)
+                            oracle[item] = oracle.GetValueOrDefault(item) + count;
+                        break;
+                    case MultiSetOp.Remove:
+                    {
+                        bool oracleRemoved = oracle.TryGetValue(item, out int c);
+                        if (oracleRemoved)
+                        {
+                            if (c == 1) oracle.Remove(item);
+                            else oracle[item] = c - 1;
+                        }
+                        Assert.Equal(oracleRemoved, sut.Remove(item));
+                        break;
+                    }
+                    case MultiSetOp.RemoveAll:
+                        Assert.Equal(oracle.Remove(item), sut.RemoveAll(item));
+                        break;
+                    case MultiSetOp.SetCount:
+                    {
+                        int oraclePrev = oracle.GetValueOrDefault(item);
+                        if (count == 0) oracle.Remove(item);
+                        else oracle[item] = count;
+                        Assert.Equal(oraclePrev, sut.SetCount(item, count));
+                        break;
+                    }
+                    case MultiSetOp.Clear:
+                        sut.Clear();
+                        oracle.Clear();
+                        break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            Assert.Equal(oracle.Values.Aggregate(0L, (acc, v) => acc + v), sut.TotalCount);
+            for (int k = -8; k <= 24; k++)
+                Assert.Equal(oracle.GetValueOrDefault(k), sut[k]);
+        }, iter: 2000);
+    }
+
     // ---- BloomFilter (probabilistic) vs HashSet<int> ------------------------
 
     // A Bloom filter has no Remove and may report false positives, so the model

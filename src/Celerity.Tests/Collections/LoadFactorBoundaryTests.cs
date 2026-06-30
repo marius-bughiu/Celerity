@@ -882,4 +882,56 @@ public class LoadFactorBoundaryTests
         for (int i = 1; i <= 50; i++)
             Assert.Equal(new[] { i }, map[i].ToArray());
     }
+
+    // ---------------------------------------------------------------
+    //  CelerityMultiSet — the element table resizes on the distinct-
+    //  element count exactly like the dictionaries; every element's
+    //  count must survive, and the out-of-band default element must not
+    //  corrupt accounting.
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void CelerityMultiSet_LowLoadFactor_TriggersEarlyResize_AndPreservesAllCounts()
+    {
+        var set = new CelerityMultiSet<int, Int32WangNaiveHasher>(capacity: 8, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 20; i++)
+            set.Add(i, i * 10);
+
+        Assert.Equal(20, set.Count);
+        for (int i = 1; i <= 20; i++)
+            Assert.Equal(i * 10, set[i]);
+    }
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.95f)]
+    public void CelerityMultiSet_VariousLoadFactors_AllCountsSurviveMultipleResizes(float loadFactor)
+    {
+        var set = new CelerityMultiSet<int, Int32WangNaiveHasher>(
+            capacity: 4, loadFactor: loadFactor);
+
+        for (int i = 1; i <= 100; i++)
+            set.Add(i, i * 7);
+
+        Assert.Equal(100, set.Count);
+        for (int i = 1; i <= 100; i++)
+            Assert.Equal(i * 7, set[i]);
+    }
+
+    [Fact]
+    public void CelerityMultiSet_DefaultElement_DoesNotCorruptResizeAccounting()
+    {
+        var set = new CelerityMultiSet<int, Int32WangNaiveHasher>(capacity: 4, loadFactor: 0.75f);
+        set.Add(0, 3);          // out-of-band default element
+        for (int i = 1; i <= 50; i++)
+            set.Add(i, i);
+
+        Assert.Equal(51, set.Count);
+        Assert.Equal(3, set[0]);
+        for (int i = 1; i <= 50; i++)
+            Assert.Equal(i, set[i]);
+    }
 }
