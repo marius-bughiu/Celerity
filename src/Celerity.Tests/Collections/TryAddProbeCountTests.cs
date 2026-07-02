@@ -8,8 +8,9 @@ namespace Celerity.Tests.Collections;
 /// <see cref="IntDictionary{TValue, THasher}.TryAdd"/>,
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}.TryAdd"/>,
 /// <see cref="RobinHoodDictionary{TKey, TValue, THasher}.TryAdd"/>,
-/// <see cref="IntSet{THasher}.TryAdd"/>, and
-/// <see cref="CeleritySet{T, THasher}.TryAdd"/> historically walked the probe chain
+/// <see cref="IntSet{THasher}.TryAdd"/>,
+/// <see cref="CeleritySet{T, THasher}.TryAdd"/>, and
+/// <see cref="SwissSet{T, THasher}.TryAdd"/> historically walked the probe chain
 /// twice on the new-key path: once via <c>ContainsKey</c>/<c>Contains</c>, then again
 /// via the indexer setter / <c>InsertNon*</c> helper. The fix collapses both walks
 /// into a single <c>ProbeForInsert</c>. These tests pin that contract by counting how
@@ -426,6 +427,37 @@ public class TryAddProbeCountTests
     public void CeleritySet_TryAdd_DuplicateItem_DoesExactlyOneProbeWalk()
     {
         var set = new CeleritySet<string, CountingStringHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            set.TryAdd($"v{i}");
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(set.TryAdd($"v{i}"));
+
+        Assert.Equal(5, _hashCallCount);
+        Assert.Equal(5, set.Count);
+    }
+
+    [Fact]
+    public void SwissSet_TryAdd_NewItem_DoesExactlyOneProbeWalk()
+    {
+        // SwissSet's combined probe both checks for an existing element and chooses
+        // the insertion slot in one walk, so a new-item insert costs exactly one
+        // Hash() call (no resize fires at capacity 64).
+        var set = new SwissSet<string, CountingStringHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 10; i++)
+            Assert.True(set.TryAdd($"v{i}"));
+
+        Assert.Equal(10, _hashCallCount);
+        Assert.Equal(10, set.Count);
+    }
+
+    [Fact]
+    public void SwissSet_TryAdd_DuplicateItem_DoesExactlyOneProbeWalk()
+    {
+        var set = new SwissSet<string, CountingStringHasher>(capacity: 64);
         for (int i = 1; i <= 5; i++)
             set.TryAdd($"v{i}");
 

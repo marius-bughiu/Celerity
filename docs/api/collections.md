@@ -663,6 +663,81 @@ foreach (var id in ids) { /* ... */ }
 
 ---
 
+## SwissSet&lt;T, THasher&gt;
+
+A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, and `IEnumerable<T>` — is identical to `CeleritySet`. Only the probing strategy differs.
+
+```csharp
+public class SwissSet<T, THasher> : IEnumerable<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+### What SIMD group probing does
+
+The set keeps a parallel array of one-byte **control** tags — one per slot — separate from the element array. Each control byte is either `EMPTY`, `DELETED` (a tombstone), or, for an occupied slot, the low 7 bits of the element's hash (its *h2* fragment). Slots are grouped into aligned blocks of 16, so a single `Vector128<sbyte>` compare tests all 16 control bytes in a group at once: a membership test loads the 16 tags, compares them against the broadcast h2, and turns the result into a 16-bit candidate mask via `Vector128.ExtractMostSignificantBits`. Only the (usually one) candidate slots then pay a full element comparison; a group with any `EMPTY` slot ends the probe. Two consequences matter to callers:
+
+- **One compare per group, not per slot.** The group compare amortizes the per-slot tag test across 16 slots, and the h2 tag filters out non-matching residents before any (potentially expensive) element comparison — so negative `Contains` lookups and lookups on clustered elements stay cheap. The portable `Vector128` API JITs to SSE2 / AVX2 on x86, AdvSimd on Arm, and a scalar software fallback elsewhere, so the type is correct everywhere and fast where hardware SIMD is available.
+- **A small, predictable overhead.** Each slot carries a one-byte control tag (so the set allocates a little more than `CeleritySet`), and deletion uses tombstones that are reclaimed by a rehash once they accumulate, so a churn of add/remove cycles cannot grow the table without bound.
+
+### When to choose it over `CeleritySet`
+
+Reach for `SwissSet` for **membership-heavy** workloads where the group compare and h2 filtering pay off — large sets, many negative `Contains` lookups ("have I seen this?" dedup guards), or clustered elements — and where one extra control byte per slot is an acceptable cost. Membership is a set's primary operation, so the negative-lookup win is exactly the common case. For small sets or write-dominated workloads with a good hasher, `CeleritySet` has the smaller footprint and is competitive. Both are single-threaded and make no iteration-order guarantee.
+
+### Constructors
+
+```csharp
+public SwissSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public SwissSet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CeleritySet` — duplicate elements (including duplicate `default(T)`) are silently deduplicated. The backing table is always a power of two and at least one SIMD group (16 slots), so a requested capacity below 16 is rounded up.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+
+### Methods
+
+- `void Add(T item)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(T item)` — `true` on success, `false` if already present.
+- `bool Contains(T item)`
+- `bool Remove(T item)`
+- `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring `CeleritySet`; `TrimExcess` additionally drops accumulated tombstones. The out-of-band `default(T)` slot is preserved.
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — struct enumerator; the out-of-band `default(T)` entry is yielded first when present.
+
+### Default-element handling
+
+Identical to `CeleritySet`: `default(T)` (`null` / `0` / `Guid.Empty` / …) is stored out-of-band via a `_hasDefaultValue` flag, so the hasher is never invoked with it (string hashers throw on `null`). Unlike linear-probing tables, the Swiss layout tracks occupancy in the control bytes rather than by sentinel element value — the out-of-band slot is kept purely to honour the hasher contract. Mutating the set during enumeration throws `InvalidOperationException` on the next `MoveNext` / `Reset`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Membership-heavy set: each Contains tests a whole 16-slot group with one SIMD compare.
+var seen = new SwissSet<int, Int32WangNaiveHasher>();
+seen.Add(42);
+seen.Add(0); // default-element slot
+
+Console.WriteLine(seen.Contains(42));   // True
+Console.WriteLine(seen.Contains(999));  // False — negative lookup short-circuits on the group scan
+
+foreach (var item in seen) { /* ... */ }
+```
+
+---
+
 ## IntSet
 
 A convenience subclass of `IntSet<Int32WangNaiveHasher>` for the common case of integer sets.
