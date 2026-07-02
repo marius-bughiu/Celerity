@@ -242,6 +242,22 @@ public class EnsureCapacityAndTrimExcessTests
     }
 
     [Fact]
+    public void SwissSet_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
+    {
+        var set = new SwissSet<string, CountingStringHasher>();
+        Assert.True(set.EnsureCapacity(N) >= N);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= N; i++)
+            set.Add($"v{i}");
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.True(set.Contains($"v{i}"));
+    }
+
+    [Fact]
     public void CelerityMultiMap_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
     {
         var map = new CelerityMultiMap<int, int, CountingIntHasher>();
@@ -438,6 +454,24 @@ public class EnsureCapacityAndTrimExcessTests
         Assert.Equal(5, set.Count);
         for (int i = 1; i <= 5; i++)
             Assert.True(set.Contains($"v{i}"));
+    }
+
+    [Fact]
+    public void SwissSet_TrimExcess_AfterShrink_PreservesContents()
+    {
+        var set = new SwissSet<string, CountingStringHasher>();
+        for (int i = 1; i <= N; i++)
+            set.Add($"v{i}");
+        for (int i = 6; i <= N; i++)
+            set.Remove($"v{i}");
+
+        set.TrimExcess();
+
+        Assert.Equal(5, set.Count);
+        for (int i = 1; i <= 5; i++)
+            Assert.True(set.Contains($"v{i}"));
+        set.Add("zz"); // tombstones were dropped; table still usable
+        Assert.True(set.Contains("zz"));
     }
 
     [Fact]

@@ -41,6 +41,7 @@ All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet 
 **Sets**
 
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
+- `SwissSet<T, THasher>` — Swiss-table SIMD group probing for sets: one `Vector128` compare tests 16 slots per membership check, filtered by a 7-bit hash tag (cost: one control byte per slot). For membership-heavy sets with many negative lookups. The set counterpart of `SwissDictionary`.
 - `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with single-probe membership. Implements `IReadOnlySet<string>`.
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
 
@@ -169,7 +170,7 @@ Console.WriteLine(scope["x"]);  // 1
 </details>
 
 <details>
-<summary><b>Sets</b> — IntSet, CeleritySet, FrozenCeleritySet</summary>
+<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, FrozenCeleritySet</summary>
 
 ```csharp
 var seen = new IntSet();
@@ -178,6 +179,14 @@ Console.WriteLine(seen.Contains(1)); // true
 
 var visited = new CeleritySet<Guid, GuidHasher>();
 visited.TryAdd(Guid.NewGuid()); // true on first add, false on duplicate
+```
+
+`SwissSet<T, THasher>` is the SIMD-probed set — the set counterpart of `SwissDictionary`. One `Vector128` compare tests a whole 16-slot group per membership check and filters candidates by a 7-bit hash tag before any element comparison, so negative `Contains` lookups (the common case for a set) stay cheap. Same API as `CeleritySet`, at the cost of one control byte per slot.
+
+```csharp
+var swissSeen = new SwissSet<int, Int32WangNaiveHasher>();
+swissSeen.Add(42);
+Console.WriteLine(swissSeen.Contains(999)); // false — negative lookup short-circuits on the group scan
 ```
 
 `FrozenCeleritySet` is the build-once, read-many string set counterpart of `FrozenCelerityDictionary` — single-probe `Contains`, immutable, implements `IReadOnlySet<string>` (so `SetEquals`, `IsSubsetOf`, `Overlaps`, … are available), and silently dedupes. Use `FrozenCeleritySet<THasher>` (e.g. `StringFnV1AFullHasher`) for non-ASCII elements.
@@ -272,6 +281,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
+| **Membership-heavy** set (large sets, many negative `Contains` lookups, clustered elements) where SIMD pays off | `SwissSet<T, THasher>` | Same API as `CeleritySet`, but Swiss-table group probing tests 16 slots per `Vector128` compare and filters candidates by a 7-bit hash tag before any element comparison. The set counterpart of `SwissDictionary`. Costs a one-byte control tag per slot; for small or write-dominated sets, `CeleritySet` is competitive. |
 | Build-once, read-many membership set keyed by `string` | `FrozenCeleritySet` | Immutable; searches for a perfect (collision-free) hash at build time so `Contains` is single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Tune the hasher via the `<THasher>` overload. |
 | **Membership gate** where a small, bounded false-positive rate is acceptable in exchange for a large memory saving (dedup pre-filters, "have I seen this before?" guards in front of an expensive exact lookup) | `BloomFilter<T, THasher>` | Probabilistic: bit-array storage with **no false negatives** and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory and never growing with element size. Add-and-test only — no `Remove`, no enumeration, no retrieval. If you need exact membership or to get the elements back, use `CeleritySet` / `FrozenCeleritySet`; if you need to **delete** from the filter, use `CuckooFilter`. |
 | **Deletable membership gate** — the same approximate-membership trade-off as `BloomFilter` but for a set that **shrinks** as well as grows (sliding windows of recent keys, cache-admission filters, expiring-entry sets) | `CuckooFilter<T, THasher>` | Probabilistic: fingerprint-bucket storage with **no false negatives**, a tunable false-positive rate, and `Remove`. Lookups touch at most two buckets (≈ two cache lines). Only remove elements you actually added. Insertion can fail at very high load (reports *full*). If your set only grows or you reset it wholesale, `BloomFilter` is simpler and can be more compact at high target false-positive rates. |

@@ -11,8 +11,9 @@ namespace Celerity.Tests.Collections;
 /// <see cref="LongDictionary{TValue}"/>,
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/>,
 /// <see cref="RobinHoodDictionary{TKey, TValue, THasher}"/>,
-/// <see cref="IntSet"/>, <see cref="LongSet"/>, and
-/// <see cref="CeleritySet{T, THasher}"/> hoisted
+/// <see cref="IntSet"/>, <see cref="LongSet"/>,
+/// <see cref="CeleritySet{T, THasher}"/>, and
+/// <see cref="SwissSet{T, THasher}"/> hoisted
 /// the <c>Resize</c> check ahead of the duplicate check. When the collection
 /// was exactly at the resize threshold and the caller supplied a duplicate
 /// key, <c>Resize</c> would run (swapping out the backing arrays) and then
@@ -423,6 +424,45 @@ public class TryAddDuplicateResizeTests
         Assert.True(enumerator.MoveNext());
 
         Assert.True(set.TryAdd(4));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    // SwissSet's minimum table is one SIMD group (16 slots), so its
+    // default-capacity threshold is (int)(16 * 0.75) = 12. Fill to exactly that
+    // before exercising the at-threshold duplicate / new-item paths.
+
+    [Fact]
+    public void SwissSet_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        var set = new SwissSet<int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            set.Add(i); // Count == 12 == threshold
+
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current);
+
+        Assert.False(set.TryAdd(2));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(Enumerable.Range(1, 12).ToArray(), seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void SwissSet_TryAdd_NewItemAtThreshold_InvalidatesEnumerator()
+    {
+        var set = new SwissSet<int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            set.Add(i); // Count == 12 == threshold
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(set.TryAdd(13));
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
