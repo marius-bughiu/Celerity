@@ -52,6 +52,7 @@ All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet 
 - `BitSet` — dense, **exact** bit vector in 64-bit words: `O(n/64)` hardware popcount (`Count`) and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `BitArray`.
 - `HyperLogLog<T, THasher>` — **probabilistic** cardinality estimator: counts *distinct* elements from a fixed ~16&#160;KB of registers (~0.8% error), never growing with the data. Mergeable.
 - `CountMinSketch<T, THasher>` — **probabilistic** frequency estimator: estimates per-element counts from a fixed grid, **never underestimating** (overestimate bounded by `epsilon · TotalCount`). Mergeable.
+- `TopKSketch<T, THasher>` — **probabilistic** top-k / heavy-hitters sketch (Space-Saving): reports a stream's most frequent elements from a fixed `k` monitors in `O(k)` memory, **never underestimating** and never missing a hitter above `TotalCount / k`.
 
 All dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` and ship allocation-free struct enumerators, `Keys` / `Values` views, and an `IEnumerable<KeyValuePair<TKey, TValue>>` constructor. The hash-table collections store `default(TKey)` (zero / `null`) out-of-band so it never collides with the empty-slot sentinel; `SmallDictionary` stores it inline.
 
@@ -200,7 +201,7 @@ Console.WriteLine(reserved.Contains("join"));  // True
 </details>
 
 <details>
-<summary><b>Probabilistic & bit-level</b> — BloomFilter, CuckooFilter, HyperLogLog, CountMinSketch</summary>
+<summary><b>Probabilistic & bit-level</b> — BloomFilter, CuckooFilter, HyperLogLog, CountMinSketch, TopKSketch</summary>
 
 `BloomFilter` is a membership gate that stores nothing but a bit array: **no false negatives** (a `false` is always correct), with a tunable false-positive rate. Add-and-test only (no `Remove`, no enumeration); merge equally-sized filters with `UnionWith`.
 
@@ -237,6 +238,16 @@ var hits = new CountMinSketch<string, StringMurmur3Hasher>(epsilon: 0.001, delta
 foreach (string url in requestStream)
     hits.Add(url);
 Console.WriteLine(hits.EstimateCount("/api/login")); // >= true count, over by <= 0.1% of total
+```
+
+`TopKSketch` reports a high-cardinality stream's **most frequent elements** from a fixed `k` monitors (the Space-Saving algorithm), so its memory is `O(k)` instead of one entry per distinct key. It never underestimates a monitored count and never misses an element whose true frequency exceeds `TotalCount / k`. Add-and-query only (no `Remove`, and no `UnionWith` — bounded top-k summaries have no exact merge).
+
+```csharp
+var hot = new TopKSketch<string, StringMurmur3Hasher>(capacity: 100); // track the top ~100
+foreach (string url in requestStream)
+    hot.Add(url);
+foreach (TopKEntry<string> e in hot.GetTopK(10))
+    Console.WriteLine($"{e.Element}: ~{e.Count} (±{e.Error})"); // heaviest first, bounded error
 ```
 
 `BitSet` is a dense, exact bit vector — see [the API reference](docs/api/collections.md#bitset) for popcount, the SIMD bulk operators, and the set-bit enumerator.
@@ -287,7 +298,8 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Deletable membership gate** — the same approximate-membership trade-off as `BloomFilter` but for a set that **shrinks** as well as grows (sliding windows of recent keys, cache-admission filters, expiring-entry sets) | `CuckooFilter<T, THasher>` | Probabilistic: fingerprint-bucket storage with **no false negatives**, a tunable false-positive rate, and `Remove`. Lookups touch at most two buckets (≈ two cache lines). Only remove elements you actually added. Insertion can fail at very high load (reports *full*). If your set only grows or you reset it wholesale, `BloomFilter` is simpler and can be more compact at high target false-positive rates. |
 | **Dense set of small integer indices** (or a fixed universe of flags) where you count set bits or combine whole vectors — bitmaps, visited/presence masks, sieves | `BitSet` | Exact dense bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `System.Collections.BitArray`. For **sparse** indices over a huge/unbounded domain, `IntSet` / `LongSet` is more memory-efficient; for approximate membership over arbitrary elements, use `BloomFilter`. |
 | **Distinct count** over a large or unbounded stream (unique visitors / events, distinct-value cardinality, deduplicated counts across shards) where a small relative error is acceptable | `HyperLogLog<T, THasher>` | Probabilistic: estimates the distinct count from a fixed array of registers (16&#160;KB at the default precision) with a ~0.8% relative standard error, never growing with the cardinality — unlike a `HashSet<T>` that stores every distinct value. Add-and-estimate only; merge shard estimators with `UnionWith`. If you need an exact count or to test a specific element, use `HashSet<T>` / `CeleritySet`; for approximate *membership* rather than counting, use `BloomFilter`. |
-| **Per-element frequency** over a large or unbounded stream (heavy hitters / top-k, approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
+| **Per-element frequency** of a *specific* element over a large or unbounded stream (approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; if you want the *set of* heaviest elements rather than a specific one's count, use `TopKSketch`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
+| **Top-k / heavy hitters** — the *most frequent* elements of a large or unbounded, high-cardinality stream (top URLs / IPs, trending items, network flow monitoring, hot keys) where only the heaviest matter | `TopKSketch<T, THasher>` | Probabilistic (Space-Saving): keeps a fixed `k` monitors, so memory is `O(k)` regardless of the distinct-key count — unlike a `Dictionary<TKey, int>` that must materialize every distinct key just to rank the top few. **Never underestimates** a monitored count and never misses an element above `TotalCount / k`; each result carries a bounded `Error`. Add-and-query only (no `Remove`, no `UnionWith`). If you need the exact fully-ranked counts, use a dictionary frequency table; for a *specific* element's frequency use `CountMinSketch`. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 **Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).

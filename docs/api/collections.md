@@ -2158,3 +2158,137 @@ var shardB = new CountMinSketch<string, StringMurmur3Hasher>(shardBUrls);
 shardA.UnionWith(shardB);
 Console.WriteLine(shardA.EstimateCount("/api/login"));   // frequency across A ∪ B
 ```
+
+## TopKSketch&lt;T, THasher&gt;
+
+A space-bounded **top-k / heavy-hitters sketch** parameterized on a custom hash provider. It
+answers "which elements occur most often, and roughly how often?" from a fixed number of
+*monitors* whose count does **not** grow with the number of distinct elements — so it finds
+a stream's heaviest hitters in `O(k)` memory, where a `Dictionary<TKey, int>` frequency table
+must store every distinct key before it can rank them.
+
+```csharp
+public class TopKSketch<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+It implements the **Space-Saving** algorithm (Metwally, Agrawal & El Abbadi, 2005):
+
+- **Fixed, small memory.** The sketch keeps exactly `Capacity` monitors (`element`, `count`,
+  `error` triples) regardless of stream cardinality — `O(k)` space, not one entry per
+  distinct key.
+- **No heavy hitter is ever missed.** Any element whose true frequency exceeds
+  `TotalCount / Capacity` is guaranteed to still be monitored, so a large enough `Capacity`
+  cannot miss a genuine heavy hitter.
+- **Bounded, one-sided error.** A monitor's `Count` **never underestimates** its element's
+  true frequency and overestimates it by at most that monitor's `Error`, so the true
+  frequency lies in `[Count − Error, Count]`. A monitor that never shared its slot has
+  `Error == 0`, i.e. an exact count.
+- **Add-and-query only.** Like a Bloom filter it has no `Remove` (decrementing a monitor
+  would break the never-underestimate guarantee). Unlike `CountMinSketch` / `HyperLogLog` it
+  has **no `UnionWith`**: two bounded top-k summaries cannot be merged into the exact top-k of
+  the combined stream without error beyond each summary's own, so no lossy merge is offered.
+  Use `Clear()` to reset.
+- **Saturating counters.** A monitor count (and `TotalCount`) that would exceed
+  `long.MaxValue` clamps there rather than wrapping negative.
+
+### How it works
+
+The sketch keeps `Capacity` monitors. An observed element that is already monitored has its
+counter incremented. While free monitors remain, an unmonitored element takes a fresh one with
+`Error == 0`. Once all monitors are in use, the element in the monitor with the **smallest**
+count is evicted: the newcomer reuses that monitor, inheriting the evicted count as its `Error`
+and setting its count to that minimum plus the new occurrences. Handing the newcomer the
+current minimum is what bounds the error and yields the guarantees above.
+
+The monitors live in an indexed binary **min-heap** keyed on count, so the next eviction victim
+(the minimum) sits at the root, and an element→monitor index dogfoods
+`CelerityDictionary<T, int, THasher>` — which is where `THasher` is used, and which also
+supplies the out-of-band handling for a `default(T)` or `null` element (so a string hasher is
+never invoked with `null`). Both a repeat observation and an eviction cost `O(log Capacity)`;
+`GetTopK` sorts the monitors, an `O(k log k)` query-time cost off the add hot path.
+
+### Constructors
+
+```csharp
+public TopKSketch(int capacity = 128)
+
+public TopKSketch(
+    IEnumerable<T> source,
+    int capacity = 128)
+```
+
+The first overload creates an empty sketch that monitors up to `capacity` elements. The
+`IEnumerable<T>` overload pre-populates it by adding each element once (so duplicates in the
+source raise the tracked frequency). A larger `capacity` tracks more candidates and tightens
+the guarantees, at proportional memory.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity` is less than 1.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats the
+  capacity validation, so a `null` source with a bad `capacity` surfaces as
+  `ArgumentNullException`.
+
+### Methods and properties
+
+- `void Add(T item)` — records one occurrence of an element.
+- `void Add(T item, long count)` — records `count` occurrences. Throws
+  `ArgumentOutOfRangeException` if `count` is not positive. A monitor count (and `TotalCount`)
+  saturates at `long.MaxValue` rather than overflowing.
+- `bool TryGetCount(T item, out long count, out long error)` — reads a monitored element's
+  count and error. Returns `false` if the element is not currently monitored (in which case its
+  true frequency is at most the smallest monitored count).
+- `TopKEntry<T>[] GetTopK()` — every monitored element, ordered by estimated count descending.
+- `TopKEntry<T>[] GetTopK(int count)` — the `count` most frequent monitored elements. Values
+  greater than `Count` return all monitors; `0` returns an empty array; a negative value throws
+  `ArgumentOutOfRangeException`.
+- `void Clear()` — discards every monitor; preserves the capacity.
+- `int Capacity { get; }` — the number of monitors kept (the `k` in top-k).
+- `int Count { get; }` — the number of elements currently monitored (`0..Capacity`).
+- `long TotalCount { get; }` — the total occurrences observed (the stream length `N`, the
+  denominator of the `N / Capacity` heavy-hitter threshold).
+
+`TopKEntry<T>` is a small readonly struct with `Element`, `Count`, and `Error` — the monitored
+element, its estimated (upper-bound) count, and the maximum amount that count may overestimate
+the truth.
+
+### Default-element handling
+
+The element→monitor index is a `CelerityDictionary<T, int, THasher>`, so a `default(T)` element
+(a zero `int`, `Guid.Empty`, …) is stored in that dictionary's out-of-band slot and a `null`
+reference is routed out-of-band rather than hashed — the hasher is never invoked with the
+zero / null element, matching the rest of the family.
+
+### Choosing it
+
+Reach for `TopKSketch` when you need the **most frequent elements of a large or unbounded,
+high-cardinality stream** and only the heaviest hitters matter: top URLs / IPs in log
+analytics, trending items, network flow monitoring, hot database keys. It holds only `k`
+monitors, so its memory is independent of the distinct-key count — the win over a
+`Dictionary<TKey, int>` that must materialize every distinct key just to sort out the top few.
+If you need the exact, fully-ranked counts (and can afford `O(distinct)` memory), use a
+dictionary frequency table; if you need the estimated frequency of a **specific** element
+rather than the top set, use `CountMinSketch<T, THasher>`; for the distinct-element *count* use
+`HyperLogLog<T, THasher>`, and for approximate *membership* use `BloomFilter<T, THasher>`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Track the 100 most-requested URLs in a high-cardinality stream from ~100 monitors,
+// regardless of how many distinct URLs appear.
+var hot = new TopKSketch<string, StringMurmur3Hasher>(capacity: 100);
+
+foreach (string url in requestStream)
+    hot.Add(url);
+
+foreach (TopKEntry<string> entry in hot.GetTopK(10))
+    Console.WriteLine($"{entry.Element}: ~{entry.Count} (±{entry.Error})");
+
+// A specific element's tracked frequency, if it survived as a heavy hitter.
+if (hot.TryGetCount("/api/login", out long count, out long error))
+    Console.WriteLine($"/api/login seen {count - error}..{count} times");
+```

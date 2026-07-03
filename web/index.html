@@ -291,6 +291,7 @@
     <div class="ship"><code>BitSet</code><div class="desc">Dense exact bit vector: O(n/64) population count and SIMD-accelerated bulk And/Or/Xor/Not over 64-bit words. A faster, count-aware BitArray.</div></div>
     <div class="ship"><code>HyperLogLog&lt;T, H&gt;</code><div class="desc">Probabilistic cardinality estimator: counts distinct elements in a fixed few KB with ~0.8% error, no matter how many you add. Mergeable; a fraction of a HashSet's memory.</div></div>
     <div class="ship"><code>CountMinSketch&lt;T, H&gt;</code><div class="desc">Probabilistic frequency estimator: estimates how often each element occurs from a fixed few KB, never underestimating. Mergeable; a fraction of a frequency-table Dictionary's memory.</div></div>
+    <div class="ship"><code>TopKSketch&lt;T, H&gt;</code><div class="desc">Top-k / heavy-hitters sketch (Space-Saving): reports a stream's most frequent elements from a fixed k monitors, never underestimating. O(k) memory instead of one entry per distinct key.</div></div>
     <div class="ship"><code>Celerity.Hashing</code><div class="desc">Wang, Murmur3, FNV-1a, Guid, default fallback.</div></div>
   </div>
 
