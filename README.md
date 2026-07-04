@@ -45,6 +45,8 @@ All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet 
 - `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with single-probe membership. Implements `IReadOnlySet<string>`.
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
 
+The mutable sets (`CeleritySet`, `SwissSet`, `IntSet`, `LongSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
+
 **Probabilistic & bit-level**
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
@@ -179,6 +181,18 @@ Console.WriteLine(seen.Contains(1)); // true
 
 var visited = new CeleritySet<Guid, GuidHasher>();
 visited.TryAdd(Guid.NewGuid()); // true on first add, false on duplicate
+```
+
+The mutable sets implement `ISet<T>`, so the full `HashSet<T>` set algebra works (with matching semantics):
+
+```csharp
+var a = new IntSet(new[] { 1, 2, 3, 4 });
+a.IntersectWith(new[] { 2, 4, 6 });        // a -> { 2, 4 }
+a.UnionWith(new[] { 4, 5 });               // a -> { 2, 4, 5 }
+Console.WriteLine(a.IsSubsetOf(new[] { 2, 4, 5, 9 })); // true
+
+ISet<int> asSet = a;                        // usable anywhere ISet<int>/ICollection<int> is expected
+Console.WriteLine(asSet.Add(7));            // true — ISet<T>.Add is the non-throwing add
 ```
 
 `SwissSet<T, THasher>` is the SIMD-probed set — the set counterpart of `SwissDictionary`. One `Vector128` compare tests a whole 16-slot group per membership check and filters candidates by a 7-bit hash tag before any element comparison, so negative `Contains` lookups (the common case for a set) stay cheap. Same API as `CeleritySet`, at the cost of one control byte per slot.

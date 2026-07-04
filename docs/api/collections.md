@@ -602,10 +602,10 @@ Console.WriteLine(map.Count); // 3
 
 ## CeleritySet&lt;T, THasher&gt;
 
-A high-performance generic set parameterized on a custom hash provider. Set counterpart to `CelerityDictionary`. Implements `IEnumerable<T>`.
+A high-performance generic set parameterized on a custom hash provider. Set counterpart to `CelerityDictionary`. Implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), so it is a drop-in for `HashSet<T>` wherever set algebra is used.
 
 ```csharp
-public class CeleritySet<T, THasher> : IEnumerable<T>
+public class CeleritySet<T, THasher> : ISet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -642,10 +642,22 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 - `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring BCL `HashSet<T>`: `EnsureCapacity` pre-grows the table to hold `capacity` elements without resizing and returns the resulting capacity; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`). The out-of-band `default(T)` slot is preserved. `EnsureCapacity` throws `ArgumentOutOfRangeException` on a negative capacity; `TrimExcess(capacity)` throws if `capacity < Count`.
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty`, `null` for reference types) is yielded first when present.
+- `void CopyTo(T[] array, int arrayIndex)` — copies every element (the out-of-band `default(T)` entry first) into `array`, matching `HashSet<T>.CopyTo` argument validation.
+
+### Set operations (`ISet<T>`)
+
+The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>` semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`, and the out-of-band `default(T)`/zero element all handled):
+
+- **Mutating:** `void UnionWith(IEnumerable<T> other)`, `void IntersectWith(IEnumerable<T> other)`, `void ExceptWith(IEnumerable<T> other)`, `void SymmetricExceptWith(IEnumerable<T> other)`.
+- **Query:** `bool IsSubsetOf(...)`, `bool IsProperSubsetOf(...)`, `bool IsSupersetOf(...)`, `bool IsProperSupersetOf(...)`, `bool Overlaps(...)`, `bool SetEquals(...)`.
+
+Each throws `ArgumentNullException` when `other` is `null`. The subset / equality shapes materialize `other` once into a distinct `HashSet<T>` keyed by `EqualityComparer<T>.Default` (the same equality the set itself uses); the superset / overlap shapes stream `other` directly against the set's O(1) membership test.
+
+> **`Add` note.** `ISet<T>.Add(T)` returns `bool` (the non-throwing add, equivalent to `TryAdd`). The concrete `public void Add(T)` keeps its throw-on-duplicate behaviour — cast to `ISet<T>`, or use `TryAdd`, when you want the boolean result. `ICollection<T>.Add(T)` ignores duplicates (never throws).
 
 ### Default-element handling
 
-`default(T)` is stored out-of-band via a `_hasDefaultValue` flag and never collides with the empty-slot sentinel. Mutating the set during enumeration throws `InvalidOperationException` on the next `MoveNext` / `Reset`, matching BCL `HashSet<T>`.
+`default(T)` is stored out-of-band via a `_hasDefaultValue` flag and never collides with the empty-slot sentinel. Mutating the set during enumeration — including via a mutating set operation such as `UnionWith` — throws `InvalidOperationException` on the next `MoveNext` / `Reset`, matching BCL `HashSet<T>`.
 
 ### Usage example
 
@@ -665,10 +677,10 @@ foreach (var id in ids) { /* ... */ }
 
 ## SwissSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, and `IEnumerable<T>` — is identical to `CeleritySet`. Only the probing strategy differs.
+A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
 
 ```csharp
-public class SwissSet<T, THasher> : IEnumerable<T>
+public class SwissSet<T, THasher> : ISet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -765,10 +777,10 @@ Same semantics and validation as `IntSet<THasher>` (see below).
 
 ## IntSet&lt;THasher&gt;
 
-A high-performance set of `int` values, parameterized on a custom hash provider. Implements `IEnumerable<int>`.
+A high-performance set of `int` values, parameterized on a custom hash provider. Implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) — the full `HashSet<int>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
 
 ```csharp
-public class IntSet<THasher> : IEnumerable<int>
+public class IntSet<THasher> : ISet<int>
     where THasher : struct, IHashProvider<int>
 ```
 
@@ -851,10 +863,10 @@ Same semantics and validation as `LongSet<THasher>` (see below).
 
 ## LongSet&lt;THasher&gt;
 
-A high-performance set of `long` values, parameterized on a custom hash provider. Implements `IEnumerable<long>`.
+A high-performance set of `long` values, parameterized on a custom hash provider. Implements `ISet<long>` (and therefore `ICollection<long>` / `IEnumerable<long>`) — the full `HashSet<long>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
 
 ```csharp
-public class LongSet<THasher> : IEnumerable<long>
+public class LongSet<THasher> : ISet<long>
     where THasher : struct, IHashProvider<long>
 ```
 
