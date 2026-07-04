@@ -66,7 +66,7 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashProvider<int>
+public class IntSet<THasher> : ISet<int> where THasher : struct, IHashProvider<int>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
@@ -389,6 +389,117 @@ public class IntSet<THasher> : IEnumerable<int> where THasher : struct, IHashPro
     IEnumerator<int> IEnumerable<int>.GetEnumerator() => GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    // ── ISet<int> / ICollection<int> set-algebra surface ──────────────────────
+    // The set-algebra logic is shared across the mutable set family via
+    // SetOperations, written once against the ISet<T> primitives every set
+    // exposes; the semantics match BCL HashSet<int> exactly.
+
+    /// <summary>
+    /// Modifies the set to contain all elements that are present in itself, in
+    /// <paramref name="other"/>, or in both.
+    /// </summary>
+    /// <param name="other">The collection to union into this set.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public void UnionWith(IEnumerable<int> other) => SetOperations.UnionWith(this, other);
+
+    /// <summary>
+    /// Modifies the set to contain only elements that are also present in
+    /// <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The collection to intersect with this set.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public void IntersectWith(IEnumerable<int> other) => SetOperations.IntersectWith(this, other);
+
+    /// <summary>
+    /// Removes every element in <paramref name="other"/> from the set.
+    /// </summary>
+    /// <param name="other">The collection of elements to remove.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public void ExceptWith(IEnumerable<int> other) => SetOperations.ExceptWith(this, other);
+
+    /// <summary>
+    /// Modifies the set to contain only elements that are present either in itself
+    /// or in <paramref name="other"/>, but not both.
+    /// </summary>
+    /// <param name="other">The collection to apply the symmetric difference with.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public void SymmetricExceptWith(IEnumerable<int> other) => SetOperations.SymmetricExceptWith(this, other);
+
+    /// <summary>
+    /// Determines whether the set is a subset of <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The collection to compare against.</param>
+    /// <returns><c>true</c> if every element of this set is in <paramref name="other"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public bool IsSubsetOf(IEnumerable<int> other) => SetOperations.IsSubsetOf(this, other);
+
+    /// <summary>
+    /// Determines whether the set is a proper (strict) subset of <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The collection to compare against.</param>
+    /// <returns>
+    /// <c>true</c> if every element of this set is in <paramref name="other"/> and
+    /// <paramref name="other"/> has at least one element this set does not.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public bool IsProperSubsetOf(IEnumerable<int> other) => SetOperations.IsProperSubsetOf(this, other);
+
+    /// <summary>
+    /// Determines whether the set is a superset of <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The collection to compare against.</param>
+    /// <returns><c>true</c> if every element of <paramref name="other"/> is in this set.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public bool IsSupersetOf(IEnumerable<int> other) => SetOperations.IsSupersetOf(this, other);
+
+    /// <summary>
+    /// Determines whether the set is a proper (strict) superset of <paramref name="other"/>.
+    /// </summary>
+    /// <param name="other">The collection to compare against.</param>
+    /// <returns>
+    /// <c>true</c> if every element of <paramref name="other"/> is in this set and
+    /// this set has at least one element <paramref name="other"/> does not.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public bool IsProperSupersetOf(IEnumerable<int> other) => SetOperations.IsProperSupersetOf(this, other);
+
+    /// <summary>
+    /// Determines whether the set and <paramref name="other"/> share at least one element.
+    /// </summary>
+    /// <param name="other">The collection to compare against.</param>
+    /// <returns><c>true</c> if the two share any element.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public bool Overlaps(IEnumerable<int> other) => SetOperations.Overlaps(this, other);
+
+    /// <summary>
+    /// Determines whether the set and <paramref name="other"/> contain the same distinct elements.
+    /// </summary>
+    /// <param name="other">The collection to compare against.</param>
+    /// <returns><c>true</c> if the two contain exactly the same elements.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
+    public bool SetEquals(IEnumerable<int> other) => SetOperations.SetEquals(this, other);
+
+    /// <summary>
+    /// Copies the elements of the set to the specified <paramref name="array"/>, starting at
+    /// <paramref name="arrayIndex"/>. The out-of-band zero element (if present) is copied first.
+    /// </summary>
+    /// <param name="array">The destination array.</param>
+    /// <param name="arrayIndex">The zero-based index in <paramref name="array"/> at which copying begins.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+    public void CopyTo(int[] array, int arrayIndex) => SetOperations.CopyTo(this, _count, array, arrayIndex);
+
+    // Adds the element, returning whether it was newly added (ISet<int> semantics) —
+    // the non-throwing counterpart of the public throw-on-duplicate Add(int).
+    bool ISet<int>.Add(int item) => TryAdd(item);
+
+    // ICollection<int>.Add must not throw on a duplicate (unlike the public Add(int)),
+    // so it maps to the non-throwing TryAdd.
+    void ICollection<int>.Add(int item) => TryAdd(item);
+
+    bool ICollection<int>.IsReadOnly => false;
 
     /// <summary>
     /// A struct enumerator over an <see cref="IntSet{THasher}"/>. Because it is
