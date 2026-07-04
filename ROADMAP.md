@@ -48,6 +48,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 - Add `Keys` / `Values` enumerable views and `GetEnumerator()` on the dictionaries. Status: `done`.
 - Constructor accepting `IEnumerable<KeyValuePair<TKey, TValue>>`. Status: `done`.
 - Add `GetEnumerator()` and `IEnumerable<T>` conformance on the sets (`IntSet`, `CeleritySet`, `LongSet`). Status: `done`.
+- Full `ISet<T>` set-algebra conformance on the mutable set family (`CeleritySet`, `SwissSet`, `IntSet`, `LongSet`) — `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith`, the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, and `CopyTo`, all with BCL `HashSet<T>` semantics, so a Celerity set drops in wherever an `ISet<T>` / `ICollection<T>` is expected. Status: `done` — shared once via the internal `SetOperations` helper and reconciled against a `HashSet<T>` oracle by a randomized differential test; completes the `HashSet<T>` drop-in-parity gap (Guiding Principle #3) discovered while reading the source after the roadmap was otherwise exhausted. Tracked in [#240](https://github.com/marius-bughiu/Celerity/issues/240).
 
 ### Hashers
 
