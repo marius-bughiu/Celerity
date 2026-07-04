@@ -33,6 +33,7 @@ internal class Program
         typeof(BitSetBenchmark),
         typeof(HyperLogLogBenchmark),
         typeof(CountMinSketchBenchmark),
+        typeof(TopKSketchBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };
