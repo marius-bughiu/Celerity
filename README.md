@@ -418,6 +418,18 @@ SpanBits.Set(bits, 5);
 for (int i = SpanBits.NextSetBit(bits, 0); i >= 0; i = SpanBits.NextSetBit(bits, i + 1)) { /* ... */ }
 ```
 
+The **`BitWriter`** / **`BitReader`** ref-struct cursors are the **sequential, sub-byte** counterpart: they pack and unpack arbitrary-width bit **fields** (a 3-bit flag group, a 12-bit sample, a 20-bit offset) end-to-end over a caller-owned `Span<byte>`, LSB-first, with **no stream and no allocation** — so a record of odd-width fields occupies exactly `ceil(total_bits / 8)` bytes. Where `VarInt` is byte-granular and `SpanBits` is random-access, these append and consume whole multi-bit fields at a moving cursor. The BCL has no equivalent (`System.Collections.BitArray` sets one bit at a time and can't append a multi-bit field). Every `TryWrite` / `TryRead` is bounds-safe (returns `false` and leaves the cursor unchanged rather than writing a partial field), and only the low `bitCount` bits of a value are stored, so an out-of-range value never corrupts a following field.
+
+```csharp
+Span<byte> buffer = stackalloc byte[BitWriter.ByteCount(3 + 12 + 20)]; // 5 bytes
+var writer = new BitWriter(buffer);
+writer.TryWriteBits(5, 3); writer.TryWriteBits(3000, 12); writer.TryWriteBits(0xABCDE, 20);
+
+var reader = new BitReader(buffer);
+reader.TryReadBits(3, out ulong flags);   // 5
+reader.TryReadBits(12, out ulong sample); // 3000
+```
+
 Then, **`SimdReductions`** ships the two span reductions that `System.Numerics.Tensors.TensorPrimitives` (which you should use for plain `Sum` / `Min` / `Max`) **doesn't** cover: a **fused single-pass `MinMax`** that computes both extrema in one pass instead of the two passes `TensorPrimitives.Min` + `TensorPrimitives.Max` cost (**~1.8× faster on large, out-of-cache `int` arrays** — a memory-bandwidth win; a wash for small in-cache spans), and an overflow-checked **`CheckedSum`** that widens `int` lanes to `long` so the SIMD accumulation can't overflow and throws `OverflowException` rather than wrapping like `TensorPrimitives.Sum` (**~4.6× faster than the only safe alternative, a scalar `checked` loop**).
 
 ```csharp

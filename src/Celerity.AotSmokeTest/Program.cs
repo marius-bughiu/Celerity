@@ -942,6 +942,34 @@ void Check(bool condition, string message)
     Check(!VarInt.TryReadVarInt(truncated, out uint _, out int r) && r == 0, "VarInt truncated read fails");
 }
 
+// BitWriter / BitReader — sequential sub-byte bit I/O. Forces the ref-struct cursors, the LSB-first
+// clear-then-set write loop, the multi-byte-straddling field path, and the bounds-safe failure paths to
+// compile under Native AOT and confirms a mixed-width field record round-trips on the native runtime.
+{
+    // A record of odd-width fields totalling 64 bits → exactly 8 bytes.
+    (ulong Value, int Bits)[] fields = { (5, 3), (3000, 12), (1, 1), (0xABCDE, 20), (0x0FFFFFFF, 28) };
+    Span<byte> buf = stackalloc byte[BitWriter.ByteCount(64)];
+
+    var writer = new BitWriter(buf);
+    bool wOk = true;
+    foreach (var (value, bits) in fields)
+        if (!writer.TryWriteBits(value, bits)) { wOk = false; break; }
+    wOk &= writer.BitsWritten == 64 && writer.BytesWritten == 8;
+    Check(wOk, "BitWriter mixed-width field pack");
+
+    var reader = new BitReader(buf);
+    bool rOk = true;
+    foreach (var (value, bits) in fields)
+        if (!reader.TryReadBits(bits, out ulong read) || read != value) { rOk = false; break; }
+    Check(rOk, "BitReader mixed-width field round-trip");
+
+    // Bounds safety: a field that overflows the buffer fails without advancing; a full read is exhausted.
+    Span<byte> one = stackalloc byte[1];
+    var w2 = new BitWriter(one);
+    Check(w2.TryWriteBits(0b111, 3) && !w2.TryWriteBits(0b111111, 6) && w2.BitsWritten == 3,
+        "BitWriter refuses an overfull field without mutating");
+}
+
 // FastGuid (#195) — non-crypto v4 + RFC 9562 big-endian v7 from a struct PRNG, and the strictly monotonic
 // GuidV7Generator. Forces the ref-generic CreateVersion4 / CreateVersion7 instantiations and the mutable
 // monotonic-counter struct to compile under Native AOT, and confirms version / variant bits, the big-endian
