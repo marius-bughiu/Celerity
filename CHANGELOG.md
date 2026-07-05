@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-05
+
 ### Added
 
 - **`TopKSketch<T, THasher>`** in `Celerity.Collections` — a **space-bounded top-k / heavy-hitters sketch** implementing the **Space-Saving** algorithm (Metwally, Agrawal & El Abbadi, 2005), completing the streaming-sketch family: **membership** (`BloomFilter`, `CuckooFilter`) → **cardinality** (`HyperLogLog`) → **frequency** (`CountMinSketch`) → **top-k** ([#238](https://github.com/marius-bughiu/Celerity/issues/238)). It reports a stream's most frequent elements from a fixed `Capacity` of *monitors* (element / count / error triples), so its memory is `O(k)` regardless of stream cardinality — **the documented BCL-beating workload is top-k over a high-cardinality stream**, where a `Dictionary<T,int>` must materialize *every distinct key* just to rank the top few (`O(distinct)` memory), whereas the sketch holds only `k` monitors. Guarantees: it **never underestimates** a monitored count, never misses an element whose true frequency exceeds `TotalCount / Capacity`, and bounds each element's true frequency to `[Count − Error, Count]`. The monitors live in an indexed binary **min-heap** keyed on count (the next eviction victim at the root) so both a repeat observation and an eviction are `O(log k)`, and the element→monitor index **dogfoods `CelerityDictionary<T, int, THasher>`** — which is where `THasher` is used and which supplies the out-of-band `default(T)` / `null` handling for free (a string hasher is never invoked with `null`). Surface: `Add(item)` / `Add(item, count)` (positive-count-validated, `long`-saturating), `TryGetCount(item, out count, out error)`, `GetTopK()` / `GetTopK(int)` (returning `TopKEntry<T>` — element / count / error — sorted by count descending), `Clear`, and `Capacity` / `Count` (distinct monitored) / `TotalCount` (stream length) properties, plus an `IEnumerable<T>` counting constructor. It is **add-and-query only**: like a Bloom filter it has no `Remove`, and unlike `CountMinSketch` / `HyperLogLog` it deliberately has **no `UnionWith`** — two bounded top-k summaries have no exact merge, so no lossy one is offered (documented). A new public readonly struct **`TopKEntry<T>`** carries a result's `Element` / `Count` / `Error`. Filed and shipped after the roadmap was otherwise exhausted (a tier-(c) enhancement), mirroring `CelerityMultiSet` ([#235](https://github.com/marius-bughiu/Celerity/issues/235)).
@@ -472,7 +474,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.2.0
 [2.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.1.0
 [2.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.0.0
 [1.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v1.5.0
