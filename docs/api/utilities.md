@@ -460,6 +460,75 @@ for (int i = SpanBits.NextSetBit(bits, 0); i >= 0; i = SpanBits.NextSetBit(bits,
 
 All methods are allocation-free; the single-bit operations and `WordCount` are `[MethodImpl(AggressiveInlining)]`, and the whole type is AOT-safe.
 
+## BitWriter / BitReader (sequential sub-byte bit I/O)
+
+```csharp
+namespace Celerity.Primitives;
+
+public ref struct BitWriter
+{
+    public BitWriter(Span<byte> destination);
+
+    public readonly int  BitsWritten   { get; }   // current cursor position
+    public readonly int  BytesWritten  { get; }   // ceil(BitsWritten / 8)
+    public readonly long CapacityInBits { get; }
+    public readonly long BitsRemaining  { get; }
+
+    public static int ByteCount(int bitCount);     // ceil(bitCount / 8), for buffer sizing
+
+    public bool TryWriteBit (bool value);
+    public bool TryWriteBits(ulong value, int bitCount);   // bitCount in [0, 64]
+}
+
+public ref struct BitReader
+{
+    public BitReader(ReadOnlySpan<byte> source);
+
+    public readonly int  BitsRead      { get; }
+    public readonly long CapacityInBits { get; }
+    public readonly long BitsRemaining  { get; }
+
+    public bool TryReadBit (out bool value);
+    public bool TryReadBits(int bitCount, out ulong value);   // bitCount in [0, 64]
+}
+```
+
+A **sequential, bounds-safe pair of cursors for packing and unpacking arbitrary-width bit fields** over a caller-owned `Span<byte>` / `ReadOnlySpan<byte>`, with **no stream and no allocation**. Where a field's width is not a whole byte — a 3-bit flag group, a 12-bit sample, a 20-bit offset — `BitWriter` appends it with a single multi-bit write and `BitReader` reads it back, so a record of odd-width fields occupies exactly `ceil(total_bits / 8)` bytes instead of one byte per field.
+
+This is the **sequential, sub-byte counterpart** to the other bit primitives: [`VarInt`](#varint-span-varint-codec) is byte-granular (whole-byte variable-length integers), and [`SpanBits`](#spanbits-span-bit-packing) is random-access (get/set one bit at a fixed index over a `Span<ulong>`). `BitWriter` / `BitReader` append and consume **whole multi-bit fields at a moving cursor**. The BCL has no equivalent: `System.Collections.BitArray` is a heap object that sets one bit at a time and cannot append a multi-bit field, and `System.Buffers.Binary.BinaryPrimitives` is byte-granular.
+
+**Bit order is LSB-first (little-endian bits):** bit position `p` is byte `p / 8`, bit `p % 8` counting from the least-significant bit; a field's least-significant bit sits at the current position and higher bits follow toward higher positions, spilling into the next byte as needed. This is the convention DEFLATE and most bit-packed codecs use, and the writer and reader are exact inverses when fields are read back in the **same order and widths** they were written.
+
+**Workloads:** bit-packed wire protocols and packet headers, compression bitstreams, packed columnar / bitmap-index encodings, and fixed-width-field records where a byte-per-field layout would waste space.
+
+**Usage** — pack a record of odd-width fields, then read it back:
+
+```csharp
+using Celerity.Primitives;
+
+Span<byte> buffer = stackalloc byte[BitWriter.ByteCount(3 + 12 + 20)];  // 5 bytes
+
+var writer = new BitWriter(buffer);
+writer.TryWriteBits(5, 3);        // a 3-bit flag group
+writer.TryWriteBits(3000, 12);    // a 12-bit sample
+writer.TryWriteBits(0xABCDE, 20); // a 20-bit offset
+int packedBytes = writer.BytesWritten;   // 5
+
+var reader = new BitReader(buffer);
+reader.TryReadBits(3,  out ulong flags);   // 5
+reader.TryReadBits(12, out ulong sample);  // 3000
+reader.TryReadBits(20, out ulong offset);  // 0xABCDE
+```
+
+**Contract and special cases:**
+
+- **`ByteCount(bitCount)` is `ceil(bitCount / 8)`** (`0` for `0`); it throws `ArgumentOutOfRangeException` for a negative count.
+- **Every `TryWrite` / `TryRead` is bounds-safe:** it returns `false` and leaves the cursor and buffer **unchanged** when the field would not fit (or the source has too few bits left), so a partial field is never written or consumed. Check the return value between fields, or size the buffer up front with `ByteCount`.
+- **Only the low `bitCount` bits of a written value are stored** — any higher bits are ignored, so an out-of-range value can never corrupt a following field. A read yields the value in its low `bitCount` bits (higher bits `0`).
+- **`bitCount` must be in `[0, 64]`**; a value outside that range throws `ArgumentOutOfRangeException`. A `0`-bit field is a no-op success (nothing written / value `0`), so a computed width of `0` needs no special-casing.
+- **Each field overwrites exactly the bits it occupies** (it clears them before depositing), so the destination need not be pre-zeroed and a field can be rewritten.
+- The types are mutable `ref struct` cursors — construct one over the buffer and write/read fields in sequence. Use them as locals; pass by `ref` if a helper method must advance the same cursor. As `ref struct`s they cannot be boxed, stored on the heap, or used across `await` / `yield` (the same constraints as `Span<T>` itself).
+
 ## SimdReductions (fused / specialized SIMD reductions)
 
 ```csharp

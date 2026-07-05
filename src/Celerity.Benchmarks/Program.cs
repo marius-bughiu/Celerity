@@ -60,6 +60,7 @@ internal class Program
         typeof(FastModBenchmark),
         typeof(PrngBenchmark),
         typeof(VarIntBenchmark),
+        typeof(BitPackingBenchmark),
         typeof(CountDigitsBenchmark),
         typeof(GuidBenchmark),
         typeof(SpanBitsBenchmark),
