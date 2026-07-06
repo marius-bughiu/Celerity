@@ -6,8 +6,9 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Tests for the <c>IEnumerable&lt;T&gt;</c> constructor on
 /// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>,
-/// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>, and
-/// the build-once <see cref="FrozenCeleritySet{THasher}"/>.
+/// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
+/// <see cref="RobinHoodSet{T, THasher}"/>, and the build-once
+/// <see cref="FrozenCeleritySet{THasher}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
 /// equivalents, but follows BCL <see cref="HashSet{T}"/> semantics rather than
@@ -757,6 +758,188 @@ public class SetIEnumerableConstructorTests
         var celerity = new CeleritySet<int, Int32WangNaiveHasher> { 0, 5, 10, 15 };
 
         var copy = new SwissSet<int, Int32WangNaiveHasher>(celerity);
+
+        Assert.Equal(celerity.Count, copy.Count);
+        foreach (int item in celerity)
+            Assert.True(copy.Contains(item));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  RobinHoodSet — source argument validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RobinHoodSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new RobinHoodSet<string, StringFnV1AHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldStillValidate_LoadFactor_WhenConstructedFromSource()
+    {
+        var source = new[] { "a" };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RobinHoodSet<string, StringFnV1AHasher>(source, loadFactor: 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RobinHoodSet<string, StringFnV1AHasher>(source, loadFactor: 0f));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  RobinHoodSet — happy path
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RobinHoodSet_ShouldSupportEmptySource()
+    {
+        var set = new RobinHoodSet<string, StringFnV1AHasher>(Array.Empty<string>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldCopyAllElements_FromArraySource()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new RobinHoodSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        IEnumerable<int> source = Enumerable.Range(1, 50);
+
+        var set = new RobinHoodSet<int, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(50, set.Count);
+        for (int i = 1; i <= 50; i++)
+            Assert.True(set.Contains(i));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldSilentlyDedupe_DuplicateElements()
+    {
+        var source = new[] { "a", "b", "a", "c", "b", "a" };
+
+        var set = new RobinHoodSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldSilentlyDedupe_DuplicateNullElements()
+    {
+        var source = new string?[] { "a", null, "b", null, "c", null };
+
+        var set = new RobinHoodSet<string?, StringFnV1AHasher>(source);
+
+        Assert.Equal(4, set.Count);
+        Assert.True(set.Contains(null));
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldSilentlyDedupe_DuplicateDefaultValueTypeElements()
+    {
+        var source = new[] { 0, 1, 0, 2, 0 };
+
+        var set = new RobinHoodSet<int, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(0));
+        Assert.True(set.Contains(1));
+        Assert.True(set.Contains(2));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldCaptureNullElement_FromSource()
+    {
+        var source = new string?[] { null, "x", "y" };
+
+        var set = new RobinHoodSet<string?, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(null));
+        Assert.True(set.Contains("x"));
+        Assert.True(set.Contains("y"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldHandleLargeSource()
+    {
+        IEnumerable<int> source = Enumerable.Range(1, 500);
+
+        var set = new RobinHoodSet<int, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(500, set.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.True(set.Contains(i), $"missing element {i}");
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldBeIndependent_FromSourceArray()
+    {
+        var source = new[] { "a", "b", "c" };
+        var set = new RobinHoodSet<string, StringFnV1AHasher>(source);
+
+        source[0] = "MUTATED";
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.False(set.Contains("MUTATED"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldUseCallerCapacity_WhenLargerThanSourceCount()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new RobinHoodSet<string, StringFnV1AHasher>(source, capacity: 1024);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldRoundtrip_FromAnotherRobinHoodSetEnumeration()
+    {
+        var original = new RobinHoodSet<int, Int32WangNaiveHasher>();
+        foreach (int i in new[] { 0, 1, 2, 3, 4, 5 })
+            original.Add(i);
+
+        var copy = new RobinHoodSet<int, Int32WangNaiveHasher>(original);
+
+        Assert.Equal(original.Count, copy.Count);
+        foreach (int item in original)
+            Assert.True(copy.Contains(item));
+    }
+
+    [Fact]
+    public void RobinHoodSet_ShouldRoundtrip_FromCeleritySetEnumeration()
+    {
+        // Cross-collection copy: build a RobinHoodSet from a CeleritySet.
+        var celerity = new CeleritySet<int, Int32WangNaiveHasher> { 0, 5, 10, 15 };
+
+        var copy = new RobinHoodSet<int, Int32WangNaiveHasher>(celerity);
 
         Assert.Equal(celerity.Count, copy.Count);
         foreach (int item in celerity)

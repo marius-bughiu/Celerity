@@ -750,6 +750,81 @@ foreach (var item in seen) { /* ... */ }
 
 ---
 
+## RobinHoodSet&lt;T, THasher&gt;
+
+A drop-in peer of `CeleritySet` that resolves collisions with **Robin Hood open addressing** instead of plain linear probing. It is the set counterpart of `RobinHoodDictionary` — the same probe-sequence-length (PSL) machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
+
+```csharp
+public class RobinHoodSet<T, THasher> : ISet<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+### What Robin Hood probing does
+
+The set keeps, for every occupied slot, the number of steps it sits away from its ideal (hash) slot — its **probe sequence length** (PSL), stored in a parallel `int` array alongside the elements. On insert, an incoming element that has travelled further than the element already occupying a slot **displaces** it ("robs from the rich"): the resident is evicted and re-inserted further along. This bounds the variance of probe lengths, so the worst-case lookup stays close to the average. Two consequences matter to callers:
+
+- **Bounded probe variance.** On clustered or adversarial element distributions — where plain linear probing grows long runs and tail-latency lookups degrade toward O(n) — the displacement rule keeps every element close to its ideal slot.
+- **Early-exit negative lookups.** The PSL invariant lets a *negative* `Contains` stop as soon as the probe distance exceeds the resident slot's PSL: if the element were present it would have displaced this shorter-distance resident, so it cannot be there. This is the common case for a set (presence checks, dedup guards). The cost is one extra `int` of PSL bookkeeping per slot and a small amount of displacement work per insert; deletion uses backward-shift-with-distance-decrement, so the table stays contiguous (no tombstones).
+
+### When to choose it over `CeleritySet`
+
+Reach for `RobinHoodSet` when your elements are **clustered or adversarial** and you want the worst-case `Contains` to track the average, or when negative lookups dominate and the PSL early-exit pays off. On uniform distributions with a good hasher it is typically a wash or a slight loss versus `CeleritySet` — the per-slot PSL `int` and the extra insert work are pure overhead there — so it is an opt-in type, not a default. Both are single-threaded and make no iteration-order guarantee.
+
+### Constructors
+
+```csharp
+public RobinHoodSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public RobinHoodSet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CeleritySet` — duplicate elements (including duplicate `default(T)`) are silently deduplicated. The backing table is always rounded up to the next power of two.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+
+### Methods
+
+- `void Add(T item)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(T item)` — `true` on success, `false` if already present.
+- `bool Contains(T item)`
+- `bool Remove(T item)`
+- `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring `CeleritySet`. The out-of-band `default(T)` slot is preserved.
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — struct enumerator; the out-of-band `default(T)` entry is yielded first when present.
+
+### Default-element handling
+
+Identical to `CeleritySet`: `default(T)` (`null` / `0` / `Guid.Empty` / …) is stored out-of-band via a `_hasDefaultValue` flag, so it never collides with the empty-slot sentinel and the hasher is never invoked with it (string hashers throw on `null`). Mutating the set during enumeration throws `InvalidOperationException` on the next `MoveNext` / `Reset`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Clustered elements: Robin Hood keeps the worst-case Contains close to the average.
+var seen = new RobinHoodSet<int, Int32WangNaiveHasher>();
+seen.Add(42);
+seen.Add(0); // default-element slot
+
+Console.WriteLine(seen.Contains(42));   // True
+Console.WriteLine(seen.Contains(999));  // False — the PSL invariant stops the probe early
+
+foreach (var item in seen) { /* ... */ }
+```
+
+---
+
 ## IntSet
 
 A convenience subclass of `IntSet<Int32WangNaiveHasher>` for the common case of integer sets.

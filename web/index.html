@@ -285,6 +285,7 @@
     <div class="ship"><code>LongSet</code><div class="desc">long-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>CeleritySet&lt;T, H&gt;</code><div class="desc">Generic set with a struct hasher constraint.</div></div>
     <div class="ship"><code>SwissSet&lt;T, H&gt;</code><div class="desc">Swiss-table SIMD group probing for sets: one Vector128 compare tests 16 slots per membership check, so negative lookups stay cheap. The set counterpart of SwissDictionary.</div></div>
+    <div class="ship"><code>RobinHoodSet&lt;T, H&gt;</code><div class="desc">Robin Hood open addressing for sets: bounded probe variance and early-exit negative lookups on clustered elements. The set counterpart of RobinHoodDictionary.</div></div>
     <div class="ship"><code>FrozenCeleritySet&lt;H&gt;</code><div class="desc">Build-once string set with perfect hashing for single-probe membership tests. Implements <code>IReadOnlySet</code>.</div></div>
     <div class="ship"><code>BloomFilter&lt;T, H&gt;</code><div class="desc">Probabilistic membership filter: bit-array storage, no false negatives, tunable false-positive rate. A fraction of a HashSet's memory.</div></div>
     <div class="ship"><code>CuckooFilter&lt;T, H&gt;</code><div class="desc">Probabilistic membership filter that <strong>supports deletion</strong>: fingerprint buckets, no false negatives, tunable false-positive rate, ≤2 cache lines per lookup. The Bloom filter you can <code>Remove</code> from.</div></div>

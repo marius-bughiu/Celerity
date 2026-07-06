@@ -470,6 +470,37 @@ public class TryAddProbeCountTests
     }
 
     [Fact]
+    public void RobinHoodSet_TryAdd_NewItem_DoesExactlyOneHashCall()
+    {
+        // RobinHoodSet computes the element hash once and threads it through both
+        // the existence probe and the Robin Hood insert, so a new-item TryAdd costs
+        // exactly one Hash() call (no resize fires at capacity 64).
+        var set = new RobinHoodSet<string, CountingStringHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 10; i++)
+            Assert.True(set.TryAdd($"v{i}"));
+
+        Assert.Equal(10, _hashCallCount);
+        Assert.Equal(10, set.Count);
+    }
+
+    [Fact]
+    public void RobinHoodSet_TryAdd_DuplicateItem_DoesExactlyOneHashCall()
+    {
+        var set = new RobinHoodSet<string, CountingStringHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            set.TryAdd($"v{i}");
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(set.TryAdd($"v{i}"));
+
+        Assert.Equal(5, _hashCallCount);
+        Assert.Equal(5, set.Count);
+    }
+
+    [Fact]
     public void IntDictionary_TryAdd_PreservesExistingValueOnDuplicate()
     {
         // Behavioural guard: TryAdd must not overwrite the existing value when
