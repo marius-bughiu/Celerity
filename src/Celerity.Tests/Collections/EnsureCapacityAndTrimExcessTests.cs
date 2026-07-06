@@ -258,6 +258,22 @@ public class EnsureCapacityAndTrimExcessTests
     }
 
     [Fact]
+    public void RobinHoodSet_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
+    {
+        var set = new RobinHoodSet<string, CountingStringHasher>();
+        Assert.True(set.EnsureCapacity(N) >= N);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= N; i++)
+            set.Add($"v{i}");
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.True(set.Contains($"v{i}"));
+    }
+
+    [Fact]
     public void CelerityMultiMap_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
     {
         var map = new CelerityMultiMap<int, int, CountingIntHasher>();
@@ -471,6 +487,24 @@ public class EnsureCapacityAndTrimExcessTests
         for (int i = 1; i <= 5; i++)
             Assert.True(set.Contains($"v{i}"));
         set.Add("zz"); // tombstones were dropped; table still usable
+        Assert.True(set.Contains("zz"));
+    }
+
+    [Fact]
+    public void RobinHoodSet_TrimExcess_AfterShrink_PreservesContents()
+    {
+        var set = new RobinHoodSet<string, CountingStringHasher>();
+        for (int i = 1; i <= N; i++)
+            set.Add($"v{i}");
+        for (int i = 6; i <= N; i++)
+            set.Remove($"v{i}");
+
+        set.TrimExcess();
+
+        Assert.Equal(5, set.Count);
+        for (int i = 1; i <= 5; i++)
+            Assert.True(set.Contains($"v{i}"));
+        set.Add("zz"); // table still usable after the shrink
         Assert.True(set.Contains("zz"));
     }
 
