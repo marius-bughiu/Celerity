@@ -825,6 +825,82 @@ foreach (var item in seen) { /* ... */ }
 
 ---
 
+## HashCachingSet&lt;T, THasher&gt;
+
+A drop-in peer of `CeleritySet` that takes the struct-of-arrays layout one step further: alongside the `items` array it keeps a dense side array of 32-bit hash **fingerprints**. It is the set counterpart of `HashCachingDictionary` — the same cached-fingerprint machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probe representation differs.
+
+```csharp
+public class HashCachingSet<T, THasher> : ISet<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+### What the cached fingerprint does
+
+Every occupied slot stores its element's hash with the top bit forced set (`hash | 0x80000000`), which makes the fingerprint always non-zero; an empty slot is the array default of `0`. A probe scan touches **only** the compact fingerprint buffer — comparing the cached fingerprint before it ever reads an element — so a candidate element is dereferenced (and the full equality check run) only on a fingerprint match. Two consequences matter to callers:
+
+- **Cache-friendly probing.** The dense `int[]` metadata buffer packs many more slots per cache line than the element array, so cache-cold lookups walk metadata instead of chasing element references.
+- **Short-circuited equality.** Elements with expensive equality (long strings, large structs) are compared in full only when their fingerprint matches, so negative lookups and colliding-slot probes reject on a single integer compare. Because the forced occupied bit sits above every power-of-two table mask, the cached fingerprint also yields the slot index directly (`fingerprint & mask`), so a resize re-homes every entry without recomputing a single hash. Deletion uses backward-shift (driven by the cached natural slot), so the table stays contiguous (no tombstones).
+
+### When to choose it over `CeleritySet`
+
+Reach for `HashCachingSet` on **lookup-dominated** workloads — large tables, many negative "have I seen this?" checks, or elements whose equality is expensive — where the fingerprint filter earns back its four bytes of metadata per slot. On tiny tables of cheap (e.g. `int`) elements it is roughly a wash versus `CeleritySet`, so it is an opt-in type, not a default. It is complementary to the SIMD-probing [`SwissSet`](#swissset-t-thasher): both cut probe cost, one via a control-byte group compare, the other via a cached fingerprint. Both are single-threaded and make no iteration-order guarantee.
+
+### Constructors
+
+```csharp
+public HashCachingSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public HashCachingSet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CeleritySet` — duplicate elements (including duplicate `default(T)`) are silently deduplicated. The backing table is always rounded up to the next power of two.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+
+### Methods
+
+- `void Add(T item)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(T item)` — `true` on success, `false` if already present.
+- `bool Contains(T item)`
+- `bool Remove(T item)`
+- `void Clear()`
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring `CeleritySet`. The out-of-band `default(T)` slot is preserved.
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — struct enumerator; the out-of-band `default(T)` entry is yielded first when present.
+
+### Default-element handling
+
+Identical to `CeleritySet`: `default(T)` (`null` / `0` / `Guid.Empty` / …) is stored out-of-band via a `_hasDefaultValue` flag, so it never collides with the empty-slot sentinel (a `0` fingerprint) and the hasher is never invoked with it (string hashers throw on `null`). Mutating the set during enumeration throws `InvalidOperationException` on the next `MoveNext` / `Reset`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Lookup-heavy dedup over long string keys: the cached fingerprint rejects
+// most non-matches on a single integer compare, before any string equality.
+var seen = new HashCachingSet<string, StringFnV1AHasher>();
+seen.Add("alpha");
+seen.Add(null!); // default-element slot
+
+Console.WriteLine(seen.Contains("alpha")); // True
+Console.WriteLine(seen.Contains("omega")); // False — rejected on the fingerprint compare
+
+foreach (var item in seen) { /* ... */ }
+```
+
+---
+
 ## IntSet
 
 A convenience subclass of `IntSet<Int32WangNaiveHasher>` for the common case of integer sets.

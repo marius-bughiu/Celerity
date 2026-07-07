@@ -252,6 +252,20 @@ public class BulkConstructorNoResizeTests
             Assert.True(set.Contains($"v{i}"));
     }
 
+    [Fact]
+    public void HashCachingSet_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        string[] src = Enumerable.Range(1, N).Select(i => $"v{i}").ToArray();
+        _hashCallCount = 0;
+
+        var set = new HashCachingSet<string, CountingStringHasher>(src);
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.True(set.Contains($"v{i}"));
+    }
+
     // ── MultiMap ────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -26,6 +26,7 @@ internal class Program
         typeof(CeleritySetBenchmark),
         typeof(SwissSetBenchmark),
         typeof(RobinHoodSetBenchmark),
+        typeof(HashCachingSetBenchmark),
         typeof(FrozenCeleritySetBenchmark),
         typeof(IntSetBenchmark),
         typeof(LongSetBenchmark),

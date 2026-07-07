@@ -7,7 +7,7 @@ namespace Celerity.Tests.Collections;
 /// Differential tests for the <see cref="ISet{T}"/> set-algebra surface added to the
 /// mutable set family (<see cref="CeleritySet{T, THasher}"/>,
 /// <see cref="SwissSet{T, THasher}"/>, <see cref="RobinHoodSet{T, THasher}"/>,
-/// <see cref="IntSet{THasher}"/>,
+/// <see cref="HashCachingSet{T, THasher}"/>, <see cref="IntSet{THasher}"/>,
 /// <see cref="LongSet{THasher}"/>). Each set type is driven through a long randomized
 /// battery of union / intersect / except / symmetric-except / subset / superset /
 /// overlap / equality operations in lockstep with a BCL <see cref="HashSet{T}"/>
@@ -45,6 +45,14 @@ public class SetAlgebraDifferentialTests
     [InlineData(98765)]
     public void RobinHoodSet_MatchesHashSet(int seed) =>
         RunDifferential(() => new RobinHoodSet<int, Int32WangNaiveHasher>(), i => i, seed);
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(1234)]
+    [InlineData(98765)]
+    public void HashCachingSet_MatchesHashSet(int seed) =>
+        RunDifferential(() => new HashCachingSet<int, Int32WangNaiveHasher>(), i => i, seed);
 
     [Theory]
     [InlineData(1)]

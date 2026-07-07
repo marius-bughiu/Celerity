@@ -33,12 +33,13 @@ public class SetAlgebraTests
     }
 
     [Fact]
-    public void IntSet_LongSet_SwissSet_RobinHoodSet_ImplementISet()
+    public void IntSet_LongSet_SwissSet_RobinHoodSet_HashCachingSet_ImplementISet()
     {
         Assert.IsAssignableFrom<ISet<int>>(new IntSet());
         Assert.IsAssignableFrom<ISet<long>>(new LongSet());
         Assert.IsAssignableFrom<ISet<int>>(new SwissSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new RobinHoodSet<int, Int32WangNaiveHasher>());
+        Assert.IsAssignableFrom<ISet<int>>(new HashCachingSet<int, Int32WangNaiveHasher>());
     }
 
     [Fact]
