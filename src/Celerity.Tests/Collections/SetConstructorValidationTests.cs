@@ -6,7 +6,7 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Constructor validation tests for <see cref="CeleritySet{T, THasher}"/>,
 /// <see cref="SwissSet{T, THasher}"/>, <see cref="RobinHoodSet{T, THasher}"/>,
-/// <see cref="IntSet{THasher}"/>, and
+/// <see cref="HashCachingSet{T, THasher}"/>, <see cref="IntSet{THasher}"/>, and
 /// <see cref="LongSet{THasher}"/>. Mirrors
 /// <see cref="ConstructorValidationTests"/> for the dictionary types.
 /// </summary>
@@ -127,6 +127,45 @@ public class SetConstructorValidationTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new RobinHoodSet<int, Int32WangNaiveHasher>(-1));
+    }
+
+    // ---------------------------------------------------------------
+    //  HashCachingSet
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void HashCachingSet_ShouldThrow_WhenLoadFactorIsZero()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new HashCachingSet<int, Int32WangNaiveHasher>(16, 0f));
+    }
+
+    [Fact]
+    public void HashCachingSet_ShouldThrow_WhenLoadFactorIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new HashCachingSet<int, Int32WangNaiveHasher>(16, -0.5f));
+    }
+
+    [Fact]
+    public void HashCachingSet_ShouldThrow_WhenLoadFactorIsOne()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new HashCachingSet<int, Int32WangNaiveHasher>(16, 1f));
+    }
+
+    [Fact]
+    public void HashCachingSet_ShouldThrow_WhenLoadFactorExceedsOne()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new HashCachingSet<int, Int32WangNaiveHasher>(16, 1.5f));
+    }
+
+    [Fact]
+    public void HashCachingSet_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new HashCachingSet<int, Int32WangNaiveHasher>(-1));
     }
 
     // ---------------------------------------------------------------

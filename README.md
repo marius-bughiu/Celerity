@@ -43,10 +43,11 @@ All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet 
 - `CeleritySet<T, THasher>` — generic set counterpart to `CelerityDictionary`.
 - `SwissSet<T, THasher>` — Swiss-table SIMD group probing for sets: one `Vector128` compare tests 16 slots per membership check, filtered by a 7-bit hash tag (cost: one control byte per slot). For membership-heavy sets with many negative lookups. The set counterpart of `SwissDictionary`.
 - `RobinHoodSet<T, THasher>` — Robin Hood probing for sets: bounds probe-length variance and lets negative `Contains` lookups exit early on clustered / adversarial elements (cost: a per-slot probe-distance `int`). The set counterpart of `RobinHoodDictionary`.
+- `HashCachingSet<T, THasher>` — struct-of-arrays layout for sets: a dense side array of 32-bit hash fingerprints lets probes scan metadata only and short-circuit expensive element equality on a single integer compare (cost: four bytes per slot). For lookup-heavy sets and costly-equality elements. The set counterpart of `HashCachingDictionary`.
 - `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with single-probe membership. Implements `IReadOnlySet<string>`.
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
 
-The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `IntSet`, `LongSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
+The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
 
 **Probabilistic & bit-level**
 
@@ -174,7 +175,7 @@ Console.WriteLine(scope["x"]);  // 1
 </details>
 
 <details>
-<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, FrozenCeleritySet</summary>
+<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet</summary>
 
 ```csharp
 var seen = new IntSet();
@@ -211,6 +212,14 @@ Console.WriteLine(swissSeen.Contains(999)); // false — negative lookup short-c
 var rhSeen = new RobinHoodSet<int, Int32WangNaiveHasher>();
 rhSeen.Add(42);
 Console.WriteLine(rhSeen.Contains(999)); // false — the PSL invariant stops the probe early
+```
+
+`HashCachingSet<T, THasher>` is the struct-of-arrays set — the set counterpart of `HashCachingDictionary`. It keeps a dense side array of 32-bit hash fingerprints alongside the elements, so a probe scans only that compact metadata and dereferences an element (running the full equality check) only on a fingerprint match. Same API as `CeleritySet`, at the cost of four bytes of metadata per slot — reach for it on lookup-heavy sets and elements with expensive equality (long strings, large structs).
+
+```csharp
+var hcSeen = new HashCachingSet<string, StringFnV1AHasher>();
+hcSeen.Add("alpha");
+Console.WriteLine(hcSeen.Contains("omega")); // false — rejected on the fingerprint compare
 ```
 
 `FrozenCeleritySet` is the build-once, read-many string set counterpart of `FrozenCelerityDictionary` — single-probe `Contains`, immutable, implements `IReadOnlySet<string>` (so `SetEquals`, `IsSubsetOf`, `Overlaps`, … are available), and silently dedupes. Use `FrozenCeleritySet<THasher>` (e.g. `StringFnV1AFullHasher`) for non-ASCII elements.
@@ -317,6 +326,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
 | **Membership-heavy** set (large sets, many negative `Contains` lookups, clustered elements) where SIMD pays off | `SwissSet<T, THasher>` | Same API as `CeleritySet`, but Swiss-table group probing tests 16 slots per `Vector128` compare and filters candidates by a 7-bit hash tag before any element comparison. The set counterpart of `SwissDictionary`. Costs a one-byte control tag per slot; for small or write-dominated sets, `CeleritySet` is competitive. |
 | Set with **clustered / adversarial** elements where worst-case `Contains` latency matters | `RobinHoodSet<T, THasher>` | Same API as `CeleritySet`, but Robin Hood probing bounds probe-length variance and lets negative lookups exit early via the probe-distance invariant so tail-latency lookups don't degrade on bunched elements. The set counterpart of `RobinHoodDictionary`. Costs a per-slot probe-distance `int`; for uniform elements with a good hasher, prefer `CeleritySet`. |
+| **Lookup-heavy** set with **costly element equality** (long strings, large structs) or cache-cold `Contains` | `HashCachingSet<T, THasher>` | Same API as `CeleritySet`, but a dense side array of 32-bit hash fingerprints lets a probe scan metadata only and run the full equality check on a candidate element solely when its fingerprint matches — so negative lookups reject on a single integer compare. The set counterpart of `HashCachingDictionary`; complementary to the SIMD-probed `SwissSet`. Costs four bytes of metadata per slot; for small tables of cheap elements, `CeleritySet` is a wash. |
 | Build-once, read-many membership set keyed by `string` | `FrozenCeleritySet` | Immutable; searches for a perfect (collision-free) hash at build time so `Contains` is single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Tune the hasher via the `<THasher>` overload. |
 | **Membership gate** where a small, bounded false-positive rate is acceptable in exchange for a large memory saving (dedup pre-filters, "have I seen this before?" guards in front of an expensive exact lookup) | `BloomFilter<T, THasher>` | Probabilistic: bit-array storage with **no false negatives** and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory and never growing with element size. Add-and-test only — no `Remove`, no enumeration, no retrieval. If you need exact membership or to get the elements back, use `CeleritySet` / `FrozenCeleritySet`; if you need to **delete** from the filter, use `CuckooFilter`. |
 | **Deletable membership gate** — the same approximate-membership trade-off as `BloomFilter` but for a set that **shrinks** as well as grows (sliding windows of recent keys, cache-admission filters, expiring-entry sets) | `CuckooFilter<T, THasher>` | Probabilistic: fingerprint-bucket storage with **no false negatives**, a tunable false-positive rate, and `Remove`. Lookups touch at most two buckets (≈ two cache lines). Only remove elements you actually added. Insertion can fail at very high load (reports *full*). If your set only grows or you reset it wholesale, `BloomFilter` is simpler and can be more compact at high target false-positive rates. |
