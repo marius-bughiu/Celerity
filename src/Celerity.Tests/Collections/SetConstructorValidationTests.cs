@@ -169,6 +169,45 @@ public class SetConstructorValidationTests
     }
 
     // ---------------------------------------------------------------
+    //  PooledCeleritySet
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void PooledCeleritySet_ShouldThrow_WhenLoadFactorIsZero()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new PooledCeleritySet<int, Int32WangNaiveHasher>(16, 0f));
+    }
+
+    [Fact]
+    public void PooledCeleritySet_ShouldThrow_WhenLoadFactorIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new PooledCeleritySet<int, Int32WangNaiveHasher>(16, -0.5f));
+    }
+
+    [Fact]
+    public void PooledCeleritySet_ShouldThrow_WhenLoadFactorIsOne()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new PooledCeleritySet<int, Int32WangNaiveHasher>(16, 1f));
+    }
+
+    [Fact]
+    public void PooledCeleritySet_ShouldThrow_WhenLoadFactorExceedsOne()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new PooledCeleritySet<int, Int32WangNaiveHasher>(16, 1.5f));
+    }
+
+    [Fact]
+    public void PooledCeleritySet_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new PooledCeleritySet<int, Int32WangNaiveHasher>(-1));
+    }
+
+    // ---------------------------------------------------------------
     //  IntSet
     // ---------------------------------------------------------------
 

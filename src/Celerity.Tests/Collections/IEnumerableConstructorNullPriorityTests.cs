@@ -219,6 +219,17 @@ public class IEnumerableConstructorNullPriorityTests
     }
 
     [Fact]
+    public void PooledCeleritySet_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new PooledCeleritySet<string, StringFnV1AHasher>(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
     public void CelerityMultiSet_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
     {
         IEnumerable<int>? source = null;

@@ -59,6 +59,14 @@ public class SetAlgebraDifferentialTests
     [InlineData(2)]
     [InlineData(1234)]
     [InlineData(98765)]
+    public void PooledCeleritySet_MatchesHashSet(int seed) =>
+        RunDifferential(() => new PooledCeleritySet<int, Int32WangNaiveHasher>(), i => i, seed);
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(1234)]
+    [InlineData(98765)]
     public void IntSet_MatchesHashSet(int seed) =>
         RunDifferential(() => new IntSet(), i => i, seed);
 
@@ -177,6 +185,10 @@ public class SetAlgebraDifferentialTests
                 }
             }
         }
+
+        // Return any rented backing arrays to the pool (PooledCeleritySet); a no-op
+        // for the non-pooled set types.
+        (set as IDisposable)?.Dispose();
     }
 
     // Builds a random `other` sequence over the small universe, with duplicates. Half

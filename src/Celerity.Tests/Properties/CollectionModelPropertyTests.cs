@@ -412,6 +412,31 @@ public class CollectionModelPropertyTests
     }
 
     [Fact]
+    public void PooledCeleritySet_ShouldMatch_BclHashSet()
+    {
+        GenSetOps.Sample(ops =>
+        {
+            using var sut = new PooledCeleritySet<int, Int32WangNaiveHasher>();
+            var oracle = new HashSet<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case SetOp.Add: Assert.Equal(oracle.Add(item), sut.TryAdd(item)); break;
+                    case SetOp.Remove: Assert.Equal(oracle.Remove(item), sut.Remove(item)); break;
+                    case SetOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            for (int k = -8; k <= 24; k++)
+                Assert.Equal(oracle.Contains(k), sut.Contains(k));
+            Assert.True(oracle.SetEquals(sut.ToHashSet()));
+        }, iter: 2000);
+    }
+
+    [Fact]
     public void IntSet_ShouldMatch_BclHashSet()
     {
         GenSetOps.Sample(ops =>

@@ -532,6 +532,36 @@ public class TryAddProbeCountTests
     }
 
     [Fact]
+    public void PooledCeleritySet_TryAdd_NewItem_DoesExactlyOneProbeWalk()
+    {
+        // PooledCeleritySet reuses CeleritySet's single-probe TryAdd, so a
+        // new-item insert costs exactly one Hash() call (no resize at capacity 64).
+        using var set = new PooledCeleritySet<string, CountingStringHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 10; i++)
+            Assert.True(set.TryAdd($"v{i}"));
+
+        Assert.Equal(10, _hashCallCount);
+        Assert.Equal(10, set.Count);
+    }
+
+    [Fact]
+    public void PooledCeleritySet_TryAdd_DuplicateItem_DoesExactlyOneProbeWalk()
+    {
+        using var set = new PooledCeleritySet<string, CountingStringHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            set.TryAdd($"v{i}");
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(set.TryAdd($"v{i}"));
+
+        Assert.Equal(5, _hashCallCount);
+        Assert.Equal(5, set.Count);
+    }
+
+    [Fact]
     public void IntDictionary_TryAdd_PreservesExistingValueOnDuplicate()
     {
         // Behavioural guard: TryAdd must not overwrite the existing value when
