@@ -901,6 +901,79 @@ foreach (var item in seen) { /* ... */ }
 
 ---
 
+## PooledCeleritySet<T, THasher>
+
+An allocation-conscious peer of `CeleritySet` whose backing array is **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. It is the set counterpart of `PooledCelerityDictionary` — the same rent / return lifecycle applied to a single element array rather than parallel key/value arrays. The public surface is identical to `CeleritySet` — same constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — with one addition: it implements `IDisposable`.
+
+```csharp
+public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
+    where THasher : struct, IHashProvider<T>
+```
+
+### Why pooled storage
+
+In high-throughput code that builds and tears down many short-lived sets (per request, per frame, per batch), the backing array is a steady source of Gen 0 garbage and, once it crosses the [85 KB Large Object Heap threshold](https://learn.microsoft.com/dotnet/standard/garbage-collection/large-object-heap), of LOH pressure that a normal `HashSet<T>` or `CeleritySet` cannot avoid. `PooledCeleritySet` borrows its element array from the shared pool and returns it on `Dispose` (and on every internal resize), so a build/use/dispose cycle reuses buffers across iterations rather than allocating fresh ones each time. The `PooledCeleritySetBenchmark` reports the difference in its `Allocated` column.
+
+### When to choose it over `CeleritySet`
+
+Reach for the pooled variant when the set is **short-lived and rebuilt frequently on a hot path**, GC pressure is a measured concern, and you can guarantee a `Dispose` (e.g. a `using` scope). For a long-lived set that lives for the life of the process, the pooling buys nothing and the disposal contract is pure overhead — stay on `CeleritySet`. Like every Celerity collection it is **not thread-safe**.
+
+### Lifecycle and pooling contract
+
+- **Dispose returns the buffer.** Call `Dispose` (ideally via `using`) when finished so the array returns to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException`.
+- **Not disposing is not a leak.** If you forget to dispose, the rented array is simply garbage-collected like any other managed array — you just forfeit the pooling benefit.
+- **Pool exhaustion is handled for you.** `ArrayPool<T>.Shared` allocates a fresh buffer when it has none to hand out, so a "pool empty" condition never surfaces to the caller.
+- **Reference types are cleared on return** so the pool does not keep your elements reachable after disposal (memory-leak prevention); value-type buffers skip the clear for speed.
+- **Over-provisioned rents are handled.** `ArrayPool.Rent` may return an array larger than requested; the set tracks its logical power-of-two capacity independently and only ever reads or writes the live region, so the (uncleared) tail of an oversized buffer never surfaces in `Count` or enumeration.
+
+### Constructors
+
+```csharp
+public PooledCeleritySet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public PooledCeleritySet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-headroom rule), validation, and exceptions as `CeleritySet` — duplicate elements (including duplicate `default(T)`) are silently deduplicated.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+
+### Default-element handling
+
+Identical to `CeleritySet`: `default(T)` (`null` / `0` / `Guid.Empty` / …) is stored out-of-band so it never collides with the empty-slot sentinel. Transparent to callers.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A set built fresh on a hot path and thrown away each iteration — the rented
+// buffer returns to the pool instead of becoming GC garbage.
+using (var set = new PooledCeleritySet<int, Int32WangNaiveHasher>())
+{
+    set.Add(42);
+    set.Add(0); // out-of-band default element
+
+    if (set.Contains(42))
+        Console.WriteLine("hit");
+
+    foreach (var item in set)
+        Console.WriteLine(item);
+} // Dispose() returns the backing array to ArrayPool<T>.Shared here.
+```
+
+---
+
 ## IntSet
 
 A convenience subclass of `IntSet<Int32WangNaiveHasher>` for the common case of integer sets.

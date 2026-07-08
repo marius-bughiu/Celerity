@@ -544,6 +544,45 @@ public class TryAddDuplicateResizeTests
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
 
+    // PooledCeleritySet shares CeleritySet's defaults (16-slot table, 0.75 load
+    // factor → threshold 12), so the same at-threshold boundary applies; the
+    // rented backing array is returned on Dispose via the using declaration.
+
+    [Fact]
+    public void PooledCeleritySet_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        using var set = new PooledCeleritySet<int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            set.Add(i); // Count == 12 == threshold
+
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current);
+
+        Assert.False(set.TryAdd(2));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(Enumerable.Range(1, 12).ToArray(), seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void PooledCeleritySet_TryAdd_NewItemAtThreshold_InvalidatesEnumerator()
+    {
+        using var set = new PooledCeleritySet<int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            set.Add(i); // Count == 12 == threshold
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(set.TryAdd(13));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
     // SmallDictionary has no hash table or load-factor threshold, but the same
     // invariant applies at the point where its backing arrays are full: a
     // duplicate TryAdd must be a true no-op (no grow, no _version bump) so an
