@@ -47,7 +47,7 @@ namespace Celerity.Collections;
 /// </list>
 /// <para>
 /// It is otherwise a drop-in peer of <see cref="CeleritySet{T, THasher}"/>: same
-/// constructors, the same <see cref="IEnumerable{T}"/> surface, the same
+/// constructors, the same <see cref="ISet{T}"/> surface, the same
 /// allocation-free struct enumerator, and the same out-of-band handling of
 /// <c>default(T)</c> (so the hasher is never invoked with the zero / null element,
 /// matching the rest of the family).
