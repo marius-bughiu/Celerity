@@ -35,7 +35,7 @@ namespace Celerity.Collections;
 /// <para>
 /// The <c>d</c> counter columns for an element are derived from a <strong>single</strong>
 /// <see cref="IHashProvider{T}"/> call by double hashing (Kirsch–Mitzenmacher): the
-/// 32-bit base hash is avalanced into 64 bits whose two halves seed the recurrence
+/// 32-bit base hash is avalanched into 64 bits whose two halves seed the recurrence
 /// <c>g_i = h1 + i·h2</c> (the stride forced odd so the rows spread out), so adding more
 /// rows costs arithmetic, not more <see cref="IHashProvider{T}.Hash"/> calls. Because the
 /// sketch stores only counters there is no empty-slot sentinel, so unlike the hash-table
