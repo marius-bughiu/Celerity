@@ -102,7 +102,8 @@ public ref struct BitReader
         }
 
         long endBit = (long)_bitPosition + bitCount;
-        if (endBit > CapacityInBits)
+        // Not enough bits left, or the resulting position would overflow a 32-bit cursor: refuse without consuming.
+        if (endBit > CapacityInBits || endBit > int.MaxValue)
         {
             value = 0;
             return false;
