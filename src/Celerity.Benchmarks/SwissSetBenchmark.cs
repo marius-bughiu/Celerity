@@ -24,15 +24,27 @@ public class SwissSetBenchmark
         hashSet = new HashSet<int>(ItemCount);
         swissSet = new SwissSet<int, Int32WangNaiveHasher>(ItemCount);
 
+        // Keys must be distinct: SwissSet.Add throws on a duplicate (TryAdd is the
+        // non-throwing variant), and over this halved range a random collision is
+        // near-certain at 100k by the birthday bound — which would abort the run.
+        // hashSet.Add returns false on a repeat, so it doubles as the dedup oracle:
+        // every key that reaches swissSet.Add is guaranteed unique.
         Random rand = new(42);
-        for (int i = 0; i < ItemCount; i++)
+        int count = 0;
+        while (count < ItemCount)
         {
-            keys[i] = rand.Next(1, int.MaxValue / 2);
-            hashSet.Add(keys[i]);
-            swissSet.Add(keys[i]);
+            int key = rand.Next(1, int.MaxValue / 2);
+            if (!hashSet.Add(key))
+            {
+                continue;
+            }
+
+            keys[count] = key;
+            swissSet.Add(key);
             // A disjoint key space for the negative-lookup arm — SwissSet's
             // headline win, where the SIMD group scan short-circuits a miss.
-            missingKeys[i] = rand.Next(int.MaxValue / 2, int.MaxValue);
+            missingKeys[count] = rand.Next(int.MaxValue / 2, int.MaxValue);
+            count++;
         }
     }
 

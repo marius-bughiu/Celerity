@@ -24,16 +24,28 @@ public class RobinHoodSetBenchmark
         hashSet = new HashSet<int>(ItemCount);
         robinHoodSet = new RobinHoodSet<int, Int32WangNaiveHasher>(ItemCount);
 
+        // Keys must be distinct: RobinHoodSet.Add throws on a duplicate (TryAdd is
+        // the non-throwing variant), and over this halved range a random collision
+        // is near-certain at 100k by the birthday bound — which would abort the run.
+        // hashSet.Add returns false on a repeat, so it doubles as the dedup oracle:
+        // every key that reaches robinHoodSet.Add is guaranteed unique.
         Random rand = new(42);
-        for (int i = 0; i < ItemCount; i++)
+        int count = 0;
+        while (count < ItemCount)
         {
-            keys[i] = rand.Next(1, int.MaxValue / 2);
-            hashSet.Add(keys[i]);
-            robinHoodSet.Add(keys[i]);
+            int key = rand.Next(1, int.MaxValue / 2);
+            if (!hashSet.Add(key))
+            {
+                continue;
+            }
+
+            keys[count] = key;
+            robinHoodSet.Add(key);
             // A disjoint key space for the negative-lookup arm — where the Robin
             // Hood PSL invariant lets a miss stop early instead of scanning the
             // whole probe run.
-            missingKeys[i] = rand.Next(int.MaxValue / 2, int.MaxValue);
+            missingKeys[count] = rand.Next(int.MaxValue / 2, int.MaxValue);
+            count++;
         }
     }
 

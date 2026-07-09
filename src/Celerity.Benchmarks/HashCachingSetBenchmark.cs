@@ -24,16 +24,28 @@ public class HashCachingSetBenchmark
         hashSet = new HashSet<int>(ItemCount);
         hashCachingSet = new HashCachingSet<int, Int32WangNaiveHasher>(ItemCount);
 
+        // Keys must be distinct: HashCachingSet.Add throws on a duplicate (TryAdd is
+        // the non-throwing variant), and over this halved range a random collision
+        // is near-certain at 100k by the birthday bound — which would abort the run.
+        // hashSet.Add returns false on a repeat, so it doubles as the dedup oracle:
+        // every key that reaches hashCachingSet.Add is guaranteed unique.
         Random rand = new(42);
-        for (int i = 0; i < ItemCount; i++)
+        int count = 0;
+        while (count < ItemCount)
         {
-            keys[i] = rand.Next(1, int.MaxValue / 2);
-            hashSet.Add(keys[i]);
-            hashCachingSet.Add(keys[i]);
+            int key = rand.Next(1, int.MaxValue / 2);
+            if (!hashSet.Add(key))
+            {
+                continue;
+            }
+
+            keys[count] = key;
+            hashCachingSet.Add(key);
             // A disjoint key space for the negative-lookup arm — where the cached
             // fingerprint filter lets a miss reject a slot on a single integer
             // compare instead of dereferencing every candidate element.
-            missingKeys[i] = rand.Next(int.MaxValue / 2, int.MaxValue);
+            missingKeys[count] = rand.Next(int.MaxValue / 2, int.MaxValue);
+            count++;
         }
     }
 
