@@ -131,6 +131,10 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public CelerityMultiMap(
         IEnumerable<KeyValuePair<TKey, TValue>> source,
         int capacity = DEFAULT_CAPACITY,
