@@ -271,4 +271,21 @@ public class IEnumerableConstructorNullPriorityTests
 
         Assert.Equal("source", ex.ParamName);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  SmallSet — like SmallDictionary it has no loadFactor parameter, so the
+    //  analogous check is that a null source beats its only other ctor
+    //  validation: a negative capacity.
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SmallSet_NullSourceWithNegativeCapacity_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new SmallSet<int>(source!, capacity: -5));
+
+        Assert.Equal("source", ex.ParamName);
+    }
 }

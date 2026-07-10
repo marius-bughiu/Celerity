@@ -47,8 +47,9 @@ All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet 
 - `PooledCeleritySet<T, THasher>` — backing array rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt sets. Same API plus `IDisposable`. The set counterpart of `PooledCelerityDictionary`.
 - `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with single-probe membership. Implements `IReadOnlySet<string>`.
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
+- `SmallSet<T>` — flat-array, linear-scan set for the very-small (`n <= ~16`) case. No hasher; the default element is stored inline. The set counterpart of `SmallDictionary`.
 
-The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
+The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
 
 **Probabilistic & bit-level**
 
@@ -176,7 +177,7 @@ Console.WriteLine(scope["x"]);  // 1
 </details>
 
 <details>
-<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet</summary>
+<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet, SmallSet</summary>
 
 ```csharp
 var seen = new IntSet();
@@ -229,6 +230,14 @@ Console.WriteLine(hcSeen.Contains("omega")); // false — rejected on the finger
 var reserved = new FrozenCeleritySet(new[] { "select", "from", "where", "join" });
 Console.WriteLine(reserved.IsPerfectlyHashed); // True
 Console.WriteLine(reserved.Contains("join"));  // True
+```
+
+`SmallSet<T>` is the flat-array set — the set counterpart of `SmallDictionary`. It skips hashing and linear-scans a flat array, which at `n <= ~16` beats a hash table (no hash, no probe chain, great cache locality). No hasher to pick; a `0` / `null` / default element is stored inline. Lookups are `O(n)`, so move to `IntSet` / `CeleritySet` once instances grow. Implements `ISet<T>`, so the full set algebra works.
+
+```csharp
+var seenScope = new SmallSet<string>();
+seenScope.Add("x");
+Console.WriteLine(seenScope.TryAdd("x")); // False — already present, unchanged
 ```
 
 </details>
@@ -322,6 +331,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
 | **Counting** occurrences / frequency histogram (element → count) | `CelerityMultiSet<T, THasher>` | `Add` is a single probe-and-increment vs the two-probe `Dictionary<T,int>` counting idiom; `SetCount` / `Remove` / `RemoveAll` manage multiplicities, `Count` is distinct elements and `TotalCount` the sum. Pick the struct hasher for your element type. |
 | Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |
+| Tiny set (`n <= ~16`) that stays small — per-scope "seen" sets, small membership guards, deduping a handful of items | `SmallSet<T>` | The set counterpart of `SmallDictionary`: flat-array linear scan beats hashing at small `n`, no hasher to pick, the default element is stored inline. Implements `ISet<T>`. Degrades to `O(n)` for large sets, so only when instances stay small. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |

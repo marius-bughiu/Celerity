@@ -1460,4 +1460,153 @@ public class SetIEnumerableConstructorTests
         foreach (string item in original)
             Assert.True(copy.Contains(item));
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  SmallSet — flat-array, linear-scan set with a capacity but NO
+    //  loadFactor (there is no probe mask), so the loadFactor-validation rows
+    //  above genuinely do not apply. The IEnumerable-source contract — null
+    //  rejection, dedupe (including the inline default/zero and null element),
+    //  large-source fidelity, source independence, and caller-capacity — does,
+    //  and is mirrored here.
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SmallSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new SmallSet<string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void SmallSet_ShouldSupportEmptySource()
+    {
+        var set = new SmallSet<string>(Array.Empty<string>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldCopyAllElements_FromArraySource()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new SmallSet<string>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Range is not an ICollection<int>; it forces the
+        // non-collection capacity-fallback path.
+        IEnumerable<int> source = Enumerable.Range(1, 50);
+
+        var set = new SmallSet<int>(source);
+
+        Assert.Equal(50, set.Count);
+        for (int i = 1; i <= 50; i++)
+            Assert.True(set.Contains(i));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldSilentlyDedupe_DuplicateElements()
+    {
+        var source = new[] { "a", "b", "a", "c", "b", "a" };
+
+        var set = new SmallSet<string>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldSilentlyDedupe_DuplicateNullElements()
+    {
+        // null is stored inline for SmallSet (no out-of-band slot); dedupe must
+        // still collapse repeats.
+        var source = new string?[] { "a", null, "b", null, "c", null };
+
+        var set = new SmallSet<string?>(source);
+
+        Assert.Equal(4, set.Count);
+        Assert.True(set.Contains(null));
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldSilentlyDedupe_DuplicateDefaultValueTypeElements()
+    {
+        // 0 is stored inline for SmallSet; dedupe must still collapse repeats.
+        var source = new[] { 0, 1, 0, 2, 0 };
+
+        var set = new SmallSet<int>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(0));
+        Assert.True(set.Contains(1));
+        Assert.True(set.Contains(2));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldHandleLargeSource()
+    {
+        IEnumerable<int> source = Enumerable.Range(1, 500);
+
+        var set = new SmallSet<int>(source);
+
+        Assert.Equal(500, set.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.True(set.Contains(i), $"missing element {i}");
+    }
+
+    [Fact]
+    public void SmallSet_ShouldBeIndependent_FromSourceArray()
+    {
+        var source = new[] { "a", "b", "c" };
+        var set = new SmallSet<string>(source);
+
+        source[0] = "MUTATED";
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.False(set.Contains("MUTATED"));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldUseCallerCapacity_WhenLargerThanSourceCount()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new SmallSet<string>(source, capacity: 64);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void SmallSet_ShouldRoundtrip_FromCeleritySetEnumeration()
+    {
+        // Cross-collection copy: build a SmallSet from a CeleritySet.
+        var celerity = new CeleritySet<int, Int32WangNaiveHasher> { 0, 5, 10, 15 };
+
+        var copy = new SmallSet<int>(celerity);
+
+        Assert.Equal(celerity.Count, copy.Count);
+        foreach (int item in celerity)
+            Assert.True(copy.Contains(item));
+    }
 }

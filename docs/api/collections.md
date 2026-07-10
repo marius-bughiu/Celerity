@@ -1747,6 +1747,113 @@ foreach (var kvp in scope) { /* ("y", 2) */ }
 
 ---
 
+## SmallSet&lt;T&gt;
+
+```csharp
+public class SmallSet<T> : ISet<T>
+```
+
+The set counterpart to `SmallDictionary`, tuned for the **very-small** case
+(`n <= ~16`), where a linear scan over a flat backing array beats a probe-based
+hash table. This is the shape you hit constantly for per-scope "seen" sets, small
+membership guards, and deduplicating a handful of items — most instances stay tiny,
+and for a tiny `n` the cost of computing a hash, masking it, and chasing a probe
+chain is pure overhead next to a cache-friendly scan of a handful of elements.
+
+Unlike the hash-table sets, `SmallSet` stores elements in an insertion-dense flat
+array and answers every query with a linear scan using `EqualityComparer<T>.Default`.
+There is **no hasher** (and so no `THasher` type parameter): you do not pick a hash
+function, because it never hashes. The trade-offs that follow directly from that:
+
+- `Contains`, `Add`/`TryAdd` (duplicate detection), and `Remove` are `O(n)` rather
+  than `O(1)`. The type is built for small `n` and **degrades for large sets** — keep
+  it to the small-`n` workloads it is designed for. It does *not* auto-promote to a
+  hash table; it simply grows its array and keeps scanning.
+- Because nothing is hashed, there is **no empty-slot sentinel** and therefore no
+  special-casing of `default(T)`. A `0`, `null`, or `Guid.Empty` element is stored
+  inline like any other — a small simplification over the hash-table sets, which keep
+  the default element out-of-band.
+- `Remove` moves the last element into the vacated slot (an `O(1)` swap once the
+  element is found), so the relative order of the surviving elements is not
+  preserved. Enumeration order is unspecified in general.
+
+It implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), ships an
+allocation-free struct enumerator, and accepts an `IEnumerable<T>` source at
+construction — the same surface as the other Celerity sets.
+
+### Constructors
+
+```csharp
+SmallSet(int capacity = 4)
+SmallSet(IEnumerable<T> source, int capacity = 4)
+```
+
+- `capacity` is the number of elements the backing array is sized for up front.
+  Unlike the hash-table sets it is used **verbatim** (it is not rounded to a power of
+  two), since there is no probe mask. `0` defers allocation until the first insert.
+- Throws `ArgumentOutOfRangeException` for a negative `capacity`. There is **no
+  `loadFactor`** parameter.
+- The `source` constructor silently deduplicates (matching BCL `HashSet<T>(IEnumerable<T>)`
+  semantics — sets have no duplicate-element contract), and throws
+  `ArgumentNullException` if `source` is `null` (the null check beats the capacity
+  validation).
+
+### Methods
+
+- `void Add(T item)` — throws `ArgumentException` on duplicate.
+- `bool TryAdd(T item)` — `true` on success, `false` if already present.
+- `bool Contains(T item)` — `O(n)` scan.
+- `bool Remove(T item)` — `O(1)` swap-removal after the scan.
+- `void Clear()` — capacity preserved.
+- `int EnsureCapacity(int capacity)` — grow the backing array to hold at least
+  `capacity` elements, returning the resulting array length. Like the constructor,
+  the length is **verbatim** (not rounded to a power of two). Throws
+  `ArgumentOutOfRangeException` on a negative capacity.
+- `void TrimExcess()` / `void TrimExcess(int capacity)` — shrink the backing array to
+  exactly the current `Count` (or `capacity`), reclaiming memory. `TrimExcess(capacity)`
+  throws if `capacity < Count`.
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator.
+- `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`,
+  matching `HashSet<T>.CopyTo` argument validation.
+
+### Set operations (`ISet<T>`)
+
+The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>`
+semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`):
+
+- **Mutating:** `void UnionWith(IEnumerable<T> other)`, `void IntersectWith(IEnumerable<T> other)`, `void ExceptWith(IEnumerable<T> other)`, `void SymmetricExceptWith(IEnumerable<T> other)`.
+- **Query:** `bool IsSubsetOf(...)`, `bool IsProperSubsetOf(...)`, `bool IsSupersetOf(...)`, `bool IsProperSupersetOf(...)`, `bool Overlaps(...)`, `bool SetEquals(...)`.
+
+Each throws `ArgumentNullException` when `other` is `null`. As with the hash-table
+sets, `ISet<T>.Add(T)` returns `bool` (equivalent to `TryAdd`), the concrete
+`public void Add(T)` keeps its throw-on-duplicate behaviour, and `ICollection<T>.Add(T)`
+ignores duplicates.
+
+### Default-element handling
+
+A `0`, `null`, or `Guid.Empty` element is an ordinary inline entry — add it, test it,
+and remove it exactly like any other element. There is no out-of-band slot.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A tiny per-scope "already seen" set — almost always a handful of elements.
+var seen = new SmallSet<string>();
+seen.Add("x");
+seen.Add("y");
+Console.WriteLine(seen.TryAdd("x")); // False — already present, unchanged
+Console.WriteLine(seen.Contains("y")); // True
+Console.WriteLine(seen.Count); // 2
+
+seen.Remove("x"); // O(1) swap-removal after the scan
+foreach (var item in seen) { /* "y" */ }
+```
+
+---
+
 ## BloomFilter&lt;T, THasher&gt;
 
 A space-efficient **probabilistic** set membership filter parameterized on a custom
