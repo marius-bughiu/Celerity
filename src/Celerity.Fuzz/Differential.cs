@@ -32,6 +32,10 @@ internal static class Differential
         ("LongDictionary", LongDictionaryCase),
         ("SmallDictionary", SmallDictionaryCase),
         ("CeleritySet", CeleritySetCase),
+        ("RobinHoodSet", RobinHoodSetCase),
+        ("SwissSet", SwissSetCase),
+        ("HashCachingSet", HashCachingSetCase),
+        ("PooledCeleritySet", PooledCeleritySetCase),
         ("IntSet", IntSetCase),
         ("LongSet", LongSetCase),
         ("SmallSet", SmallSetCase),
@@ -452,6 +456,131 @@ internal static class Differential
         }
 
         Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+    }
+
+    // ---- specialized sets (probe/deletion machinery vs a HashSet oracle) -----
+
+    // The specialized sets carry the library's most intricate probe/deletion
+    // machinery — Robin Hood displacement + backward-shift, SIMD group probing,
+    // fingerprint caching, and ArrayPool lifecycle — so each is driven against a
+    // HashSet<int> oracle exactly like CeleritySetCase, the layer most likely to
+    // surface a wrap-around / tombstone / backward-shift edge case. A naive
+    // collision-heavy hasher (Int32WangNaiveHasher) keeps probe chains long.
+
+    private static void RobinHoodSetCase(Random rng)
+    {
+        var sut = new RobinHoodSet<int, Int32WangNaiveHasher>();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+        int enumerated = 0;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            enumerated++;
+        }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    private static void SwissSetCase(Random rng)
+    {
+        var sut = new SwissSet<int, Int32WangNaiveHasher>();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+        int enumerated = 0;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            enumerated++;
+        }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    private static void HashCachingSetCase(Random rng)
+    {
+        var sut = new HashCachingSet<int, Int32WangNaiveHasher>();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+        int enumerated = 0;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            enumerated++;
+        }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    private static void PooledCeleritySetCase(Random rng)
+    {
+        using var sut = new PooledCeleritySet<int, Int32WangNaiveHasher>();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+        int enumerated = 0;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            enumerated++;
+        }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
     }
 
     // SmallSet is the flat-array, linear-scan set (no hasher); reconcile the same
