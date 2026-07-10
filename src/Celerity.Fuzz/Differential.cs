@@ -34,6 +34,7 @@ internal static class Differential
         ("CeleritySet", CeleritySetCase),
         ("IntSet", IntSetCase),
         ("LongSet", LongSetCase),
+        ("SmallSet", SmallSetCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -451,6 +452,38 @@ internal static class Differential
         }
 
         Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+    }
+
+    // SmallSet is the flat-array, linear-scan set (no hasher); reconcile the same
+    // Add / Remove / Clear churn and enumeration against a HashSet<int> oracle as
+    // CeleritySet, over the tiny key domain the type is built for.
+    private static void SmallSetCase(Random rng)
+    {
+        var sut = new SmallSet<int>();
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+        int enumerated = 0;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            enumerated++;
+        }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
     }
 
     // ---- bloom filter (probabilistic, one-directional) ----------------------
