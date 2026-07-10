@@ -216,13 +216,33 @@ jobs:
             const entries = [];
             let regressions = 0;
             let improvements = 0;
+            let errored = 0;
 
             for (const b of pr.Benchmarks) {
               const name = b.FullName;
+              // BenchmarkDotNet emits a benchmark with null Statistics and empty
+              // Measurements when that case errored or was not run (a throwing
+              // [GlobalSetup], a cancelled shard, an OOM, ...). Surface it as a row
+              // rather than dereferencing null — one errored case must never crash
+              // the aggregate job and red-X the whole PR gate.
+              if (b.Statistics == null) {
+                errored++;
+                const baseStats = baseMap.get(name);
+                entries.push({
+                  name,
+                  isHasher: /Hasher/.test(name),
+                  prCell: '⚠️ errored',
+                  stdCell: 'n/a',
+                  baseCell: baseStats ? formatNs(baseStats.Mean) : 'n/a',
+                  deltaCell: 'no measurements',
+                  flag: null,
+                });
+                continue;
+              }
               const prMean = b.Statistics.Mean;
               const prStdDev = b.Statistics.StandardDeviation;
               const baseStats = baseMap.get(name);
-              let deltaCell = '🆕 new';
+              let deltaCell = baseMap.has(name) ? '⚠️ base errored' : '🆕 new';
               let flag = null;
               if (baseStats) {
                 const baseMean = baseStats.Mean;
@@ -267,6 +287,9 @@ jobs:
               subtitle = `No regressions — ${improvements} improvement${improvements === 1 ? '' : 's'} ✅ vs main.`;
             } else {
               subtitle = `No significant change vs main (all within ±${thresholdPct}% or noise).`;
+            }
+            if (errored > 0) {
+              subtitle += ` ⚠️ ${errored} benchmark${errored === 1 ? '' : 's'} errored (no measurements) — see the table.`;
             }
 
             const baseSha = (process.env.BASE_SHA || '').slice(0, 7);

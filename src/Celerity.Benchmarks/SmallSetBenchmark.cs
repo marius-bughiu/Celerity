@@ -1,49 +1,49 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Collections;
-using Celerity.Hashing;
 
+// SmallSet is built for the very-small (n <= ~16) case, where a flat-array linear
+// scan beats a hash table. Its [Params] are therefore deliberately small — the win
+// is at low n, and at large n the O(n) scan is meant to lose, so the 1000 / 100_000
+// params used by the hash-table set benchmarks would be both catastrophically slow
+// (O(n^2) inserts) and beside the point. We sweep 8 (a clear win) and 64 (into the
+// region where the hash set catches up) so the dashboard shows both sides of the
+// crossover honestly. Mirrors SmallDictionaryBenchmark.
+//
+// Keys are generated distinct (HashSet.Add doubles as the dedup oracle) because
+// SmallSet.Add throws on a duplicate — the same guarantee the other set benchmarks
+// make.
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
-public class SwissSetBenchmark
+public class SmallSetBenchmark
 {
     private int[] keys = null!;
-    private int[] missingKeys = null!;
     private HashSet<int> hashSet = null!;
-    private SwissSet<int, Int32WangNaiveHasher> swissSet = null!;
+    private SmallSet<int> smallSet = null!;
 
-    [Params(1000, 100_000)]
+    [Params(8, 64)]
     public int ItemCount;
 
     [GlobalSetup]
     public void Setup()
     {
         keys = new int[ItemCount];
-        missingKeys = new int[ItemCount];
         hashSet = new HashSet<int>(ItemCount);
-        swissSet = new SwissSet<int, Int32WangNaiveHasher>(ItemCount);
+        smallSet = new SmallSet<int>(ItemCount);
 
-        // Keys must be distinct: SwissSet.Add throws on a duplicate (TryAdd is the
-        // non-throwing variant), and over this halved range a random collision is
-        // near-certain at 100k by the birthday bound — which would abort the run.
-        // hashSet.Add returns false on a repeat, so it doubles as the dedup oracle:
-        // every key that reaches swissSet.Add is guaranteed unique.
         Random rand = new(42);
         int count = 0;
         while (count < ItemCount)
         {
-            int key = rand.Next(1, int.MaxValue / 2);
+            int key = rand.Next(1, int.MaxValue);
             if (!hashSet.Add(key))
             {
                 continue;
             }
 
             keys[count] = key;
-            swissSet.Add(key);
-            // A disjoint key space for the negative-lookup arm — SwissSet's
-            // headline win, where the SIMD group scan short-circuits a miss.
-            missingKeys[count] = rand.Next(int.MaxValue / 2, int.MaxValue);
+            smallSet.Add(key);
             count++;
         }
     }
@@ -62,9 +62,9 @@ public class SwissSetBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Add")]
-    public void SwissSet_Add()
+    public void SmallSet_Add()
     {
-        var set = new SwissSet<int, Int32WangNaiveHasher>();
+        var set = new SmallSet<int>();
 
         foreach (var key in keys)
         {
@@ -86,36 +86,12 @@ public class SwissSetBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Contains")]
-    public bool SwissSet_Contains()
+    public bool SmallSet_Contains()
     {
         bool result = false;
         foreach (var key in keys)
         {
-            result ^= swissSet.Contains(key);
-        }
-        return result;
-    }
-
-    [Benchmark(Baseline = true)]
-    [BenchmarkCategory("ContainsMissing")]
-    public bool HashSet_ContainsMissing()
-    {
-        bool result = false;
-        foreach (var key in missingKeys)
-        {
-            result ^= hashSet.Contains(key);
-        }
-        return result;
-    }
-
-    [Benchmark]
-    [BenchmarkCategory("ContainsMissing")]
-    public bool SwissSet_ContainsMissing()
-    {
-        bool result = false;
-        foreach (var key in missingKeys)
-        {
-            result ^= swissSet.Contains(key);
+            result ^= smallSet.Contains(key);
         }
         return result;
     }
@@ -140,23 +116,23 @@ public class SwissSetBenchmark
         }
     }
 
-    [IterationSetup(Target = nameof(SwissSet_Remove))]
-    public void SetupForSwissSetRemove()
+    [IterationSetup(Target = nameof(SmallSet_Remove))]
+    public void SetupForSmallSetRemove()
     {
-        swissSet = new SwissSet<int, Int32WangNaiveHasher>(ItemCount);
+        smallSet = new SmallSet<int>(ItemCount);
         foreach (var key in keys)
         {
-            swissSet.Add(key);
+            smallSet.Add(key);
         }
     }
 
     [Benchmark]
     [BenchmarkCategory("Remove")]
-    public void SwissSet_Remove()
+    public void SmallSet_Remove()
     {
         foreach (var key in keys)
         {
-            swissSet.Remove(key);
+            smallSet.Remove(key);
         }
     }
 }

@@ -352,6 +352,24 @@ public class EnsureCapacityAndTrimExcessTests
             Assert.Equal(i * 10, map[i]);
     }
 
+    // SmallSet has no hasher, so the hash-call-counting technique above does not
+    // apply; EnsureCapacity simply grows the flat backing array (mirrors
+    // SmallDictionary).
+    [Fact]
+    public void SmallSet_EnsureCapacity_GrowsBackingArray()
+    {
+        var set = new SmallSet<int>();
+        int reported = set.EnsureCapacity(N);
+        Assert.True(reported >= N);
+
+        for (int i = 1; i <= N; i++)
+            set.Add(i);
+
+        Assert.Equal(N, set.Count);
+        for (int i = 1; i <= N; i++)
+            Assert.True(set.Contains(i));
+    }
+
     // ── TrimExcess: shrink without losing data ──────────────────────────────────────
 
     [Fact]
@@ -625,6 +643,24 @@ public class EnsureCapacityAndTrimExcessTests
         Assert.Equal(5, map.Count);
         for (int i = 1; i <= 5; i++)
             Assert.Equal(i * 10, map[i]);
+    }
+
+    [Fact]
+    public void SmallSet_TrimExcess_AfterShrink_PreservesContents()
+    {
+        var set = new SmallSet<int>();
+        for (int i = 1; i <= N; i++)
+            set.Add(i);
+        for (int i = 6; i <= N; i++)
+            set.Remove(i);
+
+        set.TrimExcess();
+
+        Assert.Equal(5, set.Count);
+        for (int i = 1; i <= 5; i++)
+            Assert.True(set.Contains(i));
+        set.Add(999); // still usable after the shrink
+        Assert.True(set.Contains(999));
     }
 
     // ── TrimExcess(capacity) and the zero/default out-of-band slot ──────────────────

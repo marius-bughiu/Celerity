@@ -78,6 +78,14 @@ public class SetAlgebraDifferentialTests
     public void LongSet_MatchesHashSet(int seed) =>
         RunDifferential<long>(() => new LongSet(), i => i, seed);
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(1234)]
+    [InlineData(98765)]
+    public void SmallSet_MatchesHashSet(int seed) =>
+        RunDifferential(() => new SmallSet<int>(), i => i, seed);
+
     private static void RunDifferential<T>(Func<ISet<T>> factory, Func<int, T> map, int seed)
     {
         var rng = new Random(seed);

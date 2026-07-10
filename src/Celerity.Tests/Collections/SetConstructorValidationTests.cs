@@ -284,4 +284,18 @@ public class SetConstructorValidationTests
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new LongSet(-1));
     }
+
+    // ---------------------------------------------------------------
+    //  SmallSet — flat-array, no hasher and NO loadFactor, so only the
+    //  negative-capacity guard applies (the loadFactor rows above genuinely
+    //  do not exist for this type). Mirrors SmallDictionary in
+    //  ConstructorValidationTests.
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void SmallSet_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new SmallSet<int>(-1));
+    }
 }

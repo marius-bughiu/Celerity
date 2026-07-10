@@ -20,9 +20,9 @@ namespace Celerity.Tests.Collections;
 /// the table, so a resize during construction would push the count above <c>N</c>.
 /// Asserting <c>== N</c> therefore fails on the pre-fix sizing and passes after it.
 ///
-/// <c>SmallDictionary</c> is intentionally excluded: it has no load factor and no
-/// hasher (it linear-scans), so its capacity-verbatim sizing already fills without
-/// resizing and there is nothing to count.
+/// <c>SmallDictionary</c> and <c>SmallSet</c> are intentionally excluded: they have
+/// no load factor and no hasher (they linear-scan), so their capacity-verbatim
+/// sizing already fills without resizing and there is nothing to count.
 /// </summary>
 public class BulkConstructorNoResizeTests
 {

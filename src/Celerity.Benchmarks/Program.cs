@@ -31,6 +31,7 @@ internal class Program
         typeof(FrozenCeleritySetBenchmark),
         typeof(IntSetBenchmark),
         typeof(LongSetBenchmark),
+        typeof(SmallSetBenchmark),
         typeof(BloomFilterBenchmark),
         typeof(CuckooFilterBenchmark),
         typeof(BitSetBenchmark),

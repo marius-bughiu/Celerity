@@ -138,6 +138,10 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public CelerityMultiSet(
         IEnumerable<T> source,
         int capacity = DEFAULT_CAPACITY,
