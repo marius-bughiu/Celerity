@@ -363,12 +363,18 @@
     { key: 'IntSet',              title: 'IntSet',                                vs: 'HashSet<int>' },
     { key: 'LongSet',             title: 'LongSet',                               vs: 'HashSet<long>' },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' },
+    { key: 'SwissSet',            title: 'SwissSet<int, ...>',                    vs: 'HashSet<int>' },
+    { key: 'RobinHoodSet',        title: 'RobinHoodSet<int, ...>',                vs: 'HashSet<int>' },
+    { key: 'HashCachingSet',      title: 'HashCachingSet<int, ...>',              vs: 'HashSet<int>' },
+    { key: 'PooledCeleritySet',   title: 'PooledCeleritySet<int, ...>',           vs: 'HashSet<int>' },
     { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                     vs: 'FrozenSet<string>' },
+    { key: 'SmallSet',            title: 'SmallSet<int>',                         vs: 'HashSet<int>', items: [8, 64] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                vs: 'HashSet<int>' },
     { key: 'BitSet',              title: 'BitSet',                                vs: 'BitArray', items: [1024, 1000000] },
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                   vs: 'HashSet<int>' },
-    { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                vs: 'Dictionary<int, int>' }
+    { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                vs: 'Dictionary<int, int>' },
+    { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                    vs: 'Dictionary<int, int>' }
   ];
   var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
