@@ -625,4 +625,47 @@ public class TryAddDuplicateResizeTests
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
+
+    // SmallSet is the set counterpart of SmallDictionary: no hash table or
+    // load-factor threshold, but the same invariant applies at the point where its
+    // backing array is full. A duplicate TryAdd must be a true no-op (no grow, no
+    // _version bump) so an active enumerator stays valid, while a new-element
+    // TryAdd that grows the array must invalidate it.
+
+    [Fact]
+    public void SmallSet_TryAdd_DuplicateAtCapacity_KeepsEnumeratorValid()
+    {
+        var set = new SmallSet<int>(capacity: 3);
+        set.Add(1);
+        set.Add(2);
+        set.Add(3); // array now exactly full
+
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current);
+
+        Assert.False(set.TryAdd(2));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(new[] { 1, 2, 3 }, seen.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void SmallSet_TryAdd_NewItemAtCapacity_InvalidatesEnumerator()
+    {
+        var set = new SmallSet<int>(capacity: 3);
+        set.Add(1);
+        set.Add(2);
+        set.Add(3); // array now exactly full — the next new element grows it
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(set.TryAdd(4));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
 }
