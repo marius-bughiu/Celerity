@@ -5,9 +5,11 @@
 # Asserts that `dotnet pack` produced a correct, publishable set of packages
 # before any of them is pushed to NuGet.org:
 #
-#   * exactly the three expected shipped packages are present
-#     (Celerity.Collections / Celerity.Hashing / Celerity.Primitives), and no
-#     unexpected extra package (e.g. a dev project that lost its IsPackable=false);
+#   * exactly the expected shipped packages are present — the three core family
+#     packages (Celerity.Collections / Celerity.Hashing / Celerity.Primitives)
+#     plus the "built with Celerity" showcase packages (Celerity.Ring /
+#     Celerity.Sentinel / Celerity.Cardinality) — and no unexpected extra package
+#     (e.g. a dev project that lost its IsPackable=false);
 #   * every .nupkg has a matching .snupkg symbol package;
 #   * every .nupkg carries the required NuGet metadata — a license, a README, an
 #     icon, and a <repository> URL with a commit SHA (the SourceLink stamp);
@@ -29,9 +31,15 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $expectedPackages = @(
+    # Core family (release in lockstep).
     'Celerity.Collections',
     'Celerity.Hashing',
-    'Celerity.Primitives'
+    'Celerity.Primitives',
+    # "Built with Celerity" showcase tier — standalone libraries built on top of
+    # the core family; packable, so solution-wide `dotnet pack` emits them too.
+    'Celerity.Ring',
+    'Celerity.Sentinel',
+    'Celerity.Cardinality'
 )
 
 if (-not (Test-Path $NuGetDirectory)) {
