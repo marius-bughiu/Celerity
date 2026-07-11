@@ -301,6 +301,16 @@
   </div>
 
   <div class="section-head">
+    <h2>Built with Celerity</h2>
+    <span class="meta">Standalone packages built on the core &mdash; add only the one you need</span>
+  </div>
+  <div class="ships">
+    <div class="ship"><code>Celerity.Ring</code><div class="desc">Consistent-hash &amp; rendezvous (HRW) rings for sharding and request routing. <strong>Byte-identical</strong> node assignment across OS, architecture, and runtime (x64, arm64, Blazor WASM), so every node in a cluster agrees on the mapping. Fills a gap the BCL has no type for. Separate NuGet package.</div></div>
+    <div class="ship"><code>Celerity.Sentinel</code><div class="desc">Streaming abuse / heavy-hitter detection: top offenders, per-key rate, and fan-out cardinality of a request stream in a <strong>fixed footprint regardless of key cardinality</strong>, so it survives the attacker key-rotation that OOMs a <code>Dictionary&lt;,&gt;</code> counter. Separate NuGet package.</div></div>
+    <div class="ship"><code>Celerity.Cardinality</code><div class="desc">Mergeable approximate <code>COUNT(DISTINCT)</code> and windowed dedup over unbounded streams: exact for small inputs, promoting to a fixed ~16&nbsp;KB estimator, with <strong>deterministic cross-shard merge</strong> identical on every runtime. Separate NuGet package.</div></div>
+  </div>
+
+  <div class="section-head">
     <h2>Design notes</h2>
   </div>
   <div class="about">
