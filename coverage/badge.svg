@@ -1,16 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="118" height="20" role="img" aria-label="coverage: 98.82%">
-  <title>coverage: 98.82%</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="111" height="20" role="img" aria-label="coverage: 98.8%">
+  <title>coverage: 98.8%</title>
   <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
-  <clipPath id="r"><rect width="118" height="20" rx="3" fill="#fff"/></clipPath>
+  <clipPath id="r"><rect width="111" height="20" rx="3" fill="#fff"/></clipPath>
   <g clip-path="url(#r)">
     <rect width="62" height="20" fill="#555"/>
-    <rect x="62" width="56" height="20" fill="#0d6e6e"/>
-    <rect width="118" height="20" fill="url(#s)"/>
+    <rect x="62" width="49" height="20" fill="#0d6e6e"/>
+    <rect width="111" height="20" fill="url(#s)"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="110" text-rendering="geometricPrecision">
     <text x="310" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="500">coverage</text>
     <text x="310" y="140" transform="scale(.1)" textLength="500">coverage</text>
-    <text x="900" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="440">98.82%</text>
-    <text x="900" y="140" transform="scale(.1)" textLength="440">98.82%</text>
+    <text x="860" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="370">98.8%</text>
+    <text x="860" y="140" transform="scale(.1)" textLength="370">98.8%</text>
   </g>
 </svg>
