@@ -48,8 +48,9 @@ All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet 
 - `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with single-probe membership. Implements `IReadOnlySet<string>`.
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
 - `SmallSet<T>` — flat-array, linear-scan set for the very-small (`n <= ~16`) case. No hasher; the default element is stored inline. The set counterpart of `SmallDictionary`.
+- `EnumSet<TEnum>` — bit-vector set for enum keys (the .NET `EnumSet`): membership is a single bit test and set algebra is word-wise bitwise ops, with no hashing or boxing. Enumerates in ascending underlying-value order.
 
-The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
+The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
 
 **Probabilistic & bit-level**
 
@@ -177,7 +178,7 @@ Console.WriteLine(scope["x"]);  // 1
 </details>
 
 <details>
-<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet, SmallSet</summary>
+<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet, SmallSet, EnumSet</summary>
 
 ```csharp
 var seen = new IntSet();
@@ -238,6 +239,15 @@ Console.WriteLine(reserved.Contains("join"));  // True
 var seenScope = new SmallSet<string>();
 seenScope.Add("x");
 Console.WriteLine(seenScope.TryAdd("x")); // False — already present, unchanged
+```
+
+`EnumSet<TEnum>` is the bit-vector set for **enum** keys — the .NET analogue of Java's `EnumSet`. It stores one bit per possible element, so `Add` / `Contains` / `Remove` are a single shift-mask-and-bit-op (no hashing, no boxing) and set algebra between two `EnumSet`s is a word-wise bitwise `OR` / `AND` / `XOR` over a handful of `ulong`s. It supports enums whose members are small non-negative integers (the default declaration); negative or sparse `[Flags]` enums throw `NotSupportedException` (use `CeleritySet` there). Enumeration is deterministic — ascending by underlying value. `EnumSet<TEnum>.All()` builds the full universe of declared constants.
+
+```csharp
+var granted = new EnumSet<Permission> { Permission.Read, Permission.Write };
+var required = new EnumSet<Permission> { Permission.Read, Permission.Execute };
+Console.WriteLine(granted.IsSupersetOf(required)); // False — word-wise subset test
+granted.UnionWith(required);                        // one bitwise OR
 ```
 
 </details>
@@ -332,6 +342,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Counting** occurrences / frequency histogram (element → count) | `CelerityMultiSet<T, THasher>` | `Add` is a single probe-and-increment vs the two-probe `Dictionary<T,int>` counting idiom; `SetCount` / `Remove` / `RemoveAll` manage multiplicities, `Count` is distinct elements and `TotalCount` the sum. Pick the struct hasher for your element type. |
 | Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |
 | Tiny set (`n <= ~16`) that stays small — per-scope "seen" sets, small membership guards, deduping a handful of items | `SmallSet<T>` | The set counterpart of `SmallDictionary`: flat-array linear scan beats hashing at small `n`, no hasher to pick, the default element is stored inline. Implements `ISet<T>`. Degrades to `O(n)` for large sets, so only when instances stay small. |
+| Set of **enum** values — flag sets, permission sets, state sets over a small enum | `EnumSet<TEnum>` | Bit-vector set indexed on the enum's underlying value (the .NET `EnumSet`): `Add` / `Contains` / `Remove` are a single bit op — no hashing, no boxing — and set algebra between two `EnumSet`s is a word-wise bitwise `OR` / `AND` / `XOR`. Enumerates ascending by value; `All()` builds the full universe. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CeleritySet<TEnum, THasher>` there. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
