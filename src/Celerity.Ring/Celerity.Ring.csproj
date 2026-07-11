@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>$(CelerityTargetFrameworks)</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PackageProjectUrl>https://github.com/marius-bughiu/Celerity</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
+		<Authors>Marius Bughiu</Authors>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!--
+		  Native AOT / trimming compatibility (#32). See Celerity.Collections for
+		  the full rationale; every package in the family carries the same switch so
+		  the trim / AOT / single-file analyzers verify the whole graph on every build.
+		-->
+		<IsAotCompatible>true</IsAotCompatible>
+		<!--
+		  Promote CS1591 (missing XML comment) to error. Every public symbol in the
+		  package must carry an XML doc comment so the shipped .xml is complete.
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<PackageId>Celerity.Ring</PackageId>
+		<Description>Deterministic consistent-hashing and rendezvous (HRW) rings for sharding and request routing, generic over the caller's key type and a zero-cost inlined Celerity hasher. Fills a literal BCL gap (there is no ConsistentHashRing in .NET) and produces byte-identical shard assignments across runtimes and architectures (x64 / arm64 / Blazor WASM). Part of the Celerity family.</Description>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>celerity;consistent-hashing;rendezvous;hrw;sharding;partitioning;ring;routing;performance</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
+		<None Include="README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Built on the Celerity collections/hashing/primitives family: the ring hashes
+		     keys through an inlined IHashProvider on the hot path and places virtual nodes
+		     with a deterministic Celerity string hasher (StringXxHash3Hasher). -->
+		<ProjectReference Include="..\Celerity\Celerity.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Using Include="Celerity.Collections" />
+		<Using Include="Celerity.Hashing" />
+		<Using Include="Celerity.Primitives" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="MinVer" Version="6.0.0">
+	    <PrivateAssets>all</PrivateAssets>
+	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+	</ItemGroup>
+</Project>

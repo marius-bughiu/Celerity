@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>$(CelerityTargetFrameworks)</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PackageProjectUrl>https://github.com/marius-bughiu/Celerity</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
+		<Authors>Marius Bughiu</Authors>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!--
+		  Native AOT / trimming compatibility (#32). See Celerity.Collections for
+		  the full rationale; every package in the family carries the same switch so
+		  the trim / AOT / single-file analyzers verify the whole graph on every build.
+		-->
+		<IsAotCompatible>true</IsAotCompatible>
+		<!--
+		  Promote CS1591 (missing XML comment) to error. Every public symbol in the
+		  package must carry an XML doc comment so the shipped .xml is complete.
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<PackageId>Celerity.Cardinality</PackageId>
+		<Description>Mergeable, deterministic distinct-count (approximate COUNT DISTINCT) over managed streams: an exact small-N fast path that promotes to a fixed ~16 KB HyperLogLog past a threshold, plus a removable Cuckoo dedup filter for windowed exact-ish deduplication. Generic over the caller's key type and a zero-cost inlined Celerity hasher, with cross-shard merge that is byte-identical across runtimes. Built on Celerity.Collections.</Description>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>celerity;cardinality;count-distinct;hyperloglog;dedup;cuckoo;streaming;sketch;performance</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
+		<None Include="README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Built on Celerity's CeleritySet (exact fast path), HyperLogLog (fixed-memory
+		     estimate), and CuckooFilter (removable dedup), each hashing through an inlined
+		     IHashProvider. -->
+		<ProjectReference Include="..\Celerity\Celerity.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Using Include="Celerity.Collections" />
+		<Using Include="Celerity.Hashing" />
+		<Using Include="Celerity.Primitives" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="MinVer" Version="6.0.0">
+	    <PrivateAssets>all</PrivateAssets>
+	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+	</ItemGroup>
+</Project>
