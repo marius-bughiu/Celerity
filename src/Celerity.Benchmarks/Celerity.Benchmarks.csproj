@@ -15,6 +15,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Celerity\Celerity.csproj" />
+    <!-- "Built with Celerity" showcase packages, benchmarked in the extended suite. -->
+    <ProjectReference Include="..\Celerity.Ring\Celerity.Ring.csproj" />
+    <ProjectReference Include="..\Celerity.Sentinel\Celerity.Sentinel.csproj" />
+    <ProjectReference Include="..\Celerity.Cardinality\Celerity.Cardinality.csproj" />
   </ItemGroup>
 
   <ItemGroup>
