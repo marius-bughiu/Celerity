@@ -1854,6 +1854,123 @@ foreach (var item in seen) { /* "y" */ }
 
 ---
 
+## EnumSet&lt;TEnum&gt;
+
+```csharp
+public class EnumSet<TEnum> : ISet<TEnum>
+    where TEnum : struct, Enum
+```
+
+A set specialized for **enum element types**, backed by a dense bit vector indexed on
+the enum's underlying integer value — the .NET analogue of Java's
+`java.util.EnumSet`. Where `HashSet<TEnum>` hashes and boxes each element through
+`EqualityComparer<TEnum>` and stores an open-addressed table, `EnumSet` stores **one
+bit per possible element**:
+
+- `Add` / `Contains` / `Remove` are a shift, a mask, and a single-`ulong` bit
+  operation — no hash, no probe chain, no per-element allocation.
+- Set algebra against another `EnumSet<TEnum>` is `O(words)` word-wise `OR` / `AND` /
+  `AND-NOT` / `XOR` over a handful of `ulong`s (usually just **one**), versus
+  `HashSet<T>`'s element-by-element rehash-and-probe.
+- Enumeration is **deterministic and ascending by underlying value** (the bit vector
+  is walked low bit first) — a bonus over the hash-table sets' unspecified order.
+
+This is the classic bit-flags-set win, made type-safe and generic.
+
+### Supported enums
+
+The backing store is sized once from the enum's **maximum defined underlying value**,
+so `EnumSet` supports enums whose members are **small, non-negative integers** — the
+default `0, 1, 2, …` declaration, which covers the overwhelming majority of enums.
+
+- An enum that declares a **negative** member throws `NotSupportedException` from the
+  constructor (a bit vector cannot be indexed by a negative value).
+- An enum whose **maximum value exceeds `65535`** — a sparse or `[Flags]`
+  power-of-two enum, for which a dense bit vector would waste enormous memory — also
+  throws `NotSupportedException`. Use `CeleritySet<TEnum, THasher>` for those.
+- A runtime value **outside the supported range** (an out-of-range cast such as
+  `(MyEnum)9999`) is rejected by `Add` / `TryAdd` with `ArgumentOutOfRangeException`,
+  and reported as absent by `Contains` / `Remove`.
+
+### Constructors
+
+```csharp
+EnumSet()
+EnumSet(IEnumerable<TEnum> source)
+```
+
+- The parameterless constructor creates an empty set. There is **no capacity or
+  `loadFactor` parameter** — the storage size is fixed by the enum, not by the element
+  count.
+- The `source` constructor silently deduplicates (matching BCL
+  `HashSet<T>(IEnumerable<T>)` semantics) and throws `ArgumentNullException` if
+  `source` is `null`. Copying from another `EnumSet<TEnum>` copies the bit vector
+  wholesale.
+- Both throw `NotSupportedException` if `TEnum` is unsupported (see above).
+
+### Static factory
+
+```csharp
+static EnumSet<TEnum> All()
+```
+
+Returns a set containing **every declared constant** of `TEnum` — the full universe of
+the enum (exactly the declared members, not every bit position).
+
+### Methods
+
+- `void Add(TEnum item)` — throws `ArgumentException` on duplicate,
+  `ArgumentOutOfRangeException` for an out-of-range value.
+- `bool TryAdd(TEnum item)` — `true` on success, `false` if already present; throws
+  `ArgumentOutOfRangeException` for an out-of-range value.
+- `bool Contains(TEnum item)` — single bit test.
+- `bool Remove(TEnum item)` — single bit clear.
+- `void Clear()`
+- `int Count { get; }`
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator, ascending order.
+- `void CopyTo(TEnum[] array, int arrayIndex)` — copies in ascending order, matching
+  `HashSet<T>.CopyTo` argument validation.
+
+### Set operations (`ISet<TEnum>`)
+
+The full BCL `HashSet<T>` set-algebra surface is available with `HashSet<T>` semantics.
+When the operand is another `EnumSet<TEnum>`, each operation runs as word-wise bitwise
+work; for a general `IEnumerable<TEnum>` it falls back to the shared element-by-element
+path.
+
+- **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
+- **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`,
+  `Overlaps`, `SetEquals`.
+
+Each throws `ArgumentNullException` when `other` is `null`. As with the hash-table
+sets, `ISet<TEnum>.Add` returns `bool` (equivalent to `TryAdd`), the concrete
+`public void Add` keeps its throw-on-duplicate behaviour, and `ICollection<TEnum>.Add`
+ignores duplicates.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+enum Permission { Read, Write, Execute, Delete, Admin }
+
+var granted = new EnumSet<Permission> { Permission.Read, Permission.Write };
+Console.WriteLine(granted.Contains(Permission.Write)); // True — a single bit test
+
+// Set algebra between two EnumSets is a word-wise bitwise op.
+var required = new EnumSet<Permission> { Permission.Read, Permission.Execute };
+Console.WriteLine(granted.IsSupersetOf(required)); // False — Execute not granted
+
+granted.UnionWith(required);                        // grant the missing ones
+Console.WriteLine(granted.Count);                   // 3
+
+var everything = EnumSet<Permission>.All();         // all declared constants
+Console.WriteLine(everything.Count);                // 5
+foreach (var p in granted) { /* ascending: Read, Write, Execute */ }
+```
+
+---
+
 ## BloomFilter&lt;T, THasher&gt;
 
 A space-efficient **probabilistic** set membership filter parameterized on a custom
