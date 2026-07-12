@@ -23,6 +23,7 @@ internal class Program
         typeof(CelerityMultiMapBenchmark),
         typeof(CelerityMultiSetBenchmark),
         typeof(SmallDictionaryBenchmark),
+        typeof(EnumMapBenchmark),
         typeof(CeleritySetBenchmark),
         typeof(SwissSetBenchmark),
         typeof(RobinHoodSetBenchmark),

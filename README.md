@@ -48,6 +48,7 @@ Standalone libraries built **on top of** Celerity — each solves a real problem
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: `Add` appends instead of overwriting. Implements `ILookup<TKey, TValue?>`.
 - `CelerityMultiSet<T, THasher>` — counting multiset (bag): each element maps to its multiplicity. Single-probe `Add`-increment for frequency counting, vs the two-probe `Dictionary<T,int>` idiom. `Count` (distinct) / `TotalCount` (occurrences).
 - `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary for the very-small (`n <= ~16`) case. No hasher; the default key is stored inline.
+- `EnumMap<TEnum, TValue>` — dense array-backed dictionary for **enum** keys (the .NET `EnumMap`): a lookup is a direct array index — no hashing, no probing, no collisions. Enumerates in ascending underlying-value order. The dictionary counterpart of `EnumSet`.
 - `IntDictionary<TValue>` / `LongDictionary<TValue>` — `int` / `long`-keyed specializations (default to `Int32WangNaiveHasher` / `Int64WangNaiveHasher`).
 
 **Sets**
@@ -116,7 +117,7 @@ byName["bob"] = 1;
 The hasher is a `struct` generic constraint, so the JIT devirtualizes and inlines `Hash()` on the probe path.
 
 <details>
-<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Frozen, MultiMap, MultiSet, Small</summary>
+<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Frozen, MultiMap, MultiSet, Small, EnumMap</summary>
 
 All four `CelerityDictionary` peers below are drop-in (same API, same hashers) and differ only in collision strategy / storage:
 
@@ -185,6 +186,16 @@ var scope = new SmallDictionary<string, int>();
 scope["x"] = 1;
 scope.TryAdd("x", 99);          // false — already present
 Console.WriteLine(scope["x"]);  // 1
+```
+
+`EnumMap<TEnum, TValue>` is the dense array-backed dictionary for **enum** keys — the .NET analogue of Java's `EnumMap` and the dictionary counterpart of `EnumSet`. It maps the enum's underlying value straight to an array slot, so `this[key]` / `TryGetValue` / `ContainsKey` / `Add` / `Remove` are a shift-mask-and-index — no hashing, no probing, no collisions — and a full sweep is a linear array walk. A parallel occupancy bit vector means a key mapped to `default(TValue)` is a genuine entry, distinct from an absent one. It supports enums whose members are small non-negative integers (the default declaration); negative or sparse `[Flags]` enums throw `NotSupportedException` (use `CelerityDictionary` there). Enumeration is deterministic — ascending by underlying value.
+
+```csharp
+enum Priority { Low, Normal, High, Critical }
+
+var queued = new EnumMap<Priority, int> { [Priority.Low] = 3, [Priority.High] = 7 };
+queued[Priority.High]++;                             // direct array index, no hashing
+Console.WriteLine(queued.ContainsKey(Priority.Normal)); // False — a single bit test
 ```
 
 </details>
@@ -353,6 +364,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
 | **Counting** occurrences / frequency histogram (element → count) | `CelerityMultiSet<T, THasher>` | `Add` is a single probe-and-increment vs the two-probe `Dictionary<T,int>` counting idiom; `SetCount` / `Remove` / `RemoveAll` manage multiplicities, `Count` is distinct elements and `TotalCount` the sum. Pick the struct hasher for your element type. |
 | Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |
+| Dictionary keyed by a small **enum** — config-by-enum, per-state data, enum→handler tables | `EnumMap<TEnum, TValue>` | Dense array indexed on the enum's underlying value (the .NET `EnumMap`): `this[key]` / `TryGetValue` / `Add` / `Remove` are a single direct array index — no hashing, no probing, no collisions — and a full sweep is a linear array walk. The dictionary counterpart of `EnumSet`; enumerates ascending by value. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CelerityDictionary<TEnum, TValue, THasher>` there. |
 | Tiny set (`n <= ~16`) that stays small — per-scope "seen" sets, small membership guards, deduping a handful of items | `SmallSet<T>` | The set counterpart of `SmallDictionary`: flat-array linear scan beats hashing at small `n`, no hasher to pick, the default element is stored inline. Implements `ISet<T>`. Degrades to `O(n)` for large sets, so only when instances stay small. |
 | Set of **enum** values — flag sets, permission sets, state sets over a small enum | `EnumSet<TEnum>` | Bit-vector set indexed on the enum's underlying value (the .NET `EnumSet`): `Add` / `Contains` / `Remove` are a single bit op — no hashing, no boxing — and set algebra between two `EnumSet`s is a word-wise bitwise `OR` / `AND` / `XOR`. Enumerates ascending by value; `All()` builds the full universe. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CeleritySet<TEnum, THasher>` there. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
