@@ -12,7 +12,7 @@ This folder contains reference documentation for the Celerity high-performance c
 
 ## API reference
 
-- [Collections](api/collections.md) — dictionaries (`CelerityDictionary`, `RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`, `IntDictionary`, `LongDictionary`, `SmallDictionary`, `FrozenCelerityDictionary`), sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `IntSet`, `LongSet`, `FrozenCeleritySet`), multi-collections (`CelerityMultiMap`, `CelerityMultiSet`), and probabilistic / bit collections (`BitSet`, `BloomFilter`, `CuckooFilter`, `HyperLogLog`, `CountMinSketch`, `TopKSketch`).
+- [Collections](api/collections.md) — dictionaries (`CelerityDictionary`, `RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`, `IntDictionary`, `LongDictionary`, `SmallDictionary`, `FrozenCelerityDictionary`), sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `IntSet`, `LongSet`, `FrozenCeleritySet`), multi-collections (`CelerityMultiMap`, `CelerityMultiSet`), and probabilistic / bit collections (`BitSet`, `BloomFilter`, `CuckooFilter`, `XorFilter`, `HyperLogLog`, `CountMinSketch`, `TopKSketch`).
 - [Hashing](api/hashing.md) — `IHashProvider<T>` interface and built-in hashers (`Int32WangNaiveHasher`, `Int32Murmur3Hasher`, `Int64WangHasher`, `Int64Murmur3Hasher`, `UInt32Hasher`, `UInt64Hasher`, `GuidHasher`, the `String*` hasher family, `DefaultHasher<T>`), and the `HashQualityEvaluator`.
 - [Utilities](api/utilities.md) — `FastUtils` helper methods.
 - [Native AOT & trimming](aot.md) — AOT / trim compatibility and how it is enforced.

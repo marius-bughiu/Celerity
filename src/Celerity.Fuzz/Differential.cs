@@ -44,6 +44,7 @@ internal static class Differential
         ("FrozenCeleritySet", FrozenSetCase),
         ("BloomFilter", BloomFilterCase),
         ("CuckooFilter", CuckooFilterCase),
+        ("XorFilter", XorFilterCase),
         ("BitSet", BitSetCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -682,6 +683,36 @@ internal static class Differential
         foreach (var kv in oracle)
             if (kv.Value > 0)
                 Check(sut.Contains(kv.Key), $"false negative for {kv.Key}");
+    }
+
+    // ---- xor filter (probabilistic, build-once, one-directional) ------------
+
+    // An xor filter is built once from a fixed element set and is then immutable. It permits false positives
+    // but never false negatives, so the check is one-directional: every element of the construction set must
+    // test present. The set is drawn from the tiny key domain (so duplicates exercise the constructor's
+    // set-dedupe) and includes a fresh random-range membership build each trial, stressing the peel + reseed
+    // construction path against different layouts.
+    private static void XorFilterCase(Random rng)
+    {
+        var oracle = new HashSet<int>();
+        int size = OpCount(rng); // 0..199 elements, including the empty-set edge case
+        for (int i = 0; i < size; i++)
+            oracle.Add(Key(rng));
+
+        var sut = new XorFilter<int, Int32WangNaiveHasher>(oracle);
+
+        // Count is the distinct-element-*hash* count: the weak naive hasher can collide two distinct ints onto
+        // one 64-bit key, which the constructor folds into a single entry, so it is a lower bound on the oracle
+        // (never above, since dedupe only ever removes).
+        Check(sut.Count <= oracle.Count, $"distinct count {sut.Count} exceeds oracle {oracle.Count}");
+
+        foreach (int k in oracle)
+            Check(sut.Contains(k), $"false negative for {k}");
+
+        // An empty filter must report every probe absent (the _count == 0 short-circuit).
+        if (oracle.Count == 0)
+            for (int k = MinKey; k <= MaxKey; k++)
+                Check(!sut.Contains(k), $"empty xor filter reported {k} present");
     }
 
     // ---- bit set (exact, two-directional) -----------------------------------

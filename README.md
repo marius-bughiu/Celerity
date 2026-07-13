@@ -68,6 +68,7 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
 - `CuckooFilter<T, THasher>` — **probabilistic** membership that **supports deletion**: fingerprint buckets, **no false negatives**, tunable false-positive rate, ≤2 cache lines per lookup. The Bloom filter you can `Remove` from.
+- `XorFilter<T, THasher>` — **probabilistic** membership that is **build-once & immutable**: ~9.84 bits/element (smaller than a Bloom filter at the same rate), three probes + two XORs per lookup (branch-free). The smallest, fastest-to-query filter for a fixed element set.
 - `BitSet` — dense, **exact** bit vector in 64-bit words: `O(n/64)` hardware popcount (`Count`) and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `BitArray`.
 - `HyperLogLog<T, THasher>` — **probabilistic** cardinality estimator: counts *distinct* elements from a fixed ~16&#160;KB of registers (~0.8% error), never growing with the data. Mergeable.
 - `CountMinSketch<T, THasher>` — **probabilistic** frequency estimator: estimates per-element counts from a fixed grid, **never underestimating** (overestimate bounded by `epsilon · TotalCount`). Mergeable.
@@ -265,7 +266,7 @@ granted.UnionWith(required);                        // one bitwise OR
 </details>
 
 <details>
-<summary><b>Probabilistic & bit-level</b> — BloomFilter, CuckooFilter, HyperLogLog, CountMinSketch, TopKSketch</summary>
+<summary><b>Probabilistic & bit-level</b> — BloomFilter, CuckooFilter, XorFilter, HyperLogLog, CountMinSketch, TopKSketch</summary>
 
 `BloomFilter` is a membership gate that stores nothing but a bit array: **no false negatives** (a `false` is always correct), with a tunable false-positive rate. Add-and-test only (no `Remove`, no enumeration); merge equally-sized filters with `UnionWith`.
 
@@ -284,6 +285,14 @@ recent.Add(42);
 Console.WriteLine(recent.Contains(42)); // True (definitely added)
 recent.Remove(42);                      // Bloom cannot do this
 Console.WriteLine(recent.Contains(42)); // False
+```
+
+`XorFilter` is the **build-once, immutable** membership filter — the smallest and fastest to query. You hand the whole element set to the constructor (there is no `Add`/`Remove`); in return it packs to ~9.84 bits/element (smaller than a Bloom filter at the same ~0.4% rate) and every `Contains` is exactly three probes and two XORs, with no probe loop or data-dependent branch. Use it for a *fixed* set — static allow/deny lists, a precomputed membership gate in front of an expensive exact lookup.
+
+```csharp
+var known = new XorFilter<string, StringXxHash3Hasher>(issuedApiKeys); // built once, then read-only
+Console.WriteLine(known.Contains("key-abc")); // True if issued (or a ~0.4% false positive)
+Console.WriteLine(known.Contains("key-zzz")); // False (no false negatives)
 ```
 
 `HyperLogLog` estimates the **distinct count** of a stream from a fixed ~16&#160;KB of registers that never grow with the data (~0.8% error). Add-and-estimate only; `Precision` sets the accuracy trade-off (`StandardError` ≈ `1.04/√m`); merge equal-precision estimators with `UnionWith`.
@@ -365,6 +374,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Build-once, read-many membership set keyed by `string` | `FrozenCeleritySet` | Immutable; searches for a perfect (collision-free) hash at build time so `Contains` is single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Tune the hasher via the `<THasher>` overload. |
 | **Membership gate** where a small, bounded false-positive rate is acceptable in exchange for a large memory saving (dedup pre-filters, "have I seen this before?" guards in front of an expensive exact lookup) | `BloomFilter<T, THasher>` | Probabilistic: bit-array storage with **no false negatives** and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory and never growing with element size. Add-and-test only — no `Remove`, no enumeration, no retrieval. If you need exact membership or to get the elements back, use `CeleritySet` / `FrozenCeleritySet`; if you need to **delete** from the filter, use `CuckooFilter`. |
 | **Deletable membership gate** — the same approximate-membership trade-off as `BloomFilter` but for a set that **shrinks** as well as grows (sliding windows of recent keys, cache-admission filters, expiring-entry sets) | `CuckooFilter<T, THasher>` | Probabilistic: fingerprint-bucket storage with **no false negatives**, a tunable false-positive rate, and `Remove`. Lookups touch at most two buckets (≈ two cache lines). Only remove elements you actually added. Insertion can fail at very high load (reports *full*). If your set only grows or you reset it wholesale, `BloomFilter` is simpler and can be more compact at high target false-positive rates. |
+| **Static membership gate** over a **fixed** element set known up front (precomputed allow/deny lists, a read-only "have I seen this?" gate in front of an expensive exact lookup) where the smallest, fastest filter matters | `XorFilter<T, THasher>` | Probabilistic, **build-once & immutable**: the whole set goes to the constructor (no `Add`/`Remove`). Packs to ~9.84 bits/element (smaller than a Bloom filter at the same ~0.4% rate) and every `Contains` is three probes + two XORs, branch-free — the fastest, most compact filter. If the set changes over the filter's lifetime, use `BloomFilter` (grows) or `CuckooFilter` (grows and shrinks) instead; the false-positive rate is fixed at ~0.4% (8-bit fingerprint), so use `BloomFilter` when you need a tunable rate. |
 | **Dense set of small integer indices** (or a fixed universe of flags) where you count set bits or combine whole vectors — bitmaps, visited/presence masks, sieves | `BitSet` | Exact dense bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `System.Collections.BitArray`. For **sparse** indices over a huge/unbounded domain, `IntSet` / `LongSet` is more memory-efficient; for approximate membership over arbitrary elements, use `BloomFilter`. |
 | **Distinct count** over a large or unbounded stream (unique visitors / events, distinct-value cardinality, deduplicated counts across shards) where a small relative error is acceptable | `HyperLogLog<T, THasher>` | Probabilistic: estimates the distinct count from a fixed array of registers (16&#160;KB at the default precision) with a ~0.8% relative standard error, never growing with the cardinality — unlike a `HashSet<T>` that stores every distinct value. Add-and-estimate only; merge shard estimators with `UnionWith`. If you need an exact count or to test a specific element, use `HashSet<T>` / `CeleritySet`; for approximate *membership* rather than counting, use `BloomFilter`. |
 | **Per-element frequency** of a *specific* element over a large or unbounded stream (approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; if you want the *set of* heaviest elements rather than a specific one's count, use `TopKSketch`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
