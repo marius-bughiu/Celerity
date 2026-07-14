@@ -484,6 +484,34 @@ void Check(bool condition, string message)
         "SmallDictionary<string, int> IEnumerable ctor + null key");
 }
 
+// EnumMap — dense array-backed dictionary for enum keys (the .NET EnumMap). Exercise
+// the indexer, TryAdd/Add, TryGetValue, Remove, the parallel occupancy vector
+// (default value distinct from absent), and the ascending-order struct enumerator.
+// DayOfWeek (0..6, contiguous) is a supported small non-negative enum; the switch on
+// Unsafe.SizeOf<TEnum>() and the Unsafe.As reinterpret cast must compile to native
+// code under AOT.
+{
+    var m = new EnumMap<DayOfWeek, string>();
+    m[DayOfWeek.Monday] = "mon";
+    Check(m.TryAdd(DayOfWeek.Tuesday, "tue"), "EnumMap.TryAdd new key");
+    Check(!m.TryAdd(DayOfWeek.Tuesday, "x"), "EnumMap.TryAdd duplicate");
+    m.Add(DayOfWeek.Sunday, "sun"); // Sunday == 0 is an ordinary key, not a sentinel
+    Check(m.TryGetValue(DayOfWeek.Monday, out var v) && v == "mon", "EnumMap indexer round-trip");
+    Check(m[DayOfWeek.Sunday] == "sun", "EnumMap zero-valued key round-trip");
+    Check(m.Remove(DayOfWeek.Tuesday), "EnumMap.Remove");
+    Check(m.Count == 2, "EnumMap count");
+
+    var keys = new List<DayOfWeek>();
+    foreach (var kvp in m) keys.Add(kvp.Key);
+    Check(keys.Count == 2 && keys[0] == DayOfWeek.Sunday && keys[1] == DayOfWeek.Monday,
+        "EnumMap ascending-order enumeration");
+
+    bool enumMapRejectsOutOfRange = false;
+    try { _ = new EnumMap<DateTimeKind, int>() { [(DateTimeKind)999] = 1 }; }
+    catch (ArgumentOutOfRangeException) { enumMapRejectsOutOfRange = true; }
+    Check(enumMapRejectsOutOfRange, "EnumMap rejects out-of-range key");
+}
+
 // SwissDictionary — SIMD group-probing dictionary (default key out-of-band, like
 // the other hash-table dictionaries). Exercise the indexer, TryAdd/Add,
 // TryGetValue, Remove (tombstone path), the out-of-band zero / null key, resize
@@ -668,6 +696,39 @@ void Check(bool condition, string message)
     var guidFilter = new CuckooFilter<Guid, GuidHasher>(100);
     guidFilter.Add(Guid.Empty); // ordinary element, no out-of-band slot
     Check(guidFilter.Contains(Guid.Empty), "CuckooFilter<Guid> empty-guid element");
+}
+
+// XorFilter — build-once, immutable probabilistic membership filter (no out-of-band
+// slot; default(T) is an ordinary element, a null reference is mapped to a fixed base
+// hash so the hasher is never called with null). Exercise the IEnumerable ctor across
+// int / Guid / string instantiations so the AOT publish compiles the peeling
+// construction and the three-probe query path, plus the empty-filter short-circuit.
+{
+    var filter = new XorFilter<int, Int32WangNaiveHasher>(new[] { 42, 0, 7, 100, -3 });
+    Check(filter.Contains(42) && filter.Contains(0) && filter.Contains(-3), "XorFilter build/contains");
+    Check(filter.Count == 5, "XorFilter count");
+    Check(filter.SlotCount % 3 == 0 && filter.SlotCount >= filter.Count, "XorFilter slot count");
+    Check(filter.FingerprintBits == 8, "XorFilter fingerprint width");
+
+    // No false negatives across a larger fill (exercises the peel + reseed path).
+    var big = new XorFilter<int, Int32WangNaiveHasher>(Enumerable.Range(1, 2000).Select(i => i * 3).ToArray());
+    bool noFalseNegatives = true;
+    for (int i = 1; i <= 2000; i++) noFalseNegatives &= big.Contains(i * 3);
+    Check(noFalseNegatives, "XorFilter no false negatives");
+    Check(big.BitsPerElement > 8d && big.BitsPerElement < 12d, "XorFilter bits/element");
+
+    // Empty filter reports everything absent via the _count == 0 short-circuit.
+    var empty = new XorFilter<int, Int32WangNaiveHasher>(Array.Empty<int>());
+    Check(empty.Count == 0 && !empty.Contains(1), "XorFilter empty reports absent");
+
+    // String elements via the IEnumerable ctor, plus the out-of-band null reference
+    // (StringFnV1AHasher throws on null; XorFilter must not call it with null).
+    var strFilter = new XorFilter<string, StringFnV1AHasher>(new[] { "alice", "bob", null! });
+    Check(strFilter.Contains("alice") && strFilter.Contains("bob") && strFilter.Contains(null!),
+        "XorFilter<string> ctor + null element");
+
+    var guidXor = new XorFilter<Guid, GuidHasher>(new[] { Guid.Empty, Guid.NewGuid() });
+    Check(guidXor.Contains(Guid.Empty), "XorFilter<Guid> empty-guid element");
 }
 
 // BitSet — dense exact bit vector. Exercise Set / Get / Flip / SetAll / Count

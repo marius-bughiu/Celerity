@@ -1971,6 +1971,117 @@ foreach (var p in granted) { /* ascending: Read, Write, Execute */ }
 
 ---
 
+## EnumMap&lt;TEnum, TValue&gt;
+
+```csharp
+public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
+    where TEnum : struct, Enum
+```
+
+A dictionary specialized for **enum keys**, backed by a dense value array indexed on the
+enum's underlying integer value plus a parallel occupancy bit vector — the .NET analogue
+of Java's `java.util.EnumMap`. It is the **dictionary counterpart of `EnumSet<TEnum>`**:
+where `EnumSet` stores one *bit* per possible element, `EnumMap` stores one *value slot*
+per possible key. Where `Dictionary<TEnum, TValue>` runs every key through
+`EqualityComparer<TEnum>` and a hash table, `EnumMap` maps the underlying value straight
+to an array slot:
+
+- `this[key]` / `TryGetValue` / `ContainsKey` / `Add` / `Remove` are a shift, a mask, a
+  single-`ulong` bit test, and a contiguous array access — no hash, no probe chain, no
+  per-entry node allocation.
+- Storage is contiguous and cache-resident (a `TValue[]` plus a `ulong[]` occupancy
+  vector), so a full sweep is a linear array walk.
+- Enumeration is **deterministic and ascending by underlying value** (the occupancy
+  vector is walked low bit first) — a bonus over the hash-table dictionaries' unspecified
+  order.
+
+Presence is tracked out-of-band in the occupancy bit vector, so a key mapped to
+`default(TValue)` (`0`, `null`, …) is a genuine entry, distinct from an absent key.
+
+This is the classic dense direct-indexed map, made type-safe and generic — the map sibling
+of the bit-flags set.
+
+### Supported enums
+
+The backing store is sized once from the enum's **maximum defined underlying value**
+(shared with `EnumSet` via the same internal layout metadata), so `EnumMap` supports enums
+whose members are **small, non-negative integers** — the default `0, 1, 2, …` declaration,
+which covers the overwhelming majority of enums.
+
+- An enum that declares a **negative** member throws `NotSupportedException` from the
+  constructor (an array cannot be indexed by a negative value).
+- An enum whose **maximum value exceeds `65535`** — a sparse or `[Flags]` power-of-two
+  enum, for which a dense array would waste enormous memory — also throws
+  `NotSupportedException`. Use `CelerityDictionary<TEnum, TValue, THasher>` for those.
+- A runtime key **outside the supported range** (an out-of-range cast such as
+  `(MyEnum)9999`) is rejected by the write surface (`Add` / `TryAdd` / `this[key] = …`)
+  with `ArgumentOutOfRangeException`, and reported as absent by the read surface
+  (`ContainsKey` / `TryGetValue` / `Remove`; the indexer getter throws
+  `KeyNotFoundException`).
+
+### Constructors
+
+```csharp
+EnumMap()
+EnumMap(IEnumerable<KeyValuePair<TEnum, TValue>> source)
+```
+
+- The parameterless constructor creates an empty map. There is **no capacity or
+  `loadFactor` parameter** — the storage size is fixed by the enum, not by the entry
+  count.
+- The `source` constructor copies the pairs, throwing `ArgumentException` on a duplicate
+  key (matching `Add` and the BCL dictionaries) and `ArgumentNullException` if `source` is
+  `null`. Copying from another `EnumMap<TEnum, TValue>` copies both backing arrays
+  wholesale.
+- Both throw `NotSupportedException` if `TEnum` is unsupported (see above).
+
+### Methods and properties
+
+- `TValue this[TEnum key] { get; set; }` — getter throws `KeyNotFoundException` for an
+  absent key; setter adds a new entry or overwrites an existing one. A pure overwrite does
+  not invalidate active enumerators (matching `Dictionary<,>`).
+- `void Add(TEnum key, TValue value)` — throws `ArgumentException` on duplicate,
+  `ArgumentOutOfRangeException` for an out-of-range key.
+- `bool TryAdd(TEnum key, TValue value)` — `true` on success, `false` if the key already
+  exists; throws `ArgumentOutOfRangeException` for an out-of-range key.
+- `bool ContainsKey(TEnum key)` — single bit test.
+- `bool ContainsValue(TValue? value)` — `O(n)` scan of occupied slots, `EqualityComparer<T>.Default` semantics.
+- `bool TryGetValue(TEnum key, out TValue? value)`.
+- `bool Remove(TEnum key)` / `bool Remove(TEnum key, out TValue? value)` — clears the slot
+  (releasing any reference) and the occupancy bit.
+- `void Clear()`
+- `int Count { get; }`
+- `KeyCollection Keys` / `ValueCollection Values` — allocation-free struct views, ascending
+  by key.
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator, ascending order.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+enum Priority { Low, Normal, High, Critical }
+
+var queued = new EnumMap<Priority, int>
+{
+    [Priority.Low] = 3,
+    [Priority.High] = 7,
+};
+
+queued[Priority.High]++;                             // direct array index, no hashing
+Console.WriteLine(queued[Priority.High]);            // 8
+
+Console.WriteLine(queued.ContainsKey(Priority.Normal)); // False — a single bit test
+Console.WriteLine(queued.TryGetValue(Priority.Low, out var n)); // True, n == 3
+
+foreach (var (p, count) in queued.Select(kvp => (kvp.Key, kvp.Value)))
+{
+    // ascending by underlying value: Low, High
+}
+```
+
+---
+
 ## BloomFilter&lt;T, THasher&gt;
 
 A space-efficient **probabilistic** set membership filter parameterized on a custom
@@ -2236,6 +2347,121 @@ void OnRequest(long id)
 }
 
 void OnExpire(long id) => recent.Remove(id);   // shrink the window — Bloom cannot do this
+```
+
+---
+
+## XorFilter&lt;T, THasher&gt;
+
+A **build-once, immutable** **probabilistic** set membership filter that is **smaller and
+faster to query** than `BloomFilter` or `CuckooFilter` at the same false-positive rate,
+parameterized on a custom hash provider. Like the other filters it answers "is this element
+*possibly* in the set?" with **no false negatives** and a bounded false-positive rate — but
+it is the *static* member of the family: the whole element set is supplied once at
+construction and the filter is then immutable (there is **no `Add`, `Remove`, or `Clear`**).
+
+```csharp
+public class XorFilter<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+### How it works
+
+The structure is the **xor filter** of Graf &amp; Lemire (*"Xor Filters: Faster and Smaller
+Than Bloom and Cuckoo Filters"*, ACM JEA 2020). The backing store is a byte array of
+`3 · blockLength ≈ 1.23 · n` 8-bit fingerprints, split into three equal segments; each
+element maps to one slot in each segment (`h0`, `h1`, `h2`), and the filter is built so that
+
+```
+fingerprint(x) == store[h0] XOR store[h1] XOR store[h2]
+```
+
+holds for every element `x` of the set. Construction assigns the fingerprints by **peeling**
+the 3-uniform hypergraph of element→slot incidences (repeatedly claiming a slot touched by
+exactly one remaining element, then back-filling in reverse), retrying with a fresh internal
+seed on the rare peel failure. A query recomputes the three slots and the fingerprint from a
+**single** `IHashProvider<T>.Hash` call and compares — exactly **three memory probes and two
+XORs**, with no probe loop and no data-dependent branch.
+
+### Xor vs. Bloom vs. Cuckoo
+
+| | `BloomFilter` | `CuckooFilter` | `XorFilter` |
+|---|---|---|---|
+| No false negatives | ✅ | ✅ | ✅ |
+| Mutable after build (`Add`) | ✅ | ✅ | ❌ (build-once) |
+| Delete individual elements | ❌ | ✅ | ❌ |
+| Lookup cost | `k` bit probes | ≤ 2 buckets | **3 probes + 2 XORs (branch-free)** |
+| Bits per element (@ ~0.4%) | ~12–14 | ~12 | **~9.84** |
+
+Reach for `XorFilter` when the element set is **known up front and does not change** — static
+allow/deny lists, a precomputed "have I seen this key?" gate in front of an expensive exact
+lookup, read-only shard membership. If the set grows over the filter's lifetime use
+`BloomFilter`; if it also shrinks use `CuckooFilter`; if you need exact membership or to
+enumerate the elements use `FrozenCeleritySet` / `CeleritySet`.
+
+### Sizing and the false-positive rate
+
+The fingerprint width is fixed at **8 bits**, so the false-positive probability is a constant
+`1 / 2⁸ ≈ 0.39%`, independent of the element count — unlike a Bloom filter, an xor filter does
+not degrade as it fills; it is sized exactly for its element set at build time. The store is
+`3 · blockLength ≈ 1.23 · n` bytes (`SlotCount`), giving ≈ 9.84 `BitsPerElement`.
+
+### Constructor
+
+```csharp
+public XorFilter(IEnumerable<T> source)
+```
+
+Builds a filter holding exactly the elements of `source`. Because the source is a *set*, the
+constructor **deduplicates internally**: two elements that hash to the same 64-bit value
+collapse to one entry (harmless — both still test present), so `Count` is the number of
+*distinct* element hashes, which can be below the source length.
+
+**Throws:**
+
+- `ArgumentNullException` if `source` is `null`.
+- `InvalidOperationException` if the peeling construction fails to converge after many reseeds
+  — only possible with a pathologically degenerate hasher, and effectively never in practice.
+
+### Methods and properties
+
+- `bool Contains(T item)` — `false` ⇒ definitely absent (no false negatives); `true` ⇒
+  probably present, subject to the ~0.4% false-positive rate.
+- `int Count { get; }` — the number of distinct element hashes represented (the deduplicated
+  element count).
+- `int SlotCount { get; }` — the number of 8-bit fingerprint slots (`3 · blockLength`), which
+  is also the filter's size in bytes.
+- `int FingerprintBits { get; }` — the fingerprint width in bits (fixed at 8). The constant
+  `XorFilter<T, THasher>.FINGERPRINT_BITS` exposes the same value.
+- `double FalsePositiveRate { get; }` — the fixed theoretical rate, `1 / 2⁸ ≈ 0.0039`.
+- `double BitsPerElement { get; }` — the storage cost per represented element
+  (`SlotCount · 8 / Count`), ≈ 9.84 for a well-sized filter; `0` for an empty filter.
+
+### Default-element handling
+
+Because the filter stores fingerprints, not keys, it needs **no out-of-band handling** for
+`default(T)` — a zero `int`, `Guid.Empty`, or the empty string is hashed like any other
+element. A `null` reference is mapped to a fixed base hash so the filter never invokes the
+hasher with `null` (the string hashers throw on `null`).
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A precomputed allow-list of known-good API keys, built once at startup and never mutated.
+string[] issuedKeys = LoadIssuedApiKeys();
+var known = new XorFilter<string, StringXxHash3Hasher>(issuedKeys);
+
+bool MightBeIssued(string apiKey)
+{
+    // A false ends the request immediately (no false negatives); a true falls through to the
+    // authoritative — and more expensive — exact lookup, wrong only ~0.4% of the time.
+    if (!known.Contains(apiKey))
+        return false;
+    return Database.ApiKeyExists(apiKey);
+}
 ```
 
 ---

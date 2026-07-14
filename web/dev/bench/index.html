@@ -425,6 +425,8 @@
     // SmallDictionary is a small-n collection: it is benchmarked at 8 / 64 items
     // (not the 1k / 100k the hash tables use), so it carries its own item counts.
     { key: 'SmallDictionary',     title: 'SmallDictionary<int, int>',                vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'], items: [8, 64] },
+    // EnumMap is bounded by the enum universe (no item-count sweep); Enumerate is the contiguous-storage sweep win.
+    { key: 'EnumMap',             title: 'EnumMap<TEnum, TValue>',                   vs: 'Dictionary<TEnum, V>',  ops: ['Add', 'Lookup', 'Remove', 'Enumerate'] },
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
@@ -440,6 +442,7 @@
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
+    { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },
     // BitSet is a dense bit vector benchmarked at 1024 / 1,000,000 bits (not the 1k /
     // 100k the hash tables use), so it carries its own item counts.
     { key: 'BitSet',              title: 'BitSet',                                   vs: 'BitArray',              ops: ['PopCount', 'And', 'Or', 'Xor'], items: [1024, 1000000] },

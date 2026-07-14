@@ -48,6 +48,7 @@ Standalone libraries built **on top of** Celerity — each solves a real problem
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: `Add` appends instead of overwriting. Implements `ILookup<TKey, TValue?>`.
 - `CelerityMultiSet<T, THasher>` — counting multiset (bag): each element maps to its multiplicity. Single-probe `Add`-increment for frequency counting, vs the two-probe `Dictionary<T,int>` idiom. `Count` (distinct) / `TotalCount` (occurrences).
 - `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary for the very-small (`n <= ~16`) case. No hasher; the default key is stored inline.
+- `EnumMap<TEnum, TValue>` — dense array-backed dictionary for **enum** keys (the .NET `EnumMap`): a lookup is a direct array index — no hashing, no probing, no collisions. Enumerates in ascending underlying-value order. The dictionary counterpart of `EnumSet`.
 - `IntDictionary<TValue>` / `LongDictionary<TValue>` — `int` / `long`-keyed specializations (default to `Int32WangNaiveHasher` / `Int64WangNaiveHasher`).
 
 **Sets**
@@ -72,6 +73,7 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
 - `CuckooFilter<T, THasher>` — **probabilistic** membership that **supports deletion**: fingerprint buckets, **no false negatives**, tunable false-positive rate, ≤2 cache lines per lookup. The Bloom filter you can `Remove` from.
+- `XorFilter<T, THasher>` — **probabilistic** membership that is **build-once & immutable**: ~9.84 bits/element (smaller than a Bloom filter at the same rate), three probes + two XORs per lookup (branch-free). The smallest, fastest-to-query filter for a fixed element set.
 - `BitSet` — dense, **exact** bit vector in 64-bit words: `O(n/64)` hardware popcount (`Count`) and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `BitArray`.
 - `HyperLogLog<T, THasher>` — **probabilistic** cardinality estimator: counts *distinct* elements from a fixed ~16&#160;KB of registers (~0.8% error), never growing with the data. Mergeable.
 - `CountMinSketch<T, THasher>` — **probabilistic** frequency estimator: estimates per-element counts from a fixed grid, **never underestimating** (overestimate bounded by `epsilon · TotalCount`). Mergeable.
@@ -120,7 +122,7 @@ byName["bob"] = 1;
 The hasher is a `struct` generic constraint, so the JIT devirtualizes and inlines `Hash()` on the probe path.
 
 <details>
-<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Frozen, MultiMap, MultiSet, Small</summary>
+<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Frozen, MultiMap, MultiSet, Small, EnumMap</summary>
 
 All four `CelerityDictionary` peers below are drop-in (same API, same hashers) and differ only in collision strategy / storage:
 
@@ -189,6 +191,16 @@ var scope = new SmallDictionary<string, int>();
 scope["x"] = 1;
 scope.TryAdd("x", 99);          // false — already present
 Console.WriteLine(scope["x"]);  // 1
+```
+
+`EnumMap<TEnum, TValue>` is the dense array-backed dictionary for **enum** keys — the .NET analogue of Java's `EnumMap` and the dictionary counterpart of `EnumSet`. It maps the enum's underlying value straight to an array slot, so `this[key]` / `TryGetValue` / `ContainsKey` / `Add` / `Remove` are a shift-mask-and-index — no hashing, no probing, no collisions — and a full sweep is a linear array walk. A parallel occupancy bit vector means a key mapped to `default(TValue)` is a genuine entry, distinct from an absent one. It supports enums whose members are small non-negative integers (the default declaration); negative or sparse `[Flags]` enums throw `NotSupportedException` (use `CelerityDictionary` there). Enumeration is deterministic — ascending by underlying value.
+
+```csharp
+enum Priority { Low, Normal, High, Critical }
+
+var queued = new EnumMap<Priority, int> { [Priority.Low] = 3, [Priority.High] = 7 };
+queued[Priority.High]++;                             // direct array index, no hashing
+Console.WriteLine(queued.ContainsKey(Priority.Normal)); // False — a single bit test
 ```
 
 </details>
@@ -269,7 +281,7 @@ granted.UnionWith(required);                        // one bitwise OR
 </details>
 
 <details>
-<summary><b>Probabilistic & bit-level</b> — BloomFilter, CuckooFilter, HyperLogLog, CountMinSketch, TopKSketch</summary>
+<summary><b>Probabilistic & bit-level</b> — BloomFilter, CuckooFilter, XorFilter, HyperLogLog, CountMinSketch, TopKSketch</summary>
 
 `BloomFilter` is a membership gate that stores nothing but a bit array: **no false negatives** (a `false` is always correct), with a tunable false-positive rate. Add-and-test only (no `Remove`, no enumeration); merge equally-sized filters with `UnionWith`.
 
@@ -288,6 +300,14 @@ recent.Add(42);
 Console.WriteLine(recent.Contains(42)); // True (definitely added)
 recent.Remove(42);                      // Bloom cannot do this
 Console.WriteLine(recent.Contains(42)); // False
+```
+
+`XorFilter` is the **build-once, immutable** membership filter — the smallest and fastest to query. You hand the whole element set to the constructor (there is no `Add`/`Remove`); in return it packs to ~9.84 bits/element (smaller than a Bloom filter at the same ~0.4% rate) and every `Contains` is exactly three probes and two XORs, with no probe loop or data-dependent branch. Use it for a *fixed* set — static allow/deny lists, a precomputed membership gate in front of an expensive exact lookup.
+
+```csharp
+var known = new XorFilter<string, StringXxHash3Hasher>(issuedApiKeys); // built once, then read-only
+Console.WriteLine(known.Contains("key-abc")); // True if issued (or a ~0.4% false positive)
+Console.WriteLine(known.Contains("key-zzz")); // False (no false negatives)
 ```
 
 `HyperLogLog` estimates the **distinct count** of a stream from a fixed ~16&#160;KB of registers that never grow with the data (~0.8% error). Add-and-estimate only; `Precision` sets the accuracy trade-off (`StandardError` ≈ `1.04/√m`); merge equal-precision estimators with `UnionWith`.
@@ -375,6 +395,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
 | **Counting** occurrences / frequency histogram (element → count) | `CelerityMultiSet<T, THasher>` | `Add` is a single probe-and-increment vs the two-probe `Dictionary<T,int>` counting idiom; `SetCount` / `Remove` / `RemoveAll` manage multiplicities, `Count` is distinct elements and `TotalCount` the sum. Pick the struct hasher for your element type. |
 | Tiny dictionary (`n <= ~16`) that stays small | `SmallDictionary<TKey, TValue>` | Flat-array linear scan beats hashing at small `n` — no hash to compute, great cache locality, no hasher to pick. Degrades to `O(n)` for large key sets, so only when instances stay small. |
+| Dictionary keyed by a small **enum** — config-by-enum, per-state data, enum→handler tables | `EnumMap<TEnum, TValue>` | Dense array indexed on the enum's underlying value (the .NET `EnumMap`): `this[key]` / `TryGetValue` / `Add` / `Remove` are a single direct array index — no hashing, no probing, no collisions — and a full sweep is a linear array walk. The dictionary counterpart of `EnumSet`; enumerates ascending by value. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CelerityDictionary<TEnum, TValue, THasher>` there. |
 | Tiny set (`n <= ~16`) that stays small — per-scope "seen" sets, small membership guards, deduping a handful of items | `SmallSet<T>` | The set counterpart of `SmallDictionary`: flat-array linear scan beats hashing at small `n`, no hasher to pick, the default element is stored inline. Implements `ISet<T>`. Degrades to `O(n)` for large sets, so only when instances stay small. |
 | Set of **enum** values — flag sets, permission sets, state sets over a small enum | `EnumSet<TEnum>` | Bit-vector set indexed on the enum's underlying value (the .NET `EnumSet`): `Add` / `Contains` / `Remove` are a single bit op — no hashing, no boxing — and set algebra between two `EnumSet`s is a word-wise bitwise `OR` / `AND` / `XOR`. Enumerates ascending by value; `All()` builds the full universe. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CeleritySet<TEnum, THasher>` there. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
@@ -387,6 +408,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Build-once, read-many membership set keyed by `string` | `FrozenCeleritySet` | Immutable; searches for a perfect (collision-free) hash at build time so `Contains` is single-probe. The set counterpart of `FrozenCelerityDictionary`; implements `IReadOnlySet<string>`. Tune the hasher via the `<THasher>` overload. |
 | **Membership gate** where a small, bounded false-positive rate is acceptable in exchange for a large memory saving (dedup pre-filters, "have I seen this before?" guards in front of an expensive exact lookup) | `BloomFilter<T, THasher>` | Probabilistic: bit-array storage with **no false negatives** and a tunable false-positive rate, using a fraction of a `HashSet<T>`'s memory and never growing with element size. Add-and-test only — no `Remove`, no enumeration, no retrieval. If you need exact membership or to get the elements back, use `CeleritySet` / `FrozenCeleritySet`; if you need to **delete** from the filter, use `CuckooFilter`. |
 | **Deletable membership gate** — the same approximate-membership trade-off as `BloomFilter` but for a set that **shrinks** as well as grows (sliding windows of recent keys, cache-admission filters, expiring-entry sets) | `CuckooFilter<T, THasher>` | Probabilistic: fingerprint-bucket storage with **no false negatives**, a tunable false-positive rate, and `Remove`. Lookups touch at most two buckets (≈ two cache lines). Only remove elements you actually added. Insertion can fail at very high load (reports *full*). If your set only grows or you reset it wholesale, `BloomFilter` is simpler and can be more compact at high target false-positive rates. |
+| **Static membership gate** over a **fixed** element set known up front (precomputed allow/deny lists, a read-only "have I seen this?" gate in front of an expensive exact lookup) where the smallest, fastest filter matters | `XorFilter<T, THasher>` | Probabilistic, **build-once & immutable**: the whole set goes to the constructor (no `Add`/`Remove`). Packs to ~9.84 bits/element (smaller than a Bloom filter at the same ~0.4% rate) and every `Contains` is three probes + two XORs, branch-free — the fastest, most compact filter. If the set changes over the filter's lifetime, use `BloomFilter` (grows) or `CuckooFilter` (grows and shrinks) instead; the false-positive rate is fixed at ~0.4% (8-bit fingerprint), so use `BloomFilter` when you need a tunable rate. |
 | **Dense set of small integer indices** (or a fixed universe of flags) where you count set bits or combine whole vectors — bitmaps, visited/presence masks, sieves | `BitSet` | Exact dense bit vector packed into 64-bit words: `O(n/64)` population count (`Count`) via hardware popcount and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `System.Collections.BitArray`. For **sparse** indices over a huge/unbounded domain, `IntSet` / `LongSet` is more memory-efficient; for approximate membership over arbitrary elements, use `BloomFilter`. |
 | **Distinct count** over a large or unbounded stream (unique visitors / events, distinct-value cardinality, deduplicated counts across shards) where a small relative error is acceptable | `HyperLogLog<T, THasher>` | Probabilistic: estimates the distinct count from a fixed array of registers (16&#160;KB at the default precision) with a ~0.8% relative standard error, never growing with the cardinality — unlike a `HashSet<T>` that stores every distinct value. Add-and-estimate only; merge shard estimators with `UnionWith`. If you need an exact count or to test a specific element, use `HashSet<T>` / `CeleritySet`; for approximate *membership* rather than counting, use `BloomFilter`. |
 | **Per-element frequency** of a *specific* element over a large or unbounded stream (approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; if you want the *set of* heaviest elements rather than a specific one's count, use `TopKSketch`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
