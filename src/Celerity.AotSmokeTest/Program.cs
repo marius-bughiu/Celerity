@@ -457,6 +457,34 @@ void Check(bool condition, string message)
         "SmallDictionary<string, int> IEnumerable ctor + null key");
 }
 
+// EnumMap — dense array-backed dictionary for enum keys (the .NET EnumMap). Exercise
+// the indexer, TryAdd/Add, TryGetValue, Remove, the parallel occupancy vector
+// (default value distinct from absent), and the ascending-order struct enumerator.
+// DayOfWeek (0..6, contiguous) is a supported small non-negative enum; the switch on
+// Unsafe.SizeOf<TEnum>() and the Unsafe.As reinterpret cast must compile to native
+// code under AOT.
+{
+    var m = new EnumMap<DayOfWeek, string>();
+    m[DayOfWeek.Monday] = "mon";
+    Check(m.TryAdd(DayOfWeek.Tuesday, "tue"), "EnumMap.TryAdd new key");
+    Check(!m.TryAdd(DayOfWeek.Tuesday, "x"), "EnumMap.TryAdd duplicate");
+    m.Add(DayOfWeek.Sunday, "sun"); // Sunday == 0 is an ordinary key, not a sentinel
+    Check(m.TryGetValue(DayOfWeek.Monday, out var v) && v == "mon", "EnumMap indexer round-trip");
+    Check(m[DayOfWeek.Sunday] == "sun", "EnumMap zero-valued key round-trip");
+    Check(m.Remove(DayOfWeek.Tuesday), "EnumMap.Remove");
+    Check(m.Count == 2, "EnumMap count");
+
+    var keys = new List<DayOfWeek>();
+    foreach (var kvp in m) keys.Add(kvp.Key);
+    Check(keys.Count == 2 && keys[0] == DayOfWeek.Sunday && keys[1] == DayOfWeek.Monday,
+        "EnumMap ascending-order enumeration");
+
+    bool enumMapRejectsOutOfRange = false;
+    try { _ = new EnumMap<DateTimeKind, int>() { [(DateTimeKind)999] = 1 }; }
+    catch (ArgumentOutOfRangeException) { enumMapRejectsOutOfRange = true; }
+    Check(enumMapRejectsOutOfRange, "EnumMap rejects out-of-range key");
+}
+
 // SwissDictionary — SIMD group-probing dictionary (default key out-of-band, like
 // the other hash-table dictionaries). Exercise the indexer, TryAdd/Add,
 // TryGetValue, Remove (tombstone path), the out-of-band zero / null key, resize
