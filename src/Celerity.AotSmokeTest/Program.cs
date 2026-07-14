@@ -428,6 +428,33 @@ void Check(bool condition, string message)
     Check(bagFromSeq[1] == 2 && bagFromSeq[2] == 1, "CelerityMultiSet IEnumerable<T> counting ctor");
 }
 
+// LruCache — fixed-capacity least-recently-used cache. Exercise put/get, the
+// recency-preserving eviction, a promoting read sparing an entry, peek/remove, the
+// out-of-band default/zero key, and the MRU->LRU struct enumerator.
+{
+    var cache = new LruCache<int, string, Int32WangNaiveHasher>(3);
+    cache[0] = "zero"; // out-of-band default key
+    cache[1] = "one";
+    cache[2] = "two";
+    Check(cache.Count == 3 && cache[0] == "zero", "LruCache put/get + default key");
+
+    _ = cache[0];      // promote 0 -> MRU..LRU = 0, 2, 1
+    cache[3] = "three"; // evicts the least-recently-used (1), not 0
+    Check(!cache.ContainsKey(1) && cache.ContainsKey(0), "LruCache evicts LRU, spares read");
+
+    Check(cache.TryPeek(0, out string? peeked) && peeked == "zero", "LruCache TryPeek");
+    Check(cache.TryPeekLeastRecentlyUsed(out int lruKey, out _) && lruKey == 2, "LruCache peek LRU");
+    Check(cache.Remove(2, out string? removed) && removed == "two", "LruCache Remove out value");
+
+    var order = new List<int>();
+    foreach (var kvp in cache) order.Add(kvp.Key);
+    Check(order.Count == 2 && order[0] == 3, "LruCache MRU-first enumeration");
+
+    var seeded = new LruCache<int, int, Int32WangNaiveHasher>(2,
+        new[] { new KeyValuePair<int, int>(1, 10), new KeyValuePair<int, int>(2, 20), new KeyValuePair<int, int>(3, 30) });
+    Check(seeded.Count == 2 && !seeded.ContainsKey(1) && seeded.ContainsKey(3), "LruCache source ctor evicts oldest");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.

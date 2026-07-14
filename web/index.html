@@ -299,6 +299,7 @@
     <div class="ship"><code>HyperLogLog&lt;T, H&gt;</code><div class="desc">Probabilistic cardinality estimator: counts distinct elements in a fixed few KB with ~0.8% error, no matter how many you add. Mergeable; a fraction of a HashSet's memory.</div></div>
     <div class="ship"><code>CountMinSketch&lt;T, H&gt;</code><div class="desc">Probabilistic frequency estimator: estimates how often each element occurs from a fixed few KB, never underestimating. Mergeable; a fraction of a frequency-table Dictionary's memory.</div></div>
     <div class="ship"><code>TopKSketch&lt;T, H&gt;</code><div class="desc">Top-k / heavy-hitters sketch (Space-Saving): reports a stream's most frequent elements from a fixed k monitors, never underestimating. O(k) memory instead of one entry per distinct key.</div></div>
+    <div class="ship"><code>LruCache&lt;K, V, H&gt;</code><div class="desc">Fixed-capacity least-recently-used cache with O(1) get/put and automatic eviction. Recency runs through an intrusive list over fixed arrays, so the hot get/put/evict path allocates nothing — unlike the idiomatic <code>Dictionary</code>+<code>LinkedList</code> LRU that allocates a node per insert.</div></div>
     <div class="ship"><code>Celerity.Hashing</code><div class="desc">Wang, Murmur3, FNV-1a, Guid, default fallback.</div></div>
   </div>
 
