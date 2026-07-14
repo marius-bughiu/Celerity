@@ -281,6 +281,7 @@
     <div class="ship"><code>CelerityMultiMap&lt;K, V, H&gt;</code><div class="desc">One-to-many map: each key groups multiple values. Implements <code>ILookup</code>.</div></div>
     <div class="ship"><code>CelerityMultiSet&lt;T, H&gt;</code><div class="desc">Counting multiset (bag): each element maps to its multiplicity. Single-probe <code>Add</code> for frequency counting.</div></div>
     <div class="ship"><code>SmallDictionary&lt;K, V&gt;</code><div class="desc">Flat-array, linear-scan dictionary tuned for the very-small (n &le; ~16) case.</div></div>
+    <div class="ship"><code>EnumMap&lt;TEnum, V&gt;</code><div class="desc">Dense array-backed dictionary for enum keys (the .NET EnumMap): a lookup is a direct array index — no hashing, no probing, no collisions. Ascending-value enumeration. The dictionary counterpart of EnumSet.</div></div>
     <div class="ship"><code>IntSet</code><div class="desc">int-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>LongSet</code><div class="desc">long-keyed set, default Wang hash.</div></div>
     <div class="ship"><code>CeleritySet&lt;T, H&gt;</code><div class="desc">Generic set with a struct hasher constraint.</div></div>
