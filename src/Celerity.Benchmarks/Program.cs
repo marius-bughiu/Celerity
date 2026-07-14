@@ -36,6 +36,7 @@ internal class Program
         typeof(EnumSetBenchmark),
         typeof(BloomFilterBenchmark),
         typeof(CuckooFilterBenchmark),
+        typeof(XorFilterBenchmark),
         typeof(BitSetBenchmark),
         typeof(HyperLogLogBenchmark),
         typeof(CountMinSketchBenchmark),

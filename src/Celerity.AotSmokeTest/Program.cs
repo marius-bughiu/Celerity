@@ -671,6 +671,39 @@ void Check(bool condition, string message)
     Check(guidFilter.Contains(Guid.Empty), "CuckooFilter<Guid> empty-guid element");
 }
 
+// XorFilter — build-once, immutable probabilistic membership filter (no out-of-band
+// slot; default(T) is an ordinary element, a null reference is mapped to a fixed base
+// hash so the hasher is never called with null). Exercise the IEnumerable ctor across
+// int / Guid / string instantiations so the AOT publish compiles the peeling
+// construction and the three-probe query path, plus the empty-filter short-circuit.
+{
+    var filter = new XorFilter<int, Int32WangNaiveHasher>(new[] { 42, 0, 7, 100, -3 });
+    Check(filter.Contains(42) && filter.Contains(0) && filter.Contains(-3), "XorFilter build/contains");
+    Check(filter.Count == 5, "XorFilter count");
+    Check(filter.SlotCount % 3 == 0 && filter.SlotCount >= filter.Count, "XorFilter slot count");
+    Check(filter.FingerprintBits == 8, "XorFilter fingerprint width");
+
+    // No false negatives across a larger fill (exercises the peel + reseed path).
+    var big = new XorFilter<int, Int32WangNaiveHasher>(Enumerable.Range(1, 2000).Select(i => i * 3).ToArray());
+    bool noFalseNegatives = true;
+    for (int i = 1; i <= 2000; i++) noFalseNegatives &= big.Contains(i * 3);
+    Check(noFalseNegatives, "XorFilter no false negatives");
+    Check(big.BitsPerElement > 8d && big.BitsPerElement < 12d, "XorFilter bits/element");
+
+    // Empty filter reports everything absent via the _count == 0 short-circuit.
+    var empty = new XorFilter<int, Int32WangNaiveHasher>(Array.Empty<int>());
+    Check(empty.Count == 0 && !empty.Contains(1), "XorFilter empty reports absent");
+
+    // String elements via the IEnumerable ctor, plus the out-of-band null reference
+    // (StringFnV1AHasher throws on null; XorFilter must not call it with null).
+    var strFilter = new XorFilter<string, StringFnV1AHasher>(new[] { "alice", "bob", null! });
+    Check(strFilter.Contains("alice") && strFilter.Contains("bob") && strFilter.Contains(null!),
+        "XorFilter<string> ctor + null element");
+
+    var guidXor = new XorFilter<Guid, GuidHasher>(new[] { Guid.Empty, Guid.NewGuid() });
+    Check(guidXor.Contains(Guid.Empty), "XorFilter<Guid> empty-guid element");
+}
+
 // BitSet — dense exact bit vector. Exercise Set / Get / Flip / SetAll / Count
 // (popcount), the SIMD-accelerated bulk And / Or / Xor / Not, the tail-bit masking
 // past Length, and both enumerators so the AOT publish compiles the Vector<ulong>

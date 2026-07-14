@@ -2351,6 +2351,121 @@ void OnExpire(long id) => recent.Remove(id);   // shrink the window — Bloom ca
 
 ---
 
+## XorFilter&lt;T, THasher&gt;
+
+A **build-once, immutable** **probabilistic** set membership filter that is **smaller and
+faster to query** than `BloomFilter` or `CuckooFilter` at the same false-positive rate,
+parameterized on a custom hash provider. Like the other filters it answers "is this element
+*possibly* in the set?" with **no false negatives** and a bounded false-positive rate — but
+it is the *static* member of the family: the whole element set is supplied once at
+construction and the filter is then immutable (there is **no `Add`, `Remove`, or `Clear`**).
+
+```csharp
+public class XorFilter<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+### How it works
+
+The structure is the **xor filter** of Graf &amp; Lemire (*"Xor Filters: Faster and Smaller
+Than Bloom and Cuckoo Filters"*, ACM JEA 2020). The backing store is a byte array of
+`3 · blockLength ≈ 1.23 · n` 8-bit fingerprints, split into three equal segments; each
+element maps to one slot in each segment (`h0`, `h1`, `h2`), and the filter is built so that
+
+```
+fingerprint(x) == store[h0] XOR store[h1] XOR store[h2]
+```
+
+holds for every element `x` of the set. Construction assigns the fingerprints by **peeling**
+the 3-uniform hypergraph of element→slot incidences (repeatedly claiming a slot touched by
+exactly one remaining element, then back-filling in reverse), retrying with a fresh internal
+seed on the rare peel failure. A query recomputes the three slots and the fingerprint from a
+**single** `IHashProvider<T>.Hash` call and compares — exactly **three memory probes and two
+XORs**, with no probe loop and no data-dependent branch.
+
+### Xor vs. Bloom vs. Cuckoo
+
+| | `BloomFilter` | `CuckooFilter` | `XorFilter` |
+|---|---|---|---|
+| No false negatives | ✅ | ✅ | ✅ |
+| Mutable after build (`Add`) | ✅ | ✅ | ❌ (build-once) |
+| Delete individual elements | ❌ | ✅ | ❌ |
+| Lookup cost | `k` bit probes | ≤ 2 buckets | **3 probes + 2 XORs (branch-free)** |
+| Bits per element (@ ~0.4%) | ~12–14 | ~12 | **~9.84** |
+
+Reach for `XorFilter` when the element set is **known up front and does not change** — static
+allow/deny lists, a precomputed "have I seen this key?" gate in front of an expensive exact
+lookup, read-only shard membership. If the set grows over the filter's lifetime use
+`BloomFilter`; if it also shrinks use `CuckooFilter`; if you need exact membership or to
+enumerate the elements use `FrozenCeleritySet` / `CeleritySet`.
+
+### Sizing and the false-positive rate
+
+The fingerprint width is fixed at **8 bits**, so the false-positive probability is a constant
+`1 / 2⁸ ≈ 0.39%`, independent of the element count — unlike a Bloom filter, an xor filter does
+not degrade as it fills; it is sized exactly for its element set at build time. The store is
+`3 · blockLength ≈ 1.23 · n` bytes (`SlotCount`), giving ≈ 9.84 `BitsPerElement`.
+
+### Constructor
+
+```csharp
+public XorFilter(IEnumerable<T> source)
+```
+
+Builds a filter holding exactly the elements of `source`. Because the source is a *set*, the
+constructor **deduplicates internally**: two elements that hash to the same 64-bit value
+collapse to one entry (harmless — both still test present), so `Count` is the number of
+*distinct* element hashes, which can be below the source length.
+
+**Throws:**
+
+- `ArgumentNullException` if `source` is `null`.
+- `InvalidOperationException` if the peeling construction fails to converge after many reseeds
+  — only possible with a pathologically degenerate hasher, and effectively never in practice.
+
+### Methods and properties
+
+- `bool Contains(T item)` — `false` ⇒ definitely absent (no false negatives); `true` ⇒
+  probably present, subject to the ~0.4% false-positive rate.
+- `int Count { get; }` — the number of distinct element hashes represented (the deduplicated
+  element count).
+- `int SlotCount { get; }` — the number of 8-bit fingerprint slots (`3 · blockLength`), which
+  is also the filter's size in bytes.
+- `int FingerprintBits { get; }` — the fingerprint width in bits (fixed at 8). The constant
+  `XorFilter<T, THasher>.FINGERPRINT_BITS` exposes the same value.
+- `double FalsePositiveRate { get; }` — the fixed theoretical rate, `1 / 2⁸ ≈ 0.0039`.
+- `double BitsPerElement { get; }` — the storage cost per represented element
+  (`SlotCount · 8 / Count`), ≈ 9.84 for a well-sized filter; `0` for an empty filter.
+
+### Default-element handling
+
+Because the filter stores fingerprints, not keys, it needs **no out-of-band handling** for
+`default(T)` — a zero `int`, `Guid.Empty`, or the empty string is hashed like any other
+element. A `null` reference is mapped to a fixed base hash so the filter never invokes the
+hasher with `null` (the string hashers throw on `null`).
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A precomputed allow-list of known-good API keys, built once at startup and never mutated.
+string[] issuedKeys = LoadIssuedApiKeys();
+var known = new XorFilter<string, StringXxHash3Hasher>(issuedKeys);
+
+bool MightBeIssued(string apiKey)
+{
+    // A false ends the request immediately (no false negatives); a true falls through to the
+    // authoritative — and more expensive — exact lookup, wrong only ~0.4% of the time.
+    if (!known.Contains(apiKey))
+        return false;
+    return Database.ApiKeyExists(apiKey);
+}
+```
+
+---
+
 ## BitSet
 
 A dense, fixed-length array of bits packed into 64-bit words. It is the **exact,
