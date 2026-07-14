@@ -2752,3 +2752,129 @@ foreach (TopKEntry<string> entry in hot.GetTopK(10))
 if (hot.TryGetCount("/api/login", out long count, out long error))
     Console.WriteLine($"/api/login seen {count - error}..{count} times");
 ```
+
+## LruCache&lt;TKey, TValue, THasher&gt;
+
+A fixed-capacity **least-recently-used (LRU) cache** parameterized on a custom hash provider: an
+`O(1)` get/put map that automatically **evicts the least-recently-used entry** when a new key would
+push the count past `Capacity`.
+
+```csharp
+public class LruCache<TKey, TValue, THasher>
+    : IReadOnlyCollection<KeyValuePair<TKey, TValue?>>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+The BCL ships no bounded LRU cache. The idiomatic .NET LRU pairs a
+`Dictionary<TKey, LinkedListNode<(TKey, TValue)>>` with a `LinkedList<(TKey, TValue)>`, which
+**heap-allocates a `LinkedListNode` per insertion** and threads its recency order through pointers
+scattered across the managed heap. `LruCache` instead threads an **intrusive doubly-linked list
+through fixed-size node arrays** (allocated once, sized to `Capacity`) alongside an open-addressed
+key→node-slot index, so after construction the hot get/put/evict path performs **no allocation at
+all**. The documented BCL-beating workload is a hot, bounded cache under continuous eviction churn
+(memoize the last `N` results), where the array-backed list wins on allocation and locality.
+
+### How it works
+
+Every entry occupies a slot in the fixed node arrays. Occupied slots form a doubly-linked
+**most-recently-used → least-recently-used** chain via parallel `prev`/`next` index arrays; the
+free slots form a stack via the same `next` array. A key→slot index dogfoods
+`CelerityDictionary<TKey, int, THasher>` — which is where `THasher` is used, and which also supplies
+the out-of-band handling for a `default(TKey)` or `null` key (so a string hasher is never invoked
+with `null`). Because a slot index is **stable across recency reordering**, a cache hit relinks the
+chain but never touches the index. When a new key arrives at capacity, the tail (LRU) slot is
+evicted and **recycled in place** for the newcomer, so steady-state churn neither allocates nor
+frees.
+
+### Reads are mutating
+
+LRU semantics require a lookup to count as a *use*. The indexer getter and `TryGet` therefore
+**promote the entry to most-recently-used**, which reorders the recency list and invalidates any
+in-progress enumerator (matching "collection was modified" semantics). To inspect the cache without
+disturbing recency order — and without invalidating an active enumerator — use `TryPeek`,
+`ContainsKey`, or the `TryPeekLeastRecentlyUsed` / `TryPeekMostRecentlyUsed` inspectors.
+
+### Constructors
+
+```csharp
+public LruCache(int capacity)
+
+public LruCache(
+    int capacity,
+    IEnumerable<KeyValuePair<TKey, TValue?>> source)
+```
+
+The first overload creates an empty cache that retains at most `capacity` entries. The `source`
+overload primes it by inserting each pair in enumeration order, so if the source yields more than
+`capacity` distinct keys the earliest ones are evicted and the last `capacity` survive as the
+most-recently-used entries.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity` is less than 1.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+
+### Methods and properties
+
+- `int Capacity` — the maximum number of entries retained before eviction.
+- `int Count` — the current number of entries (never greater than `Capacity`).
+- `TValue? this[TKey key]` — **get** promotes the entry to most-recently-used and throws
+  `KeyNotFoundException` if absent; **set** adds the key (evicting the LRU entry first if full) or
+  overwrites an existing value, and in either case promotes it to most-recently-used.
+- `bool TryGet(TKey key, out TValue? value)` — a *use*: promotes the entry to most-recently-used on
+  a hit.
+- `bool TryPeek(TKey key, out TValue? value)` — reads without changing recency (does not count as a
+  use).
+- `bool ContainsKey(TKey key)` — membership test; does not change recency.
+- `void AddOrUpdate(TKey key, TValue? value)` — inserts (evicting the LRU entry if full) or
+  overwrites, promoting to most-recently-used.
+- `void Add(TKey key, TValue? value)` — inserts as most-recently-used; throws `ArgumentException`
+  if the key already exists.
+- `bool TryAdd(TKey key, TValue? value)` — inserts as most-recently-used if absent (evicting the LRU
+  entry if full); returns `false` and leaves the cache unchanged if the key exists.
+- `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` — removes an entry, optionally
+  returning its value.
+- `void Clear()` — removes all entries; the backing storage (sized to `Capacity`) is retained.
+- `bool TryPeekLeastRecentlyUsed(out TKey? key, out TValue? value)` — reads the next eviction
+  candidate without changing recency.
+- `bool TryPeekMostRecentlyUsed(out TKey? key, out TValue? value)` — reads the freshest entry
+  without changing recency.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator yielding entries in
+  **most-recently-used → least-recently-used** order. Enumeration is a peek and does not change
+  recency.
+
+### Default-key handling
+
+`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key. The dogfooded index
+stores it out-of-band, so the whole surface (get / set / peek / remove) works with it and the hasher
+is never invoked with `null`.
+
+### Thread safety
+
+`LruCache` is not thread-safe; concurrent callers must synchronize externally. In particular, note
+that reads mutate recency, so even a read-mostly workload needs a write lock (or an external
+concurrent cache) under concurrency.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A bounded memoization cache for an expensive lookup, keyed by user id.
+var cache = new LruCache<long, Profile, Int64WangHasher>(capacity: 10_000);
+
+Profile GetProfile(long userId)
+{
+    if (cache.TryGet(userId, out Profile? cached))
+        return cached!;               // a hit promotes the entry to most-recently-used
+
+    Profile fresh = LoadFromDatabase(userId);
+    cache[userId] = fresh;            // insert; the least-recently-used profile is evicted if full
+    return fresh;
+}
+
+// Inspect the cache without disturbing eviction order.
+if (cache.TryPeekLeastRecentlyUsed(out long coldKey, out _))
+    Console.WriteLine($"Next to be evicted: user {coldKey}");
+```

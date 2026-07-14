@@ -39,6 +39,7 @@ internal class Program
         typeof(HyperLogLogBenchmark),
         typeof(CountMinSketchBenchmark),
         typeof(TopKSketchBenchmark),
+        typeof(LruCacheBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };

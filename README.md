@@ -64,6 +64,10 @@ Standalone libraries built **on top of** Celerity — each solves a real problem
 
 The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
 
+**Caches**
+
+- `LruCache<TKey, TValue, THasher>` — fixed-capacity **least-recently-used cache** with `O(1)` get/put and automatic eviction of the least-recently-used entry. Recency runs through an intrusive doubly-linked list over fixed-size arrays, so the hot get/put/evict path **allocates nothing** — unlike the idiomatic `Dictionary` + `LinkedList` LRU that heap-allocates a node per insert. Reads count as uses (a hit promotes the entry to most-recently-used); `TryPeek` / `ContainsKey` inspect without disturbing recency.
+
 **Probabilistic & bit-level**
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
@@ -319,6 +323,24 @@ foreach (TopKEntry<string> e in hot.GetTopK(10))
 </details>
 
 <details>
+<summary><b>Caches</b> — LruCache</summary>
+
+`LruCache` is a fixed-capacity **least-recently-used cache**: `O(1)` get/put, and once at capacity every insert evicts the least-recently-used entry. Its recency order runs through an intrusive doubly-linked list threaded over fixed-size arrays, so after construction the hot path allocates nothing — where the idiomatic `Dictionary` + `LinkedList` LRU heap-allocates a node per insert. A **read is a use**: a hit (indexer get or `TryGet`) promotes the entry to most-recently-used; `TryPeek` / `ContainsKey` inspect without touching recency.
+
+```csharp
+var cache = new LruCache<long, string, Int64WangHasher>(capacity: 3);
+cache[1] = "one";
+cache[2] = "two";
+cache[3] = "three";       // full: MRU..LRU = 3, 2, 1
+_ = cache[1];             // a hit promotes 1 -> MRU..LRU = 1, 3, 2
+cache[4] = "four";        // evicts the least-recently-used (2), not 1
+Console.WriteLine(cache.ContainsKey(2)); // False (evicted)
+Console.WriteLine(cache.ContainsKey(1)); // True  (spared by the read)
+```
+
+</details>
+
+<details>
 <summary><b>Construct from an existing collection</b></summary>
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
@@ -369,6 +391,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Distinct count** over a large or unbounded stream (unique visitors / events, distinct-value cardinality, deduplicated counts across shards) where a small relative error is acceptable | `HyperLogLog<T, THasher>` | Probabilistic: estimates the distinct count from a fixed array of registers (16&#160;KB at the default precision) with a ~0.8% relative standard error, never growing with the cardinality — unlike a `HashSet<T>` that stores every distinct value. Add-and-estimate only; merge shard estimators with `UnionWith`. If you need an exact count or to test a specific element, use `HashSet<T>` / `CeleritySet`; for approximate *membership* rather than counting, use `BloomFilter`. |
 | **Per-element frequency** of a *specific* element over a large or unbounded stream (approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; if you want the *set of* heaviest elements rather than a specific one's count, use `TopKSketch`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
 | **Top-k / heavy hitters** — the *most frequent* elements of a large or unbounded, high-cardinality stream (top URLs / IPs, trending items, network flow monitoring, hot keys) where only the heaviest matter | `TopKSketch<T, THasher>` | Probabilistic (Space-Saving): keeps a fixed `k` monitors, so memory is `O(k)` regardless of the distinct-key count — unlike a `Dictionary<TKey, int>` that must materialize every distinct key just to rank the top few. **Never underestimates** a monitored count and never misses an element above `TotalCount / k`; each result carries a bounded `Error`. Add-and-query only (no `Remove`, no `UnionWith`). If you need the exact fully-ranked counts, use a dictionary frequency table; for a *specific* element's frequency use `CountMinSketch`. |
+| **Bounded cache** with automatic eviction — memoize the last `N` results, an admission cache in front of an expensive lookup, any hot key→value store that must not grow without bound | `LruCache<TKey, TValue, THasher>` | Fixed-capacity least-recently-used cache: `O(1)` get/put, and once at capacity every insert evicts the least-recently-used entry. Its recency list is threaded through fixed-size arrays, so after construction the hot get/put/evict path **allocates nothing** — where the idiomatic `Dictionary` + `LinkedList` LRU allocates a `LinkedListNode` per insert. Reads are *uses* (they promote to most-recently-used); use `TryPeek` / `ContainsKey` to inspect without touching recency. Single-threaded — because reads mutate recency, even a read-mostly concurrent workload needs a write lock. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 **Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).
