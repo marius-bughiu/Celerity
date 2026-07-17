@@ -3104,3 +3104,116 @@ Profile GetProfile(long userId)
 if (cache.TryPeekLeastRecentlyUsed(out long coldKey, out _))
     Console.WriteLine($"Next to be evicted: user {coldKey}");
 ```
+
+## Deque&lt;T&gt;
+
+A growable **double-ended queue** backed by a single **circular buffer**: an array with a moving
+front index, so pushing and popping at **either** end is `O(1)` amortized and the elements stay
+contiguous.
+
+```csharp
+public sealed class Deque<T> : IReadOnlyList<T>
+```
+
+The BCL ships no double-ended queue. `Queue<T>` is FIFO-only (no push-front / pop-back), `Stack<T>`
+is LIFO-only, and the only type that supports `O(1)` at **both** ends — `LinkedList<T>` —
+**heap-allocates a node per element** and threads its order through pointers scattered across the
+managed heap. `Deque<T>` instead keeps every element in one array indexed by a moving `head` plus a
+count, wrapping around the ends, so it is the array-backed deque the BCL lacks — the .NET analogue of
+Java's `ArrayDeque` or C++'s `std::deque`. It also offers `O(1)` random access by index, which a
+linked list cannot.
+
+The documented BCL-beating workload is any sequence that pushes and pops at both ends — a bounded
+FIFO queue, a sliding window, a work-stealing / undo buffer — where `Deque<T>` wins on **allocation**
+(a warm bounded churn reuses the array with wrap-around and allocates nothing, where `LinkedList<T>`
+allocates and frees a node per operation) and on **cache locality** (contiguous storage versus
+pointer-chased nodes).
+
+### How it works
+
+Elements live in a single `T[]`; a `head` index marks the front and a `count` marks how many slots
+are occupied, wrapping modulo the array length. A `PushFront` steps `head` back one slot (wrapping to
+the end); a `PushBack` writes at `head + count` (wrapping); the pops mirror them and clear the vacated
+slot so references are released for GC. When the buffer fills, it grows by doubling, **re-linearizing**
+the elements into a fresh array so the front returns to index `0` (making a push `O(1)` amortized,
+`O(n)` on the growth step). Because the storage is contiguous, the front-relative indexer, `ToArray`,
+`CopyTo`, and enumeration are simple index arithmetic — at most two `Array.Copy` runs across the
+wrap point.
+
+### Constructors
+
+```csharp
+public Deque()
+public Deque(int capacity)
+public Deque(IEnumerable<T> collection)
+```
+
+- The parameterless constructor allocates nothing until the first push.
+- The `capacity` overload pre-sizes the backing array so an expected number of pushes avoids growth.
+- The `collection` overload copies the elements in enumeration order, so the first element yielded
+  becomes the front and the last becomes the back.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity` is negative.
+- `ArgumentNullException` if `collection` is `null`.
+
+### Methods and properties
+
+- `int Count` — the number of elements currently in the deque.
+- `int Capacity` — the number of elements the deque can hold before its backing array must grow.
+- `T this[int index]` — the element at position `index` **counting from the front** (`0` is the
+  front, `Count - 1` the back); get and set both throw `ArgumentOutOfRangeException` if out of range.
+  A set is an in-place replacement and does **not** invalidate an active enumerator (matching
+  `List<T>`).
+- `void PushFront(T item)` / `void PushBack(T item)` — add at the front / back (`O(1)` amortized).
+- `T PopFront()` / `T PopBack()` — remove and return the front / back element; throw
+  `InvalidOperationException` if empty.
+- `T PeekFront()` / `T PeekBack()` — read the front / back element without removing it; throw
+  `InvalidOperationException` if empty.
+- `bool TryPopFront(out T item)` / `bool TryPopBack(out T item)` — non-throwing pops; return `false`
+  when empty.
+- `bool TryPeekFront(out T item)` / `bool TryPeekBack(out T item)` — non-throwing peeks; return
+  `false` when empty.
+- `bool Contains(T item)` — linear `O(n)` membership test using `EqualityComparer<T>.Default`.
+- `T[] ToArray()` — a new array of the elements in front-to-back order.
+- `void CopyTo(T[] array, int arrayIndex)` — copies the elements, front to back, into `array`.
+- `int EnsureCapacity(int capacity)` — grows the backing array if needed; returns the resulting
+  capacity.
+- `void TrimExcess()` — shrinks the backing array to exactly `Count`, re-linearizing so the front
+  sits at index `0`.
+- `void Clear()` — removes all elements; the backing array is retained (use `TrimExcess` to release
+  it).
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator yielding elements **front to
+  back**; a structural modification during enumeration throws `InvalidOperationException`.
+
+### Thread safety
+
+`Deque<T>` is not thread-safe; concurrent callers must synchronize externally.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A fixed sliding window over the most recent N samples: push new samples at the back and drop the
+// oldest off the front. The circular buffer is reused with wrap-around, so this loop allocates nothing.
+var window = new Deque<double>(capacity: 100);
+
+void Record(double sample)
+{
+    window.PushBack(sample);
+    if (window.Count > 100)
+        window.PopFront();          // evict the oldest — O(1), no shifting
+}
+
+// Random access by position, newest at the back.
+double newest = window[window.Count - 1];
+
+// A deque doubles as a double-ended work queue: take work from either end.
+var work = new Deque<int>(new[] { 1, 2, 3 });
+work.PushFront(0);                  // [0, 1, 2, 3]
+int hi = work.PopFront();           // 0 — high-priority, from the front
+int lo = work.PopBack();            // 3 — low-priority, from the back
+```
+

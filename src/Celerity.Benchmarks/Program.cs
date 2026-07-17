@@ -42,6 +42,7 @@ internal class Program
         typeof(CountMinSketchBenchmark),
         typeof(TopKSketchBenchmark),
         typeof(LruCacheBenchmark),
+        typeof(DequeBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };
