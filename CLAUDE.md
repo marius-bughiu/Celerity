@@ -44,7 +44,7 @@ Full coding conventions, the test-naming scheme (`Method_ShouldExpectedBehavior_
 
 - Do **not** name private fields, list bit-shift/probe steps, or explain JIT/codegen internals. Those belong in code comments or the PR description, not the changelog.
 - One tight entry per change. If you need a paragraph, it probably belongs in the PR body with a one-line changelog pointer.
-- End the entry with `Closes #NNN` (or `Closes [#NNN](...)`).
+- End the entry with `Closes #NNN` (or `Closes [#NNN](...)`). GitHub treats `Closes`/`Fixes`/`Resolves` identically for auto-closing; this repo standardizes on **`Closes`** so the changelog reads consistently — please match it here rather than mixing keywords.
 
 This is not only a style rule: `.github/workflows/release.yml` extracts the whole `## [X.Y.Z]` section verbatim as the GitHub Release body, and an over-long section can exceed GitHub's size limit and break the release. Terse sections keep releases publishable.
 
