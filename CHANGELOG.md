@@ -115,7 +115,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- `BitSet.Flip(int)` now carries `[MethodImpl(MethodImplOptions.AggressiveInlining)]`, matching the two structurally-identical single-bit accessors that bracket it — `Get(int)` and `Set(int, bool)` — which were already marked. `Flip` does the same bounded single-word mask/mutate work (`(uint)index >= (uint)_length` guard, `1UL << (index & WordMask)` bit, `_words[index >> WordShift]` word ref, XOR, `_version++`), so the missing attribute was an inlining asymmetry rather than a deliberate choice: a hot-path bit accessor the JIT was free to leave out-of-line while its siblings inlined. No behavioural, API, or contract change — purely a codegen-consistency fix so all three accessors present the same inlining hint. Closes [#253](https://github.com/marius-bughiu/Celerity/issues/253).
+- `BitSet.Flip(int)` is now marked `[MethodImpl(MethodImplOptions.AggressiveInlining)]`, matching the sibling single-bit accessors `Get(int)` and `Set(int, bool)`, which were already inlined. Codegen-hint consistency only — no behavioural, API, or contract change. Closes [#253](https://github.com/marius-bughiu/Celerity/issues/253).
 
 ## [2.2.0] - 2026-07-05
 
