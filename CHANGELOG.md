@@ -113,6 +113,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
   (Parity facets that genuinely do not apply: **no gh-pages dashboard wiring** — the dashboard `COLLECTIONS` arrays and ship cards are for the *collection* types; the `Celerity.Primitives` utilities, `BitPackingBenchmark` included, are extended-suite microbenchmarks not surfaced on the per-commit collections dashboard, exactly like `VarIntBenchmark` / `SpanBitsBenchmark`. **No cross-collection shared tests** — `BitWriter` / `BitReader` are not open-addressed set/dict types, so the family-wide `Add` / `TryAdd` / `SetConstructorValidation` / `IEnumerableConstructor` suites do not apply, as they do not for `VarInt` / `SpanBits`. **No `ROADMAP.md` status flip** — milestone 2.1.0's `Celerity.Primitives` bit/span work is already `done` and shipped `VarInt` + `SpanBits`; this adds the sequential sub-byte field cursor that sits between them, after the roadmap was otherwise exhausted, the established post-roadmap tier-(c) pattern.)
 
+### Changed
+
+- `BitSet.Flip(int)` is now marked `[MethodImpl(MethodImplOptions.AggressiveInlining)]`, matching the sibling single-bit accessors `Get(int)` and `Set(int, bool)`, which were already inlined. Codegen-hint consistency only — no behavioural, API, or contract change. Closes [#253](https://github.com/marius-bughiu/Celerity/issues/253).
+
 ## [2.2.0] - 2026-07-05
 
 ### Added
