@@ -3217,3 +3217,97 @@ int hi = work.PopFront();           // 0 — high-priority, from the front
 int lo = work.PopBack();            // 3 — low-priority, from the back
 ```
 
+
+## DisjointSet&lt;T&gt;
+
+A **disjoint-set** (union-find) over arbitrary elements. It partitions the elements it holds into non-overlapping sets and answers *"are these two in the same set?"* (`Connected`) and *"merge these two sets"* (`Union`) in near-constant amortized time. Implements `IReadOnlyCollection<T>`.
+
+```csharp
+public sealed class DisjointSet<T> : IReadOnlyCollection<T>
+    where T : notnull
+```
+
+The element type must be non-null; equality uses `EqualityComparer<T>.Default`.
+
+The BCL ships no union-find structure. The idiomatic substitutes are both super-linear for a run of merges: keeping a `Dictionary<T, HashSet<T>>` from element to its group and copying the smaller group into the larger on every union is `O(n)` per merge (`O(n²)` to build one component from `n` singletons), and rebuilding a graph to run a BFS/DFS per connectivity query is `O(V + E)` *every* query. `DisjointSet<T>` is the near-`O(1)` structure they approximate.
+
+### How it works
+
+Each set is a forest of parent pointers packed into dense `int[]` arrays (an element→slot map turns arbitrary keys into dense indices). Two classic optimizations keep the trees flat:
+
+- **Union by size** — the smaller tree is hung under the larger tree's root, so heights grow slowly.
+- **Path halving** — every `Find` points each node it walks at its grandparent, flattening the path it just traversed.
+
+Together these give `Union`, `Find`, and `Connected` an `O(α(n))` amortized cost, where `α` is the inverse-Ackermann function and is `≤ 4` for any practical `n` — effectively `O(1)`.
+
+### The documented BCL-beating workload
+
+Any **incremental connectivity / connected-components** pass — a stream of `Union` operations interleaved with `Connected` queries: union of equivalence classes, Kruskal's minimum spanning tree, clustering, image segmentation, cycle detection in an undirected graph. `DisjointSet<T>` runs the whole stream in near-linear total time where the `Dictionary`-of-`HashSet` merge approach is quadratic. See the [union-find benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=DisjointSet) on the dashboard.
+
+### Constructors
+
+```csharp
+public DisjointSet()
+public DisjointSet(int capacity)
+public DisjointSet(IEnumerable<T> elements)
+```
+
+- The parameterless constructor starts empty with a small default capacity.
+- The `capacity` overload pre-sizes the backing storage to hold at least `capacity` elements before the first growth.
+- The `IEnumerable<T>` overload seeds each distinct element as its own singleton set, in enumeration order; duplicates after the first are ignored.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentNullException` if `elements` is `null` (enumerable overload).
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of elements. |
+| `int SetCount` | Number of disjoint sets (connected components). Starts equal to `Count` and drops by one on every effective `Union`. |
+| `int Capacity` | Elements the backing storage can hold before it must grow. |
+| `bool Add(T element)` | Adds `element` as a new singleton. Returns `false` if already present. |
+| `bool Contains(T element)` | Whether `element` is present. |
+| `bool Union(T a, T b)` | Merges the sets containing `a` and `b`, **auto-adding either if absent** (so it doubles as the edge-insertion primitive). Returns `true` if they were in different sets and are now merged; `false` if already together. |
+| `T Find(T element)` | The representative element of `element`'s set. Two elements are in the same set iff their representatives are equal. Throws `KeyNotFoundException` if absent. |
+| `bool TryFind(T element, out T representative)` | Non-throwing `Find`. |
+| `bool Connected(T a, T b)` | Whether `a` and `b` are in the same set. A **pure query** — unlike `Union` it never adds a missing element, returning `false` if either is absent. |
+| `int ComponentSize(T element)` | Number of elements in `element`'s set (`≥ 1`). Throws `KeyNotFoundException` if absent. |
+| `IReadOnlyList<IReadOnlyList<T>> GetComponents()` | A snapshot of the current partition as grouped element lists (`Count == SetCount`). `O(n)`. |
+| `void Clear()` | Removes all elements. |
+| `Enumerator GetEnumerator()` | A struct enumerator over the elements in insertion order. |
+
+The representative returned by `Find` is stable only between mutations — a later `Union` may change which element represents a set. `Connected` / `Find` compress internal paths but do not count as structural changes, so they do not invalidate an in-flight enumerator; `Add`, an effective `Union`, and `Clear` do.
+
+### Choosing it
+
+Reach for `DisjointSet<T>` when you are tracking connectivity or equivalence classes that only ever **grow by merging** — you union pairs and ask whether two elements are connected, or how many distinct groups remain. It does not support splitting a set back apart (no `un-union`), and it is not an `ISet<T>`: if you want element membership with add/remove/set-algebra, use `CeleritySet` or the BCL `HashSet<T>` instead.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Detect a cycle while adding undirected edges (union-find cycle detection).
+var uf = new DisjointSet<string>();
+(string, string)[] edges =
+{
+    ("a", "b"), ("b", "c"), ("d", "e"), ("c", "a") // the last edge closes a cycle a-b-c-a
+};
+
+foreach (var (u, v) in edges)
+{
+    if (uf.Connected(u, v))
+        Console.WriteLine($"Edge {u}-{v} closes a cycle");
+    else
+        uf.Union(u, v);
+}
+
+Console.WriteLine($"{uf.SetCount} connected component(s)");   // 2: {a,b,c} and {d,e}
+
+// Enumerate the components.
+foreach (var component in uf.GetComponents())
+    Console.WriteLine(string.Join(", ", component));
+```

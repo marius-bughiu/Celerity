@@ -43,6 +43,7 @@ internal class Program
         typeof(TopKSketchBenchmark),
         typeof(LruCacheBenchmark),
         typeof(DequeBenchmark),
+        typeof(DisjointSetBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };

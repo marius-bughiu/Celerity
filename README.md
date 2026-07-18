@@ -73,6 +73,10 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 - `Deque<T>` — growable **double-ended queue** backed by a **circular buffer**: `O(1)` amortized push / pop / peek at **both** ends, plus `O(1)` random access by index. The array-backed deque the BCL lacks (`Queue<T>` is FIFO-only, `Stack<T>` LIFO-only, and `LinkedList<T>` allocates a node per element) — a bounded FIFO / sliding-window churn reuses the buffer with wrap-around and **allocates nothing**, and enumeration walks contiguous memory. Implements `IReadOnlyList<T>`.
 
+**Union-find**
+
+- `DisjointSet<T>` — **union-find** over arbitrary elements: partitions them into disjoint sets with near-`O(1)` amortized `Union` / `Find` / `Connected` via **union by size** + **path halving**. The union-find the BCL lacks — incremental connectivity, connected components, Kruskal MST, and undirected cycle detection in near-linear total time, where the `Dictionary` + `HashSet` set-merge substitute is quadratic. `GetComponents()` materializes the current partition.
+
 **Probabilistic & bit-level**
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
@@ -381,6 +385,27 @@ int mid = work[1];                            // 2 — O(1) random access, front
 </details>
 
 <details>
+<summary><b>Union-find</b> — DisjointSet</summary>
+
+`DisjointSet<T>` is the **union-find** the BCL lacks: it partitions arbitrary elements into disjoint sets and answers `Union` / `Find` / `Connected` in near-`O(1)` amortized time via **union by size** + **path halving**. `Union` auto-adds missing elements, so it doubles as the edge-insertion primitive; `Connected` is a pure query that never mutates. Ideal for incremental connectivity, connected components, Kruskal's MST, and undirected cycle detection — a whole stream of merges runs in near-linear time, where a `Dictionary` + `HashSet` set-merge is quadratic.
+
+```csharp
+var uf = new DisjointSet<string>();
+foreach (var (u, v) in new[] { ("a", "b"), ("b", "c"), ("d", "e") })
+    uf.Union(u, v);
+
+Console.WriteLine(uf.Connected("a", "c")); // True  (a-b-c chain)
+Console.WriteLine(uf.Connected("a", "e")); // False (separate component)
+Console.WriteLine(uf.SetCount);            // 2: {a,b,c} and {d,e}
+Console.WriteLine(uf.ComponentSize("a"));  // 3
+
+foreach (var component in uf.GetComponents())
+    Console.WriteLine(string.Join(", ", component));
+```
+
+</details>
+
+<details>
 <summary><b>Construct from an existing collection</b></summary>
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
@@ -435,6 +460,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Top-k / heavy hitters** — the *most frequent* elements of a large or unbounded, high-cardinality stream (top URLs / IPs, trending items, network flow monitoring, hot keys) where only the heaviest matter | `TopKSketch<T, THasher>` | Probabilistic (Space-Saving): keeps a fixed `k` monitors, so memory is `O(k)` regardless of the distinct-key count — unlike a `Dictionary<TKey, int>` that must materialize every distinct key just to rank the top few. **Never underestimates** a monitored count and never misses an element above `TotalCount / k`; each result carries a bounded `Error`. Add-and-query only (no `Remove`, no `UnionWith`). If you need the exact fully-ranked counts, use a dictionary frequency table; for a *specific* element's frequency use `CountMinSketch`. |
 | **Bounded cache** with automatic eviction — memoize the last `N` results, an admission cache in front of an expensive lookup, any hot key→value store that must not grow without bound | `LruCache<TKey, TValue, THasher>` | Fixed-capacity least-recently-used cache: `O(1)` get/put, and once at capacity every insert evicts the least-recently-used entry. Its recency list is threaded through fixed-size arrays, so after construction the hot get/put/evict path **allocates nothing** — where the idiomatic `Dictionary` + `LinkedList` LRU allocates a `LinkedListNode` per insert. Reads are *uses* (they promote to most-recently-used); use `TryPeek` / `ContainsKey` to inspect without touching recency. Single-threaded — because reads mutate recency, even a read-mostly concurrent workload needs a write lock. |
 | **Double-ended queue** — add/remove at both ends (bounded FIFO queue, sliding window, work-stealing / undo buffer) or a queue needing random access by position | `Deque<T>` | Growable double-ended queue backed by a **circular buffer**: `O(1)` amortized `PushFront` / `PushBack` / `PopFront` / `PopBack` / peek and `O(1)` random access by index. The BCL has no deque — `Queue<T>` is FIFO-only, `Stack<T>` LIFO-only, and `LinkedList<T>` (the only O(1)-both-ends type) allocates a node per element. A warm bounded churn reuses the buffer with wrap-around so it **allocates nothing**, and enumeration walks contiguous memory. For a strict FIFO queue that never pushes front / pops back, BCL `Queue<T>` is already a circular buffer and is simpler. |
+| **Incremental connectivity / connected components** — union equivalence classes and ask whether two elements are in the same group (Kruskal MST, clustering, image segmentation, undirected cycle detection, "are these accounts linked?") | `DisjointSet<T>` | Union-find with **union by size** + **path halving**: near-`O(1)` amortized `Union` / `Find` / `Connected`, `O(α(n)) ≤ 4`. Runs a stream of merges + connectivity queries in near-linear total time, where the BCL substitutes are super-linear — a `Dictionary<T, HashSet<T>>` set-merge is `O(n²)` to coalesce `n` singletons, and a per-query BFS/DFS is `O(V+E)` every query. Grows only by merging (no un-union); it is not an `ISet<T>` — for element membership with add/remove/set-algebra use `CeleritySet` or `HashSet<T>`. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 **Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).

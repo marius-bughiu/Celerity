@@ -451,7 +451,9 @@
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                       vs: 'Dictionary<int, int>',  ops: ['Add', 'TopK'] },
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] },
     // Deque is a sequence collection benchmarked against LinkedList (the BCL's only O(1)-both-ends type).
-    { key: 'Deque',               title: 'Deque<int>',                               vs: 'LinkedList<int>',       ops: ['PushFront', 'Queue', 'Enumerate'] }
+    { key: 'Deque',               title: 'Deque<int>',                               vs: 'LinkedList<int>',       ops: ['PushFront', 'Queue', 'Enumerate'] },
+    // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.
+    { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] }
   ];
 
   var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList']);
