@@ -331,7 +331,7 @@ public class ConsistentHashRing<TNode, TKey, THasher>
             ownerIndex[i] = (int)(uint)packed[i];
         }
 
-        _snapshot = new Snapshot(positions, ownerIndex, nodes, nodeIds);
+        _snapshot = new Snapshot(positions, ownerIndex, nodes);
     }
 
     private sealed class Registration
@@ -353,14 +353,13 @@ public class ConsistentHashRing<TNode, TKey, THasher>
     private sealed class Snapshot
     {
         internal static readonly Snapshot Empty =
-            new Snapshot(Array.Empty<uint>(), Array.Empty<int>(), Array.Empty<TNode>(), Array.Empty<string>());
+            new Snapshot(Array.Empty<uint>(), Array.Empty<int>(), Array.Empty<TNode>());
 
-        internal Snapshot(uint[] positions, int[] ownerIndex, TNode[] nodes, string[] nodeIds)
+        internal Snapshot(uint[] positions, int[] ownerIndex, TNode[] nodes)
         {
             Positions = positions;
             OwnerIndex = ownerIndex;
             Nodes = nodes;
-            NodeIds = nodeIds;
         }
 
         internal uint[] Positions { get; }
@@ -368,8 +367,6 @@ public class ConsistentHashRing<TNode, TKey, THasher>
         internal int[] OwnerIndex { get; }
 
         internal TNode[] Nodes { get; }
-
-        internal string[] NodeIds { get; }
     }
 }
 

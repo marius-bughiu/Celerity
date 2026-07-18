@@ -455,6 +455,34 @@ void Check(bool condition, string message)
     Check(seeded.Count == 2 && !seeded.ContainsKey(1) && seeded.ContainsKey(3), "LruCache source ctor evicts oldest");
 }
 
+// Deque — growable double-ended queue over a circular buffer. Exercise both-ends push/pop,
+// the front-relative indexer, wrap-around growth, Try* peeks, the front-to-back struct
+// enumerator, and the IEnumerable constructor.
+{
+    var dq = new Deque<int>(new[] { 1, 2, 3 }); // front-to-back: 1, 2, 3
+    dq.PushFront(0);  // [0, 1, 2, 3]
+    dq.PushBack(4);   // [0, 1, 2, 3, 4]
+    Check(dq.Count == 5 && dq[0] == 0 && dq[4] == 4, "Deque push both ends + indexer");
+    Check(dq.PopFront() == 0 && dq.PopBack() == 4, "Deque pop both ends");
+    Check(dq.PeekFront() == 1 && dq.PeekBack() == 3, "Deque peek both ends");
+
+    // Force wrap-around and growth over a small buffer.
+    var churn = new Deque<int>(4);
+    for (int i = 0; i < 100; i++) churn.PushBack(i);
+    for (int i = 0; i < 50; i++) Check(churn.PopFront() == i, "Deque wrap-around FIFO churn");
+    Check(churn.Count == 50 && churn[0] == 50, "Deque count after churn");
+
+    Check(churn.TryPeekFront(out int f) && f == 50, "Deque TryPeekFront");
+    var empty = new Deque<int>();
+    Check(!empty.TryPopBack(out _), "Deque TryPopBack on empty");
+
+    var order = new List<int>();
+    var seq = new Deque<int>();
+    seq.PushBack(2); seq.PushFront(1); seq.PushBack(3);
+    foreach (int x in seq) order.Add(x);
+    Check(order.Count == 3 && order[0] == 1 && order[2] == 3, "Deque front-to-back enumeration");
+}
+
 // DisjointSet — union-find over arbitrary elements. Exercise add, auto-adding union, the
 // merge/no-op return, representative find, connectivity queries, component sizing, the set
 // count, growth across many singletons, grouped components, and the struct enumerator.
