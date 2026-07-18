@@ -378,9 +378,10 @@
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                   vs: 'HashSet<int>' },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                vs: 'Dictionary<int, int>' },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                    vs: 'Dictionary<int, int>' },
-    { key: 'LruCache',            title: 'LruCache<int, int, ...>',               vs: 'Dictionary + LinkedList LRU' }
+    { key: 'LruCache',            title: 'LruCache<int, int, ...>',               vs: 'Dictionary + LinkedList LRU' },
+    { key: 'Deque',               title: 'Deque<int>',                            vs: 'LinkedList<int>' }
   ];
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----
