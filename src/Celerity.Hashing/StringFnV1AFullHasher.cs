@@ -9,8 +9,8 @@ namespace Celerity.Hashing;
 /// </summary>
 /// <remarks>
 /// This is the full-character-width counterpart to <see cref="StringFnV1AHasher"/>,
-/// and directly answers the note in that hasher's remarks that "for keys with
-/// significant non-ASCII content, a full UTF-8 or UTF-16 hash is preferable."
+/// and directly answers the note in that hasher's remarks that "For Unicode-heavy
+/// workloads, a full UTF-8 or UTF-16 hash is preferable."
 /// Where <see cref="StringFnV1AHasher"/> folds only the low byte of each
 /// character (<c>c &amp; 0xFF</c>) and therefore cannot distinguish characters
 /// that differ only in their upper byte — for example <c>'A'</c> (<c>U+0041</c>)
