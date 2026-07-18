@@ -114,6 +114,14 @@ git tag -l 'v*' --sort=-v:refname | head -1
 - Pre-release builds (any commit after a tag) produce versions like `1.0.2-beta.1`. This is expected and correct.
 - When preparing a release, update `CHANGELOG.md` first, then tag the merge commit.
 
+### Changelog entries
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/); new entries go under `## [Unreleased]` in the matching `### Added` / `### Changed` / `### Fixed` subsection and are promoted into a versioned section at release time.
+
+**Keep each entry short and user-facing — a few sentences at most.** State *what* observably changed and *why it matters to a caller*, not how it's implemented. Don't name private fields, list bit-shift/probe steps, or explain JIT/codegen internals — those belong in the PR description or code comments. One tight entry per change: if it needs a paragraph, put the paragraph in the PR body and leave a one-line pointer here. End the entry with `Closes #NNN` (`Closes`/`Fixes`/`Resolves` all auto-close on GitHub; this repo standardizes on `Closes` so the changelog reads consistently).
+
+This is a release-safety rule, not only a style preference: the release workflow extracts the whole `## [X.Y.Z]` section verbatim as the GitHub Release body, and GitHub caps release bodies (~125k characters). A single release section full of paragraph-per-change entries can exceed that limit and fail the release — terse sections keep releases publishable. `CLAUDE.md` carries the same convention for coding agents.
+
 ### Cutting a release
 
 Releases are automated. Pushing a `v`-prefixed tag fires `.github/workflows/release.yml`, which builds, packs, publishes to NuGet.org, and creates a matching GitHub Release with notes extracted from `CHANGELOG.md`.
