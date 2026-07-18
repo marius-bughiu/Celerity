@@ -24,6 +24,10 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
     /// <param name="loadFactor">
     /// Determines the maximum ratio of count to capacity before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public IntSet(int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
         : base(capacity, loadFactor)
@@ -48,6 +52,10 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     public IntSet(
         IEnumerable<int> source,
@@ -107,6 +115,10 @@ public class IntSet<THasher> : ISet<int> where THasher : struct, IHashProvider<i
     /// <param name="loadFactor">
     /// Determines the maximum ratio of count to capacity before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public IntSet(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
@@ -145,6 +157,10 @@ public class IntSet<THasher> : ISet<int> where THasher : struct, IHashProvider<i
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     public IntSet(
         IEnumerable<int> source,

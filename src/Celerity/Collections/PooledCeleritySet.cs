@@ -104,6 +104,10 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
     /// <param name="loadFactor">
     /// The fraction of the set's size that can be filled before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public PooledCeleritySet(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
@@ -147,6 +151,10 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     public PooledCeleritySet(
         IEnumerable<T> source,
