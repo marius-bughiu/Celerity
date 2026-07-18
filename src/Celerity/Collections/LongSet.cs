@@ -24,6 +24,10 @@ public class LongSet : LongSet<Int64WangNaiveHasher>
     /// <param name="loadFactor">
     /// Determines the maximum ratio of count to capacity before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public LongSet(int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
         : base(capacity, loadFactor)
@@ -48,6 +52,10 @@ public class LongSet : LongSet<Int64WangNaiveHasher>
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     public LongSet(
         IEnumerable<long> source,
@@ -107,6 +115,10 @@ public class LongSet<THasher> : ISet<long> where THasher : struct, IHashProvider
     /// <param name="loadFactor">
     /// Determines the maximum ratio of count to capacity before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public LongSet(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
@@ -145,6 +157,10 @@ public class LongSet<THasher> : ISet<long> where THasher : struct, IHashProvider
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     public LongSet(
         IEnumerable<long> source,

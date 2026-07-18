@@ -121,6 +121,10 @@ public class SwissSet<T, THasher> : ISet<T> where THasher : struct, IHashProvide
     /// <param name="loadFactor">
     /// The fraction of the set's size that can be filled before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public SwissSet(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
@@ -165,6 +169,10 @@ public class SwissSet<T, THasher> : ISet<T> where THasher : struct, IHashProvide
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     public SwissSet(
         IEnumerable<T> source,

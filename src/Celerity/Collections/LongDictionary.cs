@@ -25,6 +25,10 @@ public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangNaiveHashe
     /// <param name="loadFactor">
     /// Determines the maximum ratio of count to capacity before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public LongDictionary(int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
         : base(capacity, loadFactor)
@@ -50,6 +54,10 @@ public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangNaiveHashe
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="source"/> contains one or more duplicate keys.
@@ -116,6 +124,10 @@ public class LongDictionary<TValue, THasher>
     /// <param name="loadFactor">
     /// Determines the maximum ratio of count to capacity before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public LongDictionary(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
@@ -154,6 +166,10 @@ public class LongDictionary<TValue, THasher>
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="source"/> contains one or more duplicate keys.

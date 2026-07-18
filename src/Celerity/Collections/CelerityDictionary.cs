@@ -57,6 +57,10 @@ public class CelerityDictionary<TKey, TValue, THasher>
     /// <param name="loadFactor">
     /// The fraction of the dictionary's size that can be filled before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public CelerityDictionary(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
@@ -95,6 +99,10 @@ public class CelerityDictionary<TKey, TValue, THasher>
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="source"/> contains one or more duplicate keys.

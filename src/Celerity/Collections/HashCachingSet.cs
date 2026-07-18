@@ -98,6 +98,10 @@ public class HashCachingSet<T, THasher> : ISet<T> where THasher : struct, IHashP
     /// <param name="loadFactor">
     /// The fraction of the set's size that can be filled before resizing.
     /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
+    /// </exception>
     public HashCachingSet(
         int capacity = DEFAULT_CAPACITY,
         float loadFactor = DEFAULT_LOAD_FACTOR)
@@ -139,6 +143,10 @@ public class HashCachingSet<T, THasher> : ISet<T> where THasher : struct, IHashP
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
+    /// is not in the open interval (0, 1).
     /// </exception>
     public HashCachingSet(
         IEnumerable<T> source,
