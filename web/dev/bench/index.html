@@ -449,7 +449,9 @@
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                      vs: 'HashSet<int>',          ops: ['Add', 'Estimate'] },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                   vs: 'Dictionary<int, int>',  ops: ['Add', 'Estimate'] },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                       vs: 'Dictionary<int, int>',  ops: ['Add', 'TopK'] },
-    { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] }
+    { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] },
+    // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.
+    { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] }
   ];
 
   var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray']);

@@ -69,6 +69,10 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 - `LruCache<TKey, TValue, THasher>` — fixed-capacity **least-recently-used cache** with `O(1)` get/put and automatic eviction of the least-recently-used entry. Recency runs through an intrusive doubly-linked list over fixed-size arrays, so the hot get/put/evict path **allocates nothing** — unlike the idiomatic `Dictionary` + `LinkedList` LRU that heap-allocates a node per insert. Reads count as uses (a hit promotes the entry to most-recently-used); `TryPeek` / `ContainsKey` inspect without disturbing recency.
 
+**Union-find**
+
+- `DisjointSet<T>` — **union-find** over arbitrary elements: partitions them into disjoint sets with near-`O(1)` amortized `Union` / `Find` / `Connected` via **union by size** + **path halving**. The union-find the BCL lacks — incremental connectivity, connected components, Kruskal MST, and undirected cycle detection in near-linear total time, where the `Dictionary` + `HashSet` set-merge substitute is quadratic. `GetComponents()` materializes the current partition.
+
 **Probabilistic & bit-level**
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
@@ -361,6 +365,27 @@ Console.WriteLine(cache.ContainsKey(1)); // True  (spared by the read)
 </details>
 
 <details>
+<summary><b>Union-find</b> — DisjointSet</summary>
+
+`DisjointSet<T>` is the **union-find** the BCL lacks: it partitions arbitrary elements into disjoint sets and answers `Union` / `Find` / `Connected` in near-`O(1)` amortized time via **union by size** + **path halving**. `Union` auto-adds missing elements, so it doubles as the edge-insertion primitive; `Connected` is a pure query that never mutates. Ideal for incremental connectivity, connected components, Kruskal's MST, and undirected cycle detection — a whole stream of merges runs in near-linear time, where a `Dictionary` + `HashSet` set-merge is quadratic.
+
+```csharp
+var uf = new DisjointSet<string>();
+foreach (var (u, v) in new[] { ("a", "b"), ("b", "c"), ("d", "e") })
+    uf.Union(u, v);
+
+Console.WriteLine(uf.Connected("a", "c")); // True  (a-b-c chain)
+Console.WriteLine(uf.Connected("a", "e")); // False (separate component)
+Console.WriteLine(uf.SetCount);            // 2: {a,b,c} and {d,e}
+Console.WriteLine(uf.ComponentSize("a"));  // 3
+
+foreach (var component in uf.GetComponents())
+    Console.WriteLine(string.Join(", ", component));
+```
+
+</details>
+
+<details>
 <summary><b>Construct from an existing collection</b></summary>
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
@@ -414,6 +439,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Per-element frequency** of a *specific* element over a large or unbounded stream (approximate per-key counts, rate limiting, deduplicated frequency counts across shards) where a small one-sided overestimate is acceptable | `CountMinSketch<T, THasher>` | Probabilistic: estimates each element's frequency from a fixed grid of counters (sized from `epsilon` / `delta`) that never grows with the distinct-key count — unlike a `Dictionary<TKey, int>` frequency table. **Never underestimates**; overestimates bounded by `epsilon · TotalCount` with confidence `1 − delta`. Add-and-estimate only; merge shard sketches with `UnionWith`. If you need exact counts or to enumerate keys, use a `Dictionary<TKey, int>`; if you want the *set of* heaviest elements rather than a specific one's count, use `TopKSketch`; for the distinct *count* use `HyperLogLog`, for approximate *membership* use `BloomFilter`. |
 | **Top-k / heavy hitters** — the *most frequent* elements of a large or unbounded, high-cardinality stream (top URLs / IPs, trending items, network flow monitoring, hot keys) where only the heaviest matter | `TopKSketch<T, THasher>` | Probabilistic (Space-Saving): keeps a fixed `k` monitors, so memory is `O(k)` regardless of the distinct-key count — unlike a `Dictionary<TKey, int>` that must materialize every distinct key just to rank the top few. **Never underestimates** a monitored count and never misses an element above `TotalCount / k`; each result carries a bounded `Error`. Add-and-query only (no `Remove`, no `UnionWith`). If you need the exact fully-ranked counts, use a dictionary frequency table; for a *specific* element's frequency use `CountMinSketch`. |
 | **Bounded cache** with automatic eviction — memoize the last `N` results, an admission cache in front of an expensive lookup, any hot key→value store that must not grow without bound | `LruCache<TKey, TValue, THasher>` | Fixed-capacity least-recently-used cache: `O(1)` get/put, and once at capacity every insert evicts the least-recently-used entry. Its recency list is threaded through fixed-size arrays, so after construction the hot get/put/evict path **allocates nothing** — where the idiomatic `Dictionary` + `LinkedList` LRU allocates a `LinkedListNode` per insert. Reads are *uses* (they promote to most-recently-used); use `TryPeek` / `ContainsKey` to inspect without touching recency. Single-threaded — because reads mutate recency, even a read-mostly concurrent workload needs a write lock. |
+| **Incremental connectivity / connected components** — union equivalence classes and ask whether two elements are in the same group (Kruskal MST, clustering, image segmentation, undirected cycle detection, "are these accounts linked?") | `DisjointSet<T>` | Union-find with **union by size** + **path halving**: near-`O(1)` amortized `Union` / `Find` / `Connected`, `O(α(n)) ≤ 4`. Runs a stream of merges + connectivity queries in near-linear total time, where the BCL substitutes are super-linear — a `Dictionary<T, HashSet<T>>` set-merge is `O(n²)` to coalesce `n` singletons, and a per-query BFS/DFS is `O(V+E)` every query. Grows only by merging (no un-union); it is not an `ISet<T>` — for element membership with add/remove/set-algebra use `CeleritySet` or `HashSet<T>`. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 **Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).

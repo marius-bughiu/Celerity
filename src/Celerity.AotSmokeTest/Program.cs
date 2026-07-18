@@ -455,6 +455,34 @@ void Check(bool condition, string message)
     Check(seeded.Count == 2 && !seeded.ContainsKey(1) && seeded.ContainsKey(3), "LruCache source ctor evicts oldest");
 }
 
+// DisjointSet — union-find over arbitrary elements. Exercise add, auto-adding union, the
+// merge/no-op return, representative find, connectivity queries, component sizing, the set
+// count, growth across many singletons, grouped components, and the struct enumerator.
+{
+    var ds = new DisjointSet<int>(new[] { 1, 2, 3, 4 });
+    Check(ds.Count == 4 && ds.SetCount == 4, "DisjointSet seeds singletons");
+
+    Check(ds.Union(1, 2) && ds.Union(3, 4), "DisjointSet union merges");
+    Check(ds.Union(2, 3), "DisjointSet union joins two components");
+    Check(!ds.Union(1, 4), "DisjointSet union of already-connected is a no-op");
+    Check(ds.SetCount == 1 && ds.Connected(1, 4), "DisjointSet all connected");
+    Check(ds.ComponentSize(1) == 4 && ds.Find(1).Equals(ds.Find(4)), "DisjointSet component size + shared representative");
+
+    Check(ds.Union(10, 20), "DisjointSet union auto-adds missing elements");
+    Check(ds.Contains(10) && !ds.Connected(1, 10), "DisjointSet distinct components");
+
+    var grown = new DisjointSet<int>(0);
+    for (int i = 1; i < 500; i++) grown.Union(i - 1, i);
+    Check(grown.Count == 500 && grown.SetCount == 1 && grown.ComponentSize(0) == 500, "DisjointSet chain union across growth");
+
+    var comps = ds.GetComponents();
+    Check(comps.Count == ds.SetCount, "DisjointSet GetComponents count");
+
+    var order = new List<int>();
+    foreach (int x in new DisjointSet<int>(new[] { 7, 8, 9 })) order.Add(x);
+    Check(order.Count == 3 && order[0] == 7 && order[2] == 9, "DisjointSet insertion-order enumeration");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.
