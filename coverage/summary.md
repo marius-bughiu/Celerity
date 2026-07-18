@@ -2,8 +2,8 @@
 
 | Metric | Value |
 |---|---:|
-| Line | 98.62% (6082/6167) |
-| Branch | 97.18% (2550/2624) |
+| Line | 98.64% (6252/6338) |
+| Branch | 97.22% (2627/2702) |
 
 <details><summary>Files below 100% line coverage</summary>
 
