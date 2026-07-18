@@ -255,7 +255,7 @@ public class RendezvousHash<TNode, TKey, THasher>
             weights[i] = registration.Weight;
         }
 
-        _snapshot = new Snapshot(nodes, nodeIds, nodeHashes, weights);
+        _snapshot = new Snapshot(nodes, nodeHashes, weights);
     }
 
     private sealed class Registration
@@ -274,19 +274,16 @@ public class RendezvousHash<TNode, TKey, THasher>
     private sealed class Snapshot
     {
         internal static readonly Snapshot Empty =
-            new Snapshot(Array.Empty<TNode>(), Array.Empty<string>(), Array.Empty<uint>(), Array.Empty<int>());
+            new Snapshot(Array.Empty<TNode>(), Array.Empty<uint>(), Array.Empty<int>());
 
-        internal Snapshot(TNode[] nodes, string[] nodeIds, uint[] nodeHashes, int[] weights)
+        internal Snapshot(TNode[] nodes, uint[] nodeHashes, int[] weights)
         {
             Nodes = nodes;
-            NodeIds = nodeIds;
             NodeHashes = nodeHashes;
             Weights = weights;
         }
 
         internal TNode[] Nodes { get; }
-
-        internal string[] NodeIds { get; }
 
         internal uint[] NodeHashes { get; }
 
