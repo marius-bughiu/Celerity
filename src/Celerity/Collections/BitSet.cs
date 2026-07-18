@@ -190,6 +190,7 @@ public sealed class BitSet : IEnumerable<bool>
     /// <returns>The value of the bit after flipping.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is
     /// negative or not less than <see cref="Length"/>.</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Flip(int index)
     {
         if ((uint)index >= (uint)_length)
