@@ -189,16 +189,7 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
         if (_index.ContainsKey(element))
             return false;
 
-        if (_count == _elements.Length)
-            Grow();
-
-        int slot = _count;
-        _elements[slot] = element;
-        _priorities[slot] = priority;
-        _index[element] = slot;
-        _count++;
-        SiftUp(slot);
-        _version++;
+        InsertNew(element, priority);
         return true;
     }
 
@@ -219,7 +210,8 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
             return false;
         }
 
-        TryEnqueue(element, priority);
+        // Element is known absent — insert directly rather than re-probing the index via TryEnqueue.
+        InsertNew(element, priority);
         return true;
     }
 
@@ -566,9 +558,35 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
             _priorities[slot] = default!;
     }
 
+    // Appends a known-absent element as a fresh leaf and sifts it up into place. The caller guarantees the
+    // element is not already in the index (so both TryEnqueue and EnqueueOrUpdate reach it after a single
+    // index probe, not two).
+    private void InsertNew(TElement element, TPriority priority)
+    {
+        if (_count == _elements.Length)
+            Grow();
+
+        int slot = _count;
+        _elements[slot] = element;
+        _priorities[slot] = priority;
+        _index[element] = slot;
+        _count++;
+        SiftUp(slot);
+        _version++;
+    }
+
     private void Grow()
     {
-        int newCapacity = _elements.Length == 0 ? DefaultCapacity : _elements.Length * 2;
+        // Double the capacity, but clamp to Array.MaxLength and guard the int overflow that a naive `* 2`
+        // would hit once the queue passes ~1 billion elements (the doubled value wraps negative). Throw
+        // rather than silently corrupt if the queue is already at the array ceiling.
+        int current = _elements.Length;
+        int newCapacity = current == 0 ? DefaultCapacity : current * 2;
+        if ((uint)newCapacity > (uint)Array.MaxLength)
+            newCapacity = Array.MaxLength;
+        if (newCapacity <= current)
+            throw new InvalidOperationException("The priority queue has reached its maximum capacity.");
+
         Resize(newCapacity);
         _version++;
     }
