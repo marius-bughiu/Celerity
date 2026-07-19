@@ -28,28 +28,28 @@ public class DisjointSetBenchmark
     private Dictionary<int, HashSet<int>> dictFull = null!;
 
     [Params(1000, 100_000)]
-    public int ElementCount;
+    public int ItemCount;
 
     [GlobalSetup]
     public void Setup()
     {
-        int edges = ElementCount; // a near-spanning edge stream over the universe
+        int edges = ItemCount; // a near-spanning edge stream over the universe
         edgeA = new int[edges];
         edgeB = new int[edges];
         var rand = new Random(42);
         for (int i = 0; i < edges; i++)
         {
-            edgeA[i] = rand.Next(ElementCount);
-            edgeB[i] = rand.Next(ElementCount);
+            edgeA[i] = rand.Next(ItemCount);
+            edgeB[i] = rand.Next(ItemCount);
         }
 
-        int queries = Math.Min(ElementCount, 10_000);
+        int queries = Math.Min(ItemCount, 10_000);
         queryA = new int[queries];
         queryB = new int[queries];
         for (int i = 0; i < queries; i++)
         {
-            queryA[i] = rand.Next(ElementCount);
-            queryB[i] = rand.Next(ElementCount);
+            queryA[i] = rand.Next(ItemCount);
+            queryB[i] = rand.Next(ItemCount);
         }
 
         dsFull = BuildCelerity();
@@ -130,8 +130,8 @@ public class DisjointSetBenchmark
 
     private DisjointSet<int> BuildCelerity()
     {
-        var ds = new DisjointSet<int>(ElementCount);
-        for (int i = 0; i < ElementCount; i++)
+        var ds = new DisjointSet<int>(ItemCount);
+        for (int i = 0; i < ItemCount; i++)
             ds.Add(i);
         for (int i = 0; i < edgeA.Length; i++)
             ds.Union(edgeA[i], edgeB[i]);
@@ -140,8 +140,8 @@ public class DisjointSetBenchmark
 
     private Dictionary<int, HashSet<int>> BuildDictionary()
     {
-        var map = new Dictionary<int, HashSet<int>>(ElementCount);
-        for (int i = 0; i < ElementCount; i++)
+        var map = new Dictionary<int, HashSet<int>>(ItemCount);
+        for (int i = 0; i < ItemCount; i++)
             map[i] = new HashSet<int> { i };
 
         for (int i = 0; i < edgeA.Length; i++)
