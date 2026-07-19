@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-19
+
 ### Added
 
 - **`DisjointSet<T>`** in `Celerity.Collections` — a disjoint-set / union-find over arbitrary non-null elements, filling a BCL gap (.NET ships no union-find). `Union` / `Find` / `Connected` are near-`O(1)` amortized, so incremental-connectivity and connected-components workloads (equivalence classes, Kruskal's MST, clustering, undirected cycle detection) run in near-linear total time where the idiomatic `Dictionary<T, HashSet<T>>` merge is quadratic. Not thread-safe. Closes [#272](https://github.com/marius-bughiu/Celerity/issues/272).
@@ -499,7 +501,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.3.0
 [2.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.2.0
 [2.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.1.0
 [2.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.0.0
