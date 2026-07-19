@@ -511,6 +511,39 @@ void Check(bool condition, string message)
     Check(order.Count == 3 && order[0] == 7 && order[2] == 9, "DisjointSet insertion-order enumeration");
 }
 
+// IndexedPriorityQueue — addressable binary min-heap. Exercise enqueue/peek/dequeue
+// min-order, the decrease-key Update, arbitrary Remove, priority lookups, and growth.
+{
+    var pq = new IndexedPriorityQueue<int, int, Int32WangNaiveHasher>();
+    pq.Enqueue(1, 30);
+    pq.Enqueue(2, 10);
+    pq.Enqueue(3, 20);
+    Check(pq.Count == 3 && pq.Peek() == 2, "IndexedPriorityQueue min at top");
+    Check(!pq.TryEnqueue(2, 5), "IndexedPriorityQueue rejects duplicate element");
+
+    pq.Update(3, 1); // decrease-key
+    Check(pq.Peek() == 3 && pq.GetPriority(3) == 1, "IndexedPriorityQueue decrease-key");
+    Check(pq.Remove(1, out int removed) && removed == 30, "IndexedPriorityQueue remove arbitrary out value");
+    Check(pq.TryGetPriority(2, out int p2) && p2 == 10 && !pq.Contains(1), "IndexedPriorityQueue priority lookup + absence");
+
+    Check(pq.Dequeue() == 3 && pq.Dequeue() == 2 && pq.Count == 0, "IndexedPriorityQueue dequeue order");
+
+    var grown = new IndexedPriorityQueue<int, int, Int32WangNaiveHasher>(0);
+    for (int i = 500; i > 0; i--) grown.Enqueue(i, i);
+    Check(grown.Count == 500 && grown.Peek() == 1, "IndexedPriorityQueue enqueue across growth");
+    var prev = int.MinValue;
+    var monotonic = true;
+    while (grown.TryDequeue(out _, out int pr)) { if (pr < prev) monotonic = false; prev = pr; }
+    Check(monotonic, "IndexedPriorityQueue drains in ascending priority order");
+
+    var maxHeap = new IndexedPriorityQueue<string, int, DefaultHasher<string>>(
+        Comparer<int>.Create((a, b) => b.CompareTo(a)));
+    maxHeap.Enqueue("a", 1);
+    maxHeap.Enqueue("b", 3);
+    maxHeap.Enqueue("c", 2);
+    Check(maxHeap.Dequeue() == "b", "IndexedPriorityQueue custom comparer (max-heap)");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.

@@ -380,9 +380,10 @@
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                    vs: 'Dictionary<int, int>' },
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',               vs: 'Dictionary + LinkedList LRU' },
     { key: 'Deque',               title: 'Deque<int>',                            vs: 'LinkedList<int>' },
-    { key: 'DisjointSet',         title: 'DisjointSet<int>',                      vs: 'Dictionary<int, HashSet<int>> merge' }
+    { key: 'DisjointSet',         title: 'DisjointSet<int>',                      vs: 'Dictionary<int, HashSet<int>> merge' },
+    { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',  vs: 'PriorityQueue<int, int>' }
   ];
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----

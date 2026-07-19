@@ -44,6 +44,7 @@ internal class Program
         typeof(LruCacheBenchmark),
         typeof(DequeBenchmark),
         typeof(DisjointSetBenchmark),
+        typeof(IndexedPriorityQueueBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };
