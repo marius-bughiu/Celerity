@@ -39,6 +39,7 @@ internal static class Differential
         ("IntSet", IntSetCase),
         ("LongSet", LongSetCase),
         ("SmallSet", SmallSetCase),
+        ("SparseSet", SparseSetCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -606,6 +607,43 @@ internal static class Differential
 
         Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
         for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+        int enumerated = 0;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            enumerated++;
+        }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // SparseSet is the bounded-universe integer set (Briggs–Torczon). It stores only
+    // non-negative values below its universe, so it draws from [0, SparseUniverse)
+    // rather than the shared [-8, 24] key domain (which spans negatives it rejects by
+    // design). Same Add / Remove / Clear churn and enumeration reconciled against a
+    // HashSet<int> oracle — the O(1) clear that never wipes the sparse array makes the
+    // clear-then-reuse steps the interesting ones.
+    private const int SparseUniverse = 32;
+
+    private static void SparseSetCase(Random rng)
+    {
+        var sut = new SparseSet(SparseUniverse);
+        var oracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = rng.Next(0, SparseUniverse);
+            switch (rng.Next(0, 10))
+            {
+                case < 6: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 9: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = 0; k < SparseUniverse; k++)
             Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
         int enumerated = 0;
         foreach (int item in sut)
