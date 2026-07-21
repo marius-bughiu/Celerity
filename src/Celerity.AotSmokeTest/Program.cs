@@ -511,6 +511,30 @@ void Check(bool condition, string message)
     Check(order.Count == 3 && order[0] == 7 && order[2] == 9, "DisjointSet insertion-order enumeration");
 }
 
+// SparseSet — bounded-universe sparse integer set (Briggs–Torczon). Exercise add /
+// contains / swap-remove, the out-of-range rejection, the O(1) clear-then-reuse path
+// (which must reject stale sparse entries), and the dense-array enumerator.
+{
+    var ss = new SparseSet(64);
+    for (int i = 0; i < 10; i++) ss.Add(i);
+    Check(ss.Count == 10 && ss.Universe == 64 && ss.Contains(0) && ss.Contains(9), "SparseSet add + contains");
+    Check(!ss.TryAdd(5), "SparseSet.TryAdd duplicate");
+    Check(!ss.Contains(64) && !ss.Contains(-1), "SparseSet out-of-range reads absent");
+    Check(ss.Remove(5) && !ss.Contains(5) && ss.Contains(9), "SparseSet swap-remove keeps survivors");
+
+    ss.Clear();
+    Check(ss.Count == 0 && !ss.Contains(0) && !ss.Contains(9), "SparseSet O(1) clear rejects stale entries");
+    ss.Add(9); // 9 was present before Clear — must not false-positive until re-added
+    Check(ss.Count == 1 && ss.Contains(9) && !ss.Contains(0), "SparseSet reusable after clear");
+
+    var reached = new SparseSet(128, new[] { 3, 3, 7, 1, 7 }); // dedupes
+    var seen = new List<int>();
+    foreach (int x in reached) seen.Add(x);
+    Check(reached.Count == 3 && seen.Count == 3, "SparseSet source ctor dedupe + enumeration");
+    ((ISet<int>)reached).UnionWith(new[] { 1, 2 });
+    Check(reached.Count == 4 && reached.Contains(2), "SparseSet ISet<int> union within universe");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.
