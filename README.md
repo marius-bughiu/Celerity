@@ -77,6 +77,10 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 - `DisjointSet<T>` — **union-find** over arbitrary elements: partitions them into disjoint sets with near-`O(1)` amortized `Union` / `Find` / `Connected` via **union by size** + **path halving**. The union-find the BCL lacks — incremental connectivity, connected components, Kruskal MST, and undirected cycle detection in near-linear total time, where the `Dictionary` + `HashSet` set-merge substitute is quadratic. `GetComponents()` materializes the current partition.
 
+**Priority queue**
+
+- `IndexedPriorityQueue<TElement, TPriority, THasher>` — **addressable** binary min-heap: unlike the BCL `PriorityQueue<,>` it can **change a queued element's priority** (`Update` / decrease-key) and **remove an arbitrary element** in `O(log n)`, and answer `Contains` / `TryGetPriority` in `O(1)`. The heap the priority-relaxation loop of Dijkstra / Prim / A\* needs — no lazy-deletion heap growth. Each element is a key (appears once); pass a custom `IComparer<TPriority>` for a max-heap.
+
 **Probabilistic & bit-level**
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
@@ -406,6 +410,27 @@ foreach (var component in uf.GetComponents())
 </details>
 
 <details>
+<summary><b>Addressable priority queue</b> — IndexedPriorityQueue</summary>
+
+`IndexedPriorityQueue<TElement, TPriority, THasher>` is an **addressable** binary min-heap: unlike the BCL `PriorityQueue<,>` it keeps an element→heap-slot index (a dogfooded `CelerityDictionary`) so it can **change a queued element's priority** and **remove an arbitrary element** in `O(log n)`, and look one up in `O(1)`. That is exactly what the priority-relaxation loop of Dijkstra / Prim / A\* needs — the BCL heap forces *lazy deletion* (re-enqueue + skip stale entries), which grows the heap by one entry per update. Each element is a key (it appears once); pass a custom `IComparer<TPriority>` for a max-heap.
+
+```csharp
+var pq = new IndexedPriorityQueue<string, int, DefaultHasher<string>>();
+pq.Enqueue("a", 10);
+pq.Enqueue("b", 30);
+pq.Enqueue("c", 20);
+
+pq.Update("b", 5);              // decrease-key: 'b' jumps to the front
+Console.WriteLine(pq.Peek());  // b
+
+Console.WriteLine(pq.Dequeue()); // b (priority 5)
+Console.WriteLine(pq.Dequeue()); // a (priority 10)
+Console.WriteLine(pq.Remove("c", out int p)); // True; p == 20
+```
+
+</details>
+
+<details>
 <summary><b>Construct from an existing collection</b></summary>
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
@@ -461,6 +486,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Bounded cache** with automatic eviction — memoize the last `N` results, an admission cache in front of an expensive lookup, any hot key→value store that must not grow without bound | `LruCache<TKey, TValue, THasher>` | Fixed-capacity least-recently-used cache: `O(1)` get/put, and once at capacity every insert evicts the least-recently-used entry. Its recency list is threaded through fixed-size arrays, so after construction the hot get/put/evict path **allocates nothing** — where the idiomatic `Dictionary` + `LinkedList` LRU allocates a `LinkedListNode` per insert. Reads are *uses* (they promote to most-recently-used); use `TryPeek` / `ContainsKey` to inspect without touching recency. Single-threaded — because reads mutate recency, even a read-mostly concurrent workload needs a write lock. |
 | **Double-ended queue** — add/remove at both ends (bounded FIFO queue, sliding window, work-stealing / undo buffer) or a queue needing random access by position | `Deque<T>` | Growable double-ended queue backed by a **circular buffer**: `O(1)` amortized `PushFront` / `PushBack` / `PopFront` / `PopBack` / peek and `O(1)` random access by index. The BCL has no deque — `Queue<T>` is FIFO-only, `Stack<T>` LIFO-only, and `LinkedList<T>` (the only O(1)-both-ends type) allocates a node per element. A warm bounded churn reuses the buffer with wrap-around so it **allocates nothing**, and enumeration walks contiguous memory. For a strict FIFO queue that never pushes front / pops back, BCL `Queue<T>` is already a circular buffer and is simpler. |
 | **Incremental connectivity / connected components** — union equivalence classes and ask whether two elements are in the same group (Kruskal MST, clustering, image segmentation, undirected cycle detection, "are these accounts linked?") | `DisjointSet<T>` | Union-find with **union by size** + **path halving**: near-`O(1)` amortized `Union` / `Find` / `Connected`, `O(α(n)) ≤ 4`. Runs a stream of merges + connectivity queries in near-linear total time, where the BCL substitutes are super-linear — a `Dictionary<T, HashSet<T>>` set-merge is `O(n²)` to coalesce `n` singletons, and a per-query BFS/DFS is `O(V+E)` every query. Grows only by merging (no un-union); it is not an `ISet<T>` — for element membership with add/remove/set-algebra use `CeleritySet` or `HashSet<T>`. |
+| **Priority queue whose priorities change** — a best-so-far frontier you relax (Dijkstra / Prim / A\*), or an event scheduler that reschedules / cancels pending items | `IndexedPriorityQueue<TElement, TPriority, THasher>` | Addressable binary min-heap with an element→slot index: `Update` (decrease-/increase-key) and `Remove` an arbitrary element in `O(log n)`, `Contains` / `TryGetPriority` in `O(1)`. The BCL `PriorityQueue<,>` can do none of these — its only substitute is lazy deletion, which grows the heap by one entry per update. Each element is a key (appears once); custom `IComparer<TPriority>` for a max-heap. For plain enqueue/dequeue with duplicate elements, the BCL `PriorityQueue<,>` is simpler. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 **Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).

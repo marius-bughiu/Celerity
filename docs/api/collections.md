@@ -3311,3 +3311,117 @@ Console.WriteLine($"{uf.SetCount} connected component(s)");   // 2: {a,b,c} and 
 foreach (var component in uf.GetComponents())
     Console.WriteLine(string.Join(", ", component));
 ```
+
+## IndexedPriorityQueue&lt;TElement, TPriority, THasher&gt;
+
+An **addressable (indexed) priority queue**: a binary min-heap that maps each element to its position in the heap, so — unlike the BCL `PriorityQueue<TElement, TPriority>` — it can **change a queued element's priority** (`Update` / decrease-key / increase-key) and **remove an arbitrary element** (`Remove`) in `O(log n)`, and answer `Contains` / `TryGetPriority` in `O(1)`. Implements `IReadOnlyCollection<KeyValuePair<TElement, TPriority>>`.
+
+```csharp
+public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
+    : IReadOnlyCollection<KeyValuePair<TElement, TPriority>>
+    where THasher : struct, IHashProvider<TElement>
+```
+
+Each element is a **key**: it appears in the queue at most once, and equality uses `EqualityComparer<TElement>.Default` through the supplied `THasher`. The `THasher` is a struct implementing `IHashProvider<TElement>`, so the element hashing behind the index devirtualizes and inlines.
+
+The BCL `PriorityQueue<TElement, TPriority>` is a plain binary heap with no handle to an element already inside it: it exposes neither a priority update nor an arbitrary remove. The idiomatic workaround is **lazy deletion** — re-enqueue the element with its new priority and skip stale copies when they surface at the top — which lets the heap grow to `O(operations)` rather than `O(distinct elements)` and still cannot answer *"what is this element's current priority?"*. `IndexedPriorityQueue` keeps the heap at exactly the live elements.
+
+### How it works
+
+Two parallel arrays hold the heap (`_elements[i]` / `_priorities[i]`, a 0-based binary heap: node `i`'s children are `2i+1` and `2i+2`). Beside them, an **element→heap-slot index** — a dogfooded `CelerityDictionary<TElement, int, THasher>` — records where each element currently sits. Every sift/swap updates the index in lockstep, so `Update` and `Remove` locate their element in `O(1)` and then restore the heap invariant in `O(log n)` by sifting the affected slot up or down. Because the index is a `CelerityDictionary`, the out-of-band `default(TElement)` / `null` element is handled for free, exactly as in the rest of the family.
+
+It is a **min-heap** by default (`Comparer<TPriority>.Default`): `Peek` and `Dequeue` return the element with the smallest priority. Pass a custom `IComparer<TPriority>` to invert the order (a max-heap) or to order by any other key.
+
+### The documented BCL-beating workload
+
+The **priority-relaxation loop** at the heart of Dijkstra's shortest paths, Prim's minimum spanning tree, A\*, and discrete-event simulation: seed the frontier, then repeatedly `Update` (decrease-key) an element's priority and `Dequeue` the current minimum. The addressable heap keeps its size at `O(distinct elements)` and updates a priority in `O(log n)`, where the lazy-deletion substitute over a BCL `PriorityQueue` grows the heap by one entry per relaxation and pays to skip the stale ones. It pairs with [`DisjointSet<T>`](#disjointsett) (union-find / Kruskal's MST) to cover the graph-algorithm primitives the BCL omits. See the [priority-queue benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=IndexedPriorityQueue) on the dashboard.
+
+### Constructors
+
+```csharp
+public IndexedPriorityQueue()
+public IndexedPriorityQueue(int capacity)
+public IndexedPriorityQueue(IComparer<TPriority>? comparer)
+public IndexedPriorityQueue(int capacity, IComparer<TPriority>? comparer)
+public IndexedPriorityQueue(IEnumerable<KeyValuePair<TElement, TPriority>> items)
+public IndexedPriorityQueue(IEnumerable<KeyValuePair<TElement, TPriority>> items, IComparer<TPriority>? comparer)
+```
+
+- The `capacity` overloads pre-size the backing storage to hold at least `capacity` elements before the first growth.
+- A `null` `comparer` means `Comparer<TPriority>.Default` (a min-heap). Invert it for a max-heap.
+- The `IEnumerable` overloads seed the queue with element/priority pairs; a **duplicate element keeps its last-seen priority** (the seeding is an upsert, matching `EnqueueOrUpdate`).
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentNullException` if `items` is `null` (enumerable overloads).
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of elements currently in the queue. |
+| `int Capacity` | Elements the backing storage can hold before it must grow. |
+| `IComparer<TPriority> Comparer` | The comparer used to order priorities. |
+| `void Enqueue(TElement element, TPriority priority)` | Adds `element`. Throws `ArgumentException` if it is already present. |
+| `bool TryEnqueue(TElement element, TPriority priority)` | Adds `element`; returns `false` (queue unchanged) if it is already present. |
+| `bool EnqueueOrUpdate(TElement element, TPriority priority)` | Adds `element` if absent (returns `true`) or changes its priority if present (returns `false`). |
+| `TElement Peek()` | The minimum-priority element. Throws `InvalidOperationException` if empty. |
+| `bool TryPeek(out TElement element, out TPriority priority)` | Non-throwing `Peek`. |
+| `TElement Dequeue()` | Removes and returns the minimum-priority element. Throws `InvalidOperationException` if empty. |
+| `bool TryDequeue(out TElement element, out TPriority priority)` | Non-throwing `Dequeue`. |
+| `bool Contains(TElement element)` | Whether `element` is present. `O(1)`. |
+| `TPriority GetPriority(TElement element)` | `element`'s current priority. Throws `KeyNotFoundException` if absent. `O(1)`. |
+| `bool TryGetPriority(TElement element, out TPriority priority)` | Non-throwing `GetPriority`. |
+| `void Update(TElement element, TPriority priority)` | Changes `element`'s priority (decrease- or increase-key) and restores its position. Throws `KeyNotFoundException` if absent. `O(log n)`. |
+| `bool TryUpdate(TElement element, TPriority priority)` | Non-throwing `Update`. |
+| `bool Remove(TElement element)` | Removes `element` wherever it sits in the heap. Returns `false` if absent. `O(log n)`. |
+| `bool Remove(TElement element, out TPriority priority)` | `Remove` that also returns the removed element's priority. |
+| `void Clear()` | Removes all elements. The backing storage is retained. |
+| `int EnsureCapacity(int capacity)` | Grows the backing storage to hold at least `capacity` elements; returns the resulting capacity. |
+| `void TrimExcess()` | Shrinks the backing storage to fit the current count. |
+| `Enumerator GetEnumerator()` | A struct enumerator over the element/priority pairs in **heap order** (not priority order). |
+
+Enumeration yields the pairs in heap-array order, which is **not** priority order. To visit elements by priority, `Dequeue` them (which empties the queue) or copy the pairs out and sort them. A pure read (`Peek`, `Contains`, `TryGetPriority`) does not invalidate an in-flight enumerator; every mutation (`Enqueue`, `Dequeue`, `Update`, `Remove`, `Clear`, and a capacity change that reallocates) does.
+
+### Choosing it
+
+Reach for `IndexedPriorityQueue` when you need a priority queue whose elements' priorities **change while they are queued**, or where you must **remove or look up a specific element** by value — the shortest-path / MST / A\* relaxation loop, an event scheduler that can cancel or reschedule a pending event, or any "best-so-far" frontier. If you only ever `Enqueue` and `Dequeue` and never touch an element already inside, the BCL `PriorityQueue<TElement, TPriority>` is simpler and allows duplicate elements; `IndexedPriorityQueue` trades that for the addressable operations and the one-element-per-key constraint. This type is not thread-safe; concurrent callers must synchronize externally.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Dijkstra's shortest paths over a tiny weighted graph, using decrease-key.
+var dist = new IndexedPriorityQueue<int, int, Int32WangHasher>();
+foreach (int v in new[] { 0, 1, 2, 3, 4 })
+    dist.Enqueue(v, v == 0 ? 0 : int.MaxValue); // source at 0, everything else at infinity
+
+// adjacency: node -> (neighbour, weight)
+var graph = new Dictionary<int, (int to, int w)[]>
+{
+    [0] = new[] { (1, 4), (2, 1) },
+    [1] = new[] { (3, 1) },
+    [2] = new[] { (1, 2), (3, 5) },
+    [3] = new[] { (4, 3) },
+    [4] = Array.Empty<(int, int)>(),
+};
+
+var final = new Dictionary<int, int>();
+while (dist.TryDequeue(out int u, out int du))
+{
+    final[u] = du;
+    if (du == int.MaxValue) continue; // unreachable
+    foreach (var (to, w) in graph[u])
+    {
+        // relax the edge: decrease-key if we found a shorter path
+        if (dist.TryGetPriority(to, out int old) && du + w < old)
+            dist.Update(to, du + w);
+    }
+}
+
+Console.WriteLine(string.Join(", ", final.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}")));
+// 0:0, 1:3, 2:1, 3:4, 4:7
+```
