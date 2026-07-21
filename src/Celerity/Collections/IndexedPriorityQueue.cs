@@ -122,7 +122,12 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
         _elements = initial == 0 ? Array.Empty<TElement>() : new TElement[initial];
         _priorities = initial == 0 ? Array.Empty<TPriority>() : new TPriority[initial];
         _comparer = comparer ?? Comparer<TPriority>.Default;
-        _index = new CelerityDictionary<TElement, int, THasher>(capacity);
+
+        // Size the index for `capacity` entries in a single allocation. Passing `capacity` to the ctor would
+        // size the table by NextPowerOfTwo(capacity), which is too small to hold that many entries under the
+        // load factor — EnsureCapacity would then reallocate and rehash. Building it empty and sizing once via
+        // EnsureCapacity does the entry-count-with-headroom math a single time.
+        _index = new CelerityDictionary<TElement, int, THasher>();
         if (capacity > 0)
             _index.EnsureCapacity(capacity);
     }
