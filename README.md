@@ -62,8 +62,9 @@ Standalone libraries built **on top of** Celerity — each solves a real problem
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
 - `SmallSet<T>` — flat-array, linear-scan set for the very-small (`n <= ~16`) case. No hasher; the default element is stored inline. The set counterpart of `SmallDictionary`.
 - `EnumSet<TEnum>` — bit-vector set for enum keys (the .NET `EnumSet`): membership is a single bit test and set algebra is word-wise bitwise ops, with no hashing or boxing. Enumerates in ascending underlying-value order.
+- `SparseSet` — bounded-universe integer set (Briggs–Torczon sparse set): `O(1)` `Clear` that touches no memory, plus dense, cache-friendly iteration — for clear-and-rebuild "visited" sets over ids in `[0, N)` (graph traversal, ECS, sweep-line). Costs `O(Universe)` memory.
 
-The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
+The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`, `SparseSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
 
 **Caches**
 
@@ -214,7 +215,7 @@ Console.WriteLine(queued.ContainsKey(Priority.Normal)); // False — a single bi
 </details>
 
 <details>
-<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet, SmallSet, EnumSet</summary>
+<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet, SmallSet, EnumSet, SparseSet</summary>
 
 ```csharp
 var seen = new IntSet();
@@ -284,6 +285,15 @@ var granted = new EnumSet<Permission> { Permission.Read, Permission.Write };
 var required = new EnumSet<Permission> { Permission.Read, Permission.Execute };
 Console.WriteLine(granted.IsSupersetOf(required)); // False — word-wise subset test
 granted.UnionWith(required);                        // one bitwise OR
+```
+
+`SparseSet` is the bounded-universe integer set — the classic Briggs–Torczon sparse set (a dense value array + a sparse index array). Over a fixed universe `[0, Universe)` chosen at construction, `Add` / `Contains` / `Remove` are `O(1)` with no hashing, but the point of the type is what `HashSet<int>` can't match: `Clear()` is `O(1)` (it resets a count and touches no memory, versus zeroing the whole table) and iteration is a dense, contiguous scan over exactly the present elements. That is the winning shape for clear-and-rebuild "visited" sets — graph BFS/DFS, ECS entity membership, sweep-line — where the set is emptied every iteration. The cost is `O(Universe)` memory and non-negative-values-only: a value outside `[0, Universe)` throws on `Add` and reads as absent on `Contains` / `Remove`. It is an opt-in specialized type, not a `HashSet<int>` replacement — for an unbounded or huge-and-sparse key space, reach for `IntSet`.
+
+```csharp
+var visited = new SparseSet(nodeCount);   // universe = ids in [0, nodeCount)
+visited.Add(start);
+Console.WriteLine(visited.TryAdd(start)); // False — already seen, unchanged
+visited.Clear();                          // O(1) — ready for the next traversal
 ```
 
 </details>
@@ -443,6 +453,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Dictionary keyed by a small **enum** — config-by-enum, per-state data, enum→handler tables | `EnumMap<TEnum, TValue>` | Dense array indexed on the enum's underlying value (the .NET `EnumMap`): `this[key]` / `TryGetValue` / `Add` / `Remove` are a single direct array index — no hashing, no probing, no collisions — and a full sweep is a linear array walk. The dictionary counterpart of `EnumSet`; enumerates ascending by value. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CelerityDictionary<TEnum, TValue, THasher>` there. |
 | Tiny set (`n <= ~16`) that stays small — per-scope "seen" sets, small membership guards, deduping a handful of items | `SmallSet<T>` | The set counterpart of `SmallDictionary`: flat-array linear scan beats hashing at small `n`, no hasher to pick, the default element is stored inline. Implements `ISet<T>`. Degrades to `O(n)` for large sets, so only when instances stay small. |
 | Set of **enum** values — flag sets, permission sets, state sets over a small enum | `EnumSet<TEnum>` | Bit-vector set indexed on the enum's underlying value (the .NET `EnumSet`): `Add` / `Contains` / `Remove` are a single bit op — no hashing, no boxing — and set algebra between two `EnumSet`s is a word-wise bitwise `OR` / `AND` / `XOR`. Enumerates ascending by value; `All()` builds the full universe. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CeleritySet<TEnum, THasher>` there. |
+| Set of small **non-negative ints** over a bounded range that is **cleared & rebuilt often** — "visited" sets in graph BFS/DFS, ECS entity membership, sweep-line | `SparseSet` | Briggs–Torczon sparse set (dense value array + sparse index array): `O(1)` `Clear` that touches no memory (vs `HashSet<int>` zeroing its table) and dense, cache-friendly iteration over just the present elements. `Add` / `Contains` / `Remove` are `O(1)`, no hashing. Costs `O(Universe)` memory and stores only values in `[0, Universe)`; for an unbounded or huge-and-sparse key space use `IntSet` / `HashSet<int>`. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
