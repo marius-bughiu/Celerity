@@ -70,8 +70,9 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
     private readonly IComparer<TPriority> _comparer;
     private int _count;
 
-    // Bumped on every structural mutation (enqueue, dequeue, update-that-moves, remove, clear, and any
-    // capacity change that reallocates the heap arrays) so active enumerators detect concurrent modification.
+    // Bumped on every observable mutation (enqueue, dequeue, update, remove, clear, and any capacity change
+    // that reallocates the heap arrays) so active enumerators detect concurrent modification. An update bumps
+    // it even when the element does not move, since its priority — observable via GetPriority — has changed.
     private int _version;
 
     /// <summary>Initializes a new, empty priority queue ordered by <see cref="Comparer{T}.Default"/>.</summary>
@@ -587,8 +588,9 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
         if (newCapacity <= current)
             throw new InvalidOperationException("The priority queue has reached its maximum capacity.");
 
+        // No _version bump here: Grow() is only ever called from InsertNew(), whose own _version++ covers the
+        // enqueue, so bumping here too would double-count a single operation.
         Resize(newCapacity);
-        _version++;
     }
 
     private void Resize(int newCapacity)
