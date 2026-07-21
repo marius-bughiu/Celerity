@@ -440,6 +440,8 @@
     { key: 'SmallSet',            title: 'SmallSet<int>',                            vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'], items: [8, 64] },
     // EnumSet is bounded by the enum universe (no item-count sweep); Union is the word-wise set-algebra win.
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'] },
+    // SparseSet is a bounded-universe integer set; ClearRefill is the O(1)-clear headline win.
+    { key: 'SparseSet',           title: 'SparseSet',                                vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ClearRefill', 'Remove'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },

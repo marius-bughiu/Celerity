@@ -1971,6 +1971,133 @@ foreach (var p in granted) { /* ascending: Read, Write, Execute */ }
 
 ---
 
+## SparseSet
+
+```csharp
+public class SparseSet : ISet<int>
+```
+
+A set of **non-negative integers over a bounded universe** `[0, Universe)`, backed by
+the classic **Briggs–Torczon sparse-set representation**: a *dense* array holding the
+present values contiguously, paired with a *sparse* array — indexed by value — that
+points each present value back at its slot in the dense array. Membership is the
+round-trip `sparse[v] < Count && dense[sparse[v]] == v`, which is correct even when the
+sparse array holds uninitialized garbage. That single fact is what buys the type its two
+wins over `HashSet<int>`:
+
+- **`Clear()` is `O(1)`** — it resets the count and touches *no memory*. `HashSet<int>.Clear()`
+  is `O(capacity)` (it zeroes the whole entry table). This is the headline: per-frame /
+  per-query "visited" sets in graph traversal (BFS/DFS), ECS entity membership,
+  register-allocation liveness, and sweep-line algorithms clear on every iteration.
+- **Dense, cache-friendly iteration** — present elements live contiguously in `[0, Count)`
+  of the dense array, so enumeration is a linear scan over exactly `Count` ints with no
+  empty-slot skipping.
+
+`Add` / `Contains` / `Remove` are each `O(1)` with **no hashing**, no probe chain, and no
+per-element allocation — a direct array index and the round-trip check. There is **no
+hasher** (and so no `THasher` type parameter).
+
+The trade-offs, stated honestly:
+
+- The sparse index array is **`O(Universe)` memory**, sized once at construction. The type
+  is worth it when the universe is bounded and the set is cleared / rebuilt / iterated
+  often — not as a general `HashSet<int>` replacement. For an unbounded or huge-and-sparse
+  key space, use [`IntSet`](#intset) / `HashSet<int>`.
+- It stores **only non-negative values below `Universe`**. A value outside `[0, Universe)`
+  is rejected by `Add` / `TryAdd` with `ArgumentOutOfRangeException`, and reported as absent
+  by `Contains` / `Remove` (the bounded-universe analogue of `EnumSet`).
+- `Remove` moves the last dense element into the vacated slot (an `O(1)` swap), so the
+  relative order of the surviving elements is not preserved. Enumeration order is
+  unspecified in general.
+
+It implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`), ships an
+allocation-free struct enumerator, and accepts an `IEnumerable<int>` source at construction.
+
+### Constructors
+
+```csharp
+SparseSet(int universe)
+SparseSet(int universe, IEnumerable<int> source)
+```
+
+- `universe` is the **exclusive upper bound** of storable values; the set can hold any
+  non-negative integer strictly less than it. It sizes the sparse index array once, so
+  it is the dominant memory cost — choose it to match the actual value range. `0` creates
+  a set that can store nothing.
+- Throws `ArgumentOutOfRangeException` for a negative `universe`. There is **no
+  `loadFactor`** parameter.
+- The `source` constructor pre-sizes the dense array from an `ICollection<int>` source,
+  silently deduplicates (matching BCL `HashSet<int>(IEnumerable<int>)` semantics), throws
+  `ArgumentNullException` if `source` is `null` (the null check beats the universe
+  validation), and throws `ArgumentOutOfRangeException` if any source value is outside
+  `[0, universe)`.
+
+### Methods
+
+- `void Add(int item)` — throws `ArgumentException` on duplicate, `ArgumentOutOfRangeException` out of range.
+- `bool TryAdd(int item)` — `true` on success, `false` if already present; throws out of range.
+- `bool Contains(int item)` — `O(1)`; `false` for an out-of-range value.
+- `bool Remove(int item)` — `O(1)` swap-removal; `false` for an absent or out-of-range value.
+- `void Clear()` — **`O(1)`**, touches no memory; the set stays reusable.
+- `int EnsureCapacity(int capacity)` — grow the dense array to hold at least `capacity`
+  elements (clamped to `Universe`), returning the resulting dense-array length. Throws
+  `ArgumentOutOfRangeException` on a negative capacity.
+- `void TrimExcess()` / `void TrimExcess(int capacity)` — shrink the dense array to exactly
+  the current `Count` (or `capacity`). `TrimExcess(capacity)` throws if `capacity < Count`
+  or `capacity > Universe`. The sparse index array is unaffected.
+- `int Count { get; }`, `int Universe { get; }`
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator over the dense array.
+- `void CopyTo(int[] array, int arrayIndex)` — matches `HashSet<int>.CopyTo` argument validation.
+
+### Set operations (`ISet<int>`)
+
+The full BCL `HashSet<int>` set-algebra surface is available and follows `HashSet<int>`
+semantics exactly within the universe (duplicate-tolerant `other`, self-aliasing
+`other == this`):
+
+- **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
+- **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps`, `SetEquals`.
+
+Each throws `ArgumentNullException` when `other` is `null`. The one bounded-universe caveat:
+a **mutating** operation that would *add* a value outside `[0, Universe)` (e.g. `UnionWith`
+with such an element) throws `ArgumentOutOfRangeException` rather than silently growing an
+unbounded set. Query operations tolerate out-of-range values in `other` (they simply read
+as absent). As with the other sets, `ISet<int>.Add(int)` returns `bool` (equivalent to
+`TryAdd`), the concrete `public void Add(int)` keeps its throw-on-duplicate behaviour, and
+`ICollection<int>.Add(int)` ignores duplicates.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A BFS "visited" set over a graph whose nodes are ids in [0, nodeCount).
+var visited = new SparseSet(nodeCount);
+
+for (int start = 0; start < nodeCount; start++)
+{
+    visited.Clear(); // O(1) — no memory touched, ready for the next traversal
+    var queue = new Queue<int>();
+    queue.Enqueue(start);
+    visited.Add(start);
+
+    while (queue.Count > 0)
+    {
+        int node = queue.Dequeue();
+        foreach (int next in Neighbors(node))
+        {
+            if (visited.TryAdd(next)) // false if already seen
+                queue.Enqueue(next);
+        }
+    }
+
+    // Iterate exactly the reached nodes — a dense, contiguous scan.
+    Process(visited);
+}
+```
+
+---
+
 ## EnumMap&lt;TEnum, TValue&gt;
 
 ```csharp
