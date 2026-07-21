@@ -55,8 +55,8 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     // _childChars, so IndexOfChild is a binary search and a pre-order walk visits children in ordinal order.
     private sealed class Node
     {
-        // Sorted ascending. _childChars[i] labels the edge to _children[i]. Only the first _childCount
-        // entries are live. Both arrays are null until the first child is inserted (leaf nodes stay empty).
+        // Sorted ascending. ChildChars[i] labels the edge to Children[i]. Only the first ChildCount entries
+        // are live. Both arrays start empty and are grown on the first child insert (leaf nodes stay empty).
         public char[] ChildChars = Array.Empty<char>();
         public Node[] Children = Array.Empty<Node>();
         public int ChildCount;
@@ -161,7 +161,8 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
         ArgumentNullException.ThrowIfNull(entries);
         foreach (KeyValuePair<string, TValue> entry in entries)
         {
-            ArgumentNullException.ThrowIfNull(entry.Key, "entries");
+            if (entry.Key is null)
+                throw new ArgumentNullException(nameof(entries), "A key in the entries sequence was null.");
             Set(entry.Key, entry.Value);
         }
         _version = 0;
@@ -271,7 +272,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// </param>
     /// <returns><c>true</c> if the key was found and removed; otherwise <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
-    public bool Remove(string key, out TValue value)
+    public bool Remove(string key, out TValue? value)
     {
         ArgumentNullException.ThrowIfNull(key);
 
@@ -287,7 +288,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
             int idx = node.IndexOfChild(key[d]);
             if (idx < 0)
             {
-                value = default!;
+                value = default;
                 return false;
             }
             node = node.Children[idx];
@@ -296,7 +297,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
 
         if (!node.HasValue)
         {
-            value = default!;
+            value = default;
             return false;
         }
 
@@ -362,7 +363,9 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     {
         ArgumentNullException.ThrowIfNull(prefix);
         Node? node = FindNode(prefix);
-        return node is null ? Enumerable.Empty<KeyValuePair<string, TValue>>() : Enumerate(node, prefix);
+        // Snapshot the version now (at enumerable creation), matching the BCL contract where a modification
+        // between handing out the enumerable and iterating it is detected on the first MoveNext.
+        return node is null ? Enumerable.Empty<KeyValuePair<string, TValue>>() : Enumerate(node, prefix, _version);
     }
 
     /// <summary>
@@ -372,11 +375,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// <param name="prefix">The prefix to match.</param>
     /// <returns>A lazily evaluated sequence of the matching keys in ascending order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="prefix"/> is <c>null</c>.</exception>
-    public IEnumerable<string> GetKeysWithPrefix(string prefix)
-    {
-        foreach (KeyValuePair<string, TValue> pair in GetByPrefix(prefix))
-            yield return pair.Key;
-    }
+    public IEnumerable<string> GetKeysWithPrefix(string prefix) => GetByPrefix(prefix).Select(pair => pair.Key);
 
     /// <summary>
     /// Finds the longest stored key that is a prefix of <paramref name="query"/> (a stored key equal to
@@ -393,13 +392,13 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// </param>
     /// <returns><c>true</c> if any stored key is a prefix of <paramref name="query"/>; otherwise <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="query"/> is <c>null</c>.</exception>
-    public bool TryGetLongestPrefix(string query, out string key, out TValue value)
+    public bool TryGetLongestPrefix(string query, out string? key, out TValue? value)
     {
         ArgumentNullException.ThrowIfNull(query);
 
         Node node = _root;
         int bestLength = -1;
-        TValue bestValue = default!;
+        TValue? bestValue = default;
 
         if (node.HasValue)
         {
@@ -422,8 +421,8 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
 
         if (bestLength < 0)
         {
-            key = null!;
-            value = default!;
+            key = null;
+            value = default;
             return false;
         }
 
@@ -436,14 +435,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     public IEnumerable<string> Keys => GetKeysWithPrefix(string.Empty);
 
     /// <summary>Gets the values ordered by their keys' ascending ordinal order.</summary>
-    public IEnumerable<TValue> Values
-    {
-        get
-        {
-            foreach (KeyValuePair<string, TValue> pair in Enumerate(_root, string.Empty))
-                yield return pair.Value;
-        }
-    }
+    public IEnumerable<TValue> Values => Enumerate(_root, string.Empty, _version).Select(pair => pair.Value);
 
     /// <summary>
     /// Returns an enumerator that yields every entry in ascending ordinal key order. Enumeration allocates a
@@ -451,7 +443,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// <see cref="IEnumerator.MoveNext"/> throws <see cref="InvalidOperationException"/>.
     /// </summary>
     /// <returns>An enumerator over the trie's entries in ascending key order.</returns>
-    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator() => Enumerate(_root, string.Empty).GetEnumerator();
+    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator() => Enumerate(_root, string.Empty, _version).GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
@@ -505,15 +497,18 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
 
     // Pre-order DFS from `start` (whose accumulated key is `startKey`), yielding each terminating node's entry
     // in ascending ordinal order. Uses an explicit stack and a single reused StringBuilder rather than
-    // recursion, so a pathologically long key cannot overflow the call stack.
-    private IEnumerable<KeyValuePair<string, TValue>> Enumerate(Node start, string startKey)
+    // recursion, so a pathologically long key cannot overflow the call stack. `expectedVersion` is the
+    // snapshot taken when the enumerable was created; a mutation since then is detected before the first item
+    // and after each yield, so it surfaces on the very first MoveNext (BCL-style), not one item late.
+    private IEnumerable<KeyValuePair<string, TValue>> Enumerate(Node start, string startKey, int expectedVersion)
     {
-        int version = _version;
+        if (expectedVersion != _version)
+            ThrowModified();
 
         if (start.HasValue)
         {
             yield return new KeyValuePair<string, TValue>(startKey, start.Value);
-            if (version != _version)
+            if (expectedVersion != _version)
                 ThrowModified();
         }
 
@@ -534,7 +529,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
                 if (child.HasValue)
                 {
                     yield return new KeyValuePair<string, TValue>(sb.ToString(), child.Value);
-                    if (version != _version)
+                    if (expectedVersion != _version)
                         ThrowModified();
                 }
                 stack.Push((child, 0));

@@ -129,6 +129,22 @@ public class TrieEnumerationTests
     }
 
     [Fact]
+    public void Enumerator_Throws_WhenModifiedBeforeFirstMoveNext()
+    {
+        // The version is snapshotted when the enumerable/enumerator is created, so a mutation between then and
+        // the first MoveNext is detected on that first MoveNext (BCL-style), not one item late.
+        var trie = Build("a", "b", "c");
+
+        IEnumerator<KeyValuePair<string, int>> e = trie.GetEnumerator();
+        trie.Add("d", 4);
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+
+        IEnumerator<KeyValuePair<string, int>> pe = trie.GetByPrefix(string.Empty).GetEnumerator();
+        trie.Remove("d");
+        Assert.Throws<InvalidOperationException>(() => pe.MoveNext());
+    }
+
+    [Fact]
     public void PrefixEnumeration_FromKeyNode_Throws_WhenModifiedAfterFirstYield()
     {
         // The prefix "go" is itself a stored key, so it is the first entry the stream yields — exercising the
