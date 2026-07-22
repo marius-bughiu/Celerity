@@ -139,8 +139,10 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     private readonly Node _root = new();
     private int _count;
 
-    // Bumped on every mutation (add, overwrite, remove, clear) so active enumerators detect concurrent
-    // modification and throw, matching the BCL collection contract.
+    // Bumped on every post-construction mutation (add, overwrite, remove, clear) so active enumerators detect
+    // concurrent modification and throw, matching the BCL collection contract. The bulk-load constructor
+    // resets it to 0 after populating, so a freshly built trie always starts at version 0 (no enumerator can
+    // exist during construction).
     private int _version;
 
     /// <summary>Initializes a new, empty trie.</summary>
