@@ -48,7 +48,7 @@ namespace Celerity.Collections;
 /// thread-safe; concurrent callers must synchronize externally.
 /// </para>
 /// </remarks>
-public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
+public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
 {
     // A trie node. The root carries no incoming edge; every other node is reached by exactly one edge
     // character from its parent. Child edges are held in two parallel arrays kept sorted ascending by
@@ -243,7 +243,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// </param>
     /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
-    public bool TryGetValue(string key, out TValue value)
+    public bool TryGetValue(string key, out TValue? value)
     {
         ArgumentNullException.ThrowIfNull(key);
         Node? node = FindNode(key);
@@ -252,7 +252,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
             value = node.Value;
             return true;
         }
-        value = default!;
+        value = default;
         return false;
     }
 
@@ -359,7 +359,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// <param name="prefix">The prefix to match.</param>
     /// <returns>A lazily evaluated sequence of the matching entries in ascending key order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="prefix"/> is <c>null</c>.</exception>
-    public IEnumerable<KeyValuePair<string, TValue>> GetByPrefix(string prefix)
+    public IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)
     {
         ArgumentNullException.ThrowIfNull(prefix);
         Node? node = FindNode(prefix);
@@ -377,7 +377,12 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// <param name="prefix">The prefix to match.</param>
     /// <returns>A lazily evaluated sequence of the matching keys in ascending order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="prefix"/> is <c>null</c>.</exception>
-    public IEnumerable<string> GetKeysWithPrefix(string prefix) => GetByPrefix(prefix).Select(pair => pair.Key);
+    public IEnumerable<string> GetKeysWithPrefix(string prefix)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        Node? node = FindNode(prefix);
+        return EnumerateKeys(node, prefix, _version);
+    }
 
     /// <summary>
     /// Finds the longest stored key that is a prefix of <paramref name="query"/> (a stored key equal to
@@ -441,7 +446,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     public IEnumerable<string> Keys => GetKeysWithPrefix(string.Empty);
 
     /// <summary>Gets the values ordered by their keys' ascending ordinal order.</summary>
-    public IEnumerable<TValue> Values => Enumerate(_root, string.Empty, _version).Select(pair => pair.Value);
+    public IEnumerable<TValue?> Values => EnumerateValues(_root, string.Empty, _version);
 
     /// <summary>
     /// Returns an enumerator that yields every entry in ascending ordinal key order. Enumeration allocates a
@@ -449,9 +454,14 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     /// <see cref="IEnumerator.MoveNext"/> throws <see cref="InvalidOperationException"/>.
     /// </summary>
     /// <returns>An enumerator over the trie's entries in ascending key order.</returns>
-    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator() => Enumerate(_root, string.Empty, _version).GetEnumerator();
+    public IEnumerator<KeyValuePair<string, TValue?>> GetEnumerator() => Enumerate(_root, string.Empty, _version).GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    // IReadOnlyDictionary<string, TValue?> indexer: the public indexer getter returns the non-null TValue for a
+    // nicer caller experience, so the interface's nullable-value getter is provided explicitly, matching the
+    // rest of the Celerity dictionary surface (e.g. CelerityDictionary).
+    TValue? IReadOnlyDictionary<string, TValue?>.this[string key] => this[key];
 
     // ---- internal machinery ----------------------------------------------------------------------
 
@@ -508,7 +518,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     // and after each yield, so it surfaces on the very first MoveNext (BCL-style), not one item late. A null
     // `start` (a missing prefix) yields nothing but still runs the version check, so the empty result carries
     // the same invalidation contract as a non-empty one.
-    private IEnumerable<KeyValuePair<string, TValue>> Enumerate(Node? start, string startKey, int expectedVersion)
+    private IEnumerable<KeyValuePair<string, TValue?>> Enumerate(Node? start, string startKey, int expectedVersion)
     {
         if (expectedVersion != _version)
             ThrowModified();
@@ -518,7 +528,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
 
         if (start.HasValue)
         {
-            yield return new KeyValuePair<string, TValue>(startKey, start.Value);
+            yield return new KeyValuePair<string, TValue?>(startKey, start.Value);
             if (expectedVersion != _version)
                 ThrowModified();
         }
@@ -539,7 +549,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
                 sb.Append(node.ChildChars[ci]); // sb now holds the path to `child`
                 if (child.HasValue)
                 {
-                    yield return new KeyValuePair<string, TValue>(sb.ToString(), child.Value);
+                    yield return new KeyValuePair<string, TValue?>(sb.ToString(), child.Value);
                     if (expectedVersion != _version)
                         ThrowModified();
                 }
@@ -551,6 +561,21 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
                 sb.Length--;
             }
         }
+    }
+
+    // Key- and value-only projections of Enumerate, as plain iterator blocks rather than LINQ, so the library
+    // keeps its no-LINQ / allocation-conscious stance. Each snapshots the version through Enumerate exactly as
+    // the pair walk does.
+    private IEnumerable<string> EnumerateKeys(Node? start, string startKey, int expectedVersion)
+    {
+        foreach (KeyValuePair<string, TValue?> pair in Enumerate(start, startKey, expectedVersion))
+            yield return pair.Key;
+    }
+
+    private IEnumerable<TValue?> EnumerateValues(Node? start, string startKey, int expectedVersion)
+    {
+        foreach (KeyValuePair<string, TValue?> pair in Enumerate(start, startKey, expectedVersion))
+            yield return pair.Value;
     }
 
     private static void ThrowModified() =>

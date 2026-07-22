@@ -3428,10 +3428,10 @@ Console.WriteLine(string.Join(", ", final.OrderBy(kv => kv.Key).Select(kv => $"{
 
 ## Trie&lt;TValue&gt;
 
-An ordered **prefix tree** (trie) mapping `string` keys to values. Every key is stored as a path of characters from a shared root, so keys sharing a prefix share that prefix's nodes. Implements `IReadOnlyDictionary<string, TValue>`.
+An ordered **prefix tree** (trie) mapping `string` keys to values. Every key is stored as a path of characters from a shared root, so keys sharing a prefix share that prefix's nodes. Implements `IReadOnlyDictionary<string, TValue?>`.
 
 ```csharp
-public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
+public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
 ```
 
 The BCL ships no trie. `Dictionary<string, TValue>` answers an exact-key lookup in `O(1)` but has **no efficient prefix operation**: listing every key that starts with a prefix, or finding the longest stored key that is a prefix of a query, both force an `O(n)` scan of the whole dictionary plus a `StartsWith` per key. A trie answers those directly from its structure.
