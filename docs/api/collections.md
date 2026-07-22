@@ -3425,3 +3425,71 @@ while (dist.TryDequeue(out int u, out int du))
 Console.WriteLine(string.Join(", ", final.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}")));
 // 0:0, 1:3, 2:1, 3:4, 4:7
 ```
+
+## FenwickTree&lt;T&gt;
+
+```csharp
+public sealed class FenwickTree<T> : IReadOnlyCollection<T>
+    where T : struct, INumber<T>
+```
+
+A **Fenwick tree** (Binary Indexed Tree) is a fixed-length, array-backed sequence of numeric values that answers **prefix sums** — and therefore arbitrary **range sums** — and applies **point updates** in `O(log n)` each, over a single `n`-element array with no per-node object overhead. It is generic over `System.Numerics.INumber<T>`, so it works for `int`, `long`, `uint`, `ulong`, `double`, `decimal`, and any other value type with generic-math addition and subtraction.
+
+The BCL ships nothing for the **interleaved point-update + prefix-sum-query** workload, and a plain `T[]` forces a losing tradeoff: keep the raw values and every prefix / range query is `O(n)` (sum a slice); precompute a running-total array and queries are `O(1)` but every point update is `O(n)` (fix the whole suffix). A Fenwick tree gives **both** in `O(log n)`.
+
+### How it works
+
+Each stored cell holds the partial sum of a contiguous range of the logical sequence whose length is the lowest set bit of its (1-based) index. A prefix query accumulates `O(log n)` cells by repeatedly stripping the lowest set bit (`k -= k & -k`); a point update touches the `O(log n)` cells whose ranges cover the changed index by repeatedly adding it back (`k += k & -k`). A range sum is the difference of two prefix sums. The constructor from a value sequence builds the tree in `O(n)` (one ascending pass that pushes each cell into its parent), not `O(n log n)` point-inserts.
+
+### The documented BCL-beating workload
+
+Any stream that **mixes updates with range-sum queries**: running / rolling aggregates, order-statistics and rank counters (counting inversions, "how many seen values are ≤ x"), cumulative-frequency tables, sliding-window sums over a mutating history, and gradient / weight accumulators. Against a plain array these are `O(n·q)`; against the Fenwick tree they are `O(q·log n)`. See the [Fenwick-tree benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=FenwickTree) on the dashboard.
+
+### Constructors
+
+```csharp
+public FenwickTree(int length)                 // length logical elements, all zero
+public FenwickTree(IEnumerable<T> values)      // O(n) build seeded with values, in order
+```
+
+`length` must be non-negative (`ArgumentOutOfRangeException` otherwise). The length is **fixed** at construction — the tree does not grow; `Clear` resets the values to zero but keeps the length. The `IEnumerable<T>` overload throws `ArgumentNullException` on a null source and never aliases a caller-supplied array (it copies).
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of logical elements (the fixed length). |
+| `T Total { get; }` | The sum of every logical element — `PrefixSum(Count)`. |
+| `T this[int index] { get; set; }` | Get/set the logical value at `index`. Both are `O(log n)`; the getter is `RangeSum(index, index + 1)`, the setter applies the delta to reach the new value. |
+| `void Add(int index, T delta)` | Add `delta` to the value at `index`, in `O(log n)`. A negative `delta` subtracts (for signed `T`). |
+| `T PrefixSum(int endExclusive)` | Sum of the logical elements in `[0, endExclusive)`, in `O(log n)`. `PrefixSum(0)` is zero; `PrefixSum(Count)` is `Total`. |
+| `T RangeSum(int start, int endExclusive)` | Sum of the logical elements in the half-open range `[start, endExclusive)`, in `O(log n)`. An empty range sums to zero. |
+| `void Clear()` | Reset every logical element to zero (`O(n)`); the length is unchanged. |
+| `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order (`O(n log n)` total). |
+
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator; `Add`, the indexer setter, and `Clear` do. Not thread-safe.
+
+### Choosing it
+
+Reach for `FenwickTree<T>` when you maintain a **mutable numeric sequence** and repeatedly ask for prefix or range sums *while* the values change — running totals, rank / order-statistics counters, cumulative-frequency tables, or windowed aggregates over a history you also edit. If your data is **immutable** after you build it, a one-shot precomputed prefix-sum `T[]` answers queries in `O(1)` with less code; if you **only ever update** and never query a partial sum, a raw array is simpler. The Fenwick tree wins precisely when both happen — updates *and* partial-sum queries interleave. For range **updates** with point queries, apply the tree to the difference array; for range-update + range-query, two Fenwick trees or a segment tree are the next step (not shipped). This type is not thread-safe; concurrent callers must synchronize externally.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Count inversions with a rank counter: how many already-seen values exceed the current one.
+int[] data = { 5, 2, 6, 1, 3, 4 };
+int maxValue = 6;
+
+var seen = new FenwickTree<int>(maxValue + 1); // one counter slot per possible value
+long inversions = 0;
+foreach (int x in data)
+{
+    // values already seen that are strictly greater than x -> an inversion each
+    inversions += seen.RangeSum(x + 1, maxValue + 1);
+    seen.Add(x, 1); // record that we have now seen x
+}
+
+Console.WriteLine(inversions); // 8
+```
