@@ -52,8 +52,10 @@ public class TrieBenchmark
 
     // ---- Add: build the table from empty --------------------------------------------------------------
 
+    // Pre-size the baseline to ItemCount so the Add category measures per-insert cost, not the dictionary's
+    // resize/rehash growth strategy (matching the other Add benchmarks in this repo).
     [IterationSetup(Target = nameof(Dictionary_Add))]
-    public void ResetDictForAdd() => dict = new Dictionary<string, int>();
+    public void ResetDictForAdd() => dict = new Dictionary<string, int>(ItemCount);
 
     [IterationSetup(Target = nameof(Trie_Add))]
     public void ResetTrieForAdd() => trie = new Trie<int>();

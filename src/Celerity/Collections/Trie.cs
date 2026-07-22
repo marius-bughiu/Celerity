@@ -61,7 +61,9 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     // A trie node. The root carries no incoming edge; every other node is reached by exactly one edge
     // character from its parent. Child edges are held in two parallel arrays kept sorted ascending by
     // _childChars, so IndexOfChild is a binary search and a pre-order walk visits children in ordinal order.
-    private sealed class Node
+    // Internal (not private) so the public struct Enumerator's constructor can name it as a parameter type
+    // without an accessibility-consistency error; it is still not part of the public API surface.
+    internal sealed class Node
     {
         // Sorted ascending. ChildChars[i] labels the edge to Children[i]. Only the first ChildCount entries
         // are live. Both arrays start empty and are grown on the first child insert (leaf nodes stay empty).
@@ -465,12 +467,16 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     public IEnumerable<TValue?> Values => EnumerateValues(_root, _version);
 
     /// <summary>
-    /// Returns an enumerator that yields every entry in ascending ordinal key order. Enumeration allocates a
-    /// small traversal stack; if the trie is modified during enumeration,
-    /// <see cref="IEnumerator.MoveNext"/> throws <see cref="InvalidOperationException"/>.
+    /// Returns an allocation-free struct enumerator that yields every entry in ascending ordinal key order.
+    /// Iterating via <c>foreach</c> avoids the state-machine allocation a compiler-generated iterator would
+    /// incur (the traversal itself lazily allocates a small stack only when the trie has children to walk). If
+    /// the trie is structurally modified during enumeration, <see cref="Enumerator.MoveNext"/> throws
+    /// <see cref="InvalidOperationException"/>.
     /// </summary>
-    /// <returns>An enumerator over the trie's entries in ascending key order.</returns>
-    public IEnumerator<KeyValuePair<string, TValue?>> GetEnumerator() => Enumerate(_root, string.Empty, _version).GetEnumerator();
+    /// <returns>A struct enumerator over the trie's entries in ascending key order.</returns>
+    public Enumerator GetEnumerator() => new Enumerator(this, _root, string.Empty, _version);
+
+    IEnumerator<KeyValuePair<string, TValue?>> IEnumerable<KeyValuePair<string, TValue?>>.GetEnumerator() => GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
@@ -528,13 +534,11 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         return true;
     }
 
-    // Pre-order DFS from `start` (whose accumulated key is `startKey`), yielding each terminating node's entry
-    // in ascending ordinal order. Uses an explicit stack and a single reused StringBuilder rather than
-    // recursion, so a pathologically long key cannot overflow the call stack. `expectedVersion` is the
-    // snapshot taken when the enumerable was created; a mutation since then is detected before the first item
-    // and after each yield, so it surfaces on the very first MoveNext (BCL-style), not one item late. A null
-    // `start` (a missing prefix) yields nothing but still runs the version check, so the empty result carries
-    // the same invalidation contract as a non-empty one.
+    // Pre-order DFS from `start` (whose accumulated key is `startKey`) as an IEnumerable, for the lazy
+    // prefix / keys streams. It drives the same struct Enumerator that GetEnumerator exposes, so the pre-order
+    // traversal and modification-detection live in one place. A null `start` (a missing prefix) yields nothing
+    // but still runs the version check, so an empty result honours the same invalidation contract as a
+    // non-empty one.
     private IEnumerable<KeyValuePair<string, TValue?>> Enumerate(Node? start, string startKey, int expectedVersion)
     {
         if (expectedVersion != _version)
@@ -543,46 +547,9 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         if (start is null)
             yield break;
 
-        if (start.HasValue)
-        {
-            yield return new KeyValuePair<string, TValue?>(startKey, start.Value);
-            if (expectedVersion != _version)
-                ThrowModified();
-        }
-
-        // A leaf (no children) has nothing left to walk — an empty trie, or a prefix that lands on a leaf
-        // key. Skip allocating the traversal StringBuilder and Stack in that common small case.
-        if (start.ChildCount == 0)
-            yield break;
-
-        var sb = new StringBuilder(startKey);
-        var stack = new Stack<(Node Node, int ChildIndex)>();
-        stack.Push((start, 0));
-
-        while (stack.Count > 0)
-        {
-            (Node node, int ci) = stack.Pop();
-            if (ci < node.ChildCount)
-            {
-                // Resume this node at its next child after we finish the subtree we are about to descend.
-                stack.Push((node, ci + 1));
-
-                Node child = node.Children[ci];
-                sb.Append(node.ChildChars[ci]); // sb now holds the path to `child`
-                if (child.HasValue)
-                {
-                    yield return new KeyValuePair<string, TValue?>(sb.ToString(), child.Value);
-                    if (expectedVersion != _version)
-                        ThrowModified();
-                }
-                stack.Push((child, 0));
-            }
-            else if (node != start)
-            {
-                // Children exhausted: drop the edge character that led into `node`, restoring the parent path.
-                sb.Length--;
-            }
-        }
+        var e = new Enumerator(this, start, startKey, expectedVersion);
+        while (e.MoveNext())
+            yield return e.Current;
     }
 
     // Key-only projection of the pair walk (a plain iterator block, not LINQ): the key string is genuinely
@@ -640,4 +607,121 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
 
     private static void ThrowModified() =>
         throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+    /// <summary>
+    /// A struct enumerator over a <see cref="Trie{TValue}"/> subtree that yields entries in ascending ordinal
+    /// key order. Because it is a struct, iterating via <c>foreach</c> avoids the allocation a
+    /// compiler-generated <c>IEnumerator</c> would incur; it lazily allocates a small traversal stack and a
+    /// <see cref="StringBuilder"/> only when the start node has children to walk.
+    /// </summary>
+    public struct Enumerator : IEnumerator<KeyValuePair<string, TValue?>>
+    {
+        private readonly Trie<TValue> _trie;
+        private readonly Node _start;      // subtree root; its accumulated key is _startKey
+        private readonly string _startKey;
+        private readonly int _version;
+
+        private Stack<(Node Node, int ChildIndex)>? _stack; // allocated on first descent
+        private StringBuilder? _sb;                          // holds the path to the pending node
+        private KeyValuePair<string, TValue?> _current;
+        private int _phase;                                  // 0 = not started, 1 = walking, 2 = done
+
+        internal Enumerator(Trie<TValue> trie, Node start, string startKey, int version)
+        {
+            _trie = trie;
+            _start = start;
+            _startKey = startKey;
+            _version = version;
+            _stack = null;
+            _sb = null;
+            _current = default;
+            _phase = 0;
+        }
+
+        /// <summary>Gets the entry at the current position of the enumerator.</summary>
+        public readonly KeyValuePair<string, TValue?> Current => _current;
+
+        readonly object IEnumerator.Current => _current;
+
+        /// <summary>Advances the enumerator to the next entry in ascending key order.</summary>
+        /// <returns><c>true</c> if the enumerator advanced to a new entry; otherwise <c>false</c>.</returns>
+        /// <exception cref="InvalidOperationException">The trie was modified since the enumerator was created.</exception>
+        public bool MoveNext()
+        {
+            if (_version != _trie._version)
+                ThrowModified();
+
+            if (_phase == 2)
+                return false;
+
+            if (_phase == 0)
+            {
+                _phase = 1;
+
+                // Only set up the traversal state when there is a subtree to walk (a leaf or empty trie needs
+                // neither), so single-node results allocate nothing.
+                if (_start.ChildCount != 0)
+                {
+                    _sb = new StringBuilder(_startKey);
+                    _stack = new Stack<(Node, int)>();
+                    _stack.Push((_start, 0));
+                }
+
+                if (_start.HasValue)
+                {
+                    _current = new KeyValuePair<string, TValue?>(_startKey, _start.Value);
+                    return true;
+                }
+            }
+
+            if (_stack is null)
+            {
+                _phase = 2;
+                return false;
+            }
+
+            while (_stack.Count > 0)
+            {
+                (Node node, int ci) = _stack.Pop();
+                if (ci < node.ChildCount)
+                {
+                    // Resume this node at its next child after we finish the subtree we are about to descend.
+                    _stack.Push((node, ci + 1));
+
+                    Node child = node.Children[ci];
+                    _sb!.Append(node.ChildChars[ci]); // _sb now holds the path to `child`
+                    _stack.Push((child, 0));
+                    if (child.HasValue)
+                    {
+                        _current = new KeyValuePair<string, TValue?>(_sb.ToString(), child.Value);
+                        return true;
+                    }
+                }
+                else if (node != _start)
+                {
+                    // Children exhausted: drop the edge char that led into `node`, restoring the parent path.
+                    _sb!.Length--;
+                }
+            }
+
+            _phase = 2;
+            return false;
+        }
+
+        /// <summary>Resets the enumerator to its initial position, before the first entry.</summary>
+        /// <exception cref="InvalidOperationException">The trie was modified since the enumerator was created.</exception>
+        public void Reset()
+        {
+            if (_version != _trie._version)
+                ThrowModified();
+
+            _stack = null;
+            _sb = null;
+            _current = default;
+            _phase = 0;
+        }
+
+        /// <summary>Releases any resources held by the enumerator. No-op for this type.</summary>
+        public readonly void Dispose() { }
+    }
 }

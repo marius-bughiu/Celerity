@@ -85,6 +85,55 @@ public class TrieEnumerationTests
     }
 
     [Fact]
+    public void StructEnumerator_ForeachResetAndDispose_Work()
+    {
+        var trie = Build("b", "a", "c");
+
+        // The concrete-type enumerator is the allocation-free struct; drive it directly.
+        Trie<int>.Enumerator e = trie.GetEnumerator();
+        var first = new List<string>();
+        while (e.MoveNext())
+            first.Add(e.Current.Key);
+        Assert.Equal(new[] { "a", "b", "c" }, first);
+
+        // Reset re-enumerates from the beginning.
+        e.Reset();
+        var second = new List<string>();
+        while (e.MoveNext())
+            second.Add(e.Current.Key);
+        Assert.Equal(new[] { "a", "b", "c" }, second);
+
+        e.Dispose();
+    }
+
+    [Fact]
+    public void StructEnumerator_SingleLeafKey_YieldsOnce()
+    {
+        // A single key means the start (root) has one child leaf — exercises the struct's leaf/no-descent path.
+        var trie = new Trie<int>();
+        trie["only"] = 1;
+
+        var pairs = new List<KeyValuePair<string, int>>();
+        foreach (KeyValuePair<string, int> pair in trie)
+            pairs.Add(pair);
+
+        Assert.Single(pairs);
+        Assert.Equal("only", pairs[0].Key);
+        Assert.Equal(1, pairs[0].Value);
+    }
+
+    [Fact]
+    public void StructEnumerator_Reset_Throws_WhenTrieModified()
+    {
+        var trie = Build("a", "b");
+
+        Trie<int>.Enumerator e = trie.GetEnumerator();
+        Assert.True(e.MoveNext());
+        trie.Add("c", 3);
+        Assert.Throws<InvalidOperationException>(() => e.Reset());
+    }
+
+    [Fact]
     public void Enumerator_Throws_WhenTrieAddedToDuringEnumeration()
     {
         var trie = Build("a", "b", "c");
