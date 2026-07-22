@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections;
 using System.Text;
 
@@ -47,6 +48,13 @@ namespace Celerity.Collections;
 /// nodes that no longer lead to a key, so the structure never retains dead paths. This type is not
 /// thread-safe; concurrent callers must synchronize externally.
 /// </para>
+/// <para>
+/// The complexities stated on the members (<c>O(key length)</c>, <c>O(prefix length + matches)</c>, and so
+/// on) count each character step as <c>O(1)</c>; strictly, navigating one node's children is a binary search,
+/// so a character step is <c>O(log b)</c> in that node's branching factor <c>b</c>. For the common
+/// bounded-alphabet case <c>b</c> is a small constant, so the simplified length-proportional forms hold; on a
+/// pathologically wide alphabet, multiply the character-length terms by <c>log b</c>.
+/// </para>
 /// </remarks>
 public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
 {
@@ -65,7 +73,10 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         public TValue Value = default!;
         public bool HasValue;
 
-        // Binary-searches the child edges for `c`, returning its index or -1 if absent.
+        // Binary-searches the child edges for `c`. Returns the child's index if present, otherwise the
+        // bitwise complement of the insertion point that would keep the edges sorted (the
+        // Array.BinarySearch convention), so an inserting caller can add without re-searching. Callers that
+        // only test presence just check `index < 0`.
         public int IndexOfChild(char c)
         {
             int lo = 0;
@@ -81,25 +92,13 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
                 else
                     hi = mid - 1;
             }
-            return -1;
+            return ~lo;
         }
 
-        // Inserts a fresh child under edge `c`, keeping the parallel arrays sorted, and returns it. The
-        // caller must have established via IndexOfChild that `c` is not already present.
-        public Node AddChild(char c)
+        // Inserts a fresh child under edge `c` at `index` (the insertion point from a prior IndexOfChild
+        // miss, i.e. `~IndexOfChild(c)`), keeping the parallel arrays sorted, and returns it.
+        public Node AddChildAt(int index, char c)
         {
-            int lo = 0;
-            int hi = ChildCount - 1;
-            while (lo <= hi)
-            {
-                int mid = (lo + hi) >> 1;
-                if (ChildChars[mid] < c)
-                    lo = mid + 1;
-                else
-                    hi = mid - 1;
-            }
-            // `lo` is now the insertion point that preserves ascending order.
-
             if (ChildCount == ChildChars.Length)
             {
                 int newCap = ChildChars.Length == 0 ? 2 : ChildChars.Length * 2;
@@ -107,15 +106,15 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
                 Array.Resize(ref Children, newCap);
             }
 
-            if (lo < ChildCount)
+            if (index < ChildCount)
             {
-                Array.Copy(ChildChars, lo, ChildChars, lo + 1, ChildCount - lo);
-                Array.Copy(Children, lo, Children, lo + 1, ChildCount - lo);
+                Array.Copy(ChildChars, index, ChildChars, index + 1, ChildCount - index);
+                Array.Copy(Children, index, Children, index + 1, ChildCount - index);
             }
 
             var child = new Node();
-            ChildChars[lo] = c;
-            Children[lo] = child;
+            ChildChars[index] = c;
+            Children[index] = child;
             ChildCount++;
             return child;
         }
@@ -281,48 +280,61 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         // Record the path so we can prune empty nodes on the way back up without parent pointers.
         // path[d] is the node reached after consuming d characters; path[0] is the root. childSlot[d] is the
         // index of path[d + 1] within path[d]'s child arrays — captured on the way down so the prune pass
-        // reuses it instead of re-running IndexOfChild per level.
-        var path = new Node[len + 1];
-        var childSlot = new int[len];
-        path[0] = _root;
-        Node node = _root;
-        for (int d = 0; d < len; d++)
+        // reuses it instead of re-running IndexOfChild per level. Both are rented from the pool so a frequent
+        // Remove over long keys allocates nothing per call.
+        Node[] path = ArrayPool<Node>.Shared.Rent(len + 1);
+        int[] childSlot = len == 0 ? Array.Empty<int>() : ArrayPool<int>.Shared.Rent(len);
+        try
         {
-            int idx = node.IndexOfChild(key[d]);
-            if (idx < 0)
+            path[0] = _root;
+            Node node = _root;
+            for (int d = 0; d < len; d++)
+            {
+                int idx = node.IndexOfChild(key[d]);
+                if (idx < 0)
+                {
+                    value = default;
+                    return false;
+                }
+                childSlot[d] = idx;
+                node = node.Children[idx];
+                path[d + 1] = node;
+            }
+
+            if (!node.HasValue)
             {
                 value = default;
                 return false;
             }
-            childSlot[d] = idx;
-            node = node.Children[idx];
-            path[d + 1] = node;
-        }
 
-        if (!node.HasValue)
+            value = node.Value;
+            node.Value = default!;
+            node.HasValue = false;
+            _count--;
+            _version++;
+
+            // Prune bottom-up: drop any node that now leads to no key (no children, no value). Stop at the
+            // first node that must be retained — its ancestors keep it as a child, so they are retained too.
+            // Each level's child slot is the one captured during the descent (no node moved since), so no
+            // re-search is needed.
+            for (int d = len; d >= 1; d--)
+            {
+                Node child = path[d];
+                if (child.ChildCount != 0 || child.HasValue)
+                    break;
+                path[d - 1].RemoveChildAt(childSlot[d - 1]);
+            }
+
+            return true;
+        }
+        finally
         {
-            value = default;
-            return false;
+            // Clear the Node[] on return so pooled slots don't root nodes past this call; the int[] holds no
+            // references, so it is returned without clearing.
+            ArrayPool<Node>.Shared.Return(path, clearArray: true);
+            if (len != 0)
+                ArrayPool<int>.Shared.Return(childSlot);
         }
-
-        value = node.Value;
-        node.Value = default!;
-        node.HasValue = false;
-        _count--;
-        _version++;
-
-        // Prune bottom-up: drop any node that now leads to no key (no children, no value). Stop at the first
-        // node that must be retained — its ancestors keep it as a child, so they are retained too. Each level's
-        // child slot is the one captured during the descent (no node moved since), so no re-search is needed.
-        for (int d = len; d >= 1; d--)
-        {
-            Node child = path[d];
-            if (child.ChildCount != 0 || child.HasValue)
-                break;
-            path[d - 1].RemoveChildAt(childSlot[d - 1]);
-        }
-
-        return true;
     }
 
     /// <summary>Removes all keys from the trie.</summary>
@@ -496,7 +508,8 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         {
             char c = key[i];
             int idx = node.IndexOfChild(c);
-            node = idx < 0 ? node.AddChild(c) : node.Children[idx];
+            // One search per character: reuse the miss's insertion point (~idx) instead of re-searching.
+            node = idx < 0 ? node.AddChildAt(~idx, c) : node.Children[idx];
         }
 
         if (node.HasValue)

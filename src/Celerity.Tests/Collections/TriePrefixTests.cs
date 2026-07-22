@@ -48,7 +48,7 @@ public class TriePrefixTests
     {
         var trie = Build("app", "apple", "applet", "apply", "banana", "ap, out of order");
 
-        List<string> keys = trie.GetKeysWithPrefix("app").ToList();
+        List<string> keys = trie.GetByPrefix("app").Select(pair => pair.Key).ToList();
 
         Assert.Equal(new[] { "app", "apple", "applet", "apply" }, keys);
     }
