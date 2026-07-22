@@ -450,7 +450,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     public IEnumerable<string> Keys => GetKeysWithPrefix(string.Empty);
 
     /// <summary>Gets the values ordered by their keys' ascending ordinal order.</summary>
-    public IEnumerable<TValue?> Values => EnumerateValues(_root, string.Empty, _version);
+    public IEnumerable<TValue?> Values => EnumerateValues(_root, _version);
 
     /// <summary>
     /// Returns an enumerator that yields every entry in ascending ordinal key order. Enumeration allocates a
@@ -572,19 +572,57 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         }
     }
 
-    // Key- and value-only projections of Enumerate, as plain iterator blocks rather than LINQ, so the library
-    // keeps its no-LINQ / allocation-conscious stance. Each snapshots the version through Enumerate exactly as
-    // the pair walk does.
+    // Key-only projection of the pair walk (a plain iterator block, not LINQ): the key string is genuinely
+    // needed here, and the discarded KeyValuePair wrapper is a stack struct, so there is nothing to save by
+    // duplicating the traversal.
     private IEnumerable<string> EnumerateKeys(Node? start, string startKey, int expectedVersion)
     {
         foreach (KeyValuePair<string, TValue?> pair in Enumerate(start, startKey, expectedVersion))
             yield return pair.Key;
     }
 
-    private IEnumerable<TValue?> EnumerateValues(Node? start, string startKey, int expectedVersion)
+    // Value-only DFS. Unlike Enumerate it never builds the key string (no StringBuilder, no
+    // sb.ToString(), no KeyValuePair), so the Values view does zero per-item allocation. It mirrors
+    // Enumerate's version-check and stack traversal, minus the key bookkeeping (there is no edge char to
+    // append or backtrack when the key is not produced).
+    private IEnumerable<TValue?> EnumerateValues(Node? start, int expectedVersion)
     {
-        foreach (KeyValuePair<string, TValue?> pair in Enumerate(start, startKey, expectedVersion))
-            yield return pair.Value;
+        if (expectedVersion != _version)
+            ThrowModified();
+
+        if (start is null)
+            yield break;
+
+        if (start.HasValue)
+        {
+            yield return start.Value;
+            if (expectedVersion != _version)
+                ThrowModified();
+        }
+
+        if (start.ChildCount == 0)
+            yield break;
+
+        var stack = new Stack<(Node Node, int ChildIndex)>();
+        stack.Push((start, 0));
+
+        while (stack.Count > 0)
+        {
+            (Node node, int ci) = stack.Pop();
+            if (ci < node.ChildCount)
+            {
+                stack.Push((node, ci + 1));
+
+                Node child = node.Children[ci];
+                if (child.HasValue)
+                {
+                    yield return child.Value;
+                    if (expectedVersion != _version)
+                        ThrowModified();
+                }
+                stack.Push((child, 0));
+            }
+        }
     }
 
     private static void ThrowModified() =>
