@@ -364,8 +364,10 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
         ArgumentNullException.ThrowIfNull(prefix);
         Node? node = FindNode(prefix);
         // Snapshot the version now (at enumerable creation), matching the BCL contract where a modification
-        // between handing out the enumerable and iterating it is detected on the first MoveNext.
-        return node is null ? Enumerable.Empty<KeyValuePair<string, TValue>>() : Enumerate(node, prefix, _version);
+        // between handing out the enumerable and iterating it is detected on the first MoveNext. A missing
+        // prefix (node is null) still flows through the version-checked walk, so the empty result honours the
+        // same invalidation contract as a matching one.
+        return Enumerate(node, prefix, _version);
     }
 
     /// <summary>
@@ -426,7 +428,11 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
             return false;
         }
 
-        key = query.Substring(0, bestLength);
+        // Avoid an allocation on the two common cases: an exact match (the whole query is the key) reuses the
+        // query string, and the empty-string key needs no slice; only a proper interior prefix is copied.
+        key = bestLength == query.Length ? query
+            : bestLength == 0 ? string.Empty
+            : query.Substring(0, bestLength);
         value = bestValue;
         return true;
     }
@@ -499,11 +505,16 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue>
     // in ascending ordinal order. Uses an explicit stack and a single reused StringBuilder rather than
     // recursion, so a pathologically long key cannot overflow the call stack. `expectedVersion` is the
     // snapshot taken when the enumerable was created; a mutation since then is detected before the first item
-    // and after each yield, so it surfaces on the very first MoveNext (BCL-style), not one item late.
-    private IEnumerable<KeyValuePair<string, TValue>> Enumerate(Node start, string startKey, int expectedVersion)
+    // and after each yield, so it surfaces on the very first MoveNext (BCL-style), not one item late. A null
+    // `start` (a missing prefix) yields nothing but still runs the version check, so the empty result carries
+    // the same invalidation contract as a non-empty one.
+    private IEnumerable<KeyValuePair<string, TValue>> Enumerate(Node? start, string startKey, int expectedVersion)
     {
         if (expectedVersion != _version)
             ThrowModified();
+
+        if (start is null)
+            yield break;
 
         if (start.HasValue)
         {

@@ -114,6 +114,33 @@ public class TriePrefixTests
     }
 
     [Fact]
+    public void TryGetLongestPrefix_ExactAndEmptyMatches_AvoidAllocatingANewKeyString()
+    {
+        var trie = new Trie<int>();
+        trie[string.Empty] = 0;
+        trie["abc"] = 1;
+
+        // Exact match: the returned key is the same reference as the query (no Substring copy).
+        var query = new string("abc".ToCharArray());
+        Assert.True(trie.TryGetLongestPrefix(query, out string? exact, out _));
+        Assert.Same(query, exact);
+
+        // Empty-key match: the interned empty string, no allocation.
+        Assert.True(trie.TryGetLongestPrefix("zzz", out string? empty, out _));
+        Assert.Same(string.Empty, empty);
+    }
+
+    [Fact]
+    public void GetByPrefix_MissingPrefix_StreamStillDetectsModification()
+    {
+        var trie = Build("cat", "car");
+
+        IEnumerator<KeyValuePair<string, int>> e = trie.GetByPrefix("dog").GetEnumerator();
+        trie.Add("cow", 9);
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
     public void TryGetLongestPrefix_NoStoredPrefix_ReturnsFalse()
     {
         var trie = new Trie<int>();

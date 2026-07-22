@@ -3484,12 +3484,12 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `bool ContainsKey(string key)` | Whether `key` is a stored key (an interior-only prefix returns `false`). |
 | `bool TryGetValue(string key, out TValue value)` | Non-throwing exact lookup. |
 | `bool Remove(string key)` | Removes a key, pruning any newly-dead nodes. Returns `false` if absent. |
-| `bool Remove(string key, out TValue value)` | `Remove` returning the removed value. |
+| `bool Remove(string key, out TValue? value)` | `Remove` returning the removed value (`default` when the key was absent). |
 | `void Clear()` | Removes all keys. |
 | `bool ContainsPrefix(string prefix)` | Whether any stored key starts with `prefix` (a key equal to the prefix counts). The empty prefix matches iff the trie is non-empty. |
 | `IEnumerable<KeyValuePair<string, TValue>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
 | `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
-| `bool TryGetLongestPrefix(string query, out string key, out TValue value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). |
+| `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
 | `IEnumerable<string> Keys` / `IEnumerable<TValue> Values` | Keys in ascending order and their aligned values. |
 | `IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()` | Entries in ascending key order. Enumeration allocates a small traversal stack. |
 
