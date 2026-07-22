@@ -533,6 +533,11 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
                 ThrowModified();
         }
 
+        // A leaf (no children) has nothing left to walk — an empty trie, or a prefix that lands on a leaf
+        // key. Skip allocating the traversal StringBuilder and Stack in that common small case.
+        if (start.ChildCount == 0)
+            yield break;
+
         var sb = new StringBuilder(startKey);
         var stack = new Stack<(Node Node, int ChildIndex)>();
         stack.Push((start, 0));

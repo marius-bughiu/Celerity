@@ -89,7 +89,7 @@ public class TriePrefixTests
         trie["/api"] = "api";
         trie["/api/v1"] = "v1";
 
-        Assert.True(trie.TryGetLongestPrefix("/api/v1/users", out string key, out string value));
+        Assert.True(trie.TryGetLongestPrefix("/api/v1/users", out string? key, out string? value));
         Assert.Equal("/api/v1", key);
         Assert.Equal("v1", value);
 
@@ -108,7 +108,7 @@ public class TriePrefixTests
         var trie = new Trie<int>();
         trie[string.Empty] = 7;
 
-        Assert.True(trie.TryGetLongestPrefix("anything", out string key, out int value));
+        Assert.True(trie.TryGetLongestPrefix("anything", out string? key, out int value));
         Assert.Equal(string.Empty, key);
         Assert.Equal(7, value);
     }
@@ -146,7 +146,7 @@ public class TriePrefixTests
         var trie = new Trie<int>();
         trie["abcd"] = 1; // longer than the query; not a prefix of it
 
-        Assert.False(trie.TryGetLongestPrefix("abc", out string key, out int value));
+        Assert.False(trie.TryGetLongestPrefix("abc", out string? key, out int value));
         Assert.Null(key);
         Assert.Equal(0, value);
 

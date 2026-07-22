@@ -88,7 +88,7 @@ public class TrieDifferentialTests
                     .OrderByDescending(k => k.Length)
                     .FirstOrDefault();
 
-                bool trieHit = trie.TryGetLongestPrefix(query, out string trieKey, out int trieValue);
+                bool trieHit = trie.TryGetLongestPrefix(query, out string? trieKey, out int trieValue);
                 Assert.Equal(bestKey is not null, trieHit);
                 if (bestKey is not null)
                 {

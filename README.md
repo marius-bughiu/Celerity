@@ -451,8 +451,8 @@ foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
     Console.WriteLine($"{path} -> {handler}"); // /api/v1/orders, then /api/v1/users
 
 // Longest-prefix routing: the most specific stored route that prefixes the request.
-routes.TryGetLongestPrefix("/api/v1/users/42", out string route, out string h);
-Console.WriteLine($"{route} -> {h}");           // /api/v1/users -> users-v1
+if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
+    Console.WriteLine($"{route} -> {handler}"); // /api/v1/users -> users-v1
 ```
 
 </details>
