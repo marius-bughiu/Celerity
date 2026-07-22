@@ -3482,16 +3482,16 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `void Add(string key, TValue value)` | Adds a key. Throws `ArgumentException` if it already exists. |
 | `bool TryAdd(string key, TValue value)` | Adds a key, leaving an existing entry unchanged. Returns `false` if already present. |
 | `bool ContainsKey(string key)` | Whether `key` is a stored key (an interior-only prefix returns `false`). |
-| `bool TryGetValue(string key, out TValue value)` | Non-throwing exact lookup. |
+| `bool TryGetValue(string key, out TValue? value)` | Non-throwing exact lookup. |
 | `bool Remove(string key)` | Removes a key, pruning any newly-dead nodes. Returns `false` if absent. |
 | `bool Remove(string key, out TValue? value)` | `Remove` returning the removed value (`default` when the key was absent). |
 | `void Clear()` | Removes all keys. |
 | `bool ContainsPrefix(string prefix)` | Whether any stored key starts with `prefix` (a key equal to the prefix counts). The empty prefix matches iff the trie is non-empty. |
-| `IEnumerable<KeyValuePair<string, TValue>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
+| `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
 | `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
 | `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
-| `IEnumerable<string> Keys` / `IEnumerable<TValue> Values` | Keys in ascending order and their aligned values. |
-| `IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()` | Entries in ascending key order. Enumeration allocates a small traversal stack. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `IEnumerator<KeyValuePair<string, TValue?>> GetEnumerator()` | Entries in ascending key order. Enumeration allocates a small traversal stack. |
 
 Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream); a pure lookup does not.
 
