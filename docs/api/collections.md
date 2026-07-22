@@ -3452,6 +3452,8 @@ The **prefix operations**:
 
 An exact `Add` or `TryGetValue` walks the key character by character rather than hashing it once, so for **pure exact-key** workloads a `Dictionary` is competitive or faster — the trie's value is the prefix and ordering operations, not raw exact-lookup speed. See the [trie benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=Trie) on the dashboard.
 
+> The complexities above count each character step as `O(1)`. Strictly, navigating one node's children is a binary search, so a character step is `O(log b)` in that node's branching factor `b`; for the common bounded-alphabet case `b` is a small constant and the length-proportional forms hold, while on a pathologically wide alphabet the character-length terms gain a `log b` factor.
+
 ### Constructors
 
 ```csharp
