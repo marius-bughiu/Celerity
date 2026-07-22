@@ -162,7 +162,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         foreach (KeyValuePair<string, TValue> entry in entries)
         {
             if (entry.Key is null)
-                throw new ArgumentNullException(nameof(entries), "A key in the entries sequence was null.");
+                throw new ArgumentNullException("key", "A key in the entries sequence was null.");
             Set(entry.Key, entry.Value);
         }
         _version = 0;
@@ -279,8 +279,11 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         int len = key.Length;
 
         // Record the path so we can prune empty nodes on the way back up without parent pointers.
-        // path[d] is the node reached after consuming d characters; path[0] is the root.
+        // path[d] is the node reached after consuming d characters; path[0] is the root. childSlot[d] is the
+        // index of path[d + 1] within path[d]'s child arrays — captured on the way down so the prune pass
+        // reuses it instead of re-running IndexOfChild per level.
         var path = new Node[len + 1];
+        var childSlot = new int[len];
         path[0] = _root;
         Node node = _root;
         for (int d = 0; d < len; d++)
@@ -291,6 +294,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
                 value = default;
                 return false;
             }
+            childSlot[d] = idx;
             node = node.Children[idx];
             path[d + 1] = node;
         }
@@ -308,14 +312,14 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         _version++;
 
         // Prune bottom-up: drop any node that now leads to no key (no children, no value). Stop at the first
-        // node that must be retained — its ancestors keep it as a child, so they are retained too.
+        // node that must be retained — its ancestors keep it as a child, so they are retained too. Each level's
+        // child slot is the one captured during the descent (no node moved since), so no re-search is needed.
         for (int d = len; d >= 1; d--)
         {
             Node child = path[d];
             if (child.ChildCount != 0 || child.HasValue)
                 break;
-            Node parent = path[d - 1];
-            parent.RemoveChildAt(parent.IndexOfChild(key[d - 1]));
+            path[d - 1].RemoveChildAt(childSlot[d - 1]);
         }
 
         return true;
