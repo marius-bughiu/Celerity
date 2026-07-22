@@ -81,6 +81,10 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 - `IndexedPriorityQueue<TElement, TPriority, THasher>` — **addressable** binary min-heap: unlike the BCL `PriorityQueue<,>` it can **change a queued element's priority** (`Update` / decrease-key) and **remove an arbitrary element** in `O(log n)`, and answer `Contains` / `TryGetPriority` in `O(1)`. The heap the priority-relaxation loop of Dijkstra / Prim / A\* needs — no lazy-deletion heap growth. Each element is a key (appears once); pass a custom `IComparer<TPriority>` for a max-heap.
 
+**Prefix sums**
+
+- `FenwickTree<T>` — a **Binary Indexed Tree** over a fixed-length numeric sequence (`where T : struct, INumber<T>`): **point update** and **prefix / range sum** both in `O(log n)`, in one `n`-element array with no per-node overhead. The prefix-sum structure the BCL lacks — running aggregates, rank / order-statistics counters, cumulative-frequency tables — where a plain array is `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave.
+
 **Probabilistic & bit-level**
 
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
@@ -431,6 +435,24 @@ Console.WriteLine(pq.Remove("c", out int p)); // True; p == 20
 </details>
 
 <details>
+<summary><b>Prefix sums with live updates</b> — FenwickTree</summary>
+
+`FenwickTree<T>` (`where T : struct, INumber<T>`) is a **Binary Indexed Tree**: a fixed-length numeric sequence that answers **prefix / range sums** and applies **point updates** both in `O(log n)`, in one array with no per-node overhead. The BCL ships nothing for the interleaved update + prefix-sum-query workload — a plain array is `O(n)` per query or `O(n)` per update. It wins precisely when both interleave (running aggregates, rank counters, cumulative-frequency tables).
+
+```csharp
+var tree = new FenwickTree<long>(new long[] { 3, 1, 4, 1, 5, 9 });
+
+Console.WriteLine(tree.PrefixSum(3));   // 8  (3 + 1 + 4)
+Console.WriteLine(tree.RangeSum(2, 5)); // 10 (4 + 1 + 5)
+
+tree.Add(0, 10);                        // point update, O(log n)
+Console.WriteLine(tree[0]);             // 13
+Console.WriteLine(tree.Total);          // 33
+```
+
+</details>
+
+<details>
 <summary><b>Construct from an existing collection</b></summary>
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
@@ -487,6 +509,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Double-ended queue** — add/remove at both ends (bounded FIFO queue, sliding window, work-stealing / undo buffer) or a queue needing random access by position | `Deque<T>` | Growable double-ended queue backed by a **circular buffer**: `O(1)` amortized `PushFront` / `PushBack` / `PopFront` / `PopBack` / peek and `O(1)` random access by index. The BCL has no deque — `Queue<T>` is FIFO-only, `Stack<T>` LIFO-only, and `LinkedList<T>` (the only O(1)-both-ends type) allocates a node per element. A warm bounded churn reuses the buffer with wrap-around so it **allocates nothing**, and enumeration walks contiguous memory. For a strict FIFO queue that never pushes front / pops back, BCL `Queue<T>` is already a circular buffer and is simpler. |
 | **Incremental connectivity / connected components** — union equivalence classes and ask whether two elements are in the same group (Kruskal MST, clustering, image segmentation, undirected cycle detection, "are these accounts linked?") | `DisjointSet<T>` | Union-find with **union by size** + **path halving**: near-`O(1)` amortized `Union` / `Find` / `Connected`, `O(α(n)) ≤ 4`. Runs a stream of merges + connectivity queries in near-linear total time, where the BCL substitutes are super-linear — a `Dictionary<T, HashSet<T>>` set-merge is `O(n²)` to coalesce `n` singletons, and a per-query BFS/DFS is `O(V+E)` every query. Grows only by merging (no un-union); it is not an `ISet<T>` — for element membership with add/remove/set-algebra use `CeleritySet` or `HashSet<T>`. |
 | **Priority queue whose priorities change** — a best-so-far frontier you relax (Dijkstra / Prim / A\*), or an event scheduler that reschedules / cancels pending items | `IndexedPriorityQueue<TElement, TPriority, THasher>` | Addressable binary min-heap with an element→slot index: `Update` (decrease-/increase-key) and `Remove` an arbitrary element in `O(log n)`, `Contains` / `TryGetPriority` in `O(1)`. The BCL `PriorityQueue<,>` can do none of these — its only substitute is lazy deletion, which grows the heap by one entry per update. Each element is a key (appears once); custom `IComparer<TPriority>` for a max-heap. For plain enqueue/dequeue with duplicate elements, the BCL `PriorityQueue<,>` is simpler. |
+| **Prefix / range sums over a sequence you keep mutating** — running aggregates, rank / order-statistics counters (inversions, "how many ≤ x seen"), cumulative-frequency tables | `FenwickTree<T>` | Binary Indexed Tree (`T : INumber<T>`): **point update** and **prefix / range sum** both `O(log n)`, in one array with no per-node overhead. The BCL has no prefix-sum structure; a plain array forces `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave. If the data is immutable after build, a one-shot precomputed prefix-sum array answers in `O(1)` with less code; if you only update and never query a partial sum, a raw array is simpler. |
 | Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
 
 **Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).
