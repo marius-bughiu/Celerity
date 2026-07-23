@@ -1981,14 +1981,15 @@ A set of **non-negative integers over a bounded universe** `[0, Universe)`, back
 the classic **Briggs–Torczon sparse-set representation**: a *dense* array holding the
 present values contiguously, paired with a *sparse* array — indexed by value — that
 points each present value back at its slot in the dense array. Membership is the
-round-trip `sparse[v] < Count && dense[sparse[v]] == v`, which is correct even when the
-sparse array holds uninitialized garbage. That single fact is what buys the type its two
-wins over `HashSet<int>`:
+round-trip `sparse[v] < Count && dense[sparse[v]] == v`, which is correct even for a *stale*
+sparse entry — one left over from before a `Clear`, or the zero a never-written slot still
+holds. That single fact is what buys the type its two wins over `HashSet<int>`:
 
-- **`Clear()` is `O(1)`** — it resets the count and touches *no memory*. `HashSet<int>.Clear()`
-  is `O(capacity)` (it zeroes the whole entry table). This is the headline: per-frame /
-  per-query "visited" sets in graph traversal (BFS/DFS), ECS entity membership,
-  register-allocation liveness, and sweep-line algorithms clear on every iteration.
+- **`Clear()` is `O(1)`** — it resets the count and version *without scanning or clearing the
+  backing arrays*. `HashSet<int>.Clear()` is `O(capacity)` (it zeroes the whole entry table).
+  This is the headline: per-frame / per-query "visited" sets in graph traversal (BFS/DFS), ECS
+  entity membership, register-allocation liveness, and sweep-line algorithms clear on every
+  iteration.
 - **Dense, cache-friendly iteration** — present elements live contiguously in `[0, Count)`
   of the dense array, so enumeration is a linear scan over exactly `Count` ints with no
   empty-slot skipping.
