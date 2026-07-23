@@ -7,7 +7,6 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Added
 
 - **`SparseSet`** in `Celerity.Collections` — a bounded-universe `[0, Universe)` integer set (the Briggs–Torczon sparse set), filling a BCL gap. It wins over `HashSet<int>` where the set is cleared and rebuilt often: `Clear()` is `O(1)` (it leaves the backing arrays untouched, versus `HashSet` zeroing its table) and iteration is a dense scan over just the present elements — the "visited"-set shape in graph traversal, ECS, and sweep-line code. Costs `O(Universe)` memory and stores only values in `[0, Universe)`. Implements `ISet<int>`; an opt-in specialized type, not a `HashSet<int>` replacement. Closes [#287](https://github.com/marius-bughiu/Celerity/issues/287).
-- Full parity rollout for `SparseSet`: dedicated tests (`SparseSetTests` / `SparseSetEnumerationTests` / `SparseSetDifferentialTests`), a `SetAlgebraTests` conformance row, a `Celerity.Fuzz` `SparseSetCase`, `SparseSetBenchmark` (registered in `Program.cs`, with a `ClearRefill` category), dashboard wiring (`web/index.html`, `web/dev/bench/{index,detail}.html`), and docs (`docs/api/collections.md` + README).
 
 ## [2.3.0] - 2026-07-19
 
