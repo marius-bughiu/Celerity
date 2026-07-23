@@ -24,6 +24,10 @@ public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
     /// duplicate-element and <c>null</c>-element contract.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="source"/> holds <c>2^30</c> or more distinct non-<c>null</c> elements,
+    /// which a power-of-two frozen table cannot represent.
+    /// </exception>
     public FrozenCeleritySet(IEnumerable<string> source)
         : base(source)
     {
