@@ -192,7 +192,15 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
     /// <summary>
     /// Gets the number of elements contained in the set.
     /// </summary>
-    public int Count => _count;
+    /// <exception cref="ObjectDisposedException">The set has been disposed.</exception>
+    public int Count
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return _count;
+        }
+    }
 
     /// <summary>
     /// Adds the specified element to the set.
