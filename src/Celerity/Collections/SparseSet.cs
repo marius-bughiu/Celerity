@@ -216,10 +216,12 @@ public class SparseSet : ISet<int>
         if ((uint)item >= (uint)_universe)
             return false;
 
-        if (!ContainsUnchecked(item))
+        // Inline the membership round-trip so _sparse[item] is read once (rather than once
+        // in ContainsUnchecked and again below) on this hot path.
+        int index = _sparse[item];
+        if ((uint)index >= (uint)_count || _dense[index] != item)
             return false;
 
-        int index = _sparse[item];
         int last = _count - 1;
         int lastElem = _dense[last];
 
