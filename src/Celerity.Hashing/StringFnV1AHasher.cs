@@ -37,7 +37,7 @@ public struct StringFnV1AHasher : IHashProvider<string>
         foreach (char c in key)
         {
             // Fold only the low byte of each UTF-16 code unit. Characters that share a
-            // low byte but differ in their high byte (most non-ASCII) collide here; use
+            // low byte but differ in their high byte (i.e., U+0100 and above) collide here; use
             // StringFnV1AFullHasher when that distinction matters.
             hash ^= (byte)(c & 0xFF);
             hash *= fnvPrime;
