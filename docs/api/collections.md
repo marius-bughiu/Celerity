@@ -3425,3 +3425,102 @@ while (dist.TryDequeue(out int u, out int du))
 Console.WriteLine(string.Join(", ", final.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}")));
 // 0:0, 1:3, 2:1, 3:4, 4:7
 ```
+
+## Trie&lt;TValue&gt;
+
+An ordered **prefix tree** (trie) mapping `string` keys to values. Every key is stored as a path of characters from a shared root, so keys sharing a prefix share that prefix's nodes. Implements `IReadOnlyDictionary<string, TValue?>`.
+
+```csharp
+public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
+```
+
+The BCL ships no trie. `Dictionary<string, TValue>` answers an exact-key lookup in `O(1)` but has **no efficient prefix operation**: listing every key that starts with a prefix, or finding the longest stored key that is a prefix of a query, both force an `O(n)` scan of the whole dictionary plus a `StartsWith` per key. A trie answers those directly from its structure.
+
+### How it works
+
+Each node holds its child edges in two parallel arrays kept sorted ascending by edge character, so a child lookup is a binary search and a pre-order walk visits children in ordinal order — which is why enumeration is sorted for free. A key terminates at the node reached by walking its characters from the root; the empty string is a valid key (it terminates at the root). Removal prunes bottom-up any node that no longer leads to a key, so the structure never retains dead paths, and the `Count` / `ContainsPrefix` invariants hold.
+
+Keys are compared and ordered by their UTF-16 code units (ordinal) — the same comparison `Dictionary<string, TValue>` uses with the ordinal comparer. Culture-aware comparison is not applied.
+
+### The documented BCL-beating workload
+
+The **prefix operations**:
+
+- `GetByPrefix` / `GetKeysWithPrefix` yield every entry whose key starts with a prefix in `O(prefix length + matches)` — autocomplete, typeahead, listing a namespace or route table — where a `Dictionary` must scan and `StartsWith`-filter every entry.
+- `TryGetLongestPrefix` finds the longest stored key that is a prefix of a query in `O(query length)` — routing tables, tokenizer / dictionary matching, filesystem-style longest-match.
+- Enumeration yields keys in ascending ordinal order for free, where a `Dictionary` is unordered.
+
+An exact `Add` or `TryGetValue` walks the key character by character rather than hashing it once, so for **pure exact-key** workloads a `Dictionary` is competitive or faster — the trie's value is the prefix and ordering operations, not raw exact-lookup speed. See the [trie benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=Trie) on the dashboard.
+
+> The complexities above count each character step as `O(1)`. Strictly, navigating one node's children is a binary search, so a character step is `O(log b)` in that node's branching factor `b`; for the common bounded-alphabet case `b` is a small constant and the length-proportional forms hold, while on a pathologically wide alphabet the character-length terms gain a `log b` factor.
+
+### Constructors
+
+```csharp
+public Trie()
+public Trie(IEnumerable<KeyValuePair<string, TValue>> entries)
+```
+
+- The parameterless constructor starts empty.
+- The `entries` overload bulk-loads the pairs; a later duplicate key overwrites the value set by an earlier one (indexer semantics).
+
+**Throws:**
+
+- `ArgumentNullException` if `entries` is `null`, or any key in it is `null`.
+
+### Indexer
+
+```csharp
+public TValue this[string key] { get; set; }
+```
+
+The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix that was never stored counts as absent). The setter adds the key or overwrites its existing value. Both throw `ArgumentNullException` if `key` is `null`.
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of keys. |
+| `void Add(string key, TValue value)` | Adds a key. Throws `ArgumentException` if it already exists. |
+| `bool TryAdd(string key, TValue value)` | Adds a key, leaving an existing entry unchanged. Returns `false` if already present. |
+| `bool ContainsKey(string key)` | Whether `key` is a stored key (an interior-only prefix returns `false`). |
+| `bool TryGetValue(string key, out TValue? value)` | Non-throwing exact lookup. |
+| `bool Remove(string key)` | Removes a key, pruning any newly-dead nodes. Returns `false` if absent. |
+| `bool Remove(string key, out TValue? value)` | `Remove` returning the removed value (`default` when the key was absent). |
+| `void Clear()` | Removes all keys. |
+| `bool ContainsPrefix(string prefix)` | Whether any stored key starts with `prefix` (a key equal to the prefix counts). The empty prefix matches iff the trie is non-empty. |
+| `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
+| `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
+| `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small stack only when the trie has children to walk). |
+
+Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream); a pure lookup does not.
+
+### Empty-string and default handling
+
+The empty string is an ordinary key. The trie stores no `TValue` out-of-band, so any `TValue` — including `default`/`null` — is a valid value. `null` keys are rejected.
+
+### Choosing it
+
+Reach for `Trie<TValue>` when the workload needs **prefix or ordered** access: autocomplete / typeahead, longest-prefix routing, ordered key iteration, or listing everything under a namespace. If you only ever do exact-key `Add` / `TryGetValue` / `Remove`, a `Dictionary<string, TValue>` (or `CelerityDictionary`) is the better fit — the trie earns its place only when you use the prefix operations. It is not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var routes = new Trie<string>();
+routes["/"] = "home";
+routes["/api"] = "api-root";
+routes["/api/v1/users"] = "users-v1";
+routes["/api/v1/orders"] = "orders-v1";
+
+// Autocomplete: every route under a prefix, already in sorted order.
+foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
+
+// Longest-prefix routing: the most specific stored route that prefixes the request.
+if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
+    Console.WriteLine($"matched {route} -> {handler}"); // matched /api/v1/users -> users-v1
+```

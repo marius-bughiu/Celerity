@@ -455,7 +455,9 @@
     // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
-    { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',     vs: 'PriorityQueue<int, int>', ops: ['Enqueue', 'DecreaseKey'] }
+    { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',     vs: 'PriorityQueue<int, int>', ops: ['Enqueue', 'DecreaseKey'] },
+    // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
+    { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch'] }
   ];
 
   var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue']);
