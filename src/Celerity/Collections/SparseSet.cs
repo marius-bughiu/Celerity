@@ -19,7 +19,7 @@ namespace Celerity.Collections;
 /// round-trip <c>sparse[v] &lt; Count &amp;&amp; dense[sparse[v]] == v</c>, which is correct even
 /// for a <em>stale</em> sparse entry — one left over from before a <see cref="Clear"/> or from a
 /// slot never written since construction (the array is zero-initialized) — so <see cref="Clear"/>
-/// need only reset the count and version (<c>O(1)</c>; the backing arrays are left untouched), and
+/// need only reset the count (<c>O(1)</c>; the backing arrays are left untouched), and
 /// <see cref="Add(int)"/> / <see cref="Contains(int)"/> / <see cref="Remove(int)"/> are each a
 /// direct array index with no hashing, no probe chain, and no per-element allocation.
 /// </para>
@@ -30,7 +30,7 @@ namespace Celerity.Collections;
 /// entity membership, register-allocation liveness, and sweep-line algorithms. There,
 /// <see cref="HashSet{T}"/>'s <c>Clear</c> is <c>O(capacity)</c> (it zeroes the whole entry
 /// table) and its iteration walks a possibly-sparse table, whereas this type's <c>Clear</c> only
-/// resets the count and version (the backing arrays are left as-is) and its enumeration is a
+/// resets the count (the backing arrays are left as-is) and its enumeration is a
 /// linear scan over the dense prefix.
 /// </para>
 /// <para>
@@ -234,8 +234,8 @@ public class SparseSet : ISet<int>
 
     /// <summary>
     /// Removes all elements from the set in <c>O(1)</c>. The backing arrays are neither scanned,
-    /// cleared, nor shrunk — only the count and version are updated — which is the type's defining
-    /// advantage over <see cref="HashSet{T}"/> for clear-and-rebuild workloads.
+    /// cleared, nor shrunk — only the count is reset — which is the type's defining advantage over
+    /// <see cref="HashSet{T}"/> for clear-and-rebuild workloads.
     /// </summary>
     public void Clear()
     {

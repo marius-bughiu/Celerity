@@ -1985,7 +1985,7 @@ round-trip `sparse[v] < Count && dense[sparse[v]] == v`, which is correct even f
 sparse entry — one left over from before a `Clear`, or the zero a never-written slot still
 holds. That single fact is what buys the type its two wins over `HashSet<int>`:
 
-- **`Clear()` is `O(1)`** — it resets the count and version *without scanning or clearing the
+- **`Clear()` is `O(1)`** — it resets the count *without scanning or clearing the
   backing arrays*. `HashSet<int>.Clear()` is `O(capacity)` (it zeroes the whole entry table).
   This is the headline: per-frame / per-query "visited" sets in graph traversal (BFS/DFS), ECS
   entity membership, register-allocation liveness, and sweep-line algorithms clear on every
