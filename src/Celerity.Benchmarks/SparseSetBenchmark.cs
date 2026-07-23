@@ -4,8 +4,8 @@ using Celerity.Collections;
 
 // SparseSet vs HashSet<int> over a bounded universe. The Add / Contains / Remove
 // categories mirror IntSetBenchmark; the headline is the ClearRefill category, where
-// SparseSet's O(1) Clear (a single field reset — no memory touched) beats HashSet's
-// O(capacity) table-zeroing on the clear-and-rebuild workload the type is built for
+// SparseSet's O(1) Clear (resets the count/version, leaving the backing arrays untouched)
+// beats HashSet's O(capacity) table-zeroing on the clear-and-rebuild workload it is built for
 // (per-frame / per-query "visited" sets). The universe is 4× the item count, so the
 // set is ~25% dense — a realistic sparse-occupancy shape.
 [MemoryDiagnoser(false)]

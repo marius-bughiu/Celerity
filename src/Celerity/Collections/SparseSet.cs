@@ -8,19 +8,20 @@ namespace Celerity.Collections;
 /// backed by the classic Briggs&#8211;Torczon sparse-set representation (a dense value
 /// array paired with a sparse index array). It fills a BCL gap — .NET ships no sparse
 /// set — and beats <see cref="HashSet{T}"/> on the two things that representation is
-/// built for: an <c>O(1)</c> <see cref="Clear"/> that touches no memory, and dense,
-/// cache-friendly iteration over exactly the present elements.
+/// built for: an <c>O(1)</c> <see cref="Clear"/> that never scans or clears the backing
+/// arrays, and dense, cache-friendly iteration over exactly the present elements.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The set stores its members contiguously in a <em>dense</em> array (<c>[0, Count)</c>)
 /// and keeps a <em>sparse</em> array, indexed by value, whose entry for a present value
 /// points back at that value's slot in the dense array. Membership is the sparse&#8596;dense
-/// round-trip <c>sparse[v] &lt; Count &amp;&amp; dense[sparse[v]] == v</c>, which is correct
-/// even when the sparse array is uninitialized garbage — so <see cref="Clear"/> need only
-/// reset the count (<c>O(1)</c>, no memory cleared), and <see cref="Add(int)"/> /
-/// <see cref="Contains(int)"/> / <see cref="Remove(int)"/> are each a direct array index
-/// with no hashing, no probe chain, and no per-element allocation.
+/// round-trip <c>sparse[v] &lt; Count &amp;&amp; dense[sparse[v]] == v</c>, which is correct even
+/// for a <em>stale</em> sparse entry — one left over from before a <see cref="Clear"/> or from a
+/// slot never written since construction (the array is zero-initialized) — so <see cref="Clear"/>
+/// need only reset the count and version (<c>O(1)</c>; the backing arrays are left untouched), and
+/// <see cref="Add(int)"/> / <see cref="Contains(int)"/> / <see cref="Remove(int)"/> are each a
+/// direct array index with no hashing, no probe chain, and no per-element allocation.
 /// </para>
 /// <para>
 /// <b>The documented BCL-beating workload</b> is a set of small non-negative integers from a
@@ -28,8 +29,9 @@ namespace Celerity.Collections;
 /// present element</em>: per-frame / per-query "visited" sets in graph traversal (BFS/DFS), ECS
 /// entity membership, register-allocation liveness, and sweep-line algorithms. There,
 /// <see cref="HashSet{T}"/>'s <c>Clear</c> is <c>O(capacity)</c> (it zeroes the whole entry
-/// table) and its iteration walks a possibly-sparse table, whereas this type's <c>Clear</c> is a
-/// single field write and its enumeration is a linear scan over the dense prefix.
+/// table) and its iteration walks a possibly-sparse table, whereas this type's <c>Clear</c> only
+/// resets the count and version (the backing arrays are left as-is) and its enumeration is a
+/// linear scan over the dense prefix.
 /// </para>
 /// <para>
 /// <b>Tradeoffs.</b> The sparse index array is <c>O(Universe)</c> memory, and the type stores
@@ -231,9 +233,9 @@ public class SparseSet : ISet<int>
     }
 
     /// <summary>
-    /// Removes all elements from the set in <c>O(1)</c>. The backing arrays are neither cleared
-    /// nor shrunk — only the count is reset — which is the type's defining advantage over
-    /// <see cref="HashSet{T}"/> for clear-and-rebuild workloads.
+    /// Removes all elements from the set in <c>O(1)</c>. The backing arrays are neither scanned,
+    /// cleared, nor shrunk — only the count and version are updated — which is the type's defining
+    /// advantage over <see cref="HashSet{T}"/> for clear-and-rebuild workloads.
     /// </summary>
     public void Clear()
     {
@@ -433,8 +435,9 @@ public class SparseSet : ISet<int>
     bool ICollection<int>.IsReadOnly => false;
 
     // The Briggs–Torczon membership round-trip, assuming item is already known to be in
-    // [0, _universe). sparse[item] may be stale garbage from before a Clear or from an
-    // uninitialized slot; the (uint) bound and the dense[...] == item confirmation reject it.
+    // [0, _universe). sparse[item] may be a stale value left from before a Clear, or the
+    // zero a never-written slot still holds; the (uint) bound and the dense[...] == item
+    // confirmation reject both.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool ContainsUnchecked(int item)
     {
