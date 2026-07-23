@@ -36,8 +36,9 @@ public struct StringFnV1AHasher : IHashProvider<string>
         uint hash = offsetBasis;
         foreach (char c in key)
         {
-            // Convert char to its lower byte; you may also want to consider
-            // encoding specifics if you deal with non-ASCII characters.
+            // Fold only the low byte of each UTF-16 code unit. Characters that share a
+            // low byte but differ in their high byte (most non-ASCII) collide here; use
+            // StringFnV1AFullHasher when that distinction matters.
             hash ^= (byte)(c & 0xFF);
             hash *= fnvPrime;
         }
