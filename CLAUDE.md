@@ -62,3 +62,4 @@ Too verbose (avoid): a full paragraph reciting the `(uint)index >= (uint)_length
 - Conventional-commit style subjects (`perf(BitSet): …`, `fix(...)`, `docs(...)`).
 - Bug fixes ship with a regression test that fails on `main`.
 - Never add `<Version>` / `<PackageVersion>` / `<AssemblyVersion>` to any `.csproj` — MinVer owns versioning from git tags.
+- When you act on a PR review comment, always **reply to that comment** with your conclusion — whether you agree or not, and what you changed (reference the commit) — **and mark the thread resolved**. Do this for every comment you address, so it's clear which are handled and which are still open. If you disagree and make no change, still reply with the reasoning and leave the thread unresolved for the maintainer to decide.
