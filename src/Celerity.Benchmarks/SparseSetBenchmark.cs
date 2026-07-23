@@ -46,7 +46,12 @@ public class SparseSetBenchmark
     [BenchmarkCategory("Add")]
     public void HashSet_Add()
     {
-        var set = new HashSet<int>();
+        // Pre-sized to keep the per-add comparison fair: SparseSet's universe is
+        // mandatory, so `new SparseSet(universe)` inherently pre-allocates its sparse
+        // array (no sparse resize on Add). The baseline is given the matching capacity
+        // hint (ItemCount, as the Setup / Remove paths already do) so this measures
+        // per-add cost rather than HashSet's incremental-rehash overhead.
+        var set = new HashSet<int>(ItemCount);
         foreach (var key in keys)
             set.Add(key);
     }
