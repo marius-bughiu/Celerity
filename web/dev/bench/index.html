@@ -465,7 +465,10 @@
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] }
   ];
 
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue']);
+  // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
+  // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
+  // prefix-sum type, so a raw long[] is the honest baseline there.
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
