@@ -118,11 +118,14 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
 
         // Linear-time build: every cell now holds its own logical value; one ascending pass pushes each into
         // its parent, after which each holds its correct range sum — O(n), not O(n log n) point-inserts.
+        // `parent` is widened to long for the same reason as the ascent in AddCore: at k == 1 << 30 the parent
+        // index is 1 << 31, which overflows a signed int and wraps negative, passing the `<= _length` guard and
+        // then indexing out of bounds. The guard keeps the cast back in range.
         for (int k = 1; k <= _length; k++)
         {
-            int parent = k + (k & -k);
+            long parent = k + (long)(k & -k);
             if (parent <= _length)
-                _tree[parent] += _tree[k];
+                _tree[(int)parent] += _tree[k];
         }
     }
 
@@ -252,8 +255,13 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
         if (T.IsZero(delta))
             return;
 
-        for (int k = index + 1; k <= _length; k += k & -k)
-            _tree[k] += delta;
+        // The cursor is widened to long because the ascent adds the lowest set bit each step: at k == 1 << 30
+        // the next index is 1 << 31, which overflows a signed int and wraps to int.MinValue — a negative value
+        // that would still pass a `<= _length` test and then index the array out of bounds. Lengths that large
+        // are permitted (the ceiling is Array.MaxLength - 1), so the widening is a correctness fix, not a
+        // theoretical one. The loop still terminates at _length, so the cast back is always in range.
+        for (long k = index + 1; k <= _length; k += k & -k)
+            _tree[(int)k] += delta;
 
         _version++;
     }
