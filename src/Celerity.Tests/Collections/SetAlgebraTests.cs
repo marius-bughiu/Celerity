@@ -41,8 +41,41 @@ public class SetAlgebraTests
         Assert.IsAssignableFrom<ISet<int>>(new RobinHoodSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new HashCachingSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new SmallSet<int>());
+        Assert.IsAssignableFrom<ISet<int>>(new SparseSet(16));
         using var pooled = new PooledCeleritySet<int, Int32WangNaiveHasher>();
         Assert.IsAssignableFrom<ISet<int>>(pooled);
+    }
+
+    // SparseSet carries a bounded universe, so its ISet<int> algebra matches HashSet
+    // exactly only within [0, Universe); the exhaustive differential lives in
+    // SparseSetDifferentialTests. Here we pin the basic algebra and the one
+    // bounded-universe caveat: a mutating op that would add an out-of-universe value
+    // throws.
+    [Fact]
+    public void SparseSet_SetAlgebra_MatchesHashSet_WithinUniverse()
+    {
+        var set = new SparseSet(32);
+        foreach (int i in new[] { 1, 2, 3 })
+            set.Add(i);
+
+        set.UnionWith(new[] { 3, 4, 5 });
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, set.OrderBy(x => x));
+
+        set.IntersectWith(new[] { 2, 4, 6 });
+        Assert.Equal(new[] { 2, 4 }, set.OrderBy(x => x));
+
+        Assert.True(set.IsSubsetOf(new[] { 2, 4, 8 }));
+        Assert.True(set.Overlaps(new[] { 4, 100 })); // 100 is out of universe but only probed
+        Assert.False(set.SetEquals(new[] { 2 }));
+    }
+
+    [Fact]
+    public void SparseSet_MutatingOp_ThrowsOnOutOfUniverseValueToAdd()
+    {
+        var set = new SparseSet(10);
+        set.Add(1);
+        // UnionWith must add 50, which is outside [0, 10) — the bounded-universe caveat.
+        Assert.Throws<ArgumentOutOfRangeException>(() => set.UnionWith(new[] { 2, 50 }));
     }
 
     [Fact]
