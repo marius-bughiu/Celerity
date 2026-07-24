@@ -202,7 +202,15 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
     /// <summary>
     /// Gets the number of key/value pairs contained in the dictionary.
     /// </summary>
-    public int Count => _count;
+    /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
+    public int Count
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return _count;
+        }
+    }
 
     /// <summary>
     /// Gets or sets the value associated with the specified key.
@@ -619,13 +627,29 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
     /// Gets an enumerable view over the keys in the dictionary. The view is a
     /// lightweight struct and iterating it does not allocate.
     /// </summary>
-    public KeyCollection Keys => new KeyCollection(this);
+    /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
+    public KeyCollection Keys
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return new KeyCollection(this);
+        }
+    }
 
     /// <summary>
     /// Gets an enumerable view over the values in the dictionary. The view is a
     /// lightweight struct and iterating it does not allocate.
     /// </summary>
-    public ValueCollection Values => new ValueCollection(this);
+    /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
+    public ValueCollection Values
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return new ValueCollection(this);
+        }
+    }
 
     /// <summary>
     /// A struct enumerator over a
