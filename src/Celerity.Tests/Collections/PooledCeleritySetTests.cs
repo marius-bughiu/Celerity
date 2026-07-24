@@ -233,6 +233,11 @@ public class PooledCeleritySetTests
         Assert.Throws<ObjectDisposedException>(() => set.Overlaps(new[] { 3 }));
         Assert.Throws<ObjectDisposedException>(() => set.SetEquals(new[] { 3 }));
         Assert.Throws<ObjectDisposedException>(() => set.CopyTo(new int[4], 0));
+        // Read accessor must also honour the disposed contract: Dispose zeroes
+        // _count and returns the backing array to the pool, so a silent Count
+        // here would report 0 over a buffer the pool may have re-handed out.
+        // Regression for #296.
+        Assert.Throws<ObjectDisposedException>(() => _ = set.Count);
     }
 
     [Fact]

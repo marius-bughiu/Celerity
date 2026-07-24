@@ -8,6 +8,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **`Trie<TValue>`** in `Celerity.Collections` — an ordered prefix tree mapping `string` keys to values, filling a BCL gap (.NET ships no trie). `GetByPrefix` lists every entry whose key starts with a prefix in `O(prefix + matches)` and in ascending key order, and `TryGetLongestPrefix` finds the longest stored key that is a prefix of a query in `O(query)` — the autocomplete, longest-prefix-routing, and ordered-iteration workloads a `Dictionary<string, TValue>` can only answer with an `O(n)` scan plus a `StartsWith` per key. Exact `Add` / `TryGetValue` favour a `Dictionary`, so the trie earns its place on the prefix operations. Implements `IReadOnlyDictionary<string, TValue?>`; not thread-safe. Closes [#285](https://github.com/marius-bughiu/Celerity/issues/285).
 
+### Fixed
+
+- `PooledCelerityDictionary` and `PooledCeleritySet` now throw `ObjectDisposedException` from their read accessors (`Count`, and the dictionary's `Keys` / `Values`) after `Dispose`, matching the documented "every member throws after disposal" contract. Previously these returned a silent, misleading result over arrays already returned to `ArrayPool.Shared`. Closes [#296](https://github.com/marius-bughiu/Celerity/issues/296).
+
 ## [2.3.0] - 2026-07-19
 
 ### Added
