@@ -99,7 +99,7 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
         if (values is ICollection<T> collection)
         {
             int count = collection.Count;
-            ThrowIfSourceTooLong(count);
+            ThrowIfSourceTooLong(count, nameof(values));
 
             _length = count;
             _tree = new T[count + 1];
@@ -109,7 +109,7 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
         {
             // Unknown length: materialize once, then apply the same ceiling.
             T[] seed = values.ToArray();
-            ThrowIfSourceTooLong(seed.Length);
+            ThrowIfSourceTooLong(seed.Length, nameof(values));
 
             _length = seed.Length;
             _tree = new T[_length + 1];
@@ -270,12 +270,12 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
         return sum;
     }
 
-    private static void ThrowIfSourceTooLong(int count)
+    private static void ThrowIfSourceTooLong(int count, string paramName)
     {
         if (count > MaxLength)
             throw new ArgumentException(
                 $"The source holds more than the maximum supported length of {MaxLength} elements.",
-                "values");
+                paramName);
     }
 
     private static void ThrowIndexOutOfRange(int index) =>
