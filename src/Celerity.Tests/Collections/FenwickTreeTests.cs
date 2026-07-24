@@ -432,7 +432,10 @@ public class FenwickTreeTests
     // beyond the ~30 cells the ascent touches (the runtime zeroes lazily), so it completes in ~17 ms. Where
     // that headroom genuinely is not available (a memory-capped container or runner), MemoryIntensiveFact
     // reports the test skipped rather than running it, so it can never turn the build red on resource grounds.
+    // The Category trait lets CI segregate this if it ever needs to — e.g. `--filter "Category!=MemoryIntensive"`
+    // to exclude it, or a dedicated serial job to run it away from the parallel suite.
     [MemoryIntensiveFact(1024)]
+    [Trait("Category", "MemoryIntensive")]
     public void Add_ShouldNotOverflowIndex_WhenTreeExceedsTwoToThe30()
     {
         const int length = 1 << 30; // 2^30 one-byte cells + the reserved 1-based slot ≈ 1 GiB

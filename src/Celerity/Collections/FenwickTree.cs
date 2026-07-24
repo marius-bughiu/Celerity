@@ -6,7 +6,8 @@ namespace Celerity.Collections;
 /// <summary>
 /// A <b>Fenwick tree</b> (Binary Indexed Tree): a fixed-length, array-backed sequence of numeric values that
 /// answers <b>prefix sums</b> (and therefore arbitrary range sums) and applies <b>point updates</b> in
-/// <c>O(log n)</c> each, over a single <c>n</c>-element array with no per-node object overhead.
+/// <c>O(log n)</c> each, over a single flat array — <c>n + 1</c> elements, the slot at index <c>0</c> being
+/// unused by the 1-based layout — with no per-node object overhead.
 /// </summary>
 /// <typeparam name="T">
 /// The numeric element type. Constrained to <see cref="INumber{TSelf}"/>, so it works for <see cref="int"/>,
@@ -193,11 +194,7 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
             throw new ArgumentOutOfRangeException(nameof(endExclusive), endExclusive,
                 "endExclusive must be in the range [0, Count].");
 
-        T sum = T.Zero;
-        for (int k = endExclusive; k > 0; k -= k & -k)
-            sum += _tree[k];
-
-        return sum;
+        return PrefixSumCore(endExclusive);
     }
 
     /// <summary>
@@ -266,17 +263,21 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
         _version++;
     }
 
-    // Range sum without validation: PrefixSum(endExclusive) - PrefixSum(start), collapsed to two walks.
-    private T RangeSumCore(int start, int endExclusive)
+    // The prefix walk, without validation — the single place the descending bit-strip is written, shared by
+    // PrefixSum, RangeSumCore, and the indexer getter. Unlike the ascending walks this one only ever clears
+    // the lowest set bit, so it strictly decreases and cannot overflow.
+    private T PrefixSumCore(int endExclusive)
     {
         T sum = T.Zero;
         for (int k = endExclusive; k > 0; k -= k & -k)
             sum += _tree[k];
-        for (int k = start; k > 0; k -= k & -k)
-            sum -= _tree[k];
 
         return sum;
     }
+
+    // Range sum without validation.
+    private T RangeSumCore(int start, int endExclusive) =>
+        PrefixSumCore(endExclusive) - PrefixSumCore(start);
 
     private static void ThrowIfSourceTooLong(int count, string paramName)
     {

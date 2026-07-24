@@ -19,14 +19,26 @@ public sealed class MemoryIntensiveFactAttribute : FactAttribute
     /// <summary>
     /// Marks a test as requiring <paramref name="requiredMegabytes"/> of allocatable memory.
     /// </summary>
-    /// <param name="requiredMegabytes">The size of the allocation the test makes, in MiB.</param>
+    /// <param name="requiredMegabytes">The size of the allocation the test makes, in MiB. Must be positive.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="requiredMegabytes"/> is not positive.</exception>
     public MemoryIntensiveFactAttribute(int requiredMegabytes)
     {
-        long required = (long)requiredMegabytes * 1024 * 1024;
+        // A non-positive requirement would make the threshold meaningless and silently force the test to run
+        // everywhere — exactly the behaviour this attribute exists to prevent. The argument is a compile-time
+        // constant, so this fails the first time the test is discovered rather than at run time.
+        if (requiredMegabytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requiredMegabytes), requiredMegabytes,
+                "The required size must be positive.");
+        }
+
+        // Widening before the multiply already rules out overflow for every permitted argument; `checked`
+        // states that intent rather than relying on the reader to re-derive it.
+        long required = checked((long)requiredMegabytes * 1024 * 1024);
         long available = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
 
         // A non-positive reading means "unknown" — run the test rather than skip on missing information.
-        if (available > 0 && available < required * RequiredHeadroomFactor)
+        if (available > 0 && available < checked(required * RequiredHeadroomFactor))
         {
             Skip = $"Needs ~{requiredMegabytes} MiB of allocatable memory " +
                    $"(with {RequiredHeadroomFactor}x headroom); this environment reports " +

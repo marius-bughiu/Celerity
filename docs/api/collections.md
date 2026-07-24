@@ -3660,7 +3660,7 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     where T : struct, INumber<T>
 ```
 
-A **Fenwick tree** (Binary Indexed Tree) is a fixed-length, array-backed sequence of numeric values that answers **prefix sums** — and therefore arbitrary **range sums** — and applies **point updates** in `O(log n)` each, over a single `n`-element array with no per-node object overhead. It is generic over `System.Numerics.INumber<T>`, so it works for `int`, `long`, `uint`, `ulong`, `double`, `decimal`, and any other value type with generic-math addition and subtraction.
+A **Fenwick tree** (Binary Indexed Tree) is a fixed-length, array-backed sequence of numeric values that answers **prefix sums** — and therefore arbitrary **range sums** — and applies **point updates** in `O(log n)` each, over a single flat array of `n + 1` elements (index `0` is unused by the 1-based layout), with no per-node object overhead. It is generic over `System.Numerics.INumber<T>`, so it works for `int`, `long`, `uint`, `ulong`, `double`, `decimal`, and any other value type with generic-math addition and subtraction.
 
 The BCL ships nothing for the **interleaved point-update + prefix-sum-query** workload, and a plain `T[]` forces a losing tradeoff: keep the raw values and every prefix / range query is `O(n)` (sum a slice); precompute a running-total array and queries are `O(1)` but every point update is `O(n)` (fix the whole suffix). A Fenwick tree gives **both** in `O(log n)`.
 
