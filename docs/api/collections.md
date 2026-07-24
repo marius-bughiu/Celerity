@@ -3679,7 +3679,7 @@ public FenwickTree(int length)                 // length logical elements, all z
 public FenwickTree(IEnumerable<T> values)      // O(n) build seeded with values, in order
 ```
 
-`length` must be non-negative (`ArgumentOutOfRangeException` otherwise). The length is **fixed** at construction — the tree does not grow; `Clear` resets the values to zero but keeps the length. The `IEnumerable<T>` overload throws `ArgumentNullException` on a null source and never aliases a caller-supplied array (it copies).
+`length` must be non-negative and at most `Array.MaxLength - 1` — the 1-based Fenwick layout reserves one array slot (`ArgumentOutOfRangeException` otherwise). The length is **fixed** at construction — the tree does not grow; `Clear` resets the values to zero but keeps the length. The `IEnumerable<T>` overload throws `ArgumentNullException` on a null source and never aliases a caller-supplied array (it copies).
 
 ### Methods and properties
 
@@ -3687,14 +3687,14 @@ public FenwickTree(IEnumerable<T> values)      // O(n) build seeded with values,
 | --- | --- |
 | `int Count { get; }` | The number of logical elements (the fixed length). |
 | `T Total { get; }` | The sum of every logical element — `PrefixSum(Count)`. |
-| `T this[int index] { get; set; }` | Get/set the logical value at `index`. Both are `O(log n)`; the getter is `RangeSum(index, index + 1)`, the setter applies the delta to reach the new value. |
-| `void Add(int index, T delta)` | Add `delta` to the value at `index`, in `O(log n)`. A negative `delta` subtracts (for signed `T`). |
+| `T this[int index] { get; set; }` | Get/set the logical value at `index`. Both are `O(log n)`; the getter is `RangeSum(index, index + 1)`, the setter applies the delta to reach the new value. Assigning the value already stored is a no-op. |
+| `void Add(int index, T delta)` | Add `delta` to the value at `index`, in `O(log n)`. A negative `delta` subtracts (for signed `T`); a zero `delta` is a no-op. |
 | `T PrefixSum(int endExclusive)` | Sum of the logical elements in `[0, endExclusive)`, in `O(log n)`. `PrefixSum(0)` is zero; `PrefixSum(Count)` is `Total`. |
 | `T RangeSum(int start, int endExclusive)` | Sum of the logical elements in the half-open range `[start, endExclusive)`, in `O(log n)`. An empty range sums to zero. |
 | `void Clear()` | Reset every logical element to zero (`O(n)`); the length is unchanged. |
 | `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order (`O(n log n)` total). |
 
-Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator; `Add`, the indexer setter, and `Clear` do. Not thread-safe.
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator; `Add`, the indexer setter, and `Clear` do — except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. Not thread-safe.
 
 ### Choosing it
 

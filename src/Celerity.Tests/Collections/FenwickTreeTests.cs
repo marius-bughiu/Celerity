@@ -42,6 +42,19 @@ public class FenwickTreeTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenLengthExceedsMaxSupported()
+    {
+        // The 1-based layout needs length + 1 array slots, so anything above Array.MaxLength - 1 must be
+        // rejected up front with a clear ArgumentOutOfRangeException rather than overflowing into an
+        // OverflowException / OutOfMemoryException from the allocation.
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new FenwickTree<int>(int.MaxValue));
+        Assert.Equal("length", ex.ParamName);
+
+        var atCeiling = Assert.Throws<ArgumentOutOfRangeException>(() => new FenwickTree<int>(Array.MaxLength));
+        Assert.Equal("length", atCeiling.ParamName);
+    }
+
+    [Fact]
     public void ArrayConstructor_ShouldSeedLogicalValues()
     {
         long[] values = { 3, 1, 4, 1, 5, 9, 2, 6 };
@@ -160,6 +173,50 @@ public class FenwickTreeTests
         tree[1] = 8;
 
         Assert.Equal(new[] { 7, 8, 9 }, tree.ToArray());
+    }
+
+    [Fact]
+    public void Indexer_Set_ShouldNotInvalidateEnumerator_WhenAssignedSameValue()
+    {
+        // Assigning the value already stored does not change the observable state, so — like every other
+        // no-op in the library — it must not bump the version and invalidate active enumerators.
+        var tree = new FenwickTree<int>(new[] { 7, 8, 9 });
+
+        var seen = new List<int>();
+        foreach (int v in tree)
+        {
+            tree[1] = 8; // no-op assignment
+            seen.Add(v);
+        }
+
+        Assert.Equal(new[] { 7, 8, 9 }, seen);
+    }
+
+    [Fact]
+    public void Add_ShouldNotInvalidateEnumerator_WhenDeltaZero()
+    {
+        var tree = new FenwickTree<int>(new[] { 1, 2, 3 });
+
+        var seen = new List<int>();
+        foreach (int v in tree)
+        {
+            tree.Add(0, 0); // adding zero changes nothing
+            seen.Add(v);
+        }
+
+        Assert.Equal(new[] { 1, 2, 3 }, seen);
+    }
+
+    [Fact]
+    public void Add_ShouldStillInvalidateEnumerator_WhenDeltaNonZero()
+    {
+        var tree = new FenwickTree<int>(new[] { 1, 2, 3 });
+
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            foreach (int _ in tree)
+                tree.Add(0, 1);
+        });
     }
 
     [Fact]

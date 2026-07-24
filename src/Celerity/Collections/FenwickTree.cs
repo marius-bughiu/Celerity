@@ -34,7 +34,9 @@ namespace Celerity.Collections;
 /// <para>
 /// The length is fixed at construction (like <see cref="BitSet"/>); the tree does not grow. Reads never
 /// mutate, so they never invalidate an enumerator; <see cref="Add(int, T)"/>, the indexer setter, and
-/// <see cref="Clear"/> do. This type is not thread-safe; concurrent callers must synchronize externally.
+/// <see cref="Clear"/> do — except when they are no-ops (a zero delta, or assigning the value already
+/// stored), which leave the observable state and any active enumerator untouched. This type is not
+/// thread-safe; concurrent callers must synchronize externally.
 /// </para>
 /// </remarks>
 public sealed class FenwickTree<T> : IReadOnlyCollection<T>
@@ -50,14 +52,29 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     private int _version;
 
     /// <summary>
+    /// The largest logical length a tree can hold. The 1-based Fenwick layout reserves an unused cell at
+    /// index <c>0</c>, so the backing array is one longer than the logical length and the ceiling is one
+    /// below <see cref="Array.MaxLength"/>.
+    /// </summary>
+    private static readonly int MaxLength = Array.MaxLength - 1;
+
+    /// <summary>
     /// Initializes a new Fenwick tree of <paramref name="length"/> logical elements, all zero.
     /// </summary>
-    /// <param name="length">The number of logical elements. Must be non-negative.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="length"/> is negative.</exception>
+    /// <param name="length">
+    /// The number of logical elements. Must be non-negative and at most <see cref="Array.MaxLength"/> minus one
+    /// (the 1-based layout reserves one array slot).
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="length"/> is negative, or exceeds the maximum supported length.
+    /// </exception>
     public FenwickTree(int length)
     {
         if (length < 0)
             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be non-negative.");
+        if (length > MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(length), length,
+                $"Length must be at most {MaxLength} (Array.MaxLength minus the reserved 1-based slot).");
 
         _length = length;
         _tree = new T[length + 1];
@@ -69,11 +86,19 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     /// </summary>
     /// <param name="values">The initial logical values, in enumeration order.</param>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="values"/> holds more than <see cref="Array.MaxLength"/> minus one elements.
+    /// </exception>
     public FenwickTree(IEnumerable<T> values)
     {
         ArgumentNullException.ThrowIfNull(values);
 
         T[] seed = values as T[] ?? values.ToArray();
+        if (seed.Length > MaxLength)
+            throw new ArgumentException(
+                $"The source holds more than the maximum supported length of {MaxLength} elements.",
+                nameof(values));
+
         _length = seed.Length;
         _tree = new T[_length + 1];
 
@@ -99,6 +124,7 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     /// <summary>
     /// Gets or sets the logical value at <paramref name="index"/>. Both accessors are <c>O(log n)</c>: the
     /// getter is <c>RangeSum(index, index + 1)</c>; the setter applies the delta needed to reach the new value.
+    /// Assigning the value already stored is a no-op and does not invalidate active enumerators.
     /// </summary>
     /// <param name="index">The zero-based logical index. Must be in <c>[0, Count)</c>.</param>
     /// <returns>The current logical value at <paramref name="index"/>.</returns>
@@ -124,7 +150,8 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
 
     /// <summary>
     /// Adds <paramref name="delta"/> to the logical value at <paramref name="index"/>, in <c>O(log n)</c>.
-    /// A negative <paramref name="delta"/> subtracts (for signed <typeparamref name="T"/>).
+    /// A negative <paramref name="delta"/> subtracts (for signed <typeparamref name="T"/>). A zero
+    /// <paramref name="delta"/> is a no-op and does not invalidate active enumerators.
     /// </summary>
     /// <param name="index">The zero-based logical index. Must be in <c>[0, Count)</c>.</param>
     /// <param name="delta">The amount to add to the current value.</param>
@@ -202,8 +229,16 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
 
     // Point update without bounds validation (callers validate). Walks the O(log n) cells whose ranges cover
     // `index` by repeatedly adding back the lowest set bit of the 1-based position.
+    //
+    // A zero delta is a no-op: it leaves every cell unchanged, so it skips both the walk and the version bump
+    // (matching the rest of the library, where an operation that does not change the observable state does not
+    // invalidate active enumerators). This also covers the indexer setter, which reaches here with
+    // `value - current` — zero exactly when the assigned value is the one already stored.
     private void AddCore(int index, T delta)
     {
+        if (T.IsZero(delta))
+            return;
+
         for (int k = index + 1; k <= _length; k += k & -k)
             _tree[k] += delta;
 
