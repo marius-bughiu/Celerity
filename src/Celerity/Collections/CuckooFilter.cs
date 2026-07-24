@@ -226,7 +226,9 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// <summary>
     /// Gets a value indicating whether the filter is full: an insertion has exhausted its eviction budget and a
     /// fingerprint is parked in the single-entry victim cache. While <c>true</c>, <see cref="Add"/> throws and
-    /// <see cref="TryAdd"/> returns <c>false</c>; a successful <see cref="Remove"/> clears it.
+    /// <see cref="TryAdd"/> returns <c>false</c>. It clears when a <see cref="Remove"/> either takes the parked
+    /// victim itself or frees a slot in one of the victim's two candidate buckets so the victim can be
+    /// re-homed; a <see cref="Remove"/> elsewhere in the table leaves it <c>true</c>.
     /// </summary>
     public bool IsFull => _hasVictim;
 

@@ -440,6 +440,8 @@
     { key: 'SmallSet',            title: 'SmallSet<int>',                            vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'], items: [8, 64] },
     // EnumSet is bounded by the enum universe (no item-count sweep); Union is the word-wise set-algebra win.
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'] },
+    // SparseSet is a bounded-universe integer set; ClearRefill is the O(1)-clear headline win.
+    { key: 'SparseSet',           title: 'SparseSet',                                vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ClearRefill', 'Remove'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },
@@ -456,6 +458,8 @@
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
     { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',     vs: 'PriorityQueue<int, int>', ops: ['Enqueue', 'DecreaseKey'] },
+    // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
+    { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch'] },
     // FenwickTree is a Binary Indexed Tree benchmarked against a plain long[] (O(n) prefix sum / O(n) update).
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] }
   ];

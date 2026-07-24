@@ -62,8 +62,9 @@ Standalone libraries built **on top of** Celerity — each solves a real problem
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
 - `SmallSet<T>` — flat-array, linear-scan set for the very-small (`n <= ~16`) case. No hasher; the default element is stored inline. The set counterpart of `SmallDictionary`.
 - `EnumSet<TEnum>` — bit-vector set for enum keys (the .NET `EnumSet`): membership is a single bit test and set algebra is word-wise bitwise ops, with no hashing or boxing. Enumerates in ascending underlying-value order.
+- `SparseSet` — bounded-universe integer set (Briggs–Torczon sparse set): `O(1)` `Clear` that leaves the backing arrays untouched, plus dense, cache-friendly iteration — for clear-and-rebuild "visited" sets over ids in `[0, N)` (graph traversal, ECS, sweep-line). Costs `O(Universe)` memory.
 
-The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used.
+The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`, `SparseSet`) all implement **`ISet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used. (The bounded-domain sets, `EnumSet` and `SparseSet`, are the exception to "drop in anywhere": they store only values in their fixed domain, so a mutating op that must add an out-of-domain value throws.)
 
 **Caches**
 
@@ -80,6 +81,10 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 **Priority queue**
 
 - `IndexedPriorityQueue<TElement, TPriority, THasher>` — **addressable** binary min-heap: unlike the BCL `PriorityQueue<,>` it can **change a queued element's priority** (`Update` / decrease-key) and **remove an arbitrary element** in `O(log n)`, and answer `Contains` / `TryGetPriority` in `O(1)`. The heap the priority-relaxation loop of Dijkstra / Prim / A\* needs — no lazy-deletion heap growth. Each element is a key (appears once); pass a custom `IComparer<TPriority>` for a max-heap.
+
+**Prefix trees**
+
+- `Trie<TValue>` — ordered **prefix tree** mapping string keys to values. `GetByPrefix` lists every entry whose key starts with a prefix in `O(prefix + matches)`, and `TryGetLongestPrefix` finds the longest stored key that is a prefix of a query in `O(query)`. The trie the BCL lacks — autocomplete, longest-prefix routing, and ordered (ascending-ordinal) iteration, where a `Dictionary<string, TValue>` has no prefix index and must scan every key and run `StartsWith`. Exact `Add` / `TryGetValue` favour a `Dictionary` (one hash vs a character walk); the trie earns its place on the prefix operations. Implements `IReadOnlyDictionary<string, TValue?>`.
 
 **Prefix sums**
 
@@ -222,7 +227,7 @@ Console.WriteLine(queued.ContainsKey(Priority.Normal)); // False — a single bi
 </details>
 
 <details>
-<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet, SmallSet, EnumSet</summary>
+<summary><b>Sets</b> — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, FrozenCeleritySet, SmallSet, EnumSet, SparseSet</summary>
 
 ```csharp
 var seen = new IntSet();
@@ -292,6 +297,15 @@ var granted = new EnumSet<Permission> { Permission.Read, Permission.Write };
 var required = new EnumSet<Permission> { Permission.Read, Permission.Execute };
 Console.WriteLine(granted.IsSupersetOf(required)); // False — word-wise subset test
 granted.UnionWith(required);                        // one bitwise OR
+```
+
+`SparseSet` is the bounded-universe integer set — the classic Briggs–Torczon sparse set (a dense value array + a sparse index array). Over a fixed universe `[0, Universe)` chosen at construction, `Add` / `Contains` / `Remove` are `O(1)` with no hashing, but the point of the type is what `HashSet<int>` can't match: `Clear()` is `O(1)` (it resets the count without scanning or clearing the backing arrays, versus zeroing the whole table) and iteration is a dense, contiguous scan over exactly the present elements. That is the winning shape for clear-and-rebuild "visited" sets — graph BFS/DFS, ECS entity membership, sweep-line — where the set is emptied every iteration. The cost is `O(Universe)` memory and non-negative-values-only: a value outside `[0, Universe)` throws on `Add` and reads as absent on `Contains` / `Remove`. It is an opt-in specialized type, not a `HashSet<int>` replacement — for an unbounded or huge-and-sparse key space, reach for `IntSet`.
+
+```csharp
+var visited = new SparseSet(nodeCount);   // universe = ids in [0, nodeCount)
+visited.Add(start);
+Console.WriteLine(visited.TryAdd(start)); // False — already seen, unchanged
+visited.Clear();                          // O(1) — ready for the next traversal
 ```
 
 </details>
@@ -435,6 +449,29 @@ Console.WriteLine(pq.Remove("c", out int p)); // True; p == 20
 </details>
 
 <details>
+<summary><b>Prefix trees</b> — Trie</summary>
+
+`Trie<TValue>` is the ordered **prefix tree** the BCL lacks: it maps string keys to values and answers the prefix queries a `Dictionary<string, TValue>` can't do without an `O(n)` scan. `GetByPrefix` lists every entry under a prefix in `O(prefix + matches)` and in ascending key order; `TryGetLongestPrefix` finds the most specific stored key that prefixes a query. Reach for it for autocomplete, longest-prefix routing, or ordered iteration — not for pure exact-key lookups, where a `Dictionary` (one hash vs a character walk) wins. See [the API reference](docs/api/collections.md#trietvalue).
+
+```csharp
+var routes = new Trie<string>();
+routes["/"] = "home";
+routes["/api"] = "api-root";
+routes["/api/v1/users"] = "users-v1";
+routes["/api/v1/orders"] = "orders-v1";
+
+// Autocomplete: every entry under a prefix, already sorted.
+foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {handler}"); // /api/v1/orders, then /api/v1/users
+
+// Longest-prefix routing: the most specific stored route that prefixes the request.
+if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
+    Console.WriteLine($"{route} -> {handler}"); // /api/v1/users -> users-v1
+```
+
+</details>
+
+<details>
 <summary><b>Prefix sums with live updates</b> — FenwickTree</summary>
 
 `FenwickTree<T>` (`where T : struct, INumber<T>`) is a **Binary Indexed Tree**: a fixed-length numeric sequence that answers **prefix / range sums** and applies **point updates** both in `O(log n)`, in one array with no per-node overhead. The BCL ships nothing for the interleaved update + prefix-sum-query workload — a plain array is `O(n)` per query or `O(n)` per update. It wins precisely when both interleave (running aggregates, rank counters, cumulative-frequency tables).
@@ -490,6 +527,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Dictionary keyed by a small **enum** — config-by-enum, per-state data, enum→handler tables | `EnumMap<TEnum, TValue>` | Dense array indexed on the enum's underlying value (the .NET `EnumMap`): `this[key]` / `TryGetValue` / `Add` / `Remove` are a single direct array index — no hashing, no probing, no collisions — and a full sweep is a linear array walk. The dictionary counterpart of `EnumSet`; enumerates ascending by value. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CelerityDictionary<TEnum, TValue, THasher>` there. |
 | Tiny set (`n <= ~16`) that stays small — per-scope "seen" sets, small membership guards, deduping a handful of items | `SmallSet<T>` | The set counterpart of `SmallDictionary`: flat-array linear scan beats hashing at small `n`, no hasher to pick, the default element is stored inline. Implements `ISet<T>`. Degrades to `O(n)` for large sets, so only when instances stay small. |
 | Set of **enum** values — flag sets, permission sets, state sets over a small enum | `EnumSet<TEnum>` | Bit-vector set indexed on the enum's underlying value (the .NET `EnumSet`): `Add` / `Contains` / `Remove` are a single bit op — no hashing, no boxing — and set algebra between two `EnumSet`s is a word-wise bitwise `OR` / `AND` / `XOR`. Enumerates ascending by value; `All()` builds the full universe. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CeleritySet<TEnum, THasher>` there. |
+| Set of small **non-negative ints** over a bounded range that is **cleared & rebuilt often** — "visited" sets in graph BFS/DFS, ECS entity membership, sweep-line | `SparseSet` | Briggs–Torczon sparse set (dense value array + sparse index array): `O(1)` `Clear` that leaves the backing arrays untouched (vs `HashSet<int>` zeroing its table) and dense, cache-friendly iteration over just the present elements. `Add` / `Contains` / `Remove` are `O(1)`, no hashing. Costs `O(Universe)` memory and stores only values in `[0, Universe)`; for an unbounded or huge-and-sparse key space use `IntSet` / `HashSet<int>`. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
@@ -509,10 +547,11 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Double-ended queue** — add/remove at both ends (bounded FIFO queue, sliding window, work-stealing / undo buffer) or a queue needing random access by position | `Deque<T>` | Growable double-ended queue backed by a **circular buffer**: `O(1)` amortized `PushFront` / `PushBack` / `PopFront` / `PopBack` / peek and `O(1)` random access by index. The BCL has no deque — `Queue<T>` is FIFO-only, `Stack<T>` LIFO-only, and `LinkedList<T>` (the only O(1)-both-ends type) allocates a node per element. A warm bounded churn reuses the buffer with wrap-around so it **allocates nothing**, and enumeration walks contiguous memory. For a strict FIFO queue that never pushes front / pops back, BCL `Queue<T>` is already a circular buffer and is simpler. |
 | **Incremental connectivity / connected components** — union equivalence classes and ask whether two elements are in the same group (Kruskal MST, clustering, image segmentation, undirected cycle detection, "are these accounts linked?") | `DisjointSet<T>` | Union-find with **union by size** + **path halving**: near-`O(1)` amortized `Union` / `Find` / `Connected`, `O(α(n)) ≤ 4`. Runs a stream of merges + connectivity queries in near-linear total time, where the BCL substitutes are super-linear — a `Dictionary<T, HashSet<T>>` set-merge is `O(n²)` to coalesce `n` singletons, and a per-query BFS/DFS is `O(V+E)` every query. Grows only by merging (no un-union); it is not an `ISet<T>` — for element membership with add/remove/set-algebra use `CeleritySet` or `HashSet<T>`. |
 | **Priority queue whose priorities change** — a best-so-far frontier you relax (Dijkstra / Prim / A\*), or an event scheduler that reschedules / cancels pending items | `IndexedPriorityQueue<TElement, TPriority, THasher>` | Addressable binary min-heap with an element→slot index: `Update` (decrease-/increase-key) and `Remove` an arbitrary element in `O(log n)`, `Contains` / `TryGetPriority` in `O(1)`. The BCL `PriorityQueue<,>` can do none of these — its only substitute is lazy deletion, which grows the heap by one entry per update. Each element is a key (appears once); custom `IComparer<TPriority>` for a max-heap. For plain enqueue/dequeue with duplicate elements, the BCL `PriorityQueue<,>` is simpler. |
+| **Prefix / autocomplete / longest-prefix** over string keys — list everything under a prefix, find the most specific stored key that prefixes a query, or iterate keys in order (typeahead, route/dispatch tables, tokenizer / dictionary matching, namespace listing) | `Trie<TValue>` | Ordered prefix tree: `GetByPrefix` yields every entry under a prefix in `O(prefix + matches)` and in ascending key order, `TryGetLongestPrefix` finds the longest stored prefix of a query in `O(query)`, and enumeration is sorted for free — none of which a `Dictionary<string, TValue>` can do without an `O(n)` scan + `StartsWith`. For **pure exact-key** `Add` / `TryGetValue` / `Remove` a `Dictionary` (one hash vs a per-character walk) is faster; the trie earns its place only when you use the prefix operations. Implements `IReadOnlyDictionary<string, TValue?>`; not thread-safe. |
 | **Prefix / range sums over a sequence you keep mutating** — running aggregates, rank / order-statistics counters (inversions, "how many ≤ x seen"), cumulative-frequency tables | `FenwickTree<T>` | Binary Indexed Tree (`T : INumber<T>`): **point update** and **prefix / range sum** both `O(log n)`, in one array with no per-node overhead. The BCL has no prefix-sum structure; a plain array forces `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave. If the data is immutable after build, a one-shot precomputed prefix-sum array answers in `O(1)` with less code; if you only update and never query a partial sum, a raw array is simpler. |
-| Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` | Celerity is single-threaded and iteration order is unspecified. |
+| Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` (or `Trie<TValue>` for ordered string keys) | Celerity is single-threaded, and the hash-based collections leave iteration order unspecified. The exception is `Trie<TValue>`, which iterates in ascending ordinal key order by contract. |
 
-**Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order (Celerity exposes `IReadOnlyDictionary<,>` only and does not promise order across versions).
+**Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order from the **hash-based** collections (the dictionaries and sets expose `IReadOnlyDictionary<,>` / `IReadOnlySet<>` only and do not promise order across versions). If you need ordered string-keyed iteration, `Trie<TValue>` provides it by contract (ascending ordinal key order).
 
 ## Choosing a hasher
 

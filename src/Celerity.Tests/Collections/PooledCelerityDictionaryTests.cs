@@ -274,6 +274,15 @@ public class PooledCelerityDictionaryTests
         Assert.Throws<ObjectDisposedException>(() => map.TryAdd(2, 2));
         Assert.Throws<ObjectDisposedException>(() => map.Clear());
         Assert.Throws<ObjectDisposedException>(() => map.GetEnumerator());
+        Assert.Throws<ObjectDisposedException>(() => map.EnsureCapacity(64));
+        Assert.Throws<ObjectDisposedException>(() => map.TrimExcess());
+        // Read accessors must also honour the disposed contract: Dispose returns
+        // the backing arrays to the pool, so a silent Count / Keys / Values here
+        // would report over — or enumerate — buffers the pool may have re-handed
+        // out. Regression for #296.
+        Assert.Throws<ObjectDisposedException>(() => _ = map.Count);
+        Assert.Throws<ObjectDisposedException>(() => _ = map.Keys);
+        Assert.Throws<ObjectDisposedException>(() => _ = map.Values);
     }
 
     [Fact]

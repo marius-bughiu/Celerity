@@ -62,7 +62,10 @@ public sealed class DisjointSet<T> : IReadOnlyCollection<T>
     // bump it — the observable partition is unchanged.
     private int _version;
 
-    /// <summary>Initializes a new, empty disjoint-set with a small default capacity.</summary>
+    /// <summary>
+    /// Initializes a new, empty disjoint-set with no pre-allocated capacity. The first
+    /// <see cref="Add"/> allocates the backing arrays.
+    /// </summary>
     public DisjointSet()
         : this(0)
     {

@@ -1971,6 +1971,134 @@ foreach (var p in granted) { /* ascending: Read, Write, Execute */ }
 
 ---
 
+## SparseSet
+
+```csharp
+public class SparseSet : ISet<int>
+```
+
+A set of **non-negative integers over a bounded universe** `[0, Universe)`, backed by
+the classic **Briggs–Torczon sparse-set representation**: a *dense* array holding the
+present values contiguously, paired with a *sparse* array — indexed by value — that
+points each present value back at its slot in the dense array. Membership is the
+round-trip `sparse[v] < Count && dense[sparse[v]] == v`, which is correct even for a *stale*
+sparse entry — one left over from before a `Clear`, or the zero a never-written slot still
+holds. That single fact is what buys the type its two wins over `HashSet<int>`:
+
+- **`Clear()` is `O(1)`** — it resets the count *without scanning or clearing the
+  backing arrays*. `HashSet<int>.Clear()` is `O(capacity)` (it zeroes the whole entry table).
+  This is the headline: per-frame / per-query "visited" sets in graph traversal (BFS/DFS), ECS
+  entity membership, register-allocation liveness, and sweep-line algorithms clear on every
+  iteration.
+- **Dense, cache-friendly iteration** — present elements live contiguously in `[0, Count)`
+  of the dense array, so enumeration is a linear scan over exactly `Count` ints with no
+  empty-slot skipping.
+
+`Add` / `Contains` / `Remove` are each `O(1)` with **no hashing**, no probe chain, and no
+per-element allocation — a direct array index and the round-trip check. There is **no
+hasher** (and so no `THasher` type parameter).
+
+The trade-offs, stated honestly:
+
+- The sparse index array is **`O(Universe)` memory**, sized once at construction. The type
+  is worth it when the universe is bounded and the set is cleared / rebuilt / iterated
+  often — not as a general `HashSet<int>` replacement. For an unbounded or huge-and-sparse
+  key space, use [`IntSet`](#intset) / `HashSet<int>`.
+- It stores **only non-negative values below `Universe`**. A value outside `[0, Universe)`
+  is rejected by `Add` / `TryAdd` with `ArgumentOutOfRangeException`, and reported as absent
+  by `Contains` / `Remove` (the bounded-universe analogue of `EnumSet`).
+- `Remove` moves the last dense element into the vacated slot (an `O(1)` swap), so the
+  relative order of the surviving elements is not preserved. Enumeration order is
+  unspecified in general.
+
+It implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`), ships an
+allocation-free struct enumerator, and accepts an `IEnumerable<int>` source at construction.
+
+### Constructors
+
+```csharp
+SparseSet(int universe)
+SparseSet(int universe, IEnumerable<int> source)
+```
+
+- `universe` is the **exclusive upper bound** of storable values; the set can hold any
+  non-negative integer strictly less than it. It sizes the sparse index array once, so
+  it is the dominant memory cost — choose it to match the actual value range. `0` creates
+  a set that can store nothing.
+- Throws `ArgumentOutOfRangeException` for a negative `universe`. There is **no
+  `loadFactor`** parameter.
+- The `source` constructor pre-sizes the dense array from an `ICollection<int>` source,
+  silently deduplicates (matching BCL `HashSet<int>(IEnumerable<int>)` semantics), throws
+  `ArgumentNullException` if `source` is `null` (the null check beats the universe
+  validation), and throws `ArgumentOutOfRangeException` if any source value is outside
+  `[0, universe)`.
+
+### Methods
+
+- `void Add(int item)` — throws `ArgumentException` on duplicate, `ArgumentOutOfRangeException` out of range.
+- `bool TryAdd(int item)` — `true` on success, `false` if already present; throws out of range.
+- `bool Contains(int item)` — `O(1)`; `false` for an out-of-range value.
+- `bool Remove(int item)` — `O(1)` swap-removal; `false` for an absent or out-of-range value.
+- `void Clear()` — **`O(1)`**, touches no memory; the set stays reusable.
+- `int EnsureCapacity(int capacity)` — grow the dense array to hold at least `capacity`
+  elements (clamped to `Universe`), returning the resulting dense-array length. Throws
+  `ArgumentOutOfRangeException` on a negative capacity.
+- `void TrimExcess()` / `void TrimExcess(int capacity)` — shrink the dense array to exactly
+  the current `Count` (or `capacity`). `TrimExcess(capacity)` throws if `capacity < Count`
+  or `capacity > Universe`. The sparse index array is unaffected.
+- `int Count { get; }`, `int Universe { get; }`
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator over the dense array.
+- `void CopyTo(int[] array, int arrayIndex)` — matches `HashSet<int>.CopyTo` argument validation.
+
+### Set operations (`ISet<int>`)
+
+The full BCL `HashSet<int>` set-algebra surface is available and follows `HashSet<int>`
+semantics exactly within the universe (duplicate-tolerant `other`, self-aliasing
+`other == this`):
+
+- **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
+- **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps`, `SetEquals`.
+
+Each throws `ArgumentNullException` when `other` is `null`. The one bounded-universe caveat:
+a **mutating** operation that would *add* a value outside `[0, Universe)` (e.g. `UnionWith`
+with such an element) throws `ArgumentOutOfRangeException` rather than silently growing an
+unbounded set. Query operations tolerate out-of-range values in `other` (they simply read
+as absent). As with the other sets, `ISet<int>.Add(int)` returns `bool` (equivalent to
+`TryAdd`), the concrete `public void Add(int)` keeps its throw-on-duplicate behaviour, and
+`ICollection<int>.Add(int)` ignores duplicates.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A BFS "visited" set over a graph whose nodes are ids in [0, nodeCount).
+var visited = new SparseSet(nodeCount);
+
+for (int start = 0; start < nodeCount; start++)
+{
+    visited.Clear(); // O(1) — no memory touched, ready for the next traversal
+    var queue = new Queue<int>();
+    queue.Enqueue(start);
+    visited.Add(start);
+
+    while (queue.Count > 0)
+    {
+        int node = queue.Dequeue();
+        foreach (int next in Neighbors(node))
+        {
+            if (visited.TryAdd(next)) // false if already seen
+                queue.Enqueue(next);
+        }
+    }
+
+    // Iterate exactly the reached nodes — a dense, contiguous scan.
+    Process(visited);
+}
+```
+
+---
+
 ## EnumMap&lt;TEnum, TValue&gt;
 
 ```csharp
@@ -3424,6 +3552,105 @@ while (dist.TryDequeue(out int u, out int du))
 
 Console.WriteLine(string.Join(", ", final.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}")));
 // 0:0, 1:3, 2:1, 3:4, 4:7
+```
+
+## Trie&lt;TValue&gt;
+
+An ordered **prefix tree** (trie) mapping `string` keys to values. Every key is stored as a path of characters from a shared root, so keys sharing a prefix share that prefix's nodes. Implements `IReadOnlyDictionary<string, TValue?>`.
+
+```csharp
+public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
+```
+
+The BCL ships no trie. `Dictionary<string, TValue>` answers an exact-key lookup in `O(1)` but has **no efficient prefix operation**: listing every key that starts with a prefix, or finding the longest stored key that is a prefix of a query, both force an `O(n)` scan of the whole dictionary plus a `StartsWith` per key. A trie answers those directly from its structure.
+
+### How it works
+
+Each node holds its child edges in two parallel arrays kept sorted ascending by edge character, so a child lookup is a binary search and a pre-order walk visits children in ordinal order — which is why enumeration is sorted for free. A key terminates at the node reached by walking its characters from the root; the empty string is a valid key (it terminates at the root). Removal prunes bottom-up any node that no longer leads to a key, so the structure never retains dead paths, and the `Count` / `ContainsPrefix` invariants hold.
+
+Keys are compared and ordered by their UTF-16 code units (ordinal) — the same comparison `Dictionary<string, TValue>` uses with the ordinal comparer. Culture-aware comparison is not applied.
+
+### The documented BCL-beating workload
+
+The **prefix operations**:
+
+- `GetByPrefix` / `GetKeysWithPrefix` yield every entry whose key starts with a prefix in `O(prefix length + matches)` — autocomplete, typeahead, listing a namespace or route table — where a `Dictionary` must scan and `StartsWith`-filter every entry.
+- `TryGetLongestPrefix` finds the longest stored key that is a prefix of a query in `O(query length)` — routing tables, tokenizer / dictionary matching, filesystem-style longest-match.
+- Enumeration yields keys in ascending ordinal order for free, where a `Dictionary` is unordered.
+
+An exact `Add` or `TryGetValue` walks the key character by character rather than hashing it once, so for **pure exact-key** workloads a `Dictionary` is competitive or faster — the trie's value is the prefix and ordering operations, not raw exact-lookup speed. See the [trie benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=Trie) on the dashboard.
+
+> The complexities above count each character step as `O(1)`. Strictly, navigating one node's children is a binary search, so a character step is `O(log b)` in that node's branching factor `b`; for the common bounded-alphabet case `b` is a small constant and the length-proportional forms hold, while on a pathologically wide alphabet the character-length terms gain a `log b` factor.
+
+### Constructors
+
+```csharp
+public Trie()
+public Trie(IEnumerable<KeyValuePair<string, TValue>> entries)
+```
+
+- The parameterless constructor starts empty.
+- The `entries` overload bulk-loads the pairs; a later duplicate key overwrites the value set by an earlier one (indexer semantics).
+
+**Throws:**
+
+- `ArgumentNullException` if `entries` is `null`, or any key in it is `null`.
+
+### Indexer
+
+```csharp
+public TValue this[string key] { get; set; }
+```
+
+The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix that was never stored counts as absent). The setter adds the key or overwrites its existing value. Both throw `ArgumentNullException` if `key` is `null`.
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of keys. |
+| `void Add(string key, TValue value)` | Adds a key. Throws `ArgumentException` if it already exists. |
+| `bool TryAdd(string key, TValue value)` | Adds a key, leaving an existing entry unchanged. Returns `false` if already present. |
+| `bool ContainsKey(string key)` | Whether `key` is a stored key (an interior-only prefix returns `false`). |
+| `bool TryGetValue(string key, out TValue? value)` | Non-throwing exact lookup. |
+| `bool Remove(string key)` | Removes a key, pruning any newly-dead nodes. Returns `false` if absent. |
+| `bool Remove(string key, out TValue? value)` | `Remove` returning the removed value (`default` when the key was absent). |
+| `void Clear()` | Removes all keys. |
+| `bool ContainsPrefix(string prefix)` | Whether any stored key starts with `prefix` (a key equal to the prefix counts). The empty prefix matches iff the trie is non-empty. |
+| `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
+| `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
+| `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small stack only when the trie has children to walk). |
+
+Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream); a pure lookup does not.
+
+### Empty-string and default handling
+
+The empty string is an ordinary key. The trie stores no `TValue` out-of-band, so any `TValue` — including `default`/`null` — is a valid value. `null` keys are rejected.
+
+### Choosing it
+
+Reach for `Trie<TValue>` when the workload needs **prefix or ordered** access: autocomplete / typeahead, longest-prefix routing, ordered key iteration, or listing everything under a namespace. If you only ever do exact-key `Add` / `TryGetValue` / `Remove`, a `Dictionary<string, TValue>` (or `CelerityDictionary`) is the better fit — the trie earns its place only when you use the prefix operations. It is not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var routes = new Trie<string>();
+routes["/"] = "home";
+routes["/api"] = "api-root";
+routes["/api/v1/users"] = "users-v1";
+routes["/api/v1/orders"] = "orders-v1";
+
+// Autocomplete: every route under a prefix, already in sorted order.
+foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
+
+// Longest-prefix routing: the most specific stored route that prefixes the request.
+if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
+    Console.WriteLine($"matched {route} -> {handler}"); // matched /api/v1/users -> users-v1
 ```
 
 ## FenwickTree&lt;T&gt;

@@ -371,6 +371,7 @@
     { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                     vs: 'FrozenSet<string>' },
     { key: 'SmallSet',            title: 'SmallSet<int>',                         vs: 'HashSet<int>', items: [8, 64] },
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                        vs: 'HashSet<TEnum>' },
+    { key: 'SparseSet',           title: 'SparseSet',                             vs: 'HashSet<int>' },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                vs: 'HashSet<int>' },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                   vs: 'HashSet<int>' },
@@ -382,6 +383,7 @@
     { key: 'Deque',               title: 'Deque<int>',                            vs: 'LinkedList<int>' },
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                      vs: 'Dictionary<int, HashSet<int>> merge' },
     { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',  vs: 'PriorityQueue<int, int>' },
+    { key: 'Trie',                title: 'Trie<int>',                             vs: 'Dictionary<string, int>' },
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' }
   ];
   var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue']);
