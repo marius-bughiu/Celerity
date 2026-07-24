@@ -568,6 +568,40 @@ void Check(bool condition, string message)
     Check(reached.Count == 4 && reached.Contains(2), "SparseSet ISet<int> union within universe");
 }
 
+// FenwickTree — Binary Indexed Tree over a numeric sequence. This is the one collection
+// built on generic math (INumber<T>), so the static abstract interface members resolve
+// through constrained calls the AOT compiler must specialize per T — worth pinning here
+// over more than one T. Exercise the O(n) seeded build, point update, prefix / range sums,
+// the indexer round-trip, the no-op update, clear-then-reuse, and the struct enumerator.
+{
+    var ft = new FenwickTree<long>(new long[] { 3, 1, 4, 1, 5, 9 });
+    Check(ft.Count == 6 && ft.Total == 23, "FenwickTree seeded build + total");
+    Check(ft.PrefixSum(0) == 0 && ft.PrefixSum(3) == 8 && ft.PrefixSum(6) == 23, "FenwickTree prefix sums");
+    Check(ft.RangeSum(2, 5) == 10 && ft.RangeSum(4, 4) == 0, "FenwickTree range sum + empty range");
+
+    ft.Add(0, 10);
+    Check(ft[0] == 13 && ft.Total == 33, "FenwickTree point update");
+    ft[1] = 100;
+    Check(ft[1] == 100 && ft.Total == 132, "FenwickTree indexer set");
+
+    var before = new List<long>();
+    foreach (long v in ft) before.Add(v);
+    Check(before.Count == 6 && before[0] == 13 && before[1] == 100, "FenwickTree enumerates logical values");
+
+    ft.Add(2, 0); // no-op: must not invalidate the enumerator below
+    var during = 0;
+    foreach (long _ in ft) { ft[3] = ft[3]; during++; } // no-op assignment mid-enumeration
+    Check(during == 6, "FenwickTree no-op update does not invalidate enumerators");
+
+    ft.Clear();
+    Check(ft.Count == 6 && ft.Total == 0 && ft[0] == 0, "FenwickTree clear resets values, keeps length");
+
+    // A second T (and a larger tree) so the generic-math instantiation is exercised twice.
+    var wide = new FenwickTree<int>(1000);
+    for (int i = 0; i < 1000; i++) wide.Add(i, i);
+    Check(wide.Total == 499_500 && wide.PrefixSum(10) == 45, "FenwickTree int instantiation at scale");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.
