@@ -112,6 +112,33 @@ public class FenwickTreeTests
     }
 
     [Fact]
+    public void EnumerableConstructor_ShouldHandleEmptySource()
+    {
+        // Boundary for the counted fast path: CopyTo targets index 1 of a length-1 backing array.
+        var fromCollection = new FenwickTree<int>(Array.Empty<int>());
+        Assert.Equal(0, fromCollection.Count);
+        Assert.Equal(0, fromCollection.Total);
+        Assert.Empty(fromCollection);
+
+        var fromLazy = new FenwickTree<int>(Enumerable.Empty<int>());
+        Assert.Equal(0, fromLazy.Count);
+        Assert.Equal(0, fromLazy.Total);
+        Assert.Empty(fromLazy);
+    }
+
+    [Fact]
+    public void EnumerableConstructor_ShouldSeedLogicalValues_FromNonListCollection()
+    {
+        // A counted source that is neither T[] nor List<T>, so the ICollection<T>.CopyTo path is what runs.
+        var source = new SortedSet<int> { 4, 1, 3 }; // enumerates ascending: 1, 3, 4
+        var tree = new FenwickTree<int>(source);
+
+        Assert.Equal(3, tree.Count);
+        Assert.Equal(new[] { 1, 3, 4 }, tree.ToArray());
+        Assert.Equal(8, tree.Total);
+    }
+
+    [Fact]
     public void EnumerableConstructor_ShouldThrow_WhenSourceNull()
     {
         Assert.Throws<ArgumentNullException>(() => new FenwickTree<int>((IEnumerable<int>)null!));

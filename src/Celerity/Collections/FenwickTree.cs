@@ -93,18 +93,31 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     {
         ArgumentNullException.ThrowIfNull(values);
 
-        T[] seed = values as T[] ?? values.ToArray();
-        if (seed.Length > MaxLength)
-            throw new ArgumentException(
-                $"The source holds more than the maximum supported length of {MaxLength} elements.",
-                nameof(values));
+        // A counted source (T[], List<T>, ...) is length-checked *before* anything is allocated and then
+        // copied straight into the 1-based backing array, so an oversized source reports the documented
+        // ArgumentException instead of failing the allocation first, and no intermediate array is built.
+        if (values is ICollection<T> collection)
+        {
+            int count = collection.Count;
+            ThrowIfSourceTooLong(count);
 
-        _length = seed.Length;
-        _tree = new T[_length + 1];
+            _length = count;
+            _tree = new T[count + 1];
+            collection.CopyTo(_tree, 1);
+        }
+        else
+        {
+            // Unknown length: materialize once, then apply the same ceiling.
+            T[] seed = values.ToArray();
+            ThrowIfSourceTooLong(seed.Length);
 
-        // Linear-time build: seed each cell with its own logical value, then push it into its parent. After
-        // one ascending pass every cell holds its correct range sum — O(n), not O(n log n) point-inserts.
-        Array.Copy(seed, 0, _tree, 1, _length);
+            _length = seed.Length;
+            _tree = new T[_length + 1];
+            Array.Copy(seed, 0, _tree, 1, _length);
+        }
+
+        // Linear-time build: every cell now holds its own logical value; one ascending pass pushes each into
+        // its parent, after which each holds its correct range sum — O(n), not O(n log n) point-inserts.
         for (int k = 1; k <= _length; k++)
         {
             int parent = k + (k & -k);
@@ -255,6 +268,14 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
             sum -= _tree[k];
 
         return sum;
+    }
+
+    private static void ThrowIfSourceTooLong(int count)
+    {
+        if (count > MaxLength)
+            throw new ArgumentException(
+                $"The source holds more than the maximum supported length of {MaxLength} elements.",
+                "values");
     }
 
     private static void ThrowIndexOutOfRange(int index) =>

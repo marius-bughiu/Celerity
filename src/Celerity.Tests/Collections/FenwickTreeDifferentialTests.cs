@@ -24,7 +24,9 @@ public class FenwickTreeDifferentialTests
         var rand = new Random(seed);
         int n = rand.Next(1, 64);
 
-        // Seed both models from the same random initial values (exercises the O(n) span build).
+        // Seed both models from the same random initial values. The long[] goes in through the
+        // IEnumerable<T> constructor's counted (ICollection<T>) fast path, so this also exercises the
+        // O(n) linear-time build rather than a sequence of point inserts.
         var initial = new long[n];
         for (int i = 0; i < n; i++)
             initial[i] = rand.Next(-50, 50);
