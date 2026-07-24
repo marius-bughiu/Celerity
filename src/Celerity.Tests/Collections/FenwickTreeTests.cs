@@ -423,14 +423,19 @@ public class FenwickTreeTests
     // that large are permitted (the ceiling is Array.MaxLength - 1), so this is reachable rather than
     // theoretical: the smallest INumber<T> is one byte, making a 2^30-element tree about 1 GiB.
     //
-    // Verified to throw IndexOutOfRangeException before the widening and pass after it. The 1 GiB array is
-    // committed but never faulted in beyond the ~30 cells the ascent actually touches (the runtime zeroes
-    // lazily), so this completes in milliseconds — cheap enough to run on every matrix leg rather than being
-    // skipped. Add_LowestSetBitAscent_ShouldNotWrapAtTwoToThe30 pins the same arithmetic with no allocation.
-    [Fact]
+    // Verified to throw IndexOutOfRangeException against the pre-fix code and pass after the widening, so this
+    // is the regression guard for that fix. It has to build a real 2^30-element tree: the overflow depends on
+    // _length, so no smaller instance can reach the failing step, and an arithmetic-only assertion would just
+    // re-evaluate the expression in the test rather than exercise FenwickTree at all.
+    //
+    // The cost is far lower than the 1 GiB figure suggests — the array is committed but never faulted in
+    // beyond the ~30 cells the ascent touches (the runtime zeroes lazily), so it completes in ~17 ms. Where
+    // that headroom genuinely is not available (a memory-capped container or runner), MemoryIntensiveFact
+    // reports the test skipped rather than running it, so it can never turn the build red on resource grounds.
+    [MemoryIntensiveFact(1024)]
     public void Add_ShouldNotOverflowIndex_WhenTreeExceedsTwoToThe30()
     {
-        const int length = 1 << 30;
+        const int length = 1 << 30; // 2^30 one-byte cells + the reserved 1-based slot ≈ 1 GiB
         var tree = new FenwickTree<byte>(length);
 
         // index + 1 == 1 << 30, so the ascent lands exactly on the overflowing step.
@@ -438,23 +443,6 @@ public class FenwickTreeTests
 
         Assert.Equal((byte)1, tree[length - 1]);
         Assert.Equal((byte)1, tree.Total);
-    }
-
-    [Fact]
-    public void Add_LowestSetBitAscent_ShouldNotWrapAtTwoToThe30()
-    {
-        // The cheap companion to the skipped 1 GiB test above: assert the arithmetic the implementation now
-        // performs in widened form. Done in int, `k + (k & -k)` at k == 1 << 30 wraps to int.MinValue, which
-        // is <= any valid length and would index negatively; done in long it is 1 << 31 and correctly exceeds
-        // every permitted length, so the ascent terminates instead.
-        const int k = 1 << 30;
-
-        int wrapped = unchecked(k + (k & -k));
-        Assert.True(wrapped < 0, "the int-width ascent is expected to wrap negative — this is the bug guarded against");
-
-        long widened = k + (long)(k & -k);
-        Assert.Equal(1L << 31, widened);
-        Assert.True(widened > Array.MaxLength - 1, "the widened parent must exceed the maximum permitted length, so the walk terminates");
     }
 
     [Fact]
