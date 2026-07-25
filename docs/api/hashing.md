@@ -134,7 +134,7 @@ public struct MyLongHasher : IHashProvider<long>, IHashProvider64<long>
 }
 ```
 
-Implement both interfaces when the hasher is also going to key a collection. Implement only `IHashProvider64<T>` if it is for sketches alone — but note the sketches constrain on `IHashProvider<T>`, so in practice you want both.
+**Implement both.** The sketches are constrained on `IHashProvider<T>` and select the 64-bit path from there, so a hasher that implements only `IHashProvider64<T>` cannot be passed to one — the type parameter will not bind. Implementing `IHashProvider64<T>` alone is only useful for your own code that constrains on it directly.
 
 ---
 

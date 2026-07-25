@@ -513,7 +513,8 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
     // A null reference is mapped to a fixed hash so the hasher (which may throw on null, e.g. the string hashers)
     // is never invoked with null — value-type defaults (0, Guid.Empty) are valid inputs and go through the
     // hasher normally. Both the typeof(T).IsValueType guard and the IsNative64 test are JIT-time constants, so
-    // each instantiation compiles down to a single straight-line path (and no boxing).
+    // each instantiation compiles down to a single straight-line path (and no per-call boxing: the 64-bit arm reuses a single
+    // interface reference boxed once per instantiation).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ComputeFingerprintAndIndex(T item, out ushort fingerprint, out int index)
     {

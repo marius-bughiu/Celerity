@@ -342,7 +342,8 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     // e.g. the string hashers) is never invoked with null — value-type defaults (0,
     // Guid.Empty) are valid inputs and go through the hasher normally. Both the
     // typeof(T).IsValueType guard and the IsNative64 test are JIT-time constants, so each
-    // instantiation compiles down to a single straight-line path (and no boxing).
+    // instantiation compiles down to a single straight-line path (and no per-call boxing: the 64-bit arm reuses a single
+    // interface reference boxed once per instantiation).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ComputeHashes(T item, out uint h1, out uint h2)
     {

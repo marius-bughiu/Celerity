@@ -22,11 +22,12 @@ namespace Celerity.Collections;
 /// <para>
 /// <see cref="IsNative64"/> is a pure type test, so the JIT folds it to a constant for every
 /// concrete <typeparamref name="THasher"/> and compiles exactly one of the two arms into the
-/// caller. The interface reference is materialized once in the static initializer
-/// and reused, so the 64-bit path never allocates: the sketches hash through
-/// <c>default(THasher)</c> — they construct their hasher field with <c>default</c> and every
-/// built-in hasher is a stateless struct — so one shared instance is indistinguishable from
-/// the field they hold.
+/// caller. The interface reference is boxed <strong>once</strong>, in the static initializer
+/// for the closed generic type, and reused for every subsequent call — so hashing itself
+/// allocates nothing, at the cost of a single upfront box per instantiation. Reusing one
+/// instance is sound because the sketches hash through <c>default(THasher)</c>: they construct
+/// their hasher field with <c>default</c> and never mutate it, so the shared instance is
+/// indistinguishable from the field they hold.
 /// </para>
 /// </remarks>
 /// <typeparam name="T">The element type being hashed.</typeparam>
