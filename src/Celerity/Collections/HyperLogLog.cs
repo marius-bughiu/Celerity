@@ -255,13 +255,18 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
             // produce only 2^32 · (1 − e^(−n/2^32)) distinct hashes. Inverting that
             // recovers n. The condition is a JIT-time constant, so an estimator built on
             // an IHashProvider64<T> hasher compiles this branch away entirely.
-            double remainingFraction = 1d - (estimate / TWO_POW_32);
+            double saturatedFraction = estimate / TWO_POW_32;
 
             // At or past full saturation the inverse has no finite value — every hash has
             // been seen, and the true cardinality is unbounded from the registers alone.
             // Leaving the raw estimate is the only honest answer there.
-            if (remainingFraction > 0d)
-                estimate = -TWO_POW_32 * Math.Log(remainingFraction);
+            //
+            // ln(1 - x) is evaluated as LogP1(-x) rather than Log(1 - x): forming `1 - x`
+            // first cancels away the low bits of x as x approaches 1, exactly the
+            // near-saturation regime where this correction diverges fastest and is most
+            // sensitive to them. LogP1 takes -x directly and keeps them.
+            if (saturatedFraction < 1d)
+                estimate = -TWO_POW_32 * double.LogP1(-saturatedFraction);
         }
 
         return (long)Math.Round(estimate);

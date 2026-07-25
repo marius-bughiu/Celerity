@@ -24,10 +24,18 @@ namespace Celerity.Collections;
 /// concrete <typeparamref name="THasher"/> and compiles exactly one of the two arms into the
 /// caller. The interface reference is boxed <strong>once</strong>, in the static initializer
 /// for the closed generic type, and reused for every subsequent call — so hashing itself
-/// allocates nothing, at the cost of a single upfront box per instantiation. Reusing one
-/// instance is sound because the sketches hash through <c>default(THasher)</c>: they construct
-/// their hasher field with <c>default</c> and never mutate it, so the shared instance is
-/// indistinguishable from the field they hold.
+/// allocates nothing, at the cost of a single upfront box per instantiation.
+/// </para>
+/// <para>
+/// <strong>Precondition:</strong> the shared instance is <c>default(THasher)</c>, so a caller
+/// may only use this type when it hashes through <c>default(THasher)</c> itself. Every sketch
+/// does: each assigns <c>_hasher = default</c> in its constructor, the field is
+/// <c>readonly</c>, and none of them exposes a constructor that accepts a hasher instance — so
+/// the shared instance is indistinguishable from the field they hold, even for a hasher struct
+/// that carries state. Should a sketch ever gain a hasher-instance constructor, that
+/// equivalence breaks and the 64-bit path would silently hash with the default instead; the
+/// invariant is pinned by <c>SketchHashProvider64Tests.Sketches_DoNotExposeAHasherInstanceConstructor</c>
+/// so it cannot rot unnoticed.
 /// </para>
 /// </remarks>
 /// <typeparam name="T">The element type being hashed.</typeparam>

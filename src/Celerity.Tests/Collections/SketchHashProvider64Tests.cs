@@ -176,6 +176,45 @@ public class SketchHashProvider64Tests
         }
     }
 
+    // ── The precondition the shared boxed hasher instance rests on ───────────
+
+    /// <summary>
+    /// The 64-bit dispatch calls through one <c>default(THasher)</c> boxed per closed generic
+    /// instantiation rather than through each sketch's own <c>_hasher</c> field. That is only
+    /// sound while every sketch hashes through <c>default(THasher)</c> itself — which holds
+    /// today because each assigns <c>_hasher = default</c> and none accepts a hasher instance.
+    /// </summary>
+    /// <remarks>
+    /// If a sketch ever gained a hasher-instance constructor, a stateful (for example seeded)
+    /// hasher struct would be honoured on the 32-bit path and silently ignored on the 64-bit
+    /// one — a divergence no behavioural test would catch, because both paths would still
+    /// produce plausible hashes. This test fails the moment such a constructor appears, so the
+    /// change has to be a deliberate one that also fixes <c>Hash64Source</c>.
+    /// </remarks>
+    [Fact]
+    public void Sketches_DoNotExposeAHasherInstanceConstructor()
+    {
+        Type[] sketches =
+        [
+            typeof(HyperLogLog<,>),
+            typeof(BloomFilter<,>),
+            typeof(CuckooFilter<,>),
+            typeof(XorFilter<,>),
+            typeof(CountMinSketch<,>),
+        ];
+
+        foreach (Type sketch in sketches)
+        {
+            // The hasher is the second type parameter on every one of these types.
+            Type hasherParameter = sketch.GetGenericArguments()[1];
+
+            foreach (System.Reflection.ConstructorInfo ctor in sketch.GetConstructors())
+            {
+                Assert.DoesNotContain(ctor.GetParameters(), p => p.ParameterType == hasherParameter);
+            }
+        }
+    }
+
     // ── Reference-type elements: null still bypasses the hasher ──────────────
 
     [Fact]
