@@ -207,7 +207,31 @@ Shipped to `main`, awaiting the next release tag:
 
 ### Planned
 
-Open issues on the 2.4.0 milestone carry the current list. New candidates are expected to come from the same two sources that have produced every post-roadmap item so far: **parity/symmetry audits** of the shipped families, and **BCL-gap analysis** against the current .NET surface.
+The 2026-Q3 review surveyed the shipped surface against the current .NET 8/9/10 BCL and adversarially verified each candidate against the hard rule and the [non-goals](#non-goals). Thirty-six candidates were proposed; twelve were rostered, in four themes. The open issues on the 2.4.0 milestone carry the detail.
+
+**Drop-in parity and correctness in the shipped surface.** Work on code already on NuGet, and the highest-confidence group.
+
+- Fix `HyperLogLog`'s hash-entropy floor. `Hash64` widens a 32-bit `IHashProvider<T>` result, so the reachable hash space is 2^32 — while the type's own docs assert a 64-bit space and skip the classical large-range correction on that basis. The bias exceeds the advertised 0.81% standard error from ~1e8 distinct elements, in exactly the regime the type is sold for. Needs an `IHashProvider64<T>` sibling interface and 64-bit-native hashers; the same floor is inherited by every other sketch. Status: `planned`.
+- Implement `IReadOnlySet<T>` on the mutable sets and `IDictionary<TKey, TValue>` on the dictionaries. The sets implement `ISet<T>` and the dictionaries `IReadOnlyDictionary<,>`, but `ISet<T>` does not derive from `IReadOnlySet<T>` — so an ordinary BCL-shaped API taking either interface is a compile error against a Celerity type today. This is the same Guiding Principle #3 gap the 2.2.0 set-algebra work closed, one level up. Status: `planned`.
+- Delete the per-probe virtual call. The probe loops test for an empty slot with `EqualityComparer<TKey>.Default.Equals(slot, default(TKey))`, which the JIT devirtualizes for value-type keys but not under `__Canon`-shared reference-type instantiations — one `callvirt` per probe iteration to perform what is a null check. Guiding Principle #2 exists to remove exactly this. Status: `planned`.
+- Span-keyed lookups on the string-keyed collections. .NET 9's `GetAlternateLookup<ReadOnlySpan<char>>` lets the BCL `Dictionary` probe with a span key and no allocation; Celerity's string-keyed types require a materialized `string`, so the BCL is now *ahead* on the axis this library has invested most in. Status: `planned`.
+
+**The ordered / compressed integer-data lane.** The largest structural hole left: 38 collections and not one sorted map or set, with `Trie` the only ordered type and it string-keyed.
+
+- `BTreeDictionary<TKey, TValue, TComparer>` / `BTreeSet<T, TComparer>` — cache-friendly sorted containers against `SortedDictionary<,>` / `SortedSet<T>`, which are red-black trees with a pointer chase and an allocation per node. Status: `planned`.
+- `CompressedIntSet` — a Roaring-style compressed set of 32-bit integers, covering the huge-and-sparse shape that neither `BitSet` (dense, bounded) nor `SparseSet` (small universe, `O(Universe)` memory) nor `IntSet` (hash) serves. Status: `planned`.
+- `RankSelectBitVector` — succinct `Rank` / `Select` over a dense bit vector, the primitive the above compose on. Status: `planned`.
+- Sorted-span set algebra in `Celerity.Primitives` — merge-based `Intersect` / `Union` / `Except` / `IntersectCount` over already-sorted spans, where the BCL answer is LINQ or a `HashSet` round-trip. Status: `planned`.
+
+**A fourth core package: `Celerity.Sorting`.** `Array.Sort` / `MemoryExtensions.Sort` are scalar comparison introsort with no radix, counting, or selection path for primitive keys — and the BCL structurally cannot close it, because `Array.Sort` is contractually in-place while radix needs `O(n)` scratch. That is precisely the flexibility-for-speed trade this project's Vision licenses, against a named BCL counterpart. Would layer on `Celerity.Primitives`, mirroring how `Hashing` and `Collections` layer today. Status: `planned` — see the package-scoping caveat below.
+
+**Build- and release-pipeline integrity.** Three guards the repo advertises but does not have.
+
+- The coverage gate measures one of the six shipping assemblies. `src/coverage.runsettings` filters to `[Celerity]*` with the comment "Measure only the shipping library assembly" — written when there was one. `Celerity.Hashing`, `Celerity.Primitives` and the three showcase packages are unmeasured, while `CONTRIBUTING.md` and `CLAUDE.md` describe the 95%/90% gate as library-wide. Status: `planned`.
+- Nothing can fail after the NuGet push. `release.yml` pushes six packages irreversibly, *then* extracts the release notes and creates the GitHub Release — so an over-long release body (a failure this repo has actually hit) leaves a half-published release. The notes check should be hoisted ahead of the push. Status: `planned`.
+- No API-compatibility gate. Six packages publish on a tag with no `ApiCompat` / `PackageValidation` / public-API-baseline check anywhere in the repo — in a project that already needed a hand-written `TypeForwarders.cs` to survive one assembly split. Status: `planned`.
+
+Two areas were judged real but deliberately deferred rather than rostered: a `Celerity.Statistics` package (DDSketch / reservoir sampling / running moments — a coherent fourth axis, but two new packages in one cycle is too much at once), and a batch of fuzz-target and AOT-smoke-coverage gaps (real, but low expected defect yield; better folded into whichever collection PR lands next than pursued on their own).
 
 ## Non-goals
 
