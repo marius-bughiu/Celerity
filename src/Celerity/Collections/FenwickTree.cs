@@ -1,0 +1,360 @@
+using System.Collections;
+using System.Numerics;
+
+namespace Celerity.Collections;
+
+/// <summary>
+/// A <b>Fenwick tree</b> (Binary Indexed Tree): a fixed-length, array-backed sequence of numeric values that
+/// answers <b>prefix sums</b> (and therefore arbitrary range sums) and applies <b>point updates</b> in
+/// <c>O(log n)</c> each, over a single flat array — <c>n + 1</c> elements, the slot at index <c>0</c> being
+/// unused by the 1-based layout — with no per-node object overhead.
+/// </summary>
+/// <typeparam name="T">
+/// The numeric element type. Constrained to <see cref="INumber{TSelf}"/>, so it works for <see cref="int"/>,
+/// <see cref="long"/>, <see cref="uint"/>, <see cref="ulong"/>, <see cref="double"/>, <see cref="decimal"/>,
+/// and any other value type that implements generic-math addition and subtraction.
+/// </typeparam>
+/// <remarks>
+/// <para>
+/// The BCL ships nothing for the <b>interleaved point-update + prefix-sum-query</b> workload, and a plain
+/// <c>T[]</c> forces a losing tradeoff: keep the raw values and every <see cref="PrefixSum(int)"/> /
+/// <see cref="RangeSum(int, int)"/> query is <c>O(n)</c> (sum a slice); precompute a running-total array and
+/// queries are <c>O(1)</c> but every point <see cref="Add(int, T)"/> is <c>O(n)</c> (fix the whole suffix).
+/// A Fenwick tree gives <b>both</b> in <c>O(log n)</c>. Each stored cell holds the partial sum of a range of
+/// the logical sequence whose length is the lowest set bit of its (1-based) index, so a prefix query
+/// accumulates <c>O(log n)</c> cells by repeatedly stripping the lowest set bit, and an update touches the
+/// <c>O(log n)</c> cells whose ranges cover the changed index by repeatedly adding it back.
+/// </para>
+/// <para>
+/// The documented BCL-beating workload is any stream that <b>mixes updates with range-sum queries</b>:
+/// running / rolling aggregates, order-statistics and rank counters (counting inversions, "how many seen
+/// values are ≤ x"), cumulative-frequency tables, sliding-window sums over a mutating history, and gradient
+/// or weight accumulators. Against a plain array these are <c>O(n·q)</c>; against the Fenwick tree they are
+/// <c>O(q·log n)</c>.
+/// </para>
+/// <para>
+/// The length is fixed at construction (like <see cref="BitSet"/>); the tree does not grow. Reads never
+/// mutate, so they never invalidate an enumerator; <see cref="Add(int, T)"/>, the indexer setter, and
+/// <see cref="Clear"/> do — except when they are no-ops (a zero delta, or assigning the value already
+/// stored), which leave the observable state and any active enumerator untouched. This type is not
+/// thread-safe; concurrent callers must synchronize externally.
+/// </para>
+/// </remarks>
+public sealed class FenwickTree<T> : IReadOnlyCollection<T>
+    where T : struct, INumber<T>
+{
+    // 1-based Fenwick storage: _tree[0] is unused, _tree[k] holds the sum of the logical elements in the
+    // half-open range (k - (k & -k), k] (1-based). _length is the logical element count == _tree.Length - 1.
+    private readonly T[] _tree;
+    private readonly int _length;
+
+    // Bumped on every mutation (Add / indexer set / Clear) so active enumerators throw on concurrent
+    // modification. A pure query (PrefixSum / RangeSum / indexer get) is not a mutation and does not bump it.
+    private int _version;
+
+    /// <summary>
+    /// The largest logical length a tree can hold. The 1-based Fenwick layout reserves an unused cell at
+    /// index <c>0</c>, so the backing array is one longer than the logical length and the ceiling is one
+    /// below <see cref="Array.MaxLength"/>.
+    /// </summary>
+    private static readonly int MaxLength = Array.MaxLength - 1;
+
+    /// <summary>
+    /// Initializes a new Fenwick tree of <paramref name="length"/> logical elements, all zero.
+    /// </summary>
+    /// <param name="length">
+    /// The number of logical elements. Must be non-negative and at most <see cref="Array.MaxLength"/> minus one
+    /// (the 1-based layout reserves one array slot).
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="length"/> is negative, or exceeds the maximum supported length.
+    /// </exception>
+    public FenwickTree(int length)
+    {
+        if (length < 0)
+            throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be non-negative.");
+        if (length > MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(length), length,
+                $"Length must be at most {MaxLength} (Array.MaxLength minus the reserved 1-based slot).");
+
+        _length = length;
+        _tree = new T[length + 1];
+    }
+
+    /// <summary>
+    /// Initializes a new Fenwick tree seeded with <paramref name="values"/>, built in <c>O(n)</c>. The logical
+    /// element at index <c>i</c> starts equal to the <c>i</c>-th element of <paramref name="values"/>.
+    /// </summary>
+    /// <param name="values">The initial logical values, in enumeration order.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="values"/> holds more than <see cref="Array.MaxLength"/> minus one elements.
+    /// </exception>
+    public FenwickTree(IEnumerable<T> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        // A counted source (T[], List<T>, ...) is length-checked *before* anything is allocated and then
+        // copied straight into the 1-based backing array, so an oversized source reports the documented
+        // ArgumentException instead of failing the allocation first, and no intermediate array is built.
+        if (values is ICollection<T> collection)
+        {
+            int count = collection.Count;
+            ThrowIfSourceTooLong(count, nameof(values));
+
+            _length = count;
+            _tree = new T[count + 1];
+            collection.CopyTo(_tree, 1);
+        }
+        else
+        {
+            // Unknown length: materialize once, then apply the same ceiling.
+            T[] seed = values.ToArray();
+            ThrowIfSourceTooLong(seed.Length, nameof(values));
+
+            _length = seed.Length;
+            _tree = new T[_length + 1];
+            Array.Copy(seed, 0, _tree, 1, _length);
+        }
+
+        // Linear-time build: every cell now holds its own logical value; one ascending pass pushes each into
+        // its parent, after which each holds its correct range sum — O(n), not O(n log n) point-inserts.
+        // `parent` is widened to long for the same reason as the ascent in AddCore: at k == 1 << 30 the parent
+        // index is 1 << 31, which overflows a signed int and wraps negative, passing the `<= _length` guard and
+        // then indexing out of bounds. The guard keeps the cast back in range.
+        for (int k = 1; k <= _length; k++)
+        {
+            long parent = k + (long)(k & -k);
+            if (parent <= _length)
+                _tree[(int)parent] += _tree[k];
+        }
+    }
+
+    /// <summary>Gets the number of logical elements in the tree (its fixed length).</summary>
+    public int Count => _length;
+
+    /// <summary>
+    /// Gets the sum of every logical element — equivalent to <see cref="PrefixSum(int)"/> with the full length.
+    /// </summary>
+    public T Total => PrefixSumCore(_length);
+
+    /// <summary>
+    /// Gets or sets the logical value at <paramref name="index"/>. Both accessors are <c>O(log n)</c>: the
+    /// getter is <c>RangeSum(index, index + 1)</c>; the setter applies the delta needed to reach the new value.
+    /// Assigning the value already stored is a no-op and does not invalidate active enumerators.
+    /// </summary>
+    /// <param name="index">The zero-based logical index. Must be in <c>[0, Count)</c>.</param>
+    /// <returns>The current logical value at <paramref name="index"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is out of range.</exception>
+    public T this[int index]
+    {
+        get
+        {
+            if ((uint)index >= (uint)_length)
+                ThrowIndexOutOfRange(index);
+
+            return RangeSumCore(index, index + 1);
+        }
+        set
+        {
+            if ((uint)index >= (uint)_length)
+                ThrowIndexOutOfRange(index);
+
+            T current = RangeSumCore(index, index + 1);
+            AddCore(index, value - current);
+        }
+    }
+
+    /// <summary>
+    /// Adds <paramref name="delta"/> to the logical value at <paramref name="index"/>, in <c>O(log n)</c>.
+    /// A negative <paramref name="delta"/> subtracts (for signed <typeparamref name="T"/>). A zero
+    /// <paramref name="delta"/> is a no-op and does not invalidate active enumerators.
+    /// </summary>
+    /// <param name="index">The zero-based logical index. Must be in <c>[0, Count)</c>.</param>
+    /// <param name="delta">The amount to add to the current value.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is out of range.</exception>
+    public void Add(int index, T delta)
+    {
+        if ((uint)index >= (uint)_length)
+            ThrowIndexOutOfRange(index);
+
+        AddCore(index, delta);
+    }
+
+    /// <summary>
+    /// Returns the sum of the logical elements in <c>[0, endExclusive)</c>, in <c>O(log n)</c>. Passing
+    /// <c>0</c> yields zero; passing <see cref="Count"/> yields <see cref="Total"/>.
+    /// </summary>
+    /// <param name="endExclusive">The exclusive upper bound of the prefix. Must be in <c>[0, Count]</c>.</param>
+    /// <returns>The sum of the first <paramref name="endExclusive"/> logical elements.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="endExclusive"/> is out of range.</exception>
+    public T PrefixSum(int endExclusive)
+    {
+        if ((uint)endExclusive > (uint)_length)
+            throw new ArgumentOutOfRangeException(nameof(endExclusive), endExclusive,
+                "endExclusive must be in the range [0, Count].");
+
+        return PrefixSumCore(endExclusive);
+    }
+
+    /// <summary>
+    /// Returns the sum of the logical elements in <c>[start, endExclusive)</c>, in <c>O(log n)</c>. An empty
+    /// range (<c>start == endExclusive</c>) sums to zero.
+    /// </summary>
+    /// <param name="start">The inclusive lower bound. Must be in <c>[0, endExclusive]</c>.</param>
+    /// <param name="endExclusive">The exclusive upper bound. Must be in <c>[start, Count]</c>.</param>
+    /// <returns>The sum of the logical elements in the half-open range.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The range is invalid or out of bounds.</exception>
+    public T RangeSum(int start, int endExclusive)
+    {
+        if ((uint)start > (uint)_length)
+            throw new ArgumentOutOfRangeException(nameof(start), start,
+                "start must be in the range [0, Count].");
+        if ((uint)endExclusive > (uint)_length)
+            throw new ArgumentOutOfRangeException(nameof(endExclusive), endExclusive,
+                "endExclusive must be in the range [0, Count].");
+        if (endExclusive < start)
+            throw new ArgumentOutOfRangeException(nameof(endExclusive), endExclusive,
+                "endExclusive must be greater than or equal to start.");
+
+        return RangeSumCore(start, endExclusive);
+    }
+
+    /// <summary>Resets every logical element to zero. Runs in <c>O(n)</c>.</summary>
+    public void Clear()
+    {
+        Array.Clear(_tree, 0, _tree.Length);
+        _version++;
+    }
+
+    /// <summary>
+    /// Returns an enumerator over the logical values in index order. Enumeration is <c>O(n log n)</c> (each
+    /// value is recovered by an <c>O(log n)</c> difference of adjacent prefix sums).
+    /// </summary>
+    /// <returns>A struct enumerator over the logical values.</returns>
+    public Enumerator GetEnumerator() => new(this);
+
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    // ---- internals ---------------------------------------------------------------------------------
+
+    // Point update without bounds validation (callers validate). Walks the O(log n) cells whose ranges cover
+    // `index` by repeatedly adding back the lowest set bit of the 1-based position.
+    //
+    // A zero delta is a no-op: it leaves every cell unchanged, so it skips both the walk and the version bump
+    // (matching the rest of the library, where an operation that does not change the observable state does not
+    // invalidate active enumerators). This also covers the indexer setter, which reaches here with
+    // `value - current` — zero exactly when the assigned value is the one already stored.
+    private void AddCore(int index, T delta)
+    {
+        if (T.IsZero(delta))
+            return;
+
+        // The cursor is widened to long because the ascent adds the lowest set bit each step: at k == 1 << 30
+        // the next index is 1 << 31, which overflows a signed int and wraps to int.MinValue — a negative value
+        // that would still pass a `<= _length` test and then index the array out of bounds. Lengths that large
+        // are permitted (the ceiling is Array.MaxLength - 1), so the widening is a correctness fix, not a
+        // theoretical one. The loop still terminates at _length, so the cast back is always in range.
+        for (long k = index + 1; k <= _length; k += k & -k)
+            _tree[(int)k] += delta;
+
+        _version++;
+    }
+
+    // The prefix walk, without validation — the single place the descending bit-strip is written, shared by
+    // PrefixSum, RangeSumCore (and through it the indexer), Total, and the enumerator. Every one of those
+    // callers has already established that the bound is in range, so none of them pay for a second check.
+    // Unlike the ascending walks this one only ever clears the lowest set bit, so it strictly decreases and
+    // cannot overflow.
+    private T PrefixSumCore(int endExclusive)
+    {
+        T sum = T.Zero;
+        for (int k = endExclusive; k > 0; k -= k & -k)
+            sum += _tree[k];
+
+        return sum;
+    }
+
+    // Range sum without validation.
+    private T RangeSumCore(int start, int endExclusive) =>
+        PrefixSumCore(endExclusive) - PrefixSumCore(start);
+
+    private static void ThrowIfSourceTooLong(int count, string paramName)
+    {
+        if (count > MaxLength)
+            throw new ArgumentException(
+                $"The source holds more than the maximum supported length of {MaxLength} elements.",
+                paramName);
+    }
+
+    private static void ThrowIndexOutOfRange(int index) =>
+        throw new ArgumentOutOfRangeException(nameof(index), index,
+            "Index must be in the range [0, Count).");
+
+    /// <summary>A struct enumerator over a <see cref="FenwickTree{T}"/>'s logical values in index order.</summary>
+    public struct Enumerator : IEnumerator<T>
+    {
+        private readonly FenwickTree<T> _tree;
+        private readonly int _version;
+        private int _index;
+        private T _prefix;   // running PrefixSum(_index): lets each value be one O(log n) query, not two.
+        private T _current;
+
+        internal Enumerator(FenwickTree<T> tree)
+        {
+            _tree = tree;
+            _version = tree._version;
+            _index = 0;
+            _prefix = T.Zero;
+            _current = default;
+        }
+
+        /// <summary>Gets the logical value at the current position of the enumerator.</summary>
+        public readonly T Current => _current;
+
+        readonly object? IEnumerator.Current => _current;
+
+        /// <summary>Advances the enumerator to the next logical value.</summary>
+        /// <returns><c>true</c> if there is a next value; otherwise <c>false</c>.</returns>
+        /// <exception cref="InvalidOperationException">The tree was modified during enumeration.</exception>
+        public bool MoveNext()
+        {
+            if (_version != _tree._version)
+                throw new InvalidOperationException("The Fenwick tree was modified during enumeration.");
+
+            if (_index < _tree._length)
+            {
+                // The guard above puts _index + 1 in [1, _length], so the core walk is called directly:
+                // PrefixSum's range check could never fail here, and skipping it keeps the throw path out
+                // of the loop body.
+                T nextPrefix = _tree.PrefixSumCore(_index + 1);
+                _current = nextPrefix - _prefix;
+                _prefix = nextPrefix;
+                _index++;
+                return true;
+            }
+
+            _current = default;
+            return false;
+        }
+
+        /// <summary>Resets the enumerator to before the first value.</summary>
+        /// <exception cref="InvalidOperationException">The tree was modified during enumeration.</exception>
+        public void Reset()
+        {
+            if (_version != _tree._version)
+                throw new InvalidOperationException("The Fenwick tree was modified during enumeration.");
+
+            _index = 0;
+            _prefix = T.Zero;
+            _current = default;
+        }
+
+        /// <summary>Releases resources used by the enumerator. This is a no-op.</summary>
+        public readonly void Dispose()
+        {
+        }
+    }
+}

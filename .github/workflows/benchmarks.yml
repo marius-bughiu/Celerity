@@ -26,22 +26,28 @@ on:
 # together on the one shard runner, so the per-benchmark delta still cancels hardware.
 env:
   # Keep in sync with the matrix.shard list below.
-  SHARD_TOTAL: '6'
+  #
+  # Raised 6 -> 8: at 6 the heaviest shard measured ~65 min per slice, so head + base
+  # came to ~130 min and overran the 120 min timeout, while the lightest finished in
+  # ~86 min. CiConfig.cs is explicit that the job schedule stays as-is and the matrix
+  # is what scales when the suite grows, so this widens the matrix rather than trading
+  # away measurement accuracy.
+  SHARD_TOTAL: '8'
 
 jobs:
   benchmark-shard:
     name: benchmark (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # Steady state: head slice (~30 min) + base slice (~30 min) ~= 60 min. The one
-    # transitional run of THIS PR is slower (see the base step) and may be cancelled
-    # here — that is no worse than the status quo (the gate is cancelled on every PR
-    # today) and self-heals the moment `--shard` lands on main.
+    # Measured at SHARD_TOTAL=6: slices ran 43-65 min, so head + base came to 86-130 min
+    # and the heaviest shard overran this timeout. At 8 the same work divides further,
+    # putting the heaviest shard back comfortably inside the limit. Re-measure and widen
+    # the matrix again if shard durations creep back toward it.
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         # Must enumerate 0 .. SHARD_TOTAL-1.
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
 
     permissions:
       contents: read
@@ -85,11 +91,11 @@ jobs:
         # on THIS runner so hardware variance cancels (hosted runners vary 20-50%
         # run-to-run, so a stored cross-runner baseline would be noise-dominated).
         #
-        # TRANSITIONAL: until this PR's `--shard` support lands on main, the base tip's
-        # `--ci` does not understand `--shard` and runs the FULL ~3h suite here, so these
-        # base steps will exceed the job timeout and be cancelled on THIS PR only. That
-        # matches today's behaviour (the gate is already cancelled on every PR) and the
-        # workflow self-heals once merged — every later PR's base honours `--shard`.
+        # `--shard` is on main now, so the base tip honours it and measures only this
+        # shard's slice — the transitional full-suite base run that this comment used to
+        # warn about no longer happens. A cancellation here is therefore a real signal (the
+        # slice genuinely exceeded the job timeout) rather than expected behaviour that will
+        # self-heal, and should be investigated instead of dismissed.
         if: github.event_name == 'pull_request'
         working-directory: ${{ github.workspace }}
         run: |
