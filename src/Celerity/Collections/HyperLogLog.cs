@@ -29,14 +29,39 @@ namespace Celerity.Collections;
 /// recovers an estimate of <c>n</c> (Flajolet et&#160;al., 2007). The estimate applies
 /// the standard small-range <em>linear counting</em> correction so that low
 /// cardinalities — where many registers are still zero — are estimated accurately
-/// rather than by the bias-prone raw formula. No large-range correction is needed
-/// because the 64-bit hash space is far larger than any realistic cardinality.
+/// rather than by the bias-prone raw formula. Whether a <em>large</em>-range correction
+/// is applied depends on the hasher: see below.
 /// </para>
 /// <para>
-/// The 64-bit hash is derived from a <strong>single</strong>
-/// <see cref="IHashProvider{T}"/> call by avalanching the 32-bit base hash with the
-/// SplitMix64 finalizer, so any existing hasher plugs in unchanged and adding an
-/// element costs one <see cref="IHashProvider{T}.Hash"/> call. Because the estimator
+/// The 64-bit hash comes from a <strong>single</strong> hasher call, but how much
+/// entropy that call carries depends on the hasher, and the estimator adapts:
+/// </para>
+/// <list type="bullet">
+/// <item>
+/// <description>
+/// <strong>A hasher implementing <see cref="IHashProvider64{T}"/></strong> (for example
+/// <see cref="Celerity.Hashing.Int64WangHasher"/>,
+/// <see cref="Celerity.Hashing.GuidHasher"/>, or any of the 64-bit string hashers) supplies
+/// all 64 bits directly. The hash space is then 2^64 — far larger than any realistic
+/// cardinality — so no large-range correction is needed and the estimate holds its
+/// <see cref="StandardError"/> across the whole range. <strong>Use one of these when
+/// counting beyond ~10^8 distinct elements.</strong>
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// <strong>A 32-bit-only hasher</strong> has its code avalanched into 64 bits by the
+/// SplitMix64 finalizer. That finalizer is a bijection, so it loses nothing — but it also
+/// creates nothing: the reachable hash space is still 2^32, and distinct elements start
+/// sharing a hash as the count approaches it (about 0.12% of elements at 10^7, 1.2% at
+/// 10^8, 10.8% at 10^9). The estimator detects this case and applies the classical
+/// Flajolet large-range correction, <c>−2^32 · ln(1 − E / 2^32)</c>, which recovers the
+/// true cardinality from the saturated distinct-hash count.
+/// </description>
+/// </item>
+/// </list>
+/// <para>
+/// Either way adding an element costs one hasher call. Because the estimator
 /// stores only register ranks there is no empty-slot sentinel, so unlike the
 /// hash-table collections it needs no out-of-band handling for <c>default(T)</c> (a
 /// zero <c>int</c>, <see cref="System.Guid.Empty"/>, …): those are hashed and counted
@@ -71,6 +96,12 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
 
     /// <summary>The maximum supported precision (<c>m = 65536</c> registers).</summary>
     public const int MAX_PRECISION = 16;
+
+    // The size of the hash space reachable through a 32-bit IHashProvider<T>, and the
+    // threshold above which the classical large-range correction is worth applying
+    // (Flajolet et al. 2007 use 2^32 / 30). Both are used only on the 32-bit path.
+    private const double TWO_POW_32 = 4294967296d;
+    private const double LARGE_RANGE_THRESHOLD = TWO_POW_32 / 30d;
 
     private readonly byte[] _registers;
     private readonly int _precision;       // p
@@ -187,7 +218,11 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
     /// <see cref="RegisterCount"/>. The raw harmonic-mean estimate is replaced by
     /// <em>linear counting</em> in the small-cardinality regime (when the raw estimate
     /// is small and some registers are still zero), which is markedly more accurate
-    /// there.
+    /// there. When the estimator was parameterized on a 32-bit-only hasher it also
+    /// applies the classical large-range correction above 2^32/30, compensating for the
+    /// distinct elements that share a hash once the count approaches the 2^32 hash
+    /// space; parameterize on an <see cref="IHashProvider64{T}"/> hasher and neither the
+    /// saturation nor the correction applies.
     /// </remarks>
     public long EstimateCardinality()
     {
@@ -209,7 +244,25 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
         // Small-range correction: when the raw estimate is small and registers remain
         // empty, linear counting on the empty-register fraction is far more accurate.
         if (estimate <= 2.5 * m && zeroRegisters != 0)
+        {
             estimate = m * Math.Log((double)m / zeroRegisters);
+        }
+        else if (!Hash64Source<T, THasher>.IsNative64 && estimate > LARGE_RANGE_THRESHOLD)
+        {
+            // Large-range correction. A 32-bit hasher reaches only 2^32 distinct hashes,
+            // so what the registers actually measure is the number of distinct *hashes*,
+            // which saturates as the cardinality approaches 2^32: n distinct elements
+            // produce only 2^32 · (1 − e^(−n/2^32)) distinct hashes. Inverting that
+            // recovers n. The condition is a JIT-time constant, so an estimator built on
+            // an IHashProvider64<T> hasher compiles this branch away entirely.
+            double remainingFraction = 1d - (estimate / TWO_POW_32);
+
+            // At or past full saturation the inverse has no finite value — every hash has
+            // been seen, and the true cardinality is unbounded from the registers alone.
+            // Leaving the raw estimate is the only honest answer there.
+            if (remainingFraction > 0d)
+                estimate = -TWO_POW_32 * Math.Log(remainingFraction);
+        }
 
         return (long)Math.Round(estimate);
     }
@@ -262,19 +315,38 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
         _ => 0.7213 / (1.0 + 1.079 / m),
     };
 
-    // Derives a full 64-bit hash from a single IHashProvider call by avalanching the
-    // 32-bit base hash with the SplitMix64 finalizer. The finalizer is a bijection on
-    // 64 bits, so distinct base hashes stay distinct — the estimator sees no collisions
-    // beyond the hasher's own. A null reference is mapped to a fixed base hash so the
-    // hasher (which may throw on null, e.g. the string hashers) is never invoked with
-    // null; value-type defaults (0, Guid.Empty) are valid inputs and go through the
-    // hasher normally. The typeof(T).IsValueType guard is a JIT-time constant, so the
-    // null check is compiled away entirely for value-type instantiations (no boxing).
+    // Produces the full 64-bit hash the registers are derived from.
+    //
+    // When THasher implements IHashProvider64<T> the hasher's own 64-bit result is used
+    // as-is: the interface contract is that it is already avalanched, and re-mixing it
+    // would only cost multiplies. Otherwise the 32-bit code is avalanched with the
+    // SplitMix64 finalizer, a bijection on 64 bits, so distinct base hashes stay distinct
+    // — but the reachable space is still 2^32, which is what EstimateCardinality's
+    // large-range correction compensates for.
+    //
+    // A null reference is mapped to a fixed hash so the hasher (which may throw on null,
+    // e.g. the string hashers) is never invoked with null; value-type defaults (0,
+    // Guid.Empty) are valid inputs and go through the hasher normally. Both the
+    // typeof(T).IsValueType guard and the IsNative64 test are JIT-time constants, so each
+    // instantiation compiles down to a single straight-line path (and no boxing).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ulong Hash64(T item)
     {
-        int baseHash = (!typeof(T).IsValueType && item is null) ? 0 : _hasher.Hash(item);
-        ulong z = (uint)baseHash + 0x9E3779B97F4A7C15UL;
+        if (!typeof(T).IsValueType && item is null)
+            return Mix64(0);
+
+        if (Hash64Source<T, THasher>.IsNative64)
+            return Hash64Source<T, THasher>.Hash64(item);
+
+        return Mix64((uint)_hasher.Hash(item));
+    }
+
+    // SplitMix64 finalizer seeded with the 32-bit base hash widened by the golden-ratio
+    // increment, so even a zero base hash avalanches to a well-distributed 64-bit value.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong Mix64(uint x)
+    {
+        ulong z = x + 0x9E3779B97F4A7C15UL;
         z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
         z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
         return z ^ (z >> 31);

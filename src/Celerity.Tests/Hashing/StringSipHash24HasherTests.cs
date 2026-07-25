@@ -307,4 +307,43 @@ public class StringSipHash24HasherTests
         Assert.True(set.Contains("Łatin"));
         Assert.False(set.Contains("bob"));
     }
+
+    // ── 64-bit surface (IHashProvider64<string>) ──────────────────────────────
+
+    /// <summary>
+    /// The hasher computes 64 bits of SipHash-2-4 state internally and used to throw half of it
+    /// away; <c>Hash64</c> now publishes it. Reconciling against the same independent
+    /// byte-oriented reference the 32-bit tests use pins the whole pipeline, and asserting
+    /// the xor-fold relationship pins that <c>Hash</c> did not drift while the fold moved.
+    /// </summary>
+    [Fact]
+    public void Hash64_MatchesReferenceImplementation_AndFoldsToHash()
+    {
+        foreach (string s in HasherStringCorpus.Strings)
+        {
+            ulong expected = SipHash24(Encoding.Unicode.GetBytes(s));
+            ulong actual = _hasher.Hash64(s);
+
+            Assert.Equal(expected, actual);
+            Assert.Equal(unchecked((int)(actual ^ (actual >> 32))), _hasher.Hash(s));
+        }
+    }
+
+    [Fact]
+    public void Hash64_NullKey_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => _hasher.Hash64(null!));
+    }
+
+    [Fact]
+    public void Hash64_HighHalf_VariesAcrossKeys()
+    {
+        // The whole point of the 64-bit surface: the high half must carry information rather
+        // than repeat a widened 32-bit code.
+        var highHalves = new HashSet<uint>();
+        for (int i = 0; i < 1000; i++)
+            highHalves.Add((uint)(_hasher.Hash64($"element-{i}") >> 32));
+
+        Assert.True(highHalves.Count > 990, $"only {highHalves.Count} distinct high halves");
+    }
 }

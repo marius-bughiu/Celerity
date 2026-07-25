@@ -71,8 +71,15 @@ namespace Celerity.Hashing;
 /// bytes). The dictionaries store the out-of-band <c>null</c>-key entry without
 /// ever calling the hasher, so this does not collide with the empty-slot sentinel.
 /// </para>
+/// <para>
+/// The algorithm carries 64 bits of state internally, so the type also implements
+/// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns that state un-folded, which is
+/// what the probabilistic sketches want (see <see cref="IHashProvider64{T}"/> for why the extra
+/// 32 bits matter there and not in a hash table). <see cref="Hash"/> is unchanged — it is
+/// exactly <c>h ^ (h &gt;&gt; 32)</c> of the 64-bit result.
+/// </para>
 /// </remarks>
-public struct StringSipHash24Hasher : IHashProvider<string>
+public struct StringSipHash24Hasher : IHashProvider<string>, IHashProvider64<string>
 {
     // Canonical SipHash reference key (RFC-draft test-vector key, bytes 00..0f),
     // read as two little-endian 64-bit halves. Fixed because collections build the
@@ -101,6 +108,26 @@ public struct StringSipHash24Hasher : IHashProvider<string>
     /// </exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int Hash(string key)
+    {
+        ulong h64 = Hash64(key);
+        return unchecked((int)(h64 ^ (h64 >> 32)));
+    }
+
+    /// <summary>
+    /// Computes the full 64-bit SipHash-2-4 (using this type's fixed built-in key) hash of the specified string over its
+    /// native little-endian UTF-16 byte stream — the value <see cref="Hash(string)"/>
+    /// xor-folds down to 32 bits.
+    /// </summary>
+    /// <param name="key">The string to hash. Must not be <c>null</c>.</param>
+    /// <returns>The 64-bit SipHash-2-4 (using this type's fixed built-in key) hash of <paramref name="key"/>.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="key"/> is <c>null</c>. Celerity dictionaries store the
+    /// out-of-band <c>null</c>-key entry without calling the hasher, so this
+    /// check only surfaces when the hasher is used directly or plugged into a
+    /// consumer that does not handle <c>null</c> keys out-of-band.
+    /// </exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ulong Hash64(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
 
@@ -149,7 +176,7 @@ public struct StringSipHash24Hasher : IHashProvider<string>
         ulong h = v0 ^ v1 ^ v2 ^ v3;
 
         // Xor-fold the 64-bit state down to 32 bits, keeping the high-half entropy.
-        return unchecked((int)(h ^ (h >> 32)));
+        return h;
     }
 
     /// <summary>

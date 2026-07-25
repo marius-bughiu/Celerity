@@ -53,6 +53,11 @@ internal static class Differential
         ("CuckooFilterMerge", CuckooFilterMergeCase),
         ("HyperLogLogMerge", HyperLogLogMergeCase),
         ("CountMinSketchMerge", CountMinSketchMergeCase),
+        ("BloomFilterHash64", BloomFilterHash64Case),
+        ("CuckooFilterHash64", CuckooFilterHash64Case),
+        ("XorFilterHash64", XorFilterHash64Case),
+        ("HyperLogLogHash64", HyperLogLogHash64Case),
+        ("CountMinSketchHash64", CountMinSketchHash64Case),
     ];
 
     private const int MinKey = -8;
@@ -1138,5 +1143,149 @@ internal static class Differential
             sb.Append(All[i].Name);
         }
         return sb.ToString();
+    }
+
+    // ---- the IHashProvider64 path on every sketch (one-directional) ---------
+
+    // The five sketches take a hasher's 64-bit surface when it provides one (#304), which is a
+    // *different* code path from the widened 32-bit one the cases above drive: the hash is the
+    // hasher's own ulong rather than a SplitMix64 / fmix64 avalanche of a 32-bit code, so the
+    // fingerprint, bucket-index and register-rank derivations all see different bits. These cases
+    // mirror their 32-bit siblings over `long` keys with Int64WangHasher (which implements
+    // IHashProvider64<long>) so the new path is reconciled against the same BCL oracles.
+
+    private const long MinKey64 = -8L;
+    private const long MaxKey64 = 24L;
+
+    private static long Key64(Random rng) => rng.NextInt64(MinKey64, MaxKey64 + 1);
+
+    private static void BloomFilterHash64Case(Random rng)
+    {
+        var sut = new BloomFilter<long, Int64WangHasher>(64);
+        var oracle = new HashSet<long>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            long item = Key64(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 9: sut.Add(item); oracle.Add(item); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        foreach (long k in oracle)
+            Check(sut.Contains(k), $"false negative for {k}");
+    }
+
+    private static void CuckooFilterHash64Case(Random rng)
+    {
+        var sut = new CuckooFilter<long, Int64WangHasher>(512);
+        var oracle = new Dictionary<long, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            long item = Key64(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 7:
+                    if (sut.TryAdd(item))
+                        oracle[item] = oracle.TryGetValue(item, out int c) ? c + 1 : 1;
+                    break;
+                case < 9:
+                    if (oracle.TryGetValue(item, out int n) && n > 0)
+                    {
+                        Check(sut.Remove(item), $"present element {item} failed to remove");
+                        if (n == 1) oracle.Remove(item);
+                        else oracle[item] = n - 1;
+                    }
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        foreach (var kv in oracle)
+            if (kv.Value > 0)
+                Check(sut.Contains(kv.Key), $"false negative for {kv.Key}");
+    }
+
+    private static void XorFilterHash64Case(Random rng)
+    {
+        var oracle = new HashSet<long>();
+        int size = OpCount(rng);
+        for (int i = 0; i < size; i++)
+            oracle.Add(Key64(rng));
+
+        var sut = new XorFilter<long, Int64WangHasher>(oracle);
+
+        // hash64shift is a bijection on 64 bits, so unlike the naive-hasher case above no two
+        // distinct longs can share a key: the distinct count must match the oracle exactly.
+        Check(sut.Count == oracle.Count, $"distinct count {sut.Count} != oracle {oracle.Count}");
+
+        foreach (long k in oracle)
+            Check(sut.Contains(k), $"false negative for {k}");
+
+        if (oracle.Count == 0)
+            for (long k = MinKey64; k <= MaxKey64; k++)
+                Check(!sut.Contains(k), $"empty xor filter reported {k} present");
+    }
+
+    private static void HyperLogLogHash64Case(Random rng)
+    {
+        var sut = new HyperLogLog<long, Int64WangHasher>();
+        var oracle = new HashSet<long>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            long item = Key64(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 9: sut.Add(item); oracle.Add(item); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        long estimate = sut.EstimateCardinality();
+        int exact = oracle.Count;
+        Check(estimate >= exact - 3 && estimate <= exact + 1,
+            $"cardinality estimate {estimate} not within slack of exact {exact}");
+    }
+
+    private static void CountMinSketchHash64Case(Random rng)
+    {
+        var sut = new CountMinSketch<long, Int64WangHasher>();
+        var oracle = new Dictionary<long, long>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            long item = Key64(rng);
+            switch (rng.Next(0, 10))
+            {
+                case < 7:
+                    sut.Add(item);
+                    oracle[item] = oracle.TryGetValue(item, out long c) ? c + 1 : 1;
+                    break;
+                case < 9:
+                    int weight = rng.Next(1, 20);
+                    sut.Add(item, weight);
+                    oracle[item] = oracle.TryGetValue(item, out long w) ? w + weight : weight;
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        foreach (var kv in oracle)
+            Check(sut.EstimateCount(kv.Key) >= kv.Value,
+                $"underestimate for {kv.Key}: {sut.EstimateCount(kv.Key)} < {kv.Value}");
     }
 }

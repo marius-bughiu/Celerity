@@ -22,6 +22,38 @@ public class Int64WangHasherTests
         Assert.Equal(expected, _hasher.Hash(input));
     }
 
+    // ── 64-bit surface (IHashProvider64<long>) ────────────────────────────────
+    //
+    // hash64shift is a bijection on 64 bits, so Hash64 exposes the whole mix rather than
+    // truncating it. The anchors are the same inputs as the 32-bit ones above; each 32-bit
+    // anchor is exactly the low half of its 64-bit counterpart, which pins the truncation
+    // as well as the mixer.
+
+    [Theory]
+    [InlineData(0L,                    0x77CFA1EEF01BCA90UL)]
+    [InlineData(1L,                    0x5BCA7C69B794F8CEUL)]
+    [InlineData(-1L,                   0x1F89206E3F8EC794UL)]
+    [InlineData(42L,                   0x0F3DB82F1E7B6F7AUL)]
+    [InlineData(long.MaxValue,         0x81AD52718398E837UL)]
+    [InlineData(long.MinValue,         0x3BE7D0F7780DE548UL)]
+    [InlineData(1234567890123456789L,  0x3CA3710FA77A5A1AUL)]
+    public void Hash64_ReturnsExpected(long input, ulong expected)
+    {
+        Assert.Equal(expected, _hasher.Hash64(input));
+    }
+
+    [Fact]
+    public void Hash64_HighHalf_VariesAcrossKeys()
+    {
+        // The whole point of the 64-bit surface: the high half must carry information, not
+        // repeat a widened 32-bit code.
+        var highHalves = new HashSet<uint>();
+        for (long i = 0; i < 1000; i++)
+            highHalves.Add((uint)(_hasher.Hash64(i) >> 32));
+
+        Assert.True(highHalves.Count > 990, $"only {highHalves.Count} distinct high halves");
+    }
+
     // ── Determinism ───────────────────────────────────────────────────────────
 
     [Fact]

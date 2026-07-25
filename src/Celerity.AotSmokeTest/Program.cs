@@ -1347,6 +1347,53 @@ void Check(bool condition, string message)
     Check(blendThrows, "Branchless.Select throws on length mismatch");
 }
 
+// IHashProvider64 (#304) — the 64-bit hasher surface and the sketch dispatch that selects it.
+// The dispatch is a JIT/ILC-folded type test plus a once-boxed interface reference held in a
+// static generic field, so this forces ILC to compile both the folded constant and the boxed
+// interface call for a value-type hasher — the shapes most likely to differ from the JIT.
+{
+    Check(new Int64WangHasher().Hash64(42L) != 0UL, "Int64WangHasher.Hash64");
+    Check((int)new Int64Murmur3Hasher().Hash64(42L) == new Int64Murmur3Hasher().Hash(42L),
+        "Int64Murmur3Hasher.Hash64 low half == Hash");
+    Check((int)new UInt64Hasher().Hash64(42UL) == new UInt64Hasher().Hash(42UL),
+        "UInt64Hasher.Hash64 low half == Hash");
+    Check((int)new UInt64WangHasher().Hash64(42UL) == new UInt64WangHasher().Hash(42UL),
+        "UInt64WangHasher.Hash64 low half == Hash");
+    Guid probeGuid = new Guid("12345678-1234-1234-1234-1234567890AB");
+    Check((int)new GuidHasher().Hash64(probeGuid) == new GuidHasher().Hash(probeGuid),
+        "GuidHasher.Hash64 low half == Hash");
+
+    ulong s64 = new StringXxHash64Hasher().Hash64("celerity");
+    Check(unchecked((int)(s64 ^ (s64 >> 32))) == new StringXxHash64Hasher().Hash("celerity"),
+        "StringXxHash64Hasher.Hash64 xor-fold == Hash");
+
+    // The sketches must take the 64-bit path and stay accurate on it.
+    var hll64 = new HyperLogLog<long, Int64WangHasher>();
+    for (long i = 0; i < 20_000; i++) hll64.Add(i);
+    long est = hll64.EstimateCardinality();
+    Check(est > 18_000 && est < 22_000, "HyperLogLog with a 64-bit hasher");
+
+    var bloom64 = new BloomFilter<long, Int64Murmur3Hasher>(2_000, 0.01);
+    for (long i = 0; i < 2_000; i++) bloom64.Add(i);
+    bool bloomOk = true;
+    for (long i = 0; i < 2_000; i++) bloomOk &= bloom64.Contains(i);
+    Check(bloomOk, "BloomFilter with a 64-bit hasher: no false negatives");
+
+    var cms64 = new CountMinSketch<string, StringXxHash64Hasher>(0.001, 0.01);
+    cms64.Add("celerity", 5);
+    cms64.Add(null!); // null must still bypass the hasher on the 64-bit path
+    Check(cms64.EstimateCount("celerity") >= 5 && cms64.EstimateCount(null!) >= 1,
+        "CountMinSketch with a 64-bit string hasher + null element");
+
+    var xor64 = new XorFilter<long, Int64WangHasher>(new long[] { 1, 2, 3 });
+    Check(xor64.Contains(1) && xor64.Contains(2) && xor64.Contains(3),
+        "XorFilter with a 64-bit hasher");
+
+    // HashQualityEvaluator's 64-bit surface.
+    var report64 = HashQualityEvaluator.Evaluate64<long, Int64WangHasher>(new long[] { 1, 2, 3, 4 }, 8);
+    Check(report64.KeyCount == 4 && report64.DistinctHashCount == 4, "HashQualityEvaluator.Evaluate64");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

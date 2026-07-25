@@ -257,4 +257,83 @@ public class HashQualityEvaluatorTests
         Assert.Contains("Buckets=16", text);
         Assert.Contains("Score=", text);
     }
+
+    // ── 64-bit surface (Evaluate64) ─────────────────────────────────────────────
+
+    // A 64-bit hasher whose two surfaces disagree, so a test can tell which one ran.
+    private struct WideLongHasher : IHashProvider<long>, IHashProvider64<long>
+    {
+        public int Hash(long key) => 7;                      // deliberately degenerate
+
+        public ulong Hash64(long key) => (ulong)key * 0x9E3779B97F4A7C15UL;
+    }
+
+    private static long[] LongRange(int count)
+    {
+        var result = new long[count];
+        for (int i = 0; i < count; i++)
+        {
+            result[i] = i;
+        }
+
+        return result;
+    }
+
+    [Fact]
+    public void Evaluate64_ThrowsArgumentNullException_WhenKeysNull()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => HashQualityEvaluator.Evaluate64<long, WideLongHasher>(null!));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-1024)]
+    public void Evaluate64_ThrowsArgumentOutOfRange_WhenBucketCountLessThanOne(int bucketCount)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => HashQualityEvaluator.Evaluate64<long, WideLongHasher>(LongRange(4), bucketCount));
+    }
+
+    [Fact]
+    public void Evaluate64_MeasuresThe64BitSurface_NotThe32BitOne()
+    {
+        // The 32-bit surface is constant, so Evaluate would report 63 collisions and one
+        // occupied bucket. Evaluate64 must see the multiplicative 64-bit mix instead.
+        HashQualityReport report =
+            HashQualityEvaluator.Evaluate64<long, WideLongHasher>(LongRange(64), 64);
+
+        Assert.Equal(64, report.KeyCount);
+        Assert.Equal(64, report.DistinctHashCount);
+        Assert.Equal(0, report.CollisionCount);
+    }
+
+    [Fact]
+    public void Evaluate64_ReportsBucketMetricsOverTheLowBits()
+    {
+        HashQualityReport report =
+            HashQualityEvaluator.Evaluate64<long, Int64WangHasher>(LongRange(4096), 1024);
+
+        Assert.Equal(4096, report.KeyCount);
+        Assert.Equal(1024, report.BucketCount);
+        Assert.Equal(4096, report.DistinctHashCount);
+
+        // A strong 64-bit mixer over 4096 sequential keys should fill essentially every
+        // bucket and stay close to the ideal sum-of-squares score.
+        Assert.True(report.OccupiedBucketCount > 1000, $"only {report.OccupiedBucketCount} occupied buckets");
+        Assert.InRange(report.DistributionScore, 0.8, 1.2);
+    }
+
+    [Fact]
+    public void Evaluate64_EmptyKeySet_ReportsZeroes()
+    {
+        HashQualityReport report =
+            HashQualityEvaluator.Evaluate64<long, Int64WangHasher>([], 16);
+
+        Assert.Equal(0, report.KeyCount);
+        Assert.Equal(0, report.DistinctHashCount);
+        Assert.Equal(0, report.CollisionCount);
+        Assert.Equal(0, report.OccupiedBucketCount);
+    }
 }

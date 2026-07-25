@@ -16,7 +16,7 @@ As of 2.0.0 Celerity ships as three layered NuGet packages. **`Celerity.Collecti
 | Package | What it adds | Depends on |
 |---|---|---|
 | [`Celerity.Collections`](https://www.nuget.org/packages/Celerity.Collections/) | dictionaries, sets, frozen/perfect-hash collections, streaming sketches | `Celerity.Hashing`, `Celerity.Primitives` |
-| `Celerity.Hashing` | `IHashProvider<T>`, the struct hashers, `HashQualityEvaluator` | `Celerity.Primitives` |
+| `Celerity.Hashing` | `IHashProvider<T>` / `IHashProvider64<T>`, the struct hashers, `HashQualityEvaluator` | `Celerity.Primitives` |
 | `Celerity.Primitives` | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid` | — |
 
 > **Upgrading from 1.x?** Namespaces are unchanged except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives`. See the [migration guide](docs/migration.md#200--the-package-split).
@@ -566,6 +566,8 @@ Once the collection is settled, pick a hasher for your key shape. Defaults are g
 | `Guid` | `GuidHasher` | — |
 | Any other type | `DefaultHasher<T>` (delegates to `EqualityComparer<T>.Default`) | Replace with a hand-written struct hasher if profiling shows `Hash` on the hot path. |
 
+> **Counting past ~10^8 distinct elements? Pick a 64-bit hasher.** The probabilistic sketches (`HyperLogLog`, `BloomFilter`, `CuckooFilter`, `XorFilter`, `CountMinSketch`) never store the element, so two elements that hash alike are indistinguishable forever — and a 32-bit hash reaches only 2^32 ≈ 4.3 billion values, no matter how it is widened. Hashers that carry genuine 64-bit entropy implement **`IHashProvider64<T>`** and the sketches route through it automatically: `Int64WangHasher` / `Int64Murmur3Hasher` (`long`), `UInt64WangHasher` / `UInt64Hasher` (`ulong`), `GuidHasher` (`Guid`), and the nine 64-bit `string` hashers (`StringXxHash64Hasher`, `StringXxHash3Hasher`, `StringCityHash64Hasher`, `StringMetroHash64Hasher`, `StringHighwayHash64Hasher`, `StringSipHash13Hasher`, `StringSipHash24Hasher`, `StringFnV1A64Hasher`, `StringFnV164Hasher`). They already computed 64 bits internally and folded them away, so `Hash64` costs nothing extra. With a 32-bit-only hasher the sketches still work — `HyperLogLog` applies the classical large-range correction so its estimate stays honest — but the entropy floor is real. See [`IHashProvider64<T>`](docs/api/hashing.md#ihashprovider64t).
+
 The value of a struct hasher is **distribution quality (avalanche), determinism, and the zero-cost devirtualized generic** — *not* raw hashing speed. For `int` keys especially, `GetHashCode()` is already the identity (zero work), so no mixing hasher beats it on speed; `Int32IdentityHasher` / `Int64IdentityHasher` expose that zero-work floor explicitly so you can *skip* mixing when keys are already uniform, and you escalate to a mixer only when distribution (not speed) demands it.
 
 > **Fixed-seed hashers are not a HashDoS defence.** `string.GetHashCode()` is already a purpose-built **Marvin32** with per-process random seeding; a hardcoded-seed Murmur3 / FNV / xxHash is *not* more flood-resistant — usually **less**, because an attacker who knows the fixed algorithm and seed can precompute colliding keys offline. What stops hash-flooding is a **keyed** PRF with a *secret, per-process-random* key, not merely picking a "stronger" fixed hash. For untrusted `string` keys, the BCL `string.GetHashCode()` (`DefaultHasher<string>`) is the safe default; reach for the keyed SipHash / HighwayHash hashers only when you also supply a secret seed. The fixed-seed hashers' real strength is **reproducibility** (same code across processes and runtimes), which `GetHashCode()` deliberately does not give you.
@@ -588,6 +590,15 @@ Implement `IHashProvider<T>` as a **struct** (required by `where THasher : struc
 public interface IHashProvider<T>
 {
     int Hash(T key);
+}
+```
+
+For the probabilistic sketches there is a 64-bit sibling. Implement it alongside when your hasher genuinely carries 64 bits of entropy — see [`IHashProvider64<T>`](docs/api/hashing.md#ihashprovider64t) for the contract and why widening a 32-bit code does not qualify:
+
+```csharp
+public interface IHashProvider64<T>
+{
+    ulong Hash64(T key);
 }
 ```
 

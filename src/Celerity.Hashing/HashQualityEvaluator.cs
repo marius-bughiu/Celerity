@@ -61,6 +61,68 @@ public static class HashQualityEvaluator
             keyCount++;
         }
 
+        return Summarize(counts, keyCount, distinctHashes.Count);
+    }
+
+    /// <summary>
+    /// The <see cref="IHashProvider64{T}"/> counterpart of
+    /// <see cref="Evaluate{T, THasher}(IEnumerable{T}, int)"/>: hashes every key with
+    /// <typeparamref name="THasher"/>'s 64-bit surface and reports the same metrics.
+    /// </summary>
+    /// <remarks>
+    /// The collision figures are the reason to reach for this overload. A 32-bit hasher can
+    /// produce at most 2^32 distinct codes, so on a large key sample its collision rate is
+    /// bounded below by the size of the hash space rather than by the quality of its mixing —
+    /// which is invisible in <see cref="Evaluate{T, THasher}(IEnumerable{T}, int)"/>, where every
+    /// hasher is measured against the same ceiling. Evaluating the 64-bit surface separates the
+    /// two: collisions reported here are the hasher's own. The bucket metrics mask the low bits
+    /// of the 64-bit code, mirroring how a power-of-two-sized consumer would index with it.
+    /// </remarks>
+    /// <typeparam name="T">The key type.</typeparam>
+    /// <typeparam name="THasher">The 64-bit hash provider to evaluate. Instantiated via <c>default</c>; the built-in hashers are stateless structs.</typeparam>
+    /// <param name="keys">The sample of keys to hash.</param>
+    /// <param name="bucketCount">The number of buckets, rounded up to the next power of two. Defaults to <c>1024</c>.</param>
+    /// <returns>A <see cref="HashQualityReport"/> describing the distribution.</returns>
+    /// <exception cref="System.ArgumentNullException"><paramref name="keys"/> is <see langword="null"/>.</exception>
+    /// <exception cref="System.ArgumentOutOfRangeException"><paramref name="bucketCount"/> is less than 1.</exception>
+    public static HashQualityReport Evaluate64<T, THasher>(IEnumerable<T> keys, int bucketCount = 1024)
+        where THasher : struct, IHashProvider64<T>
+    {
+        if (keys is null)
+        {
+            throw new ArgumentNullException(nameof(keys));
+        }
+
+        if (bucketCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bucketCount), bucketCount, "Bucket count must be at least 1.");
+        }
+
+        int buckets = FastUtils.NextPowerOfTwo(bucketCount);
+        ulong mask = (ulong)(buckets - 1);
+
+        int[] counts = new int[buckets];
+        HashSet<ulong> distinctHashes = new();
+        THasher hasher = default;
+
+        int keyCount = 0;
+        foreach (T key in keys)
+        {
+            ulong code = hasher.Hash64(key);
+            distinctHashes.Add(code);
+            counts[(int)(code & mask)]++;
+            keyCount++;
+        }
+
+        return Summarize(counts, keyCount, distinctHashes.Count);
+    }
+
+    // Shared statistics pass over the per-bucket loads. Identical for both surfaces: only the
+    // width of the hash code and of the distinct-code set differ above.
+    private static HashQualityReport Summarize(int[] counts, int keyCount, int distinctCount)
+    {
+        int buckets = counts.Length;
+
         int occupied = 0;
         int maxLoad = 0;
         for (int i = 0; i < buckets; i++)
@@ -102,7 +164,6 @@ public static class HashQualityEvaluator
             distributionScore = sumSquares / expectedSumSquares;
         }
 
-        int distinctCount = distinctHashes.Count;
         int collisionCount = keyCount - distinctCount;
         double collisionRate = keyCount == 0 ? 0.0 : (double)collisionCount / keyCount;
 

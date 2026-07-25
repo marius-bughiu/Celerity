@@ -504,17 +504,20 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
         return index ^ (int)(h & (uint)_bucketMask);
     }
 
-    // Derives a non-zero f-bit fingerprint and the primary bucket index from a single IHashProvider call by
-    // avalanching the 32-bit base hash into 64 bits (the SplitMix64 finalizer) and splitting the result. A null
-    // reference is mapped to a fixed base hash so the hasher (which may throw on null, e.g. the string hashers)
+    // Derives a non-zero f-bit fingerprint and the primary bucket index from a single hasher call by splitting a
+    // 64-bit hash. When THasher implements IHashProvider64<T> that hash is the hasher's own 64-bit result;
+    // otherwise the 32-bit code is avalanched into 64 bits with the SplitMix64 finalizer, which spreads the code
+    // over the range but cannot create entropy — the reachable space stays 2^32, putting a floor of roughly
+    // n/2^32 under the false-positive rate no matter how wide a fingerprint the caller asks for.
+    //
+    // A null reference is mapped to a fixed hash so the hasher (which may throw on null, e.g. the string hashers)
     // is never invoked with null — value-type defaults (0, Guid.Empty) are valid inputs and go through the
-    // hasher normally. The typeof(T).IsValueType guard is a JIT-time constant, so the null check is compiled
-    // away entirely for value-type instantiations (no boxing).
+    // hasher normally. Both the typeof(T).IsValueType guard and the IsNative64 test are JIT-time constants, so
+    // each instantiation compiles down to a single straight-line path (and no boxing).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ComputeFingerprintAndIndex(T item, out ushort fingerprint, out int index)
     {
-        int baseHash = (!typeof(T).IsValueType && item is null) ? 0 : _hasher.Hash(item);
-        ulong mixed = Mix64((uint)baseHash);
+        ulong mixed = Hash64(item);
 
         uint fp = (uint)mixed & _fingerprintMask;
         if (fp == 0)
@@ -522,6 +525,19 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
         fingerprint = (ushort)fp;
 
         index = (int)((uint)(mixed >> 32) & (uint)_bucketMask);
+    }
+
+    // The element's 64-bit hash; see ComputeFingerprintAndIndex for the entropy discussion.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ulong Hash64(T item)
+    {
+        if (!typeof(T).IsValueType && item is null)
+            return Mix64(0);
+
+        if (Hash64Source<T, THasher>.IsNative64)
+            return Hash64Source<T, THasher>.Hash64(item);
+
+        return Mix64((uint)_hasher.Hash(item));
     }
 
     // SplitMix64 finalizer seeded with the 32-bit base hash widened by the golden-ratio increment, so even a
