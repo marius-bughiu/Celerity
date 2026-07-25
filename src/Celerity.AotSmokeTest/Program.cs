@@ -631,6 +631,87 @@ void Check(bool condition, string message)
         "SmallDictionary<string, int> IEnumerable ctor + null key");
 }
 
+// Trie — ordered prefix tree over string keys. The only collection that walks a key character by
+// character instead of hashing it, and the only one whose surface mixes an allocation-free struct
+// enumerator with compiler-generated iterators (GetByPrefix / GetKeysWithPrefix / Keys / Values), so
+// the AOT publish must compile both traversal shapes. Exercise the indexer / Add / TryAdd /
+// TryGetValue, the empty-string key stored on the root, GetByPrefix (ascending order, and the
+// O(prefix + matches) contract — it descends to the prefix node and walks only that subtree, never
+// the whole trie), TryGetLongestPrefix, Remove with bottom-up pruning, ordered enumeration, and the
+// IReadOnlyDictionary<string, TValue?> surface.
+{
+    var trie = new Trie<int>(new[]
+    {
+        new KeyValuePair<string, int>("car", 3),
+        new KeyValuePair<string, int>("cart", 4),
+        new KeyValuePair<string, int>("cat", 5),
+        new KeyValuePair<string, int>("dog", 6),
+    });
+    trie[""] = 0; // the empty string is a valid key, held on the root node
+    Check(trie.Count == 5 && trie["cart"] == 4 && trie[""] == 0, "Trie bulk-load ctor + empty-string key");
+    Check(trie.TryAdd("care", 40), "Trie.TryAdd new key");
+    Check(!trie.TryAdd("care", 99) && trie["care"] == 40, "Trie.TryAdd duplicate leaves the value");
+    trie.Add("dot", 7);
+    Check(trie.TryGetValue("cat", out int cat) && cat == 5, "Trie.TryGetValue");
+    Check(!trie.TryGetValue("ca", out _), "Trie interior node is not a key");
+    Check(trie.ContainsKey("dog") && !trie.ContainsKey("do"), "Trie.ContainsKey");
+    Check(trie.ContainsPrefix("ca") && !trie.ContainsPrefix("z"), "Trie.ContainsPrefix");
+
+    // GetByPrefix descends to the prefix node and yields only that subtree, in ascending ordinal order.
+    var prefixed = new List<string>();
+    foreach (var kvp in trie.GetByPrefix("car")) prefixed.Add(kvp.Key);
+    Check(prefixed.Count == 3 && prefixed[0] == "car" && prefixed[1] == "care" && prefixed[2] == "cart",
+        "Trie.GetByPrefix ordered subtree walk");
+    Check(!trie.GetByPrefix("zz").Any(), "Trie.GetByPrefix on a missing prefix yields nothing");
+
+    var keys = new List<string>(trie.GetKeysWithPrefix("do"));
+    Check(keys.Count == 2 && keys[0] == "dog" && keys[1] == "dot", "Trie.GetKeysWithPrefix");
+
+    // Longest stored key that is a prefix of the query — the routing-table shape.
+    Check(trie.TryGetLongestPrefix("cartoon", out string? longest, out int longestValue)
+        && longest == "cart" && longestValue == 4, "Trie.TryGetLongestPrefix interior match");
+    Check(trie.TryGetLongestPrefix("cat", out string? exact, out _) && exact == "cat",
+        "Trie.TryGetLongestPrefix exact match");
+    Check(trie.TryGetLongestPrefix("zzz", out string? rootKey, out int rootValue)
+        && rootKey!.Length == 0 && rootValue == 0, "Trie.TryGetLongestPrefix falls back to the empty key");
+
+    // Remove prunes the nodes that no longer lead to a key, leaving siblings and prefixes intact.
+    Check(trie.Remove("cart", out int removed) && removed == 4, "Trie.Remove out value");
+    Check(!trie.ContainsKey("cart") && trie["car"] == 3 && trie["care"] == 40,
+        "Trie.Remove prunes without disturbing siblings");
+    Check(!trie.Remove("cart"), "Trie.Remove absent key");
+
+    // The struct enumerator yields every entry in ascending ordinal key order.
+    var ordered = new List<string>();
+    foreach (var kvp in trie) ordered.Add(kvp.Key);
+    bool ascending = ordered.Count == trie.Count;
+    for (int i = 1; i < ordered.Count; i++)
+        ascending &= string.CompareOrdinal(ordered[i - 1], ordered[i]) < 0;
+    Check(ascending, "Trie struct enumerator yields every entry in ascending ordinal key order");
+
+    // IReadOnlyDictionary<string, TValue?> conformance. The interface indexer is implemented
+    // explicitly (its getter is nullable-valued), so it is reachable only through the interface.
+    IReadOnlyDictionary<string, int> view = trie;
+    Check(view.Count == trie.Count && view["cat"] == 5 && view.ContainsKey("dog"),
+        "Trie IReadOnlyDictionary indexer + ContainsKey");
+    Check(view.TryGetValue("care", out int viaInterface) && viaInterface == 40,
+        "Trie IReadOnlyDictionary TryGetValue");
+    Check(view.Keys.Count() == view.Count && view.Values.Sum() == 0 + 3 + 40 + 5 + 6 + 7,
+        "Trie IReadOnlyDictionary Keys/Values");
+    int boxed = 0;
+    foreach (var _ in (IEnumerable<KeyValuePair<string, int>>)trie) boxed++;
+    Check(boxed == trie.Count, "Trie boxed IEnumerable enumeration");
+
+    // A reference-type TValue and a larger build, so the AOT publish compiles a second generic
+    // instantiation plus the child-array growth and the Clear path.
+    var wide = new Trie<string>();
+    for (int i = 0; i < 500; i++) wide[$"key{i:D3}"] = $"v{i}";
+    Check(wide.Count == 500 && wide["key499"] == "v499", "Trie<string> build at scale");
+    Check(wide.GetKeysWithPrefix("key1").Count() == 100, "Trie<string> prefix slice at scale");
+    wide.Clear();
+    Check(wide.Count == 0 && !wide.ContainsPrefix("key"), "Trie.Clear");
+}
+
 // EnumMap — dense array-backed dictionary for enum keys (the .NET EnumMap). Exercise
 // the indexer, TryAdd/Add, TryGetValue, Remove, the parallel occupancy vector
 // (default value distinct from absent), and the ascending-order struct enumerator.
