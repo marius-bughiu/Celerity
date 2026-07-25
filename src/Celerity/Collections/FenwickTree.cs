@@ -136,7 +136,7 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     /// <summary>
     /// Gets the sum of every logical element — equivalent to <see cref="PrefixSum(int)"/> with the full length.
     /// </summary>
-    public T Total => PrefixSum(_length);
+    public T Total => PrefixSumCore(_length);
 
     /// <summary>
     /// Gets or sets the logical value at <paramref name="index"/>. Both accessors are <c>O(log n)</c>: the
@@ -264,8 +264,10 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     }
 
     // The prefix walk, without validation — the single place the descending bit-strip is written, shared by
-    // PrefixSum, RangeSumCore, and the indexer getter. Unlike the ascending walks this one only ever clears
-    // the lowest set bit, so it strictly decreases and cannot overflow.
+    // PrefixSum, RangeSumCore (and through it the indexer), Total, and the enumerator. Every one of those
+    // callers has already established that the bound is in range, so none of them pay for a second check.
+    // Unlike the ascending walks this one only ever clears the lowest set bit, so it strictly decreases and
+    // cannot overflow.
     private T PrefixSumCore(int endExclusive)
     {
         T sum = T.Zero;
@@ -324,7 +326,10 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
 
             if (_index < _tree._length)
             {
-                T nextPrefix = _tree.PrefixSum(_index + 1);
+                // The guard above puts _index + 1 in [1, _length], so the core walk is called directly:
+                // PrefixSum's range check could never fail here, and skipping it keeps the throw path out
+                // of the loop body.
+                T nextPrefix = _tree.PrefixSumCore(_index + 1);
                 _current = nextPrefix - _prefix;
                 _prefix = nextPrefix;
                 _index++;
