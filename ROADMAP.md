@@ -14,13 +14,23 @@ Status legend: `planned`, `in-progress`, `done`, `deferred`.
 
 ## Vision
 
-Celerity currently ships a single NuGet package (`Celerity.Collections`). Long-term, the project will expand into a family of focused packages — each targeting a specific area where specialized, high-performance implementations can outperform the BCL in niche scenarios. The package structure will mirror the .NET ecosystem's own organization:
+Celerity ships **three** NuGet packages as of v2.0.0 (the package split — see milestone 2.0.0 below; the roadmap previously described a single `Celerity.Collections` package, which predates that release). Long-term, the project will continue to expand into a family of focused packages — each targeting a specific area where specialized, high-performance implementations can outperform the BCL in niche scenarios. The package structure mirrors the .NET ecosystem's own organization:
 
 - `Celerity.Collections` — dictionaries, sets, and specialized collection types
 - `Celerity.Hashing` — hash providers, hash evaluation utilities (positioned on *distribution quality, determinism, and zero-cost devirtualization* — not on beating `GetHashCode()` for speed; see milestone 1.6.0)
 - `Celerity.Primitives` — low-level utilities that fill genuine BCL gaps: `FastMod`/`FastDiv`, struct PRNGs, span varint, integer digit-count, fast/compliant GUID, alignment/bit-packing (see milestone 2.1.0; we deliberately do not reimplement what `BitOperations`/`TensorPrimitives` already inline)
 
 Each package will remain narrowly scoped: if a type doesn't offer a measurable performance advantage over its BCL counterpart in at least one documented workload, it doesn't ship.
+
+### The "Built with Celerity" showcase tier
+
+Alongside the core packages, a separate **showcase tier** ships standalone libraries *built on* Celerity, each filling a niche where a pure-managed .NET implementation beats dropping to native code. These are downstream consumers, not core packages: they demonstrate the core in a real problem domain and are held to their own domain bar rather than to the core's "must beat the BCL counterpart" rule (in most cases the BCL has no counterpart at all).
+
+- `Celerity.Ring` — deterministic consistent-hash and rendezvous (HRW) rings for sharding and request routing, producing byte-identical node assignment across OS / architecture / runtime.
+- `Celerity.Sentinel` — streaming abuse / heavy-hitter detection (top offenders, per-key rate, fan-out cardinality) in a fixed footprint regardless of key cardinality.
+- `Celerity.Cardinality` — mergeable approximate `COUNT(DISTINCT)` and windowed dedup over unbounded managed streams, with deterministic cross-shard merge.
+
+Cross-process sketch wire-serialization is deliberately deferred — it needs core Celerity to expose sketch bytes first, and the core is explicitly [not a serialization library](#non-goals).
 
 ## Completed milestones
 
@@ -95,7 +105,7 @@ A correctness-of-claims pass on the hashing layer, prompted by the observation t
 
 ## Milestone 2.0.0 — Multi-package restructure
 
-Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API). The *new collections* and *infrastructure* work below has shipped, the **package restructure itself — the defining work of this milestone — has landed** (the library builds and packs as three packages, each multi-targeting `net8.0;net9.0;net10.0`, #189), and the **release pipeline is now complete** (symbol packages, SourceLink, deterministic builds, and a publish-time package-validation gate, #190). What remains is the human-gated go/no-go on the actual `v2.0.0` tag (#213).
+Split the monolithic `Celerity.Collections` into focused packages mirroring the .NET package structure. This is a breaking change in packaging (not necessarily in API). The *new collections* and *infrastructure* work below has shipped, the **package restructure itself — the defining work of this milestone — has landed** (the library builds and packs as three packages, each multi-targeting `net8.0;net9.0;net10.0`, #189), and the **release pipeline is now complete** (symbol packages, SourceLink, deterministic builds, and a publish-time package-validation gate, #190). **`v2.0.0` shipped on 2026-06-21**, closing the human-gated release review ([#213](https://github.com/marius-bughiu/Celerity/issues/213)); the milestone is complete and closed.
 
 ### Package split
 
@@ -131,6 +141,7 @@ The "fast-utils" expansion that fills `Celerity.Primitives` with specialized BCL
 - Integer digit-count / `Log10` — public `CountDigits` (the BCL's LZCNT-based one is `internal`); for buffer sizing and column alignment. Status: `done` — `FastUtils.CountDigits` ships `uint` / `ulong` (exact, branch-lean: the 32-bit path is Lemire's single-`Log2`/LZCNT-plus-magic-table count, the 64-bit path a one-division comparison ladder) plus signed `int` / `long` overloads that count the magnitude (sign excluded, `MinValue` handled without overflow), and the companion integer `Log10(uint)` / `Log10(ulong)` (`CountDigits - 1`, exact at every power of ten where the floating-point `Math.Log10` mis-rounds; `Log10(0)` returns `0`). Correctness is reconciled against `value.ToString().Length` (two dense exhaustive `[0, 2,000,000)` sweeps + every power-of-ten boundary + ~200k random per width), benchmarked vs a naive divide-by-ten loop and `(int)Math.Log10 + 1` in the extended-suite `CountDigitsBenchmark`, documented in [`docs/api/utilities.md`](docs/api/utilities.md#countdigits--log10-base-10-digit-count) and the README, and exercised by the Native AOT smoke test. Tracked in [#194](https://github.com/marius-bughiu/Celerity/issues/194).
 - Fast non-crypto GUID v4 (from the struct PRNG) + RFC-9562 big-endian v7 (sortable, DB-friendly; the BCL's `CreateVersion7` uses a non-big-endian layout that bloats DB indexes). Status: `done` — `FastGuid.CreateVersion4<TRng>(ref TRng)` is a non-cryptographic random v4 filled from any `IRandomSource` struct PRNG, and `FastGuid.CreateVersion7<TRng>(ref TRng, long unixTimeMilliseconds)` is an RFC 9562 v7 whose 48-bit timestamp sits in the **big-endian** most-significant bytes so the canonical string sorts in creation order (unlike .NET 9's mixed-endian `Guid.CreateVersion7`, which scrambles the DB sort order); the `Guid` is built via the field constructor with big-endian reads so this needs no .NET 9-only API (the library targets net8.0). `GuidV7Generator<TRng>` adds a strictly monotonic v7 sequence (RFC 9562 monotonic-counter method: a 12-bit `rand_a` counter that advances within a millisecond and borrows from the next on overflow), so a same-millisecond burst is still strictly increasing. Both set the correct version/variant bits, are deterministic from a seeded generator, and are documented prominently as **NOT cryptographically secure** (use `Guid.NewGuid()` for unguessable IDs). Benchmarked vs `Guid.NewGuid()` (and `Guid.CreateVersion7` under `#if NET9_0_OR_GREATER`) in the extended-suite `GuidBenchmark`, documented in [`docs/api/utilities.md`](docs/api/utilities.md#fastguid-fast-non-crypto-guid-v4--v7) and the README, and exercised by the Native AOT smoke test. Tracked in [#195](https://github.com/marius-bughiu/Celerity/issues/195).
 - Alignment helpers + span bit-packing over caller-owned memory (`AlignUp`/`AlignDown`/`IsAligned`, span bit get/set/scan/popcount), distinct from the owning `BitSet` collection. Status: `done` — `FastUtils.AlignUp` / `AlignDown` / `IsAligned` ship power-of-two alignment for `int` / `long` sizes and pointer-sized `nuint` addresses (the `internal` BCL `Align` trick, exposed and `BitOperations.IsPow2`-validated), and `Celerity.Primitives.SpanBits` is the **non-owning** counterpart to `BitSet`: `Get` / `Set` / `Clear` / `Flip` / hardware-`POPCNT` `PopCount` / `TZCNT` `NextSetBit` scan over a caller-owned `Span<ulong>` (a `stackalloc` buffer, a slice, a pooled array), plus a `WordCount` sizing helper — where `BitSet` owns its storage, `SpanBits` operates on memory you already manage. Reconciled against a modulo oracle (alignment) and a `bool[]` model (bits), benchmarked vs `System.Collections.BitArray` in the extended-suite `SpanBitsBenchmark`, documented in [`docs/api/utilities.md`](docs/api/utilities.md#alignment-helpers-alignup--aligndown--isaligned) and the README, and exercised by the Native AOT smoke test. Tracked in [#196](https://github.com/marius-bughiu/Celerity/issues/196).
+- Sequential bit-field cursors over caller-owned spans — `BitWriter` / `BitReader`. Status: `done` — a bounds-safe pair of `ref struct` cursors for packing and unpacking arbitrary-width bit fields over a `Span<byte>` / `ReadOnlySpan<byte>`, with no stream and no allocation, filling the gap between byte-granular `VarInt` and random-access `SpanBits`: a record of odd-width fields occupies exactly `ceil(total_bits / 8)` bytes instead of one byte per field (wire protocols, compression bitstreams, packed columnar / bitmap-index encodings). Bit order is LSB-first (the DEFLATE convention); the BCL has no span-based multi-bit bit writer. Released in **v2.3.0** and rostered here retroactively by the 2026-Q3 roadmap review — it landed after this milestone was otherwise complete, but belongs to the `SpanBits` / `VarInt` line above rather than to the collection work it shipped alongside.
 
 ### Research — verify the win before shipping
 
@@ -140,6 +151,63 @@ The "fast-utils" expansion that fills `Celerity.Primitives` with specialized BCL
 ### Explicitly out of scope — the BCL already does these well
 
 Per the guiding rule, these are **not** worth shipping because they already inline to optimal/SIMD code: next-power-of-two / `IsPow2` / `Log2` / `PopCount` / `LeadingZeroCount` / `TrailingZeroCount` / `RotateLeft`/`Right` (`System.Numerics.BitOperations`); SIMD `Sum`/`Min`/`Max`/`Dot`/`IndexOf`/`Contains` (`TensorPrimitives`, generic over `INumber<T>`, + `MemoryExtensions`/`SearchValues`); hex and Base64 encode/decode (`Convert.ToHexString`, `System.Buffers.Text.Base64`, AVX-512); byte-swap/endianness (`BinaryPrimitives`); branchless `Min`/`Max`/`Abs`/`Clamp` (JIT `cmov`); and generic xxHash/CRC span hashing (`System.IO.Hashing` — depend on it rather than reimplement).
+
+## Milestone 2.3.0 — specialized-collection expansion (shipped 2026-07-19)
+
+**Rostered retroactively by the 2026-Q3 roadmap review.** The planned roadmap was complete through 2.1.0, but development did not stop — it continued under the convention this project had already been following informally: *when the plan is exhausted, the next item comes from reading the source*, either a BCL-parity gap or a family whose members are not symmetric. That produced a full release worth of collections that were never on the roadmap. This section records them so the roadmap stays a faithful account of what shipped, not only of what was planned.
+
+### Dictionary → set parity (the specialized-set family)
+
+The dictionary family had four specialized performance peers while the set family had none. Closing that asymmetry produced four types, each a drop-in peer of `CeleritySet` differing only in probing/storage strategy. All `done`.
+
+- `RobinHoodSet<T, THasher>` — Robin Hood open addressing; bounds probe-length variance on clustered / adversarial elements, negative lookups exit early.
+- `HashCachingSet<T, THasher>` — parallel cached hash fingerprints; a probe compares one integer before dereferencing an element, winning on lookup-dominated sets and costly-equality elements.
+- `PooledCeleritySet<T, THasher>` — `ArrayPool`-backed and `IDisposable`; recycles buffers for short-lived, frequently-rebuilt sets instead of generating Gen 0 / LOH garbage.
+- `SmallSet<T>` — flat-array linear scan for `n <= ~16`, the set counterpart of `SmallDictionary` and the last dictionary→set parity gap.
+
+Their differential fuzz targets landed with them ([#252](https://github.com/marius-bughiu/Celerity/issues/252)), closing a harness gap where the newest sets were not driven against a BCL oracle.
+
+### Enum-keyed collections
+
+- `EnumSet<TEnum>` — bit-vector set for enum element types (the .NET analogue of Java's `EnumSet`); membership is a single bit test and set algebra is word-wise. Status: `done`. Tracked in [#259](https://github.com/marius-bughiu/Celerity/issues/259).
+- `EnumMap<TEnum, TValue>` — dense array-backed dictionary for enum keys, the dictionary counterpart of `EnumSet`; a lookup is a direct array index, not a hash probe. Status: `done`. Tracked in [#263](https://github.com/marius-bughiu/Celerity/issues/263).
+
+Both support enums whose members are small non-negative integers; a negative or sparse (`[Flags]`) enum throws at construction. Note: these are enum-generic, so they cannot join the `int`-parameterized shared test suites — they carry dedicated coverage instead.
+
+### BCL gaps — structures .NET does not ship at all
+
+Each of these fills a genuine hole in the framework rather than beating an existing BCL type.
+
+- `Deque<T>` — growable double-ended queue over a circular buffer. .NET has no array-backed deque (`Queue<T>` / `Stack<T>` are single-ended; `LinkedList<T>` allocates per element). All four end operations plus a front-relative indexer are `O(1)` amortized. Status: `done`. Tracked in [#268](https://github.com/marius-bughiu/Celerity/issues/268).
+- `DisjointSet<T>` — union-find with union-by-size and path halving. .NET ships no union-find; the idiomatic `Dictionary<T, HashSet<T>>` merge is quadratic where this is near-linear. Status: `done`. Tracked in [#272](https://github.com/marius-bughiu/Celerity/issues/272).
+- `LruCache<TKey, TValue, THasher>` — fixed-capacity LRU. .NET ships no bounded LRU cache; the steady-state get/put/evict path allocates nothing, unlike the idiomatic `Dictionary` + `LinkedList` hand-roll. Status: `done`. Tracked in [#266](https://github.com/marius-bughiu/Celerity/issues/266).
+- `IndexedPriorityQueue<TElement, TPriority, THasher>` — an *addressable* binary heap: unlike `PriorityQueue<,>` it supports decrease-key / update-priority and remove-by-element in `O(log n)`, the operation Dijkstra / A\* / event simulation need and the BCL type cannot do without a lazy-deletion workaround. Status: `done`.
+
+### Membership filters
+
+- `XorFilter<T, THasher>` — build-once, immutable membership filter; smaller (~9.84 bits/element) and faster to query (three probes, no probe loop) than `BloomFilter` or `CuckooFilter` at the same false-positive rate, completing the membership-filter family with its static member. Status: `done`.
+
+### Primitives
+
+- `BitWriter` / `BitReader` also shipped in this release; they are rostered under milestone 2.1.0 above, alongside the `SpanBits` / `VarInt` work they extend.
+
+## Milestone 2.4.0 — rolling post-roadmap work
+
+The planned roadmap is complete through 2.1.0, and the two releases since have been driven entirely by source-reading rather than by the plan. Rather than let that work keep landing unrostered — the drift the 2026-Q3 review was opened to catch — **2.4.0 is a standing milestone** that new post-roadmap work is filed against as it is identified. It is not a fixed scope with a completion date; it is the home for the tier-(c) lane.
+
+Work admitted here is held to exactly the same bar as everything above: the hard rule (a documented workload where it beats its BCL counterpart, or a genuine BCL gap) and the [non-goals](#non-goals).
+
+### In flight
+
+Shipped to `main`, awaiting the next release tag:
+
+- `Trie<TValue>` — ordered prefix tree mapping `string` keys to values; the operation no hash table can do is *prefix* enumeration in sorted order without scanning every key. Status: `done`. Tracked in [#285](https://github.com/marius-bughiu/Celerity/issues/285).
+- `SparseSet` — bounded-universe `[0, Universe)` integer set with `O(1)` clear and dense iteration; the classic ECS / graph-visited-set structure, where `HashSet<int>.Clear()` and hash iteration both lose. Status: `done`. Tracked in [#287](https://github.com/marius-bughiu/Celerity/issues/287).
+- `FenwickTree<T>` — Binary Indexed Tree over a fixed-length sequence: `O(log n)` point update *and* prefix-sum query, where a running-sum array gives `O(1)` query but `O(n)` update and a plain array gives the reverse. Status: `done`. Tracked in [#289](https://github.com/marius-bughiu/Celerity/issues/289).
+
+### Planned
+
+Open issues on the 2.4.0 milestone carry the current list. New candidates are expected to come from the same two sources that have produced every post-roadmap item so far: **parity/symmetry audits** of the shipped families, and **BCL-gap analysis** against the current .NET surface.
 
 ## Non-goals
 
