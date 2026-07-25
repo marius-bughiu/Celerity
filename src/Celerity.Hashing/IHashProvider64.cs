@@ -44,8 +44,9 @@ namespace Celerity.Hashing;
 /// <para>
 /// Hashers that implement it are listed in
 /// <see href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/hashing.md">the hashing API reference</see>;
-/// a sketch parameterized on a hasher that does not simply keeps the widened 32-bit path,
-/// with the accuracy consequences documented on the sketch.
+/// a sketch parameterized on a hasher that does <em>not</em> implement
+/// <see cref="IHashProvider64{T}"/> keeps the widened 32-bit path, with the accuracy
+/// consequences documented on the sketch.
 /// </para>
 /// </remarks>
 /// <typeparam name="T">The type of value to hash.</typeparam>
