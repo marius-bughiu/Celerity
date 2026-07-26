@@ -1111,4 +1111,76 @@ public class RemoveOutValueTests
         Assert.False(map.ContainsKey(1));
         Assert.Empty(map);
     }
+
+    // ---------------------------------------------------------------
+    //  BTreeDictionary
+    //
+    //  The ordered dictionary has no hasher, so the rehash-after-collision
+    //  cases above do not apply; instead a removal can rotate a key out of a
+    //  sibling or merge two nodes, so the captured value must survive the
+    //  rebalancing. The whole-tree row below covers exactly that.
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BTreeDictionary_RemoveOutValue_ReturnsTrueAndCapturedValue_ForExistingKey()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map[7] = "seven";
+
+        bool removed = map.Remove(7, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("seven", captured);
+        Assert.False(map.ContainsKey(7));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void BTreeDictionary_RemoveOutValue_ReturnsFalseAndDefault_ForMissingKey()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map[1] = "one";
+
+        bool removed = map.Remove(99, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Single(map);
+    }
+
+    [Fact]
+    public void BTreeDictionary_RemoveOutValue_ReturnsFalseAndDefault_OnEmptyMap()
+    {
+        var map = new BTreeDictionary<int, string>();
+
+        Assert.False(map.Remove(1, out string? captured));
+        Assert.Null(captured);
+    }
+
+    [Fact]
+    public void BTreeDictionary_RemoveOutValue_CapturesDefaultValueType_Correctly()
+    {
+        var map = new BTreeDictionary<int, int>();
+        map[5] = 0; // a stored value equal to default(TValue)
+
+        Assert.True(map.Remove(5, out int captured));
+        Assert.Equal(0, captured);
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void BTreeDictionary_RemoveOutValue_CapturesValue_AcrossRebalancing()
+    {
+        var map = new BTreeDictionary<int, string>();
+        for (int i = 0; i < 1000; i++)
+            map[i] = "v" + i;
+
+        for (int i = 0; i < 1000; i++)
+        {
+            Assert.True(map.Remove(i, out string? captured));
+            Assert.Equal("v" + i, captured);
+        }
+
+        Assert.Empty(map);
+    }
 }

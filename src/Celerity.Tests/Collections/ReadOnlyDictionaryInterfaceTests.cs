@@ -1494,4 +1494,65 @@ public class ReadOnlyDictionaryInterfaceTests
         Assert.Equal(150L, SumValues(longDict));
         Assert.Equal(150, SumValues(smallDict));
     }
+
+    // -------- BTreeDictionary --------
+
+    [Fact]
+    public void BTreeDictionary_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map[1] = "one";
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1));
+        Assert.Equal("one", ro[1]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new BTreeDictionary<int, string>();
+
+        Assert.Throws<KeyNotFoundException>(() => ro[42]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new BTreeDictionary<int, string>();
+
+        bool found = ro.TryGetValue(42, out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void BTreeDictionary_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map[7] = "seven";
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        bool found = ro.TryGetValue(7, out string? value);
+
+        Assert.True(found);
+        Assert.Equal("seven", value);
+    }
+
+    [Fact]
+    public void BTreeDictionary_InterfaceKeysAndValues_ShouldEnumerateInKeyOrder()
+    {
+        var map = new BTreeDictionary<int, int>();
+        for (int i = 5; i >= 0; i--)
+            map[i] = i * 10;
+
+        IReadOnlyDictionary<int, int> ro = map;
+
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, ro.Keys);
+        Assert.Equal(new[] { 0, 10, 20, 30, 40, 50 }, ro.Values);
+        Assert.Equal(150, SumValues(map));
+    }
 }

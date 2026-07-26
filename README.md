@@ -86,6 +86,13 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 - `Trie<TValue>` — ordered **prefix tree** mapping string keys to values. `GetByPrefix` lists every entry whose key starts with a prefix in `O(prefix + matches)`, and `TryGetLongestPrefix` finds the longest stored key that is a prefix of a query in `O(query)`. The trie the BCL lacks — autocomplete, longest-prefix routing, and ordered (ascending-ordinal) iteration, where a `Dictionary<string, TValue>` has no prefix index and must scan every key and run `StartsWith`. Exact `Add` / `TryGetValue` favour a `Dictionary` (one hash vs a character walk); the trie earns its place on the prefix operations. Implements `IReadOnlyDictionary<string, TValue?>`.
 
+**Sorted (ordered) collections**
+
+- `BTreeDictionary<TKey, TValue, TComparer>` / `BTreeDictionary<TKey, TValue>` — a **sorted map backed by a B-tree**: up to **31 keys per node** in flat arrays, so a lookup visits `log₃₂(n)` nodes instead of chasing `log₂(n)` pointers — roughly **4 cache misses instead of ~20 at `n = 1M`**. Adds the ordered surface a hash table cannot answer: `Min`, `Max`, `TryGetLowerBound` / `TryGetUpperBound`, `EnumerateRange` in `O(log n + k)`, and in-order enumeration. The B-tree the BCL lacks — `SortedDictionary<,>` is a red-black tree with one heap object per entry, and `SortedList<,>` memmoves the tail on every insert. Implements `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`.
+- `BTreeSet<T, TComparer>` / `BTreeSet<T>` — the set counterpart, with the same ordered surface and no values to store, so the memory saving over `SortedSet<T>` is larger still. Implements `ISet<T>` and `IReadOnlySet<T>`.
+
+Both take their ordering as a **struct** `IComparer<T>` type parameter (`DefaultComparer<T>` by default), exactly as the hashers are struct type parameters, so the comparison inlines instead of costing a virtual call per key inspected inside a node.
+
 **Prefix sums**
 
 - `FenwickTree<T>` — a **Binary Indexed Tree** over a fixed-length numeric sequence (`where T : struct, INumber<T>`): **point update** and **prefix / range sum** both in `O(log n)`, in one flat array with no per-node overhead. The prefix-sum structure the BCL lacks — running aggregates, rank / order-statistics counters, cumulative-frequency tables — where a plain array is `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave.
@@ -472,6 +479,31 @@ if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string
 </details>
 
 <details>
+<summary><b>Sorted maps and sets with range scans</b> — BTreeDictionary / BTreeSet</summary>
+
+`BTreeDictionary<TKey, TValue>` and `BTreeSet<T>` keep their keys in order across nodes of up to 31 keys held in flat arrays, so a lookup visits `log₃₂(n)` nodes rather than chasing `log₂(n)` pointers the way `SortedDictionary<,>` / `SortedSet<>` (red-black trees, one heap object per entry) must. They add the ordered surface a hash table has no answer for — bounds and `O(log n + k)` range scans.
+
+```csharp
+var series = new BTreeDictionary<long, double>();
+series[1_000] = 1.5;
+series[1_010] = 2.5;
+series[1_020] = 3.5;
+
+Console.WriteLine(series.Min.Key);   // 1000
+Console.WriteLine(series.Max.Key);   // 1020
+
+// First key at or after 1005, and the first strictly after it.
+series.TryGetLowerBound(1_005, out var atOrAfter);   // 1010
+series.TryGetUpperBound(1_010, out var strictlyAfter); // 1020
+
+// Seek in O(log n), then walk contiguous node arrays — no full scan, no allocation.
+foreach (var sample in series.EnumerateRange(1_000, 1_020))
+    Console.WriteLine(sample.Key); // 1000, 1010
+```
+
+</details>
+
+<details>
 <summary><b>Prefix sums with live updates</b> — FenwickTree</summary>
 
 `FenwickTree<T>` (`where T : struct, INumber<T>`) is a **Binary Indexed Tree**: a fixed-length numeric sequence that answers **prefix / range sums** and applies **point updates** both in `O(log n)`, in one array with no per-node overhead. The BCL ships nothing for the interleaved update + prefix-sum-query workload — a plain array is `O(n)` per query or `O(n)` per update. It wins precisely when both interleave (running aggregates, rank counters, cumulative-frequency tables).
@@ -548,10 +580,11 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Incremental connectivity / connected components** — union equivalence classes and ask whether two elements are in the same group (Kruskal MST, clustering, image segmentation, undirected cycle detection, "are these accounts linked?") | `DisjointSet<T>` | Union-find with **union by size** + **path halving**: near-`O(1)` amortized `Union` / `Find` / `Connected`, `O(α(n)) ≤ 4`. Runs a stream of merges + connectivity queries in near-linear total time, where the BCL substitutes are super-linear — a `Dictionary<T, HashSet<T>>` set-merge is `O(n²)` to coalesce `n` singletons, and a per-query BFS/DFS is `O(V+E)` every query. Grows only by merging (no un-union); it is not an `ISet<T>` — for element membership with add/remove/set-algebra use `CeleritySet` or `HashSet<T>`. |
 | **Priority queue whose priorities change** — a best-so-far frontier you relax (Dijkstra / Prim / A\*), or an event scheduler that reschedules / cancels pending items | `IndexedPriorityQueue<TElement, TPriority, THasher>` | Addressable binary min-heap with an element→slot index: `Update` (decrease-/increase-key) and `Remove` an arbitrary element in `O(log n)`, `Contains` / `TryGetPriority` in `O(1)`. The BCL `PriorityQueue<,>` can do none of these — its only substitute is lazy deletion, which grows the heap by one entry per update. Each element is a key (appears once); custom `IComparer<TPriority>` for a max-heap. For plain enqueue/dequeue with duplicate elements, the BCL `PriorityQueue<,>` is simpler. |
 | **Prefix / autocomplete / longest-prefix** over string keys — list everything under a prefix, find the most specific stored key that prefixes a query, or iterate keys in order (typeahead, route/dispatch tables, tokenizer / dictionary matching, namespace listing) | `Trie<TValue>` | Ordered prefix tree: `GetByPrefix` yields every entry under a prefix in `O(prefix + matches)` and in ascending key order, `TryGetLongestPrefix` finds the longest stored prefix of a query in `O(query)`, and enumeration is sorted for free — none of which a `Dictionary<string, TValue>` can do without an `O(n)` scan + `StartsWith`. For **pure exact-key** `Add` / `TryGetValue` / `Remove` a `Dictionary` (one hash vs a per-character walk) is faster; the trie earns its place only when you use the prefix operations. Implements `IReadOnlyDictionary<string, TValue?>`; not thread-safe. |
+| **Sorted keys** — you need the entries in comparer order, or the ordered questions a hash table cannot answer: smallest / largest key, "first key at or after *x*", "every key in `[a, b)`" (time-series by timestamp, order books, LSM-style memtables, sweep-line events, interval endpoints) | `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` | B-tree with up to 31 keys per node in flat arrays: a lookup visits `log₃₂(n)` nodes instead of chasing `log₂(n)` pointers (~4 cache misses instead of ~20 at `n = 1M`), an in-order walk streams contiguous arrays rather than successor pointers, and allocation is one node per 31 entries instead of one object per entry. The BCL has no B-tree: `SortedDictionary<,>` / `SortedSet<>` are red-black trees, `SortedList<,>` is `O(n)` per middle insert, and `OrderedDictionary<,>` (.NET 9) is *insertion*-ordered, not sorted. Wins on the **interleaved insert + lookup + range-scan** load; for a few dozen entries a `SortedList<,>` is hard to beat, and if you never need order a hash table answers in `O(1)`. |
 | **Prefix / range sums over a sequence you keep mutating** — running aggregates, rank / order-statistics counters (inversions, "how many ≤ x seen"), cumulative-frequency tables | `FenwickTree<T>` | Binary Indexed Tree (`T : INumber<T>`): **point update** and **prefix / range sum** both `O(log n)`, in one array with no per-node overhead. The BCL has no prefix-sum structure; a plain array forces `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave. If the data is immutable after build, a one-shot precomputed prefix-sum array answers in `O(1)` with less code; if you only update and never query a partial sum, a raw array is simpler. |
-| Need a stable iteration order or multi-threaded access | BCL `Dictionary<,>`, `ConcurrentDictionary<,>` (or `Trie<TValue>` for ordered string keys) | Celerity is single-threaded, and the hash-based collections leave iteration order unspecified. The exception is `Trie<TValue>`, which iterates in ascending ordinal key order by contract. |
+| Need a stable iteration order or multi-threaded access | `BTreeDictionary<,>` / `BTreeSet<>` for sorted order, `Trie<TValue>` for ordered string keys; BCL `ConcurrentDictionary<,>` for concurrency | Celerity is single-threaded, and the **hash-based** collections leave iteration order unspecified. The ordered collections do promise order by contract: the B-trees iterate in comparer order, `Trie<TValue>` in ascending ordinal key order. |
 
-**Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), the mutable `IDictionary<,>` interface, or a guaranteed iteration order from the **hash-based** collections (the dictionaries and sets expose `IReadOnlyDictionary<,>` / `IReadOnlySet<>` only and do not promise order across versions). If you need ordered string-keyed iteration, `Trie<TValue>` provides it by contract (ascending ordinal key order).
+**Celerity is not the right answer when** you need concurrent access (use `ConcurrentDictionary<,>` or your own lock — Celerity is single-threaded), or a guaranteed iteration order from the **hash-based** collections (those dictionaries expose `IReadOnlyDictionary<,>` and those sets `ISet<>`, and neither promises an order across versions). When you do need ordered iteration, reach for the ordered collections instead: `BTreeDictionary<,>` / `BTreeSet<>` iterate in comparer order and support bounds and range scans, and `Trie<TValue>` gives ascending ordinal order over string keys. `BTreeDictionary<,>` also implements the **mutable** `IDictionary<,>` interface, and `BTreeSet<>` implements `ISet<>`.
 
 ## Choosing a hasher
 

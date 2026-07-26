@@ -602,6 +602,55 @@ void Check(bool condition, string message)
     Check(wide.Total == 499_500 && wide.PrefixSum(10) == 45, "FenwickTree int instantiation at scale");
 }
 
+// BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
+// the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
+// IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the
+// enumerators, which are the only inline arrays in the library. Exercise the split path (well past a
+// node's 31 keys), the rebalancing remove path, the ordered surface, and both enumerators.
+{
+    var map = new BTreeDictionary<int, int>();
+    for (int i = 999; i >= 0; i--) map.Add(i, i * 2);
+    Check(map.Count == 1000 && map[500] == 1000, "BTreeDictionary bulk add across splits");
+    Check(map.Min.Key == 0 && map.Max.Key == 999, "BTreeDictionary min/max");
+    Check(map.TryGetLowerBound(500, out var lb) && lb.Key == 500, "BTreeDictionary lower bound");
+    Check(map.TryGetUpperBound(500, out var ub) && ub.Key == 501, "BTreeDictionary upper bound");
+
+    var scanned = 0;
+    foreach (var entry in map.EnumerateRange(100, 150)) scanned++;
+    Check(scanned == 50, "BTreeDictionary range scan");
+
+    var ordered = 0;
+    var previous = int.MinValue;
+    foreach (var entry in map)
+    {
+        Check(entry.Key > previous, "BTreeDictionary enumerates in ascending key order");
+        previous = entry.Key;
+        ordered++;
+    }
+
+    Check(ordered == 1000, "BTreeDictionary full enumeration");
+
+    for (int i = 0; i < 1000; i += 2) Check(map.Remove(i, out var removed) && removed == i * 2, "BTreeDictionary remove with rebalancing");
+    Check(map.Count == 500 && map.Min.Key == 1, "BTreeDictionary state after removals");
+
+    IDictionary<int, int> asDictionary = map;
+    Check(asDictionary.Keys.Count == 500 && asDictionary.Values.Count == 500, "BTreeDictionary IDictionary views");
+
+    var set = new BTreeSet<int>(Enumerable.Range(0, 1000).Reverse());
+    Check(set.Count == 1000 && set.Min == 0 && set.Max == 999, "BTreeSet source ctor across splits");
+    Check(!set.TryAdd(10) && set.Remove(10) && !set.Contains(10), "BTreeSet duplicate + remove");
+    var inRange = 0;
+    foreach (int item in set.EnumerateRange(200, 260)) inRange++;
+    Check(inRange == 60, "BTreeSet range scan");
+    ((ISet<int>)set).IntersectWith(new[] { 1, 2, 3, 5000 });
+    Check(set.Count == 3 && set.Max == 3, "BTreeSet ISet<int> intersect");
+
+    // A hand-written struct comparer: a second closed generic instantiation for ILC to compile.
+    var descending = new BTreeSet<int, DescendingIntComparer>();
+    for (int i = 0; i < 100; i++) descending.Add(i);
+    Check(descending.Min == 99 && descending.Max == 0, "BTreeSet custom struct comparer order");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.
@@ -1483,3 +1532,10 @@ if (failures == 0)
 
 Console.Error.WriteLine($"Celerity AOT smoke test: {failures} check(s) failed.");
 return 1;
+
+// A hand-written struct comparer for the BTreeSet instantiation above: a second closed generic, so ILC
+// compiles the constrained IComparer<int> call for a comparer other than DefaultComparer<int>.
+internal readonly struct DescendingIntComparer : IComparer<int>
+{
+    public int Compare(int x, int y) => y.CompareTo(x);
+}

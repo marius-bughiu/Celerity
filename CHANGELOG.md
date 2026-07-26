@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`BTreeDictionary<TKey, TValue, TComparer>` and `BTreeSet<T, TComparer>`** (with `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` aliases and the `DefaultComparer<T>` struct comparer) in `Celerity.Collections` — the library's first sorted map and set, and the B-tree the BCL lacks. Up to 31 keys per node keep a lookup `log₃₂(n)` node visits deep instead of chasing the `log₂(n)` pointers a red-black tree costs, and both add the ordered surface a hash table cannot answer: `Min` / `Max`, lower / upper bound, `EnumerateRange` in `O(log n + k)`, and in-order enumeration. They win on the interleaved insert + lookup + range-scan workload and on memory, and lose slightly on a delete-dominated one. Not thread-safe. Closes [#305](https://github.com/marius-bughiu/Celerity/issues/305).
+
 ## [2.4.0] - 2026-07-26
 
 ### Added

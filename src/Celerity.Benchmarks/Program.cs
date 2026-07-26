@@ -48,6 +48,8 @@ internal class Program
         typeof(IndexedPriorityQueueBenchmark),
         typeof(TrieBenchmark),
         typeof(FenwickTreeBenchmark),
+        typeof(BTreeDictionaryBenchmark),
+        typeof(BTreeSetBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };
