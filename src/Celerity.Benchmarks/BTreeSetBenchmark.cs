@@ -175,8 +175,11 @@ public class BTreeSetBenchmark
     [BenchmarkCategory("Mixed")]
     public int SortedSet_Mixed()
     {
-        // The documented win workload: build the set, then interleave membership tests with in-order range
-        // scans — sweep-line events, sorted id sets, interval endpoints.
+        // The documented win workload: build the set while interleaving membership tests and an in-order scan
+        // of the leading window — sweep-line events, sorted id sets, interval endpoints. The scan is
+        // deliberately the same in-order walk on both sides (no EnumerateRange / GetViewBetween here), so this
+        // row measures insert + membership + enumeration on symmetric work; the range-API comparison is
+        // isolated in the RangeScan group.
         var set = new SortedSet<int>();
         int result = 0;
 

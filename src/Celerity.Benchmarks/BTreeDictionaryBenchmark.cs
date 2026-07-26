@@ -193,8 +193,11 @@ public class BTreeDictionaryBenchmark
     [BenchmarkCategory("Mixed")]
     public int SortedDictionary_Mixed()
     {
-        // The documented win workload: build the map, then interleave lookups with in-order range scans —
-        // time-series ingest, order books, LSM memtables.
+        // The documented win workload: build the map while interleaving lookups and an in-order scan of the
+        // leading window — time-series ingest, order books, LSM memtables. The scan is deliberately the same
+        // in-order walk on both sides (no EnumerateRange here), so this row measures insert + lookup +
+        // enumeration on symmetric work; the range-API asymmetry is isolated in the RangeScan group, which
+        // would otherwise dominate this one.
         var map = new SortedDictionary<int, int>();
         int result = 0;
 
