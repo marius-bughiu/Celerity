@@ -6,7 +6,14 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`StringKeyProbeBenchmark`** — the tracked suite's first `string`-keyed dictionary and set rows (lookup hit, lookup miss, set `Contains`), shown as the **String-keyed probe** card on the benchmark dashboard. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
+- **`ReferenceKeyProbeTests`** — cross-collection coverage for vacant-slot detection on the open-addressed collections with reference-type keys. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
 - **`BTreeDictionary<TKey, TValue, TComparer>` and `BTreeSet<T, TComparer>`** (with `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` aliases and the `DefaultComparer<T>` struct comparer) in `Celerity.Collections` — the library's first sorted map and set, and the B-tree the BCL lacks. Up to 31 keys per node keep a lookup `log₃₂(n)` node visits deep instead of chasing the `log₂(n)` pointers a red-black tree costs, and both add the ordered surface a hash table cannot answer: `Min` / `Max`, lower / upper bound, `EnumerateRange` in `O(log n + k)`, and in-order enumeration. They win on the interleaved insert + lookup + range-scan workload and on memory, and lose slightly on a delete-dominated one. Not thread-safe. Closes [#305](https://github.com/marius-bughiu/Celerity/issues/305).
+
+### Changed
+
+- Lookups on **reference-type keys** are faster across the open-addressed dictionaries and sets — around 10% on in-cache `string`-keyed lookups locally. Behaviour is identical, and value-type keys are unaffected. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
+- The README and performance guide now point `string`-keyed workloads at `HashCachingDictionary`: on 100k `string` keys `CelerityDictionary` measures behind the BCL `Dictionary`, and the hash-caching variant closes the gap. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
 
 ### Fixed
 

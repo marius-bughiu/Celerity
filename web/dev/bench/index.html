@@ -467,7 +467,12 @@
     // Mixed (interleaved insert + lookup + in-order range scan) is the documented win workload; RangeScan is
     // the operation SortedDictionary cannot express at all.
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',                vs: 'SortedDictionary<int, int>', ops: ['Add', 'Lookup', 'Remove', 'RangeScan', 'Mixed'] },
-    { key: 'BTreeSet',            title: 'BTreeSet<int>',                            vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Mixed'] }
+    { key: 'BTreeSet',            title: 'BTreeSet<int>',                            vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Mixed'] },
+    // StringKeyProbe tracks the reference-type-key probe path — every other card here keys on int/long,
+    // where the JIT devirtualizes the per-probe comparison and the codegen question does not arise.
+    // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
+    // LookupMissing is the probe-heavy arm: a miss walks the cluster to the first vacant slot.
+    { key: 'StringKeyProbe',      title: 'String-keyed probe',                       vs: 'Dictionary<string, int> / HashSet<string>', ops: ['Lookup', 'LookupMissing', 'Contains'] }
   ];
 
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.

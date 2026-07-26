@@ -50,6 +50,7 @@ internal class Program
         typeof(FenwickTreeBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
+        typeof(StringKeyProbeBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };

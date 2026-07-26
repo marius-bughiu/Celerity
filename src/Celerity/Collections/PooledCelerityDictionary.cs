@@ -320,7 +320,6 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         if (_hasDefaultKey && valueComparer.Equals(_defaultKeyValue, value))
             return true;
 
-        var keyComparer = EqualityComparer<TKey>.Default;
         TKey?[] keys = _keys;
         TValue?[] values = _values;
         ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
@@ -330,7 +329,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         int length = _size;
         for (int i = 0; i < length; i++)
         {
-            if (!keyComparer.Equals(Unsafe.Add(ref keysRef, (nint)(uint)i), default(TKey)) &&
+            if (!EmptySlot.Is(Unsafe.Add(ref keysRef, (nint)(uint)i)) &&
                 valueComparer.Equals(Unsafe.Add(ref valuesRef, (nint)(uint)i), value))
             {
                 return true;
@@ -722,11 +721,10 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
                 int length = _dict._size;
                 ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
                 ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
-                var comparer = EqualityComparer<TKey>.Default;
                 while (++_index < length)
                 {
                     TKey? key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
-                    if (!comparer.Equals(key, default(TKey)))
+                    if (!EmptySlot.Is(key))
                     {
                         _current = new KeyValuePair<TKey, TValue?>(key!, Unsafe.Add(ref valuesRef, (nint)(uint)_index));
                         return true;
@@ -878,7 +876,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     private static bool IsDefaultKey(TKey key) =>
-        EqualityComparer<TKey>.Default.Equals(key, default(TKey));
+        EmptySlot.Is(key);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ThrowIfDisposed()
@@ -919,7 +917,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         while (true)
         {
             TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(TKey))) { wasEmpty = true; return index; }
+            if (EmptySlot.Is(slot)) { wasEmpty = true; return index; }
             if (comparer.Equals(slot, key)) { wasEmpty = false; return index; }
             index = (index + 1) & mask;
         }
@@ -937,7 +935,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         while (true)
         {
             TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(TKey))) return -1;
+            if (EmptySlot.Is(slot)) return -1;
             if (comparer.Equals(slot, key)) return index;
             index = (index + 1) & mask;
         }
@@ -967,15 +965,14 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         ref TKey? newKeysRef = ref MemoryMarshal.GetArrayDataReference(newKeys);
         ref TValue? newValuesRef = ref MemoryMarshal.GetArrayDataReference(newValues);
 
-        var comparer = EqualityComparer<TKey>.Default;
         for (int i = 0; i < oldSize; i++)
         {
             TKey? key = Unsafe.Add(ref oldKeysRef, (nint)(uint)i);
-            if (comparer.Equals(key, default(TKey)))
+            if (EmptySlot.Is(key))
                 continue;
 
             int index = _hasher.Hash(key!) & mask;
-            while (!comparer.Equals(Unsafe.Add(ref newKeysRef, (nint)(uint)index), default(TKey)))
+            while (!EmptySlot.Is(Unsafe.Add(ref newKeysRef, (nint)(uint)index)))
                 index = (index + 1) & mask;
 
             Unsafe.Add(ref newKeysRef, (nint)(uint)index) = key;
@@ -1004,7 +1001,6 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
         ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
         int mask = _mask;
-        var comparer = EqualityComparer<TKey>.Default;
         int i = startIndex;
         int j = i;
 
@@ -1012,7 +1008,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         {
             j = (j + 1) & mask;
             TKey? candidateKey = Unsafe.Add(ref keysRef, (nint)(uint)j);
-            if (comparer.Equals(candidateKey, default(TKey)))
+            if (EmptySlot.Is(candidateKey))
                 break;
 
             int k = _hasher.Hash(candidateKey!) & mask;

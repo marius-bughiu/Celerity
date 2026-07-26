@@ -386,7 +386,10 @@
     { key: 'Trie',                title: 'Trie<int>',                             vs: 'Dictionary<string, int>' },
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' },
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',             vs: 'SortedDictionary<int, int>' },
-    { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' }
+    { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
+    // StringKeyProbe is the reference-type-key probe path (every other card here keys on int/long).
+    // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
+    { key: 'StringKeyProbe',      title: 'String-keyed probe',                    vs: 'Dictionary<string, int> / HashSet<string>' }
   ];
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no

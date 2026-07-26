@@ -287,7 +287,6 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
         if (_hasDefaultKey && valueComparer.Equals(_defaultKeyValue, value))
             return true;
 
-        var keyComparer = EqualityComparer<TKey>.Default;
         TKey?[] keys = _keys;
         TValue?[] values = _values;
         ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
@@ -295,7 +294,7 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
         int length = keys.Length;
         for (int i = 0; i < length; i++)
         {
-            if (!keyComparer.Equals(Unsafe.Add(ref keysRef, (nint)(uint)i), default(TKey)) &&
+            if (!EmptySlot.Is(Unsafe.Add(ref keysRef, (nint)(uint)i)) &&
                 valueComparer.Equals(Unsafe.Add(ref valuesRef, (nint)(uint)i), value))
             {
                 return true;
@@ -615,11 +614,10 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
                 int length = keys.Length;
                 ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
                 ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
-                var comparer = EqualityComparer<TKey>.Default;
                 while (++_index < length)
                 {
                     TKey? key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
-                    if (!comparer.Equals(key, default(TKey)))
+                    if (!EmptySlot.Is(key))
                     {
                         _current = new KeyValuePair<TKey, TValue?>(key!, Unsafe.Add(ref valuesRef, (nint)(uint)_index));
                         return true;
@@ -773,7 +771,7 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     private static bool IsDefaultKey(TKey key) =>
-        EqualityComparer<TKey>.Default.Equals(key, default(TKey));
+        EmptySlot.Is(key);
 
     // Robin Hood lookup. Walks the probe chain from the key's ideal slot and
     // stops on one of three conditions: an empty slot (key absent), a resident
@@ -807,7 +805,7 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
         while (true)
         {
             TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(TKey)))
+            if (EmptySlot.Is(slot))
                 return -1;
             if (Unsafe.Add(ref distRef, (nint)(uint)index) < dist)
                 return -1;
@@ -839,14 +837,13 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
         ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
         ref int distRef = ref MemoryMarshal.GetArrayDataReference(distances);
         int mask = keys.Length - 1;
-        var comparer = EqualityComparer<TKey>.Default;
         int index = hash & mask;
         int dist = 0;
 
         while (true)
         {
             ref TKey? slotKey = ref Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (comparer.Equals(slotKey, default(TKey)))
+            if (EmptySlot.Is(slotKey))
             {
                 slotKey = key;
                 Unsafe.Add(ref valuesRef, (nint)(uint)index) = value;
@@ -902,11 +899,10 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
         ref TKey? oldKeysRef = ref MemoryMarshal.GetArrayDataReference(oldKeys);
         ref TValue? oldValuesRef = ref MemoryMarshal.GetArrayDataReference(oldValues);
 
-        var comparer = EqualityComparer<TKey>.Default;
         for (int i = 0; i < oldKeys.Length; i++)
         {
             TKey? key = Unsafe.Add(ref oldKeysRef, (nint)(uint)i);
-            if (comparer.Equals(key, default(TKey)))
+            if (EmptySlot.Is(key))
                 continue;
 
             InsertAbsent(newKeys, newValues, newDistances, key!, Unsafe.Add(ref oldValuesRef, (nint)(uint)i));
@@ -934,7 +930,6 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
         ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
         ref int distRef = ref MemoryMarshal.GetArrayDataReference(distances);
         int mask = keys.Length - 1;
-        var comparer = EqualityComparer<TKey>.Default;
         int i = startIndex;
 
         while (true)
@@ -942,7 +937,7 @@ public class RobinHoodDictionary<TKey, TValue, THasher>
             int next = (i + 1) & mask;
             TKey? nextKey = Unsafe.Add(ref keysRef, (nint)(uint)next);
             int nextDist = Unsafe.Add(ref distRef, (nint)(uint)next);
-            if (comparer.Equals(nextKey, default(TKey)) || nextDist == 0)
+            if (EmptySlot.Is(nextKey) || nextDist == 0)
                 break;
 
             Unsafe.Add(ref keysRef, (nint)(uint)i) = nextKey;
