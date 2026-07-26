@@ -29,12 +29,23 @@ namespace Celerity.Hashing;
 /// entry without calling the hasher, so this does not collide with the
 /// empty-slot sentinel.
 /// </para>
+/// <para>
+/// <c>hash64shift</c> is invertible on 64 bits, so the type also implements
+/// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns the full mix instead
+/// of the low half, which is what the probabilistic sketches want (see
+/// <see cref="IHashProvider64{T}"/> for why the extra 32 bits matter there and not in a
+/// hash table).
+/// </para>
 /// </remarks>
-public struct UInt64WangHasher : IHashProvider<ulong>
+public struct UInt64WangHasher : IHashProvider<ulong>, IHashProvider64<ulong>
 {
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Hash(ulong key)
+    public int Hash(ulong key) => (int)Hash64(key);
+
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ulong Hash64(ulong key)
     {
         ulong u = key;
 
@@ -46,6 +57,6 @@ public struct UInt64WangHasher : IHashProvider<ulong>
         u ^= u >> 28;
         u += u << 31;
 
-        return (int)u;
+        return u;
     }
 }

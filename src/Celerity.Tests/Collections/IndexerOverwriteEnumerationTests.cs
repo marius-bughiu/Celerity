@@ -218,4 +218,22 @@ public class IndexerOverwriteEnumerationTests
             _ = enumerator.Current;
         }
     }
+
+    [Fact]
+    public void BTreeDictionary_OverwriteDuringEnumeration_DoesNotThrow()
+    {
+        var map = new BTreeDictionary<int, int>();
+        map[0] = 100; // default (zero) key - an ordinary, order-first key here
+        map[1] = 10;
+        map[2] = 20;
+
+        AssertOverwriteAllowedAddRejected(
+            getEnumerator: () => map.GetEnumerator(),
+            overwriteExisting: () => map[1] = 11,
+            overwriteDefault: () => map[0] = 101,
+            addNewKey: () => map[99] = 990);
+
+        Assert.Equal(11, map[1]);
+        Assert.Equal(101, map[0]);
+    }
 }

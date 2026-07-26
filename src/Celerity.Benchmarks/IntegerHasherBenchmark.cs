@@ -259,4 +259,44 @@ public class IntegerHasherBenchmark
     [Benchmark]
     [BenchmarkCategory("Guid")]
     public int Guid_Celerity() => HashAll<Guid, GuidHasher>(guidKeys);
+
+    // ---- IHashProvider64: the un-truncated 64-bit surface ----
+
+    /// <summary>
+    /// Hashes every key through <typeparamref name="THasher"/>'s <c>Hash64</c>, XOR-folding the codes
+    /// into a single returned value so the JIT cannot elide the loop. These arms sit in their key type's
+    /// category next to the 32-bit ones, so the dashboard shows what the probabilistic sketches pay for
+    /// the extra entropy: the <c>_Hash64</c> row is the same mixer without the final truncation, so it
+    /// should measure at or below its 32-bit sibling.
+    /// </summary>
+    private static ulong HashAll64<T, THasher>(T[] keys) where THasher : struct, IHashProvider64<T>
+    {
+        THasher hasher = default;
+        ulong acc = 0;
+        for (int i = 0; i < keys.Length; i++)
+        {
+            acc ^= hasher.Hash64(keys[i]);
+        }
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Int64")]
+    public ulong Int64_Wang_Hash64() => HashAll64<long, Int64WangHasher>(longKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("Int64")]
+    public ulong Int64_Murmur3_Hash64() => HashAll64<long, Int64Murmur3Hasher>(longKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("UInt64")]
+    public ulong UInt64_Default_Hash64() => HashAll64<ulong, UInt64Hasher>(ulongKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("UInt64")]
+    public ulong UInt64_Wang_Hash64() => HashAll64<ulong, UInt64WangHasher>(ulongKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("Guid")]
+    public ulong Guid_Celerity_Hash64() => HashAll64<Guid, GuidHasher>(guidKeys);
 }

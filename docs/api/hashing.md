@@ -38,6 +38,106 @@ Use `[MethodImpl(MethodImplOptions.AggressiveInlining)]` to hint the JIT. All bu
 
 ---
 
+## IHashProvider64&lt;T&gt;
+
+```csharp
+public interface IHashProvider64<T>
+{
+    ulong Hash64(T key);
+}
+```
+
+The 64-bit sibling of `IHashProvider<T>`, for consumers whose accuracy depends on the **size of the hash space** rather than on the quality of a bucket index.
+
+### Why 32 bits is enough for a table and not for a sketch
+
+A hash table masks the code down to a bucket index and resolves the rest by comparing keys, so a collision costs a probe, not a wrong answer. 32 bits is plenty.
+
+The probabilistic sketches — `HyperLogLog`, `BloomFilter`, `CuckooFilter`, `XorFilter`, `CountMinSketch` — never store the element. Two elements that hash alike are indistinguishable *forever*, and their error budgets assume the hash space is large enough for that to be negligible.
+
+A 32-bit hash gives only 2^32 ≈ 4.3 billion values. Widening it into 64 bits with a bijective finalizer such as SplitMix64 spreads those values over the full range but **creates no entropy that was not there** — the reachable set is still 2^32. For `n` distinct elements the expected number of distinct codes is `2^32 · (1 − e^(−n / 2^32))`, a systematic shortfall of about `n / 2^33`:
+
+| distinct elements | elements sharing a hash |
+|---|---|
+| 10^7 | ~0.12% |
+| 10^8 | ~1.2% |
+| 10^9 | ~10.8% |
+
+`HyperLogLog` at the default precision has a 0.81% standard error, so from roughly 10^8 distinct elements the entropy floor dominates the estimator's own noise. `IHashProvider64<T>` is how you get past it.
+
+### The contract
+
+Implementing the interface is a claim that the result carries **genuine 64-bit information** — derived from at least 64 bits of internal state and avalanched so every input bit influences every output bit. Consumers use `Hash64` as-is, without re-mixing it.
+
+Widening a 32-bit code does **not** qualify, and a hasher whose key type holds fewer than 64 bits (an `int`, say) cannot qualify no matter how it mixes. That is why the `Int32*` / `UInt32*` hashers, the naive folds, and `DefaultHasher<T>` (bounded by the 32-bit `object.GetHashCode()`) deliberately do not implement it.
+
+The interface does **not** derive from `IHashProvider<T>`: the two contracts are independent, and inheriting would force every 64-bit hasher to also publish a lossy 32-bit fold. The built-in hashers implement both, so one struct serves the collections and the sketches alike.
+
+### Which built-in hashers implement it
+
+| Key type | Hashers with `Hash64` | Relationship to `Hash` |
+|---|---|---|
+| `long` | `Int64WangHasher`, `Int64Murmur3Hasher` | `Hash` is the low 32 bits of `Hash64` |
+| `ulong` | `UInt64WangHasher`, `UInt64Hasher` | `Hash` is the low 32 bits of `Hash64` |
+| `Guid` | `GuidHasher` | `Hash` is the low 32 bits of `Hash64` |
+| `string` | `StringXxHash64Hasher`, `StringXxHash3Hasher`, `StringCityHash64Hasher`, `StringMetroHash64Hasher`, `StringHighwayHash64Hasher`, `StringSipHash13Hasher`, `StringSipHash24Hasher`, `StringFnV1A64Hasher`, `StringFnV164Hasher` | `Hash` is `h ^ (h >> 32)` of `Hash64` |
+
+These all already computed 64 bits internally and then threw half away, so `Hash64` costs nothing extra — it is the same mixer minus the final narrowing.
+
+### Using it with a sketch
+
+Nothing changes at the call site. Parameterize the sketch on a hasher that implements `IHashProvider64<T>` and it takes the 64-bit path automatically; parameterize it on a 32-bit-only hasher and it keeps the widened path. The selection is a compile-time type test the JIT folds away, so each instantiation compiles to a single straight-line path and neither allocates.
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// 2^64 hash space: no saturation, no correction, error stays at ~0.81%.
+var wide = new HyperLogLog<long, Int64WangHasher>();
+
+// 2^32 hash space: HyperLogLog detects this and applies the classical
+// large-range correction above 2^32/30 so the estimate stays honest.
+var narrow = new HyperLogLog<long, Int64WangNaiveHasher>();
+
+for (long i = 0; i < 200_000_000; i++)
+{
+    wide.Add(i);
+    narrow.Add(i);
+}
+```
+
+For counts beyond ~10^8, prefer a 64-bit hasher. Below that the two paths are indistinguishable.
+
+### Implementing a custom 64-bit hasher
+
+```csharp
+using System.Runtime.CompilerServices;
+using Celerity.Hashing;
+
+public struct MyLongHasher : IHashProvider<long>, IHashProvider64<long>
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(long key) => (int)Hash64(key);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ulong Hash64(long key)
+    {
+        // Murmur3 fmix64 — a bijection on 64 bits, so no entropy is lost.
+        ulong x = (ulong)key;
+        x ^= x >> 33;
+        x *= 0xff51afd7ed558ccdUL;
+        x ^= x >> 33;
+        x *= 0xc4ceb9fe1a85ec53UL;
+        x ^= x >> 33;
+        return x;
+    }
+}
+```
+
+**Implement both.** The sketches are constrained on `IHashProvider<T>` and select the 64-bit path from there, so a hasher that implements only `IHashProvider64<T>` cannot be passed to one — the type parameter will not bind. Implementing `IHashProvider64<T>` alone is only useful for your own code that constrains on it directly.
+
+---
+
 ## Built-in Hashers
 
 ### Int32IdentityHasher
@@ -91,12 +191,14 @@ The extra middle-16-bits fold over a naive `key.GetHashCode()` keeps a chunk of 
 ### Int64Murmur3Hasher
 
 ```csharp
-public struct Int64Murmur3Hasher : IHashProvider<long>
+public struct Int64Murmur3Hasher : IHashProvider<long>, IHashProvider64<long>
 ```
 
 The finalizer stage of MurmurHash3 applied to 64-bit integer keys. Produces well-distributed hashes even for clustered input. Returns the lower 32 bits of the mixed result.
 
 **Algorithm:** Three rounds of XOR-shift and multiply using the standard Murmur3 constants (`0xff51afd7ed558ccd`, `0xc4ceb9fe1a85ec53`), followed by a final XOR-shift, truncated to `int`.
+
+> Also implements [`IHashProvider64<long>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
 ### StringDjb2Hasher
 
@@ -219,7 +321,7 @@ It sits in the `string` escalation ladder: `StringFnV1AHasher` (cheapest, low-by
 ### StringFnV1A64Hasher
 
 ```csharp
-public struct StringFnV1A64Hasher : IHashProvider<string>
+public struct StringFnV1A64Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 FNV-1a **64-bit** hash for string keys over the **full** UTF-16 representation — it folds the same little-endian UTF-16 byte stream as `StringFnV1AFullHasher` (low byte then high byte of every character), but accumulates into a 64-bit state using the FNV-1a 64-bit parameters, then xor-folds the result down to a signed 32-bit value. Carrying twice as many bits through the accumulation means intermediate values collide far less often, so for longer keys and larger key sets the distribution holds up better than the 32-bit FNV-1a hashers before the final fold. The fold (`h ^ (h >> 32)`) is the standard FNV retraction and keeps the extra high-half entropy in the returned value.
@@ -230,10 +332,12 @@ It sits one rung above `StringFnV1AFullHasher` on the `string` escalation ladder
 
 **Note:** maps the empty string `""` → the 64-bit offset basis xor-folded to 32 bits — no characters are folded. The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
 
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
 ### StringFnV164Hasher
 
 ```csharp
-public struct StringFnV164Hasher : IHashProvider<string>
+public struct StringFnV164Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 The original **FNV-1 64-bit** hash (multiply-then-XOR) for string keys over the **full** UTF-16 representation — it folds the same little-endian UTF-16 byte stream as `StringFnV1Hasher` (low byte then high byte of every character), but accumulates into a 64-bit state using the FNV-1 64-bit parameters, then xor-folds the result down to a signed 32-bit value. This is the wide-accumulator counterpart to `StringFnV1Hasher`, and the FNV-1 counterpart to `StringFnV1A64Hasher`: FNV-1 multiplies first and XORs second (`hash = hash * prime; hash ^= b`), while `StringFnV1A64Hasher` XORs first and multiplies second. It is provided for users who specifically want the original FNV-1 ordering at 64-bit width (for example, to match an external system that hashes with FNV-1-64).
@@ -245,6 +349,8 @@ It sits at the cheap, classic end of the `string` escalation ladder, a peer of t
 **Parameters:** offset basis = `14695981039346656037`, prime = `1099511628211`.
 
 **Note:** maps the empty string `""` → the 64-bit offset basis xor-folded to 32 bits — no characters are folded — exactly as `StringFnV1A64Hasher` maps the empty string (FNV-1 and FNV-1a share the same offset basis). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
 ### StringJenkinsOaatHasher
 
@@ -306,7 +412,7 @@ It sits alongside `StringMurmur3Hasher` on the `string` escalation ladder: `Stri
 ### StringXxHash64Hasher
 
 ```csharp
-public struct StringXxHash64Hasher : IHashProvider<string>
+public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 The xxHash64 (XXH64) algorithm, seed `0`, applied to the string's native little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result. This is the wide-accumulator counterpart to `StringXxHash32Hasher`: it processes the input in **32-byte stripes** (sixteen chars) across four **64-bit** accumulators and finishes with the XXH64 avalanche. Carrying twice as many bits through the accumulation means intermediate values collide far less often, so for longer keys and larger key sets the distribution holds up even better than XXH32 before the final fold; the 64-bit result is reduced to 32 bits by xor-folding the high half into the low half (`h ^ (h >> 32)`), keeping the extra high-half entropy in the returned value. Each multiply is 64-bit, which on 64-bit platforms is the same throughput as a 32-bit multiply, and the wider stripe lets the loop consume input twice as fast, so the wider state is effectively free there. Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
@@ -317,10 +423,12 @@ It sits at the strong-distribution top of the `string` escalation ladder alongsi
 
 **Note:** `Hash(s)` equals canonical XXH64 (seed `0`) over `Encoding.Unicode.GetBytes(s)`, xor-folded to 32 bits. The empty string maps to the well-known canonical empty-input vector `0xEF46DB3751D8E999` folded to 32 bits (its UTF-16 byte stream is zero bytes). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel. For longer keys, `StringMetroHash64Hasher` is a peer worth profiling against.
 
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
 ### StringMetroHash64Hasher
 
 ```csharp
-public struct StringMetroHash64Hasher : IHashProvider<string>
+public struct StringMetroHash64Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 The MetroHash64 algorithm (J. Andrew Rogers' `metrohash64_1` variant), seed `0`, applied to the string's native little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result. MetroHash is a family of statistically robust hash functions designed for maximum throughput on modern 64-bit CPUs. Like `StringXxHash64Hasher` it processes the input in **32-byte stripes** (sixteen chars) across four independent **64-bit** accumulators, but its lattice of multiply / rotate / add steps gives the out-of-order core four independent multiply chains to keep in flight, so on mid-length keys it is competitive with — and often beats — the xxHash family. The 64-bit result is reduced to 32 bits by xor-folding the high half into the low half (`h ^ (h >> 32)`), keeping the extra high-half entropy in the returned value. Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
@@ -331,10 +439,12 @@ It sits at the strong-distribution top of the `string` escalation ladder alongsi
 
 **Note:** `Hash(s)` equals canonical MetroHash64 (`metrohash64_1`, seed `0`) over `Encoding.Unicode.GetBytes(s)`, xor-folded to 32 bits. The empty string maps to the algorithm's length-`0` result — `finalize(k2 * k0)` — folded to 32 bits (its UTF-16 byte stream is zero bytes, so no stripes or lanes are consumed). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
 
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
 ### StringCityHash64Hasher
 
 ```csharp
-public struct StringCityHash64Hasher : IHashProvider<string>
+public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 Google's CityHash64 algorithm (the `CityHash64` entry point of the v1.1 reference), applied to the string's native little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result. CityHash is a family of strong, fast non-cryptographic hash functions built around 64-bit multiplies and rotates. Unlike the single stripe loop of the xxHash / MetroHash family, CityHash64 is **length-classed**: inputs of 16 bytes or fewer, 17–32 bytes, and 33–64 bytes each take a dedicated branch of multiply / rotate / `ShiftMix` steps, and only inputs over 64 bytes enter the 56-byte-state main loop (two `WeakHashLen32WithSeeds` blocks plus `x`, `y`, `z`) consuming 64 bytes (thirty-two chars) per iteration. This makes it especially strong on the short-to-mid key lengths typical of identifiers and dictionary keys, where a stripe-oriented hash spends most of its time in tail handling. The 64-bit result is reduced to 32 bits by xor-folding the high half into the low half (`h ^ (h >> 32)`), keeping the extra high-half entropy in the returned value. Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
@@ -345,10 +455,12 @@ It sits at the strong-distribution top of the `string` escalation ladder alongsi
 
 **Note:** `Hash(s)` equals canonical CityHash64 (v1.1) over `Encoding.Unicode.GetBytes(s)`, xor-folded to 32 bits. The empty string maps to the algorithm's length-`0` result — the constant `k2` (`0x9AE16A3B2F90404F`) — folded to 32 bits (its UTF-16 byte stream is zero bytes, so the shortest length class returns `k2` directly). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel. `StringXxHash3Hasher` is the third-generation xxHash peer in the same throughput-oriented tier; when the keys come from an untrusted source, the keyed `StringHalfSipHash24Hasher` / `StringSipHash13Hasher` / `StringSipHash24Hasher` / `StringHighwayHash64Hasher` trade some of this throughput for hash-flooding resistance.
 
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
 ### StringXxHash3Hasher
 
 ```csharp
-public struct StringXxHash3Hasher : IHashProvider<string>
+public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 The XXH3 algorithm (64-bit output, default secret, seed `0`), applied to the string's native little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result. XXH3 is the third-generation member of the xxHash family — the successor to `StringXxHash32Hasher` (XXH32) and `StringXxHash64Hasher` (XXH64) — and the highest-throughput option in the box across most key shapes. Unlike the single stripe loop of XXH32 / XXH64, XXH3 mixes the input against a fixed 192-byte **secret** and is **length-classed**: short inputs take dedicated branches (1–3, 4–8, 9–16, 17–128, and 129–240 bytes) that fold the relevant bytes against slices of the secret through a 128-bit multiply, and only inputs longer than 240 bytes enter the eight-lane accumulator loop that consumes 64-byte stripes against the secret and periodically scrambles the lanes. This makes it both very fast on the short-to-mid keys typical of identifiers (its dedicated short branches avoid stripe-loop tail overhead) and extremely fast in bulk on long keys. The 64-bit result is reduced to 32 bits by xor-folding the high half into the low half (`h ^ (h >> 32)`), keeping the extra high-half entropy in the returned value. Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
@@ -359,10 +471,12 @@ It sits at the strong-distribution top of the `string` escalation ladder alongsi
 
 **Note:** `Hash(s)` equals canonical XXH3 64-bit (default secret, seed `0`) over `Encoding.Unicode.GetBytes(s)`, xor-folded to 32 bits. The empty string maps to the well-known canonical empty-input vector `0x2D06800538D394C2` folded to 32 bits (its UTF-16 byte stream is zero bytes). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel. When the keys come from an untrusted source, the keyed `StringHalfSipHash24Hasher` / `StringSipHash13Hasher` / `StringSipHash24Hasher` / `StringHighwayHash64Hasher` trade some of this throughput for hash-flooding resistance.
 
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
 ### StringSipHash13Hasher
 
 ```csharp
-public struct StringSipHash13Hasher : IHashProvider<string>
+public struct StringSipHash13Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 The SipHash-1-3 keyed pseudorandom function (Jean-Philippe Aumasson & Daniel J. Bernstein), applied to the string's native little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result. It is the **reduced-round** sibling of `StringSipHash24Hasher`: the two-digit suffix is the round count, so SipHash-1-3 runs **one** `SipRound` of compression per 8-byte (four-char) message word and **three** `SipRound`s of finalization, versus two and four for SipHash-2-4. Halving the compression work makes it materially faster on every message word while keeping SipHash's keyed, hash-flooding-resistant avalanche — which is exactly why it is the construction Rust's standard-library `HashMap` uses by default. Like SipHash-2-4 it is an add-rotate-xor (ARX) construction over four 64-bit state words and carries no large table. The 64-bit result is reduced to 32 bits by xor-folding the high half into the low half (`h ^ (h >> 32)`), keeping the extra high-half entropy in the returned value. Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
@@ -375,10 +489,12 @@ It sits at the keyed top of the `string` escalation ladder, as a peer to `String
 
 **Note:** `Hash(s)` equals canonical SipHash-1-3 (with the fixed key above) over `Encoding.Unicode.GetBytes(s)`, xor-folded to 32 bits. The empty string maps to the length-`0` reference vector `0xABAC0158050FC4DC` folded to 32 bits (its UTF-16 byte stream is zero bytes). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel. For the conservative-round-count sibling with more cryptographic margin, see `StringSipHash24Hasher`.
 
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
 ### StringSipHash24Hasher
 
 ```csharp
-public struct StringSipHash24Hasher : IHashProvider<string>
+public struct StringSipHash24Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 The SipHash-2-4 keyed pseudorandom function (Jean-Philippe Aumasson & Daniel J. Bernstein), applied to the string's native little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result. Unlike the throughput-oriented `StringXxHash32Hasher` / `StringXxHash64Hasher` / `StringMetroHash64Hasher` / `StringCityHash64Hasher` peers, SipHash is built to resist **hash flooding**: an adversary who controls the keys cannot construct a flood of inputs that collide into one bucket and degrade the table to O(n) probe chains without recovering the secret key, which SipHash is designed to make infeasible. This is why it is the default string hasher in Python, Ruby, and Rust's `HashMap`, whose tables are routinely fed untrusted input. It is an add-rotate-xor (ARX) construction over four 64-bit state words: two `SipRound`s of compression per 8-byte (four-char) message word, then four `SipRound`s of finalization — so it carries no large table and stays branch-light, but it is slower than the multiply-and-rotate throughput family (and than its own reduced-round sibling `StringSipHash13Hasher`, which runs one compression and three finalization rounds for less cost). The 64-bit result is reduced to 32 bits by xor-folding the high half into the low half (`h ^ (h >> 32)`), keeping the extra high-half entropy in the returned value. Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
@@ -390,6 +506,8 @@ It sits one rung beyond the throughput-oriented peers at the top of the `string`
 **Algorithm:** standard SipHash-2-4 with key `k0 = 0x0706050403020100`, `k1 = 0x0F0E0D0C0B0A0908`. Initialize `v0..v3` from the constants `0x736F6D6570736575`, `0x646F72616E646F6D`, `0x6C7967656E657261`, `0x7465646279746573` XORed with the key halves. For each 8-byte little-endian message word `m`: `v3 ^= m`, two `SipRound`s, `v0 ^= m`. The final block packs the leftover 0–6 tail bytes into the low bytes and the input length (mod 256) into the top byte, then runs the same `v3 ^= b` / two rounds / `v0 ^= b` step. Finalize with `v2 ^= 0xFF` then four `SipRound`s; the result is `v0 ^ v1 ^ v2 ^ v3`, xor-folded to 32 bits. `SipRound` is the fixed add / rotate / xor lattice with left-rotation constants 13, 32, 16, 21, 17, 32.
 
 **Note:** `Hash(s)` equals canonical SipHash-2-4 (with the fixed key above) over `Encoding.Unicode.GetBytes(s)`, xor-folded to 32 bits. The empty string maps to the published length-`0` vector `0x726FDB47DD0E0E31` folded to 32 bits (its UTF-16 byte stream is zero bytes). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel. For the faster reduced-round variant, see `StringSipHash13Hasher`; for the cheaper 32-bit-word variant tuned for short keys, see `StringHalfSipHash24Hasher`; for a keyed option whose wider state is designed to vectorize, see `StringHighwayHash64Hasher`.
+
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
 ### StringHalfSipHash24Hasher
 
@@ -410,7 +528,7 @@ Unlike every other `string` hasher here, HalfSipHash's primitive output is *alre
 ### StringHighwayHash64Hasher
 
 ```csharp
-public struct StringHighwayHash64Hasher : IHashProvider<string>
+public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64<string>
 ```
 
 Google's HighwayHash (64-bit output), applied to the string's native little-endian UTF-16 byte stream, xor-folded down to a signed 32-bit result. HighwayHash is a **keyed** pseudorandom hash that Google designed as a faster successor to SipHash for the same job — resisting **hash flooding**, where an adversary who controls the keys floods a table with values that collide into one bucket and degrade it to O(n) probe chains. Like `StringSipHash24Hasher` it is keyed, so an attacker cannot construct such a collision set without recovering the secret key. Where SipHash is a compact ARX lattice, HighwayHash keeps a wide four-lane state (`v0`, `v1`, `mul0`, `mul1`, four 64-bit words each) that it advances 32 bytes (sixteen chars) at a time through per-lane 32×32→64-bit multiplies, a byte-shuffling *zipper merge*, and four permute-and-update finalization rounds. That structure is built to map onto SIMD lanes (AVX2 / NEON), which is where HighwayHash earns its throughput edge over SipHash. The 64-bit result is reduced to 32 bits by xor-folding the high half into the low half (`h ^ (h >> 32)`). Like the other full-width string hashers it consumes the **full** 16-bit value of every character, so it distinguishes characters that differ only in their upper byte — for example `'A'` (`U+0041`) and `'Ł'` (`U+0141`), which `StringFnV1AHasher` collides on.
@@ -424,6 +542,8 @@ It sits at the keyed top of the `string` escalation ladder, as a peer to `String
 **Algorithm:** standard HighwayHash64. Initialize the four lanes from the fixed key XORed with the `mul0` / `mul1` constants (`v0[i] = mul0[i] ^ key[i]`, `v1[i] = mul1[i] ^ rot32(key[i])`). For each 32-byte packet read four little-endian 64-bit lanes and run the per-lane mix (`v1 += mul0 + lane`, `mul0 ^= (v1 & 0xffffffff) * (v0 >> 32)`, `v0 += mul1`, `mul1 ^= (v0 & 0xffffffff) * (v1 >> 32)`) followed by four `ZipperMergeAndAdd` byte-shuffle steps. A trailing partial packet (1–30 bytes here, since the UTF-16 stream is even) mixes its length into `v0`, rotates `v1` by that length, and packs the leftover bytes into a zero-filled 32-byte block under the reference's alignment rules. Finalize with four permute-and-update rounds (reorder the `v0` lanes and swap their 32-bit halves, then re-run the update) and return `v0[0] + v1[0] + mul0[0] + mul1[0]`, xor-folded to 32 bits.
 
 **Note:** `Hash(s)` equals canonical HighwayHash64 (with the fixed key above) over `Encoding.Unicode.GetBytes(s)`, xor-folded to 32 bits. The empty string maps to the published length-`0` reference vector `0x907A56DE22C26E53` folded to 32 bits (its UTF-16 byte stream is zero bytes). The dictionaries store the out-of-band `null`-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
+> Also implements [`IHashProvider64<string>`](#ihashprovider64t) — `Hash64` returns the 64-bit state before the xor-fold. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
 ### Int32Murmur3Hasher
 
@@ -450,10 +570,12 @@ Thomas Wang's 32-bit integer hash (`hash32shift`) for `int` keys. The full-mixer
 ### Int64WangHasher
 
 ```csharp
-public struct Int64WangHasher : IHashProvider<long>
+public struct Int64WangHasher : IHashProvider<long>, IHashProvider64<long>
 ```
 
 Thomas Wang's 64-bit integer hash for `long` keys. Faster than `Int64Murmur3Hasher` while still providing better avalanche than a simple XOR-fold. Bijective on `ulong`, so the only source of collisions is truncation to 32 bits when the result is returned. Prefer it over the default `Int64WangNaiveHasher` when the key distribution is clustered or adversarial and the XOR-fold's collision behaviour is no longer acceptable; prefer `Int64Murmur3Hasher` when even better avalanche is needed.
+
+> Also implements [`IHashProvider64<long>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
 ### UInt32Hasher
 
@@ -490,15 +612,17 @@ MurmurHash3 32-bit finalizer (`fmix32`) for `uint` keys. The `uint` counterpart 
 ### UInt64Hasher
 
 ```csharp
-public struct UInt64Hasher : IHashProvider<ulong>
+public struct UInt64Hasher : IHashProvider<ulong>, IHashProvider64<ulong>
 ```
 
 MurmurHash3 64-bit finalizer (`fmix64`) for `ulong` keys. Counterpart to `Int64Murmur3Hasher` for unsigned 64-bit integers.
 
+> Also implements [`IHashProvider64<ulong>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
 ### UInt64WangHasher
 
 ```csharp
-public struct UInt64WangHasher : IHashProvider<ulong>
+public struct UInt64WangHasher : IHashProvider<ulong>, IHashProvider64<ulong>
 ```
 
 Thomas Wang's 64-bit integer hash (`hash64shift`) for `ulong` keys. The `ulong` counterpart to `Int64WangHasher`, and a cheaper alternative to `UInt64Hasher` (the Murmur3 `fmix64` finalizer) on the cost-vs-avalanche curve. The mixer uses only shifts and adds — no multiplies — so it is cheaper than the two 64-bit multiplies of `UInt64Hasher` while still giving every input bit influence over the result. Bijective on `ulong`, so the only source of collisions is truncation to 32 bits when the result is returned. Prefer it over `UInt64Hasher` when profiling shows the two `fmix64` multiplies are a hot-path cost and the keys are already reasonably uniform; escalate back to `UInt64Hasher` for adversarial workloads that need maximum avalanche.
@@ -506,6 +630,8 @@ Thomas Wang's 64-bit integer hash (`hash64shift`) for `ulong` keys. The `ulong` 
 **Algorithm:** `u = ~u + (u << 21)`, `^ (u >> 24)`, `+ (u << 3) + (u << 8)`, `^ (u >> 14)`, `+ (u << 2) + (u << 4)`, `^ (u >> 28)`, `+ (u << 31)`, computed on the `ulong` directly and truncated to `int`. For any given 64-bit pattern it returns exactly what `Int64WangHasher` returns for the same bits.
 
 **Note:** unlike the Murmur3 finalizer, this function does **not** map `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
+> Also implements [`IHashProvider64<ulong>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
 ### UInt64WangNaiveHasher
 
@@ -522,12 +648,14 @@ An extremely cheap XOR-fold for `ulong` keys — the cheap-default tier of the `
 ### GuidHasher
 
 ```csharp
-public struct GuidHasher : IHashProvider<Guid>
+public struct GuidHasher : IHashProvider<Guid>, IHashProvider64<Guid>
 ```
 
 Reinterprets the 128-bit `Guid` as two 64-bit halves (via `Unsafe.As<Guid, ulong>`, no stack buffer), runs `fmix64` on each, and XORs the mixed halves. Prefer over `DefaultHasher<Guid>` on hot paths — it is fully inlineable and avoids the `EqualityComparer<Guid>.Default` virtual dispatch.
 
 **Note:** maps `Guid.Empty → 0`, so dictionaries / sets keyed on `Guid` engage the out-of-band default-key slot for `Guid.Empty`.
+
+> Also implements [`IHashProvider64<Guid>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
 ### DefaultHasher&lt;T&gt;
 
@@ -572,6 +700,9 @@ public static class HashQualityEvaluator
 {
     public static HashQualityReport Evaluate<T, THasher>(IEnumerable<T> keys, int bucketCount = 1024)
         where THasher : struct, IHashProvider<T>;
+
+    public static HashQualityReport Evaluate64<T, THasher>(IEnumerable<T> keys, int bucketCount = 1024)
+        where THasher : struct, IHashProvider64<T>;
 }
 ```
 
@@ -582,6 +713,8 @@ This is **not** a hot-path API: it allocates working buffers and walks an `IEnum
 `bucketCount` is rounded up to the next power of two (matching the collections' array sizing). `Evaluate` throws `ArgumentNullException` for a null `keys` sequence and `ArgumentOutOfRangeException` when `bucketCount < 1`.
 
 > Pass **distinct** keys to measure a hasher's intrinsic quality. Duplicate keys in the sample naturally hash to the same code and are counted as collisions.
+
+`Evaluate64` is the [`IHashProvider64<T>`](#ihashprovider64t) counterpart and reports the same metrics over the hasher's 64-bit surface. The collision figures are the reason to reach for it: a 32-bit hasher can produce at most 2^32 distinct codes, so on a large sample its collision rate is bounded below by the size of the hash space rather than by the quality of its mixing — invisible in `Evaluate`, where every hasher is measured against the same ceiling. Evaluating the 64-bit surface separates the two, so the collisions reported are the hasher's own. Bucket metrics mask the low bits of the 64-bit code, mirroring how a power-of-two-sized consumer would index with it.
 
 ### HashQualityReport
 

@@ -197,4 +197,37 @@ public class StringHasherBenchmark
     [Benchmark]
     [BenchmarkCategory("Hash")]
     public int HighwayHash64() => HashAll<StringHighwayHash64Hasher>();
+
+    // ---- IHashProvider64: the un-folded 64-bit surface ----
+
+    /// <summary>
+    /// Hashes every key through <typeparamref name="THasher"/>'s <c>Hash64</c>, XOR-folding the codes
+    /// into a single returned value so the JIT cannot elide the loop.
+    /// </summary>
+    private ulong HashAll64<THasher>() where THasher : struct, IHashProvider64<string>
+    {
+        THasher hasher = default;
+        string[] k = keys;
+        ulong acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash64(k[i]);
+        }
+        return acc;
+    }
+
+    // The nine 64-bit string hashers compute a ulong internally and Hash is exactly that value plus one
+    // xor-fold, so the Hash-vs-Hash64 delta is structural and identical across all nine. Two
+    // representatives — the cheapest bulk hasher and the most expensive per-byte one — are enough to put
+    // that delta on the dashboard; duplicating all nine would grow this class by 27 runs (it is already
+    // 50 arms across three key shapes) for no additional information. See
+    // https://github.com/marius-bughiu/Celerity/issues/300 for the shard budget this stays inside.
+
+    [Benchmark]
+    [BenchmarkCategory("Hash")]
+    public ulong XxHash64_Hash64() => HashAll64<StringXxHash64Hasher>();
+
+    [Benchmark]
+    [BenchmarkCategory("Hash")]
+    public ulong SipHash24_Hash64() => HashAll64<StringSipHash24Hasher>();
 }

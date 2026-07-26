@@ -1044,4 +1044,97 @@ public class AddAndTryAddTests
         Assert.Single(map);
         Assert.Equal("first", map[1]);
     }
+
+    // ---------------------------------------------------------------
+    //  BTreeDictionary - Add / TryAdd
+    //
+    //  The ordered dictionary has no hasher and no load factor, so the
+    //  probe-count and resize-threshold rows above do not apply. What does
+    //  apply is the family's add contract, and it must hold at every tree
+    //  depth - a node splits at 31 keys, so the multi-level row below reaches
+    //  the internal-node path as well as the leaf one.
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BTreeDictionary_Add_ShouldStoreValue_ForNewKey()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map.Add(1, "one");
+
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_Add_ShouldThrow_OnDuplicateKey()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map.Add(1, "first");
+
+        var ex = Assert.Throws<ArgumentException>(() => map.Add(1, "second"));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void BTreeDictionary_Add_ShouldThrow_OnDuplicateKey_AndLeaveValueUnchanged()
+    {
+        var map = new BTreeDictionary<int, int>();
+        map.Add(42, 100);
+
+        Assert.Throws<ArgumentException>(() => map.Add(42, 999));
+
+        Assert.Single(map);
+        Assert.Equal(100, map[42]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_Add_ShouldStoreValue_ForZeroKey()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map.Add(0, "zero");
+
+        Assert.Single(map);
+        Assert.Equal("zero", map[0]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_TryAdd_ShouldReturnTrue_ForNewKey()
+    {
+        var map = new BTreeDictionary<int, string>();
+
+        Assert.True(map.TryAdd(1, "one"));
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_TryAdd_ShouldReturnFalse_OnDuplicateKey_AndNotOverwrite()
+    {
+        var map = new BTreeDictionary<int, string>();
+        map.TryAdd(1, "first");
+
+        Assert.False(map.TryAdd(1, "second"));
+
+        Assert.Single(map);
+        Assert.Equal("first", map[1]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_AddAndTryAdd_ShouldRejectDuplicates_AcrossMultipleLevels()
+    {
+        // 2000 entries is three levels deep, so the duplicate probes below land in leaves and in internal
+        // nodes alike.
+        var map = new BTreeDictionary<int, int>();
+        for (int i = 0; i < 2000; i++)
+            map.Add(i, i);
+
+        for (int i = 0; i < 2000; i += 37)
+        {
+            int key = i;
+            Assert.False(map.TryAdd(key, -1));
+            Assert.Throws<ArgumentException>(() => map.Add(key, -1));
+            Assert.Equal(key, map[key]);
+        }
+
+        Assert.Equal(2000, map.Count);
+    }
 }

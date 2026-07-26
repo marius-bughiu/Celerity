@@ -354,16 +354,27 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static byte Fingerprint(ulong h) => (byte)(h ^ (h >> 32));
 
-    // The element's stable 64-bit key, independent of the construction seed. A null reference is mapped to a
-    // fixed base hash so the hasher (which may throw on null, e.g. the string hashers) is never invoked with
-    // null — value-type defaults (0, Guid.Empty) are valid inputs and go through the hasher normally. The
-    // typeof(T).IsValueType guard is a JIT-time constant, so the null check is compiled away entirely for
-    // value-type instantiations (no boxing).
+    // The element's stable 64-bit key, independent of the construction seed. When THasher implements
+    // IHashProvider64<T> the hasher's own 64-bit result is used as-is (the interface contract is that it is
+    // already avalanched); otherwise the 32-bit code is avalanched with fmix64, which spreads the code over the
+    // 64-bit range but cannot create entropy — the reachable space stays 2^32, putting a floor of roughly
+    // n/2^32 under the false-positive rate no matter how wide the fingerprints are.
+    //
+    // A null reference is mapped to a fixed hash so the hasher (which may throw on null, e.g. the string
+    // hashers) is never invoked with null — value-type defaults (0, Guid.Empty) are valid inputs and go through
+    // the hasher normally. Both the typeof(T).IsValueType guard and the IsNative64 test are JIT-time constants,
+    // so each instantiation compiles down to a single straight-line path (and no per-call boxing: the 64-bit arm reuses a single
+    // interface reference boxed once per instantiation).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ulong KeyHash(T item)
     {
-        int baseHash = (!typeof(T).IsValueType && item is null) ? 0 : _hasher.Hash(item);
-        return Mix((uint)baseHash);
+        if (!typeof(T).IsValueType && item is null)
+            return Mix(0);
+
+        if (Hash64Source<T, THasher>.IsNative64)
+            return Hash64Source<T, THasher>.Hash64(item);
+
+        return Mix((uint)_hasher.Hash(item));
     }
 
     // Murmur3 fmix64 — a bijective 64-bit avalanche, so distinct inputs always yield distinct outputs (no

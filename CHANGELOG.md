@@ -6,6 +6,18 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`BTreeDictionary<TKey, TValue, TComparer>` and `BTreeSet<T, TComparer>`** (with `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` aliases and the `DefaultComparer<T>` struct comparer) in `Celerity.Collections` — the library's first sorted map and set, and the B-tree the BCL lacks. Up to 31 keys per node keep a lookup `log₃₂(n)` node visits deep instead of chasing the `log₂(n)` pointers a red-black tree costs, and both add the ordered surface a hash table cannot answer: `Min` / `Max`, lower / upper bound, `EnumerateRange` in `O(log n + k)`, and in-order enumeration. They win on the interleaved insert + lookup + range-scan workload and on memory, and lose slightly on a delete-dominated one. Not thread-safe. Closes [#305](https://github.com/marius-bughiu/Celerity/issues/305).
+
+### Fixed
+
+- **The coverage gate measured only one of the six shipped packages.** Coverlet's assembly filter is exact-match, so `Celerity.Hashing`, `Celerity.Primitives`, and the three showcase packages had been outside the gate since the 2.0.0 package split — any of them could have dropped to 0% with CI green. All six are now measured, the gaps that exposed are backfilled to **100% line and branch** coverage, and the floor is raised from 95%/90% to match. Closes [#314](https://github.com/marius-bughiu/Celerity/issues/314).
+
+## [2.4.0] - 2026-07-26
+
+### Added
+
+- **`IHashProvider64<T>`** in `Celerity.Hashing` — a 64-bit hash contract (`ulong Hash64(T key)`) for consumers whose accuracy depends on the size of the hash space rather than on a bucket index. Fourteen built-in hashers implement it: `Int64WangHasher`, `Int64Murmur3Hasher`, `UInt64WangHasher`, `UInt64Hasher`, `GuidHasher`, and the nine 64-bit `string` hashers; `Hash` is unchanged on all of them. `HashQualityEvaluator.Evaluate64` reports distribution over the new surface. Closes [#304](https://github.com/marius-bughiu/Celerity/issues/304).
+- The five probabilistic sketches (`HyperLogLog`, `BloomFilter`, `CuckooFilter`, `XorFilter`, `CountMinSketch`) now use a hasher's `Hash64` when it provides one, lifting the 2^32 entropy floor on their error budgets. Constructors and type parameters are unchanged, and a 32-bit-only hasher behaves exactly as before. Closes [#304](https://github.com/marius-bughiu/Celerity/issues/304).
 - **Native AOT smoke-test coverage for `Trie<TValue>`** — the trie was the one collection the AOT smoke test did not exercise, so its surface is now proven to run under a Native AOT publish. Test-only hardening; no public API change.
 - **`FenwickTree<T>`** in `Celerity.Collections` — a Binary Indexed Tree over a fixed-length numeric sequence (`where T : struct, INumber<T>`) that applies point updates and answers prefix / range sums both in `O(log n)`, filling a BCL gap: .NET ships no prefix-sum structure, and a plain array costs `O(n)` per query or `O(n)` per update. It wins precisely where updates and range-sum queries interleave — running aggregates, rank / order-statistics counters, cumulative-frequency tables. Not thread-safe. Closes [#289](https://github.com/marius-bughiu/Celerity/issues/289).
 - **`Trie<TValue>`** in `Celerity.Collections` — an ordered prefix tree mapping `string` keys to values, filling a BCL gap (.NET ships no trie). `GetByPrefix` lists every entry whose key starts with a prefix in `O(prefix + matches)` and in ascending key order, and `TryGetLongestPrefix` finds the longest stored key that is a prefix of a query in `O(query)` — the autocomplete, longest-prefix-routing, and ordered-iteration workloads a `Dictionary<string, TValue>` can only answer with an `O(n)` scan plus a `StartsWith` per key. Exact `Add` / `TryGetValue` favour a `Dictionary`, so the trie earns its place on the prefix operations. Implements `IReadOnlyDictionary<string, TValue?>`; not thread-safe. Closes [#285](https://github.com/marius-bughiu/Celerity/issues/285).
@@ -13,7 +25,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
-- **The coverage gate measured only one of the six shipped packages.** Coverlet's assembly filter is exact-match, so `Celerity.Hashing`, `Celerity.Primitives`, and the three showcase packages had been outside the gate since the 2.0.0 package split — any of them could have dropped to 0% with CI green. All six are now measured, the gaps that exposed are backfilled to **100% line and branch** coverage, and the floor is raised from 95%/90% to match. Closes [#314](https://github.com/marius-bughiu/Celerity/issues/314).
+- `HyperLogLog` no longer under-counts large streams. It derived its 64-bit hash from a 32-bit hasher, so the real hash space was 2^32, not the 2^64 its docs claimed — a ~1.2% undercount at 10^8 distinct elements, past its advertised 0.81% standard error. Pass an `IHashProvider64<T>` hasher for a genuine 2^64 space; with a 32-bit hasher it now applies the classical large-range correction it previously skipped. Closes [#304](https://github.com/marius-bughiu/Celerity/issues/304).
 - `PooledCelerityDictionary` and `PooledCeleritySet` now throw `ObjectDisposedException` from their read accessors (`Count`, and the dictionary's `Keys` / `Values`) after `Dispose`, matching the documented "every member throws after disposal" contract. Previously these returned a silent, misleading result over arrays already returned to `ArrayPool.Shared`. Closes [#296](https://github.com/marius-bughiu/Celerity/issues/296).
 
 ## [2.3.0] - 2026-07-19
@@ -514,7 +526,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.4.0
 [2.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.3.0
 [2.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.2.0
 [2.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.1.0

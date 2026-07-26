@@ -462,13 +462,18 @@
     { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch'] },
     // FenwickTree is a Binary Indexed Tree benchmarked against a plain long[] holding the raw values: point
     // updates are O(1) there, but every prefix / range sum re-adds the slice (O(n)). The tree keeps both O(log n).
-    { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] }
+    { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] },
+    // BTreeDictionary / BTreeSet are the ordered containers, benchmarked against the BCL's red-black trees.
+    // Mixed (interleaved insert + lookup + in-order range scan) is the documented win workload; RangeScan is
+    // the operation SortedDictionary cannot express at all.
+    { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',                vs: 'SortedDictionary<int, int>', ops: ['Add', 'Lookup', 'Remove', 'RangeScan', 'Mixed'] },
+    { key: 'BTreeSet',            title: 'BTreeSet<int>',                            vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Mixed'] }
   ];
 
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'SortedDictionary', 'SortedSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

@@ -11,15 +11,26 @@ namespace Celerity.Hashing;
 /// excellent avalanche properties — every input bit affects every output bit —
 /// making it a good choice for clustered or adversarial key distributions.
 /// The result is truncated to 32 bits by taking the lower half.
+/// <para>
+/// The finalizer is a bijection on 64 bits, so the type also implements
+/// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns the full mix instead
+/// of the low half, which is what the probabilistic sketches want (see
+/// <see cref="IHashProvider64{T}"/> for why the extra 32 bits matter there and not in a
+/// hash table).
+/// </para>
 /// </remarks>
-public struct Int64Murmur3Hasher : IHashProvider<long>
+public struct Int64Murmur3Hasher : IHashProvider<long>, IHashProvider64<long>
 {
     private const long C1 = unchecked((long)0xff51afd7ed558ccdUL);
     private const long C2 = unchecked((long)0xc4ceb9fe1a85ec53UL);
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Hash(long key)
+    public int Hash(long key) => (int)Hash64(key);
+
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ulong Hash64(long key)
     {
         // XOR with its shifted self.
         key ^= (long)((ulong)key >> 33);
@@ -36,7 +47,6 @@ public struct Int64Murmur3Hasher : IHashProvider<long>
         // Final XOR.
         key ^= (long)((ulong)key >> 33);
 
-        // Take the lower 32 bits as the final hash value.
-        return (int)key;
+        return (ulong)key;
     }
 }

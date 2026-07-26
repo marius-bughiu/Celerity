@@ -1609,4 +1609,78 @@ public class SetIEnumerableConstructorTests
         foreach (int item in celerity)
             Assert.True(copy.Contains(item));
     }
+
+    // --------------------------------------------------------------
+    //  BTreeSet - the ordered set has neither a capacity nor a loadFactor
+    //  parameter (a B-tree grows a node at a time), so those rows genuinely do
+    //  not apply. The IEnumerable-source contract - null rejection, dedupe
+    //  (including the default/zero and null element), large-source fidelity and
+    //  source independence - does, with the added guarantee that the seeded
+    //  content comes back in comparer order.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void BTreeSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new BTreeSet<string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void BTreeSet_ShouldSupportEmptySource()
+    {
+        var set = new BTreeSet<string>(Array.Empty<string>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void BTreeSet_ShouldCopyAllElements_FromArraySource_InOrder()
+    {
+        var set = new BTreeSet<string>(new[] { "c", "a", "b" });
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(new[] { "a", "b", "c" }, set);
+    }
+
+    [Fact]
+    public void BTreeSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Range is not an ICollection<int>, and 500 elements split nodes while the constructor
+        // fills the tree.
+        var set = new BTreeSet<int>(Enumerable.Range(0, 500).Reverse());
+
+        Assert.Equal(500, set.Count);
+        Assert.Equal(Enumerable.Range(0, 500), set);
+    }
+
+    [Fact]
+    public void BTreeSet_ShouldDedupeSource_IncludingDefaultAndNullElements()
+    {
+        var ints = new BTreeSet<int>(new[] { 0, 1, 0, 1, 2 });
+
+        Assert.Equal(new[] { 0, 1, 2 }, ints);
+
+        var strings = new BTreeSet<string>(new[] { "a", null!, "a", null! });
+
+        Assert.Equal(2, strings.Count);
+        Assert.Equal(new string?[] { null, "a" }, strings);
+    }
+
+    [Fact]
+    public void BTreeSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 3 };
+
+        var set = new BTreeSet<int>(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        foreach (int item in new[] { 1, 2, 3 })
+            Assert.True(set.Contains(item));
+    }
 }

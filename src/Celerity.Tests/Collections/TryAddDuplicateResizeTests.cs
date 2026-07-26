@@ -668,4 +668,77 @@ public class TryAddDuplicateResizeTests
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
+
+    // BTreeDictionary and BTreeSet have no hash table and no load factor, but the
+    // same invariant applies at the point where a node is exactly full (31 keys):
+    // a duplicate TryAdd must be a true no-op - no split, no _version bump - so an
+    // active enumerator stays valid, while a new-key TryAdd that splits the node
+    // must invalidate it.
+
+    [Fact]
+    public void BTreeDictionary_TryAdd_DuplicateAtNodeCapacity_KeepsEnumeratorValid()
+    {
+        var map = new BTreeDictionary<int, int>();
+        for (int i = 0; i < 31; i++)
+            map.Add(i, i * 10); // the root leaf is now exactly full
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(2, 99));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        Assert.Equal(Enumerable.Range(0, 31), seen);
+        Assert.Equal(20, map[2]);
+    }
+
+    [Fact]
+    public void BTreeDictionary_TryAdd_NewKeyAtNodeCapacity_InvalidatesEnumerator()
+    {
+        var map = new BTreeDictionary<int, int>();
+        for (int i = 0; i < 31; i++)
+            map.Add(i, i * 10); // the next new key splits the root
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.TryAdd(100, 1000));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void BTreeSet_TryAdd_DuplicateAtNodeCapacity_KeepsEnumeratorValid()
+    {
+        var set = new BTreeSet<int>(Enumerable.Range(0, 31)); // the root leaf is now exactly full
+
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current);
+
+        Assert.False(set.TryAdd(2));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(Enumerable.Range(0, 31), seen);
+    }
+
+    [Fact]
+    public void BTreeSet_TryAdd_NewElementAtNodeCapacity_InvalidatesEnumerator()
+    {
+        var set = new BTreeSet<int>(Enumerable.Range(0, 31)); // the next new element splits the root
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(set.TryAdd(100));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
 }

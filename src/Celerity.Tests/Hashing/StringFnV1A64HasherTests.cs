@@ -249,4 +249,59 @@ public class StringFnV1A64HasherTests
         Assert.True(set.Contains("Łatin"));
         Assert.False(set.Contains("bob"));
     }
+
+    // ── 64-bit surface (IHashProvider64<string>) ──────────────────────────────
+
+    /// <summary>
+    /// The 64-bit state of the same independent FNV-1a reference used by
+    /// <c>ReferenceFnv1a64Utf16</c>, before the xor-fold to 32 bits.
+    /// </summary>
+    private static ulong ReferenceFnv1a64Raw(string s)
+    {
+        ulong hash = OffsetBasis;
+        foreach (byte b in Encoding.Unicode.GetBytes(s))
+        {
+            hash ^= b;
+            hash *= FnvPrime;
+        }
+
+        return hash;
+    }
+
+    /// <summary>
+    /// The hasher computes 64 bits of FNV-1a 64-bit state internally and used to throw half of it
+    /// away; <c>Hash64</c> now publishes it. Reconciling against the same independent
+    /// byte-oriented reference the 32-bit tests use pins the whole pipeline, and asserting
+    /// the xor-fold relationship pins that <c>Hash</c> did not drift while the fold moved.
+    /// </summary>
+    [Fact]
+    public void Hash64_MatchesReferenceImplementation_AndFoldsToHash()
+    {
+        foreach (string s in HasherStringCorpus.Strings)
+        {
+            ulong expected = ReferenceFnv1a64Raw(s);
+            ulong actual = _hasher.Hash64(s);
+
+            Assert.Equal(expected, actual);
+            Assert.Equal(unchecked((int)(actual ^ (actual >> 32))), _hasher.Hash(s));
+        }
+    }
+
+    [Fact]
+    public void Hash64_NullKey_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => _hasher.Hash64(null!));
+    }
+
+    [Fact]
+    public void Hash64_HighHalf_VariesAcrossKeys()
+    {
+        // The whole point of the 64-bit surface: the high half must carry information rather
+        // than repeat a widened 32-bit code.
+        var highHalves = new HashSet<uint>();
+        for (int i = 0; i < 1000; i++)
+            highHalves.Add((uint)(_hasher.Hash64($"element-{i}") >> 32));
+
+        Assert.True(highHalves.Count > 990, $"only {highHalves.Count} distinct high halves");
+    }
 }

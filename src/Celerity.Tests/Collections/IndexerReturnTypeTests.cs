@@ -212,4 +212,26 @@ public class IndexerReturnTypeTests
         Type valueType = closed.GetGenericArguments()[valueGenericIndex];
         Assert.Equal(valueType, indexer!.PropertyType);
     }
+
+    [Fact]
+    public void BTreeDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(
+            typeof(BTreeDictionary<string, int, DefaultComparer<string>>),
+            keyType: typeof(string),
+            valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void BTreeDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        var map = new BTreeDictionary<int, string>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
 }

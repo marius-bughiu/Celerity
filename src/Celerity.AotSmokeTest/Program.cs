@@ -602,6 +602,55 @@ void Check(bool condition, string message)
     Check(wide.Total == 499_500 && wide.PrefixSum(10) == 45, "FenwickTree int instantiation at scale");
 }
 
+// BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
+// the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
+// IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the
+// enumerators, which are the only inline arrays in the library. Exercise the split path (well past a
+// node's 31 keys), the rebalancing remove path, the ordered surface, and both enumerators.
+{
+    var map = new BTreeDictionary<int, int>();
+    for (int i = 999; i >= 0; i--) map.Add(i, i * 2);
+    Check(map.Count == 1000 && map[500] == 1000, "BTreeDictionary bulk add across splits");
+    Check(map.Min.Key == 0 && map.Max.Key == 999, "BTreeDictionary min/max");
+    Check(map.TryGetLowerBound(500, out var lb) && lb.Key == 500, "BTreeDictionary lower bound");
+    Check(map.TryGetUpperBound(500, out var ub) && ub.Key == 501, "BTreeDictionary upper bound");
+
+    var scanned = 0;
+    foreach (var entry in map.EnumerateRange(100, 150)) scanned++;
+    Check(scanned == 50, "BTreeDictionary range scan");
+
+    var ordered = 0;
+    var previous = int.MinValue;
+    foreach (var entry in map)
+    {
+        Check(entry.Key > previous, "BTreeDictionary enumerates in ascending key order");
+        previous = entry.Key;
+        ordered++;
+    }
+
+    Check(ordered == 1000, "BTreeDictionary full enumeration");
+
+    for (int i = 0; i < 1000; i += 2) Check(map.Remove(i, out var removed) && removed == i * 2, "BTreeDictionary remove with rebalancing");
+    Check(map.Count == 500 && map.Min.Key == 1, "BTreeDictionary state after removals");
+
+    IDictionary<int, int> asDictionary = map;
+    Check(asDictionary.Keys.Count == 500 && asDictionary.Values.Count == 500, "BTreeDictionary IDictionary views");
+
+    var set = new BTreeSet<int>(Enumerable.Range(0, 1000).Reverse());
+    Check(set.Count == 1000 && set.Min == 0 && set.Max == 999, "BTreeSet source ctor across splits");
+    Check(!set.TryAdd(10) && set.Remove(10) && !set.Contains(10), "BTreeSet duplicate + remove");
+    var inRange = 0;
+    foreach (int item in set.EnumerateRange(200, 260)) inRange++;
+    Check(inRange == 60, "BTreeSet range scan");
+    ((ISet<int>)set).IntersectWith(new[] { 1, 2, 3, 5000 });
+    Check(set.Count == 3 && set.Max == 3, "BTreeSet ISet<int> intersect");
+
+    // A hand-written struct comparer: a second closed generic instantiation for ILC to compile.
+    var descending = new BTreeSet<int, DescendingIntComparer>();
+    for (int i = 0; i < 100; i++) descending.Add(i);
+    Check(descending.Min == 99 && descending.Max == 0, "BTreeSet custom struct comparer order");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.
@@ -1428,6 +1477,53 @@ void Check(bool condition, string message)
     Check(blendThrows, "Branchless.Select throws on length mismatch");
 }
 
+// IHashProvider64 (#304) — the 64-bit hasher surface and the sketch dispatch that selects it.
+// The dispatch is a JIT/ILC-folded type test plus a once-boxed interface reference held in a
+// static generic field, so this forces ILC to compile both the folded constant and the boxed
+// interface call for a value-type hasher — the shapes most likely to differ from the JIT.
+{
+    Check(new Int64WangHasher().Hash64(42L) != 0UL, "Int64WangHasher.Hash64");
+    Check((int)new Int64Murmur3Hasher().Hash64(42L) == new Int64Murmur3Hasher().Hash(42L),
+        "Int64Murmur3Hasher.Hash64 low half == Hash");
+    Check((int)new UInt64Hasher().Hash64(42UL) == new UInt64Hasher().Hash(42UL),
+        "UInt64Hasher.Hash64 low half == Hash");
+    Check((int)new UInt64WangHasher().Hash64(42UL) == new UInt64WangHasher().Hash(42UL),
+        "UInt64WangHasher.Hash64 low half == Hash");
+    Guid probeGuid = new Guid("12345678-1234-1234-1234-1234567890AB");
+    Check((int)new GuidHasher().Hash64(probeGuid) == new GuidHasher().Hash(probeGuid),
+        "GuidHasher.Hash64 low half == Hash");
+
+    ulong s64 = new StringXxHash64Hasher().Hash64("celerity");
+    Check(unchecked((int)(s64 ^ (s64 >> 32))) == new StringXxHash64Hasher().Hash("celerity"),
+        "StringXxHash64Hasher.Hash64 xor-fold == Hash");
+
+    // The sketches must take the 64-bit path and stay accurate on it.
+    var hll64 = new HyperLogLog<long, Int64WangHasher>();
+    for (long i = 0; i < 20_000; i++) hll64.Add(i);
+    long est = hll64.EstimateCardinality();
+    Check(est > 18_000 && est < 22_000, "HyperLogLog with a 64-bit hasher");
+
+    var bloom64 = new BloomFilter<long, Int64Murmur3Hasher>(2_000, 0.01);
+    for (long i = 0; i < 2_000; i++) bloom64.Add(i);
+    bool bloomOk = true;
+    for (long i = 0; i < 2_000; i++) bloomOk &= bloom64.Contains(i);
+    Check(bloomOk, "BloomFilter with a 64-bit hasher: no false negatives");
+
+    var cms64 = new CountMinSketch<string, StringXxHash64Hasher>(0.001, 0.01);
+    cms64.Add("celerity", 5);
+    cms64.Add(null!); // null must still bypass the hasher on the 64-bit path
+    Check(cms64.EstimateCount("celerity") >= 5 && cms64.EstimateCount(null!) >= 1,
+        "CountMinSketch with a 64-bit string hasher + null element");
+
+    var xor64 = new XorFilter<long, Int64WangHasher>(new long[] { 1, 2, 3 });
+    Check(xor64.Contains(1) && xor64.Contains(2) && xor64.Contains(3),
+        "XorFilter with a 64-bit hasher");
+
+    // HashQualityEvaluator's 64-bit surface.
+    var report64 = HashQualityEvaluator.Evaluate64<long, Int64WangHasher>(new long[] { 1, 2, 3, 4 }, 8);
+    Check(report64.KeyCount == 4 && report64.DistinctHashCount == 4, "HashQualityEvaluator.Evaluate64");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
@@ -1436,3 +1532,10 @@ if (failures == 0)
 
 Console.Error.WriteLine($"Celerity AOT smoke test: {failures} check(s) failed.");
 return 1;
+
+// A hand-written struct comparer for the BTreeSet instantiation above: a second closed generic, so ILC
+// compiles the constrained IComparer<int> call for a comparer other than DefaultComparer<int>.
+internal readonly struct DescendingIntComparer : IComparer<int>
+{
+    public int Compare(int x, int y) => y.CompareTo(x);
+}
