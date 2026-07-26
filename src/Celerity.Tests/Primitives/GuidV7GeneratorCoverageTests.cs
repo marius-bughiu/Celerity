@@ -79,10 +79,16 @@ public class GuidV7GeneratorCoverageTests
         Guid g = gen.Next();
         long after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        // Ordered rather than assumed: the wall clock is not monotonic, and an NTP step between the two
-        // readings would otherwise invert the range and fail a generator that behaved perfectly. Whichever
-        // way the clock moved, Next()'s own reading lies between the two that straddle it.
-        Assert.InRange(TimestampMs(g), Math.Min(before, after), Math.Max(before, after));
+        // The wall clock is not monotonic, so neither bound is trustworthy to the millisecond: a backward NTP
+        // step before the call inverts the straddle, and one *after* the call can leave the embedded reading
+        // above both samples. Ordering the bounds fixes the first; a second of slack fixes the second.
+        //
+        // Nothing this test exists to catch is lost by that slack. It is here to prove Next() reads the wall
+        // clock in the right epoch and the right unit, and those failures are not close calls — a .NET-ticks
+        // or 1900 epoch is wrong by decades, and seconds-for-milliseconds by a factor of a thousand. A
+        // millisecond-exact bound would only buy the ability to fail on a clock adjustment.
+        const long SlackMs = 1000;
+        Assert.InRange(TimestampMs(g), Math.Min(before, after) - SlackMs, Math.Max(before, after) + SlackMs);
 
         // The timestamp also leads the canonical string form, which is what makes v7 lexicographically
         // sortable — a wrong-epoch or wrong-unit read would break that even if the range check passed.
