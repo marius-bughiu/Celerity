@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Celerity.Hashing;
 
@@ -45,13 +46,24 @@ namespace Celerity.Collections;
 /// <typeparam name="THasher">The sketch's hasher type.</typeparam>
 internal static class Hash64Source<T, THasher> where THasher : struct, IHashProvider<T>
 {
+    private static readonly IHashProvider64<T>? Native = CreateNative();
+
     // Guarded by the same folded type test the callers use, so a 32-bit-only THasher compiles
     // to a plain `null` here and never boxes: writing this as an unconditional
     // `(object)default(THasher) as IHashProvider64<T>` would leave the boxing to the JIT's
     // box-then-isinst pattern match to elide, which is an optimization to rely on rather than
     // a guarantee. The cast on the taken arm cannot fail — IsNative64 is exactly the test for
     // it — and on the other arm it is not compiled at all.
-    private static readonly IHashProvider64<T>? Native =
+    //
+    // The `: null` arm is unobservable and so carries no test. `Native` is read only by Hash64,
+    // and every caller guards that on IsNative64 being true, so this class is never initialized
+    // for a 32-bit-only THasher — the false arm is only ever evaluated if the runtime chooses to
+    // run the beforefieldinit initializer eagerly, which is its option and not a contract. The
+    // arm stays because the field must be null for such a THasher on any path that does reach it.
+    [ExcludeFromCodeCoverage(Justification = "The false arm is unobservable: Native is read only " +
+        "by Hash64, which callers invoke only when IsNative64 is true, so a 32-bit-only THasher " +
+        "never triggers this initializer.")]
+    private static IHashProvider64<T>? CreateNative() =>
         IsNative64 ? (IHashProvider64<T>)(object)default(THasher) : null;
 
     /// <summary>

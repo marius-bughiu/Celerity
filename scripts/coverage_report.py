@@ -34,7 +34,11 @@ from datetime import datetime, timezone
 
 
 def find_inputs(patterns: list[str]) -> list[str]:
-    """Every file matching any of the given globs, de-duplicated and oldest-first."""
+    """Every file matching any of the given globs, de-duplicated.
+
+    Ordered by pattern, and oldest-first within each. The order is presentational
+    only — parse() merges the reports, so it does not affect the result.
+    """
     found: list[str] = []
     for pattern in patterns:
         matches = sorted(glob.glob(pattern, recursive=True), key=os.path.getmtime)
