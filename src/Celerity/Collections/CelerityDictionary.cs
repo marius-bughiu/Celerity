@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Celerity.Hashing;
@@ -823,6 +824,13 @@ public class CelerityDictionary<TKey, TValue, THasher>
     internal int ProbeForKey<TSpanHasher>(ReadOnlySpan<char> key, TSpanHasher hasher)
         where TSpanHasher : struct, ISpanHashProvider
     {
+        // The slot reinterpretation below is a no-op only while TKey really is string. Nothing in
+        // the type system says so — the extension methods' signatures do — so assert it. Debug.Assert
+        // is [Conditional("DEBUG")], so this costs nothing in a release build and the hot path is
+        // unchanged; it exists to catch a future in-assembly caller that forgets the precondition.
+        Debug.Assert(typeof(TKey) == typeof(string),
+            "The span probe reinterprets each slot as a string; it is only valid for TKey == string.");
+
         TKey?[] keys = _keys;
         ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
         int mask = keys.Length - 1;

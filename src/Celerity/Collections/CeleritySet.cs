@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Celerity.Hashing;
@@ -586,6 +587,13 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
     internal int ProbeForItem<TSpanHasher>(ReadOnlySpan<char> item, TSpanHasher hasher)
         where TSpanHasher : struct, ISpanHashProvider
     {
+        // The slot reinterpretation below is a no-op only while T really is string. Nothing in the
+        // type system says so — the extension methods' signatures do — so assert it. Debug.Assert is
+        // [Conditional("DEBUG")], so this costs nothing in a release build and the hot path is
+        // unchanged; it exists to catch a future in-assembly caller that forgets the precondition.
+        Debug.Assert(typeof(T) == typeof(string),
+            "The span probe reinterprets each slot as a string; it is only valid for T == string.");
+
         T?[] slots = _slots;
         ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;

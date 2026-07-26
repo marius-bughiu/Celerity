@@ -81,24 +81,12 @@ public class StringInternTableBenchmark
 
     // ---- Dedupe: walk the stream and end up holding one instance per distinct token -------------------
 
-    // The pre-.NET-9 BCL answer: materialize every occurrence, then let the set throw the duplicates away.
-    // Correct, and it allocates one string per occurrence.
+    // The pre-.NET-9 BCL answer, and the true functional analogue: a dictionary keyed by the token
+    // hands the canonical instance back, exactly as GetOrAdd does. It still allocates one string per
+    // *occurrence*, because the key has to exist before it can be looked up — which is the whole gap.
+    // (A HashSet<string> fill is the same shape minus the canonical instance, so it is not benchmarked
+    // separately here; the Lookup category below uses HashSet<string> as its baseline.)
     [Benchmark(Baseline = true)]
-    [BenchmarkCategory("Dedupe")]
-    public int HashSet_Dedupe()
-    {
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        for (int i = 0; i < tokens.Length; i++)
-        {
-            (int offset, int length) = tokens[i];
-            set.Add(new string(buffer, offset, length));
-        }
-        return set.Count;
-    }
-
-    // The same shape with a dictionary, which at least hands the canonical instance back — still one
-    // allocation per occurrence, because the key must exist before it can be looked up.
-    [Benchmark]
     [BenchmarkCategory("Dedupe")]
     public int Dictionary_Dedupe()
     {
