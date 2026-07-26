@@ -513,7 +513,9 @@ public class BTreeDictionary<TKey, TValue, TComparer>
     /// <param name="array">The destination array.</param>
     /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
     /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+    /// </exception>
     /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
     public void CopyTo(KeyValuePair<TKey, TValue?>[] array, int arrayIndex)
     {
@@ -521,6 +523,9 @@ public class BTreeDictionary<TKey, TValue, TComparer>
         if (arrayIndex < 0)
             throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
                 "Array index must be non-negative.");
+        if (arrayIndex > array.Length)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                "Array index is beyond the end of the destination array.");
         if (array.Length - arrayIndex < _count)
             throw new ArgumentException(
                 "The destination array has insufficient space for the entries.", nameof(array));
@@ -1214,7 +1219,9 @@ public class BTreeDictionary<TKey, TValue, TComparer>
         /// <param name="array">The destination array.</param>
         /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
         /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is negative.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+        /// </exception>
         /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
         public void CopyTo(TKey[] array, int arrayIndex)
         {
@@ -1222,6 +1229,9 @@ public class BTreeDictionary<TKey, TValue, TComparer>
             if (arrayIndex < 0)
                 throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
                     "Array index must be non-negative.");
+            if (arrayIndex > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index is beyond the end of the destination array.");
             if (array.Length - arrayIndex < _dict._count)
                 throw new ArgumentException(
                     "The destination array has insufficient space for the keys.", nameof(array));
@@ -1306,7 +1316,9 @@ public class BTreeDictionary<TKey, TValue, TComparer>
         /// <param name="array">The destination array.</param>
         /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
         /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is negative.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+        /// </exception>
         /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
         public void CopyTo(TValue?[] array, int arrayIndex)
         {
@@ -1314,6 +1326,9 @@ public class BTreeDictionary<TKey, TValue, TComparer>
             if (arrayIndex < 0)
                 throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
                     "Array index must be non-negative.");
+            if (arrayIndex > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index is beyond the end of the destination array.");
             if (array.Length - arrayIndex < _dict._count)
                 throw new ArgumentException(
                     "The destination array has insufficient space for the values.", nameof(array));

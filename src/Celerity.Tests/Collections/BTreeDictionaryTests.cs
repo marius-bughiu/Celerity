@@ -666,9 +666,11 @@ public class BTreeDictionaryTests
 
         Assert.Throws<ArgumentNullException>(() => dict.Keys.CopyTo(null!, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => dict.Keys.CopyTo(new int[4], -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => dict.Keys.CopyTo(new int[4], 5));
         Assert.Throws<ArgumentException>(() => dict.Keys.CopyTo(new int[1], 1));
         Assert.Throws<ArgumentNullException>(() => dict.Values.CopyTo(null!, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => dict.Values.CopyTo(new int[4], -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => dict.Values.CopyTo(new int[4], 5));
         Assert.Throws<ArgumentException>(() => dict.Values.CopyTo(new int[1], 1));
     }
 
@@ -712,6 +714,10 @@ public class BTreeDictionaryTests
 
         Assert.Throws<ArgumentNullException>(() => dict.CopyTo(null!, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => dict.CopyTo(new KeyValuePair<int, int>[4], -1));
+
+        // An index past the end is out of range, not an insufficient-space ArgumentException — matching
+        // SetOperations.CopyTo and BCL Dictionary.CopyTo.
+        Assert.Throws<ArgumentOutOfRangeException>(() => dict.CopyTo(new KeyValuePair<int, int>[4], 5));
         Assert.Throws<ArgumentException>(() => dict.CopyTo(new KeyValuePair<int, int>[1], 1));
     }
 
