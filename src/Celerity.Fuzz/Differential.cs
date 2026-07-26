@@ -40,6 +40,8 @@ internal static class Differential
         ("LongSet", LongSetCase),
         ("SmallSet", SmallSetCase),
         ("SparseSet", SparseSetCase),
+        ("BTreeDictionary", BTreeDictionaryCase),
+        ("BTreeSet", BTreeSetCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -64,9 +66,18 @@ internal static class Differential
             throw new DivergenceException(message);
     }
 
+    // The ordered collections pack 31 keys into a node, so the hash-table key domain above would never
+    // split one. These two widen the domain and lengthen the run so a case builds two to three levels and
+    // drives splits, borrows, and merges instead of staying inside a single root leaf.
+    private const int MinOrderedKey = -8;
+    private const int MaxOrderedKey = 300;
+
     private static int Key(Random rng) => rng.Next(MinKey, MaxKey + 1);
     private static int Value(Random rng) => rng.Next(0, 1000);
     private static int OpCount(Random rng) => rng.Next(0, 200);
+
+    private static int OrderedKey(Random rng) => rng.Next(MinOrderedKey, MaxOrderedKey + 1);
+    private static int OrderedOpCount(Random rng) => rng.Next(0, 800);
 
     // ---- key/value dictionaries --------------------------------------------
 
@@ -652,6 +663,138 @@ internal static class Differential
             enumerated++;
         }
         Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // ---- ordered (B-tree) collections ---------------------------------------
+    //
+    // Unlike the hash-table targets, these are order-sensitive: the oracle is a SortedDictionary /
+    // SortedSet and the check compares the enumerated *sequence*, element for element. A B-tree that has
+    // lost balance or dropped a promoted key can still answer lookups correctly for a while, so the
+    // sequence — not just membership — is what actually catches a bad split, borrow, or merge.
+
+    private static void BTreeDictionaryCase(Random rng)
+    {
+        var sut = new BTreeDictionary<int, int>();
+        var oracle = new SortedDictionary<int, int>();
+        int ops = OrderedOpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = OrderedKey(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 9: int v = Value(rng); sut[key] = v; oracle[key] = v; break;
+                case < 14: int v2 = Value(rng); Check(sut.TryAdd(key, v2) == oracle.TryAdd(key, v2), $"TryAdd({key})"); break;
+                case < 19:
+                    bool expected = oracle.TryGetValue(key, out int expectedValue);
+                    oracle.Remove(key);
+                    bool actual = sut.Remove(key, out int actualValue);
+                    Check(expected == actual, $"Remove({key}) {actual} != {expected}");
+                    Check(!expected || expectedValue == actualValue, $"Remove({key}) value {actualValue} != {expectedValue}");
+                    break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+
+        for (int k = MinOrderedKey - 2; k <= MaxOrderedKey + 2; k++)
+        {
+            bool e = oracle.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a && (!e || ev == av), $"lookup({k}) {a}/{av} != {e}/{ev}");
+
+            // The ordered surface has to agree at every probe too, including both open ends.
+            bool expectedLower = false;
+            int expectedLowerKey = 0;
+            bool expectedUpper = false;
+            int expectedUpperKey = 0;
+            foreach (int oracleKey in oracle.Keys)
+            {
+                if (!expectedLower && oracleKey >= k)
+                {
+                    expectedLower = true;
+                    expectedLowerKey = oracleKey;
+                }
+
+                if (!expectedUpper && oracleKey > k)
+                {
+                    expectedUpper = true;
+                    expectedUpperKey = oracleKey;
+                    break;
+                }
+            }
+
+            Check(sut.TryGetLowerBound(k, out KeyValuePair<int, int> lower) == expectedLower, $"lower({k})");
+            Check(!expectedLower || lower.Key == expectedLowerKey, $"lower({k}) {lower.Key} != {expectedLowerKey}");
+            Check(sut.TryGetUpperBound(k, out KeyValuePair<int, int> upper) == expectedUpper, $"upper({k})");
+            Check(!expectedUpper || upper.Key == expectedUpperKey, $"upper({k}) {upper.Key} != {expectedUpperKey}");
+        }
+
+        CheckSameSequence(sut.Select(e => e.Key), oracle.Keys, "enumeration");
+        CheckSameSequence(sut.Select(e => e.Value), oracle.Values, "values");
+
+        // A range scan must be the same sequence as the equivalent filter over the oracle.
+        int from = OrderedKey(rng);
+        int to = from + rng.Next(0, 120);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to).Select(e => e.Key),
+            oracle.Keys.Where(k => k >= from && k < to),
+            $"range[{from},{to})");
+    }
+
+    private static void BTreeSetCase(Random rng)
+    {
+        var sut = new BTreeSet<int>();
+        var oracle = new SortedSet<int>();
+        int ops = OrderedOpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = OrderedKey(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 11: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 19: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+
+        for (int k = MinOrderedKey - 2; k <= MaxOrderedKey + 2; k++)
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+
+        CheckSameSequence(sut, oracle, "enumeration");
+
+        int from = OrderedKey(rng);
+        int to = from + rng.Next(0, 120);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to),
+            oracle.Where(v => v >= from && v < to),
+            $"range[{from},{to})");
+    }
+
+    // Order-sensitive comparison: both sequences must yield the same elements in the same positions.
+    private static void CheckSameSequence(IEnumerable<int> actual, IEnumerable<int> expected, string what)
+    {
+        using IEnumerator<int> a = actual.GetEnumerator();
+        using IEnumerator<int> e = expected.GetEnumerator();
+        int index = 0;
+
+        while (true)
+        {
+            bool hasA = a.MoveNext();
+            bool hasE = e.MoveNext();
+            if (hasA != hasE)
+                throw new DivergenceException($"{what} length differs at index {index}");
+            if (!hasA)
+                return;
+            if (a.Current != e.Current)
+                throw new DivergenceException($"{what}[{index}] {a.Current} != {e.Current}");
+
+            index++;
+        }
     }
 
     // ---- bloom filter (probabilistic, one-directional) ----------------------

@@ -925,4 +925,70 @@ public class ContainsValueTests
         var map = new SmallDictionary<int, string?> { [1] = null, [2] = "x" };
         Assert.True(map.ContainsValue(null));
     }
+
+    // ---------------- BTreeDictionary ----------------
+
+    [Fact]
+    public void BTreeDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = new BTreeDictionary<int, int>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void BTreeDictionary_FindsValueInRegularSlot()
+    {
+        var map = new BTreeDictionary<int, int> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void BTreeDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = new BTreeDictionary<int, int> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void BTreeDictionary_DefaultValueLookup_ZeroValue()
+    {
+        var map = new BTreeDictionary<int, int> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+
+        var empty = new BTreeDictionary<int, int>();
+        Assert.False(empty.ContainsValue(0));
+    }
+
+    [Fact]
+    public void BTreeDictionary_AfterRemove_DoesNotReportRemovedValue()
+    {
+        var map = new BTreeDictionary<int, int> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.Remove(2));
+        Assert.False(map.ContainsValue(200));
+        Assert.True(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(300));
+    }
+
+    [Fact]
+    public void BTreeDictionary_FindsValue_AcrossMultipleLevels()
+    {
+        // The scan walks the in-order enumeration, so this also pins that a value stored deep in the tree -
+        // and one promoted into an internal node by a split - is still reachable.
+        var map = new BTreeDictionary<int, int>();
+        for (int i = 0; i < 2000; i++)
+            map[i] = i * 3;
+
+        Assert.True(map.ContainsValue(0));
+        Assert.True(map.ContainsValue(31 * 3));
+        Assert.True(map.ContainsValue(1999 * 3));
+        Assert.False(map.ContainsValue(2000 * 3));
+    }
+
+    [Fact]
+    public void BTreeDictionary_NullValue_ReturnsTrue_WhenPresent()
+    {
+        var map = new BTreeDictionary<int, string?> { [1] = null, [2] = "x" };
+        Assert.True(map.ContainsValue(null));
+    }
 }

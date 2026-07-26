@@ -3720,3 +3720,171 @@ foreach (int x in data)
 
 Console.WriteLine(inversions); // 8
 ```
+
+## BTreeDictionary&lt;TKey, TValue, TComparer&gt;
+
+```csharp
+public class BTreeDictionary<TKey, TValue, TComparer>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
+    where TComparer : struct, IComparer<TKey>
+
+// Ordered by Comparer<TKey>.Default:
+public class BTreeDictionary<TKey, TValue> : BTreeDictionary<TKey, TValue, DefaultComparer<TKey>>
+```
+
+A **sorted dictionary backed by a B-tree**. Keys are kept in ascending `TComparer` order across nodes that hold up to **31 keys each in flat arrays**, so a lookup visits `log₃₂(n)` nodes instead of chasing `log₂(n)` pointers, and it adds the ordered surface a hash table cannot answer: `Min`, `Max`, `TryGetLowerBound`, `TryGetUpperBound`, `EnumerateRange`, and in-order enumeration.
+
+### When to choose it over `SortedDictionary` / `SortedList`
+
+The BCL has no B-tree. `SortedDictionary<TKey, TValue>` is a red-black tree: one heap object per entry and roughly `log₂(n)` dependent pointer chases — about 20 potential cache misses at `n = 1M` — for a single lookup. `SortedList<TKey, TValue>` is array-backed, so lookups are a clean binary search but every insert in the middle memmoves the tail (`O(n)`). `OrderedDictionary<TKey, TValue>` (.NET 9) is *insertion*-ordered and does not close the gap at all.
+
+With a fan-out of 32, the same million entries sit about **4 node visits** deep, the keys inside a node are one or two cache lines the prefetcher handles well, and allocation drops from one object per entry to three arrays per 31 entries. The documented BCL-beating workload is a large ordered map under an **interleaved insert + lookup + in-order range-scan** load — time-series keyed by timestamp, order books, LSM-style memtables. See the [BTreeDictionary benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeDictionary) on the dashboard.
+
+Where it does **not** win: tiny maps (a `SortedList` of a few dozen entries is hard to beat), and any workload that never needs order — a hash table answers those in `O(1)`, so reach for `CelerityDictionary` instead.
+
+### Why the struct comparer?
+
+`TComparer` is a `struct, IComparer<TKey>` type parameter rather than an `IComparer<TKey>` instance for the same reason the hashers are struct type parameters: an interface-typed comparer costs a virtual call for **every key inspected inside a node** — several per node visit, on the hottest path in the tree. `DefaultComparer<T>` wraps `Comparer<T>.Default`, and the two-parameter `BTreeDictionary<TKey, TValue>` alias closes over it so the common case needs no extra type argument. To order by something else, write your own struct comparer and pass it as the type argument.
+
+### Constructors
+
+```csharp
+public BTreeDictionary()
+public BTreeDictionary(TComparer comparer)
+public BTreeDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source)
+public BTreeDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source, TComparer comparer)
+```
+
+There is no capacity or load-factor parameter — a B-tree grows one node at a time, and an empty dictionary owns no node arrays at all. The `comparer` overloads exist for a **stateful** `TComparer` (a culture, a sort direction, a key selector); without one the ordering is `default(TComparer)`. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and `ArgumentException` on a duplicate key, and never alias a caller-supplied collection.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of entries. |
+| `TComparer Comparer { get; }` | The comparer defining the key order. |
+| `TValue this[TKey key] { get; set; }` | Get throws `KeyNotFoundException` when absent; set inserts or overwrites. Both `O(log n)`. An in-place overwrite is not a structural change and does not invalidate active enumerators. |
+| `KeyCollection Keys { get; }` / `ValueCollection Values { get; }` | Allocation-free views in ascending key order. Read-only `ICollection<T>`s: the mutating members throw `NotSupportedException`. |
+| `void Add(TKey key, TValue? value)` | Insert; throws `ArgumentException` when the key is already present. |
+| `bool TryAdd(TKey key, TValue? value)` | Non-throwing insert. A rejected duplicate is a true no-op — it does not restructure the tree or invalidate enumerators. |
+| `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | `O(log n)` lookup. |
+| `bool ContainsValue(TValue? value)` | `O(n)` scan — the tree is indexed by key, not by value. |
+| `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` | `O(log n)` removal, rebalancing by borrowing from a sibling or merging two nodes. |
+| `void Clear()` | Drop every entry; the tree releases all of its nodes. |
+| `KeyValuePair<TKey, TValue?> Min { get; }` / `Max { get; }` | First / last entry in key order, `O(log n)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out KeyValuePair<TKey, TValue?> entry)` / `TryGetMax(...)` | The non-throwing forms. |
+| `bool TryGetLowerBound(TKey key, out KeyValuePair<TKey, TValue?> entry)` | First entry with a key **≥** `key` (`lower_bound`); an exact match is its own lower bound. |
+| `bool TryGetUpperBound(TKey key, out KeyValuePair<TKey, TValue?> entry)` | First entry with a key **>** `key` (`upper_bound`). |
+| `RangeEnumerable EnumerateRange(TKey fromInclusive, TKey toExclusive)` | The entries of the half-open range `[fromInclusive, toExclusive)`, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `Enumerator GetEnumerator()` | Struct enumerator over the entries in ascending key order. The traversal path is held in an inline buffer, so a `foreach` allocates nothing. |
+| `void CopyTo(KeyValuePair<TKey, TValue?>[] array, int arrayIndex)` | Copy every entry in key order. |
+
+Unlike `SortedDictionary`, a **`null` (or `default`) key is legal** and sorts before every other key, matching how the rest of the family treats the out-of-band default key; a custom `TComparer` that rejects `null` overrides that. Adding, removing, and clearing invalidate active enumerators (`InvalidOperationException` from `MoveNext`); lookups, a rejected duplicate `TryAdd`, a `Remove` of an absent key, and an in-place value overwrite do not. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A time-series keyed by timestamp: append as samples arrive, then scan a window in order.
+var series = new BTreeDictionary<long, double>();
+foreach ((long timestamp, double value) in ReadSamples())
+{
+    series[timestamp] = value;
+}
+
+// Every sample in [start, end) — O(log n) to seek, then a walk over contiguous node arrays.
+double sum = 0;
+int count = 0;
+foreach (KeyValuePair<long, double> sample in series.EnumerateRange(start, end))
+{
+    sum += sample.Value;
+    count++;
+}
+
+Console.WriteLine($"window mean: {sum / count}");
+
+// The ordered questions a hash table cannot answer.
+Console.WriteLine(series.Min.Key);                       // earliest timestamp
+Console.WriteLine(series.Max.Key);                       // latest timestamp
+series.TryGetLowerBound(start, out var firstAtOrAfter);  // first sample at or after `start`
+```
+
+## BTreeSet&lt;T, TComparer&gt;
+
+```csharp
+public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
+    where TComparer : struct, IComparer<T>
+
+// Ordered by Comparer<T>.Default:
+public class BTreeSet<T> : BTreeSet<T, DefaultComparer<T>>
+```
+
+The set counterpart of `BTreeDictionary`: elements kept in ascending `TComparer` order, up to **31 per node** in flat arrays, with the same ordered surface — `Min`, `Max`, `TryGetLowerBound`, `TryGetUpperBound`, `EnumerateRange`, and in-order enumeration.
+
+### When to choose it over `SortedSet`
+
+`SortedSet<T>` is a red-black tree with one heap object per element and roughly `log₂(n)` dependent pointer chases per lookup; this type reaches the same element in about `log₃₂(n)` node visits — around 4 instead of 20 potential cache misses at `n = 1M`. Because it stores no values, a node is a single element array plus its children, so the memory saving over `SortedSet` is larger still. The documented BCL-beating workload is a large ordered set under an **interleaved insert + membership + in-order range-scan** load — sorted id sets, sweep-line event sets, interval endpoints. See the [BTreeSet benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeSet) on the dashboard.
+
+Where it does **not** win: small sets, and any workload that never needs order — `CeleritySet` or `IntSet` answer those in `O(1)`.
+
+### Constructors
+
+```csharp
+public BTreeSet()
+public BTreeSet(TComparer comparer)
+public BTreeSet(IEnumerable<T> source)
+public BTreeSet(IEnumerable<T> source, TComparer comparer)
+```
+
+As with the dictionary, there is no capacity or load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and silently ignore duplicates.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `TComparer Comparer { get; }` | Element count; the comparer defining the order. |
+| `void Add(T item)` | Insert; throws `ArgumentException` when the element is already present (the family-wide set convention). |
+| `bool TryAdd(T item)` | Non-throwing insert. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
+| `bool Contains(T item)` / `bool Remove(T item)` | `O(log n)`. |
+| `void Clear()` | Drop every element; the tree releases all of its nodes. |
+| `T Min { get; }` / `T Max { get; }` | Smallest / largest element, `O(log n)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
+| `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | Smallest element **≥** / **>** `item`, `O(log n)`. |
+| `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | The elements of the half-open range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. |
+| `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` / `SetEquals` | The `ISet<T>` / `IReadOnlySet<T>` queries. |
+| `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
+
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family); a custom comparer that conflates values default equality keeps apart — a case-insensitive order, say — can therefore disagree with `SortedSet<T>` on those members alone. A `null` (or `default`) element is legal and sorts first. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A sweep line over interval endpoints: insert as events arrive, query the neighbourhood in order.
+var active = new BTreeSet<int>();
+foreach (int endpoint in endpoints)
+{
+    active.TryAdd(endpoint);
+}
+
+// The nearest active endpoint at or after `x`, and the next one strictly after it.
+if (active.TryGetLowerBound(x, out int atOrAfter))
+{
+    Console.WriteLine(atOrAfter);
+}
+
+if (active.TryGetUpperBound(x, out int strictlyAfter))
+{
+    Console.WriteLine(strictlyAfter);
+}
+
+// Everything in the window, in order, without scanning the whole set.
+foreach (int endpoint in active.EnumerateRange(windowStart, windowEnd))
+{
+    Process(endpoint);
+}
+```
