@@ -29,7 +29,9 @@ namespace Celerity.Collections;
 /// </code>
 /// <para>
 /// A <c>null</c> argument is not rejected: <see cref="Comparer{T}.Default"/> orders <c>null</c> before every
-/// non-<c>null</c> value, which is what makes <c>default(TKey)</c> a legal key in the ordered collections.
+/// non-<c>null</c> value, which is what makes a <c>null</c> key or element legal in the ordered collections.
+/// That says nothing about <c>default(T)</c> for a value type — <c>default(int)</c> is simply <c>0</c>, and
+/// sorts after every negative value like any other key.
 /// </para>
 /// </remarks>
 public readonly struct DefaultComparer<T> : IComparer<T>

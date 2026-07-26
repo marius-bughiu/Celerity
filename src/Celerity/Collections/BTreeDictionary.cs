@@ -75,10 +75,12 @@ public class BTreeDictionary<TKey, TValue> : BTreeDictionary<TKey, TValue, Defau
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/> instead.
 /// </para>
 /// <para>
-/// Unlike <see cref="SortedDictionary{TKey, TValue}"/>, a <c>null</c> (or <c>default</c>) key is legal and
-/// sorts before every other key, matching how the rest of the family treats the out-of-band default key;
-/// a custom <typeparamref name="TComparer"/> that rejects <c>null</c> overrides that. This type is not
-/// thread-safe; concurrent callers must synchronize externally.
+/// Unlike <see cref="SortedDictionary{TKey, TValue}"/>, a <c>null</c> key is legal:
+/// <see cref="Comparer{T}.Default"/> orders <c>null</c> before every non-<c>null</c> key (a custom
+/// <typeparamref name="TComparer"/> that rejects <c>null</c> overrides that). There is no out-of-band
+/// <c>default(TKey)</c> slot as in the hash-based family — a value-type <c>default(TKey)</c> is an ordinary
+/// key that sorts wherever the comparer puts it, so <c>0</c> follows every negative <see cref="int"/> rather
+/// than coming first. This type is not thread-safe; concurrent callers must synchronize externally.
 /// </para>
 /// </remarks>
 public class BTreeDictionary<TKey, TValue, TComparer>

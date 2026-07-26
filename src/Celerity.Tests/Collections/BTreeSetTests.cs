@@ -246,7 +246,7 @@ public class BTreeSetTests
     }
 
     [Fact]
-    public void Add_ShouldAcceptNullElement_AndSortItFirst()
+    public void Add_ShouldAcceptNullElement_AndSortItBeforeEveryNonNullElement()
     {
         var set = new BTreeSet<string>();
         set.Add("b");

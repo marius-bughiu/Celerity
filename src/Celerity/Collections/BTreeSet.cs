@@ -67,9 +67,11 @@ public class BTreeSet<T> : BTreeSet<T, DefaultComparer<T>>
 /// <see cref="EqualityComparer{T}.Default"/>, matching the rest of the family. A custom comparer that treats
 /// two values as equal when <see cref="EqualityComparer{T}.Default"/> does not — a case-insensitive order,
 /// say — can therefore disagree with <see cref="SortedSet{T}"/> on those members alone. Like the rest of the family, <see cref="Add"/> throws
-/// on a duplicate — use <see cref="TryAdd"/> when the element may already be present. A <c>null</c> (or
-/// <c>default</c>) element is legal and sorts first. This type is not thread-safe; concurrent callers must
-/// synchronize externally.
+/// on a duplicate — use <see cref="TryAdd"/> when the element may already be present. A <c>null</c> element is
+/// legal and <see cref="Comparer{T}.Default"/> orders it before every non-<c>null</c> one; there is no
+/// out-of-band <c>default(T)</c> slot as in the hash-based family, so a value-type <c>default(T)</c> is an
+/// ordinary element that sorts wherever the comparer puts it (<c>0</c> follows every negative
+/// <see cref="int"/>). This type is not thread-safe; concurrent callers must synchronize externally.
 /// </para>
 /// </remarks>
 public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>

@@ -396,8 +396,10 @@ public class BTreeDictionaryTests
     // ---- the default / null key ---------------------------------------------
 
     [Fact]
-    public void Add_ShouldAcceptDefaultKey_AndSortItFirst()
+    public void Add_ShouldTreatDefaultKeyAsOrdinary_WhenKeyIsAValueType()
     {
+        // There is no out-of-band default-key slot here: default(int) is 0, an ordinary key that sorts
+        // between the negatives and the positives rather than first.
         var dict = new BTreeDictionary<int, string>();
         dict.Add(5, "five");
         dict.Add(0, "zero");
@@ -410,7 +412,7 @@ public class BTreeDictionaryTests
     }
 
     [Fact]
-    public void Add_ShouldAcceptNullKey_AndSortItFirst()
+    public void Add_ShouldAcceptNullKey_AndSortItBeforeEveryNonNullKey()
     {
         // Comparer<string>.Default orders null before every non-null key, so — unlike SortedDictionary —
         // a null key is a legal, well-ordered key here.

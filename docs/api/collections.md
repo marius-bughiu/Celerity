@@ -3781,7 +3781,7 @@ There is no capacity or load-factor parameter — a B-tree grows one node at a t
 | `Enumerator GetEnumerator()` | Struct enumerator over the entries in ascending key order. The traversal path is held in an inline buffer, so a `foreach` allocates nothing. |
 | `void CopyTo(KeyValuePair<TKey, TValue?>[] array, int arrayIndex)` | Copy every entry in key order. |
 
-Unlike `SortedDictionary`, a **`null` (or `default`) key is legal** and sorts before every other key, matching how the rest of the family treats the out-of-band default key; a custom `TComparer` that rejects `null` overrides that. Adding, removing, and clearing invalidate active enumerators (`InvalidOperationException` from `MoveNext`); lookups, a rejected duplicate `TryAdd`, a `Remove` of an absent key, and an in-place value overwrite do not. Not thread-safe.
+Unlike `SortedDictionary`, a **`null` key is legal**: `Comparer<TKey>.Default` orders `null` before every non-`null` key (a custom `TComparer` that rejects `null` overrides that). There is no out-of-band `default(TKey)` slot as in the hash-based family — a value-type `default(TKey)` is an ordinary key that sorts wherever the comparer puts it, so `0` follows every negative `int` rather than coming first. Adding, removing, and clearing invalidate active enumerators (`InvalidOperationException` from `MoveNext`); lookups, a rejected duplicate `TryAdd`, a `Remove` of an absent key, and an in-place value overwrite do not. Not thread-safe.
 
 ### Usage example
 
@@ -3859,7 +3859,7 @@ As with the dictionary, there is no capacity or load factor. The `IEnumerable` o
 | `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
 
-Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). A custom comparer that treats two values as equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — can therefore disagree with `SortedSet<T>` on those members alone. A `null` (or `default`) element is legal and sorts first. Not thread-safe.
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). A custom comparer that treats two values as equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — can therefore disagree with `SortedSet<T>` on those members alone. A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
 
 ### Usage example
 
