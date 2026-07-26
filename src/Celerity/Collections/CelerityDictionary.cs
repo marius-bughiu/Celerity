@@ -803,6 +803,47 @@ public class CelerityDictionary<TKey, TValue, THasher>
         }
     }
 
+    // The hasher instance the span-lookup extension methods hand back to the probe below.
+    // The field is private and the extension methods live outside the type, so they need a
+    // way to reach it without the class itself carrying an ISpanHashProvider constraint —
+    // which could not be added to THasher without breaking every existing instantiation.
+    internal THasher Hasher => _hasher;
+
+    // Reads the value parked alongside a slot the span probe already located.
+    internal TValue? ValueAt(int index) => _values[index];
+
+    // The span twin of ProbeForKey. Generic in its own hasher type parameter (rather than
+    // reusing THasher) so the ISpanHashProvider constraint lives on the method: the class
+    // constraint stays exactly what it has always been, and the JIT still devirtualizes the
+    // hash call because TSpanHasher is a struct type parameter.
+    //
+    // Only reachable from SpanLookupExtensions, whose signatures pin TKey to string — which
+    // is what makes the reinterpretation of the slot below sound.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int ProbeForKey<TSpanHasher>(ReadOnlySpan<char> key, TSpanHasher hasher)
+        where TSpanHasher : struct, ISpanHashProvider
+    {
+        TKey?[] keys = _keys;
+        ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = keys.Length - 1;
+        int index = hasher.Hash(key) & mask;
+
+        while (true)
+        {
+            ref TKey? slot = ref Unsafe.Add(ref keysRef, (nint)(uint)index);
+            if (EmptySlot.Is(slot))
+                return -1;
+
+            // TKey is string at every call site (see above), so this is a no-op
+            // reinterpretation rather than a cast. Comparing the spans is ordinal, matching
+            // the EqualityComparer<string>.Default the string-keyed probe uses.
+            if (key.SequenceEqual(Unsafe.As<TKey?, string?>(ref slot).AsSpan()))
+                return index;
+
+            index = (index + 1) & mask;
+        }
+    }
+
     private void Resize() => Resize(FastUtils.DoubleCapacity(_keys.Length));
 
     // Rehashes every live entry into a freshly allocated table of the given power-of-two size.

@@ -19,6 +19,11 @@ public class TrieBenchmark
     private string[] keys = null!;
     private string[] prefixes = null!;
 
+    // The same keys laid end to end in one buffer, with the slice bounds of each — the shape a tokenizer
+    // actually holds its keys in, and the input to the SpanLookup category below.
+    private char[] buffer = null!;
+    private (int Offset, int Length)[] slices = null!;
+
     // Rebuilt per iteration by the [IterationSetup]s below for the build (Add) category.
     private Trie<int> trie = null!;
     private Dictionary<string, int> dict = null!;
@@ -38,8 +43,16 @@ public class TrieBenchmark
             prefixes[b] = $"{(char)('a' + b / 26)}{(char)('a' + b % 26)}";
 
         keys = new string[ItemCount];
+        slices = new (int, int)[ItemCount];
+        var text = new System.Text.StringBuilder();
         for (int i = 0; i < ItemCount; i++)
+        {
             keys[i] = $"{prefixes[i % PrefixBuckets]}_{i:D8}";
+            slices[i] = (text.Length, keys[i].Length);
+            text.Append(keys[i]).Append(' ');
+        }
+
+        buffer = text.ToString().ToCharArray();
 
         trieFull = new Trie<int>();
         dictFull = new Dictionary<string, int>(ItemCount);
@@ -125,6 +138,41 @@ public class TrieBenchmark
         {
             foreach (KeyValuePair<string, int> pair in trieFull.GetByPrefix(prefix))
                 acc += pair.Value;
+        }
+        return acc;
+    }
+
+    // ---- SpanLookup: the caller holds spans, not strings ----------------------------------------------
+    // The baseline is what a net8.0 caller must do to probe any string-keyed collection: allocate the
+    // string first. The trie descends the span directly, so the whole allocation and copy vanish — which
+    // is why this category is the one with allocation numbers worth reading. It also flips the Lookup
+    // verdict: the trie's character walk no longer competes against a bare hash, but against a hash plus
+    // an allocation. (.NET 9's Dictionary<string,V>.GetAlternateLookup closes this gap on that runtime;
+    // this project targets net8.0, the floor where the BCL has no answer.)
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("SpanLookup")]
+    public long Dictionary_SpanLookup()
+    {
+        long acc = 0;
+        for (int i = 0; i < slices.Length; i++)
+        {
+            (int offset, int length) = slices[i];
+            acc += dictFull[new string(buffer, offset, length)];
+        }
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("SpanLookup")]
+    public long Trie_SpanLookup()
+    {
+        long acc = 0;
+        for (int i = 0; i < slices.Length; i++)
+        {
+            (int offset, int length) = slices[i];
+            trieFull.TryGetValue(buffer.AsSpan(offset, length), out int value);
+            acc += value;
         }
         return acc;
     }

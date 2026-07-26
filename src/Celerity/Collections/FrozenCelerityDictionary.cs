@@ -468,6 +468,47 @@ public class FrozenCelerityDictionary<TValue, THasher>
     // Returns the slot holding <paramref name="key"/>, or -1 if absent. In perfect
     // mode this is a single index + equality check; in fallback mode it linear-probes
     // until it finds the key or hits an empty slot. The caller guarantees key != null.
+    // The hasher instance the span-lookup extension methods hand back to the probe below.
+    // The field is private and the extension methods live outside the type, so they need a
+    // way to reach it without the class itself carrying an ISpanHashProvider constraint —
+    // which could not be added to THasher without breaking every existing instantiation.
+    internal THasher Hasher => _hasher;
+
+    // Reads the value parked alongside a slot the span probe already located.
+    internal TValue? ValueAt(int index) => _values[index];
+
+    // The span twin of FindSlot. Generic in its own hasher type parameter (rather than
+    // reusing THasher) so the ISpanHashProvider constraint lives on the method: the class
+    // constraint stays exactly what it has always been, and the JIT still devirtualizes the
+    // hash call because TSpanHasher is a struct type parameter. Both the perfect and the
+    // linear-probing fallback shapes are mirrored exactly, including the same Mix/seed, so
+    // the span path and the string path resolve to the same slot.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int FindSlot<TSpanHasher>(ReadOnlySpan<char> key, TSpanHasher hasher)
+        where TSpanHasher : struct, ISpanHashProvider
+    {
+        string?[] keys = _keys;
+        ref string? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
+        int mask = _mask;
+        int slot = (int)(Mix(unchecked((uint)hasher.Hash(key)), _seed) & (uint)mask);
+
+        if (_isPerfect)
+        {
+            string? candidate = Unsafe.Add(ref keysRef, (nint)(uint)slot);
+            return candidate is not null && key.SequenceEqual(candidate.AsSpan()) ? slot : -1;
+        }
+
+        while (true)
+        {
+            string? candidate = Unsafe.Add(ref keysRef, (nint)(uint)slot);
+            if (candidate is null)
+                return -1;
+            if (key.SequenceEqual(candidate.AsSpan()))
+                return slot;
+            slot = (slot + 1) & mask;
+        }
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int FindSlot(string key)
     {

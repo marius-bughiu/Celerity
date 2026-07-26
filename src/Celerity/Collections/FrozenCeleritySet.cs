@@ -481,6 +481,44 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     // mode this is a single index + equality check; in fallback mode it linear-probes
     // until it finds the element or hits an empty slot. The caller guarantees
     // item != null.
+    // The hasher instance the span-lookup extension methods hand back to the probe below.
+    // The field is private and the extension methods live outside the type, so they need a
+    // way to reach it without the class itself carrying an ISpanHashProvider constraint —
+    // which could not be added to THasher without breaking every existing instantiation.
+    internal THasher Hasher => _hasher;
+
+    // The span twin of FindSlot. Generic in its own hasher type parameter (rather than
+    // reusing THasher) so the ISpanHashProvider constraint lives on the method: the class
+    // constraint stays exactly what it has always been, and the JIT still devirtualizes the
+    // hash call because TSpanHasher is a struct type parameter. Both the perfect and the
+    // linear-probing fallback shapes are mirrored exactly, including the same Mix/seed, so
+    // the span path and the string path resolve to the same slot.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int FindSlot<TSpanHasher>(ReadOnlySpan<char> item, TSpanHasher hasher)
+        where TSpanHasher : struct, ISpanHashProvider
+    {
+        string?[] items = _items;
+        ref string? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
+        int mask = _mask;
+        int slot = (int)(Mix(unchecked((uint)hasher.Hash(item)), _seed) & (uint)mask);
+
+        if (_isPerfect)
+        {
+            string? candidate = Unsafe.Add(ref itemsRef, (nint)(uint)slot);
+            return candidate is not null && item.SequenceEqual(candidate.AsSpan()) ? slot : -1;
+        }
+
+        while (true)
+        {
+            string? candidate = Unsafe.Add(ref itemsRef, (nint)(uint)slot);
+            if (candidate is null)
+                return -1;
+            if (item.SequenceEqual(candidate.AsSpan()))
+                return slot;
+            slot = (slot + 1) & mask;
+        }
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int FindSlot(string item)
     {

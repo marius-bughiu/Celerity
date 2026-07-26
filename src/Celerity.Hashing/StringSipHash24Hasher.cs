@@ -75,11 +75,11 @@ namespace Celerity.Hashing;
 /// The algorithm carries 64 bits of state internally, so the type also implements
 /// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns that state un-folded, which is
 /// what the probabilistic sketches want (see <see cref="IHashProvider64{T}"/> for why the extra
-/// 32 bits matter there and not in a hash table). <see cref="Hash"/> is unchanged — it is
+/// 32 bits matter there and not in a hash table). <see cref="Hash(string)"/> is unchanged — it is
 /// exactly <c>h ^ (h &gt;&gt; 32)</c> of the 64-bit result.
 /// </para>
 /// </remarks>
-public struct StringSipHash24Hasher : IHashProvider<string>, IHashProvider64<string>
+public struct StringSipHash24Hasher : IHashProvider<string>, IHashProvider64<string>, ISpanHashProvider
 {
     // Canonical SipHash reference key (RFC-draft test-vector key, bytes 00..0f),
     // read as two little-endian 64-bit halves. Fixed because collections build the
@@ -109,7 +109,23 @@ public struct StringSipHash24Hasher : IHashProvider<string>, IHashProvider64<str
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int Hash(string key)
     {
-        ulong h64 = Hash64(key);
+        ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
+
+    /// <summary>
+    /// Computes the SipHash-2-4 hash of the specified character span (using this type's
+    /// fixed built-in key), xor-folded to a signed 32-bit result.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit, xor-folded SipHash-2-4 hash of <paramref name="key"/> — the same
+    /// value <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
+        ulong h64 = Hash64Core(key);
         return unchecked((int)(h64 ^ (h64 >> 32)));
     }
 
@@ -130,8 +146,16 @@ public struct StringSipHash24Hasher : IHashProvider<string>, IHashProvider64<str
     public ulong Hash64(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash64Core(key.AsSpan());
+    }
 
-        int charLen = key.Length;               // count of UTF-16 code units (chars)
+    // The single 64-bit body. Both Hash64(string) and the span-based Hash(ReadOnlySpan<char>)
+    // route through it, so the string and span overloads cannot drift apart — the parity the
+    // ISpanHashProvider contract requires.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong Hash64Core(ReadOnlySpan<char> key)
+    {
+        int charLen = key.Length;             // count of UTF-16 code units (chars)
         ulong byteLen = (ulong)charLen * 2UL;   // SipHash operates on the byte length
 
         ulong v0 = Init0 ^ K0;
@@ -186,7 +210,7 @@ public struct StringSipHash24Hasher : IHashProvider<string>, IHashProvider64<str
     /// would read over the native little-endian UTF-16 stream.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Word(string key, int i) =>
+    private static ulong Word(ReadOnlySpan<char> key, int i) =>
         (ulong)key[i]
         | ((ulong)key[i + 1] << 16)
         | ((ulong)key[i + 2] << 32)

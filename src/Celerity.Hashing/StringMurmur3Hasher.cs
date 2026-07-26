@@ -40,7 +40,7 @@ namespace Celerity.Hashing;
 /// calling the hasher, so this does not collide with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringMurmur3Hasher : IHashProvider<string>
+public struct StringMurmur3Hasher : IHashProvider<string>, ISpanHashProvider
 {
     private const uint C1 = 0xcc9e2d51u;
     private const uint C2 = 0x1b873593u;
@@ -61,7 +61,21 @@ public struct StringMurmur3Hasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the MurmurHash3 x86_32 hash of the specified character span over its
+    /// UTF-16 code units.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit MurmurHash3 hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         uint h = 0;
         int length = key.Length;
 
