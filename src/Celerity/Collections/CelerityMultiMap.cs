@@ -536,7 +536,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     // ---- internal helpers ----
 
     private static bool IsDefaultKey(TKey key) =>
-        EqualityComparer<TKey>.Default.Equals(key, default(TKey));
+        EmptySlot.Is(key);
 
     // Returns the existing or newly-created value group for key, updating _count
     // (and the default-key bookkeeping) when a new key is introduced, but NOT
@@ -597,7 +597,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         while (true)
         {
             TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(TKey))) { wasEmpty = true; return index; }
+            if (EmptySlot.Is(slot)) { wasEmpty = true; return index; }
             if (comparer.Equals(slot, key)) { wasEmpty = false; return index; }
             index = (index + 1) & mask;
         }
@@ -615,7 +615,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         while (true)
         {
             TKey? slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(TKey))) return -1;
+            if (EmptySlot.Is(slot)) return -1;
             if (comparer.Equals(slot, key)) return index;
             index = (index + 1) & mask;
         }
@@ -642,15 +642,14 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         ref TKey? oldKeysRef = ref MemoryMarshal.GetArrayDataReference(oldKeys);
         ref TKey? newKeysRef = ref MemoryMarshal.GetArrayDataReference(newKeys);
 
-        var comparer = EqualityComparer<TKey>.Default;
         for (int i = 0; i < oldKeys.Length; i++)
         {
             TKey? key = Unsafe.Add(ref oldKeysRef, (nint)(uint)i);
-            if (comparer.Equals(key, default(TKey)))
+            if (EmptySlot.Is(key))
                 continue;
 
             int index = _hasher.Hash(key!) & mask;
-            while (!comparer.Equals(Unsafe.Add(ref newKeysRef, (nint)(uint)index), default(TKey)))
+            while (!EmptySlot.Is(Unsafe.Add(ref newKeysRef, (nint)(uint)index)))
                 index = (index + 1) & mask;
 
             Unsafe.Add(ref newKeysRef, (nint)(uint)index) = key;
@@ -673,7 +672,6 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         List<TValue?>?[] groups = _groups;
         ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
         int mask = keys.Length - 1;
-        var comparer = EqualityComparer<TKey>.Default;
         int i = startIndex;
         int j = i;
 
@@ -681,7 +679,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         {
             j = (j + 1) & mask;
             TKey? candidateKey = Unsafe.Add(ref keysRef, (nint)(uint)j);
-            if (comparer.Equals(candidateKey, default(TKey)))
+            if (EmptySlot.Is(candidateKey))
                 break;
 
             int k = _hasher.Hash(candidateKey!) & mask;
@@ -893,11 +891,10 @@ public class CelerityMultiMap<TKey, TValue, THasher>
                 List<TValue?>?[] groups = _map._groups;
                 int length = keys.Length;
                 ref TKey? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
-                var comparer = EqualityComparer<TKey>.Default;
                 while (++_index < length)
                 {
                     TKey? key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
-                    if (!comparer.Equals(key, default(TKey)))
+                    if (!EmptySlot.Is(key))
                     {
                         _current = new Grouping(key!, groups[_index]);
                         return true;

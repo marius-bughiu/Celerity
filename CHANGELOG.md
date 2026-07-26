@@ -6,7 +6,14 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`StringKeyProbeBenchmark`** — the tracked benchmark suite's first `string`-keyed dictionary and set rows (lookup hit, lookup miss, set `Contains`), registered in the core suite and rendered as the **String-keyed probe** card on the benchmark dashboard. Every other card keys on `int` / `long`. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
+- **`ReferenceKeyProbeTests`** — cross-collection coverage pinning vacant-slot detection on all twelve open-addressed collections against a key type whose `Equals` claims equality with `null`, plus the `null`-key round trip on each. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
 - **`BTreeDictionary<TKey, TValue, TComparer>` and `BTreeSet<T, TComparer>`** (with `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` aliases and the `DefaultComparer<T>` struct comparer) in `Celerity.Collections` — the library's first sorted map and set, and the B-tree the BCL lacks. Up to 31 keys per node keep a lookup `log₃₂(n)` node visits deep instead of chasing the `log₂(n)` pointers a red-black tree costs, and both add the ordered surface a hash table cannot answer: `Min` / `Max`, lower / upper bound, `EnumerateRange` in `O(log n + k)`, and in-order enumeration. They win on the interleaved insert + lookup + range-scan workload and on memory, and lose slightly on a delete-dominated one. Not thread-safe. Closes [#305](https://github.com/marius-bughiu/Celerity/issues/305).
+
+### Changed
+
+- Lookups on **reference-type keys** are faster across the open-addressed collections (`CelerityDictionary`, `RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`, `CelerityMultiMap` and their set counterparts): testing whether a slot is vacant no longer costs an interface call per probe iteration. Behaviour is identical and value-type keys are unaffected; locally, in-cache `string`-keyed lookups improved ~10%. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
+- The performance guide and the README now state plainly that `CelerityDictionary` measures **behind** the BCL `Dictionary` on `string` keys — the BCL stores a hash code per entry — and point `string`-keyed workloads at `HashCachingDictionary`, which closes the gap and wins outright on negative lookups. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
 
 ## [2.4.0] - 2026-07-26
 

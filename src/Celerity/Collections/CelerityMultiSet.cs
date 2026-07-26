@@ -559,7 +559,7 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
     // ---- internal helpers ----
 
     private static bool IsDefaultKey(T element) =>
-        EqualityComparer<T>.Default.Equals(element, default(T));
+        EmptySlot.Is(element);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int CheckedAdd(int current, int add)
@@ -581,7 +581,7 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
         while (true)
         {
             T? slot = Unsafe.Add(ref elementsRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(T))) { wasEmpty = true; return index; }
+            if (EmptySlot.Is(slot)) { wasEmpty = true; return index; }
             if (comparer.Equals(slot, element)) { wasEmpty = false; return index; }
             index = (index + 1) & mask;
         }
@@ -599,7 +599,7 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
         while (true)
         {
             T? slot = Unsafe.Add(ref elementsRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(T))) return -1;
+            if (EmptySlot.Is(slot)) return -1;
             if (comparer.Equals(slot, element)) return index;
             index = (index + 1) & mask;
         }
@@ -626,15 +626,14 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
         ref T? oldElementsRef = ref MemoryMarshal.GetArrayDataReference(oldElements);
         ref T? newElementsRef = ref MemoryMarshal.GetArrayDataReference(newElements);
 
-        var comparer = EqualityComparer<T>.Default;
         for (int i = 0; i < oldElements.Length; i++)
         {
             T? element = Unsafe.Add(ref oldElementsRef, (nint)(uint)i);
-            if (comparer.Equals(element, default(T)))
+            if (EmptySlot.Is(element))
                 continue;
 
             int index = _hasher.Hash(element!) & mask;
-            while (!comparer.Equals(Unsafe.Add(ref newElementsRef, (nint)(uint)index), default(T)))
+            while (!EmptySlot.Is(Unsafe.Add(ref newElementsRef, (nint)(uint)index)))
                 index = (index + 1) & mask;
 
             Unsafe.Add(ref newElementsRef, (nint)(uint)index) = element;
@@ -657,7 +656,6 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
         int[] counts = _counts;
         ref T? elementsRef = ref MemoryMarshal.GetArrayDataReference(elements);
         int mask = elements.Length - 1;
-        var comparer = EqualityComparer<T>.Default;
         int i = startIndex;
         int j = i;
 
@@ -665,7 +663,7 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
         {
             j = (j + 1) & mask;
             T? candidate = Unsafe.Add(ref elementsRef, (nint)(uint)j);
-            if (comparer.Equals(candidate, default(T)))
+            if (EmptySlot.Is(candidate))
                 break;
 
             int k = _hasher.Hash(candidate!) & mask;
@@ -750,11 +748,10 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
                 int[] counts = _set._counts;
                 int length = elements.Length;
                 ref T? elementsRef = ref MemoryMarshal.GetArrayDataReference(elements);
-                var comparer = EqualityComparer<T>.Default;
                 while (++_index < length)
                 {
                     T? element = Unsafe.Add(ref elementsRef, (nint)(uint)_index);
-                    if (!comparer.Equals(element, default(T)))
+                    if (!EmptySlot.Is(element))
                     {
                         _current = new KeyValuePair<T, int>(element!, counts[_index]);
                         return true;

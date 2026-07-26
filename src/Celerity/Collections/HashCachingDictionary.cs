@@ -786,7 +786,7 @@ public class HashCachingDictionary<TKey, TValue, THasher>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     private static bool IsDefaultKey(TKey key) =>
-        EqualityComparer<TKey>.Default.Equals(key, default(TKey));
+        EmptySlot.Is(key);
 
     // The cached fingerprint for a key: its hash with the top bit forced set so
     // the stored metadata is always non-zero (zero is reserved for "empty").

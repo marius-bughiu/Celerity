@@ -544,11 +544,10 @@ public class RobinHoodSet<T, THasher> : ISet<T> where THasher : struct, IHashPro
                 T?[] items = _set._items;
                 int length = items.Length;
                 ref T? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
-                var comparer = EqualityComparer<T>.Default;
                 while (++_index < length)
                 {
                     T? item = Unsafe.Add(ref itemsRef, (nint)(uint)_index);
-                    if (!comparer.Equals(item, default(T)))
+                    if (!EmptySlot.Is(item))
                     {
                         _current = item;
                         return true;
@@ -584,7 +583,7 @@ public class RobinHoodSet<T, THasher> : ISet<T> where THasher : struct, IHashPro
     }
 
     private static bool IsDefaultValue(T item) =>
-        EqualityComparer<T>.Default.Equals(item, default(T));
+        EmptySlot.Is(item);
 
     // Robin Hood lookup. Walks the probe chain from the element's ideal slot and
     // stops on one of three conditions: an empty slot (element absent), a resident
@@ -613,7 +612,7 @@ public class RobinHoodSet<T, THasher> : ISet<T> where THasher : struct, IHashPro
         while (true)
         {
             T? slot = Unsafe.Add(ref itemsRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(T)))
+            if (EmptySlot.Is(slot))
                 return -1;
             if (Unsafe.Add(ref distRef, (nint)(uint)index) < dist)
                 return -1;
@@ -640,14 +639,13 @@ public class RobinHoodSet<T, THasher> : ISet<T> where THasher : struct, IHashPro
         ref T? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
         ref int distRef = ref MemoryMarshal.GetArrayDataReference(distances);
         int mask = items.Length - 1;
-        var comparer = EqualityComparer<T>.Default;
         int index = hash & mask;
         int dist = 0;
 
         while (true)
         {
             ref T? slotItem = ref Unsafe.Add(ref itemsRef, (nint)(uint)index);
-            if (comparer.Equals(slotItem, default(T)))
+            if (EmptySlot.Is(slotItem))
             {
                 slotItem = item;
                 Unsafe.Add(ref distRef, (nint)(uint)index) = dist;
@@ -692,11 +690,10 @@ public class RobinHoodSet<T, THasher> : ISet<T> where THasher : struct, IHashPro
         int[] newDistances = new int[newSize];
         ref T? oldItemsRef = ref MemoryMarshal.GetArrayDataReference(oldItems);
 
-        var comparer = EqualityComparer<T>.Default;
         for (int i = 0; i < oldItems.Length; i++)
         {
             T? item = Unsafe.Add(ref oldItemsRef, (nint)(uint)i);
-            if (comparer.Equals(item, default(T)))
+            if (EmptySlot.Is(item))
                 continue;
 
             InsertAbsent(newItems, newDistances, item!, _hasher.Hash(item!));
@@ -721,7 +718,6 @@ public class RobinHoodSet<T, THasher> : ISet<T> where THasher : struct, IHashPro
         ref T? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
         ref int distRef = ref MemoryMarshal.GetArrayDataReference(distances);
         int mask = items.Length - 1;
-        var comparer = EqualityComparer<T>.Default;
         int i = startIndex;
 
         while (true)
@@ -729,7 +725,7 @@ public class RobinHoodSet<T, THasher> : ISet<T> where THasher : struct, IHashPro
             int next = (i + 1) & mask;
             T? nextItem = Unsafe.Add(ref itemsRef, (nint)(uint)next);
             int nextDist = Unsafe.Add(ref distRef, (nint)(uint)next);
-            if (comparer.Equals(nextItem, default(T)) || nextDist == 0)
+            if (EmptySlot.Is(nextItem) || nextDist == 0)
                 break;
 
             Unsafe.Add(ref itemsRef, (nint)(uint)i) = nextItem;

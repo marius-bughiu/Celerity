@@ -607,7 +607,7 @@ public class SwissSet<T, THasher> : ISet<T> where THasher : struct, IHashProvide
     }
 
     private static bool IsDefaultValue(T item) =>
-        EqualityComparer<T>.Default.Equals(item, default(T));
+        EmptySlot.Is(item);
 
     // SIMD group lookup for a non-default element. Walks the aligned-group probe
     // sequence from the element's home group: a single Vector128 compare turns each

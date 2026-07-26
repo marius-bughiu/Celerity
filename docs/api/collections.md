@@ -385,6 +385,8 @@ The fingerprint of an occupied slot is the key's hash with its top bit forced se
 
 Reach for `HashCachingDictionary` for **lookup-dominated** workloads, **expensive-equality keys** (long strings, large value-type keys), or large cache-cold tables where the metadata-only scan pays off, and where four bytes of metadata per slot is an acceptable cost. For small tables of cheap (e.g. `int`) keys, `CelerityDictionary` has the smaller footprint and is roughly a wash. It is complementary to `SwissDictionary`: both keep a metadata side array, but `HashCachingDictionary` is a scalar, wider-fingerprint design with backward-shift (tombstone-free) deletion, while `SwissDictionary` uses SIMD group probing over one-byte tags. Both are single-threaded and make no iteration-order guarantee.
 
+`string` keys are the case worth calling out. The BCL `Dictionary<string, TValue>` already stores a hash code per entry, so `CelerityDictionary<string, …>` — which stores keys and nothing else — gives up a full ordinal string compare per probed slot and measures *behind* the BCL there. `HashCachingDictionary` restores that structure and the gap largely closes; on the negative-lookup path it turns into a win. See [reference-type keys: cache the hash](../performance.md#reference-type-keys-cache-the-hash) for the measured table.
+
 ### Constructors
 
 ```csharp

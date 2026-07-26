@@ -28,6 +28,21 @@ The single biggest win is using the type whose layout matches your key. The spec
 
 See the full decision table with rationale in the [README](../README.md#choosing-a-collection). If your workload isn't on it, the BCL collection is usually the right starting point.
 
+### Reference-type keys: cache the hash
+
+Celerity's open-addressed tables store keys and nothing else, so a lookup **recomputes the hash of the probe key once and compares the key itself at every slot it visits**. For an `int` key both are near-free. For a `string` key the comparison is a full ordinal string compare, and the BCL `Dictionary<string, TValue>` sidesteps most of them by storing a 32-bit hash code per entry and rejecting a slot on an `int` compare first. On string keys that BCL structure wins:
+
+| Workload (100k identifier-shaped `string` keys) | vs `Dictionary<string, int>` |
+|---|---|
+| `CelerityDictionary<string, int, StringXxHash3Hasher>` lookup (hit) | 1.33× slower |
+| `CelerityDictionary<string, int, StringXxHash3Hasher>` lookup (miss) | 1.60× slower |
+| `HashCachingDictionary<string, int, StringXxHash3Hasher>` lookup (hit) | 1.18× slower |
+| `HashCachingDictionary<string, int, StringXxHash3Hasher>` lookup (miss) | **0.94× — faster** |
+
+`HashCachingDictionary<TKey, TValue, THasher>` / `HashCachingSet<T, THasher>` keep the same per-slot hash code the BCL does, which is what closes the gap — most of it on the miss path, where a probe walks the whole cluster to the first vacant slot. **If your keys are strings (or any reference type with a non-trivial `Equals`), reach for the hash-caching variants, not the plain ones.** The tradeoff is one extra `int` per slot.
+
+These rows are tracked continuously as the **String-keyed probe** card on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) (`StringKeyProbeBenchmark`); numbers above are from a local `--job medium` run and will differ on your hardware.
+
 ## 2. Use the struct fast paths, not the boxed interface
 
 Every Celerity dictionary ships a **struct** `Enumerator` and struct `KeyCollection` / `ValueCollection` views. A plain `foreach` binds to the struct enumerator and allocates nothing:

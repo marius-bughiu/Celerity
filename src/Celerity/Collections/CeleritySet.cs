@@ -196,7 +196,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         while (true)
         {
             T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(T))) break;
+            if (EmptySlot.Is(slot)) break;
             if (comparer.Equals(slot, item)) return false;
             index = (index + 1) & mask;
         }
@@ -208,7 +208,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
             slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
             mask = slots.Length - 1;
             index = _hasher.Hash(item) & mask;
-            while (!comparer.Equals(Unsafe.Add(ref slotsRef, (nint)(uint)index), default(T)))
+            while (!EmptySlot.Is(Unsafe.Add(ref slotsRef, (nint)(uint)index)))
                 index = (index + 1) & mask;
         }
 
@@ -528,11 +528,10 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
                 T?[] slots = _set._slots;
                 int length = slots.Length;
                 ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
-                var comparer = EqualityComparer<T>.Default;
                 while (++_index < length)
                 {
                     T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)_index);
-                    if (!comparer.Equals(slot, default(T)))
+                    if (!EmptySlot.Is(slot))
                     {
                         _current = slot;
                         return true;
@@ -568,7 +567,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
     }
 
     private static bool IsDefaultValue(T item) =>
-        EqualityComparer<T>.Default.Equals(item, default(T));
+        EmptySlot.Is(item);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(T item)
@@ -582,7 +581,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         while (true)
         {
             T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (comparer.Equals(slot, default(T))) return -1;
+            if (EmptySlot.Is(slot)) return -1;
             if (comparer.Equals(slot, item)) return index;
             index = (index + 1) & mask;
         }
@@ -617,15 +616,14 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         ref T? oldSlotsRef = ref MemoryMarshal.GetArrayDataReference(oldSlots);
         ref T? newSlotsRef = ref MemoryMarshal.GetArrayDataReference(newSlots);
 
-        var comparer = EqualityComparer<T>.Default;
         for (int i = 0; i < oldSlots.Length; i++)
         {
             T? item = Unsafe.Add(ref oldSlotsRef, (nint)(uint)i);
-            if (comparer.Equals(item, default(T)))
+            if (EmptySlot.Is(item))
                 continue;
 
             int index = _hasher.Hash(item!) & mask;
-            while (!comparer.Equals(Unsafe.Add(ref newSlotsRef, (nint)(uint)index), default(T)))
+            while (!EmptySlot.Is(Unsafe.Add(ref newSlotsRef, (nint)(uint)index)))
                 index = (index + 1) & mask;
 
             Unsafe.Add(ref newSlotsRef, (nint)(uint)index) = item;
@@ -648,7 +646,6 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         T?[] slots = _slots;
         ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;
-        var comparer = EqualityComparer<T>.Default;
         int i = startIndex;
         int j = i;
 
@@ -656,7 +653,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         {
             j = (j + 1) & mask;
             T? candidate = Unsafe.Add(ref slotsRef, (nint)(uint)j);
-            if (comparer.Equals(candidate, default(T)))
+            if (EmptySlot.Is(candidate))
                 break;
 
             int k = _hasher.Hash(candidate!) & mask;

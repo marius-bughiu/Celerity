@@ -793,7 +793,7 @@ public class SwissDictionary<TKey, TValue, THasher>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     private static bool IsDefaultKey(TKey key) =>
-        EqualityComparer<TKey>.Default.Equals(key, default(TKey));
+        EmptySlot.Is(key);
 
     // SIMD group lookup for a non-default key. Walks the aligned-group probe
     // sequence from the key's home group: a single Vector128 compare turns each

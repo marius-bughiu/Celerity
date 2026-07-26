@@ -590,7 +590,7 @@ public class HashCachingSet<T, THasher> : ISet<T> where THasher : struct, IHashP
     }
 
     private static bool IsDefaultValue(T item) =>
-        EqualityComparer<T>.Default.Equals(item, default(T));
+        EmptySlot.Is(item);
 
     // The cached fingerprint for an element: its hash with the top bit forced set
     // so the stored metadata is always non-zero (zero is reserved for "empty").
