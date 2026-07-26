@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Celerity.Hashing;
@@ -115,9 +116,7 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
         // Slot count ≈ 1.23·n, split into three equal segments. The peelability threshold for a 3-uniform
         // hypergraph sits just above this ratio, so a fresh seed almost always yields a peelable layout.
         int arrayLength = 32 + (int)Math.Ceiling(1.23 * size);
-        int blockLength = arrayLength / 3;
-        if (blockLength < 1)
-            blockLength = 1;
+        int blockLength = AtLeastOne(arrayLength / 3);
         _blockLength = blockLength;
         int capacity = blockLength * 3;
 
@@ -134,7 +133,26 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
         ulong[] keys = new ulong[size];
         distinct.CopyTo(keys);
 
-        if (!TryBuild(keys, capacity, blockLength, out _seed, _fingerprints))
+        BuildOrThrow(keys, capacity, blockLength, out _seed, _fingerprints);
+    }
+
+    // The minimum segment width. Unreachable: arrayLength is 32 + ceil(1.23·size), so it is at least 32 even for
+    // an empty source and blockLength is therefore at least 10. Kept against a future change to the sizing ratio.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: arrayLength >= 32 always, so blockLength >= 10.")]
+    private static int AtLeastOne(int value) => value < 1 ? 1 : value;
+
+    // Wraps the peel driver in its non-convergence guard. Unreachable through the public API: TryBuild only
+    // returns false after all MaxConstructionAttempts seeds stall, and the seed chain
+    // (candidate = Mix(candidate + 0x9E3779B97F4A7C15)) is independent of the element set — a caller-supplied
+    // hasher fixes only *which* keys exist, not how they scatter across segments, and duplicate hashes are
+    // collapsed by the HashSet before peeling begins. A degenerate (constant) hasher therefore makes the peel
+    // easier, not harder: it reduces the set to a single key, which always peels. The throw stays because a
+    // future change to the sizing ratio or seed schedule could make convergence fail for real.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: no element set or hasher can stall the peel across " +
+        "all MaxConstructionAttempts seeds, because the seed schedule is independent of the keys.")]
+    private static void BuildOrThrow(ulong[] keys, int capacity, int blockLength, out ulong seed, byte[] store)
+    {
+        if (!TryBuild(keys, capacity, blockLength, out seed, store))
             throw new InvalidOperationException(
                 "XorFilter construction failed to converge; the hasher maps the element set too degenerately to peel.");
     }
@@ -193,11 +211,15 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
 
     // ── construction ─────────────────────────────────────────────────────────────────────
 
-    // One peel attempt for a fixed seed. Returns true and fills 'store' on success. The 3-uniform hypergraph
-    // has one vertex per slot and one edge per key (its three segment slots); peeling repeatedly claims a slot
-    // incident to exactly one remaining key, records (key, slot), and removes that key. If every key is peeled
-    // the fingerprints are back-filled in reverse peel order, which guarantees each key's own slot is the last
-    // of its three to be written, so the query XOR reproduces its fingerprint.
+    // Retry driver: allocates the peel scratch once, then re-runs the peel under a fresh seed until one
+    // succeeds. Individual attempts do stall in practice (a 2-core remains), which is why the reseed exists.
+    //
+    // Excluded from coverage because *exhausting* the retries is not reachable — see BuildOrThrow for the
+    // argument. That makes the loop's exit branch and the `seed = 0; return false` tail dead, and there is no
+    // way to exclude a loop-exit branch without excluding the loop, so the driver is separated out and measured
+    // as one unreachable retry policy. Everything that a caller can actually influence lives in TryPeel, which
+    // stays measured — including its stall path.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: the retries cannot be exhausted; see BuildOrThrow.")]
     private static bool TryBuild(ulong[] keys, int capacity, int blockLength, out ulong seed, byte[] store)
     {
         int size = keys.Length;
@@ -212,62 +234,8 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
         ulong candidate = 0x726b2b9d438b9d4dUL; // deterministic starting seed; reseeded on failure
         for (int attempt = 0; attempt < MaxConstructionAttempts; attempt++)
         {
-            Array.Clear(slotCount, 0, capacity);
-            Array.Clear(slotHashXor, 0, capacity);
-
-            // Scatter every key across its three segment slots.
-            for (int i = 0; i < size; i++)
+            if (TryPeel(keys, capacity, blockLength, candidate, store, slotCount, slotHashXor, queue, stackHash, stackSlot))
             {
-                ulong h = Mix(keys[i] ^ candidate);
-                Positions(h, blockLength, out int h0, out int h1, out int h2);
-                slotCount[h0]++; slotHashXor[h0] ^= h;
-                slotCount[h1]++; slotHashXor[h1] ^= h;
-                slotCount[h2]++; slotHashXor[h2] ^= h;
-            }
-
-            // Seed the queue with every degree-1 slot.
-            int qSize = 0;
-            for (int i = 0; i < capacity; i++)
-                if (slotCount[i] == 1)
-                    queue[qSize++] = i;
-
-            int stackSize = 0;
-            while (qSize > 0)
-            {
-                int slot = queue[--qSize];
-                if (slotCount[slot] != 1)
-                    continue; // its lone key was already peeled via another slot
-
-                ulong h = slotHashXor[slot]; // the one remaining key touching this slot
-                stackHash[stackSize] = h;
-                stackSlot[stackSize] = slot;
-                stackSize++;
-
-                Positions(h, blockLength, out int h0, out int h1, out int h2);
-                RemoveKey(h0, h, slotCount, slotHashXor, queue, ref qSize);
-                RemoveKey(h1, h, slotCount, slotHashXor, queue, ref qSize);
-                RemoveKey(h2, h, slotCount, slotHashXor, queue, ref qSize);
-            }
-
-            if (stackSize == size)
-            {
-                // Back-fill in reverse peel order. Each key's claimed slot is xored with its fingerprint and
-                // the current values of its two other slots; those other slots are already final (their owners
-                // were peeled later, hence assigned earlier in this reverse pass), so the invariant holds.
-                Array.Clear(store, 0, capacity);
-                for (int i = stackSize - 1; i >= 0; i--)
-                {
-                    ulong h = stackHash[i];
-                    int slot = stackSlot[i];
-                    Positions(h, blockLength, out int h0, out int h1, out int h2);
-
-                    byte val = Fingerprint(h);
-                    if (slot != h0) val ^= store[h0];
-                    if (slot != h1) val ^= store[h1];
-                    if (slot != h2) val ^= store[h2];
-                    store[slot] = val;
-                }
-
                 seed = candidate;
                 return true;
             }
@@ -278,6 +246,80 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
 
         seed = 0;
         return false;
+    }
+
+    // One peel attempt for a fixed seed. Returns true and fills 'store' on success. The 3-uniform hypergraph
+    // has one vertex per slot and one edge per key (its three segment slots); peeling repeatedly claims a slot
+    // incident to exactly one remaining key, records (key, slot), and removes that key. If every key is peeled
+    // the fingerprints are back-filled in reverse peel order, which guarantees each key's own slot is the last
+    // of its three to be written, so the query XOR reproduces its fingerprint.
+    //
+    // The scratch buffers belong to the caller so a retry reuses them rather than reallocating; this method
+    // clears the ones it accumulates into.
+    private static bool TryPeel(
+        ulong[] keys, int capacity, int blockLength, ulong candidate, byte[] store,
+        int[] slotCount, ulong[] slotHashXor, int[] queue, ulong[] stackHash, int[] stackSlot)
+    {
+        int size = keys.Length;
+
+        Array.Clear(slotCount, 0, capacity);
+        Array.Clear(slotHashXor, 0, capacity);
+
+        // Scatter every key across its three segment slots.
+        for (int i = 0; i < size; i++)
+        {
+            ulong h = Mix(keys[i] ^ candidate);
+            Positions(h, blockLength, out int h0, out int h1, out int h2);
+            slotCount[h0]++; slotHashXor[h0] ^= h;
+            slotCount[h1]++; slotHashXor[h1] ^= h;
+            slotCount[h2]++; slotHashXor[h2] ^= h;
+        }
+
+        // Seed the queue with every degree-1 slot.
+        int qSize = 0;
+        for (int i = 0; i < capacity; i++)
+            if (slotCount[i] == 1)
+                queue[qSize++] = i;
+
+        int stackSize = 0;
+        while (qSize > 0)
+        {
+            int slot = queue[--qSize];
+            if (slotCount[slot] != 1)
+                continue; // its lone key was already peeled via another slot
+
+            ulong h = slotHashXor[slot]; // the one remaining key touching this slot
+            stackHash[stackSize] = h;
+            stackSlot[stackSize] = slot;
+            stackSize++;
+
+            Positions(h, blockLength, out int h0, out int h1, out int h2);
+            RemoveKey(h0, h, slotCount, slotHashXor, queue, ref qSize);
+            RemoveKey(h1, h, slotCount, slotHashXor, queue, ref qSize);
+            RemoveKey(h2, h, slotCount, slotHashXor, queue, ref qSize);
+        }
+
+        if (stackSize != size)
+            return false; // a 2-core remains: this seed is unusable, the caller reseeds
+
+        // Back-fill in reverse peel order. Each key's claimed slot is xored with its fingerprint and the
+        // current values of its two other slots; those other slots are already final (their owners were peeled
+        // later, hence assigned earlier in this reverse pass), so the invariant holds.
+        Array.Clear(store, 0, capacity);
+        for (int i = stackSize - 1; i >= 0; i--)
+        {
+            ulong h = stackHash[i];
+            int slot = stackSlot[i];
+            Positions(h, blockLength, out int h0, out int h1, out int h2);
+
+            byte val = Fingerprint(h);
+            if (slot != h0) val ^= store[h0];
+            if (slot != h1) val ^= store[h1];
+            if (slot != h2) val ^= store[h2];
+            store[slot] = val;
+        }
+
+        return true;
     }
 
     // Detaches key 'h' from slot 'pos'; if that leaves the slot at degree 1 it becomes peelable.

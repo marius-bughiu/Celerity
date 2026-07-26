@@ -1,9 +1,9 @@
 name: Coverage
 
 # Code-coverage reporting and gate (issue #29). Collects line/branch coverage for
-# the Celerity library via coverlet, renders an HTML report + badges with
-# ReportGenerator, fails the build if coverage drops below the floor, comments the
-# summary on PRs, and publishes the HTML report to gh-pages (/coverage) on main.
+# all six shipping Celerity packages via coverlet, renders an HTML report + badges
+# with ReportGenerator, fails the build if coverage drops below the floor, comments
+# the summary on PRs, and publishes the HTML report to gh-pages (/coverage) on main.
 
 on:
   push:
@@ -17,11 +17,18 @@ on:
       - 'src/**'
       - '.github/workflows/coverage.yml'
 
-# Coverage floor. The suite sits well above this (~99.9% line); the floor is the
-# contract that guards against silent regressions, not the target.
+# Coverage floor. The suite is at 100% line and 100% branch across all six
+# shipping packages, so the floor is set to match: every reachable line and branch
+# is covered, and the handful of guards no test can reach (array-size ceilings,
+# clamps their caller's own validation already rules out) carry
+# [ExcludeFromCodeCoverage] with a Justification saying why.
+#
+# A 100 floor is deliberately a hair-trigger: new code arrives with its tests, or
+# the gate goes red. If a genuinely unreachable branch turns up, exclude it at the
+# source with a justification rather than lowering these numbers.
 env:
-  MIN_LINE_COVERAGE: '95'
-  MIN_BRANCH_COVERAGE: '90'
+  MIN_LINE_COVERAGE: '100'
+  MIN_BRANCH_COVERAGE: '100'
 
 jobs:
   coverage:
@@ -38,16 +45,22 @@ jobs:
           fetch-depth: 0
           filter: tree:0
 
+      # Both SDKs: the core suite is collected on net8.0 (the floor TFM), while the
+      # three showcase test projects are single-target net10.0.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
-      # Coverage is collected on net8.0 only. The library source is identical
-      # across the multi-targeted TFMs (#189) — no #if-gated code paths today —
-      # so one TFM fully covers the line/branch surface, keeps the merged report
-      # deterministic, and avoids provisioning the net9/net10 SDKs in this job.
-      - name: Collect coverage
+      # Coverage for the core packages is collected on net8.0 only. The library
+      # source is identical across the multi-targeted TFMs (#189) — no #if-gated
+      # code paths today — so one TFM fully covers the line/branch surface and
+      # keeps the report deterministic. If a #if-gated path is ever introduced,
+      # this step has to fan out over the TFMs, or the 100% floor will start
+      # failing on the gated arm.
+      - name: Collect coverage (core packages)
         working-directory: src
         run: >
           dotnet test Celerity.Tests/Celerity.Tests.csproj
@@ -57,13 +70,32 @@ jobs:
           --settings coverage.runsettings
           --results-directory ./TestResults/coverage
 
+      # The showcase packages ship too, so they are inside the gate (#314). Their
+      # test projects are separate, hence a separate results directory that the
+      # report step merges with the core one.
+      - name: Collect coverage (showcase packages)
+        working-directory: src
+        run: |
+          set -euo pipefail
+          for project in Ring Sentinel Cardinality; do
+            dotnet test "Celerity.${project}.Tests/Celerity.${project}.Tests.csproj" \
+              --configuration Release \
+              --collect:"XPlat Code Coverage" \
+              --settings coverage.runsettings \
+              --results-directory "./TestResults/showcase/${project}"
+          done
+
       # Renders the HTML report, badge, and PR summary, writes the run summary,
       # and fails the job if coverage is below the floor — all in one script, so
       # the report carries the project's own styling and no third-party upsell.
+      # The two --input globs are merged on (source file, line); the showcase
+      # projects also pull in Celerity.Collections, and a line covered by any run
+      # counts as covered.
       - name: Generate report and enforce floor
         run: >
           python3 scripts/coverage_report.py
           --input "src/TestResults/coverage/**/coverage.cobertura.xml"
+          --input "src/TestResults/showcase/*/**/coverage.cobertura.xml"
           --outdir coveragereport
           --min-line "$MIN_LINE_COVERAGE"
           --min-branch "$MIN_BRANCH_COVERAGE"

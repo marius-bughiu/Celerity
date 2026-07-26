@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Coverage collection settings for the coverlet "XPlat Code Coverage" collector.
-  Scopes coverage to the Celerity library only (the test, benchmark, fuzz, and
+  Scopes coverage to the six shipping packages (the test, benchmark, fuzz, and
   AOT-smoke assemblies are not the subject under measurement) and emits Cobertura
   for ReportGenerator. See docs/testing.md and .github/workflows/coverage.yml.
+
+  ADDING A PACKAGE? Add its assembly to <Include> below and, if it has its own test
+  project, add that project to the coverage workflow. Coverlet's assembly filter is
+  EXACT-MATCH, not a prefix — see the comment on <Include>. A new package that is
+  not listed here is silently unmeasured and the gate stays green regardless of its
+  coverage, which is exactly how #314 happened.
 -->
 <RunSettings>
   <DataCollectionRunSettings>
@@ -11,9 +17,24 @@
       <DataCollector friendlyName="XPlat code coverage">
         <Configuration>
           <Format>cobertura</Format>
-          <!-- Measure only the shipping library assembly. -->
-          <Include>[Celerity]*</Include>
-          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+          <!--
+            Every shipping assembly, one entry each.
+
+            The assembly segment of a coverlet filter is anchored — "[Celerity]*"
+            compiles to ^Celerity$ and matches ONLY the assembly literally named
+            Celerity (the Celerity.Collections package). It is not a prefix, so it
+            never matched Celerity.Hashing, Celerity.Primitives, or the three
+            showcase packages; from the 2.0.0 package split until #314 those were
+            outside the gate entirely and could have dropped to 0% with CI green.
+          -->
+          <Include>[Celerity]*,[Celerity.Hashing]*,[Celerity.Primitives]*,[Celerity.Ring]*,[Celerity.Sentinel]*,[Celerity.Cardinality]*</Include>
+          <!--
+            ExcludeFromCodeCoverageAttribute marks the handful of guards that no test
+            can reach — array-size ceilings and clamps that the callers' own argument
+            validation already rules out. Each carries a Justification spelling out why.
+            coverlet honours the attribute natively; it is listed for the reader.
+          -->
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
           <SkipAutoProps>true</SkipAutoProps>
           <UseSourceLink>true</UseSourceLink>
         </Configuration>

@@ -29,7 +29,7 @@ dotnet test                  # xUnit
 ```
 
 - `net8.0` is the floor. Shared code must not use net9/net10-only APIs unguarded — gate newer paths with `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` and keep a net8.0 fallback. The target list lives in `src/Directory.Build.props`.
-- Coverage is gated in CI: keep line ≥ 95%, branch ≥ 90%.
+- Coverage is gated in CI at 100% line and 100% branch across all six shipping packages. New code needs its tests. For a branch no test can reach, use `[ExcludeFromCodeCoverage(Justification = "…")]` rather than lowering the floor, and add a new shipping package's assembly to `src/coverage.runsettings` (the filter is exact-match, so an unlisted package is silently unmeasured).
 - Every public type/member needs an XML doc comment (`GenerateDocumentationFile` is on; missing docs warn).
 - Hashers are `struct`s passed as generic constraints (`where THasher : struct, IHashProvider<T>`) so the JIT devirtualizes them — do not turn them into classes/interfaces.
 - Avoid allocations on hot paths.

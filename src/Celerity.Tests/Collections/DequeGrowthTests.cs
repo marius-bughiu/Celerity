@@ -200,4 +200,45 @@ public class DequeGrowthTests
         Assert.Equal(2, deque.Capacity);
         Assert.Equal(new[] { 1, 2 }, deque.ToArray());
     }
+
+    /// <summary>
+    /// The doubling clamp: once the backing array passes half of <see cref="Array.MaxLength"/>, the naive
+    /// <c>_items.Length * 2</c> would exceed the largest array the runtime can allocate (and, one doubling
+    /// later, wrap negative). Growth must saturate at <see cref="Array.MaxLength"/> instead.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The element type must be <see cref="byte"/>: <see cref="Array.MaxLength"/> (0x7FFFFFC7) is chosen so a
+    /// <c>byte[]</c> of that length just fits under the 2 GiB single-object limit, so any wider element type
+    /// would fail the clamped allocation on every machine regardless of memory. That also rules this test out
+    /// of any generic sweep over element types.
+    /// </para>
+    /// <para>
+    /// The deque is left empty, so the growth copies nothing — the cost is the two allocations, not a 3 GiB
+    /// memcpy. Peak footprint is ~3.0 GiB: the 1 GiB source array is still rooted while the 2 GiB replacement
+    /// is allocated. An empty deque cannot be used as a shortcut, because <c>Grow</c> takes the
+    /// <c>DefaultCapacity</c> path when the array is zero-length and never reaches the clamp.
+    /// </para>
+    /// </remarks>
+    [MemoryIntensiveFact(3100)]
+    public void EnsureCapacity_ShouldSaturateAtArrayMaxLength_WhenDoublingWouldOverflowIt()
+    {
+        // Half of Array.MaxLength, rounded up: doubling this gives Array.MaxLength + 1, which is the smallest
+        // input that trips the clamp.
+        int justOverHalf = (Array.MaxLength / 2) + 1;
+
+        var deque = new Deque<byte>(justOverHalf);
+        Assert.Equal(justOverHalf, deque.Capacity);
+
+        int reported = deque.EnsureCapacity(justOverHalf + 1);
+
+        Assert.Equal(Array.MaxLength, reported);
+        Assert.Equal(Array.MaxLength, deque.Capacity);
+
+        // Saturated, but still a working deque.
+        Assert.Equal(0, deque.Count);
+        deque.PushBack(7);
+        Assert.Equal(7, deque.PeekFront());
+        Assert.Equal(1, deque.Count);
+    }
 }
