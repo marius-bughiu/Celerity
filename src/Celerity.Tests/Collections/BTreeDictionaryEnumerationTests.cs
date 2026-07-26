@@ -166,6 +166,29 @@ public class BTreeDictionaryEnumerationTests
     }
 
     [Fact]
+    public void NonGenericCurrent_ShouldExposeTheSameEntry_OnEveryEnumerator()
+    {
+        var dict = new BTreeDictionary<int, int>();
+        dict.Add(1, 10);
+
+        IEnumerator entries = ((IEnumerable)dict).GetEnumerator();
+        Assert.True(entries.MoveNext());
+        Assert.Equal(new KeyValuePair<int, int>(1, 10), entries.Current);
+
+        IEnumerator keys = ((IEnumerable)dict.Keys).GetEnumerator();
+        Assert.True(keys.MoveNext());
+        Assert.Equal(1, keys.Current);
+
+        IEnumerator values = ((IEnumerable)dict.Values).GetEnumerator();
+        Assert.True(values.MoveNext());
+        Assert.Equal(10, values.Current);
+
+        IEnumerator range = ((IEnumerable)dict.EnumerateRange(0, 5)).GetEnumerator();
+        Assert.True(range.MoveNext());
+        Assert.Equal(new KeyValuePair<int, int>(1, 10), range.Current);
+    }
+
+    [Fact]
     public void KeyAndValueEnumerators_ShouldSupportResetAndDispose()
     {
         var dict = new BTreeDictionary<int, int>();

@@ -59,16 +59,19 @@ public class BTreeDictionary<TKey, TValue> : BTreeDictionary<TKey, TValue, Defau
 /// This type keeps up to <c>31</c> keys per node in contiguous arrays, so the fan-out is <c>32</c> and the
 /// same million entries sit about <c>4</c> node visits deep. Within a node the keys are one or two cache
 /// lines the prefetcher handles well. In-order enumeration and <see cref="EnumerateRange"/> walk those
-/// arrays rather than chasing successor pointers, and allocation drops from one object per entry to three
-/// arrays per <c>31</c> entries.
+/// arrays rather than chasing successor pointers, and allocation drops from one object per entry to one node
+/// — its key and value arrays, plus a child array when it is internal — per <c>31</c> entries.
 /// </para>
 /// <para>
 /// The documented BCL-beating workload is a large ordered map under an <b>interleaved insert + lookup +
 /// in-order range-scan</b> load: time-series keyed by timestamp, order books, LSM-style memtables — the
 /// mixed pattern where <see cref="SortedDictionary{TKey, TValue}"/> pays the pointer chase and
-/// <see cref="SortedList{TKey, TValue}"/> pays the <c>O(n)</c> shift. Where it does <i>not</i> win: tiny maps
-/// (a <see cref="SortedList{TKey, TValue}"/> of a few dozen entries is hard to beat), and any workload that
-/// never needs order — a hash table answers those in <c>O(1)</c>, so reach for
+/// <see cref="SortedList{TKey, TValue}"/> pays the <c>O(n)</c> shift. Where it does <i>not</i> win: small maps
+/// (at a thousand entries the red-black tree's shallower-per-node work is competitive, and a
+/// <see cref="SortedList{TKey, TValue}"/> of a few dozen entries is hard to beat); a delete-dominated load,
+/// where rebalancing by borrow/merge measures a few percent behind
+/// <see cref="SortedDictionary{TKey, TValue}"/>'s rotations; and any workload that never needs order — a hash
+/// table answers those in <c>O(1)</c>, so reach for
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/> instead.
 /// </para>
 /// <para>

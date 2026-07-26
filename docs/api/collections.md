@@ -3740,7 +3740,9 @@ The BCL has no B-tree. `SortedDictionary<TKey, TValue>` is a red-black tree: one
 
 With a fan-out of 32, the same million entries sit about **4 node visits** deep, the keys inside a node are one or two cache lines the prefetcher handles well, and allocation drops from one object per entry to three arrays per 31 entries. The documented BCL-beating workload is a large ordered map under an **interleaved insert + lookup + in-order range-scan** load — time-series keyed by timestamp, order books, LSM-style memtables. See the [BTreeDictionary benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeDictionary) on the dashboard.
 
-Where it does **not** win: tiny maps (a `SortedList` of a few dozen entries is hard to beat), and any workload that never needs order — a hash table answers those in `O(1)`, so reach for `CelerityDictionary` instead.
+Where it does **not** win: small maps (at a thousand entries the red-black tree is competitive, and a `SortedList` of a few dozen entries is hard to beat); a **delete-dominated** load, where rebalancing by borrow/merge measures a few percent behind `SortedDictionary`'s rotations; and any workload that never needs order — a hash table answers those in `O(1)`, so reach for `CelerityDictionary` instead.
+
+Measured on the short-run local sweep at 100k entries (see the dashboard for the tracked CI numbers): mixed insert + lookup + range-scan **0.59x** the time of `SortedDictionary`, bulk add **0.74x**, lookup **0.84x**, remove **1.12x** (the loss above), and **0.36x** the allocation. `BTreeSet` against `SortedSet` at the same size: mixed **0.79x**, add **0.72x**, contains **0.91x**, `GetViewBetween`-equivalent range scan **0.43x**, remove **1.06x**, allocation **0.24x**.
 
 ### Why the struct comparer?
 
@@ -3826,7 +3828,7 @@ The set counterpart of `BTreeDictionary`: elements kept in ascending `TComparer`
 
 `SortedSet<T>` is a red-black tree with one heap object per element and roughly `log₂(n)` dependent pointer chases per lookup; this type reaches the same element in about `log₃₂(n)` node visits — around 4 instead of 20 potential cache misses at `n = 1M`. Because it stores no values, a node is a single element array plus its children, so the memory saving over `SortedSet` is larger still. The documented BCL-beating workload is a large ordered set under an **interleaved insert + membership + in-order range-scan** load — sorted id sets, sweep-line event sets, interval endpoints. See the [BTreeSet benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeSet) on the dashboard.
 
-Where it does **not** win: small sets, and any workload that never needs order — `CeleritySet` or `IntSet` answer those in `O(1)`.
+Where it does **not** win: small sets (at a thousand elements `SortedSet` is competitive), a delete-dominated load (a few percent behind its rotations), and any workload that never needs order — `CeleritySet` or `IntSet` answer those in `O(1)`.
 
 ### Constructors
 
@@ -3857,7 +3859,7 @@ As with the dictionary, there is no capacity or load factor. The `IEnumerable` o
 | `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
 
-Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family); a custom comparer that conflates values default equality keeps apart — a case-insensitive order, say — can therefore disagree with `SortedSet<T>` on those members alone. A `null` (or `default`) element is legal and sorts first. Not thread-safe.
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). A custom comparer that treats two values as equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — can therefore disagree with `SortedSet<T>` on those members alone. A `null` (or `default`) element is legal and sorts first. Not thread-safe.
 
 ### Usage example
 

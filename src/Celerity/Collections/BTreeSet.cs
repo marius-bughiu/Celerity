@@ -54,17 +54,19 @@ public class BTreeSet<T> : BTreeSet<T, DefaultComparer<T>>
 /// <para>
 /// The documented BCL-beating workload is a large ordered set under an <b>interleaved insert + membership +
 /// in-order range-scan</b> load — sorted id sets, sweep-line event sets, interval endpoints. Where it does
-/// <i>not</i> win: small sets, and any workload that never needs order (reach for
-/// <see cref="CeleritySet{T, THasher}"/> or <see cref="IntSet{THasher}"/> instead — <c>O(1)</c> beats
-/// <c>O(log n)</c> when order is not part of the question).
+/// <i>not</i> win: small sets (at a thousand elements <see cref="SortedSet{T}"/> is competitive), a
+/// delete-dominated load (rebalancing by borrow/merge measures a few percent behind its rotations), and any
+/// workload that never needs order (reach for <see cref="CeleritySet{T, THasher}"/> or
+/// <see cref="IntSet{THasher}"/> instead — <c>O(1)</c> beats <c>O(log n)</c> when order is not part of the
+/// question).
 /// </para>
 /// <para>
 /// Membership is defined by <typeparamref name="TComparer"/> — two elements are the same element when the
 /// comparer orders them equal. The <see cref="ISet{T}"/> algebra members materialize the right-hand side into
 /// a <see cref="HashSet{T}"/>, so they compare <i>that</i> side with
-/// <see cref="EqualityComparer{T}.Default"/>, matching the rest of the family; a custom comparer that
-/// conflates values default equality keeps apart (a case-insensitive order, say) can therefore disagree with
-/// <see cref="SortedSet{T}"/> on those members alone. Like the rest of the family, <see cref="Add"/> throws
+/// <see cref="EqualityComparer{T}.Default"/>, matching the rest of the family. A custom comparer that treats
+/// two values as equal when <see cref="EqualityComparer{T}.Default"/> does not — a case-insensitive order,
+/// say — can therefore disagree with <see cref="SortedSet{T}"/> on those members alone. Like the rest of the family, <see cref="Add"/> throws
 /// on a duplicate — use <see cref="TryAdd"/> when the element may already be present. A <c>null</c> (or
 /// <c>default</c>) element is legal and sorts first. This type is not thread-safe; concurrent callers must
 /// synchronize externally.

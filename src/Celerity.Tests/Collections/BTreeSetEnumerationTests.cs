@@ -122,6 +122,20 @@ public class BTreeSetEnumerationTests
     }
 
     [Fact]
+    public void NonGenericCurrent_ShouldExposeTheSameElement_OnBothEnumerators()
+    {
+        var set = new BTreeSet<int>(new[] { 1 });
+
+        IEnumerator items = ((IEnumerable)set).GetEnumerator();
+        Assert.True(items.MoveNext());
+        Assert.Equal(1, items.Current);
+
+        IEnumerator range = ((IEnumerable)set.EnumerateRange(0, 5)).GetEnumerator();
+        Assert.True(range.MoveNext());
+        Assert.Equal(1, range.Current);
+    }
+
+    [Fact]
     public void RangeEnumerator_ShouldStopAtTheUpperBound_AndSupportReset()
     {
         var set = new BTreeSet<int>(Enumerable.Range(0, 500));
