@@ -120,6 +120,9 @@ The suite covers **100% of lines and 100% of branches** across all six. A small 
 | `FrozenCelerityDictionary.ThrowIfKeyCountExceedsCeiling`, `FrozenCeleritySet.ThrowIfElementCountExceedsCeiling` | The count is taken *after* materializing the source into a `List<string>`, so reaching 2³⁰ needs an 8.6 GB `string[]` — past the 2 GiB array limit. A source that merely reports a huge `ICollection.Count` cannot reach it; that count is only a capacity hint. |
 | `CuckooFilter.AtLeastOne`, `XorFilter.AtLeastOne` | Dead by construction: the constructors' own argument validation already forces both sizing expressions above the floor. |
 | `XorFilter.BuildOrThrow`, `XorFilter.TryBuild` | The peel retry schedule is independent of the element set, so no hasher can stall all `MaxConstructionAttempts` seeds. Individual attempts *do* stall and retry — that path lives in `TryPeel`, which stays measured. |
+| `Hash64Source.CreateNative` | Its `null` arm is unobservable. `Native` is read only by `Hash64`, and every caller guards that on `IsNative64` being true, so the class is never initialized for a 32-bit-only `THasher` — the arm is evaluated only if the runtime runs the `beforefieldinit` initializer eagerly, which is its option and not a contract. |
+
+That table is the complete set; `grep -rn "ExcludeFromCodeCoverage" src/Celerity*/` should return nothing beyond it.
 
 The rule for new code: exclusions are for genuinely unreachable code and must carry a `Justification` that says *why*. Anything a test can reach gets a test.
 
