@@ -26,15 +26,26 @@ namespace Celerity.Hashing;
 /// <see cref="Guid"/> keys on hot paths: it is fully inlineable and avoids the
 /// virtual dispatch through <see cref="EqualityComparer{T}.Default"/>.
 /// </para>
+/// <para>
+/// A <see cref="Guid"/> carries 128 bits, so folding the mixed halves to 32 throws away
+/// most of them. The type therefore also implements <see cref="IHashProvider64{T}"/>:
+/// <see cref="Hash64"/> returns the full <c>lo ^ hi</c> combination, which is what the
+/// probabilistic sketches want (see <see cref="IHashProvider64{T}"/> for why the extra
+/// 32 bits matter there and not in a hash table).
+/// </para>
 /// </remarks>
-public struct GuidHasher : IHashProvider<Guid>
+public struct GuidHasher : IHashProvider<Guid>, IHashProvider64<Guid>
 {
     private const ulong C1 = 0xff51afd7ed558ccdUL;
     private const ulong C2 = 0xc4ceb9fe1a85ec53UL;
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Hash(Guid key)
+    public int Hash(Guid key) => (int)Hash64(key);
+
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ulong Hash64(Guid key)
     {
         // Reinterpret the 16-byte Guid as two ulongs. `key` is a by-value local,
         // so `ref key` is safe to take and outlives the reinterpret.
@@ -47,8 +58,7 @@ public struct GuidHasher : IHashProvider<Guid>
         lo = Fmix64(lo);
         hi = Fmix64(hi);
 
-        // Combine and truncate to 32 bits.
-        return (int)(lo ^ hi);
+        return lo ^ hi;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

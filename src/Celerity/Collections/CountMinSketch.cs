@@ -331,24 +331,42 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         _totalCount = SaturatingAdd(_totalCount, other._totalCount);
     }
 
-    // Derives two independent 32-bit hash lanes from a single IHashProvider call by
-    // avalanching the 32-bit base hash into 64 bits (the SplitMix64 finalizer) and
-    // splitting the result. A null reference is mapped to a fixed base hash so the hasher
-    // (which may throw on null, e.g. the string hashers) is never invoked with null —
-    // value-type defaults (0, Guid.Empty) are valid inputs and go through the hasher
-    // normally. The typeof(T).IsValueType guard is a JIT-time constant, so the null check
-    // is compiled away entirely for value-type instantiations (no boxing).
+    // Derives two independent 32-bit hash lanes from a single hasher call by splitting a
+    // 64-bit hash. When THasher implements IHashProvider64<T> that hash is the hasher's
+    // own 64-bit result; otherwise the 32-bit code is avalanched into 64 bits with the
+    // SplitMix64 finalizer, which spreads the code over the range but cannot create
+    // entropy — the reachable space stays 2^32, so two distinct elements sharing a 32-bit
+    // code share a counter cell in every row and their estimates are pooled.
+    //
+    // A null reference is mapped to a fixed hash so the hasher (which may throw on null,
+    // e.g. the string hashers) is never invoked with null — value-type defaults (0,
+    // Guid.Empty) are valid inputs and go through the hasher normally. Both the
+    // typeof(T).IsValueType guard and the IsNative64 test are JIT-time constants, so each
+    // instantiation compiles down to a single straight-line path (and no per-call boxing: the 64-bit arm reuses a single
+    // interface reference boxed once per instantiation).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ComputeHashes(T item, out uint h1, out uint h2)
     {
-        int baseHash = (!typeof(T).IsValueType && item is null) ? 0 : _hasher.Hash(item);
-        ulong mixed = Mix64((uint)baseHash);
+        ulong mixed = Hash64(item);
         h1 = (uint)mixed;
         h2 = (uint)(mixed >> 32);
 
         // h2 is the stride of the g_i = h1 + i·h2 recurrence; a zero stride would map every
         // row to the same column. Force it odd (and non-zero) so the d rows spread out.
         h2 |= 1u;
+    }
+
+    // The element's 64-bit hash; see ComputeHashes for the entropy discussion.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ulong Hash64(T item)
+    {
+        if (!typeof(T).IsValueType && item is null)
+            return Mix64(0);
+
+        if (Hash64Source<T, THasher>.IsNative64)
+            return Hash64Source<T, THasher>.Hash64(item);
+
+        return Mix64((uint)_hasher.Hash(item));
     }
 
     // Adds two non-negative longs, clamping to long.MaxValue instead of wrapping past it.

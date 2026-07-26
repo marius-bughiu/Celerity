@@ -19,6 +19,65 @@ public class GuidHasherTests
         Assert.Equal(0, _hasher.Hash(Guid.Empty));
     }
 
+    // ── 64-bit surface (IHashProvider64<Guid>) ────────────────────────────────
+
+    /// <summary>
+    /// Independent reimplementation of the hasher's pipeline that goes through
+    /// <see cref="Guid.ToByteArray"/> and <see cref="BitConverter"/> rather than the
+    /// hasher's <c>Unsafe.As</c> reinterpret, so agreement pins the two-halves byte layout
+    /// as well as the mixing.
+    /// </summary>
+    private static ulong ReferenceHash64(Guid key)
+    {
+        byte[] bytes = key.ToByteArray();
+        ulong lo = BitConverter.ToUInt64(bytes, 0);
+        ulong hi = BitConverter.ToUInt64(bytes, 8);
+        return Fmix64(lo) ^ Fmix64(hi);
+
+        static ulong Fmix64(ulong x)
+        {
+            x ^= x >> 33;
+            x *= 0xff51afd7ed558ccdUL;
+            x ^= x >> 33;
+            x *= 0xc4ceb9fe1a85ec53UL;
+            x ^= x >> 33;
+            return x;
+        }
+    }
+
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    [InlineData("12345678-1234-1234-1234-1234567890AB")]
+    [InlineData("DEADBEEF-CAFE-BABE-F00D-123456789ABC")]
+    [InlineData("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")]
+    [InlineData("00000000-0000-0000-0000-000000000001")]
+    public void Hash64_MatchesReferenceImplementation(string guid)
+    {
+        Guid key = new Guid(guid);
+        ulong expected = ReferenceHash64(key);
+
+        Assert.Equal(expected, _hasher.Hash64(key));
+
+        // Hash is the low half of the 64-bit result — the documented narrowing.
+        Assert.Equal((int)expected, _hasher.Hash(key));
+    }
+
+    [Fact]
+    public void Hash64_HighHalf_VariesAcrossKeys()
+    {
+        // A Guid carries 128 bits; folding to 32 threw most of them away. The 64-bit
+        // surface must vary in its high half, not repeat a widened 32-bit code.
+        var highHalves = new HashSet<uint>();
+        for (int i = 0; i < 1000; i++)
+        {
+            byte[] bytes = new byte[16];
+            BitConverter.TryWriteBytes(bytes.AsSpan(), (long)i);
+            highHalves.Add((uint)(_hasher.Hash64(new Guid(bytes)) >> 32));
+        }
+
+        Assert.True(highHalves.Count > 990, $"only {highHalves.Count} distinct high halves");
+    }
+
     // ── Determinism ───────────────────────────────────────────────────────────
 
     [Fact]

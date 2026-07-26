@@ -20,6 +20,37 @@ public class Int64Murmur3HasherTests
         Assert.Equal(0, result);
     }
 
+    // ── 64-bit surface (IHashProvider64<long>) ────────────────────────────────
+    //
+    // fmix64 is a bijection on 64 bits, so Hash64 exposes the whole mix rather than
+    // truncating it, and Hash is exactly its low half.
+
+    [Theory]
+    [InlineData(0L,                    0x0000000000000000UL)] // fmix64 fixes zero
+    [InlineData(1L,                    0xB456BCFC34C2CB2CUL)]
+    [InlineData(-1L,                   0x64B5720B4B825F21UL)]
+    [InlineData(42L,                   0x810879608E4259CCUL)]
+    [InlineData(long.MaxValue,         0xABB93DF0A930EDEAUL)]
+    [InlineData(long.MinValue,         0x8F780810AF31A493UL)]
+    [InlineData(1234567890123456789L,  0x9C49C6098A8F367EUL)]
+    public void Hash64_ReturnsExpected(long input, ulong expected)
+    {
+        Assert.Equal(expected, _hasher.Hash64(input));
+        Assert.Equal(_hasher.Hash(input), (int)expected);
+    }
+
+    [Fact]
+    public void Hash64_HighHalf_VariesAcrossKeys()
+    {
+        // The whole point of the 64-bit surface: the high half must carry information, not
+        // repeat a widened 32-bit code.
+        var highHalves = new HashSet<uint>();
+        for (long i = 1; i <= 1000; i++)
+            highHalves.Add((uint)(_hasher.Hash64(i) >> 32));
+
+        Assert.True(highHalves.Count > 990, $"only {highHalves.Count} distinct high halves");
+    }
+
     [Theory]
     [InlineData(1L)]
     [InlineData(-1L)]

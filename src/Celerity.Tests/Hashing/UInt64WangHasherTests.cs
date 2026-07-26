@@ -29,6 +29,25 @@ public class UInt64WangHasherTests
         Assert.Equal(expected, _hasher.Hash(input));
     }
 
+    // ── 64-bit surface (IHashProvider64<ulong>) ───────────────────────────────
+    //
+    // The same anchors as Int64WangHasherTests, on the matching bit patterns: hash64shift
+    // is a bijection on 64 bits, so Hash64 exposes the whole mix and each 32-bit anchor
+    // above is exactly its low half.
+
+    [Theory]
+    [InlineData(0UL,                     0x77CFA1EEF01BCA90UL)]
+    [InlineData(1UL,                     0x5BCA7C69B794F8CEUL)]
+    [InlineData(ulong.MaxValue,          0x1F89206E3F8EC794UL)]
+    [InlineData(42UL,                    0x0F3DB82F1E7B6F7AUL)]
+    [InlineData(0x7FFFFFFFFFFFFFFFUL,    0x81AD52718398E837UL)]
+    [InlineData(0x8000000000000000UL,    0x3BE7D0F7780DE548UL)]
+    [InlineData(1234567890123456789UL,   0x3CA3710FA77A5A1AUL)]
+    public void Hash64_ReturnsExpected(ulong input, ulong expected)
+    {
+        Assert.Equal(expected, _hasher.Hash64(input));
+    }
+
     // ── Bit-pattern equivalence with Int64WangHasher ──────────────────────────
 
     [Theory]

@@ -2248,6 +2248,13 @@ call by double hashing (Kirsch–Mitzenmacher): the 32-bit base hash is avalanch
 64 bits whose two halves seed the recurrence `g_i = h1 + i·h2`, so adding more hash
 functions costs arithmetic, not more `Hash()` calls.
 
+> **Hash entropy.** The 64 bits come from the hasher's own `Hash64` when it implements
+> [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening its 32-bit
+> code. Widening spreads the code over the 64-bit range but creates no entropy: the reachable
+> space stays 2<sup>32</sup>, which puts a floor of roughly `n / 2^32` under the realized
+> false-positive rate no matter how many bits you allocate — about 0.12% at 10<sup>7</sup>
+> elements and 1.2% at 10<sup>8</sup>. Past ~10<sup>8</sup> elements, use a 64-bit hasher.
+
 ### Constructors
 
 ```csharp
@@ -2366,6 +2373,13 @@ and re-homes it in *its* alternate bucket, repeating up to a bounded number of "
 fingerprint and the primary index both come from a **single** `IHashProvider<T>.Hash` call
 avalanched into 64 bits (the SplitMix64 finalizer). A lookup or delete touches at most two
 buckets (≈ two cache lines) regardless of fill.
+
+> **Hash entropy.** The 64 bits come from the hasher's own `Hash64` when it implements
+> [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening its 32-bit
+> code. Widening spreads the code over the 64-bit range but creates no entropy: the reachable
+> space stays 2<sup>32</sup>, which puts a floor of roughly `n / 2^32` under the realized
+> false-positive rate no matter how many bits you allocate — about 0.12% at 10<sup>7</sup>
+> elements and 1.2% at 10<sup>8</sup>. Past ~10<sup>8</sup> elements, use a 64-bit hasher.
 
 ### Cuckoo vs. Bloom
 
@@ -2510,6 +2524,14 @@ exactly one remaining element, then back-filling in reverse), retrying with a fr
 seed on the rare peel failure. A query recomputes the three slots and the fingerprint from a
 **single** `IHashProvider<T>.Hash` call and compares — exactly **three memory probes and two
 XORs**, with no probe loop and no data-dependent branch.
+
+> **Hash entropy.** The 64-bit element key comes from the hasher's own `Hash64` when it
+> implements [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening
+> its 32-bit code with `fmix64`. Widening spreads the code over the 64-bit range but creates
+> no entropy: the reachable space stays 2<sup>32</sup>, which puts a floor of roughly
+> `n / 2^32` under the realized false-positive rate — and, because the construction
+> deduplicates on the key, elements that share one are silently merged. Past ~10<sup>8</sup>
+> elements, use a 64-bit hasher.
 
 ### Xor vs. Bloom vs. Cuckoo
 
@@ -2739,13 +2761,30 @@ registers with a predictable rank pattern, and the harmonic mean of `2^register`
 all registers recovers an estimate of `n` (Flajolet et&#160;al., 2007). The estimate
 applies the standard small-range **linear counting** correction, so low cardinalities —
 where many registers are still zero — are estimated accurately rather than by the
-bias-prone raw formula. No large-range correction is needed because the 64-bit hash
-space dwarfs any realistic cardinality.
+bias-prone raw formula.
 
-The 64-bit hash is derived from a **single** `IHashProvider<T>` call by avalanching the
-32-bit base hash with the SplitMix64 finalizer (a bijection on 64 bits, so distinct base
-hashes stay distinct), so any existing hasher plugs in unchanged and `Add` costs one
-`Hash()` call.
+### The hash space, and why the hasher choice matters past ~10<sup>8</sup>
+
+The 64-bit hash comes from a **single** hasher call either way, but how much entropy that
+call carries depends on the hasher, and the estimator adapts:
+
+- **A hasher implementing [`IHashProvider64<T>`](hashing.md#ihashprovider64t)** — for example
+  `Int64WangHasher`, `Int64Murmur3Hasher`, `GuidHasher`, or any of the nine 64-bit `string`
+  hashers — supplies all 64 bits directly. The hash space is then 2<sup>64</sup>, which
+  dwarfs any realistic cardinality, so no large-range correction is needed and the estimate
+  holds its `StandardError` across the whole range. **Use one of these when counting beyond
+  ~10<sup>8</sup> distinct elements.**
+- **A 32-bit-only hasher** has its code avalanched into 64 bits by the SplitMix64 finalizer.
+  That finalizer is a bijection, so it loses nothing — but it also creates nothing: the
+  reachable hash space is still 2<sup>32</sup>, and distinct elements start sharing a hash
+  as the count approaches it (~0.12% of elements at 10<sup>7</sup>, 1.2% at
+  10<sup>8</sup>, 10.8% at 10<sup>9</sup>). The estimator detects this case and applies the
+  classical Flajolet **large-range correction**, `−2^32 · ln(1 − E / 2^32)`, which recovers
+  the true cardinality from the saturated distinct-hash count.
+
+Either way `Add` costs one hasher call, and the selection is a compile-time type test the
+JIT folds away — each instantiation compiles to a single straight-line path, and neither
+allocates.
 
 ### Constructors
 
@@ -2814,6 +2853,8 @@ using Celerity.Collections;
 using Celerity.Hashing;
 
 // Count distinct visitor ids in a high-volume stream from ~16 KB of registers.
+// Int64Murmur3Hasher implements IHashProvider64<long>, so the estimator sees the full
+// 2^64 hash space and stays accurate past 10^8 distinct ids.
 var uniqueVisitors = new HyperLogLog<long, Int64Murmur3Hasher>();
 
 foreach (long visitorId in eventStream)
@@ -2875,6 +2916,13 @@ index is a mask, not a modulo), and the failure probability `delta` drives the r
 hash is avalanched into 64 bits whose two halves seed the recurrence `g_i = h1 + i·h2`
 (the stride forced odd so the rows spread out), so adding rows costs arithmetic, not more
 `Hash()` calls.
+
+> **Hash entropy.** The 64 bits come from the hasher's own `Hash64` when it implements
+> [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening its 32-bit
+> code. Widening spreads the code over the 64-bit range but creates no entropy: the reachable
+> space stays 2<sup>32</sup>, so past ~10<sup>8</sup> distinct elements a growing fraction of
+> them share a code and have their counts pooled — an overestimate the `epsilon` budget does
+> not account for. Past that scale, use a 64-bit hasher.
 
 ### Constructors
 
