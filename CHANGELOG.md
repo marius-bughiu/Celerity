@@ -8,6 +8,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **`BTreeDictionary<TKey, TValue, TComparer>` and `BTreeSet<T, TComparer>`** (with `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` aliases and the `DefaultComparer<T>` struct comparer) in `Celerity.Collections` — the library's first sorted map and set, and the B-tree the BCL lacks. Up to 31 keys per node keep a lookup `log₃₂(n)` node visits deep instead of chasing the `log₂(n)` pointers a red-black tree costs, and both add the ordered surface a hash table cannot answer: `Min` / `Max`, lower / upper bound, `EnumerateRange` in `O(log n + k)`, and in-order enumeration. They win on the interleaved insert + lookup + range-scan workload and on memory, and lose slightly on a delete-dominated one. Not thread-safe. Closes [#305](https://github.com/marius-bughiu/Celerity/issues/305).
 
+### Fixed
+
+- **The coverage gate measured only one of the six shipped packages.** Coverlet's assembly filter is exact-match, so `Celerity.Hashing`, `Celerity.Primitives`, and the three showcase packages had been outside the gate since the 2.0.0 package split — any of them could have dropped to 0% with CI green. All six are now measured, the gaps that exposed are backfilled to **100% line and branch** coverage, and the floor is raised from 95%/90% to match. Closes [#314](https://github.com/marius-bughiu/Celerity/issues/314).
+
 ## [2.4.0] - 2026-07-26
 
 ### Added

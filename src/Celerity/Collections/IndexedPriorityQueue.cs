@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using Celerity.Hashing;
 
 namespace Celerity.Collections;
@@ -588,14 +589,31 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
         // rather than silently corrupt if the queue is already at the array ceiling.
         int current = _elements.Length;
         int newCapacity = current == 0 ? DefaultCapacity : current * 2;
+        newCapacity = ClampGrowth(newCapacity, current);
+
+        // No _version bump here: Grow() is only ever called from InsertNew(), whose own _version++ covers the
+        // enqueue, so bumping here too would double-count a single operation.
+        Resize(newCapacity);
+    }
+
+    // The growth ceiling, split out because neither arm is reachable from the public API. Grow() has exactly one
+    // caller — InsertNew() — and fires only when _count == _elements.Length, so the clamp needs 2^30 *live*
+    // entries; EnsureCapacity() calls Resize() directly and cannot pre-inflate the array into it. InsertNew()
+    // also runs only for elements absent from _index, so duplicates cannot pad the count: TElement must supply
+    // 2^30 distinct values, forcing _elements past the 2 GiB single-object array limit. The throw needs
+    // _elements.Length == _count == Array.MaxLength, which is strictly harder still. No test runner can reach
+    // either, at any memory size. Both are kept because they are the only thing between a saturated queue and a
+    // silently negative capacity.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: needs 2^30 live entries with distinct elements, " +
+        "which exceeds the 2 GiB single-object array limit regardless of available memory.")]
+    private static int ClampGrowth(int newCapacity, int current)
+    {
         if ((uint)newCapacity > (uint)Array.MaxLength)
             newCapacity = Array.MaxLength;
         if (newCapacity <= current)
             throw new InvalidOperationException("The priority queue has reached its maximum capacity.");
 
-        // No _version bump here: Grow() is only ever called from InsertNew(), whose own _version++ covers the
-        // enqueue, so bumping here too would double-count a single operation.
-        Resize(newCapacity);
+        return newCapacity;
     }
 
     private void Resize(int newCapacity)

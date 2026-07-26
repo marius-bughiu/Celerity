@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Celerity.Hashing;
 
@@ -130,14 +131,14 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
         // fingerprint fits a ushort (bit-packing narrower fingerprints is a future space optimization).
         double fExact = Math.Log2((2.0 * BucketSize) / falsePositiveRate);
         int f = (int)Math.Ceiling(fExact);
-        if (f < 1) f = 1;
+        f = AtLeastOne(f);
         if (f > 16) f = 16;
         _fingerprintBits = f;
         _fingerprintMask = (uint)((1 << f) - 1);
 
         // Bucket count, rounded up to a power of two so the alternate-bucket XOR stays in range.
         int desired = (int)Math.Ceiling(expectedItems / (BucketSize * TargetLoad));
-        int buckets = FastUtils.NextPowerOfTwo(desired < 1 ? 1 : desired);
+        int buckets = FastUtils.NextPowerOfTwo(AtLeastOne(desired));
         _bucketCount = buckets;
         _bucketMask = buckets - 1;
 
@@ -147,6 +148,20 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
         // without affecting correctness.
         _rng = new WyRand(0x9E3779B97F4A7C15UL);
     }
+
+    // Floor used by both sizing computations above. Neither can actually reach it, because the constructor's
+    // own argument validation already rules the case out:
+    //
+    //   fingerprint width  f = ceil(log2(2·BucketSize / p)) = ceil(log2(8 / p)), and p is rejected unless it is
+    //                        strictly between 0 and 1 — so 8/p > 8, log2 > 3, and f >= 4 for every accepted rate.
+    //   bucket count       desired = ceil(expectedItems / (BucketSize · TargetLoad)) = ceil(n / 3.76), and n is
+    //                        rejected unless positive — so the smallest legal n == 1 already yields 1.
+    //
+    // The floor is kept as defence-in-depth against a future change to either formula or to the validation, but
+    // it is dead by construction today and therefore carries no test.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: the constructor's argument validation already " +
+        "guarantees both sizing expressions are >= 1. Kept as defence-in-depth against a future change.")]
+    private static int AtLeastOne(int value) => value < 1 ? 1 : value;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CuckooFilter{T,THasher}"/> class pre-populated with the

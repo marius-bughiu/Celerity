@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Celerity.Hashing;
@@ -157,10 +158,7 @@ public class FrozenCelerityDictionary<TValue, THasher>
         // require the non-null key count to stay strictly below the 2^30 power-of-two
         // ceiling (NextPowerOfTwo caps there), so reject an impossible count up front with
         // a clear error rather than overflow the build search or hang the fallback probe.
-        if (n >= FastUtils.MaxPowerOfTwoCapacity)
-            throw new ArgumentException(
-                $"A frozen dictionary can hold at most {FastUtils.MaxPowerOfTwoCapacity - 1} non-null keys; got {n}.",
-                nameof(source));
+        ThrowIfKeyCountExceedsCeiling(n, nameof(source));
 
         // Precompute the raw hash code of every key once; the perfect-hash search
         // re-mixes these with each candidate seed rather than re-hashing the strings.
@@ -323,6 +321,21 @@ public class FrozenCelerityDictionary<TValue, THasher>
     /// lightweight struct and iterating it does not allocate.
     /// </summary>
     public ValueCollection Values => new ValueCollection(this);
+
+    // The key-count ceiling. Unreachable from any caller: `n` counts the keys already materialized into a
+    // List<string>, so reaching 2^30 needs an 8.6 GB backing string[] — past the 2 GiB single-object array
+    // limit — before this check is even read. A source that merely *reports* a huge ICollection.Count cannot
+    // reach it either; that count is used only as the list's initial capacity hint. Kept because it documents
+    // and enforces the invariant the perfect-hash search depends on.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: 2^30 materialized keys exceed the 2 GiB " +
+        "single-object array limit, so the guard cannot be reached regardless of available memory.")]
+    private static void ThrowIfKeyCountExceedsCeiling(int n, string paramName)
+    {
+        if (n >= FastUtils.MaxPowerOfTwoCapacity)
+            throw new ArgumentException(
+                $"A frozen dictionary can hold at most {FastUtils.MaxPowerOfTwoCapacity - 1} non-null keys; got {n}.",
+                paramName);
+    }
 
     // ── Perfect-hash construction ─────────────────────────────────────────────
 

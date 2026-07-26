@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Celerity.Collections;
 
@@ -445,8 +446,7 @@ public sealed class Deque<T> : IReadOnlyList<T>
         int newCapacity = _items.Length == 0 ? DefaultCapacity : _items.Length * 2;
 
         // Guard the doubling against overflow and honour the requested minimum.
-        if ((uint)newCapacity > (uint)Array.MaxLength)
-            newCapacity = Array.MaxLength;
+        newCapacity = ClampToArrayMaxLength(newCapacity);
         if (newCapacity < min)
             newCapacity = min;
 
@@ -456,6 +456,15 @@ public sealed class Deque<T> : IReadOnlyList<T>
         _head = 0;
         _version++;
     }
+
+    // The doubling ceiling. Reaching it needs a backing array of more than 2^30 elements, so it is only
+    // observable from a test that first allocates ~3 GiB — see DequeGrowthTests, which pins it behind
+    // [MemoryIntensiveFact] so memory-capped runners skip rather than fail. Excluded from coverage so the gate
+    // does not depend on whether that runner had the headroom to run the test.
+    [ExcludeFromCodeCoverage(Justification = "Needs a >1 billion element backing array; pinned by a " +
+        "[MemoryIntensiveFact] test that skips on memory-capped runners.")]
+    private static int ClampToArrayMaxLength(int newCapacity) =>
+        (uint)newCapacity > (uint)Array.MaxLength ? Array.MaxLength : newCapacity;
 
     /// <summary>
     /// A struct enumerator over a <see cref="Deque{T}"/> that yields elements from front to back. Because it
