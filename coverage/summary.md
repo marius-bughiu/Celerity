@@ -2,17 +2,6 @@
 
 | Metric | Value |
 |---|---:|
-| Line | 98.65% (7871/7979) |
-| Branch | 97.19% (3281/3376) |
+| Line | 100% (9806/9806) |
+| Branch | 100% (3862/3862) |
 
-<details><summary>Files below 100% line coverage</summary>
-
-| File | Line | Branch |
-|---|---:|---:|
-| `src/Celerity/Collections/TopKEntry.cs` | 80% | n/a |
-| `src/Celerity/Collections/XorFilter.cs` | 94.44% | 90.48% |
-| `src/Celerity/Collections/EnumMap.cs` | 95.09% | 92.19% |
-| `src/Celerity/Collections/FenwickTree.cs` | 96.12% | 94.74% |
-| `src/Celerity/Collections/IndexedPriorityQueue.cs` | 96.23% | 90.91% |
-
-</details>
