@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Celerity.Hashing;
@@ -153,10 +154,7 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         // require the non-null element count to stay strictly below the 2^30 power-of-two
         // ceiling (NextPowerOfTwo caps there), so reject an impossible count up front with
         // a clear error rather than overflow the build search or hang the fallback probe.
-        if (n >= FastUtils.MaxPowerOfTwoCapacity)
-            throw new ArgumentException(
-                $"A frozen set can hold at most {FastUtils.MaxPowerOfTwoCapacity - 1} non-null elements; got {n}.",
-                nameof(source));
+        ThrowIfElementCountExceedsCeiling(n, nameof(source));
 
         // Precompute the raw hash code of every element once; the perfect-hash search
         // re-mixes these with each candidate seed rather than re-hashing the strings.
@@ -349,6 +347,20 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
                 return false;
         }
         return true;
+    }
+
+    // The element-count ceiling — the mirror of FrozenCelerityDictionary's key-count guard, and unreachable for
+    // the same reason: `n` counts the elements already materialized into a List<string>, so reaching 2^30 needs
+    // an 8.6 GB backing string[], past the 2 GiB single-object array limit, before this check is read. A source
+    // that merely *reports* a huge ICollection.Count cannot reach it either; that count is only a capacity hint.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: 2^30 materialized elements exceed the 2 GiB " +
+        "single-object array limit, so the guard cannot be reached regardless of available memory.")]
+    private static void ThrowIfElementCountExceedsCeiling(int n, string paramName)
+    {
+        if (n >= FastUtils.MaxPowerOfTwoCapacity)
+            throw new ArgumentException(
+                $"A frozen set can hold at most {FastUtils.MaxPowerOfTwoCapacity - 1} non-null elements; got {n}.",
+                paramName);
     }
 
     // ── Perfect-hash construction ─────────────────────────────────────────────

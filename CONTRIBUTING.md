@@ -59,7 +59,8 @@ These are enforced by review, not by an analyzer. Reading the existing code is t
 - Prefer `[Fact]` for a single case, `[Theory] + [InlineData]` for parameterized cases.
 - When fixing a bug, add a test that fails on `main` and passes on your branch. It's fine to reference the issue number in a comment.
 - New collections are expected to carry parity coverage at every layer: behavioural tests, a CsCheck property test against the closest BCL oracle, and a `Celerity.Fuzz` target. See the [Testing & coverage guide](docs/testing.md) for how each layer works and how to run them.
-- Coverage is gated in CI (`.github/workflows/coverage.yml`); keep line coverage ≥ 95% and branch ≥ 90%. The suite normally sits near 100%.
+- Coverage is gated in CI (`.github/workflows/coverage.yml`) at **100% line and 100% branch**, across all six shipping packages. New code arrives with its tests, or the gate goes red. If you hit a branch no test can reach, exclude it at the source with `[ExcludeFromCodeCoverage(Justification = "…")]` explaining why — do not lower the floor. See the [Testing & coverage guide](docs/testing.md) for the current exclusions and the reasoning behind each.
+- Adding a new shipping package? Add its assembly to `src/coverage.runsettings` and its test project to the coverage workflow. Coverlet's assembly filter is exact-match, so an unlisted package is silently unmeasured.
 
 ## Benchmarks
 

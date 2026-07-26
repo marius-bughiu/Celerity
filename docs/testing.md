@@ -12,7 +12,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
 
-All of these run in CI. Coverage is measured on the library assembly and gated; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
+All of these run in CI. Coverage is measured on all six shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
 
 ## Philosophy: example tests, then adversarial tests
 
@@ -107,24 +107,58 @@ Add an entry to `Differential.All` in `src/Celerity.Fuzz/Differential.cs` and wr
 
 ## Code coverage
 
-Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) (already referenced by the test project) and scoped to the shipping `Celerity` assembly via [`src/coverage.runsettings`](../src/coverage.runsettings) — the test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.
+Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) and scoped to all six shipping assemblies — `Celerity`, `Celerity.Hashing`, `Celerity.Primitives`, `Celerity.Ring`, `Celerity.Sentinel`, `Celerity.Cardinality` — via [`src/coverage.runsettings`](../src/coverage.runsettings). The test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.
+
+Four test projects contribute: `Celerity.Tests` for the three core packages, plus `Celerity.Ring.Tests` / `Celerity.Sentinel.Tests` / `Celerity.Cardinality.Tests` for the showcase tier. Their Cobertura reports are merged on (source file, line number), so a line covered by any run counts as covered — which matters because the showcase projects also exercise `Celerity.Collections` transitively.
+
+The suite covers **100% of lines and 100% of branches** across all six. A small number of guards are excluded at the source with `[ExcludeFromCodeCoverage(Justification = "…")]`, and only where no test could ever reach them:
+
+| Guard | Why no test can reach it |
+|---|---|
+| `Deque.ClampToArrayMaxLength` | Needs a backing array above 2³⁰ elements. Pinned by a real `[MemoryIntensiveFact(3100)]` test in `DequeGrowthTests`, which allocates ~3 GiB and skips on memory-capped runners — excluded so the gate does not depend on whether the runner had the headroom. |
+| `IndexedPriorityQueue.ClampGrowth` | Needs 2³⁰ *live* entries with distinct elements, pushing the backing array past the 2 GiB single-object limit. `EnsureCapacity` calls `Resize` directly, so capacity cannot be pre-inflated into it. |
+| `FrozenCelerityDictionary.ThrowIfKeyCountExceedsCeiling`, `FrozenCeleritySet.ThrowIfElementCountExceedsCeiling` | The count is taken *after* materializing the source into a `List<string>`, so reaching 2³⁰ needs an 8.6 GB `string[]` — past the 2 GiB array limit. A source that merely reports a huge `ICollection.Count` cannot reach it; that count is only a capacity hint. |
+| `CuckooFilter.AtLeastOne`, `XorFilter.AtLeastOne` | Dead by construction: the constructors' own argument validation already forces both sizing expressions above the floor. |
+| `XorFilter.BuildOrThrow`, `XorFilter.TryBuild` | The peel retry schedule is independent of the element set, so no hasher can stall all `MaxConstructionAttempts` seeds. Individual attempts *do* stall and retry — that path lives in `TryPeel`, which stays measured. |
+| `Hash64Source.CreateNative` | Its `null` arm is unobservable. `Native` is read only by `Hash64`, and every caller guards that on `IsNative64` being true, so the class is never initialized for a 32-bit-only `THasher` — the arm is evaluated only if the runtime runs the `beforefieldinit` initializer eagerly, which is its option and not a contract. |
+
+That table is the complete set; `grep -rn "ExcludeFromCodeCoverage" src/Celerity*/` should return nothing beyond it.
+
+The rule for new code: exclusions are for genuinely unreachable code and must carry a `Justification` that says *why*. Anything a test can reach gets a test.
+
+> **Adding a shipping package?** Add its assembly to the `<Include>` list in `src/coverage.runsettings`, and its test project to `.github/workflows/coverage.yml`. Coverlet's assembly filter is **exact-match, not a prefix** — `[Celerity]*` compiles to `^Celerity$` and matches only the `Celerity.Collections` assembly. That is how the 2.0.0 package split left five of six packages silently outside the gate until [#314](https://github.com/marius-bughiu/Celerity/issues/314). An unlisted package is unmeasured, and the gate stays green no matter what its coverage is.
 
 Collect and render a report locally:
 
 ```bash
-# 1. collect Cobertura coverage for the library only
+# 1. collect Cobertura coverage for the three core packages.
+#    Clear stale results first: the four reports are merged by source-file path, and
+#    SourceLink resolves those paths from the build's git state — so mixing reports
+#    from different commits makes the same file appear twice under two spellings and
+#    the merged totals come out roughly halved.
 cd src
+rm -rf ./TestResults/coverage ./TestResults/showcase
 dotnet test Celerity.Tests/Celerity.Tests.csproj \
   --collect:"XPlat Code Coverage" \
   --settings coverage.runsettings \
   --results-directory ./TestResults/coverage
 
-# 2. render the HTML report + badge (pure Python, no extra tooling)
+# 2. and for the three showcase packages
+for project in Ring Sentinel Cardinality; do
+  dotnet test "Celerity.${project}.Tests/Celerity.${project}.Tests.csproj" \
+    --collect:"XPlat Code Coverage" \
+    --settings coverage.runsettings \
+    --results-directory "./TestResults/showcase/${project}"
+done
+
+# 3. render the HTML report + badge (pure Python, no extra tooling).
+#    --input is repeatable; the reports are merged.
 python3 ../scripts/coverage_report.py \
   --input "./TestResults/coverage/**/coverage.cobertura.xml" \
-  --outdir ../coveragereport --min-line 95 --min-branch 90
+  --input "./TestResults/showcase/*/**/coverage.cobertura.xml" \
+  --outdir ../coveragereport --min-line 100 --min-branch 100
 
-# 3. open coveragereport/index.html
+# 4. open coveragereport/index.html
 ```
 
 The report is rendered by [`scripts/coverage_report.py`](../scripts/coverage_report.py) — a small generator that reads the Cobertura XML coverlet produces and emits an `index.html` styled like the rest of the Celerity site, a `badge.svg`, and a `summary.md`. It exists so the report carries the project's own look and no third-party "sponsors only" upsell; there is no dependency on ReportGenerator.
@@ -134,7 +168,7 @@ The report is rendered by [`scripts/coverage_report.py`](../scripts/coverage_rep
 The `coverage` workflow (`.github/workflows/coverage.yml`) runs on every PR and on `main`:
 
 - Collects coverage, renders the report + badge with `scripts/coverage_report.py`, and uploads it as a build artifact.
-- **Fails the build** if line coverage drops below `MIN_LINE_COVERAGE` (95%) or branch coverage below `MIN_BRANCH_COVERAGE` (90%). The suite sits far above these (100% line and branch) — the floor guards against silent regressions; it is not the target.
+- **Fails the build** if line coverage drops below `MIN_LINE_COVERAGE` (100%) or branch coverage below `MIN_BRANCH_COVERAGE` (100%). The floor is deliberately a hair-trigger: new code arrives with its tests, or the gate goes red. If you hit a genuinely unreachable branch, exclude it at the source with a justification rather than lowering the floor.
 - Posts a coverage summary comment on the PR.
 - On `main`, publishes the HTML report to `gh-pages` under [`/coverage`](https://marius-bughiu.github.io/Celerity/coverage/) and refreshes the README badge.
 

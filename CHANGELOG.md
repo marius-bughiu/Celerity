@@ -15,6 +15,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - Lookups on **reference-type keys** are faster across the open-addressed dictionaries and sets — around 10% on in-cache `string`-keyed lookups locally. Behaviour is identical, and value-type keys are unaffected. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
 - The README and performance guide now point `string`-keyed workloads at `HashCachingDictionary`: on 100k `string` keys `CelerityDictionary` measures behind the BCL `Dictionary`, and the hash-caching variant closes the gap. Closes [#308](https://github.com/marius-bughiu/Celerity/issues/308).
 
+### Fixed
+
+- **The coverage gate measured only one of the six shipped packages.** Coverlet's assembly filter is exact-match, so `Celerity.Hashing`, `Celerity.Primitives`, and the three showcase packages had been outside the gate since the 2.0.0 package split — any of them could have dropped to 0% with CI green. All six are now measured, the gaps that exposed are backfilled to **100% line and branch** coverage, and the floor is raised from 95%/90% to match. Closes [#314](https://github.com/marius-bughiu/Celerity/issues/314).
+
 ## [2.4.0] - 2026-07-26
 
 ### Added

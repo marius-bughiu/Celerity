@@ -15,9 +15,13 @@ configured minimum it writes the summary, prints the numbers, and exits non-zero
 This replaces ReportGenerator so the report carries no "sponsors only" upsell and
 matches the project's own dashboard styling. See docs/testing.md.
 
+--input may be repeated; the reports are merged on (source file, line number), so
+one invocation covers every test project that contributes coverage.
+
 Usage:
-    coverage_report.py --input "<glob-or-path>" --outdir coveragereport \
-        [--min-line 95] [--min-branch 90] [--title "Celerity coverage"]
+    coverage_report.py --input "<glob-or-path>" [--input "<another>"] \
+        --outdir coveragereport \
+        [--min-line 100] [--min-branch 100] [--title "Celerity coverage"]
 """
 import argparse
 import glob
@@ -29,40 +33,60 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 
-def find_input(pattern: str) -> str:
-    matches = sorted(glob.glob(pattern, recursive=True), key=os.path.getmtime)
-    if not matches:
-        sys.exit(f"coverage_report: no coverage file matched '{pattern}'")
-    return matches[-1]
+def find_inputs(patterns: list[str]) -> list[str]:
+    """Every file matching any of the given globs, de-duplicated.
+
+    Ordered by pattern, and oldest-first within each. The order is presentational
+    only — parse() merges the reports, so it does not affect the result.
+    """
+    found: list[str] = []
+    for pattern in patterns:
+        matches = sorted(glob.glob(pattern, recursive=True), key=os.path.getmtime)
+        if not matches:
+            sys.exit(f"coverage_report: no coverage file matched '{pattern}'")
+        for m in matches:
+            if m not in found:
+                found.append(m)
+    return found
 
 
 _COND = re.compile(r"\((\d+)/(\d+)\)")
 
 
-def parse(path: str):
-    """Returns (overall, files) where files is a list of per-file dicts."""
-    root = ET.parse(path).getroot()
+def parse(paths: list[str]):
+    """Returns (overall, files) where files is a list of per-file dicts.
 
+    Accepts several Cobertura reports and merges them. Coverage is collected once
+    per test project (Celerity.Tests plus the three showcase test projects), and
+    those runs overlap: the showcase projects reference Celerity.Collections, so
+    the same source file is measured by more than one run. Merging on
+    (filename, line number) is what makes that overlap additive rather than
+    last-one-wins — a line covered by any run counts as covered, and a branch
+    keeps the best reading any run saw.
+    """
     # Aggregate per source file. Multiple <class> elements (a type and its nested
     # enumerators) share one filename; merge their lines, deduping by line number.
     files: dict[str, dict] = {}
-    for cls in root.iter("class"):
-        fname = cls.get("filename", "")
-        f = files.setdefault(fname, {"lines": {}, "branches": {}})
-        for line in cls.iter("line"):
-            num = int(line.get("number"))
-            hits = int(line.get("hits", "0"))
-            # max hits wins if a line appears under more than one class element
-            f["lines"][num] = max(f["lines"].get(num, 0), hits)
-            if line.get("branch") == "True":
-                cc = line.get("condition-coverage", "")
-                m = _COND.search(cc)
-                if m:
-                    covered, total = int(m.group(1)), int(m.group(2))
-                    prev = f["branches"].get(num, (0, 0))
-                    # keep the richer reading (most branches seen for this line)
-                    if total >= prev[1]:
-                        f["branches"][num] = (covered, total)
+    for path in paths:
+        root = ET.parse(path).getroot()
+        for cls in root.iter("class"):
+            fname = cls.get("filename", "")
+            f = files.setdefault(fname, {"lines": {}, "branches": {}})
+            for line in cls.iter("line"):
+                num = int(line.get("number"))
+                hits = int(line.get("hits", "0"))
+                # max hits wins if a line appears under more than one class element
+                f["lines"][num] = max(f["lines"].get(num, 0), hits)
+                if line.get("branch") == "True":
+                    cc = line.get("condition-coverage", "")
+                    m = _COND.search(cc)
+                    if m:
+                        covered, total = int(m.group(1)), int(m.group(2))
+                        prev = f["branches"].get(num, (0, 0))
+                        # keep the richer reading (most branches seen for this line);
+                        # on a tie in arm count, the run that covered more wins
+                        if total > prev[1] or (total == prev[1] and covered > prev[0]):
+                            f["branches"][num] = (covered, total)
 
     file_rows = []
     for fname, data in files.items():
@@ -87,11 +111,13 @@ def parse(path: str):
 
     file_rows.sort(key=lambda r: (r["line_rate"], r["branch_rate"] if r["branch_rate"] is not None else 1.0, r["display"]))
 
+    # Summed from the merged per-file rows rather than read off any one report's
+    # root attributes — those describe a single run and cannot see the others.
     overall = {
-        "lines_covered": int(root.get("lines-covered", 0)),
-        "lines_valid": int(root.get("lines-valid", 0)),
-        "branches_covered": int(root.get("branches-covered", 0)),
-        "branches_valid": int(root.get("branches-valid", 0)),
+        "lines_covered": sum(r["lines_covered"] for r in file_rows),
+        "lines_valid": sum(r["lines_valid"] for r in file_rows),
+        "branches_covered": sum(r["branches_covered"] for r in file_rows),
+        "branches_valid": sum(r["branches_valid"] for r in file_rows),
     }
     overall["line_rate"] = (overall["lines_covered"] / overall["lines_valid"]) if overall["lines_valid"] else 1.0
     overall["branch_rate"] = (overall["branches_covered"] / overall["branches_valid"]) if overall["branches_valid"] else 1.0
@@ -373,15 +399,16 @@ def render_summary(overall, files, min_line, min_branch, passed) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="Cobertura XML path or glob")
+    ap.add_argument("--input", required=True, action="append",
+                    help="Cobertura XML path or glob. Repeat to merge several test projects' reports.")
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--min-line", type=float, default=0.0)
     ap.add_argument("--min-branch", type=float, default=0.0)
     ap.add_argument("--title", default="Celerity coverage")
     args = ap.parse_args()
 
-    path = find_input(args.input)
-    overall, files = parse(path)
+    paths = find_inputs(args.input)
+    overall, files = parse(paths)
     os.makedirs(args.outdir, exist_ok=True)
 
     with open(os.path.join(args.outdir, "index.html"), "w", encoding="utf-8") as f:
@@ -402,7 +429,8 @@ def main() -> int:
         with open(step_summary, "a", encoding="utf-8") as f:
             f.write(summary)
 
-    print(f"Source:          {path}")
+    for i, path in enumerate(paths):
+        print(f"{'Sources:' if i == 0 else '':<16} {path}")
     print(f"Line coverage:   {line_pct:.2f}% (floor {args.min_line:.0f}%)")
     print(f"Branch coverage: {branch_pct:.2f}% (floor {args.min_branch:.0f}%)")
     print(f"Report:          {os.path.join(args.outdir, 'index.html')}")
