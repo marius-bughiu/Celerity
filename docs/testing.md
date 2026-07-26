@@ -12,7 +12,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
 
-All of these run in CI. Coverage is measured on all three shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
+All of these run in CI. Coverage is measured on all six shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
 
 ## Philosophy: example tests, then adversarial tests
 
@@ -128,8 +128,13 @@ The rule for new code: exclusions are for genuinely unreachable code and must ca
 Collect and render a report locally:
 
 ```bash
-# 1. collect Cobertura coverage for the three core packages
+# 1. collect Cobertura coverage for the three core packages.
+#    Clear stale results first: the four reports are merged by source-file path, and
+#    SourceLink resolves those paths from the build's git state — so mixing reports
+#    from different commits makes the same file appear twice under two spellings and
+#    the merged totals come out roughly halved.
 cd src
+rm -rf ./TestResults/coverage ./TestResults/showcase
 dotnet test Celerity.Tests/Celerity.Tests.csproj \
   --collect:"XPlat Code Coverage" \
   --settings coverage.runsettings \

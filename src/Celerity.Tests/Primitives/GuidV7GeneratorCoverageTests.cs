@@ -79,7 +79,10 @@ public class GuidV7GeneratorCoverageTests
         Guid g = gen.Next();
         long after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        Assert.InRange(TimestampMs(g), before, after);
+        // Ordered rather than assumed: the wall clock is not monotonic, and an NTP step between the two
+        // readings would otherwise invert the range and fail a generator that behaved perfectly. Whichever
+        // way the clock moved, Next()'s own reading lies between the two that straddle it.
+        Assert.InRange(TimestampMs(g), Math.Min(before, after), Math.Max(before, after));
 
         // The timestamp also leads the canonical string form, which is what makes v7 lexicographically
         // sortable — a wrong-epoch or wrong-unit read would break that even if the range check passed.
