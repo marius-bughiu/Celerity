@@ -57,20 +57,55 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # The release workflow's CHANGELOG extraction is a shell script, so it is
-  # outside `dotnet test` and the coverage gate. Exercising it on every PR keeps
-  # the pre-push release gate (#315) honest — in particular the size assertion,
-  # without which an over-cap CHANGELOG section publishes six packages to
-  # NuGet.org and only then fails to create the release.
+  # A dry run of the guards that stand between a tag and NuGet.org (#315). They
+  # all live on the release path, which no PR exercises — so without this job a
+  # breaking API change or a mis-packed package is only discovered by the nightly
+  # preview or by the release itself, long after review. Publishing is
+  # irreversible; the feedback belongs in the PR that causes it.
   release-gates:
     name: release-gates
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: src
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: tree:0
 
+      # The CHANGELOG extraction is a shell script, so it sits outside
+      # `dotnet test` and the coverage gate. Its size assertion is the one
+      # guarding against an over-cap release body publishing six packages and
+      # only then failing to create the release.
       - name: Test the release-notes extraction gate
+        working-directory: ${{ github.workspace }}
         run: ./.github/scripts/test-extract-release-notes.sh
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Restore workloads
+        run: dotnet workload restore
+
+      # Packing is what runs package validation: each package is compared
+      # against its published baseline across every TFM, and any breaking API
+      # change fails here. See src/Directory.Build.props for the baseline-bump
+      # ritual and the suppression escape hatch.
+      - name: Pack (runs package validation against the published baseline)
+        run: dotnet pack --configuration Release --output ${{ github.workspace }}/nuget -p:ContinuousIntegrationBuild=true
+
+      - name: Validate packages
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: ./.github/scripts/validate-packages.ps1 -NuGetDirectory "${{ github.workspace }}/nuget"
 
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})

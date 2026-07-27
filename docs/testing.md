@@ -11,7 +11,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Property-based tests | `Celerity.Tests/Properties/` | Across thousands of randomized operation sequences, every collection stays observably equal to its BCL oracle. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
-| Release gates | `.github/scripts/` | The pre-publish guards hold: a breaking API change fails `pack`, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `./.github/scripts/test-extract-release-notes.sh` |
+| Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: a breaking API change fails `pack`, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
 
 All of these run in CI. Coverage is measured on all six shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
 
@@ -116,7 +116,9 @@ Publishing to NuGet.org is irreversible, so the checks that decide whether a rel
 | Package metadata | A missing symbol package, license, README, icon, or SourceLink stamp; a missing or unexpected package id. | [`validate-packages.ps1`](../.github/scripts/validate-packages.ps1) |
 | Release notes | No `## [X.Y.Z]` section for the tag, or one at/over the 120,000-byte guard for GitHub's ~125k release-body cap. | [`extract-release-notes.sh`](../.github/scripts/extract-release-notes.sh) |
 
-Only the last of these is pure shell, so it is the one outside `dotnet test`. [`test-extract-release-notes.sh`](../.github/scripts/test-extract-release-notes.sh) covers it — happy path, section boundaries, missing section, oversized section, and that a failed run leaves no partial file for a later step to publish — and runs as the `release-gates` job on every PR.
+All three also run on **every PR**, as the `release-gates` job in `ci.yml`. Nothing else in CI packs, so without that job a breaking API change or a mis-packed package would only surface in the nightly preview or in the release itself — long after review, and for the release, too late.
+
+The release-notes gate is the one piece that is pure shell and therefore outside `dotnet test`. [`test-extract-release-notes.sh`](../.github/scripts/test-extract-release-notes.sh) covers it — happy path, section boundaries, missing section, oversized section, and that a failed run leaves no partial file for a later step to publish.
 
 ```bash
 ./.github/scripts/test-extract-release-notes.sh
