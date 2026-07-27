@@ -143,6 +143,8 @@ The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as 
 ./.github/scripts/extract-release-notes.sh 1.2.0
 ```
 
+`workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push.
+
 ### Package validation
 
 Every `dotnet pack` validates each package against its last published version and **fails the build on any breaking API change**, across all three TFMs. Since the NuGet push is irreversible, this guard has to run before it — so it runs on every release build, and locally whenever you pack.
@@ -154,7 +156,7 @@ Two situations need a deliberate decision rather than a workaround:
 - **An intentional break.** Run `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` on the offending project, which writes a `CompatibilitySuppressions.xml` next to its `.csproj`. Commit it with a comment explaining each entry, so the break is reviewed in the PR instead of discovered by a consumer.
 - **A package's first release.** There is no published predecessor to validate against, and asking for one fails the restore. Set `<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>` in that package's `.csproj`, ship it once, then delete the property.
 
-`workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push.
+Both gates, plus the package-metadata check, also run on every PR as the `release-gates` job — see [docs/testing.md](docs/testing.md#release-gates).
 
 ## Scope
 
