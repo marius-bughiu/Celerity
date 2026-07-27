@@ -259,7 +259,7 @@ public class EnumSetTests
         set.Add(value);
         Assert.True(set.Contains(value));
         Assert.Single(set);
-        Assert.Contains(value, set);
+        Assert.True(set.Contains(value));
     }
 
     public static IEnumerable<object[]> ByteEnumCases() =>

@@ -7,14 +7,13 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A high-performance generic hash set, parameterized on a custom
-/// <see cref="IHashProvider{T}"/> implementation.
-/// </summary>
+/// <see cref="IHashProvider{T}"/> implementation. 
 /// <typeparam name="T">The type of elements in the set.</typeparam>
 /// <typeparam name="THasher">
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProvider<T>
+public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : struct, IHashProvider<T>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.

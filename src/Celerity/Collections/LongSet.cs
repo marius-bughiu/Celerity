@@ -74,7 +74,7 @@ public class LongSet : LongSet<Int64WangNaiveHasher>
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class LongSet<THasher> : ISet<long> where THasher : struct, IHashProvider<long>
+public class LongSet<THasher> : ISet<long>, IReadOnlySet<long> where THasher : struct, IHashProvider<long>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.

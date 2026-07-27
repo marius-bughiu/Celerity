@@ -58,7 +58,7 @@ namespace Celerity.Collections;
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class SwissSet<T, THasher> : ISet<T> where THasher : struct, IHashProvider<T>
+public class SwissSet<T, THasher> : ISet<T> ,IReadOnlySet<T> where THasher : struct, IHashProvider<T>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.

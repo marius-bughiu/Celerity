@@ -74,7 +74,7 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class IntSet<THasher> : ISet<int> where THasher : struct, IHashProvider<int>
+public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : struct, IHashProvider<int>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.

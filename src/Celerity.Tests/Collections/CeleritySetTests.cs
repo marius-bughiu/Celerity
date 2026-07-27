@@ -83,7 +83,7 @@ public class CeleritySetTests
     }
 
     [Fact]
-    public void TryAdd_ZeroIntKey_ShouldReturnFalse_WhenDuplicate()
+    public void TryAdd_ZeroIntKey_ShouldReturnFalse_WhenDuplicate() 
     {
         var set = new CeleritySet<int, Int32WangNaiveHasher>();
         Assert.True(set.TryAdd(0));
