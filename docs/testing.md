@@ -112,7 +112,7 @@ Publishing to NuGet.org is irreversible, so the checks that decide whether a rel
 
 | Gate | Fails on | Where |
 |---|---|---|
-| Package validation | Any breaking public-API change against the last published version of that package, on any TFM. | `dotnet pack`, via `EnablePackageValidation` in `src/Directory.Build.props` / `Directory.Build.targets` |
+| Package validation | Any breaking public-API change against the last published version of that package, on any TFM. | `dotnet pack`. The switch is `EnablePackageValidation` in [`src/Directory.Build.targets`](../src/Directory.Build.targets); the baseline version it compares against is `CelerityPackageValidationBaseline` in [`src/Directory.Build.props`](../src/Directory.Build.props). |
 | Package metadata | A missing symbol package, license, README, icon, or SourceLink stamp; a missing or unexpected package id. | [`validate-packages.ps1`](../.github/scripts/validate-packages.ps1) |
 | Release notes | No `## [X.Y.Z]` section for the tag, or one at/over the 120,000-byte guard for GitHub's ~125k release-body cap. | [`extract-release-notes.sh`](../.github/scripts/extract-release-notes.sh) |
 
