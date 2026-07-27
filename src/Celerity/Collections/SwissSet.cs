@@ -58,7 +58,7 @@ namespace Celerity.Collections;
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class SwissSet<T, THasher> : ISet<T> where THasher : struct, IHashProvider<T>
+public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : struct, IHashProvider<T>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
@@ -607,7 +607,7 @@ public class SwissSet<T, THasher> : ISet<T> where THasher : struct, IHashProvide
     }
 
     private static bool IsDefaultValue(T item) =>
-        EmptySlot.Is(item);
+        EqualityComparer<T>.Default.Equals(item, default(T));
 
     // SIMD group lookup for a non-default element. Walks the aligned-group probe
     // sequence from the element's home group: a single Vector128 compare turns each
