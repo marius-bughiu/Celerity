@@ -57,6 +57,21 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # The release workflow's CHANGELOG extraction is a shell script, so it is
+  # outside `dotnet test` and the coverage gate. Exercising it on every PR keeps
+  # the pre-push release gate (#315) honest — in particular the size assertion,
+  # without which an over-cap CHANGELOG section publishes six packages to
+  # NuGet.org and only then fails to create the release.
+  release-gates:
+    name: release-gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the release-notes extraction gate
+        run: ./.github/scripts/test-extract-release-notes.sh
+
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})
     runs-on: ubuntu-latest

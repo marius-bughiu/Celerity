@@ -11,6 +11,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Property-based tests | `Celerity.Tests/Properties/` | Across thousands of randomized operation sequences, every collection stays observably equal to its BCL oracle. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
+| Release gates | `.github/scripts/` | The pre-publish guards hold: a breaking API change fails `pack`, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `./.github/scripts/test-extract-release-notes.sh` |
 
 All of these run in CI. Coverage is measured on all six shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
 
@@ -104,6 +105,27 @@ In CI the fuzzer runs as a **nightly** job (`.github/workflows/fuzz.yml`) with a
 ### Adding a fuzz target
 
 Add an entry to `Differential.All` in `src/Celerity.Fuzz/Differential.cs` and write a method that drives your collection against a BCL oracle, calling `Check(condition, message)` on every observable. The driver discovers it automatically (including in `--list`).
+
+## Release gates
+
+Publishing to NuGet.org is irreversible, so the checks that decide whether a release is well-formed all run *before* the push, in the `build` job of `.github/workflows/release.yml` ([#315](https://github.com/marius-bughiu/Celerity/issues/315)). Three of them:
+
+| Gate | Fails on | Where |
+|---|---|---|
+| Package validation | Any breaking public-API change against the last published version of that package, on any TFM. | `dotnet pack`, via `EnablePackageValidation` in `src/Directory.Build.props` / `Directory.Build.targets` |
+| Package metadata | A missing symbol package, license, README, icon, or SourceLink stamp; a missing or unexpected package id. | [`validate-packages.ps1`](../.github/scripts/validate-packages.ps1) |
+| Release notes | No `## [X.Y.Z]` section for the tag, or one at/over the 120,000-byte guard for GitHub's ~125k release-body cap. | [`extract-release-notes.sh`](../.github/scripts/extract-release-notes.sh) |
+
+Only the last of these is pure shell, so it is the one outside `dotnet test`. [`test-extract-release-notes.sh`](../.github/scripts/test-extract-release-notes.sh) covers it — happy path, section boundaries, missing section, oversized section, and that a failed run leaves no partial file for a later step to publish — and runs as the `release-gates` job on every PR.
+
+```bash
+./.github/scripts/test-extract-release-notes.sh
+
+# preview the notes for a version before tagging
+./.github/scripts/extract-release-notes.sh 2.4.0
+```
+
+The baseline-bump ritual that keeps package validation meaningful is in [CONTRIBUTING.md](../CONTRIBUTING.md#package-validation).
 
 ## Code coverage
 

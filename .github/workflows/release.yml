@@ -37,6 +37,31 @@ jobs:
           9.0.x
           10.0.x
 
+    # Runs before the build, and therefore long before `deploy` pushes to
+    # NuGet.org (#315). A missing or over-long CHANGELOG section used to fail in
+    # `github-release`, i.e. after all six packages were already published and
+    # unremovable. Failing here means nothing shipped: fix the CHANGELOG, re-tag.
+    # The extracted file is handed to `github-release` as an artifact rather than
+    # re-extracted there, so the release body is exactly what was validated.
+    - name: Extract and validate release notes
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        tag="${GITHUB_REF_NAME}"
+        ./.github/scripts/extract-release-notes.sh "${tag#v}"
+        echo "--- Release notes for $tag ---"
+        cat release-notes.md
+
+    - name: Upload release notes
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-notes
+        if-no-files-found: error
+        retention-days: 7
+        path: ${{ github.workspace }}/release-notes.md
+
     - name: Restore workloads
       run: dotnet workload restore
 
@@ -52,10 +77,16 @@ jobs:
     # so a reproducible build never depends on an env var. IncludeSymbols +
     # SymbolPackageFormat=snupkg (also from the shared props) emit a .snupkg
     # next to every .nupkg.
+    #
+    # This is also where package validation runs (#315): the shared props/targets
+    # set EnablePackageValidation + a baseline version, so `pack` downloads each
+    # package's published predecessor and fails on any breaking API change,
+    # across every TFM. See src/Directory.Build.props for the baseline-bump
+    # ritual and the suppression escape hatch.
     - name: Create nuget package
       run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }} -p:ContinuousIntegrationBuild=true
 
-    # Fail loudly if any of the three packages is missing a symbol package or
+    # Fail loudly if any of the six packages is missing a symbol package or
     # the required NuGet metadata (license, README, icon, repository URL), so a
     # mis-packed release never reaches NuGet.org.
     - name: Validate packages
@@ -122,28 +153,13 @@ jobs:
           name: nuget
           path: ${{ env.NuGetDirectory }}
 
-      - name: Extract release notes from CHANGELOG.md
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
-          # Extract the section under "## [<version>]" up to (but not including)
-          # the next "## [" heading. Empty output means the CHANGELOG was not
-          # updated for this version — fail loudly so the maintainer notices.
-          # We use index() rather than regex because matching a literal "[" in
-          # awk's POSIX regex is fiddly across implementations.
-          awk -v ver="$version" '
-            index($0, "## [" ver "]") == 1 { capture = 1; next }
-            capture && index($0, "## [") == 1 { exit }
-            capture { print }
-          ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "::error::No CHANGELOG.md section found for [$version]. Move the [Unreleased] block to [$version] and re-tag." >&2
-            exit 1
-          fi
-          echo "--- Release notes for $tag ---"
-          cat release-notes.md
+      # Already extracted and size-checked in `build`, before the NuGet push.
+      # Downloading it rather than re-running the extraction keeps the release
+      # body identical to the one that passed the gate.
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ github.workspace }}
 
       - name: Create GitHub Release
         env:

@@ -75,4 +75,40 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+  <!--
+    Package validation — the binary-compatibility gate (#315).
+
+    `dotnet pack` downloads each package's published predecessor and fails the
+    build on any breaking change, across every TFM in the package. Without this,
+    deleting a public member, narrowing a parameter type, or dropping a type
+    forwarder produced a green CI run and a silently breaking package — and the
+    push to NuGet.org is irreversible, so the guard has to run before it.
+
+    Deliberate breaks are not blocked, only made explicit: run
+    `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` on the offending
+    project, which writes a CompatibilitySuppressions.xml next to its .csproj.
+    Commit it with a comment per entry so the break is reviewed in the PR.
+
+    ### AT RELEASE TIME ###
+    Bump CelerityPackageValidationBaseline below to the version you are about to
+    tag, in the same commit that moves the CHANGELOG's [Unreleased] block to
+    [X.Y.Z]. This is the part that rots: a stale baseline silently validates
+    against an older surface, so a break introduced after it goes unnoticed. The
+    ritual is written up in CONTRIBUTING.md, section "Cutting a release".
+
+    All six shipped packages (Celerity.Collections / Celerity.Hashing /
+    Celerity.Primitives / Celerity.Ring / Celerity.Sentinel / Celerity.Cardinality)
+    are published at this baseline and share it. A brand-new package has no
+    published predecessor to validate against, and asking for one fails the
+    restore, so its .csproj sets CelerityNoPublishedBaseline to true until its
+    first release ships, then drops the property.
+
+    Only the baseline version lives here, so there is exactly one line to bump.
+    Turning validation on has to happen later, in Directory.Build.targets, where
+    IsPackable is known; see the comment there.
+  -->
+  <PropertyGroup>
+    <CelerityPackageValidationBaseline>2.4.0</CelerityPackageValidationBaseline>
+  </PropertyGroup>
+
 </Project>

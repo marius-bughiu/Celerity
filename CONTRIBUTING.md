@@ -129,13 +129,30 @@ Releases are automated. Pushing a `v`-prefixed tag fires `.github/workflows/rele
 
 ```bash
 # 1. Move the CHANGELOG [Unreleased] block to [X.Y.Z] (with today's date if you
-#    want one — the workflow does not require a date), commit, and merge to main.
-# 2. Tag the merge commit and push the tag.
+#    want one — the workflow does not require a date).
+# 2. In the SAME commit, bump <CelerityPackageValidationBaseline> in
+#    src/Directory.Build.props to X.Y.Z. See "Package validation" below.
+# 3. Commit, merge to main, then tag the merge commit and push the tag.
 git tag -a v1.2.0 -m "Release 1.2.0"
 git push origin v1.2.0
 ```
 
-The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as the GitHub Release body. If no matching section exists for the tag's version, the workflow fails loudly — the fix is to update `CHANGELOG.md` and re-tag.
+The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as the GitHub Release body. Two things can go wrong with that — no section exists for the tag's version, or the section exceeds GitHub's ~125k release-body cap — and both are checked in the `build` job, **before** anything is pushed to NuGet.org. A failure there means nothing shipped: fix `CHANGELOG.md` and re-tag. You can check a section before tagging:
+
+```bash
+./.github/scripts/extract-release-notes.sh 1.2.0
+```
+
+### Package validation
+
+Every `dotnet pack` validates each package against its last published version and **fails the build on any breaking API change**, across all three TFMs. Since the NuGet push is irreversible, this guard has to run before it — so it runs on every release build, and locally whenever you pack.
+
+The baseline is one property, `<CelerityPackageValidationBaseline>` in `src/Directory.Build.props`, shared by all six packages. **Bump it to the version you are about to tag, in the same commit that moves the CHANGELOG block.** This is the part that rots: a stale baseline keeps validating against an older surface, so a break introduced after it slips through.
+
+Two situations need a deliberate decision rather than a workaround:
+
+- **An intentional break.** Run `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` on the offending project, which writes a `CompatibilitySuppressions.xml` next to its `.csproj`. Commit it with a comment explaining each entry, so the break is reviewed in the PR instead of discovered by a consumer.
+- **A package's first release.** There is no published predecessor to validate against, and asking for one fails the restore. Set `<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>` in that package's `.csproj`, ship it once, then delete the property.
 
 `workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push.
 
