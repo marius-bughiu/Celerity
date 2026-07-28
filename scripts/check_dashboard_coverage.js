@@ -167,15 +167,17 @@ function main() {
     }
 
     for (const col of index.COLLECTIONS) {
+      // The primary count, exactly as index.html picks it: a card's ratio text may fall
+      // back to the smaller count, but its chart is always seriesFor(..., primaryN), and
+      // that is what decides between a sparkline and "awaiting data". So the primary
+      // count is the one that has to resolve.
       const items = col.items || [1000, 100000];
+      const primaryN = items[items.length - 1];
       for (const op of col.ops) {
-        const resolved = items.some((n) => {
-          const pair = idx[index.idxKey(col.key, op, n)];
-          return pair && pair.bcl && pair.celerity;
-        });
-        if (!resolved) {
-          const at = items.map((n) => (n == null ? 'no sweep' : n)).join(' / ');
-          problems.push(`${col.key}.${op} has no BCL+Celerity pair at ${at} — that card renders empty.`);
+        const pair = idx[index.idxKey(col.key, op, primaryN)];
+        if (!pair || !pair.bcl || !pair.celerity) {
+          const at = primaryN == null ? 'no sweep' : primaryN;
+          problems.push(`${col.key}.${op} has no BCL+Celerity pair at ${at} — that card renders "awaiting data".`);
         }
       }
     }
