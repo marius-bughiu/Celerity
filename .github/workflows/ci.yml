@@ -57,6 +57,21 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # The benchmark workflow only fires on `src/**`, so a dashboard-only change never
+  # reaches the report-backed run of this same script in benchmarks.yml. These are the
+  # structural checks, which need no measurements and cost seconds.
+  dashboard-coverage:
+    name: dashboard-coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+
+      - name: Check dashboard wiring
+        run: node scripts/check_dashboard_coverage.js
+
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})
     runs-on: ubuntu-latest

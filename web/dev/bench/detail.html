@@ -105,6 +105,8 @@
       overflow: hidden;
       background: var(--bg);
     }
+    /* An unparameterized benchmark has one bucket and no buttons; hide the empty frame. */
+    .toggle:empty { display: none; }
     .toggle button {
       background: var(--bg);
       border: none;
@@ -348,6 +350,10 @@
   'use strict';
 
   // Keep in sync with web/dev/bench/index.html.
+  // `items: [NO_SWEEP]` marks a benchmark class that declares no [Params]: its
+  // measurements carry no parenthesized suffix, so there is a single bucket and
+  // no item-count toggle.
+  var NO_SWEEP = null;
   var COLLECTIONS = [
     { key: 'IntDictionary',       title: 'IntDictionary<int>',                    vs: 'Dictionary<int, int>' },
     { key: 'LongDictionary',      title: 'LongDictionary<int>',                   vs: 'Dictionary<long, int>' },
@@ -360,7 +366,7 @@
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',       vs: 'Dictionary<int, List<int>>' },
     { key: 'CelerityMultiSet',    title: 'CelerityMultiSet<int, ...>',            vs: 'Dictionary<int, int>' },
     { key: 'SmallDictionary',     title: 'SmallDictionary<int, int>',             vs: 'Dictionary<int, int>', items: [8, 64] },
-    { key: 'EnumMap',             title: 'EnumMap<TEnum, TValue>',                vs: 'Dictionary<TEnum, V>' },
+    { key: 'EnumMap',             title: 'EnumMap<TEnum, TValue>',                vs: 'Dictionary<TEnum, V>', items: [NO_SWEEP] },
     { key: 'IntSet',              title: 'IntSet',                                vs: 'HashSet<int>' },
     { key: 'LongSet',             title: 'LongSet',                               vs: 'HashSet<long>' },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                 vs: 'HashSet<int>' },
@@ -370,7 +376,7 @@
     { key: 'PooledCeleritySet',   title: 'PooledCeleritySet<int, ...>',           vs: 'HashSet<int>' },
     { key: 'FrozenCeleritySet',   title: 'FrozenCeleritySet',                     vs: 'FrozenSet<string>' },
     { key: 'SmallSet',            title: 'SmallSet<int>',                         vs: 'HashSet<int>', items: [8, 64] },
-    { key: 'EnumSet',             title: 'EnumSet<TEnum>',                        vs: 'HashSet<TEnum>' },
+    { key: 'EnumSet',             title: 'EnumSet<TEnum>',                        vs: 'HashSet<TEnum>', items: [NO_SWEEP] },
     { key: 'SparseSet',           title: 'SparseSet',                             vs: 'HashSet<int>' },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                vs: 'HashSet<int>' },
@@ -420,8 +426,15 @@
     return;
   }
   // Most collections use the default 1k / 100k counts; a small-n collection like
-  // SmallDictionary overrides them with collection.items.
+  // SmallDictionary overrides them with collection.items, and an unparameterized one
+  // carries the single [NO_SWEEP] bucket.
   var itemCounts = collection.items || SUPPORTED_ITEM_COUNTS;
+  var sweeps = itemCounts.length > 1 || itemCounts[0] != null;
+
+  // Subtitle / notice label for an item count, which is absent on an unparameterized run.
+  function itemCountLabel(n) {
+    return n == null ? 'no item-count sweep' : n.toLocaleString() + ' items';
+  }
   if (params.n === null) {
     params.n = itemCounts[itemCounts.length - 1];
   }
@@ -442,14 +455,18 @@
   }
   var runs = data.entries['Celerity Benchmarks'];
 
+  // Keep in sync with the parser in index.html: the ItemCount suffix is optional, so a
+  // class that declares no [Params] parses with itemCount === NO_SWEEP instead of being
+  // dropped. A class whose params property is named something other than ItemCount stays
+  // unparsed by design — scripts/check_dashboard_coverage.js fails CI on it.
   function parseName(name) {
-    var m = name.match(/^(\w+)Benchmark\.(\w+?)_(\w+)\(ItemCount:\s*(\d+)\)$/);
+    var m = name.match(/^(\w+)Benchmark\.(\w+?)_(\w+)(?:\(ItemCount:\s*(\d+)\))?$/);
     if (!m) return null;
     return {
       collection: m[1],
       typeName: m[2],
       op: m[3],
-      itemCount: parseInt(m[4], 10),
+      itemCount: m[4] != null ? parseInt(m[4], 10) : NO_SWEEP,
       isBcl: BCL_TYPES.has(m[2])
     };
   }
@@ -555,7 +572,9 @@
         '<tbody></tbody>' +
       '</table>';
 
-    // Build the toggle buttons.
+    // Build the toggle buttons. An unparameterized benchmark has a single bucket and
+    // nothing to toggle between, so the control is left empty (and hidden by CSS).
+    if (!sweeps) return;
     var toggle = document.getElementById('n-toggle');
     itemCounts.forEach(function (n) {
       var btn = document.createElement('button');
@@ -579,7 +598,7 @@
 
   function renderDynamic() {
     document.getElementById('op-label').textContent = params.op;
-    document.getElementById('n-label').textContent = params.n.toLocaleString() + ' items';
+    document.getElementById('n-label').textContent = itemCountLabel(params.n);
 
     // Active toggle button.
     document.querySelectorAll('#n-toggle button').forEach(function (b) {
@@ -593,7 +612,8 @@
       // Replace the dynamic region with a notice but keep the header.
       var notice = document.createElement('div');
       notice.className = 'notice';
-      notice.innerHTML = 'No measurements recorded for <code>' + collection.title + '.' + params.op + '</code> at ' + params.n.toLocaleString() + ' items yet. <a href="./">Back to dashboard &rarr;</a>';
+      notice.innerHTML = 'No measurements recorded for <code>' + collection.title + '.' + params.op + '</code>' +
+        (params.n == null ? '' : ' at ' + params.n.toLocaleString() + ' items') + ' yet. <a href="./">Back to dashboard &rarr;</a>';
       // Remove headline + chart + table; insert notice in their place.
       ['headline','chart-wrap','section-head','measurements'].forEach(function () { /* placeholder */ });
       var existing = document.querySelector('.headline');
