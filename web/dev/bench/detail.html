@@ -612,7 +612,8 @@
       // Replace the dynamic region with a notice but keep the header.
       var notice = document.createElement('div');
       notice.className = 'notice';
-      notice.innerHTML = 'No measurements recorded for <code>' + collection.title + '.' + params.op + '</code>' +
+      // `op` is whatever the query string says, so it is escaped before it reaches innerHTML.
+      notice.innerHTML = 'No measurements recorded for <code>' + collection.title + '.' + escapeHtml(params.op) + '</code>' +
         (params.n == null ? '' : ' at ' + params.n.toLocaleString() + ' items') + ' yet. <a href="./">Back to dashboard &rarr;</a>';
       // Remove headline + chart + table; insert notice in their place.
       ['headline','chart-wrap','section-head','measurements'].forEach(function () { /* placeholder */ });
