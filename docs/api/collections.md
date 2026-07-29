@@ -2741,6 +2741,135 @@ aMask.And(bMask);                     // SIMD over 64-bit words
 
 ---
 
+## RankSelectBitVector
+
+```csharp
+public sealed class RankSelectBitVector
+```
+
+An **immutable** succinct index over a dense bit vector that answers the two positional
+queries `BitSet` cannot:
+
+- **`Rank(i)`** — how many bits are set *below* position `i`, in `O(1)`.
+- **`Select(k)`** — the position of the `k`-th set bit, in `O(log n)`.
+
+### When *not* to use this — read first
+
+The vector is a **snapshot taken at construction** and the type has no mutating member.
+A caller who changes the underlying bits must build a new `RankSelectBitVector`, which
+costs `O(Length / 64)`. That makes this the wrong type for anything that mutates while
+it queries — free-slot allocators, ECS id compaction, live "visited" sets — where a
+rebuild per update is strictly *worse* than the naive counting loop. Use `BitSet` (or
+`SparseSet`) there, and snapshot into a `RankSelectBitVector` only once the bits have
+settled.
+
+### The documented BCL-beating workload
+
+There is no BCL counterpart at all: `BitArray` exposes neither rank nor select,
+`BitOperations.PopCount` is per-word, and .NET 8/9/10 ship no succinct data-structure
+support — so the honest baseline is the loop a caller writes by hand, popcounting every
+word below the query position. That loop is `O(index / 64)`: at the midpoint of a
+100-million-bit vector it is roughly 780,000 iterations, which this type replaces with
+two index loads and one masked population count, at a cost independent of the position.
+
+The winning workloads are all **build-once**: dense↔sparse index remapping in column
+stores (map a dense row ordinal to its position in a sparse column and back), succinct
+and compressed tries, and wavelet trees. See the
+[rank/select benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankSelectBitVector)
+on the dashboard, whose baseline arm *is* that hand-rolled loop.
+
+### How it works, and what it costs
+
+The index is two arrays: an `int` per **256-bit superblock** holding the number of set
+bits before it, plus a `byte` per **64-bit word** holding the number of set bits before
+that word *within its superblock* (at most 192, so a byte suffices — which is what pins
+the superblock at 256 bits). `Rank` is then one load from each array plus a single
+masked `POPCNT` of the query word. `Select` binary-searches the superblock array, walks
+the at most four words inside the chosen superblock, and resolves the position within
+that word by a six-step popcount narrowing.
+
+Together the two arrays cost 8 bytes per 32 bytes of vector — **25% over the bits
+themselves**, the same price as the classic rank9 layout and the standard cost of an
+exact rank that touches a single word. `IndexSizeInBytes` reports the exact figure for a
+given instance.
+
+### Constructors
+
+```csharp
+public RankSelectBitVector(BitSet bits)
+public RankSelectBitVector(int length, ReadOnlySpan<ulong> words)
+public RankSelectBitVector(int length, IEnumerable<int> positions)
+```
+
+- `RankSelectBitVector(BitSet bits)` — snapshots and indexes an existing `BitSet`. Later
+  mutations of `bits` do not affect the vector.
+- `RankSelectBitVector(int length, ReadOnlySpan<ulong> words)` — reads packed words,
+  where bit `i` is bit `i % 64` of word `i / 64`. The span must hold at least
+  `ceil(length / 64)` entries; any further words, and any bits at or beyond `length` in
+  the final word, are ignored.
+- `RankSelectBitVector(int length, IEnumerable<int> positions)` — sets the bits at the
+  given positions, in any order. Repeated positions are idempotent.
+
+**Throws:**
+
+- `ArgumentNullException` if `bits` or `positions` is `null`.
+- `ArgumentOutOfRangeException` if `length` is negative, or a position is outside
+  `[0, length)`.
+- `ArgumentException` if `words` is too short to hold `length` bits.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Length { get; }` | The number of bits in the vector. |
+| `int Count { get; }` | The number of set bits. Precomputed at construction, so this is a field read rather than the `O(Length / 64)` scan `BitSet.Count` performs. |
+| `int IndexSizeInBytes { get; }` | The size of the rank/select index, excluding the bits themselves — the space price of the constant-time rank. |
+| `bool this[int index] { get; }` / `bool Get(int index)` | The value of a single bit. `ArgumentOutOfRangeException` outside `[0, Length)`. |
+| `int Rank(int index)` | The number of set bits strictly below `index`, in `O(1)`. `index` runs from `0` to `Length` **inclusive**: `Rank(0)` is `0` and `Rank(Length)` is `Count`. `ArgumentOutOfRangeException` outside that range. |
+| `int Rank0(int index)` | The number of *clear* bits strictly below `index` — the complement identity `index - Rank(index)`, with the same bounds. |
+| `int Select(int rank)` | The position of the `rank`-th set bit, counting from zero, in `O(log n)`. Satisfies `Rank(Select(k)) == k`. Throws `ArgumentOutOfRangeException` if `rank` is outside `[0, Count)`. |
+| `bool TrySelect(int rank, out int position)` | The non-throwing form: returns `false` and sets `position` to `-1` when `rank` is outside `[0, Count)`. |
+| `BitSet ToBitSet()` | A new, mutable `BitSet` holding a copy of the indexed bits — the way to edit a vector and rebuild the index over the result. |
+
+The type holds no mutable state after construction, so instances are safe to share
+across threads.
+
+### Choosing it
+
+Reach for `RankSelectBitVector` when a bit vector is **filled, frozen, and then queried
+many times** by position, and the query is "how many before here" or "where is the k-th
+one". If you only need the total set-bit count, `BitSet.Count` already gives it in one
+pass with no index. If the bits keep changing, stay on `BitSet` — the rebuild dominates.
+If you need prefix *sums over numbers* rather than counts over bits, and the values
+mutate, that is `FenwickTree<T>`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A column store keeps values only for the rows that are non-null. `present` marks
+// which logical rows those are; `values` is the dense array of just those rows.
+var present = new BitSet(rowCount);
+foreach (int row in nonNullRows)
+    present[row] = true;
+
+// Freeze the presence mask and index it once, after the load has finished.
+var index = new RankSelectBitVector(present);
+
+// Logical row -> dense slot: the number of present rows before it.
+if (index[row])
+    Console.WriteLine(values[index.Rank(row)]);
+
+// Dense slot -> logical row: the inverse direction, in O(log n).
+int logicalRow = index.Select(slot);
+
+// Both directions without the index would be a scan of the whole mask.
+Console.WriteLine($"{index.Count} present rows, index costs {index.IndexSizeInBytes} bytes");
+```
+
+---
+
 ## HyperLogLog&lt;T, THasher&gt;
 
 A space-efficient **probabilistic cardinality estimator** parameterized on a custom

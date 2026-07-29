@@ -50,6 +50,7 @@ internal static class Differential
         ("CuckooFilter", CuckooFilterCase),
         ("XorFilter", XorFilterCase),
         ("BitSet", BitSetCase),
+        ("RankSelectBitVector", RankSelectBitVectorCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
         ("BloomFilterMerge", BloomFilterMergeCase),
@@ -973,6 +974,62 @@ internal static class Differential
             Check(xor[i] == (oracle[i] ^ otherBits[i]), $"Xor bit {i}");
             Check(not[i] == !oracle[i], $"Not bit {i}");
         }
+    }
+
+    // ---- succinct rank/select index -----------------------------------------
+
+    // RankSelectBitVector is immutable, so the randomization is in the vector rather than
+    // in an operation sequence: a random length that straddles the 64-bit block and
+    // 256-bit superblock boundaries, at a random density that reaches both degenerate
+    // ends. Every rank position and every select ordinal is then reconciled against the
+    // naive bool[] counting loop the type exists to replace, and all three constructors
+    // are checked to index the same bits.
+    private static void RankSelectBitVectorCase(Random rng)
+    {
+        int length = rng.Next(0, 1200);
+        int densityPercent = rng.Next(0, 101);
+
+        var oracle = new bool[length];
+        var positions = new List<int>();
+        for (int i = 0; i < length; i++)
+        {
+            if (rng.Next(100) < densityPercent)
+            {
+                oracle[i] = true;
+                positions.Add(i);
+            }
+        }
+
+        var sut = new RankSelectBitVector(length, positions);
+        var fromBitSet = new RankSelectBitVector(new BitSet(oracle));
+
+        Check(sut.Length == length, "Length disagreed");
+        Check(sut.Count == positions.Count, "Count disagreed");
+        Check(fromBitSet.Count == positions.Count, "BitSet-snapshot Count disagreed");
+
+        int rank = 0;
+        for (int i = 0; i <= length; i++)
+        {
+            Check(sut.Rank(i) == rank, $"Rank({i}) disagreed");
+            Check(sut.Rank0(i) == i - rank, $"Rank0({i}) disagreed");
+            Check(fromBitSet.Rank(i) == rank, $"BitSet-snapshot Rank({i}) disagreed");
+            if (i < length)
+            {
+                Check(sut[i] == oracle[i], $"bit {i} disagreed");
+                if (oracle[i])
+                    rank++;
+            }
+        }
+
+        for (int k = 0; k < positions.Count; k++)
+            Check(sut.Select(k) == positions[k], $"Select({k}) disagreed");
+
+        Check(!sut.TrySelect(positions.Count, out int missing) && missing == -1,
+            "TrySelect past the last set bit disagreed");
+
+        // ToBitSet feeds the mutable type back in; re-indexing it must be a fixed point.
+        var rebuilt = new RankSelectBitVector(sut.ToBitSet());
+        Check(rebuilt.Length == length && rebuilt.Count == positions.Count, "ToBitSet round trip disagreed");
     }
 
     // ---- cardinality estimator ----------------------------------------------

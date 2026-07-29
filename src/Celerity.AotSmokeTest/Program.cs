@@ -1127,6 +1127,39 @@ void Check(bool condition, string message)
     }
 }
 
+// RankSelectBitVector — immutable succinct rank/select index over a dense bit vector.
+// Exercise all three constructors, the O(1) Rank / Rank0, the O(log n) Select and its
+// Try counterpart, and ToBitSet, over a vector long enough to span several 256-bit
+// superblocks so the AOT publish compiles the two-level index build, the superblock
+// binary search, and the within-word popcount narrowing.
+{
+    var sparse = new RankSelectBitVector(1000, new[] { 0, 63, 64, 255, 256, 700, 999 });
+    Check(sparse.Length == 1000 && sparse.Count == 7, "RankSelectBitVector positions ctor");
+    Check(sparse.Rank(0) == 0 && sparse.Rank(64) == 2 && sparse.Rank(1000) == 7, "RankSelectBitVector rank");
+    Check(sparse.Rank0(64) == 62 && sparse.Rank0(1000) == 993, "RankSelectBitVector rank0");
+    Check(sparse.Select(0) == 0 && sparse.Select(3) == 255 && sparse.Select(6) == 999, "RankSelectBitVector select");
+    Check(sparse.TrySelect(1, out int secondSetBit) && secondSetBit == 63, "RankSelectBitVector try-select");
+    Check(!sparse.TrySelect(7, out int noSuchBit) && noSuchBit == -1, "RankSelectBitVector try-select past the end");
+    Check(sparse[256] && !sparse[257], "RankSelectBitVector get");
+    Check(sparse.IndexSizeInBytes > 0, "RankSelectBitVector index size");
+
+    var dense = new BitSet(600);
+    for (int i = 0; i < 600; i += 3) dense[i] = true;
+    var indexed = new RankSelectBitVector(dense);
+    bool rankOk = true;
+    for (int i = 0; i <= 600; i++) rankOk &= indexed.Rank(i) == ((i + 2) / 3);
+    Check(rankOk, "RankSelectBitVector BitSet snapshot rank");
+    bool selectOk = true;
+    for (int k = 0; k < indexed.Count; k++) selectOk &= indexed.Select(k) == k * 3;
+    Check(selectOk, "RankSelectBitVector BitSet snapshot select");
+
+    var packed = new RankSelectBitVector(128, new ulong[] { ulong.MaxValue, 0b101UL });
+    Check(packed.Count == 66 && packed.Select(65) == 66, "RankSelectBitVector packed-words ctor");
+
+    BitSet roundTrip = indexed.ToBitSet();
+    Check(roundTrip.Length == 600 && roundTrip.Count == indexed.Count, "RankSelectBitVector ToBitSet");
+}
+
 // HyperLogLog — probabilistic cardinality estimator (no out-of-band slot; default(T)
 // is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
 // is never called with null). Exercise Add / EstimateCardinality / Clear / UnionWith
