@@ -17,6 +17,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- **The `EnumMap` and `EnumSet` cards on the benchmark dashboard rendered empty.** The page required an `(ItemCount: N)` suffix on every result name, and both benchmarks deliberately declare no item-count sweep, so their measurements were published and then discarded at render time. Both cards now chart their real numbers, and unparameterized benchmarks are excluded from the headline speedup stats. Closes [#301](https://github.com/marius-bughiu/Celerity/issues/301).
+- A blank dashboard card is now a red CI check rather than a silent gap: `scripts/check_dashboard_coverage.js` fails when a published result name is unparseable, when a card has no measurements behind it, or when a charted collection is missing from either `COLLECTIONS` array or from the CI benchmark suite. Closes [#301](https://github.com/marius-bughiu/Celerity/issues/301).
 - **The coverage gate measured only one of the six shipped packages.** Coverlet's assembly filter is exact-match, so `Celerity.Hashing`, `Celerity.Primitives`, and the three showcase packages had been outside the gate since the 2.0.0 package split — any of them could have dropped to 0% with CI green. All six are now measured, the gaps that exposed are backfilled to **100% line and branch** coverage, and the floor is raised from 95%/90% to match. Closes [#314](https://github.com/marius-bughiu/Celerity/issues/314).
 
 ## [2.4.0] - 2026-07-26

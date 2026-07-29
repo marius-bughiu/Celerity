@@ -155,6 +155,7 @@ jobs:
             exit 0
           fi
           echo "have_head=true" >> "$GITHUB_OUTPUT"
+          echo "head_shards=${#head_files[@]}" >> "$GITHUB_OUTPUT"
 
           # Stitch every shard's joined report back into one: keep shard 0's metadata,
           # concatenate all shards' Benchmarks arrays.
@@ -418,3 +419,11 @@ jobs:
           git -c user.name="github-actions" -c user.email="github-actions@github.com" \
             commit -m "Sync custom dashboard from ${GITHUB_SHA:0:7}"
           git push origin gh-pages
+
+      # Deliberately the LAST step: a dashboard-wiring mistake must not cost us the
+      # measurement, so the comment and the gh-pages publish above happen first and this
+      # only reddens the job. Skipped unless every shard reported, since a partial merge
+      # is legitimately missing whole benchmark classes (the job runs with if: always()).
+      - name: Check dashboard coverage of the merged report
+        if: steps.merge.outputs.have_head == 'true' && steps.merge.outputs.head_shards == env.SHARD_TOTAL
+        run: node scripts/check_dashboard_coverage.js /tmp/pr-report-full.json
