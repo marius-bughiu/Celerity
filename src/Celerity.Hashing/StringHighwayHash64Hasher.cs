@@ -80,11 +80,11 @@ namespace Celerity.Hashing;
 /// The algorithm carries 64 bits of state internally, so the type also implements
 /// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns that state un-folded, which is
 /// what the probabilistic sketches want (see <see cref="IHashProvider64{T}"/> for why the extra
-/// 32 bits matter there and not in a hash table). <see cref="Hash"/> is unchanged — it is
+/// 32 bits matter there and not in a hash table). <see cref="Hash(string)"/> is unchanged — it is
 /// exactly <c>h ^ (h &gt;&gt; 32)</c> of the 64-bit result.
 /// </para>
 /// </remarks>
-public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64<string>
+public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64<string>, ISpanHashProvider
 {
     // Fixed 256-bit key: the canonical HighwayHash reference test key (bytes
     // 00..1f read as four little-endian 64-bit words). Fixed because collections
@@ -110,7 +110,23 @@ public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int Hash(string key)
     {
-        ulong h64 = Hash64(key);
+        ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
+
+    /// <summary>
+    /// Computes the HighwayHash-64 hash of the specified character span (using this type's
+    /// fixed built-in key), xor-folded to a signed 32-bit result.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit, xor-folded HighwayHash-64 hash of <paramref name="key"/> — the same
+    /// value <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
+        ulong h64 = Hash64Core(key);
         return unchecked((int)(h64 ^ (h64 >> 32)));
     }
 
@@ -131,7 +147,15 @@ public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64
     public ulong Hash64(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash64Core(key.AsSpan());
+    }
 
+    // The single 64-bit body. Both Hash64(string) and the span-based Hash(ReadOnlySpan<char>)
+    // route through it, so the string and span overloads cannot drift apart — the parity the
+    // ISpanHashProvider contract requires.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong Hash64Core(ReadOnlySpan<char> key)
+    {
         // Four lanes of 64-bit state, held on the stack (no heap allocation).
         Span<ulong> v0 = stackalloc ulong[4];
         Span<ulong> v1 = stackalloc ulong[4];
@@ -277,7 +301,7 @@ public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void UpdateRemainder(
-        string key, int tailStartChar, int sizeMod32,
+        ReadOnlySpan<char> key, int tailStartChar, int sizeMod32,
         Span<ulong> v0, Span<ulong> v1, Span<ulong> mul0, Span<ulong> mul1)
     {
         int sizeMod4 = sizeMod32 & 3;           // 0 or 2 on an always-even byte stream
@@ -340,7 +364,7 @@ public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64
     /// over the native little-endian UTF-16 stream.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Lane(string key, int i) =>
+    private static ulong Lane(ReadOnlySpan<char> key, int i) =>
         (ulong)key[i]
         | ((ulong)key[i + 1] << 16)
         | ((ulong)key[i + 2] << 32)
@@ -353,7 +377,7 @@ public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64
     /// offsets its high byte.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static byte TailByte(string key, int tailStartChar, int b) =>
+    private static byte TailByte(ReadOnlySpan<char> key, int tailStartChar, int b) =>
         (byte)(key[tailStartChar + (b >> 1)] >> ((b & 1) << 3));
 
     /// <summary>Rotates a 64-bit value by 32 bits (swaps its two 32-bit halves).</summary>

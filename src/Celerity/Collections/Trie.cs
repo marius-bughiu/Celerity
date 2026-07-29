@@ -259,6 +259,45 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         return false;
     }
 
+    /// <summary>
+    /// Determines whether the trie contains the characters in <paramref name="key"/>, without
+    /// materializing a <see cref="string"/> from the span.
+    /// </summary>
+    /// <param name="key">The characters to locate. An empty span means the key <c>""</c>.</param>
+    /// <returns><c>true</c> if the key is present; otherwise <c>false</c>.</returns>
+    /// <remarks>
+    /// A <see cref="Trie{TValue}"/> descends its keys character by character, so a span key costs
+    /// exactly what a <see cref="string"/> key costs — minus the <c>new string(span)</c> a caller
+    /// holding a slice of a parse buffer would otherwise have to allocate per lookup.
+    /// </remarks>
+    public bool ContainsKey(ReadOnlySpan<char> key)
+    {
+        Node? node = FindNode(key);
+        return node is not null && node.HasValue;
+    }
+
+    /// <summary>
+    /// Attempts to get the value associated with the characters in <paramref name="key"/>, without
+    /// materializing a <see cref="string"/> from the span.
+    /// </summary>
+    /// <param name="key">The characters to locate. An empty span means the key <c>""</c>.</param>
+    /// <param name="value">
+    /// When this method returns, the associated value if the key was found; otherwise the default
+    /// value of <typeparamref name="TValue"/>.
+    /// </param>
+    /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
+    public bool TryGetValue(ReadOnlySpan<char> key, out TValue? value)
+    {
+        Node? node = FindNode(key);
+        if (node is not null && node.HasValue)
+        {
+            value = node.Value;
+            return true;
+        }
+        value = default;
+        return false;
+    }
+
     /// <summary>Removes <paramref name="key"/> from the trie.</summary>
     /// <param name="key">The key to remove.</param>
     /// <returns><c>true</c> if the key was found and removed; otherwise <c>false</c>.</returns>
@@ -369,6 +408,19 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         Node? node = FindNode(prefix);
         // Because removal prunes dead paths, a surviving node either terminates a key or has descendants that
         // do; the only node that can exist while leading to no key is the root of an empty trie.
+        return node is not null && (node.HasValue || node.ChildCount != 0);
+    }
+
+    /// <summary>
+    /// Determines whether any stored key starts with the characters in <paramref name="prefix"/>
+    /// (a key equal to the prefix counts), without materializing a <see cref="string"/> from the
+    /// span. The empty span matches whenever the trie is non-empty.
+    /// </summary>
+    /// <param name="prefix">The characters to test as a prefix.</param>
+    /// <returns><c>true</c> if at least one key has <paramref name="prefix"/> as a prefix; otherwise <c>false</c>.</returns>
+    public bool ContainsPrefix(ReadOnlySpan<char> prefix)
+    {
+        Node? node = FindNode(prefix);
         return node is not null && (node.HasValue || node.ChildCount != 0);
     }
 
@@ -490,7 +542,9 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     // ---- internal machinery ----------------------------------------------------------------------
 
     // Walks the key from the root and returns the node it ends on, or null if the path breaks.
-    private Node? FindNode(string key)
+    // Takes a span so the string and span lookup surfaces share one descent; a string key is
+    // handed in as key.AsSpan(), which is free.
+    private Node? FindNode(ReadOnlySpan<char> key)
     {
         Node node = _root;
         for (int i = 0; i < key.Length; i++)

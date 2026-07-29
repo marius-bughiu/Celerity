@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Celerity.Hashing;
@@ -568,6 +569,51 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
 
     private static bool IsDefaultValue(T item) =>
         EmptySlot.Is(item);
+
+    // The hasher instance the span-lookup extension methods hand back to the probe below.
+    // The field is private and the extension methods live outside the type, so they need a
+    // way to reach it without the class itself carrying an ISpanHashProvider constraint —
+    // which could not be added to THasher without breaking every existing instantiation.
+    internal THasher Hasher => _hasher;
+
+    // The span twin of ProbeForItem. Generic in its own hasher type parameter (rather than
+    // reusing THasher) so the ISpanHashProvider constraint lives on the method: the class
+    // constraint stays exactly what it has always been, and the JIT still devirtualizes the
+    // hash call because TSpanHasher is a struct type parameter.
+    //
+    // Only reachable from SpanLookupExtensions, whose signatures pin T to string — which is
+    // what makes the reinterpretation of the slot below sound.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int ProbeForItem<TSpanHasher>(ReadOnlySpan<char> item, TSpanHasher hasher)
+        where TSpanHasher : struct, ISpanHashProvider
+    {
+        // The slot reinterpretation below is a no-op only while T really is string. Nothing in the
+        // type system says so — the extension methods' signatures do — so assert it. Debug.Assert is
+        // [Conditional("DEBUG")], so this costs nothing in a release build and the hot path is
+        // unchanged; it exists to catch a future in-assembly caller that forgets the precondition.
+        Debug.Assert(typeof(T) == typeof(string),
+            "The span probe reinterprets each slot as a string; it is only valid for T == string.");
+
+        T?[] slots = _slots;
+        ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+        int mask = slots.Length - 1;
+        int index = hasher.Hash(item) & mask;
+
+        while (true)
+        {
+            ref T? slot = ref Unsafe.Add(ref slotsRef, (nint)(uint)index);
+            if (EmptySlot.Is(slot))
+                return -1;
+
+            // T is string at every call site (see above), so this is a no-op
+            // reinterpretation rather than a cast. Comparing the spans is ordinal, matching
+            // the EqualityComparer<string>.Default the string-keyed probe uses.
+            if (item.SequenceEqual(Unsafe.As<T?, string?>(ref slot).AsSpan()))
+                return index;
+
+            index = (index + 1) & mask;
+        }
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ProbeForItem(T item)

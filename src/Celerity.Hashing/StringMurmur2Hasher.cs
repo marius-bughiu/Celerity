@@ -56,7 +56,7 @@ namespace Celerity.Hashing;
 /// sentinel.
 /// </para>
 /// </remarks>
-public struct StringMurmur2Hasher : IHashProvider<string>
+public struct StringMurmur2Hasher : IHashProvider<string>, ISpanHashProvider
 {
     private const uint M = 0x5bd1e995u;
     private const int R = 24;
@@ -78,7 +78,21 @@ public struct StringMurmur2Hasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the MurmurHash2 (32-bit, seed <c>0</c>) hash of the specified character
+    /// span over the full little-endian UTF-16 byte stream (both bytes of every character).
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit MurmurHash2 hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         int length = key.Length;
 
         // MurmurHash2 seeds the accumulator with seed ^ byteLength; seed is 0 here,

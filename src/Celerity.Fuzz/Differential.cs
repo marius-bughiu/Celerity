@@ -45,6 +45,7 @@ internal static class Differential
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
+        ("StringInternTable", StringInternTableCase),
         ("BloomFilter", BloomFilterCase),
         ("CuckooFilter", CuckooFilterCase),
         ("XorFilter", XorFilterCase),
@@ -1235,6 +1236,72 @@ internal static class Differential
             seen++;
         }
         Check(seen == oracle.Count, $"enumeration count {seen} != {oracle.Count}");
+    }
+
+    private static void StringInternTableCase(Random rng)
+    {
+        // A tiny, duplicate-rich token universe so hits dominate misses and probe chains stay
+        // dense; the table starts undersized so the run drives several resizes.
+        var table = new StringInternTable(capacity: 2);
+
+        // The oracle maps a token's contents to the canonical instance first handed out.
+        var oracle = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        int steps = rng.Next(0, 400);
+        for (int i = 0; i < steps; i++)
+        {
+            string token = $"tok_{rng.Next(0, 30)}";
+            int op = rng.Next(100);
+
+            if (op < 50)
+            {
+                // Intern from a span carved out of a larger buffer — the parser shape. Only a
+                // miss may materialize a string; a hit must return the instance already held.
+                string padded = $"<<{token}>>";
+                string interned = table.GetOrAdd(padded.AsSpan(2, token.Length));
+
+                Check(interned == token, $"GetOrAdd(span) returned {interned} for {token}");
+                if (oracle.TryGetValue(token, out string? canonical))
+                    Check(ReferenceEquals(canonical, interned), $"GetOrAdd(span) re-allocated {token}");
+                else
+                    oracle[token] = interned;
+            }
+            else if (op < 70)
+            {
+                string supplied = new string(token.ToCharArray());
+                string interned = table.GetOrAdd(supplied);
+
+                if (oracle.TryGetValue(token, out string? canonical))
+                    Check(ReferenceEquals(canonical, interned), $"GetOrAdd(string) re-allocated {token}");
+                else
+                {
+                    Check(ReferenceEquals(supplied, interned), $"GetOrAdd(string) did not adopt {token}");
+                    oracle[token] = interned;
+                }
+            }
+            else if (op < 90)
+            {
+                bool expected = oracle.TryGetValue(token, out string? canonical);
+                bool actual = table.TryGet(token.AsSpan(), out string? found);
+                Check(expected == actual, $"TryGet({token}) {actual} != {expected}");
+                Check(!expected || ReferenceEquals(canonical, found), $"TryGet({token}) returned a non-canonical instance");
+                Check(table.Contains(token.AsSpan()) == expected, $"Contains(span {token}) != {expected}");
+                Check(table.Contains(token) == expected, $"Contains(string {token}) != {expected}");
+            }
+            else
+            {
+                int seen = 0;
+                foreach (string s in table)
+                {
+                    Check(oracle.TryGetValue(s, out string? canonical) && ReferenceEquals(canonical, s),
+                        $"enumeration yielded a non-canonical or absent {s}");
+                    seen++;
+                }
+                Check(seen == oracle.Count, $"enumeration count {seen} != {oracle.Count}");
+            }
+
+            Check(table.Count == oracle.Count, $"Count {table.Count} != {oracle.Count}");
+        }
     }
 
     private static void FrozenSetCase(Random rng)

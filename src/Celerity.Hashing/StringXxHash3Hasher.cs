@@ -63,11 +63,11 @@ namespace Celerity.Hashing;
 /// The algorithm carries 64 bits of state internally, so the type also implements
 /// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns that state un-folded, which is
 /// what the probabilistic sketches want (see <see cref="IHashProvider64{T}"/> for why the extra
-/// 32 bits matter there and not in a hash table). <see cref="Hash"/> is unchanged — it is
+/// 32 bits matter there and not in a hash table). <see cref="Hash(string)"/> is unchanged — it is
 /// exactly <c>h ^ (h &gt;&gt; 32)</c> of the 64-bit result.
 /// </para>
 /// </remarks>
-public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<string>
+public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<string>, ISpanHashProvider
 {
     private const ulong Prime64_1 = 0x9E3779B185EBCA87UL;
     private const ulong Prime64_2 = 0xC2B2AE3D27D4EB4FUL;
@@ -124,7 +124,23 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int Hash(string key)
     {
-        ulong h64 = Hash64(key);
+        ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
+
+    /// <summary>
+    /// Computes the XXH3-64 hash of the specified character span, xor-folded to a
+    /// signed 32-bit result.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit, xor-folded XXH3-64 hash of <paramref name="key"/> — the same
+    /// value <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
+        ulong h64 = Hash64Core(key);
         return unchecked((int)(h64 ^ (h64 >> 32)));
     }
 
@@ -145,7 +161,15 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     public ulong Hash64(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash64Core(key.AsSpan());
+    }
 
+    // The single 64-bit body. Both Hash64(string) and the span-based Hash(ReadOnlySpan<char>)
+    // route through it, so the string and span overloads cannot drift apart — the parity the
+    // ISpanHashProvider contract requires.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong Hash64Core(ReadOnlySpan<char> key)
+    {
         // n = count of UTF-16 code units (chars); the conceptual byte length is 2 * n,
         // which is always even — so every XXH3 read in the 4-to-240-byte and long
         // paths lands on a char boundary. The single odd-aligned read in XXH3 (the
@@ -197,7 +221,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     // ── Short-length code paths (seed 0) ──────────────────────────────────────
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Len4to8(string s, int n)
+    private static ulong Len4to8(ReadOnlySpan<char> s, int n)
     {
         ulong byteLength = (ulong)(2 * n);
         uint input1 = Key32(s, 0);          // bytes [0, 4)
@@ -208,7 +232,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Len9to16(string s, int n)
+    private static ulong Len9to16(ReadOnlySpan<char> s, int n)
     {
         ulong byteLength = (ulong)(2 * n);
         ulong bitflip1 = Sec64(24) ^ Sec64(32);
@@ -222,7 +246,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
         return Xxh3Avalanche(acc);
     }
 
-    private static ulong Len17to128(string s, int n)
+    private static ulong Len17to128(ReadOnlySpan<char> s, int n)
     {
         int len = 2 * n; // byte length, in (16, 128]
         ulong acc = (ulong)len * Prime64_1;
@@ -250,7 +274,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
         return Xxh3Avalanche(acc);
     }
 
-    private static ulong Len129to240(string s, int n)
+    private static ulong Len129to240(ReadOnlySpan<char> s, int n)
     {
         int len = 2 * n; // byte length, in (128, 240]
         ulong acc = (ulong)len * Prime64_1;
@@ -276,7 +300,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
 
     // ── Long code path (> 240 bytes), default secret / seed 0 ─────────────────
 
-    private static ulong HashLong(string s, int n)
+    private static ulong HashLong(ReadOnlySpan<char> s, int n)
     {
         long byteLength = 2L * n;
 
@@ -311,7 +335,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void Accumulate(Span<ulong> acc, string s, int startChar, int nbStripes)
+    private static void Accumulate(Span<ulong> acc, ReadOnlySpan<char> s, int startChar, int nbStripes)
     {
         for (int i = 0; i < nbStripes; i++)
         {
@@ -321,7 +345,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void AccumulateStripe(Span<ulong> acc, string s, int stripeChar, int secretOffset)
+    private static void AccumulateStripe(Span<ulong> acc, ReadOnlySpan<char> s, int stripeChar, int secretOffset)
     {
         for (int lane = 0; lane < 8; lane++)
         {
@@ -367,7 +391,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     /// through a 128-bit multiply. Seed is <c>0</c>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Mix16B(string s, int ci, int so)
+    private static ulong Mix16B(ReadOnlySpan<char> s, int ci, int so)
     {
         ulong inputLo = Key64(s, ci);
         ulong inputHi = Key64(s, ci + 4);
@@ -420,7 +444,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     /// byte-oriented XXH3 would read over the native little-endian UTF-16 stream.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Key64(string s, int ci) =>
+    private static ulong Key64(ReadOnlySpan<char> s, int ci) =>
         (ulong)s[ci]
         | ((ulong)s[ci + 1] << 16)
         | ((ulong)s[ci + 2] << 32)
@@ -431,7 +455,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     /// starting at char index <paramref name="ci"/>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Key32(string s, int ci) =>
+    private static uint Key32(ReadOnlySpan<char> s, int ci) =>
         (uint)s[ci] | ((uint)s[ci + 1] << 16);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

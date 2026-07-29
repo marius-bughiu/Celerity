@@ -66,7 +66,7 @@ namespace Celerity.Hashing;
 /// sentinel.
 /// </para>
 /// </remarks>
-public struct StringDjb2AHasher : IHashProvider<string>
+public struct StringDjb2AHasher : IHashProvider<string>, ISpanHashProvider
 {
     /// <summary>
     /// Computes the djb2a (XOR-folding) hash of the specified string over the
@@ -84,7 +84,21 @@ public struct StringDjb2AHasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the djb2a (XOR-folding) hash of the specified character span over
+    /// the full little-endian UTF-16 byte stream (both bytes of every character).
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit djb2a hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         uint hash = 5381u;
         foreach (char c in key)
         {
