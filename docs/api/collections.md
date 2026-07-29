@@ -144,6 +144,10 @@ public Enumerator GetEnumerator()
 
 Returns a struct enumerator that yields `KeyValuePair<TKey, TValue?>`. The out-of-band default-key entry is yielded first if present. *Structurally* mutating the dictionary during enumeration — adding a new key, removing a key, or `Clear` — throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Overwriting the value of an existing key via the indexer (`dict[existingKey] = newValue`) is *not* a structural change and does not invalidate an active enumerator, so the common "iterate and update values in place" pattern is legal. Iteration order is unspecified and may change between versions.
 
+### Span-keyed lookups (string keys)
+
+When `TKey` is `string` and the hasher also implements `ISpanHashProvider` (every built-in `String*Hasher` does), `TryGetValue(ReadOnlySpan<char>, out TValue?)` and `ContainsKey(ReadOnlySpan<char>)` probe directly from a slice of a caller-held buffer — no `new string(span)` per lookup. See [span-keyed lookups](#span-keyed-lookups).
+
 ### IReadOnlyDictionary&lt;TKey, TValue?&gt;
 
 `CelerityDictionary` implements `IReadOnlyDictionary<TKey, TValue?>` via thin explicit interface forwarders on top of the existing struct `KeyCollection` / `ValueCollection` / `Enumerator` types. The zero-allocation `foreach` fast path is preserved; the interface path boxes the enumerator exactly once per `GetEnumerator()` call, matching BCL `Dictionary<,>` behaviour. The out-of-band default-key entry is surfaced through every interface member.
@@ -656,6 +660,10 @@ The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<
 Each throws `ArgumentNullException` when `other` is `null`. The subset / equality shapes materialize `other` once into a distinct `HashSet<T>` keyed by `EqualityComparer<T>.Default` (the same equality the set itself uses); the superset / overlap shapes stream `other` directly against the set's O(1) membership test.
 
 > **`Add` note.** `ISet<T>.Add(T)` returns `bool` (the non-throwing add, equivalent to `TryAdd`). The concrete `public void Add(T)` keeps its throw-on-duplicate behaviour — cast to `ISet<T>`, or use `TryAdd`, when you want the boolean result. `ICollection<T>.Add(T)` ignores duplicates (never throws).
+
+### Span-keyed lookups (string elements)
+
+When `T` is `string` and the hasher also implements `ISpanHashProvider` (every built-in `String*Hasher` does), `Contains(ReadOnlySpan<char>)` probes directly from a slice of a caller-held buffer — no `new string(span)` per lookup. See [span-keyed lookups](#span-keyed-lookups).
 
 ### Default-element handling
 
@@ -1274,6 +1282,8 @@ var byName = new FrozenCelerityDictionary<int, StringMurmur3Hasher>(new[]
 Console.WriteLine(byName["alice"]); // 1
 ```
 
+Both the convenience type and this one also carry `TryGetValue(ReadOnlySpan<char>, out TValue?)` and `ContainsKey(ReadOnlySpan<char>)` — see [span-keyed lookups](#span-keyed-lookups).
+
 ## FrozenCeleritySet
 
 ```csharp
@@ -1390,6 +1400,8 @@ using Celerity.Hashing;
 var tags = new FrozenCeleritySet<StringMurmur3Hasher>(new[] { "alice", "bob" });
 Console.WriteLine(tags.Contains("alice")); // True
 ```
+
+Both the convenience type and this one also carry `Contains(ReadOnlySpan<char>)` — see [span-keyed lookups](#span-keyed-lookups).
 
 ## CelerityMultiMap&lt;TKey, TValue, THasher&gt;
 
@@ -3662,11 +3674,14 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `void Add(string key, TValue value)` | Adds a key. Throws `ArgumentException` if it already exists. |
 | `bool TryAdd(string key, TValue value)` | Adds a key, leaving an existing entry unchanged. Returns `false` if already present. |
 | `bool ContainsKey(string key)` | Whether `key` is a stored key (an interior-only prefix returns `false`). |
+| `bool ContainsKey(ReadOnlySpan<char> key)` | The same, from a character span — no `string` is materialized. See [span-keyed lookups](#span-keyed-lookups). |
 | `bool TryGetValue(string key, out TValue? value)` | Non-throwing exact lookup. |
+| `bool TryGetValue(ReadOnlySpan<char> key, out TValue? value)` | The same, from a character span. |
 | `bool Remove(string key)` | Removes a key, pruning any newly-dead nodes. Returns `false` if absent. |
 | `bool Remove(string key, out TValue? value)` | `Remove` returning the removed value (`default` when the key was absent). |
 | `void Clear()` | Removes all keys. |
 | `bool ContainsPrefix(string prefix)` | Whether any stored key starts with `prefix` (a key equal to the prefix counts). The empty prefix matches iff the trie is non-empty. |
+| `bool ContainsPrefix(ReadOnlySpan<char> prefix)` | The same, from a character span. |
 | `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
 | `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
 | `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
@@ -3701,6 +3716,129 @@ foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
 // Longest-prefix routing: the most specific stored route that prefixes the request.
 if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
     Console.WriteLine($"matched {route} -> {handler}"); // matched /api/v1/users -> users-v1
+```
+
+## Span-keyed lookups
+
+Every string-keyed Celerity collection can be probed with a `ReadOnlySpan<char>` — a slice of a buffer the caller already holds — without first materializing a `string`.
+
+| Type | Span members |
+|------|--------------|
+| `FrozenCelerityDictionary<TValue, THasher>` | `TryGetValue(ReadOnlySpan<char>, out TValue?)`, `ContainsKey(ReadOnlySpan<char>)` |
+| `FrozenCeleritySet<THasher>` | `Contains(ReadOnlySpan<char>)` |
+| `CelerityDictionary<string, TValue, THasher>` | `TryGetValue(ReadOnlySpan<char>, out TValue?)`, `ContainsKey(ReadOnlySpan<char>)` |
+| `CeleritySet<string, THasher>` | `Contains(ReadOnlySpan<char>)` |
+| `Trie<TValue>` | `TryGetValue(ReadOnlySpan<char>, out TValue?)`, `ContainsKey(ReadOnlySpan<char>)`, `ContainsPrefix(ReadOnlySpan<char>)` |
+
+### Why it matters
+
+Without them, a tokenizer, CSV / log reader, or route dispatcher holding a `ReadOnlySpan<char>` must call `new string(span)` to probe the collection: **one allocation plus a copy per lookup**, on the hot path of exactly the workloads these types exist for. The span overloads delete both. Nothing else changes — stored keys are compared ordinally against the span, which is what `EqualityComparer<string>.Default` does, so a span lookup and the equivalent string lookup always agree.
+
+> **.NET 9+.** `Dictionary<string,V>.GetAlternateLookup<ReadOnlySpan<char>>()` gives the BCL the same capability on .NET 9 and later. These overloads work on **all three** of Celerity's target frameworks, including the `net8.0` floor where the BCL has no answer.
+
+### How they are exposed
+
+On the four hashed collections the span overloads are **extension methods** in `Celerity.Collections` (`SpanLookupExtensions`), because the span probe needs the hasher to implement [`ISpanHashProvider`](hashing.md#ispanhashprovider) as well as `IHashProvider<string>` — and adding that to the class's own constraint would break every existing instantiation. The extra constraint therefore lives on the methods:
+
+```csharp
+where THasher : struct, IHashProvider<string>, ISpanHashProvider
+```
+
+They bind only when the hasher supplies both, resolve statically (no boxing — the JIT still devirtualizes the hash call through the struct type parameter), and read like instance methods at the call site as long as `Celerity.Collections` is in scope. Every built-in `String*Hasher` implements both. `Trie<TValue>` takes no hasher, so its span overloads are ordinary instance methods.
+
+### The empty span
+
+A span has no `null` state, so an **empty span means the empty string `""`** — an ordinary key — and never the out-of-band `null` key. Look the `null` key up through the `string` overload.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var routes = new FrozenCelerityDictionary<int, StringXxHash3Hasher>(
+[
+    new("/api/v1/users",  1),
+    new("/api/v1/orders", 2),
+]);
+
+ReadOnlySpan<char> line = "GET /api/v1/users HTTP/1.1".AsSpan();
+ReadOnlySpan<char> path = line.Slice(4, 14);
+
+if (routes.TryGetValue(path, out int handler))   // no string allocated
+    Dispatch(handler);
+```
+
+## StringInternTable
+
+A canonicalizing table of strings: probe it with a `ReadOnlySpan<char>` and it returns the one shared `string` for those characters, allocating **only on a miss**.
+
+```csharp
+public sealed class StringInternTable : StringInternTable<StringFnV1AFullHasher>
+
+public class StringInternTable<THasher> : IReadOnlyCollection<string>
+    where THasher : struct, IHashProvider<string>, ISpanHashProvider
+```
+
+### The documented BCL-beating workload
+
+**A 10M-cell CSV or log parse over ~100 distinct tokens.** The intern table allocates **100 strings instead of 10,000,000** — only the miss path materializes one. Downstream reference equality then works, and the GC never sees the other 9,999,900 copies.
+
+This is the one collection you cannot build on the pre-.NET-9 BCL: `HashSet<string>.TryGetValue` takes a `string`, so you must **allocate the string before you can discover you already had it** — the very allocation you were trying to avoid. `string.Intern` is not a substitute either: it is process-wide, never collected for the life of the process, and still requires a `string` to hand it. A `StringInternTable` is an ordinary object — its scope is yours, `Clear` releases everything it holds, and dropping the table drops the interned strings with it.
+
+> **.NET 9+.** `Dictionary<string,V>.GetAlternateLookup<ReadOnlySpan<char>>()` can express the same pattern on .NET 9 and later. This type works on all three of Celerity's target frameworks, including the `net8.0` floor.
+
+### Default hasher
+
+The non-generic `StringInternTable` uses `StringFnV1AFullHasher` — cheap, and **full Unicode width**, so tokens that differ only in a character's high byte do not collide. (This deliberately differs from the frozen collections' `StringFnV1AHasher` default, which folds only the low byte: an intern table's inputs are arbitrary parsed text rather than curated identifiers.) A collision is never a correctness problem in either case — the ordinal span comparison resolves it — but it costs probes. Supply any `String*Hasher` through `StringInternTable<THasher>` for a different speed/quality point.
+
+### Constructors
+
+```csharp
+public StringInternTable(int capacity = 16, float loadFactor = 0.75f)
+```
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity` is negative, or `loadFactor` is not in the open interval (0, 1).
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of distinct strings interned. |
+| `string GetOrAdd(ReadOnlySpan<char> key)` | The canonical instance for those characters, allocating one only on a miss. |
+| `string GetOrAdd(string key)` | The canonical instance; on a miss the supplied instance itself becomes canonical, so this never allocates. Throws `ArgumentNullException` on `null`. |
+| `bool TryGet(ReadOnlySpan<char> key, out string? value)` | Pure lookup — never interns. `value` is `null` on a miss. |
+| `bool Contains(ReadOnlySpan<char> key)` | Whether those characters are already interned. |
+| `bool Contains(string key)` | The same. Throws `ArgumentNullException` on `null`. |
+| `void Clear()` | Drops every interned string; the backing capacity is preserved. |
+| `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the interned strings. Order is unspecified. |
+
+`GetOrAdd` (when it interns) and `Clear` are structural changes that invalidate an in-flight enumerator; `TryGet` and `Contains` never mutate.
+
+### Empty-string and `null` handling
+
+The empty string is an ordinary entry, and an empty span means `""`. `null` is not storable — the `string` overloads reject it.
+
+### Choosing it
+
+Reach for `StringInternTable` when you are producing **many occurrences of few distinct strings** from a buffer you already hold: parsers, tokenizers, log ingestion, column stores, header dispatch. If you need to associate a *value* with each token, use a `CelerityDictionary<string, TValue, THasher>` with the [span lookups](#span-keyed-lookups) instead. It is not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var interned = new StringInternTable();
+
+foreach (ReadOnlySpan<char> cell in SplitCells(line))
+{
+    string token = interned.GetOrAdd(cell);   // allocates only the first time each token is seen
+    Consume(token);
+}
+
+Console.WriteLine(interned.Count);            // distinct tokens, == strings allocated
 ```
 
 ## FenwickTree&lt;T&gt;

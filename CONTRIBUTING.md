@@ -76,14 +76,34 @@ dotnet run -c Release -- --filter '*' # run everything with the default (slow, h
 
 ### CI
 
-The `benchmarks` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the full suite on `ubuntu-latest` after `build-and-test` succeeds. It uses a faster `CiConfig` (3 warmup × 5 measurement iterations) so the whole suite completes in ~5 min.
+[`.github/workflows/benchmarks.yml`](.github/workflows/benchmarks.yml) runs the CI-tracked core suite (the `CoreBenchmarks` array in `Program.cs`) at full BenchmarkDotNet accuracy, sharded across a parallel matrix. On a PR each shard measures its slice of both the PR head and the `main` tip back-to-back on the same runner, so hardware variance cancels; an aggregate job stitches the shard reports back together.
 
 Results are parsed by [`benchmark-action/github-action-benchmark`](https://github.com/benchmark-action/github-action-benchmark) and:
 
-- **On a PR**: a comment is posted with the comparison vs the last `main` baseline. If any benchmark regresses by more than **200%** (i.e. is 2× slower or worse), the job fails red. The threshold is deliberately loose because GitHub-hosted runners are noisy — we'll tighten it once we have history to calibrate against.
-- **On a push to `main`**: the new measurement is appended to the `gh-pages`-stored history powering the dashboard at `https://marius-bughiu.github.io/Celerity/dev/bench/` (enable Pages on the `gh-pages` branch once the first run creates it).
+- **On a PR**: a comment is posted with the same-runner A/B comparison vs `main`. Rows that move by more than ±10% *and* beyond the combined standard deviation of both measurements are flagged; the flags are advisory, so a noisy row does not fail the job.
+- **On a push to `main`**: the new measurement is appended to the `gh-pages`-stored history powering the dashboard at <https://marius-bughiu.github.io/Celerity/dev/bench/>.
 
 If a change is motivated by performance, include before/after numbers from a local Release run in the PR description — the CI job is a guardrail, not a precision instrument. Numbers without `-c Release` are not useful — BenchmarkDotNet refuses to run in Debug.
+
+### The dashboard
+
+The dashboard reads BenchmarkDotNet result *names*, so a benchmark's naming is part of its contract with the site. A name that the page's parser does not recognise is dropped silently — the data publishes to `gh-pages` correctly and the card just renders blank, with nothing red anywhere.
+
+Two rules keep a benchmark chartable:
+
+- Methods are named `{TypeName}_{Op}` — `EnumSet_Contains`, `Dictionary_Lookup`. The type name decides whether the row is the Celerity arm or the BCL baseline (`BCL_TYPES` in the dashboard source), and `{Op}` is what the card is titled.
+- A `[Params]` sweep property must be called **`ItemCount`**. A class may declare no sweep at all — `EnumMap` / `EnumSet` are bounded by the enum universe, so a synthetic item count would chart a dimension that does not exist — in which case the dashboard renders a single bucket. Any *other* property name is rejected rather than charted under an "items" label it does not mean.
+
+Adding a collection to the site means updating three lists by hand, since the published data alone does not tell the page what to draw: the ship card in `web/index.html`, and the `COLLECTIONS` array in **both** `web/dev/bench/index.html` and `web/dev/bench/detail.html` (`items: [NO_SWEEP]` for an unparameterized class).
+
+[`scripts/check_dashboard_coverage.js`](scripts/check_dashboard_coverage.js) enforces all of this so the failure mode is a red check rather than a blank card. It lifts the `COLLECTIONS` tables and the name parsers out of the dashboard HTML rather than reimplementing them, so it validates the code that actually ships. Run it any time you touch a benchmark or the dashboard:
+
+```bash
+node scripts/check_dashboard_coverage.js                                   # structural checks
+node scripts/check_dashboard_coverage.js path/to/joined-report-full.json   # + verify the data
+```
+
+The structural half — the two `COLLECTIONS` arrays agree, and every charted collection has a `{Key}Benchmark` registered in `CoreBenchmarks` — runs on every PR in `ci.yml`. The full check runs in the aggregate job of `benchmarks.yml`, against the merged report, and additionally asserts that every published name parses and that every card resolves to both a BCL and a Celerity measurement.
 
 ## Versioning
 

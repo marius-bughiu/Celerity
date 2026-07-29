@@ -11,6 +11,11 @@ public class FrozenCelerityDictionaryBenchmark
     private string[] keys = null!;
     private KeyValuePair<string, int>[] pairs = null!;
 
+    // The same keys laid end to end in one buffer, with the slice bounds of each — the shape a parser or
+    // router actually holds its keys in, and the input to the SpanLookup category below.
+    private char[] buffer = null!;
+    private (int Offset, int Length)[] slices = null!;
+
     private FrozenDictionary<string, int> frozenDictionary = null!;
     private FrozenCelerityDictionary<int> frozenCelerity = null!;
 
@@ -22,12 +27,18 @@ public class FrozenCelerityDictionaryBenchmark
     {
         keys = new string[ItemCount];
         pairs = new KeyValuePair<string, int>[ItemCount];
+        slices = new (int, int)[ItemCount];
+        var text = new System.Text.StringBuilder();
         for (int i = 0; i < ItemCount; i++)
         {
             // Identifier-shaped, guaranteed-distinct keys.
             keys[i] = "celerity/key/" + i + "/" + (i * 2654435761u);
             pairs[i] = new KeyValuePair<string, int>(keys[i], i);
+            slices[i] = (text.Length, keys[i].Length);
+            text.Append(keys[i]).Append(' ');
         }
+
+        buffer = text.ToString().ToCharArray();
 
         frozenDictionary = pairs.ToFrozenDictionary(p => p.Key, p => p.Value);
         frozenCelerity = new FrozenCelerityDictionary<int>(pairs);
@@ -68,6 +79,40 @@ public class FrozenCelerityDictionaryBenchmark
         int acc = 0;
         foreach (var key in keys)
             acc += frozenCelerity[key];
+        return acc;
+    }
+
+    // ── SpanLookup (the caller holds spans, not strings) ──────────────────────
+    // The baseline is what a net8.0 caller must do to probe any string-keyed collection: allocate the
+    // string first. The Celerity arm probes the span directly, so the whole allocation and copy vanish —
+    // which is the point, and why this category is the one with allocation numbers worth reading.
+    // (.NET 9's Dictionary<string,V>.GetAlternateLookup closes this gap on that runtime; this project
+    // targets net8.0, the floor where the BCL has no answer.)
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("SpanLookup")]
+    public int FrozenDictionary_SpanLookup()
+    {
+        int acc = 0;
+        for (int i = 0; i < slices.Length; i++)
+        {
+            (int offset, int length) = slices[i];
+            acc += frozenDictionary[new string(buffer, offset, length)];
+        }
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("SpanLookup")]
+    public int FrozenCelerityDictionary_SpanLookup()
+    {
+        int acc = 0;
+        for (int i = 0; i < slices.Length; i++)
+        {
+            (int offset, int length) = slices[i];
+            frozenCelerity.TryGetValue(buffer.AsSpan(offset, length), out int value);
+            acc += value;
+        }
         return acc;
     }
 }

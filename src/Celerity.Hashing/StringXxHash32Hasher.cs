@@ -47,7 +47,7 @@ namespace Celerity.Hashing;
 /// the hasher, so this does not collide with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringXxHash32Hasher : IHashProvider<string>
+public struct StringXxHash32Hasher : IHashProvider<string>, ISpanHashProvider
 {
     private const uint Prime1 = 2654435761u;
     private const uint Prime2 = 2246822519u;
@@ -71,7 +71,21 @@ public struct StringXxHash32Hasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the xxHash32 hash (seed <c>0</c>) of the specified character span over
+    /// its native little-endian UTF-16 byte stream.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit xxHash32 hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         int length = key.Length;            // count of UTF-16 code units (chars)
         uint byteLength = (uint)length * 2u; // XXH32 mixes in the byte length
 
@@ -147,7 +161,7 @@ public struct StringXxHash32Hasher : IHashProvider<string>
     /// byte-oriented XXH32 would read over the native little-endian UTF-16 stream.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Block(string key, int i) =>
+    private static uint Block(ReadOnlySpan<char> key, int i) =>
         (uint)key[i] | ((uint)key[i + 1] << 16);
 
     /// <summary>The XXH32 accumulator round: <c>rotl(acc + lane * PRIME32_2, 13) * PRIME32_1</c>.</summary>

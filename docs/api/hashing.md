@@ -138,6 +138,65 @@ public struct MyLongHasher : IHashProvider<long>, IHashProvider64<long>
 
 ---
 
+## ISpanHashProvider
+
+```csharp
+public interface ISpanHashProvider
+{
+    int Hash(ReadOnlySpan<char> key);
+}
+```
+
+The span sibling of `IHashProvider<T>`, so a caller holding a slice of a buffer can hash it — and probe a string-keyed collection with it — without first materializing a `string`.
+
+**Every built-in `String*Hasher` implements it.** Each already walks the characters, so the span overload *is* the body and the `string` overload delegates to it. The integer and `Guid` hashers do not: a character span is not their key shape.
+
+### The contract
+
+For every `string s`, an implementation must satisfy:
+
+```csharp
+hasher.Hash(s) == hasher.Hash(s.AsSpan())
+```
+
+This is load-bearing, not cosmetic. The [span lookups](collections.md#span-keyed-lookups) hash a span and then compare the result against keys that were *placed* using the `string` overload. A divergence would not merely be slow — it would report a stored key as absent. Share one body between the two overloads rather than maintaining two copies; `SpanHashParityTests` pins the contract for every built-in hasher across every length class, including as a slice of a larger buffer.
+
+A span has no `null` state: `default(ReadOnlySpan<char>)` is empty, and empty means the empty string `""`. The `string` overloads keep throwing `ArgumentNullException` on `null` exactly as before.
+
+### Why it is a separate interface
+
+`IHashProvider<T>.Hash(T)` is generic in its key type, and a `ref struct` such as `ReadOnlySpan<char>` could not be used as a generic type argument before `allows ref struct` (C# 13 / .NET 9) — while `net8.0` is Celerity's floor. Expressing the span overload as a separate **non-generic** interface sidesteps that entirely, because the span is a method parameter rather than a type argument. The same reasoning gave `IHashProvider64<T>` its independent shape.
+
+### Implementing it on a custom hasher
+
+Put the algorithm in the span overload and delegate:
+
+```csharp
+public struct MyStringHasher : IHashProvider<string>, ISpanHashProvider
+{
+    public int Hash(string key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());   // one body, so the two cannot drift
+    }
+
+    public int Hash(ReadOnlySpan<char> key)
+    {
+        uint hash = 2166136261u;
+        foreach (char c in key)
+        {
+            hash ^= c;
+            hash *= 16777619u;
+        }
+        return unchecked((int)hash);
+    }
+}
+```
+
+Implementations must be structs, for the same devirtualization reason as `IHashProvider<T>`. The collections' span overloads are constrained on `where THasher : struct, IHashProvider<string>, ISpanHashProvider`, so a hasher that implements only one of the two simply will not bind there.
+
+---
+
 ## Built-in Hashers
 
 ### Int32IdentityHasher

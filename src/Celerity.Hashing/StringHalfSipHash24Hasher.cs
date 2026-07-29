@@ -73,7 +73,7 @@ namespace Celerity.Hashing;
 /// hasher, so this does not collide with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringHalfSipHash24Hasher : IHashProvider<string>
+public struct StringHalfSipHash24Hasher : IHashProvider<string>, ISpanHashProvider
 {
     // Canonical HalfSipHash reference key (test-vector key, bytes 00..07), read as
     // two little-endian 32-bit halves. Fixed because collections build the hasher
@@ -103,7 +103,22 @@ public struct StringHalfSipHash24Hasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the HalfSipHash-2-4 hash of the specified character span over its native
+    /// little-endian UTF-16 byte stream (using this type's fixed built-in key), returning
+    /// the native 32-bit result as a signed integer.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit HalfSipHash-2-4 hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         int charLen = key.Length;               // count of UTF-16 code units (chars)
         uint byteLen = (uint)charLen * 2U;      // HalfSipHash operates on the byte length
 
@@ -156,7 +171,7 @@ public struct StringHalfSipHash24Hasher : IHashProvider<string>
     /// HalfSipHash would read over the native little-endian UTF-16 stream.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Word(string key, int i) =>
+    private static uint Word(ReadOnlySpan<char> key, int i) =>
         key[i] | ((uint)key[i + 1] << 16);
 
     /// <summary>

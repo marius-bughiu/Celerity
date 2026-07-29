@@ -53,7 +53,7 @@ namespace Celerity.Hashing;
 /// the hasher, so this does not collide with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringFnV1Hasher : IHashProvider<string>
+public struct StringFnV1Hasher : IHashProvider<string>, ISpanHashProvider
 {
     /// <summary>
     /// Computes the FNV-1 32-bit hash of the specified string over the full
@@ -71,7 +71,21 @@ public struct StringFnV1Hasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the FNV-1 32-bit hash of the specified character span over the full
+    /// little-endian UTF-16 byte stream (both bytes of every character).
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit FNV-1 hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         // The FNV-1 32-bit parameters (identical to FNV-1a).
         const uint fnvPrime = 16777619u;
         const uint offsetBasis = 2166136261u;
