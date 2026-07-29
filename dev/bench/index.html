@@ -424,7 +424,7 @@
     { key: 'SwissDictionary',     title: 'SwissDictionary<int, int, ...>',           vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'HashCachingDictionary', title: 'HashCachingDictionary<int, int, ...>',    vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'PooledCelerityDictionary', title: 'PooledCelerityDictionary<int, int, ...>', vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
-    { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup'] },
+    { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup', 'SpanLookup'] },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'CelerityMultiSet',    title: 'CelerityMultiSet<int, ...>',               vs: 'Dictionary<int, int>',       ops: ['Count', 'Lookup', 'Remove'] },
     // SmallDictionary is a small-n collection: it is benchmarked at 8 / 64 items
@@ -464,7 +464,11 @@
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
     { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',     vs: 'PriorityQueue<int, int>', ops: ['Enqueue', 'DecreaseKey'] },
     // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
-    { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch'] },
+    // SpanLookup probes from a ReadOnlySpan<char> slice, which the baseline must first turn into a string.
+    { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch', 'SpanLookup'] },
+    // StringInternTable canonicalizes tokens probed as spans: it allocates one string per distinct token,
+    // where the BCL arms must allocate one per occurrence before they can dedupe. Allocation is the headline.
+    { key: 'StringInternTable',   title: 'StringInternTable',                        vs: 'HashSet<string> / Dictionary<string, string>', ops: ['Dedupe', 'Lookup'] },
     // FenwickTree is a Binary Indexed Tree benchmarked against a plain long[] holding the raw values: point
     // updates are O(1) there, but every prefix / range sum re-adds the slice (O(n)). The tree keeps both O(log n).
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] },
