@@ -378,7 +378,7 @@ foreach (TopKEntry<string> e in hot.GetTopK(10))
 
 `BitSet` is a dense, exact bit vector — see [the API reference](docs/api/collections.md#bitset) for popcount, the SIMD bulk operators, and the set-bit enumerator.
 
-`RankSelectBitVector` is the **build-once** succinct index over such a vector: `Rank(i)` returns how many bits are set below `i` in `O(1)`, and `Select(k)` returns the position of the `k`-th set bit in `O(log n)`. Nothing in .NET offers either, so the alternative is the `O(i/64)` popcount loop a caller writes by hand — at the midpoint of a 100-million-bit vector, ~780,000 iterations replaced by two index loads and one masked popcount. The index costs 25% over the bits and is **invalidated by any mutation**, so mutate a `BitSet` and snapshot it once the bits have settled.
+`RankSelectBitVector` is the **build-once** succinct index over such a vector — see [the API reference](docs/api/collections.md#rankselectbitvector) for the full surface. `Rank(i)` returns how many bits are set below `i` in `O(1)`, and `Select(k)` returns the position of the `k`-th set bit in `O(log n)`. Nothing in .NET offers either, so the alternative is the `O(i/64)` popcount loop a caller writes by hand — at the midpoint of a 100-million-bit vector, ~780,000 iterations replaced by two index loads and one masked popcount. The index costs 25% over the bits and is **invalidated by any mutation**, so mutate a `BitSet` and snapshot it once the bits have settled.
 
 ```csharp
 var present = new BitSet(rowCount);

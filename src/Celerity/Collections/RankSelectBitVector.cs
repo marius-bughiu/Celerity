@@ -107,7 +107,7 @@ public sealed class RankSelectBitVector
     {
         _words = words;
         _length = length;
-        _superRanks = new int[(int)(((uint)length + ((1u << SuperblockShift) - 1)) >> SuperblockShift)];
+        _superRanks = new int[SuperblockCount(length)];
         _blockRanks = new byte[words.Length];
 
         int total = 0;
@@ -383,6 +383,9 @@ public sealed class RankSelectBitVector
     }
 
     private static int WordCount(int length) => (int)(((uint)length + WordMask) >> WordShift);
+
+    private static int SuperblockCount(int length) =>
+        (int)(((uint)length + ((1u << SuperblockShift) - 1)) >> SuperblockShift);
 
     private static void ThrowIfNegativeLength(int length)
     {
