@@ -1,0 +1,33 @@
+<Project>
+
+  <!--
+    Package validation — the binary-compatibility gate (#315).
+
+    This lives in Directory.Build.targets rather than Directory.Build.props for
+    one reason: IsPackable. Directory.Build.props is imported *before* the
+    project body, so at that point every project looks packable. Enabling
+    validation there puts a baseline PackageDownload on the test / benchmark /
+    fuzz / AOT-smoke projects too, and restore fails with
+
+        error : Invalid framework identifier ''.
+
+    because those projects have no PackageId to resolve a baseline for.
+    Directory.Build.targets is imported *after* the project body, so the
+    IsPackable=false that each dev project sets is already visible here and the
+    six shipped packages are the only ones the condition matches.
+
+    The baseline version itself is CelerityPackageValidationBaseline, declared in
+    Directory.Build.props — that is the single line to bump at release time, and
+    the ritual is documented both there and in CONTRIBUTING.md.
+
+    CelerityNoPublishedBaseline is the escape hatch for a package's *first*
+    release: with no published predecessor on NuGet.org, asking for a baseline
+    fails the restore. A new package sets the property in its .csproj, ships
+    once, then deletes it.
+  -->
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion Condition="'$(CelerityNoPublishedBaseline)' != 'true'">$(CelerityPackageValidationBaseline)</PackageValidationBaselineVersion>
+  </PropertyGroup>
+
+</Project>

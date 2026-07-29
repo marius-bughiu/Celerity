@@ -48,6 +48,10 @@ jobs:
       # Deterministic build + .snupkg symbol packages come from the shared props
       # (#190); -p:ContinuousIntegrationBuild=true is passed explicitly so the
       # preview build is reproducible without relying on the CI env var.
+      #
+      # Packing also runs package validation (#315), so this job fails if `main`
+      # has drifted into a breaking API change against the published baseline —
+      # a night's notice before a tag would have shipped it.
       - name: Create nuget package
         run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }} -p:ContinuousIntegrationBuild=true
 

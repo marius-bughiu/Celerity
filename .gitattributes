@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings whatever a contributor's core.autocrlf is
+# set to: the release gates in .github/scripts run on ubuntu-latest, and a CRLF
+# shebang line makes bash fail with a bare "not found" (#315).
+*.sh text eol=lf
