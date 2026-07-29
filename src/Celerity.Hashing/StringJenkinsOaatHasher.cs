@@ -50,7 +50,7 @@ namespace Celerity.Hashing;
 /// does not collide with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringJenkinsOaatHasher : IHashProvider<string>
+public struct StringJenkinsOaatHasher : IHashProvider<string>, ISpanHashProvider
 {
     /// <summary>
     /// Computes Bob Jenkins' one-at-a-time hash of the specified string over the
@@ -68,7 +68,21 @@ public struct StringJenkinsOaatHasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes Bob Jenkins' one-at-a-time hash of the specified character span over
+    /// the full little-endian UTF-16 byte stream (both bytes of every character).
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit one-at-a-time hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         uint hash = 0u;
         foreach (char c in key)
         {

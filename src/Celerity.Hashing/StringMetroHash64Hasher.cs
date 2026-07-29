@@ -57,11 +57,11 @@ namespace Celerity.Hashing;
 /// The algorithm carries 64 bits of state internally, so the type also implements
 /// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns that state un-folded, which is
 /// what the probabilistic sketches want (see <see cref="IHashProvider64{T}"/> for why the extra
-/// 32 bits matter there and not in a hash table). <see cref="Hash"/> is unchanged — it is
+/// 32 bits matter there and not in a hash table). <see cref="Hash(string)"/> is unchanged — it is
 /// exactly <c>h ^ (h &gt;&gt; 32)</c> of the 64-bit result.
 /// </para>
 /// </remarks>
-public struct StringMetroHash64Hasher : IHashProvider<string>, IHashProvider64<string>
+public struct StringMetroHash64Hasher : IHashProvider<string>, IHashProvider64<string>, ISpanHashProvider
 {
     // metrohash64_1 mixing constants (J. Andrew Rogers, public-domain reference).
     private const ulong K0 = 0xC83A91E1UL;
@@ -85,7 +85,23 @@ public struct StringMetroHash64Hasher : IHashProvider<string>, IHashProvider64<s
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int Hash(string key)
     {
-        ulong h64 = Hash64(key);
+        ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
+
+    /// <summary>
+    /// Computes the MetroHash64 hash of the specified character span, xor-folded to a
+    /// signed 32-bit result.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit, xor-folded MetroHash64 hash of <paramref name="key"/> — the same
+    /// value <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
+        ulong h64 = Hash64Core(key);
         return unchecked((int)(h64 ^ (h64 >> 32)));
     }
 
@@ -106,8 +122,16 @@ public struct StringMetroHash64Hasher : IHashProvider<string>, IHashProvider64<s
     public ulong Hash64(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash64Core(key.AsSpan());
+    }
 
-        int length = key.Length;                // count of UTF-16 code units (chars)
+    // The single 64-bit body. Both Hash64(string) and the span-based Hash(ReadOnlySpan<char>)
+    // route through it, so the string and span overloads cannot drift apart — the parity the
+    // ISpanHashProvider contract requires.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong Hash64Core(ReadOnlySpan<char> key)
+    {
+        int length = key.Length;              // count of UTF-16 code units (chars)
         ulong byteLength = (ulong)length * 2UL; // MetroHash mixes in the byte length
 
         // Seed 0: hash starts at ((0 + k2) * k0) + len.
@@ -185,7 +209,7 @@ public struct StringMetroHash64Hasher : IHashProvider<string>, IHashProvider64<s
     /// read over the native little-endian UTF-16 stream.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Lane(string key, int i) =>
+    private static ulong Lane(ReadOnlySpan<char> key, int i) =>
         (ulong)key[i]
         | ((ulong)key[i + 1] << 16)
         | ((ulong)key[i + 2] << 32)
@@ -197,6 +221,6 @@ public struct StringMetroHash64Hasher : IHashProvider<string>, IHashProvider64<s
     /// 16 bits, the next char the high 16 bits.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Block(string key, int i) =>
+    private static uint Block(ReadOnlySpan<char> key, int i) =>
         (uint)key[i] | ((uint)key[i + 1] << 16);
 }

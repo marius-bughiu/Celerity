@@ -411,6 +411,11 @@
   // Layout: ordered list of collections + the BCL counterpart label for the "vs" subtitle.
   // The class prefix in benchmark names is "{prefix}Benchmark", and methods are
   // named "{TypeName}_{Op}". BCL types: Dictionary, HashSet. Celerity types: the rest.
+  //
+  // `items` overrides the default 1k / 100k sweep. A benchmark class that declares no
+  // [Params] at all uses `items: [NO_SWEEP]`: its measurements carry no parenthesized
+  // suffix and live in a single bucket rather than a per-item-count series.
+  var NO_SWEEP = null;
   var COLLECTIONS = [
     { key: 'IntDictionary',       title: 'IntDictionary<int>',                       vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'LongDictionary',      title: 'LongDictionary<int>',                      vs: 'Dictionary<long, int>', ops: ['Insert', 'Lookup', 'Remove'] },
@@ -419,14 +424,14 @@
     { key: 'SwissDictionary',     title: 'SwissDictionary<int, int, ...>',           vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'HashCachingDictionary', title: 'HashCachingDictionary<int, int, ...>',    vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'PooledCelerityDictionary', title: 'PooledCelerityDictionary<int, int, ...>', vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
-    { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup'] },
+    { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup', 'SpanLookup'] },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'CelerityMultiSet',    title: 'CelerityMultiSet<int, ...>',               vs: 'Dictionary<int, int>',       ops: ['Count', 'Lookup', 'Remove'] },
     // SmallDictionary is a small-n collection: it is benchmarked at 8 / 64 items
     // (not the 1k / 100k the hash tables use), so it carries its own item counts.
     { key: 'SmallDictionary',     title: 'SmallDictionary<int, int>',                vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'], items: [8, 64] },
     // EnumMap is bounded by the enum universe (no item-count sweep); Enumerate is the contiguous-storage sweep win.
-    { key: 'EnumMap',             title: 'EnumMap<TEnum, TValue>',                   vs: 'Dictionary<TEnum, V>',  ops: ['Add', 'Lookup', 'Remove', 'Enumerate'] },
+    { key: 'EnumMap',             title: 'EnumMap<TEnum, TValue>',                   vs: 'Dictionary<TEnum, V>',  ops: ['Add', 'Lookup', 'Remove', 'Enumerate'], items: [NO_SWEEP] },
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
@@ -439,7 +444,7 @@
     // items (not the 1k / 100k the hash sets use), so it carries its own item counts.
     { key: 'SmallSet',            title: 'SmallSet<int>',                            vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'], items: [8, 64] },
     // EnumSet is bounded by the enum universe (no item-count sweep); Union is the word-wise set-algebra win.
-    { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'] },
+    { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'], items: [NO_SWEEP] },
     // SparseSet is a bounded-universe integer set; ClearRefill is the O(1)-clear headline win.
     { key: 'SparseSet',           title: 'SparseSet',                                vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ClearRefill', 'Remove'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
@@ -463,7 +468,11 @@
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
     { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',     vs: 'PriorityQueue<int, int>', ops: ['Enqueue', 'DecreaseKey'] },
     // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
-    { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch'] },
+    // SpanLookup probes from a ReadOnlySpan<char> slice, which the baseline must first turn into a string.
+    { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch', 'SpanLookup'] },
+    // StringInternTable canonicalizes tokens probed as spans: it allocates one string per distinct token,
+    // where the BCL arms must allocate one per occurrence before they can dedupe. Allocation is the headline.
+    { key: 'StringInternTable',   title: 'StringInternTable',                        vs: 'HashSet<string> / Dictionary<string, string>', ops: ['Dedupe', 'Lookup'] },
     // FenwickTree is a Binary Indexed Tree benchmarked against a plain long[] holding the raw values: point
     // updates are O(1) there, but every prefix / range sum re-adds the slice (O(n)). The tree keeps both O(log n).
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] },
@@ -497,15 +506,27 @@
 
   // ---- Parse benchmark name into structured fields ----
   function parseName(name) {
-    // "CelerityDictionaryBenchmark.CelerityDictionary_Lookup(ItemCount: 1000)"
-    var m = name.match(/^(\w+)Benchmark\.(\w+?)_(\w+)\(ItemCount:\s*(\d+)\)$/);
+    // "CelerityDictionaryBenchmark.CelerityDictionary_Lookup(ItemCount: 1000)", or
+    // "EnumMapBenchmark.EnumMap_Lookup" for a class that declares no [Params] sweep.
+    //
+    // The suffix is matched strictly as ItemCount rather than as any parameter name:
+    // a class whose params property is called something else measures a dimension the
+    // cards label "items", so charting it would be wrong. Such a class stays unparsed
+    // here and is caught by scripts/check_dashboard_coverage.js in CI instead.
+    var m = name.match(/^(\w+)Benchmark\.(\w+?)_(\w+)(?:\(ItemCount:\s*(\d+)\))?$/);
     if (!m) return null;
     var collection = m[1];
     var typeName = m[2];
     var op = m[3];
-    var itemCount = parseInt(m[4], 10);
+    var itemCount = m[4] != null ? parseInt(m[4], 10) : NO_SWEEP;
     var isBcl = BCL_TYPES.has(typeName);
     return { collection: collection, typeName: typeName, op: op, itemCount: itemCount, isBcl: isBcl };
+  }
+
+  // Index key. NO_SWEEP collapses to an empty trailing field, so an unparameterized
+  // benchmark gets its own bucket that can never collide with a real item count.
+  function idxKey(collection, op, itemCount) {
+    return collection + '|' + op + '|' + (itemCount == null ? '' : itemCount);
   }
 
   // ---- Build a quick-lookup index of latest values per (collection, op, itemCount, kind) ----
@@ -514,7 +535,7 @@
     benches.forEach(function (b) {
       var p = parseName(b.name);
       if (!p) return;
-      var key = p.collection + '|' + p.op + '|' + p.itemCount;
+      var key = idxKey(p.collection, p.op, p.itemCount);
       if (!idx[key]) idx[key] = {};
       idx[key][p.isBcl ? 'bcl' : 'celerity'] = b.value;
     });
@@ -529,9 +550,11 @@
     Object.keys(latestIdx).forEach(function (key) {
       var parts = key.split('|');
       var op = parts[1];
-      var n = parseInt(parts[2], 10);
       if (opAliases.indexOf(op) === -1) return;
-      if (n !== ITEM_COUNT_FOR_HEADLINE) return;
+      // Unparameterized benchmarks have no item count and are excluded outright,
+      // rather than bucketed at 0 and compared against the 100k headline sweep.
+      if (parts[2] === '') return;
+      if (parseInt(parts[2], 10) !== ITEM_COUNT_FOR_HEADLINE) return;
       var pair = latestIdx[key];
       if (pair.bcl == null || pair.celerity == null) return;
       var ratio = pair.bcl / pair.celerity;
@@ -567,8 +590,7 @@
 
   // ---- Charts per collection ----
   function ratioFor(collection, op, itemCount) {
-    var key = collection + '|' + op + '|' + itemCount;
-    var pair = latestIdx[key];
+    var pair = latestIdx[idxKey(collection, op, itemCount)];
     if (!pair || pair.bcl == null || pair.celerity == null) return null;
     return pair.bcl / pair.celerity;
   }
@@ -704,20 +726,22 @@
       }
 
       if (displayRatio != null) {
-        var pairPrimary = latestIdx[col.key + '|' + op + '|' + primaryN];
+        var pairPrimary = latestIdx[idxKey(col.key, op, primaryN)];
+        var shownPair, shownN;
         if (pairPrimary && pairPrimary.bcl != null && pairPrimary.celerity != null) {
-          detail = fmtNs(pairPrimary.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pairPrimary.bcl).replace('&mu;', 'µ') + ' @ ' + fmtCount(primaryN) + ' items';
+          shownPair = pairPrimary; shownN = primaryN;
         } else {
-          var pairFallback = latestIdx[col.key + '|' + op + '|' + fallbackN];
-          detail = fmtNs(pairFallback.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(pairFallback.bcl).replace('&mu;', 'µ') + ' @ ' + fmtCount(fallbackN) + ' items';
+          shownPair = latestIdx[idxKey(col.key, op, fallbackN)]; shownN = fallbackN;
         }
+        detail = fmtNs(shownPair.celerity).replace('&mu;', 'µ') + ' vs ' + fmtNs(shownPair.bcl).replace('&mu;', 'µ') +
+          (shownN == null ? '' : ' @ ' + fmtCount(shownN) + ' items');
       }
 
       var cell = document.createElement('div');
       cell.className = 'chart-cell';
       cell.dataset.collection = col.key;
       cell.dataset.op = op;
-      cell.dataset.items = String(primaryN);
+      if (primaryN != null) cell.dataset.items = String(primaryN);
       cell.innerHTML =
         '<div class="op">' + op + '</div>' +
         '<div class="ratio ' + ratioCls + '">' + ratioStr + '</div>' +
@@ -746,7 +770,7 @@
       function navigate() {
         var qs = '?c=' + encodeURIComponent(cell.dataset.collection) +
                  '&op=' + encodeURIComponent(cell.dataset.op) +
-                 '&n=' + cell.dataset.items;
+                 (cell.dataset.items ? '&n=' + cell.dataset.items : '');
         window.location.href = 'detail.html' + qs;
       }
       cell.addEventListener('click', navigate);

@@ -67,11 +67,11 @@ namespace Celerity.Hashing;
 /// The algorithm carries 64 bits of state internally, so the type also implements
 /// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns that state un-folded, which is
 /// what the probabilistic sketches want (see <see cref="IHashProvider64{T}"/> for why the extra
-/// 32 bits matter there and not in a hash table). <see cref="Hash"/> is unchanged — it is
+/// 32 bits matter there and not in a hash table). <see cref="Hash(string)"/> is unchanged — it is
 /// exactly <c>h ^ (h &gt;&gt; 32)</c> of the 64-bit result.
 /// </para>
 /// </remarks>
-public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<string>
+public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<string>, ISpanHashProvider
 {
     // CityHash v1.1 mixing constants (Geoff Pike & Jyrki Alakuijala, public domain).
     private const ulong K0 = 0xC3A5C85C97CB3127UL;
@@ -96,7 +96,23 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int Hash(string key)
     {
-        ulong h64 = Hash64(key);
+        ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
+
+    /// <summary>
+    /// Computes the CityHash64 hash of the specified character span, xor-folded to a
+    /// signed 32-bit result.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit, xor-folded CityHash64 hash of <paramref name="key"/> — the same
+    /// value <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
+        ulong h64 = Hash64Core(key);
         return unchecked((int)(h64 ^ (h64 >> 32)));
     }
 
@@ -117,8 +133,16 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
     public ulong Hash64(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash64Core(key.AsSpan());
+    }
 
-        int charLen = key.Length;               // count of UTF-16 code units (chars)
+    // The single 64-bit body. Both Hash64(string) and the span-based Hash(ReadOnlySpan<char>)
+    // route through it, so the string and span overloads cannot drift apart — the parity the
+    // ISpanHashProvider contract requires.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong Hash64Core(ReadOnlySpan<char> key)
+    {
+        int charLen = key.Length;             // count of UTF-16 code units (chars)
         ulong byteLen = (ulong)charLen * 2UL;   // CityHash operates on the byte length
 
         ulong h = byteLen <= 32UL
@@ -133,7 +157,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
 
     // ── Length-classed hash bodies (mirror CityHash64's dispatch) ───────────────
 
-    private static ulong HashLen0to16(string key, int charLen, ulong byteLen)
+    private static ulong HashLen0to16(ReadOnlySpan<char> key, int charLen, ulong byteLen)
     {
         if (byteLen >= 8UL)
         {
@@ -168,7 +192,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
         return K2;
     }
 
-    private static ulong HashLen17to32(string key, int charLen, ulong byteLen)
+    private static ulong HashLen17to32(ReadOnlySpan<char> key, int charLen, ulong byteLen)
     {
         ulong mul = K2 + byteLen * 2UL;
         ulong a = Lane(key, 0) * K1;
@@ -181,7 +205,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
             mul);
     }
 
-    private static ulong HashLen33to64(string key, int charLen, ulong byteLen)
+    private static ulong HashLen33to64(ReadOnlySpan<char> key, int charLen, ulong byteLen)
     {
         ulong mul = K2 + byteLen * 2UL;
         ulong a = Lane(key, 0) * K2;
@@ -204,7 +228,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
         return b + x;
     }
 
-    private static ulong HashLong(string key, int charLen, ulong byteLen)
+    private static ulong HashLong(ReadOnlySpan<char> key, int charLen, ulong byteLen)
     {
         // For strings over 64 bytes CityHash hashes the end first, then keeps 56
         // bytes of state (v, w, x, y, z) and consumes 64 bytes (thirty-two chars)
@@ -251,7 +275,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
     /// read over the native little-endian UTF-16 stream.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Lane(string key, int i) =>
+    private static ulong Lane(ReadOnlySpan<char> key, int i) =>
         (ulong)key[i]
         | ((ulong)key[i + 1] << 16)
         | ((ulong)key[i + 2] << 32)
@@ -263,7 +287,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
     /// 16 bits, the next char the high 16 bits.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Block(string key, int i) =>
+    private static ulong Block(ReadOnlySpan<char> key, int i) =>
         (uint)key[i] | ((uint)key[i + 1] << 16);
 
     /// <summary>CityHash's <c>ShiftMix</c>: <c>val ^ (val &gt;&gt; 47)</c>.</summary>
@@ -296,7 +320,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
     /// seeds, returning the two-word result.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static (ulong, ulong) WeakHashLen32WithSeeds(string key, int i, ulong a, ulong b)
+    private static (ulong, ulong) WeakHashLen32WithSeeds(ReadOnlySpan<char> key, int i, ulong a, ulong b)
     {
         ulong w = Lane(key, i);
         ulong x = Lane(key, i + 4);

@@ -62,7 +62,7 @@ namespace Celerity.Hashing;
 /// calling the hasher, so this does not collide with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringElfHasher : IHashProvider<string>
+public struct StringElfHasher : IHashProvider<string>, ISpanHashProvider
 {
     /// <summary>
     /// Computes the PJW / ELF hash of the specified string over the full
@@ -81,7 +81,22 @@ public struct StringElfHasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the PJW / ELF hash of the specified character span over the full
+    /// little-endian UTF-16 byte stream (both bytes of every character).
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit ELF hash of <paramref name="key"/> (always in the range
+    /// <c>[0, 0x0FFFFFFF]</c>, since the algorithm clears the top nibble) — the same
+    /// value <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         uint hash = 0u;
         foreach (char c in key)
         {

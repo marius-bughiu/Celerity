@@ -11,7 +11,7 @@ namespace Celerity.Hashing;
 /// so strings that differ only in high bytes of non-ASCII characters may collide.
 /// For Unicode-heavy workloads, a full UTF-8 or UTF-16 hash is preferable.
 /// </remarks>
-public struct StringFnV1AHasher : IHashProvider<string>
+public struct StringFnV1AHasher : IHashProvider<string>, ISpanHashProvider
 {
     /// <summary>
     /// Computes the FNV-1a 32-bit hash of the specified string.
@@ -28,7 +28,20 @@ public struct StringFnV1AHasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the FNV-1a 32-bit hash of the specified character span.
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit FNV-1a hash of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         // The FNV-1a 32-bit parameters
         const uint fnvPrime = 16777619;
         const uint offsetBasis = 2166136261;

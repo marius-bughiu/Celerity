@@ -48,6 +48,7 @@ internal class Program
         typeof(DisjointSetBenchmark),
         typeof(IndexedPriorityQueueBenchmark),
         typeof(TrieBenchmark),
+        typeof(StringInternTableBenchmark),
         typeof(FenwickTreeBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),

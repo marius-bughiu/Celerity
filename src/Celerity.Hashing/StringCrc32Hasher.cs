@@ -68,7 +68,7 @@ namespace Celerity.Hashing;
 /// with the empty-slot sentinel.
 /// </para>
 /// </remarks>
-public struct StringCrc32Hasher : IHashProvider<string>
+public struct StringCrc32Hasher : IHashProvider<string>, ISpanHashProvider
 {
     /// <summary>The reflected CRC-32 (ISO-HDLC / IEEE 802.3) generator polynomial.</summary>
     private const uint Polynomial = 0xEDB88320u;
@@ -114,7 +114,22 @@ public struct StringCrc32Hasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the standard CRC-32 (ISO-HDLC / IEEE 802.3 / zlib) of the specified
+    /// character span over the full little-endian UTF-16 byte stream (both bytes of
+    /// every character).
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit CRC-32 of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         uint[] table = Table;
         uint crc = 0xFFFFFFFFu;
 

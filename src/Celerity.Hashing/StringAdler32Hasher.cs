@@ -66,7 +66,7 @@ namespace Celerity.Hashing;
 /// sentinel.
 /// </para>
 /// </remarks>
-public struct StringAdler32Hasher : IHashProvider<string>
+public struct StringAdler32Hasher : IHashProvider<string>, ISpanHashProvider
 {
     /// <summary>
     /// The Adler-32 modulus: <c>65521</c>, the largest prime below 2^16.
@@ -89,7 +89,21 @@ public struct StringAdler32Hasher : IHashProvider<string>
     public int Hash(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
+        return Hash(key.AsSpan());
+    }
 
+    /// <summary>
+    /// Computes the standard Adler-32 (RFC 1950 / zlib) of the specified character span
+    /// over the full little-endian UTF-16 byte stream (both bytes of every character).
+    /// </summary>
+    /// <param name="key">The characters to hash.</param>
+    /// <returns>
+    /// The signed 32-bit Adler-32 of <paramref name="key"/> — the same value
+    /// <see cref="Hash(string)"/> returns for a string with the same contents.
+    /// </returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ReadOnlySpan<char> key)
+    {
         uint a = 1u;
         uint b = 0u;
 

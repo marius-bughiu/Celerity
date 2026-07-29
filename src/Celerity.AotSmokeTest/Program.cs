@@ -761,6 +761,71 @@ void Check(bool condition, string message)
     Check(wide.Count == 0 && !wide.ContainsPrefix("key"), "Trie.Clear");
 }
 
+// Span-keyed lookups + StringInternTable. These are the paths where the JIT's devirtualization
+// of a struct hasher through a *method*-level generic constraint (ISpanHashProvider on the
+// SpanLookupExtensions methods, not on the collection's own type parameter) has to survive AOT
+// compilation — every instantiation below is one the ILC has to see and generate.
+{
+    // The key sits inside a larger buffer, exactly as a parser would hold it: nothing here is
+    // ever turned into a string before the probe.
+    char[] buffer = "..alpha..beta..".ToCharArray();
+    ReadOnlySpan<char> alpha = buffer.AsSpan(2, 5);
+    ReadOnlySpan<char> beta = buffer.AsSpan(9, 4);
+    ReadOnlySpan<char> missing = "gamma".AsSpan();
+
+    var pairs = new[]
+    {
+        new KeyValuePair<string, int>("alpha", 1),
+        new KeyValuePair<string, int>("beta", 2),
+    };
+
+    var frozenDict = new FrozenCelerityDictionary<int, StringXxHash3Hasher>(pairs);
+    Check(frozenDict.TryGetValue(alpha, out int fdA) && fdA == 1, "FrozenCelerityDictionary span TryGetValue");
+    Check(frozenDict.ContainsKey(beta) && !frozenDict.ContainsKey(missing), "FrozenCelerityDictionary span ContainsKey");
+
+    var frozenSet = new FrozenCeleritySet<StringXxHash3Hasher>(new[] { "alpha", "beta" });
+    Check(frozenSet.Contains(alpha) && !frozenSet.Contains(missing), "FrozenCeleritySet span Contains");
+
+    var dict = new CelerityDictionary<string, int, StringFnV1AFullHasher>();
+    dict.Add("alpha", 1);
+    dict.Add("beta", 2);
+    Check(dict.TryGetValue(beta, out int dB) && dB == 2, "CelerityDictionary span TryGetValue");
+    Check(dict.ContainsKey(alpha) && !dict.ContainsKey(missing), "CelerityDictionary span ContainsKey");
+
+    var set = new CeleritySet<string, StringFnV1AFullHasher>();
+    set.Add("alpha");
+    Check(set.Contains(alpha) && !set.Contains(missing), "CeleritySet span Contains");
+
+    var spanTrie = new Trie<int>();
+    spanTrie["alpha"] = 1;
+    Check(spanTrie.TryGetValue(alpha, out int tA) && tA == 1, "Trie span TryGetValue");
+    Check(spanTrie.ContainsKey(alpha) && spanTrie.ContainsPrefix("alp".AsSpan()), "Trie span ContainsKey/ContainsPrefix");
+
+    // Every String*Hasher must answer Hash(s) == Hash(s.AsSpan()) after AOT compilation too —
+    // the contract the span probes above are built on.
+    var spanHasher = new StringXxHash3Hasher();
+    Check(spanHasher.Hash("alpha") == spanHasher.Hash(alpha), "ISpanHashProvider string/span parity");
+
+    // StringInternTable: the miss path allocates, every repeat returns the same reference.
+    var interned = new StringInternTable();
+    string first = interned.GetOrAdd(alpha);
+    string second = interned.GetOrAdd("xxalphaxx".AsSpan(2, 5));
+    Check(first == "alpha" && ReferenceEquals(first, second), "StringInternTable canonicalizes by contents");
+    Check(interned.Count == 1 && interned.Contains(alpha) && !interned.Contains(missing), "StringInternTable Count/Contains");
+    Check(interned.TryGet(alpha, out string? got) && ReferenceEquals(got, first), "StringInternTable.TryGet");
+    interned.GetOrAdd(beta);
+    int internedSeen = 0;
+    foreach (string _ in interned) internedSeen++;
+    Check(internedSeen == 2, "StringInternTable struct enumerator");
+    interned.Clear();
+    Check(interned.Count == 0, "StringInternTable.Clear");
+
+    // A second hasher instantiation, so the ILC generates more than one closed generic.
+    var internedStrong = new StringInternTable<StringMurmur3Hasher>();
+    Check(ReferenceEquals(internedStrong.GetOrAdd(alpha), internedStrong.GetOrAdd(alpha)),
+        "StringInternTable<StringMurmur3Hasher> canonicalizes");
+}
+
 // EnumMap — dense array-backed dictionary for enum keys (the .NET EnumMap). Exercise
 // the indexer, TryAdd/Add, TryGetValue, Remove, the parallel occupancy vector
 // (default value distinct from absent), and the ascending-order struct enumerator.
