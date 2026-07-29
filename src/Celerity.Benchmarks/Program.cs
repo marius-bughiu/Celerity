@@ -39,6 +39,7 @@ internal class Program
         typeof(CuckooFilterBenchmark),
         typeof(XorFilterBenchmark),
         typeof(BitSetBenchmark),
+        typeof(RankSelectBitVectorBenchmark),
         typeof(HyperLogLogBenchmark),
         typeof(CountMinSketchBenchmark),
         typeof(TopKSketchBenchmark),

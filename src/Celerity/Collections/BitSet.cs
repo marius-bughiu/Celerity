@@ -107,10 +107,21 @@ public sealed class BitSet : IEnumerable<bool>
         }
     }
 
+    // Takes ownership of an already-packed word array whose bits beyond `length` are clear. Used by
+    // RankSelectBitVector.ToBitSet to hand back a mutable copy without a per-bit round trip.
+    internal BitSet(ulong[] words, int length)
+    {
+        _length = length;
+        _words = words;
+    }
+
     /// <summary>
     /// Gets the number of bits in the set.
     /// </summary>
     public int Length => _length;
+
+    // A private copy of the packed words, for RankSelectBitVector to index without aliasing this mutable set.
+    internal ulong[] SnapshotWords() => (ulong[])_words.Clone();
 
     /// <summary>
     /// Gets the number of bits that are set (the cardinality / population count),
