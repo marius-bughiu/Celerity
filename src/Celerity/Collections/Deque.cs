@@ -43,8 +43,9 @@ public sealed class Deque<T> : IReadOnlyList<T>
     private int _count;
 
     // Incremented on every structural mutation (push/pop/clear/grow/trim) so active enumerators can detect
-    // concurrent modification and throw. An indexer set is an in-place element change, not structural, and
-    // does not bump it — matching List<T>.
+    // concurrent modification and throw. Operations that change nothing observable do not bump it: an indexer
+    // set is an in-place element change, not structural (matching List<T>), and a Clear() or TrimExcess() with
+    // nothing to do returns early.
     private int _version;
 
     /// <summary>
@@ -280,23 +281,26 @@ public sealed class Deque<T> : IReadOnlyList<T>
 
     /// <summary>
     /// Removes all elements from the deque. The backing array is retained (use <see cref="TrimExcess"/> to
-    /// release it).
+    /// release it). Clearing an already-empty deque is a true no-op and leaves active enumerators valid.
     /// </summary>
     public void Clear()
     {
-        if (_count != 0)
+        // An already-empty deque has nothing to release and no observable state to reset (_head can still be
+        // non-zero after a drain by popping, but no reader consults it while _count is 0), so the version must
+        // not move: a no-op Clear() would otherwise invalidate every live enumerator.
+        if (_count == 0)
+            return;
+
+        // Clear only the occupied slots (handling wrap-around) so references are released for GC.
+        if (_head + _count <= _items.Length)
         {
-            // Clear only the occupied slots (handling wrap-around) so references are released for GC.
-            if (_head + _count <= _items.Length)
-            {
-                Array.Clear(_items, _head, _count);
-            }
-            else
-            {
-                int firstRun = _items.Length - _head;
-                Array.Clear(_items, _head, firstRun);
-                Array.Clear(_items, 0, _count - firstRun);
-            }
+            Array.Clear(_items, _head, _count);
+        }
+        else
+        {
+            int firstRun = _items.Length - _head;
+            Array.Clear(_items, _head, firstRun);
+            Array.Clear(_items, 0, _count - firstRun);
         }
 
         _head = 0;

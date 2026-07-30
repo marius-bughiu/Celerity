@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Reflection;
 using Celerity.Collections;
 
 namespace Celerity.Tests.Collections;
@@ -93,6 +94,99 @@ public class DequeEnumerationTests
             seen++;
         }
         Assert.Equal(3, seen);
+    }
+
+    [Fact]
+    public void Clear_ShouldNotInvalidateEnumerator_WhenTheDequeIsAlreadyEmpty()
+    {
+        // A Clear() that removes nothing is not a structural modification, so it must not bump the version —
+        // the rule the other 28 count-based collections in the family already follow.
+        var deque = new Deque<int>();
+
+        Deque<int>.Enumerator neverPopulated = deque.GetEnumerator();
+        deque.Clear();
+        Assert.False(neverPopulated.MoveNext());
+
+        // The same holds for the far more likely shape: a defensive Clear() on a deque that some earlier
+        // Clear() (or a drain by popping) already emptied.
+        deque.PushBack(1);
+        deque.PushBack(2);
+        deque.Clear();
+
+        Deque<int>.Enumerator afterRealClear = deque.GetEnumerator();
+        deque.Clear();
+        Assert.False(afterRealClear.MoveNext());
+
+        // And when the deque was drained by popping instead, which leaves the head parked mid-buffer rather
+        // than at index 0 — the state the old unconditional `_head = 0` reset was normalizing.
+        deque.PushBack(3);
+        deque.PushBack(4);
+        Assert.Equal(3, deque.PopFront());
+        Assert.Equal(4, deque.PopFront());
+        Assert.Equal(0, deque.Count);
+
+        Deque<int>.Enumerator afterDrain = deque.GetEnumerator();
+        deque.Clear();
+        Assert.False(afterDrain.MoveNext());
+
+        // The un-normalized head is not observable: the deque still behaves correctly afterwards.
+        deque.PushBack(5);
+        deque.PushFront(4);
+        Assert.Equal(new[] { 4, 5 }, deque.ToArray());
+    }
+
+    [Fact]
+    public void Clear_ShouldInvalidateEnumerator_WhenTheDequeHeldElements()
+    {
+        // The positive control for the guard above: a Clear() that actually removes something is a structural
+        // modification and must still invalidate live enumerators.
+        var deque = new Deque<int>();
+        deque.PushBack(1);
+        deque.PushBack(2);
+
+        Deque<int>.Enumerator e = deque.GetEnumerator();
+        deque.Clear();
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void Clear_ShouldReleaseEveryOccupiedSlot_WhenTheLayoutIsWrapped()
+    {
+        // Guards the early-out against being placed above the reference-releasing Array.Clear calls: a wrapped
+        // layout clears two runs, and both must still be reached for a non-empty deque.
+        var deque = new Deque<string>(4);
+        deque.PushBack("b");
+        deque.PushBack("c");
+        deque.PushFront("a");   // head wraps to the end of the buffer
+        Assert.Equal(new[] { "a", "b", "c" }, deque.ToArray());
+
+        int capacityBefore = deque.Capacity;
+        deque.Clear();
+
+        Assert.Equal(0, deque.Count);
+        Assert.Equal(capacityBefore, deque.Capacity);
+        Assert.False(deque.Contains("a"));
+        Assert.Empty(deque);
+
+        // The logical assertions above would all still hold if Clear() skipped the Array.Clear runs entirely
+        // (with _count at 0 no reader consults the slots), so the release is checked directly: every physical
+        // slot must be null, or the retained buffer is pinning the cleared strings for GC.
+        Assert.All(BackingSlots(deque), slot => Assert.Null(slot));
+
+        // Still usable, and the front lands back at a sane slot.
+        deque.PushBack("z");
+        Assert.Equal("z", deque.PeekFront());
+        Assert.Equal("z", deque.PeekBack());
+    }
+
+    // Reads Deque<T>'s private backing array. Reference release is not observable through the public surface —
+    // a leaked slot behaves identically to a cleared one — so pinning it needs the field itself.
+    private static T[] BackingSlots<T>(Deque<T> deque)
+    {
+        FieldInfo? items = typeof(Deque<T>).GetField("_items", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(items);
+        return Assert.IsType<T[]>(items.GetValue(deque));
     }
 
     [Fact]

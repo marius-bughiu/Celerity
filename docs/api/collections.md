@@ -3502,7 +3502,8 @@ public Deque(IEnumerable<T> collection)
 - `void TrimExcess()` — shrinks the backing array to exactly `Count`, re-linearizing so the front
   sits at index `0`.
 - `void Clear()` — removes all elements; the backing array is retained (use `TrimExcess` to release
-  it).
+  it). Clearing an **already-empty** deque is a true no-op and does **not** invalidate an active
+  enumerator, matching the rest of the collection family.
 - `Enumerator GetEnumerator()` — an allocation-free struct enumerator yielding elements **front to
   back**; a structural modification during enumeration throws `InvalidOperationException`.
 
