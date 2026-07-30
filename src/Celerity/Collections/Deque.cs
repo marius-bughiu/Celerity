@@ -43,8 +43,9 @@ public sealed class Deque<T> : IReadOnlyList<T>
     private int _count;
 
     // Incremented on every structural mutation (push/pop/clear/grow/trim) so active enumerators can detect
-    // concurrent modification and throw. An indexer set is an in-place element change, not structural, and
-    // does not bump it — matching List<T>.
+    // concurrent modification and throw. Operations that change nothing observable do not bump it: an indexer
+    // set is an in-place element change, not structural (matching List<T>), and a Clear() or TrimExcess() with
+    // nothing to do returns early.
     private int _version;
 
     /// <summary>
@@ -284,8 +285,9 @@ public sealed class Deque<T> : IReadOnlyList<T>
     /// </summary>
     public void Clear()
     {
-        // An already-empty deque has nothing to release and no state to reset, so the version must not move:
-        // a no-op Clear() would otherwise invalidate every live enumerator.
+        // An already-empty deque has nothing to release and no observable state to reset (_head can still be
+        // non-zero after a drain by popping, but no reader consults it while _count is 0), so the version must
+        // not move: a no-op Clear() would otherwise invalidate every live enumerator.
         if (_count == 0)
             return;
 
