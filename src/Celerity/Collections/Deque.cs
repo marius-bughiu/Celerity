@@ -280,23 +280,25 @@ public sealed class Deque<T> : IReadOnlyList<T>
 
     /// <summary>
     /// Removes all elements from the deque. The backing array is retained (use <see cref="TrimExcess"/> to
-    /// release it).
+    /// release it). Clearing an already-empty deque is a true no-op and leaves active enumerators valid.
     /// </summary>
     public void Clear()
     {
-        if (_count != 0)
+        // An already-empty deque has nothing to release and no state to reset, so the version must not move:
+        // a no-op Clear() would otherwise invalidate every live enumerator.
+        if (_count == 0)
+            return;
+
+        // Clear only the occupied slots (handling wrap-around) so references are released for GC.
+        if (_head + _count <= _items.Length)
         {
-            // Clear only the occupied slots (handling wrap-around) so references are released for GC.
-            if (_head + _count <= _items.Length)
-            {
-                Array.Clear(_items, _head, _count);
-            }
-            else
-            {
-                int firstRun = _items.Length - _head;
-                Array.Clear(_items, _head, firstRun);
-                Array.Clear(_items, 0, _count - firstRun);
-            }
+            Array.Clear(_items, _head, _count);
+        }
+        else
+        {
+            int firstRun = _items.Length - _head;
+            Array.Clear(_items, _head, firstRun);
+            Array.Clear(_items, 0, _count - firstRun);
         }
 
         _head = 0;

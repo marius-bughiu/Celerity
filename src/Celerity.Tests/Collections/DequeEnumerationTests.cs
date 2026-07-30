@@ -96,6 +96,85 @@ public class DequeEnumerationTests
     }
 
     [Fact]
+    public void Clear_ShouldNotInvalidateEnumerator_WhenTheDequeIsAlreadyEmpty()
+    {
+        // A Clear() that removes nothing is not a structural modification, so it must not bump the version —
+        // the rule the other 28 count-based collections in the family already follow.
+        var deque = new Deque<int>();
+
+        Deque<int>.Enumerator neverPopulated = deque.GetEnumerator();
+        deque.Clear();
+        Assert.False(neverPopulated.MoveNext());
+
+        // The same holds for the far more likely shape: a defensive Clear() on a deque that some earlier
+        // Clear() (or a drain by popping) already emptied.
+        deque.PushBack(1);
+        deque.PushBack(2);
+        deque.Clear();
+
+        Deque<int>.Enumerator afterRealClear = deque.GetEnumerator();
+        deque.Clear();
+        Assert.False(afterRealClear.MoveNext());
+
+        // And when the deque was drained by popping instead, which leaves the head parked mid-buffer rather
+        // than at index 0 — the state the old unconditional `_head = 0` reset was normalizing.
+        deque.PushBack(3);
+        deque.PushBack(4);
+        Assert.Equal(3, deque.PopFront());
+        Assert.Equal(4, deque.PopFront());
+        Assert.Equal(0, deque.Count);
+
+        Deque<int>.Enumerator afterDrain = deque.GetEnumerator();
+        deque.Clear();
+        Assert.False(afterDrain.MoveNext());
+
+        // The un-normalized head is not observable: the deque still behaves correctly afterwards.
+        deque.PushBack(5);
+        deque.PushFront(4);
+        Assert.Equal(new[] { 4, 5 }, deque.ToArray());
+    }
+
+    [Fact]
+    public void Clear_ShouldInvalidateEnumerator_WhenTheDequeHeldElements()
+    {
+        // The positive control for the guard above: a Clear() that actually removes something is a structural
+        // modification and must still invalidate live enumerators.
+        var deque = new Deque<int>();
+        deque.PushBack(1);
+        deque.PushBack(2);
+
+        Deque<int>.Enumerator e = deque.GetEnumerator();
+        deque.Clear();
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void Clear_ShouldReleaseEveryOccupiedSlot_WhenTheLayoutIsWrapped()
+    {
+        // Guards the early-out against being placed above the reference-releasing Array.Clear calls: a wrapped
+        // layout clears two runs, and both must still be reached for a non-empty deque.
+        var deque = new Deque<string>(4);
+        deque.PushBack("b");
+        deque.PushBack("c");
+        deque.PushFront("a");   // head wraps to the end of the buffer
+        Assert.Equal(new[] { "a", "b", "c" }, deque.ToArray());
+
+        int capacityBefore = deque.Capacity;
+        deque.Clear();
+
+        Assert.Equal(0, deque.Count);
+        Assert.Equal(capacityBefore, deque.Capacity);
+        Assert.False(deque.Contains("a"));
+        Assert.Empty(deque);
+
+        // Still usable, and the front lands back at a sane slot.
+        deque.PushBack("z");
+        Assert.Equal("z", deque.PeekFront());
+        Assert.Equal("z", deque.PeekBack());
+    }
+
+    [Fact]
     public void MoveNext_PastEnd_StaysFalse()
     {
         var deque = new Deque<int>();
