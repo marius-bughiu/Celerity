@@ -351,10 +351,12 @@ public class LruCache<TKey, TValue, THasher>
     /// <summary>
     /// Returns an allocation-free struct enumerator that yields each entry in
     /// <b>most-recently-used to least-recently-used</b> order. Enumeration is a peek: it does not
-    /// change recency. If the cache is modified during enumeration — including by a mutating read
-    /// (<see cref="TryGet(TKey, out TValue)"/> or the indexer getter) that promotes an entry which was
-    /// not already most-recently-used — <see cref="Enumerator.MoveNext"/> throws
-    /// <see cref="InvalidOperationException"/>.
+    /// change recency. <see cref="Enumerator.MoveNext"/> throws <see cref="InvalidOperationException"/>
+    /// when the entry set or the recency order changed since the enumerator was taken: an insert, an
+    /// eviction, a <see cref="Remove(TKey)"/>, a <see cref="Clear"/>, or any read or write that
+    /// promoted an entry which was not already most-recently-used. Overwriting the value of an entry
+    /// without moving it is not a structural change and leaves active enumerators valid, matching the
+    /// rest of the library.
     /// </summary>
     /// <returns>A struct enumerator over this cache.</returns>
     public Enumerator GetEnumerator() => new Enumerator(this);
