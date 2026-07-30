@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Reflection;
 using Celerity.Collections;
 
 namespace Celerity.Tests.Collections;
@@ -168,10 +169,24 @@ public class DequeEnumerationTests
         Assert.False(deque.Contains("a"));
         Assert.Empty(deque);
 
+        // The logical assertions above would all still hold if Clear() skipped the Array.Clear runs entirely
+        // (with _count at 0 no reader consults the slots), so the release is checked directly: every physical
+        // slot must be null, or the retained buffer is pinning the cleared strings for GC.
+        Assert.All(BackingSlots(deque), slot => Assert.Null(slot));
+
         // Still usable, and the front lands back at a sane slot.
         deque.PushBack("z");
         Assert.Equal("z", deque.PeekFront());
         Assert.Equal("z", deque.PeekBack());
+    }
+
+    // Reads Deque<T>'s private backing array. Reference release is not observable through the public surface —
+    // a leaked slot behaves identically to a cleared one — so pinning it needs the field itself.
+    private static T[] BackingSlots<T>(Deque<T> deque)
+    {
+        FieldInfo? items = typeof(Deque<T>).GetField("_items", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(items);
+        return Assert.IsType<T[]>(items.GetValue(deque));
     }
 
     [Fact]
