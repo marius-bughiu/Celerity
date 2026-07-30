@@ -31,7 +31,9 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Reads are mutating.</b> LRU semantics require a lookup to count as a use, so the indexer getter
 /// and <see cref="TryGet(TKey, out TValue)"/> promote the entry to most-recently-used and therefore
-/// invalidate any in-progress enumerator (matching "collection was modified" semantics). Use
+/// invalidate any in-progress enumerator (matching "collection was modified" semantics) — except when
+/// the entry is <i>already</i> the most-recently-used one, where the promotion is a no-op that leaves
+/// the recency order and any active enumerator untouched. Use
 /// <see cref="TryPeek(TKey, out TValue)"/> or <see cref="ContainsKey(TKey)"/> to inspect the cache
 /// without disturbing recency order.
 /// </para>
@@ -155,7 +157,10 @@ public class LruCache<TKey, TValue, THasher>
     /// value of <typeparamref name="TValue"/>.
     /// </param>
     /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
-    /// <remarks>A hit reorders the recency list and therefore invalidates active enumerators.</remarks>
+    /// <remarks>
+    /// A hit reorders the recency list and therefore invalidates active enumerators, unless the entry
+    /// is already the most-recently-used one — that promotion is a no-op and leaves them valid.
+    /// </remarks>
     public bool TryGet(TKey key, out TValue? value)
     {
         if (!_index.TryGetValue(key, out int node))
@@ -347,8 +352,9 @@ public class LruCache<TKey, TValue, THasher>
     /// Returns an allocation-free struct enumerator that yields each entry in
     /// <b>most-recently-used to least-recently-used</b> order. Enumeration is a peek: it does not
     /// change recency. If the cache is modified during enumeration — including by a mutating read
-    /// (<see cref="TryGet(TKey, out TValue)"/> or the indexer getter) — <see cref="Enumerator.MoveNext"/>
-    /// throws <see cref="InvalidOperationException"/>.
+    /// (<see cref="TryGet(TKey, out TValue)"/> or the indexer getter) that promotes an entry which was
+    /// not already most-recently-used — <see cref="Enumerator.MoveNext"/> throws
+    /// <see cref="InvalidOperationException"/>.
     /// </summary>
     /// <returns>A struct enumerator over this cache.</returns>
     public Enumerator GetEnumerator() => new Enumerator(this);

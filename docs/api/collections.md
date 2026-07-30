@@ -3335,7 +3335,9 @@ frees.
 
 LRU semantics require a lookup to count as a *use*. The indexer getter and `TryGet` therefore
 **promote the entry to most-recently-used**, which reorders the recency list and invalidates any
-in-progress enumerator (matching "collection was modified" semantics). To inspect the cache without
+in-progress enumerator (matching "collection was modified" semantics). The one exception is a hit on
+the entry that is *already* most-recently-used: there is nothing to reorder, so the promotion is a
+no-op and active enumerators stay valid. To inspect the cache without
 disturbing recency order — and without invalidating an active enumerator — use `TryPeek`,
 `ContainsKey`, or the `TryPeekLeastRecentlyUsed` / `TryPeekMostRecentlyUsed` inspectors.
 
