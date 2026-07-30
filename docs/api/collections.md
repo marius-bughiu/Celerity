@@ -3937,7 +3937,7 @@ public StringInternTable(int capacity = 16, float loadFactor = 0.75f)
 |--------|-------------|
 | `int Count` | Number of distinct strings interned. |
 | `string GetOrAdd(ReadOnlySpan<char> key)` | The canonical instance for those characters, allocating one only on a miss. |
-| `string GetOrAdd(string key)` | The canonical instance; on a miss the supplied instance itself becomes canonical, so this never allocates. Throws `ArgumentNullException` on `null`. |
+| `string GetOrAdd(string key)` | The canonical instance; on a miss the supplied instance itself becomes canonical, so this never allocates a `string` (an insert past the load factor still grows the backing array). Throws `ArgumentNullException` on `null`. |
 | `bool TryGet(ReadOnlySpan<char> key, out string? value)` | Pure lookup — never interns. `value` is `null` on a miss. |
 | `bool Contains(ReadOnlySpan<char> key)` | Whether those characters are already interned. |
 | `bool Contains(string key)` | The same. Throws `ArgumentNullException` on `null`. |

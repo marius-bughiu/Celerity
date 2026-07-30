@@ -188,9 +188,10 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
     /// <remarks>
-    /// This overload never allocates: on a miss the supplied instance becomes the canonical
-    /// one. It is the shape to use when you already hold a <see cref="string"/> and want to
-    /// collapse duplicates.
+    /// This overload never allocates a <see cref="string"/>: on a miss the supplied instance
+    /// becomes the canonical one. (An insert that crosses the load factor still grows the
+    /// backing array, as any hash table does.) It is the shape to use when you already hold a
+    /// <see cref="string"/> and want to collapse duplicates.
     /// </remarks>
     public string GetOrAdd(string key)
     {
