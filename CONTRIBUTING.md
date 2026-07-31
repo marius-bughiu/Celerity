@@ -97,6 +97,8 @@ Two rules keep a benchmark chartable:
 
 Adding a collection to the site means updating three lists by hand, since the published data alone does not tell the page what to draw: the ship card in `web/index.html`, and the `COLLECTIONS` array in **both** `web/dev/bench/index.html` and `web/dev/bench/detail.html` (`items: [NO_SWEEP]` for an unparameterized class).
 
+Write the `title` and `vs` in those arrays as plain text — `BTreeSet<int>`, not `BTreeSet&lt;int&gt;`. They are escaped at render time, so a pre-escaped label renders its entities literally. The flip side is that a label must never be concatenated into an `innerHTML` template raw: a generic parameter is then parsed as a start tag and vanishes from the heading. The check below fails CI on that.
+
 [`scripts/check_dashboard_coverage.js`](scripts/check_dashboard_coverage.js) enforces all of this so the failure mode is a red check rather than a blank card. It lifts the `COLLECTIONS` tables and the name parsers out of the dashboard HTML rather than reimplementing them, so it validates the code that actually ships. Run it any time you touch a benchmark or the dashboard:
 
 ```bash
@@ -104,7 +106,7 @@ node scripts/check_dashboard_coverage.js                                   # str
 node scripts/check_dashboard_coverage.js path/to/joined-report-full.json   # + verify the data
 ```
 
-The structural half — the two `COLLECTIONS` arrays agree, and every charted collection has a `{Key}Benchmark` registered in `CoreBenchmarks` — runs on every PR in `ci.yml`. The full check runs in the aggregate job of `benchmarks.yml`, against the merged report, and additionally asserts that every published name parses and that every card resolves to both a BCL and a Celerity measurement.
+The structural half — the two `COLLECTIONS` arrays agree, every charted collection has a `{Key}Benchmark` registered in `CoreBenchmarks`, and no label reaches an `innerHTML` template unescaped — runs on every PR in `ci.yml`. The full check runs in the aggregate job of `benchmarks.yml`, against the merged report, and additionally asserts that every published name parses and that every card resolves to both a BCL and a Celerity measurement.
 
 ## Versioning
 

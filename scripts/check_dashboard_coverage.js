@@ -1,30 +1,33 @@
 #!/usr/bin/env node
 //
-// Fails when the benchmark dashboard would silently render an empty card.
+// Fails when the benchmark dashboard would silently drop what it was asked to render.
 //
 // The dashboard parses BenchmarkDotNet result names with regexes, and a name that does
 // not match is dropped without a trace: the data publishes to gh-pages correctly and the
 // card just renders blank. That has happened twice — EnumMap / EnumSet declare no
 // [Params] at all, and DisjointSet once named its params property ElementCount — and
-// neither produced any CI signal.
+// neither produced any CI signal. The same silence applies to the card *labels*: a title
+// like `IntDictionary<int>` written straight to innerHTML has its generic parameters
+// parsed as a start tag and swallowed, so the card renders with a truncated heading.
 //
-// This check closes that gap. It lifts the COLLECTIONS tables and the two name parsers
+// This check closes those gaps. It lifts the COLLECTIONS tables and the two name parsers
 // straight out of the dashboard HTML rather than reimplementing them, so it validates
 // the parser that actually ships and cannot drift from it.
 //
 // Structural checks, run on every PR (no benchmark run needed):
 //   1. index.html and detail.html agree on the collection keys and their item counts;
 //   2. every charted collection has a matching benchmark class registered in the
-//      CoreBenchmarks array of src/Celerity.Benchmarks/Program.cs.
+//      CoreBenchmarks array of src/Celerity.Benchmarks/Program.cs;
+//   3. no markup-shaped label is concatenated into an innerHTML template unescaped.
 //
 // Report checks, run in the benchmark job once the sharded suite has been merged:
-//   3. every benchmark name in the report is understood by one of the dashboard parsers;
-//   4. every (collection, op) pair the dashboard draws a card for resolves to both a BCL
+//   4. every benchmark name in the report is understood by one of the dashboard parsers;
+//   5. every (collection, op) pair the dashboard draws a card for resolves to both a BCL
 //      and a Celerity measurement.
 //
 // Usage:
-//   node scripts/check_dashboard_coverage.js                             # 1-2 only
-//   node scripts/check_dashboard_coverage.js <joined-report-full.json>   # 1-4
+//   node scripts/check_dashboard_coverage.js                             # 1-3 only
+//   node scripts/check_dashboard_coverage.js <joined-report-full.json>   # 1-5
 // Run from the repository root.
 
 'use strict';
@@ -102,6 +105,54 @@ function loadBenchmarkNames(reportPath) {
   return report.Benchmarks.map((b) => b.FullName).filter(Boolean);
 }
 
+// ---- Unescaped-label detection ------------------------------------------------------
+// The COLLECTIONS titles and `vs` baselines are trusted in-repo literals, but they are
+// markup-shaped: `IntDictionary<int>` concatenated into an innerHTML template is parsed
+// as a start tag, so the visible heading loses its generic parameters (and, for
+// `EnumSet<TEnum>`, materializes a stray <tenum> element). Every such label has to pass
+// through the page's escapeHtml() on its way to an HTML sink.
+//
+// Both concatenation directions are matched. The attribute API is a safe sink — it takes
+// text, not markup — so a line handing a label to setAttribute/textContent is skipped.
+const LABEL_FIELDS = '(?:title|vs|sub)';
+const LABEL_OWNERS = '(?:col|collection|meta|c)';
+const RAW_LABEL = new RegExp(
+  `\\+\\s*${LABEL_OWNERS}\\.${LABEL_FIELDS}\\b|\\b${LABEL_OWNERS}\\.${LABEL_FIELDS}\\s*\\+`
+);
+const SAFE_SINKS = /setAttribute\(|\.textContent\b/;
+
+// A template is routinely spread over several source lines, and the sink that decides
+// whether it is safe sits on the first of them — so lines are folded into logical
+// statements first, joining any line that ends on a continuation token with the next.
+const CONTINUES = /[,+(=]$|&&$|\|\|$/;
+
+function logicalLines(source) {
+  const raw = source.split(/\r?\n/);
+  const out = [];
+  let buf = null;
+  raw.forEach((line, i) => {
+    const trimmed = line.trim();
+    if (buf === null) buf = { line: i + 1, text: trimmed };
+    else buf.text += ' ' + trimmed;
+    if (!CONTINUES.test(trimmed)) {
+      out.push(buf);
+      buf = null;
+    }
+  });
+  if (buf !== null) out.push(buf);
+  return out;
+}
+
+function findRawLabels(file) {
+  return logicalLines(fs.readFileSync(file, 'utf8'))
+    .filter((s) => !SAFE_SINKS.test(s.text) && RAW_LABEL.test(s.text))
+    .map((s) => ({
+      line: s.line,
+      match: s.text.match(RAW_LABEL)[0].trim(),
+      text: s.text.length > 160 ? s.text.slice(0, 157) + '...' : s.text,
+    }));
+}
+
 // ---- Checks -------------------------------------------------------------------------
 
 function main() {
@@ -142,10 +193,21 @@ function main() {
     }
   }
 
+  // (3) A markup-shaped label written raw to innerHTML renders truncated.
+  for (const file of [INDEX_HTML, DETAIL_HTML]) {
+    for (const hit of findRawLabels(file)) {
+      problems.push(
+        `${file}:${hit.line} concatenates \`${hit.match}\` into a markup string without escapeHtml() — ` +
+        `a generic type name in that label is parsed as a tag and dropped from the rendered heading. ` +
+        `Line: ${hit.text}`
+      );
+    }
+  }
+
   if (reportPath) {
     const names = loadBenchmarkNames(reportPath);
 
-    // (3) Nothing in the report may be silently unrenderable.
+    // (4) Nothing in the report may be silently unrenderable.
     const unparsed = names.filter((n) => !index.parseName(n) && !index.parseHasher(n, 0));
     if (unparsed.length > 0) {
       const classes = [...new Set(unparsed.map((n) => n.split('.')[0]))];
@@ -156,7 +218,7 @@ function main() {
       );
     }
 
-    // (4) Every card the dashboard draws must have both series behind it.
+    // (5) Every card the dashboard draws must have both series behind it.
     const idx = {};
     for (const name of names) {
       const p = index.parseName(name);
