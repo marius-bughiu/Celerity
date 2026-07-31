@@ -112,17 +112,19 @@ function loadBenchmarkNames(reportPath) {
 // `EnumSet<TEnum>`, materializes a stray <tenum> element). Every such label has to pass
 // through the page's escapeHtml() on its way to an HTML sink.
 //
-// Both concatenation directions are matched. The attribute API is a safe sink — it takes
-// text, not markup — so a line handing a label to setAttribute/textContent is skipped.
+// Both concatenation directions are matched, but only inside a statement that is building
+// markup: one feeding an HTML sink, or one splicing the label into a string literal that
+// opens a tag. Concatenating a label anywhere else is fine — the attribute API, textContent
+// and a query string all take text, not markup — so those are not flagged.
 const LABEL_FIELDS = '(?:title|vs|sub)';
 const LABEL_OWNERS = '(?:col|collection|meta|c)';
 const RAW_LABEL = new RegExp(
   `\\+\\s*${LABEL_OWNERS}\\.${LABEL_FIELDS}\\b|\\b${LABEL_OWNERS}\\.${LABEL_FIELDS}\\s*\\+`
 );
-const SAFE_SINKS = /setAttribute\(|\.textContent\b/;
+const MARKUP_CONTEXT = /\.(?:inner|outer)HTML\b|insertAdjacentHTML\(|document\.write\(|['"]</;
 
-// A template is routinely spread over several source lines, and the sink that decides
-// whether it is safe sits on the first of them — so lines are folded into logical
+// A template is routinely spread over several source lines, and the sink that says whether
+// it is markup at all sits on the first of them — so lines are folded into logical
 // statements first, joining any line that ends on a continuation token with the next.
 const CONTINUES = /[,+(=]$|&&$|\|\|$/;
 
@@ -145,7 +147,7 @@ function logicalLines(source) {
 
 function findRawLabels(file) {
   return logicalLines(fs.readFileSync(file, 'utf8'))
-    .filter((s) => !SAFE_SINKS.test(s.text) && RAW_LABEL.test(s.text))
+    .filter((s) => MARKUP_CONTEXT.test(s.text) && RAW_LABEL.test(s.text))
     .map((s) => ({
       line: s.line,
       match: s.text.match(RAW_LABEL)[0].trim(),
