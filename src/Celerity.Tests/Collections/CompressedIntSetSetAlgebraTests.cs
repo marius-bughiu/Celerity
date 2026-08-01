@@ -491,6 +491,45 @@ public class CompressedIntSetSetAlgebraTests
     }
 
     [Fact]
+    public void SetAlgebra_ShouldStillAnswer_WhenTheSetHoldsMoreElementsThanAnInt32()
+    {
+        // Count throws past int.MaxValue by design, so any fallback routed through the shared
+        // SetOperations helper — which compares ICollection<T>.Count — would throw here instead of
+        // answering. Every one of these is computable from the long Cardinality, and must be.
+        var set = new CompressedIntSet();
+        set.AddRange(int.MinValue, int.MaxValue);
+        Assert.Throws<OverflowException>(() => set.Count);
+
+        var sequence = new List<int> { 5, 7 };
+
+        Assert.True(set.Overlaps(sequence));
+        Assert.False(set.SetEquals(sequence));
+        Assert.False(set.IsSubsetOf(sequence));
+        Assert.False(set.IsProperSubsetOf(sequence));
+        Assert.True(set.IsSupersetOf(sequence));
+        Assert.True(set.IsProperSupersetOf(sequence));
+
+        // And the one mutating fallback that would have had to snapshot the whole set to work.
+        set.IntersectWith(sequence);
+
+        Assert.Equal(new[] { 5, 7 }, set);
+        Assert.Equal(2, set.Count);
+    }
+
+    [Fact]
+    public void IntersectWith_ShouldNotBumpTheVersion_WhenAPlainSequenceRemovesNothing()
+    {
+        var set = new CompressedIntSet(new[] { 1, 2, 3 });
+
+        using IEnumerator<int> live = ((IEnumerable<int>)set).GetEnumerator();
+        set.IntersectWith(new List<int> { 1, 2, 3, 4 });
+
+        Assert.Equal(new[] { 1, 2, 3 }, set);
+        Assert.True(live.MoveNext());
+        Assert.Equal(1, live.Current);
+    }
+
+    [Fact]
     public void ExceptWith_ShouldBeANoOp_WhenTheSetIsEmptyAndTheOtherSideIsAPlainSequence()
     {
         var set = new CompressedIntSet();

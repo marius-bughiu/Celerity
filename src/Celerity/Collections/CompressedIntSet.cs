@@ -393,8 +393,16 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
 
     // ── ISet<int> / IReadOnlySet<int> surface ─────────────────────────────────
     // Each operation takes the chunk-wise path when `other` is a CompressedIntSet — the case the
-    // type exists for — and otherwise falls back to the shared element-at-a-time SetOperations
-    // helper the rest of the set family uses, so the semantics match BCL HashSet<int> either way.
+    // type exists for — and otherwise handles an arbitrary IEnumerable<int> with BCL HashSet<int>
+    // semantics.
+    //
+    // The two fallbacks that need nothing from Count (SymmetricExceptWith) or only stream `other`
+    // against Contains (IsSupersetOf) route through the shared SetOperations helper the rest of the
+    // set family uses. The other six do not, and that is deliberate rather than drift: SetOperations
+    // is written against ICollection<T>.Count, which on this type throws once the cardinality passes
+    // int.MaxValue — a state AddRange reaches cheaply. Every one of those six answers is perfectly
+    // computable there, so each compares against the long Cardinality instead and stays usable at the
+    // full 32-bit cardinality the type supports.
 
     /// <summary>
     /// Modifies the set to contain all elements present in itself, in <paramref name="other"/>, or
@@ -435,7 +443,17 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
             return;
         }
 
-        SetOperations.IntersectWith(this, other);
+        // Not SetOperations.IntersectWith: that snapshots this set into a List<T> and reads its
+        // Count, neither of which a set holding more than int.MaxValue elements can do. Building the
+        // survivors from `other` instead is bounded by `other`, so it works at any cardinality.
+        var survivors = new CompressedIntSet();
+        foreach (int item in other)
+        {
+            if (Contains(item))
+                survivors.TryAdd(item);
+        }
+
+        ReplaceWith(survivors);
     }
 
     /// <summary>
@@ -501,7 +519,8 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         if (other is CompressedIntSet o)
             return _cardinality <= o._cardinality && IsSubsetOfCore(o);
 
-        return SetOperations.IsSubsetOf(this, other);
+        HashSet<int> materialized = new(other);
+        return _cardinality <= materialized.Count && AllElementsIn(materialized);
     }
 
     /// <summary>
@@ -519,7 +538,8 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         if (other is CompressedIntSet o)
             return _cardinality < o._cardinality && IsSubsetOfCore(o);
 
-        return SetOperations.IsProperSubsetOf(this, other);
+        HashSet<int> materialized = new(other);
+        return _cardinality < materialized.Count && AllElementsIn(materialized);
     }
 
     /// <summary>
@@ -552,7 +572,17 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         if (other is CompressedIntSet o)
             return o._cardinality < _cardinality && o.IsSubsetOfCore(this);
 
-        return SetOperations.IsProperSupersetOf(this, other);
+        HashSet<int> materialized = new(other);
+        if (materialized.Count >= _cardinality)
+            return false;
+
+        foreach (int item in materialized)
+        {
+            if (!Contains(item))
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -570,7 +600,13 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         if (other is CompressedIntSet o)
             return OverlapsCore(o);
 
-        return SetOperations.Overlaps(this, other);
+        foreach (int item in other)
+        {
+            if (Contains(item))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -585,7 +621,8 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         if (other is CompressedIntSet o)
             return _cardinality == o._cardinality && IsSubsetOfCore(o);
 
-        return SetOperations.SetEquals(this, other);
+        HashSet<int> materialized = new(other);
+        return _cardinality == materialized.Count && AllElementsIn(materialized);
     }
 
     /// <summary>
@@ -1573,6 +1610,31 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         }
 
         return false;
+    }
+
+    // Takes over `replacement`'s storage. Only ever called with a set built locally by the caller,
+    // so stealing its arrays cannot alias anything anyone else still holds.
+    private void ReplaceWith(CompressedIntSet replacement)
+    {
+        bool changed = replacement._cardinality != _cardinality;
+        _chunks = replacement._chunks;
+        _chunkCount = replacement._chunkCount;
+        _cardinality = replacement._cardinality;
+        if (changed)
+            _version++;
+    }
+
+    // Whether every element of this set is in `other`. Each caller compares cardinalities first, so
+    // this is never reached for a set too large to walk.
+    private bool AllElementsIn(HashSet<int> other)
+    {
+        foreach (int item in this)
+        {
+            if (!other.Contains(item))
+                return false;
+        }
+
+        return true;
     }
 
     private void TruncateChunks(int count)
