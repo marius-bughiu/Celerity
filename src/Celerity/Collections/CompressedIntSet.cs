@@ -1309,6 +1309,11 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
             return count;
         }
 
+        // The two counting queries below probe the larger side rather than merging the two sorted
+        // cursors the way the mutating operators do. That is deliberate: probing lets Overlaps bail
+        // on the first hit (a merge would have to keep stepping the smaller side), and neither query
+        // writes a result, so the merge's one advantage — producing the output in order for free —
+        // buys nothing here.
         int total = 0;
         if (a.Cardinality <= b.Cardinality)
         {

@@ -16,9 +16,10 @@ using Celerity.Collections;
 //     garbage. That column is half the reason to use this type.
 //
 // The sweep stays at the family's 1,000 / 100,000 item counts so the card sits alongside the other
-// set cards on the dashboard and the CI A/B run stays affordable. The type's headline claim is
-// stated for ~1M elements over a ~100M universe, which is the Sparse shape here at ten times the
-// scale — the mechanism, and the ratio, are the same.
+// set cards on the dashboard and the CI A/B run stays affordable. That is a *tenth* of the scale
+// the type's headline claim is stated at (~1M elements over a ~100M universe) — but the same shape,
+// because the Sparse arms keep the 100x universe ratio, so a chunk still holds a few hundred values
+// and still lands in an array container. The full-scale measurements are recorded in ROADMAP.md.
 //
 // The distribution is encoded in the category name rather than in a second [Params] on purpose: the
 // dashboard's benchmark-name parser accepts exactly one `(ItemCount: N)` suffix, and a second
@@ -118,6 +119,9 @@ public class CompressedIntSetBenchmark
         return set.Count;
     }
 
+    // The Optimize() call is deliberate and is counted against this arm: it is what a caller does
+    // after a bulk load, and it is what makes the Allocated column report the settled footprint
+    // rather than an un-compacted one. It costs this arm time to make the memory number honest.
     [Benchmark]
     [BenchmarkCategory("Add")]
     public int CompressedIntSet_Add()
