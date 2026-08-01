@@ -138,6 +138,14 @@ public class CompressedIntSetTests
         Assert.Equal(0, set.Count);
         Assert.Empty(set);
         Assert.False(set.Contains(0));
+
+        // Every container payload is gone, but the chunk index keeps its capacity so the set can be
+        // refilled without regrowing it — which is why the reported footprint is not yet zero.
+        Assert.True(set.MemoryUsageInBytes > 0);
+        Assert.True(set.MemoryUsageInBytes < BitmapPayloadBytes);
+
+        set.Optimize();
+        Assert.Equal(0, set.MemoryUsageInBytes);
     }
 
     // ---- container transitions -------------------------------------------------------

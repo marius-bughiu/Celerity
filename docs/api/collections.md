@@ -2214,7 +2214,9 @@ CompressedIntSet(IEnumerable<int> source)
   holds more than `int.MaxValue` elements, which only a very wide `AddRange` can produce (the set
   can hold all 2^32 `int` values). Use `Cardinality` if that is reachable for your data.
 - `long MemoryUsageInBytes { get; }` — the chunk index plus every container payload, excluding
-  object headers. A measure of how well the data compressed; watch it across `Optimize()`.
+  object headers. A measure of how well the data compressed; watch it across `Optimize()`. It counts
+  the index's *capacity*, not just its used length, so it stays non-zero after a `Clear()` until
+  `Optimize()` trims it.
 
 ### Methods
 
@@ -2227,8 +2229,10 @@ CompressedIntSet(IEnumerable<int> source)
 - `bool Contains(int item)` — `O(1)` in a bitmap chunk, `O(log n)` in an array or run chunk, and a
   single comparison against the chunk index when nothing covers the value.
 - `bool Remove(int item)` — `true` if removed. A chunk emptied by its last removal is dropped.
-- `void Clear()` — empties the set and releases every container. A `Clear()` on an already-empty
-  set changes nothing and leaves active enumerators valid.
+- `void Clear()` — empties the set, dropping every container payload. The chunk index keeps its
+  capacity so the set can be refilled without regrowing it, so `MemoryUsageInBytes` does not fall to
+  zero after a `Clear()` — call `Optimize()` to hand that back. A `Clear()` on an already-empty set
+  changes nothing and leaves active enumerators valid.
 - `void Optimize()` — re-encodes every chunk in its smallest form (the only thing that produces
   run containers from existing data) and trims the chunk index and array containers to exact size.
   Purely a representation change: no element is added or removed, and active enumerators stay

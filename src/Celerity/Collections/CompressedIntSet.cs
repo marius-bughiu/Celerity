@@ -180,6 +180,8 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// plus each chunk's container payload. Object headers are not counted, so this is a measure of
     /// how well the data compressed rather than an exact managed-heap figure. It changes as
     /// containers switch form, and <see cref="Optimize"/> is what drives it down after a bulk load.
+    /// The index is counted at its full capacity rather than its used length, so this stays non-zero
+    /// after a <see cref="Clear"/> until <see cref="Optimize"/> trims the index away.
     /// </summary>
     public long MemoryUsageInBytes
     {
@@ -311,8 +313,11 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     }
 
     /// <summary>
-    /// Removes all elements from the set, releasing every container. A <see cref="Clear"/> on an
-    /// already-empty set changes nothing and leaves active enumerators valid.
+    /// Removes all elements from the set, dropping every container payload. The chunk index keeps
+    /// its capacity so the set can be refilled without regrowing it, which means
+    /// <see cref="MemoryUsageInBytes"/> does not fall to zero — call <see cref="Optimize"/>
+    /// afterwards to hand that back. A <see cref="Clear"/> on an already-empty set changes nothing
+    /// and leaves active enumerators valid.
     /// </summary>
     public void Clear()
     {
