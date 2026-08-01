@@ -46,7 +46,7 @@ namespace Celerity.Collections;
 /// so the order after a removal is unspecified.
 /// </para>
 /// </remarks>
-public class SmallSet<T> : ISet<T>
+public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
 {
     /// <summary>
     /// The capacity the set grows to on its first insert when constructed with no

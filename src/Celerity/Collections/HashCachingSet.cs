@@ -49,7 +49,7 @@ namespace Celerity.Collections;
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class HashCachingSet<T, THasher> : ISet<T> where THasher : struct, IHashProvider<T>
+public class HashCachingSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : struct, IHashProvider<T>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
@@ -590,7 +590,7 @@ public class HashCachingSet<T, THasher> : ISet<T> where THasher : struct, IHashP
     }
 
     private static bool IsDefaultValue(T item) =>
-        EmptySlot.Is(item);
+        EqualityComparer<T>.Default.Equals(item, default(T));
 
     // The cached fingerprint for an element: its hash with the top bit forced set
     // so the stored metadata is always non-zero (zero is reserved for "empty").

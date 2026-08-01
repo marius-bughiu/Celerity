@@ -389,8 +389,6 @@ The fingerprint of an occupied slot is the key's hash with its top bit forced se
 
 Reach for `HashCachingDictionary` for **lookup-dominated** workloads, **expensive-equality keys** (long strings, large value-type keys), or large cache-cold tables where the metadata-only scan pays off, and where four bytes of metadata per slot is an acceptable cost. For small tables of cheap (e.g. `int`) keys, `CelerityDictionary` has the smaller footprint and is roughly a wash. It is complementary to `SwissDictionary`: both keep a metadata side array, but `HashCachingDictionary` is a scalar, wider-fingerprint design with backward-shift (tombstone-free) deletion, while `SwissDictionary` uses SIMD group probing over one-byte tags. Both are single-threaded and make no iteration-order guarantee.
 
-`string` keys are the case worth calling out. The BCL `Dictionary<string, TValue>` already stores a hash code per entry, so `CelerityDictionary<string, …>` — which stores keys and nothing else — gives up a full ordinal string compare per probed slot and measures *behind* the BCL there. `HashCachingDictionary` restores that structure and the gap largely closes; on the negative-lookup path it turns into a win. See [reference-type keys: cache the hash](../performance.md#reference-type-keys-cache-the-hash) for the measured table.
-
 ### Constructors
 
 ```csharp
@@ -608,10 +606,10 @@ Console.WriteLine(map.Count); // 3
 
 ## CeleritySet&lt;T, THasher&gt;
 
-A high-performance generic set parameterized on a custom hash provider. Set counterpart to `CelerityDictionary`. Implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), so it is a drop-in for `HashSet<T>` wherever set algebra is used.
+A high-performance generic set parameterized on a custom hash provider. Set counterpart to `CelerityDictionary`. Implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`) and `IReadOnlySet<T>`, so it is a drop-in for `HashSet<T>` wherever set algebra is used, including at call sites typed against the read-only interface.
 
 ```csharp
-public class CeleritySet<T, THasher> : ISet<T>
+public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -650,9 +648,9 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty`, `null` for reference types) is yielded first when present.
 - `void CopyTo(T[] array, int arrayIndex)` — copies every element (the out-of-band `default(T)` entry first) into `array`, matching `HashSet<T>.CopyTo` argument validation.
 
-### Set operations (`ISet<T>`)
+### Set operations (`ISet<T>` / `IReadOnlySet<T>`)
 
-The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>` semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`, and the out-of-band `default(T)`/zero element all handled):
+The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>` semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`, and the out-of-band `default(T)`/zero element all handled). The query members below satisfy `IReadOnlySet<T>` as well as `ISet<T>`, so a `CeleritySet<T, THasher>` can be passed to either:
 
 - **Mutating:** `void UnionWith(IEnumerable<T> other)`, `void IntersectWith(IEnumerable<T> other)`, `void ExceptWith(IEnumerable<T> other)`, `void SymmetricExceptWith(IEnumerable<T> other)`.
 - **Query:** `bool IsSubsetOf(...)`, `bool IsProperSubsetOf(...)`, `bool IsSupersetOf(...)`, `bool IsProperSupersetOf(...)`, `bool Overlaps(...)`, `bool SetEquals(...)`.
@@ -690,7 +688,7 @@ foreach (var id in ids) { /* ... */ }
 A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
 
 ```csharp
-public class SwissSet<T, THasher> : ISet<T>
+public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -762,10 +760,10 @@ foreach (var item in seen) { /* ... */ }
 
 ## RobinHoodSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that resolves collisions with **Robin Hood open addressing** instead of plain linear probing. It is the set counterpart of `RobinHoodDictionary` — the same probe-sequence-length (PSL) machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
+A drop-in peer of `CeleritySet` that resolves collisions with **Robin Hood open addressing** instead of plain linear probing. It is the set counterpart of `RobinHoodDictionary` — the same probe-sequence-length (PSL) machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` / `IReadOnlySet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
 
 ```csharp
-public class RobinHoodSet<T, THasher> : ISet<T>
+public class RobinHoodSet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -837,10 +835,10 @@ foreach (var item in seen) { /* ... */ }
 
 ## HashCachingSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that takes the struct-of-arrays layout one step further: alongside the `items` array it keeps a dense side array of 32-bit hash **fingerprints**. It is the set counterpart of `HashCachingDictionary` — the same cached-fingerprint machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probe representation differs.
+A drop-in peer of `CeleritySet` that takes the struct-of-arrays layout one step further: alongside the `items` array it keeps a dense side array of 32-bit hash **fingerprints**. It is the set counterpart of `HashCachingDictionary` — the same cached-fingerprint machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` / `IReadOnlySet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probe representation differs.
 
 ```csharp
-public class HashCachingSet<T, THasher> : ISet<T>
+public class HashCachingSet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -913,10 +911,10 @@ foreach (var item in seen) { /* ... */ }
 
 ## PooledCeleritySet<T, THasher>
 
-An allocation-conscious peer of `CeleritySet` whose backing array is **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. It is the set counterpart of `PooledCelerityDictionary` — the same rent / return lifecycle applied to a single element array rather than parallel key/value arrays. The public surface is identical to `CeleritySet` — same constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — with one addition: it implements `IDisposable`.
+An allocation-conscious peer of `CeleritySet` whose backing array is **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. It is the set counterpart of `PooledCelerityDictionary` — the same rent / return lifecycle applied to a single element array rather than parallel key/value arrays. The public surface is identical to `CeleritySet` — same constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` / `IReadOnlySet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — with one addition: it implements `IDisposable`.
 
 ```csharp
-public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
+public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposable
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -1011,10 +1009,10 @@ Same semantics and validation as `IntSet<THasher>` (see below).
 
 ## IntSet&lt;THasher&gt;
 
-A high-performance set of `int` values, parameterized on a custom hash provider. Implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) — the full `HashSet<int>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
+A high-performance set of `int` values, parameterized on a custom hash provider. Implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) and `IReadOnlySet<int>` — the full `HashSet<int>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
 
 ```csharp
-public class IntSet<THasher> : ISet<int>
+public class IntSet<THasher> : ISet<int>, IReadOnlySet<int>
     where THasher : struct, IHashProvider<int>
 ```
 
@@ -1097,10 +1095,10 @@ Same semantics and validation as `LongSet<THasher>` (see below).
 
 ## LongSet&lt;THasher&gt;
 
-A high-performance set of `long` values, parameterized on a custom hash provider. Implements `ISet<long>` (and therefore `ICollection<long>` / `IEnumerable<long>`) — the full `HashSet<long>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
+A high-performance set of `long` values, parameterized on a custom hash provider. Implements `ISet<long>` (and therefore `ICollection<long>` / `IEnumerable<long>`) and `IReadOnlySet<long>` — the full `HashSet<long>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
 
 ```csharp
-public class LongSet<THasher> : ISet<long>
+public class LongSet<THasher> : ISet<long>, IReadOnlySet<long>
     where THasher : struct, IHashProvider<long>
 ```
 
@@ -1764,7 +1762,7 @@ foreach (var kvp in scope) { /* ("y", 2) */ }
 ## SmallSet&lt;T&gt;
 
 ```csharp
-public class SmallSet<T> : ISet<T>
+public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
 ```
 
 The set counterpart to `SmallDictionary`, tuned for the **very-small** case
@@ -1791,9 +1789,9 @@ function, because it never hashes. The trade-offs that follow directly from that
   element is found), so the relative order of the surviving elements is not
   preserved. Enumeration order is unspecified in general.
 
-It implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), ships an
-allocation-free struct enumerator, and accepts an `IEnumerable<T>` source at
-construction — the same surface as the other Celerity sets.
+It implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`) and
+`IReadOnlySet<T>`, ships an allocation-free struct enumerator, and accepts an
+`IEnumerable<T>` source at construction — the same surface as the other Celerity sets.
 
 ### Constructors
 
@@ -1831,10 +1829,11 @@ SmallSet(IEnumerable<T> source, int capacity = 4)
 - `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`,
   matching `HashSet<T>.CopyTo` argument validation.
 
-### Set operations (`ISet<T>`)
+### Set operations (`ISet<T>` / `IReadOnlySet<T>`)
 
 The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>`
-semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`):
+semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`). The
+query members below satisfy `IReadOnlySet<T>` as well as `ISet<T>`:
 
 - **Mutating:** `void UnionWith(IEnumerable<T> other)`, `void IntersectWith(IEnumerable<T> other)`, `void ExceptWith(IEnumerable<T> other)`, `void SymmetricExceptWith(IEnumerable<T> other)`.
 - **Query:** `bool IsSubsetOf(...)`, `bool IsProperSubsetOf(...)`, `bool IsSupersetOf(...)`, `bool IsProperSupersetOf(...)`, `bool Overlaps(...)`, `bool SetEquals(...)`.
@@ -1871,7 +1870,7 @@ foreach (var item in seen) { /* "y" */ }
 ## EnumSet&lt;TEnum&gt;
 
 ```csharp
-public class EnumSet<TEnum> : ISet<TEnum>
+public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
     where TEnum : struct, Enum
 ```
 
@@ -1945,9 +1944,9 @@ the enum (exactly the declared members, not every bit position).
 - `void CopyTo(TEnum[] array, int arrayIndex)` — copies in ascending order, matching
   `HashSet<T>.CopyTo` argument validation.
 
-### Set operations (`ISet<TEnum>`)
+### Set operations (`ISet<TEnum>` / `IReadOnlySet<TEnum>`)
 
-The full BCL `HashSet<T>` set-algebra surface is available with `HashSet<T>` semantics.
+The full BCL `HashSet<T>` set-algebra surface is available with `HashSet<T>` semantics. The query members below satisfy `IReadOnlySet<TEnum>` as well as `ISet<TEnum>`.
 When the operand is another `EnumSet<TEnum>`, each operation runs as word-wise bitwise
 work; for a general `IEnumerable<TEnum>` it falls back to the shared element-by-element
 path.
@@ -1988,7 +1987,7 @@ foreach (var p in granted) { /* ascending: Read, Write, Execute */ }
 ## SparseSet
 
 ```csharp
-public class SparseSet : ISet<int>
+public class SparseSet : ISet<int>, IReadOnlySet<int>
 ```
 
 A set of **non-negative integers over a bounded universe** `[0, Universe)`, backed by
@@ -2025,8 +2024,9 @@ The trade-offs, stated honestly:
   relative order of the surviving elements is not preserved. Enumeration order is
   unspecified in general.
 
-It implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`), ships an
-allocation-free struct enumerator, and accepts an `IEnumerable<int>` source at construction.
+It implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) and
+`IReadOnlySet<int>`, ships an allocation-free struct enumerator, and accepts an
+`IEnumerable<int>` source at construction.
 
 ### Constructors
 
@@ -2064,11 +2064,11 @@ SparseSet(int universe, IEnumerable<int> source)
 - `Enumerator GetEnumerator()` — allocation-free struct enumerator over the dense array.
 - `void CopyTo(int[] array, int arrayIndex)` — matches `HashSet<int>.CopyTo` argument validation.
 
-### Set operations (`ISet<int>`)
+### Set operations (`ISet<int>` / `IReadOnlySet<int>`)
 
 The full BCL `HashSet<int>` set-algebra surface is available and follows `HashSet<int>`
 semantics exactly within the universe (duplicate-tolerant `other`, self-aliasing
-`other == this`):
+`other == this`). The query members below satisfy `IReadOnlySet<int>` as well as `ISet<int>`:
 
 - **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
 - **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps`, `SetEquals`.
@@ -2262,13 +2262,6 @@ call by double hashing (Kirsch–Mitzenmacher): the 32-bit base hash is avalanch
 64 bits whose two halves seed the recurrence `g_i = h1 + i·h2`, so adding more hash
 functions costs arithmetic, not more `Hash()` calls.
 
-> **Hash entropy.** The 64 bits come from the hasher's own `Hash64` when it implements
-> [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening its 32-bit
-> code. Widening spreads the code over the 64-bit range but creates no entropy: the reachable
-> space stays 2<sup>32</sup>, which puts a floor of roughly `n / 2^32` under the realized
-> false-positive rate no matter how many bits you allocate — about 0.12% at 10<sup>7</sup>
-> elements and 1.2% at 10<sup>8</sup>. Past ~10<sup>8</sup> elements, use a 64-bit hasher.
-
 ### Constructors
 
 ```csharp
@@ -2387,13 +2380,6 @@ and re-homes it in *its* alternate bucket, repeating up to a bounded number of "
 fingerprint and the primary index both come from a **single** `IHashProvider<T>.Hash` call
 avalanched into 64 bits (the SplitMix64 finalizer). A lookup or delete touches at most two
 buckets (≈ two cache lines) regardless of fill.
-
-> **Hash entropy.** The 64 bits come from the hasher's own `Hash64` when it implements
-> [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening its 32-bit
-> code. Widening spreads the code over the 64-bit range but creates no entropy: the reachable
-> space stays 2<sup>32</sup>, which puts a floor of roughly `n / 2^32` under the realized
-> false-positive rate no matter how many bits you allocate — about 0.12% at 10<sup>7</sup>
-> elements and 1.2% at 10<sup>8</sup>. Past ~10<sup>8</sup> elements, use a 64-bit hasher.
 
 ### Cuckoo vs. Bloom
 
@@ -2538,14 +2524,6 @@ exactly one remaining element, then back-filling in reverse), retrying with a fr
 seed on the rare peel failure. A query recomputes the three slots and the fingerprint from a
 **single** `IHashProvider<T>.Hash` call and compares — exactly **three memory probes and two
 XORs**, with no probe loop and no data-dependent branch.
-
-> **Hash entropy.** The 64-bit element key comes from the hasher's own `Hash64` when it
-> implements [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening
-> its 32-bit code with `fmix64`. Widening spreads the code over the 64-bit range but creates
-> no entropy: the reachable space stays 2<sup>32</sup>, which puts a floor of roughly
-> `n / 2^32` under the realized false-positive rate — and, because the construction
-> deduplicates on the key, elements that share one are silently merged. Past ~10<sup>8</sup>
-> elements, use a 64-bit hasher.
 
 ### Xor vs. Bloom vs. Cuckoo
 
@@ -2904,30 +2882,13 @@ registers with a predictable rank pattern, and the harmonic mean of `2^register`
 all registers recovers an estimate of `n` (Flajolet et&#160;al., 2007). The estimate
 applies the standard small-range **linear counting** correction, so low cardinalities —
 where many registers are still zero — are estimated accurately rather than by the
-bias-prone raw formula.
+bias-prone raw formula. No large-range correction is needed because the 64-bit hash
+space dwarfs any realistic cardinality.
 
-### The hash space, and why the hasher choice matters past ~10<sup>8</sup>
-
-The 64-bit hash comes from a **single** hasher call either way, but how much entropy that
-call carries depends on the hasher, and the estimator adapts:
-
-- **A hasher implementing [`IHashProvider64<T>`](hashing.md#ihashprovider64t)** — for example
-  `Int64WangHasher`, `Int64Murmur3Hasher`, `GuidHasher`, or any of the nine 64-bit `string`
-  hashers — supplies all 64 bits directly. The hash space is then 2<sup>64</sup>, which
-  dwarfs any realistic cardinality, so no large-range correction is needed and the estimate
-  holds its `StandardError` across the whole range. **Use one of these when counting beyond
-  ~10<sup>8</sup> distinct elements.**
-- **A 32-bit-only hasher** has its code avalanched into 64 bits by the SplitMix64 finalizer.
-  That finalizer is a bijection, so it loses nothing — but it also creates nothing: the
-  reachable hash space is still 2<sup>32</sup>, and distinct elements start sharing a hash
-  as the count approaches it (~0.12% of elements at 10<sup>7</sup>, 1.2% at
-  10<sup>8</sup>, 10.8% at 10<sup>9</sup>). The estimator detects this case and applies the
-  classical Flajolet **large-range correction**, `−2^32 · ln(1 − E / 2^32)`, which recovers
-  the true cardinality from the saturated distinct-hash count.
-
-Either way `Add` costs one hasher call, and the selection is a compile-time type test the
-JIT folds away — each instantiation compiles to a single straight-line path, and neither
-allocates.
+The 64-bit hash is derived from a **single** `IHashProvider<T>` call by avalanching the
+32-bit base hash with the SplitMix64 finalizer (a bijection on 64 bits, so distinct base
+hashes stay distinct), so any existing hasher plugs in unchanged and `Add` costs one
+`Hash()` call.
 
 ### Constructors
 
@@ -2996,8 +2957,6 @@ using Celerity.Collections;
 using Celerity.Hashing;
 
 // Count distinct visitor ids in a high-volume stream from ~16 KB of registers.
-// Int64Murmur3Hasher implements IHashProvider64<long>, so the estimator sees the full
-// 2^64 hash space and stays accurate past 10^8 distinct ids.
 var uniqueVisitors = new HyperLogLog<long, Int64Murmur3Hasher>();
 
 foreach (long visitorId in eventStream)
@@ -3059,13 +3018,6 @@ index is a mask, not a modulo), and the failure probability `delta` drives the r
 hash is avalanched into 64 bits whose two halves seed the recurrence `g_i = h1 + i·h2`
 (the stride forced odd so the rows spread out), so adding rows costs arithmetic, not more
 `Hash()` calls.
-
-> **Hash entropy.** The 64 bits come from the hasher's own `Hash64` when it implements
-> [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise from widening its 32-bit
-> code. Widening spreads the code over the 64-bit range but creates no entropy: the reachable
-> space stays 2<sup>32</sup>, so past ~10<sup>8</sup> distinct elements a growing fraction of
-> them share a code and have their counts pooled — an overestimate the `epsilon` budget does
-> not account for. Past that scale, use a 64-bit hasher.
 
 ### Constructors
 
@@ -4039,174 +3991,4 @@ foreach (int x in data)
 }
 
 Console.WriteLine(inversions); // 8
-```
-
-## BTreeDictionary&lt;TKey, TValue, TComparer&gt;
-
-```csharp
-public class BTreeDictionary<TKey, TValue, TComparer>
-    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
-    where TComparer : struct, IComparer<TKey>
-
-// Ordered by Comparer<TKey>.Default:
-public class BTreeDictionary<TKey, TValue> : BTreeDictionary<TKey, TValue, DefaultComparer<TKey>>
-```
-
-A **sorted dictionary backed by a B-tree**. Keys are kept in ascending `TComparer` order across nodes that hold up to **31 keys each in flat arrays**, so a lookup visits `log₃₂(n)` nodes instead of chasing `log₂(n)` pointers, and it adds the ordered surface a hash table cannot answer: `Min`, `Max`, `TryGetLowerBound`, `TryGetUpperBound`, `EnumerateRange`, and in-order enumeration.
-
-### When to choose it over `SortedDictionary` / `SortedList`
-
-The BCL has no B-tree. `SortedDictionary<TKey, TValue>` is a red-black tree: one heap object per entry and roughly `log₂(n)` dependent pointer chases — about 20 potential cache misses at `n = 1M` — for a single lookup. `SortedList<TKey, TValue>` is array-backed, so lookups are a clean binary search but every insert in the middle memmoves the tail (`O(n)`). `OrderedDictionary<TKey, TValue>` (.NET 9) is *insertion*-ordered and does not close the gap at all.
-
-With a fan-out of 32, the same million entries sit about **4 node visits** deep, the keys inside a node are one or two cache lines the prefetcher handles well, and allocation drops from one object per entry to one node per 31 entries (a leaf holds a key and a value array; an internal node adds a child array). The documented BCL-beating workload is a large ordered map under an **interleaved insert + lookup + in-order range-scan** load — time-series keyed by timestamp, order books, LSM-style memtables. See the [BTreeDictionary benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeDictionary) on the dashboard.
-
-Where it does **not** win: small maps (at a thousand entries the red-black tree is competitive, and a `SortedList` of a few dozen entries is hard to beat); a **delete-dominated** load, where rebalancing by borrow/merge measures a few percent behind `SortedDictionary`'s rotations; and any workload that never needs order — a hash table answers those in `O(1)`, so reach for `CelerityDictionary` instead.
-
-Measured on the short-run local sweep at 100k entries (see the dashboard for the tracked CI numbers): mixed insert + lookup + range-scan **0.59x** the time of `SortedDictionary`, bulk add **0.74x**, lookup **0.84x**, remove **1.12x** (the loss above), and **0.36x** the allocation. `BTreeSet` against `SortedSet` at the same size: mixed **0.79x**, add **0.72x**, contains **0.91x**, `GetViewBetween`-equivalent range scan **0.43x**, remove **1.06x**, allocation **0.24x**.
-
-### Why the struct comparer?
-
-`TComparer` is a `struct, IComparer<TKey>` type parameter rather than an `IComparer<TKey>` instance for the same reason the hashers are struct type parameters: an interface-typed comparer costs a virtual call for **every key inspected inside a node** — several per node visit, on the hottest path in the tree. `DefaultComparer<T>` wraps `Comparer<T>.Default`, and the two-parameter `BTreeDictionary<TKey, TValue>` alias closes over it so the common case needs no extra type argument. To order by something else, write your own struct comparer and pass it as the type argument.
-
-### Constructors
-
-```csharp
-public BTreeDictionary()
-public BTreeDictionary(TComparer comparer)
-public BTreeDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source)
-public BTreeDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source, TComparer comparer)
-```
-
-There is no capacity or load-factor parameter — a B-tree grows one node at a time, and an empty dictionary owns no node arrays at all. The `comparer` overloads exist for a **stateful** `TComparer` (a culture, a sort direction, a key selector); without one the ordering is `default(TComparer)`. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and `ArgumentException` on a duplicate key, and never alias a caller-supplied collection.
-
-### Methods and properties
-
-| Member | Description |
-| --- | --- |
-| `int Count { get; }` | The number of entries. |
-| `TComparer Comparer { get; }` | The comparer defining the key order. |
-| `TValue this[TKey key] { get; set; }` | Get throws `KeyNotFoundException` when absent; set inserts or overwrites. Both `O(log n)`. An in-place overwrite is not a structural change and does not invalidate active enumerators. |
-| `KeyCollection Keys { get; }` / `ValueCollection Values { get; }` | Allocation-free views in ascending key order. Read-only `ICollection<T>`s: the mutating members throw `NotSupportedException`. |
-| `void Add(TKey key, TValue? value)` | Insert; throws `ArgumentException` when the key is already present. |
-| `bool TryAdd(TKey key, TValue? value)` | Non-throwing insert. A rejected duplicate is a true no-op — it does not restructure the tree or invalidate enumerators. |
-| `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | `O(log n)` lookup. |
-| `bool ContainsValue(TValue? value)` | `O(n)` scan — the tree is indexed by key, not by value. |
-| `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` | `O(log n)` removal, rebalancing by borrowing from a sibling or merging two nodes. |
-| `void Clear()` | Drop every entry; the tree releases all of its nodes. |
-| `KeyValuePair<TKey, TValue?> Min { get; }` / `Max { get; }` | First / last entry in key order, `O(log n)`. Throws `InvalidOperationException` when empty. |
-| `bool TryGetMin(out KeyValuePair<TKey, TValue?> entry)` / `TryGetMax(...)` | The non-throwing forms. |
-| `bool TryGetLowerBound(TKey key, out KeyValuePair<TKey, TValue?> entry)` | First entry with a key **≥** `key` (`lower_bound`); an exact match is its own lower bound. |
-| `bool TryGetUpperBound(TKey key, out KeyValuePair<TKey, TValue?> entry)` | First entry with a key **>** `key` (`upper_bound`). |
-| `RangeEnumerable EnumerateRange(TKey fromInclusive, TKey toExclusive)` | The entries of the half-open range `[fromInclusive, toExclusive)`, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
-| `Enumerator GetEnumerator()` | Struct enumerator over the entries in ascending key order. The traversal path is held in an inline buffer, so a `foreach` allocates nothing. |
-| `void CopyTo(KeyValuePair<TKey, TValue?>[] array, int arrayIndex)` | Copy every entry in key order. |
-
-Unlike `SortedDictionary`, a **`null` key is legal**: `Comparer<TKey>.Default` orders `null` before every non-`null` key (a custom `TComparer` that rejects `null` overrides that). There is no out-of-band `default(TKey)` slot as in the hash-based family — a value-type `default(TKey)` is an ordinary key that sorts wherever the comparer puts it, so `0` follows every negative `int` rather than coming first. Adding, removing, and clearing invalidate active enumerators (`InvalidOperationException` from `MoveNext`); lookups, a rejected duplicate `TryAdd`, a `Remove` of an absent key, and an in-place value overwrite do not. Not thread-safe.
-
-### Usage example
-
-```csharp
-using Celerity.Collections;
-
-// A time-series keyed by timestamp: append as samples arrive, then scan a window in order.
-var series = new BTreeDictionary<long, double>();
-foreach ((long timestamp, double value) in ReadSamples())
-{
-    series[timestamp] = value;
-}
-
-// Every sample in [start, end) — O(log n) to seek, then a walk over contiguous node arrays.
-double sum = 0;
-int count = 0;
-foreach (KeyValuePair<long, double> sample in series.EnumerateRange(start, end))
-{
-    sum += sample.Value;
-    count++;
-}
-
-Console.WriteLine($"window mean: {sum / count}");
-
-// The ordered questions a hash table cannot answer.
-Console.WriteLine(series.Min.Key);                       // earliest timestamp
-Console.WriteLine(series.Max.Key);                       // latest timestamp
-series.TryGetLowerBound(start, out var firstAtOrAfter);  // first sample at or after `start`
-```
-
-## BTreeSet&lt;T, TComparer&gt;
-
-```csharp
-public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
-    where TComparer : struct, IComparer<T>
-
-// Ordered by Comparer<T>.Default:
-public class BTreeSet<T> : BTreeSet<T, DefaultComparer<T>>
-```
-
-The set counterpart of `BTreeDictionary`: elements kept in ascending `TComparer` order, up to **31 per node** in flat arrays, with the same ordered surface — `Min`, `Max`, `TryGetLowerBound`, `TryGetUpperBound`, `EnumerateRange`, and in-order enumeration.
-
-### When to choose it over `SortedSet`
-
-`SortedSet<T>` is a red-black tree with one heap object per element and roughly `log₂(n)` dependent pointer chases per lookup; this type reaches the same element in about `log₃₂(n)` node visits — around 4 instead of 20 potential cache misses at `n = 1M`. Because it stores no values, a node is a single element array plus its children, so the memory saving over `SortedSet` is larger still. The documented BCL-beating workload is a large ordered set under an **interleaved insert + membership + in-order range-scan** load — sorted id sets, sweep-line event sets, interval endpoints. See the [BTreeSet benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeSet) on the dashboard.
-
-Where it does **not** win: small sets (at a thousand elements `SortedSet` is competitive), a delete-dominated load (a few percent behind its rotations), and any workload that never needs order — `CeleritySet` or `IntSet` answer those in `O(1)`.
-
-### Constructors
-
-```csharp
-public BTreeSet()
-public BTreeSet(TComparer comparer)
-public BTreeSet(IEnumerable<T> source)
-public BTreeSet(IEnumerable<T> source, TComparer comparer)
-```
-
-As with the dictionary, there is no capacity or load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and silently ignore duplicates.
-
-### Methods and properties
-
-| Member | Description |
-| --- | --- |
-| `int Count { get; }` / `TComparer Comparer { get; }` | Element count; the comparer defining the order. |
-| `void Add(T item)` | Insert; throws `ArgumentException` when the element is already present (the family-wide set convention). |
-| `bool TryAdd(T item)` | Non-throwing insert. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
-| `bool Contains(T item)` / `bool Remove(T item)` | `O(log n)`. |
-| `void Clear()` | Drop every element; the tree releases all of its nodes. |
-| `T Min { get; }` / `T Max { get; }` | Smallest / largest element, `O(log n)`. Throws `InvalidOperationException` when empty. |
-| `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
-| `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | Smallest element **≥** / **>** `item`, `O(log n)`. |
-| `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | The elements of the half-open range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
-| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. |
-| `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` / `SetEquals` | The `ISet<T>` / `IReadOnlySet<T>` queries. |
-| `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
-| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
-
-Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). A custom comparer that treats two values as equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — can therefore disagree with `SortedSet<T>` on those members alone. A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
-
-### Usage example
-
-```csharp
-using Celerity.Collections;
-
-// A sweep line over interval endpoints: insert as events arrive, query the neighbourhood in order.
-var active = new BTreeSet<int>();
-foreach (int endpoint in endpoints)
-{
-    active.TryAdd(endpoint);
-}
-
-// The nearest active endpoint at or after `x`, and the next one strictly after it.
-if (active.TryGetLowerBound(x, out int atOrAfter))
-{
-    Console.WriteLine(atOrAfter);
-}
-
-if (active.TryGetUpperBound(x, out int strictlyAfter))
-{
-    Console.WriteLine(strictlyAfter);
-}
-
-// Everything in the window, in order, without scanning the whole set.
-foreach (int endpoint in active.EnumerateRange(windowStart, windowEnd))
-{
-    Process(endpoint);
-}
 ```

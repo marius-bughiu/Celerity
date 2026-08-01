@@ -15,7 +15,7 @@ namespace Celerity.Collections;
 /// The hasher used to compute element hashes. Must be a value type implementing
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
-public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProvider<T>
+public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : struct, IHashProvider<T>
 {
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
@@ -197,7 +197,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         while (true)
         {
             T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (EmptySlot.Is(slot)) break;
+            if (comparer.Equals(slot, default(T))) break;
             if (comparer.Equals(slot, item)) return false;
             index = (index + 1) & mask;
         }
@@ -209,7 +209,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
             slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
             mask = slots.Length - 1;
             index = _hasher.Hash(item) & mask;
-            while (!EmptySlot.Is(Unsafe.Add(ref slotsRef, (nint)(uint)index)))
+            while (!comparer.Equals(Unsafe.Add(ref slotsRef, (nint)(uint)index), default(T)))
                 index = (index + 1) & mask;
         }
 
@@ -529,10 +529,11 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
                 T?[] slots = _set._slots;
                 int length = slots.Length;
                 ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
+                var comparer = EqualityComparer<T>.Default;
                 while (++_index < length)
                 {
                     T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)_index);
-                    if (!EmptySlot.Is(slot))
+                    if (!comparer.Equals(slot, default(T)))
                     {
                         _current = slot;
                         return true;
@@ -568,7 +569,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
     }
 
     private static bool IsDefaultValue(T item) =>
-        EmptySlot.Is(item);
+        EqualityComparer<T>.Default.Equals(item, default(T));
 
     // The hasher instance the span-lookup extension methods hand back to the probe below.
     // The field is private and the extension methods live outside the type, so they need a
@@ -627,7 +628,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         while (true)
         {
             T? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (EmptySlot.Is(slot)) return -1;
+            if (comparer.Equals(slot, default(T))) return -1;
             if (comparer.Equals(slot, item)) return index;
             index = (index + 1) & mask;
         }
@@ -662,14 +663,15 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         ref T? oldSlotsRef = ref MemoryMarshal.GetArrayDataReference(oldSlots);
         ref T? newSlotsRef = ref MemoryMarshal.GetArrayDataReference(newSlots);
 
+        var comparer = EqualityComparer<T>.Default;
         for (int i = 0; i < oldSlots.Length; i++)
         {
             T? item = Unsafe.Add(ref oldSlotsRef, (nint)(uint)i);
-            if (EmptySlot.Is(item))
+            if (comparer.Equals(item, default(T)))
                 continue;
 
             int index = _hasher.Hash(item!) & mask;
-            while (!EmptySlot.Is(Unsafe.Add(ref newSlotsRef, (nint)(uint)index)))
+            while (!comparer.Equals(Unsafe.Add(ref newSlotsRef, (nint)(uint)index), default(T)))
                 index = (index + 1) & mask;
 
             Unsafe.Add(ref newSlotsRef, (nint)(uint)index) = item;
@@ -692,6 +694,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         T?[] slots = _slots;
         ref T? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;
+        var comparer = EqualityComparer<T>.Default;
         int i = startIndex;
         int j = i;
 
@@ -699,7 +702,7 @@ public class CeleritySet<T, THasher> : ISet<T> where THasher : struct, IHashProv
         {
             j = (j + 1) & mask;
             T? candidate = Unsafe.Add(ref slotsRef, (nint)(uint)j);
-            if (EmptySlot.Is(candidate))
+            if (comparer.Equals(candidate, default(T)))
                 break;
 
             int k = _hasher.Hash(candidate!) & mask;

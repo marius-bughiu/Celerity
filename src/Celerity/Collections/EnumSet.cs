@@ -49,7 +49,7 @@ namespace Celerity.Collections;
 /// The type is single-threaded.
 /// </para>
 /// </remarks>
-public class EnumSet<TEnum> : ISet<TEnum>
+public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
     where TEnum : struct, Enum
 {
     private readonly ulong[] _words;
