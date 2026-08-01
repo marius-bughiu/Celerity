@@ -299,7 +299,13 @@ public class CompressedIntSetTests
         Assert.Equal(5L, set.AddRange(1_000_010, 1_000_014)); // inside one 64-bit word
         Assert.Equal(200L, set.AddRange(1_000_100, 1_000_299)); // spans several words
 
-        Assert.Equal(206, set.Count);
+        // Ends exactly on a word boundary, which is the high-mask special case: the closing word is
+        // filled entirely rather than partially, and computing that mask by shifting would overflow.
+        Assert.Equal(128L, set.AddRange(1_000_320, 1_000_447));
+        Assert.True(set.Contains(1_000_447));
+        Assert.False(set.Contains(1_000_448));
+
+        Assert.Equal(334, set.Count);
         Assert.True(set.Contains(1_000_010));
         Assert.True(set.Contains(1_000_014));
         Assert.False(set.Contains(1_000_015));

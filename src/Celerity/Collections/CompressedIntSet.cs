@@ -635,7 +635,26 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
     /// <exception cref="OverflowException">The set holds more than <see cref="int.MaxValue"/> elements.</exception>
-    public void CopyTo(int[] array, int arrayIndex) => SetOperations.CopyTo(this, Count, array, arrayIndex);
+    public void CopyTo(int[] array, int arrayIndex)
+    {
+        // Written out rather than delegated to SetOperations.CopyTo for the same reason as the six
+        // set operations above: that helper takes an int count, so passing it Count would evaluate —
+        // and throw from — the overflow guard *before* any argument was validated, turning
+        // CopyTo(null, 0) on a very large set into an OverflowException. Checking the long
+        // _cardinality keeps the argument-validation order identical to HashSet<int>.CopyTo, and a
+        // set too large for an int[] correctly reports insufficient space rather than overflowing.
+        ArgumentNullException.ThrowIfNull(array);
+        if (arrayIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Array index must be non-negative.");
+        if (arrayIndex > array.Length)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Array index is beyond the end of the destination array.");
+        if (array.Length - arrayIndex < _cardinality)
+            throw new ArgumentException("The destination array has insufficient space to copy the set's elements.", nameof(array));
+
+        int i = arrayIndex;
+        foreach (int item in this)
+            array[i++] = item;
+    }
 
     // Adds the element, returning whether it was newly added (ISet<T> semantics) — the
     // non-throwing (on duplicates) counterpart of the public throw-on-duplicate Add(int).

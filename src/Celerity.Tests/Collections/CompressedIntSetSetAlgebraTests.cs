@@ -314,6 +314,81 @@ public class CompressedIntSetSetAlgebraTests
         Assert.Equal(new[] { 1, 900_000 }, set);
     }
 
+    // The four cases below are each one arm of a chunk-index merge that the randomized differential
+    // test reaches only by luck. Pinning them deterministically matters twice over: a merge arm that
+    // silently stopped running would still look correct on most inputs, and the repo gates on 100%
+    // branch coverage, which a property test cannot be relied on to hold up.
+
+    [Fact]
+    public void UnionWith_ShouldKeepTrailingChunks_WhenTheRightSideRunsOutFirst()
+    {
+        var set = new CompressedIntSet(new[] { 1, 900_000 });
+
+        set.UnionWith(new CompressedIntSet(new[] { 2 }));
+
+        Assert.Equal(new[] { 1, 2, 900_000 }, set);
+    }
+
+    [Fact]
+    public void SymmetricExceptWith_ShouldKeepTrailingChunks_WhenTheRightSideRunsOutFirst()
+    {
+        var set = new CompressedIntSet(new[] { 1, 900_000 });
+
+        set.SymmetricExceptWith(new CompressedIntSet(new[] { 2 }));
+
+        Assert.Equal(new[] { 1, 2, 900_000 }, set);
+    }
+
+    [Fact]
+    public void IsSubsetOf_ShouldReturnFalse_WhenAChunkHasMoreElementsThanItsCounterpart()
+    {
+        // Four elements against five, so the whole-set cardinality check passes and the per-chunk
+        // one has to do the work: the left set's first chunk holds three where the right holds two.
+        var set = new CompressedIntSet(new[] { 1, 2, 3, 900_000 });
+        var other = new CompressedIntSet(new[] { 1, 2, 900_000, 900_001, 900_002 });
+
+        Assert.False(set.IsSubsetOf(other));
+        Assert.False(set.SetEquals(other));
+    }
+
+    [Fact]
+    public void IsSubsetOf_ShouldReturnFalse_WhenTheRightSideHasNoChunkAtAll()
+    {
+        // Two elements against three, so the whole-set check passes; the left set's second chunk has
+        // no counterpart on the right at all, which is a different rejection from the one above.
+        var set = new CompressedIntSet(new[] { 1, 900_000 });
+        var other = new CompressedIntSet(new[] { 1, 2, 3 });
+
+        Assert.False(set.IsSubsetOf(other));
+    }
+
+    [Fact]
+    public void Overlaps_ShouldSkipChunksNeitherSideShares_InBothDirections()
+    {
+        var set = new CompressedIntSet(new[] { 1, 900_000 });
+
+        // Left chunk below the right's: the left index advances.
+        Assert.True(set.Overlaps(new CompressedIntSet(new[] { 900_000 })));
+        Assert.False(set.Overlaps(new CompressedIntSet(new[] { 900_001 })));
+
+        // Right chunk below the left's: the right index advances.
+        var high = new CompressedIntSet(new[] { 900_000 });
+        Assert.True(high.Overlaps(new CompressedIntSet(new[] { 1, 900_000 })));
+        Assert.False(high.Overlaps(new CompressedIntSet(new[] { 1, 2 })));
+    }
+
+    [Fact]
+    public void SymmetricExceptWith_ShouldAdoptAChunkFromTheRightSide_MidMerge()
+    {
+        // The right side's 500_000 chunk sits between the left side's two, so it is adopted while
+        // both indices are still live — not by the trailing loop that drains one side at the end.
+        var set = new CompressedIntSet(new[] { 1, 900_000 });
+
+        set.SymmetricExceptWith(new CompressedIntSet(new[] { 500_000, 900_000 }));
+
+        Assert.Equal(new[] { 1, 500_000 }, set);
+    }
+
     [Fact]
     public void IntersectCount_ShouldSkipChunksTheOtherSideDoesNotHave()
     {
@@ -508,6 +583,12 @@ public class CompressedIntSetSetAlgebraTests
         Assert.False(set.IsProperSubsetOf(sequence));
         Assert.True(set.IsSupersetOf(sequence));
         Assert.True(set.IsProperSupersetOf(sequence));
+
+        // CopyTo cannot succeed here — no int[] is long enough — but it must say so in the order
+        // HashSet<int>.CopyTo does, rather than surfacing the Count overflow ahead of the arguments.
+        Assert.Throws<ArgumentNullException>(() => set.CopyTo(null!, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => set.CopyTo(new int[4], -1));
+        Assert.Throws<ArgumentException>(() => set.CopyTo(new int[4], 0));
 
         // And the one mutating fallback that would have had to snapshot the whole set to work.
         set.IntersectWith(sequence);
