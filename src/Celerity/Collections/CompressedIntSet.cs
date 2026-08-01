@@ -6,9 +6,11 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>exact, compressed set of 32-bit integers</b> that partitions the value space into
-/// 65,536-value chunks and stores each chunk in whichever of three container forms is smallest — a
-/// sorted <c>ushort[]</c> when sparse, a 1024-word bitmap when dense, or run-length pairs when
-/// clustered. It fills a BCL gap: .NET ships no compressed integer set, so the alternatives are
+/// 65,536-value chunks and stores each chunk in the form that suits its density: a sorted
+/// <c>ushort[]</c> while it is sparse, a 1024-word bitmap once it is dense. A third, run-length form
+/// is available for clustered data, but it is <b>opt-in</b> — only <see cref="Optimize"/> and
+/// <see cref="AddRange"/> produce it, never an ordinary <see cref="TryAdd(int)"/> or
+/// <see cref="Remove(int)"/>. It fills a BCL gap: .NET ships no compressed integer set, so the alternatives are
 /// <see cref="HashSet{T}"/> (~32&#8211;48 bytes per element and one hash probe per element for set
 /// algebra), <see cref="BitArray"/> (<c>O(universe)</c> memory), or <see cref="SortedSet{T}"/> (a
 /// red-black tree with a pointer chase per node).

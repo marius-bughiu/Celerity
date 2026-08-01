@@ -2134,13 +2134,14 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
    family and shared test suites.
 
 With that said: it is an **exact** set of 32-bit integers that partitions the value space into
-**65,536-value chunks** and stores each chunk in whichever of three container forms is smallest.
+**65,536-value chunks** and stores each chunk in the form that suits its density. Note the third
+row: run encoding is **opt-in**, not something ordinary inserts and removals reach for.
 
 | Container | Layout | Chosen when |
 |---|---|---|
 | **Sorted array** | `ushort[]` of offsets | the chunk is sparse (≤ 4096 values) |
 | **Bitmap** | 1024 × 64-bit words (8 KB) | the chunk is dense (> 4096 values) |
-| **Run-length** | `(start, length)` pairs | the chunk is clustered and runs cost less than either of the above |
+| **Run-length** | `(start, length)` pairs | the chunk is clustered, runs cost less than either of the above, **and** `Optimize()` or `AddRange` has been asked to compress it |
 
 4096 is where a sorted `ushort[]` and a 1024-word bitmap both cost 8 KB, so above it the bitmap is
 never larger and answers `Contains` in `O(1)` instead of `O(log n)`.

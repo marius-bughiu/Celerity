@@ -89,16 +89,23 @@ public class CompressedIntSetBenchmark
         return keys;
     }
 
+    // Blocks are laid one per fixed stride and jittered inside it, so they cannot overlap and every
+    // key is distinct by construction. Drawing free-floating origins instead would let two blocks
+    // collide, which silently shrinks the set below ItemCount and skews both the time and the memory
+    // comparison — and does so differently for each distribution.
     private static int[] Clustered(int seed, int count)
     {
         const int Blocks = 32;
+        const int Universe = 100_000_000;
+        const int Stride = Universe / Blocks;
+
         var rand = new Random(seed);
+        int perBlock = Math.Max(1, ((count + Blocks) - 1) / Blocks); // ceiling: Blocks of these cover count
         int[] keys = new int[count];
-        int perBlock = Math.Max(1, count / Blocks);
         int written = 0;
-        while (written < count)
+        for (int block = 0; block < Blocks && written < count; block++)
         {
-            int origin = rand.Next(0, 100_000_000 - perBlock);
+            int origin = (block * Stride) + rand.Next(0, Stride - perBlock);
             for (int i = 0; i < perBlock && written < count; i++)
                 keys[written++] = origin + i;
         }
