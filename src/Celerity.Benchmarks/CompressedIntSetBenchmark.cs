@@ -11,9 +11,15 @@ using Celerity.Collections;
 //     Intersect categories sweep the key distribution — sparse (the posting-list shape the type is
 //     sold for), dense, and clustered — because which container form each chunk lands in, and
 //     therefore which code path runs, is entirely a function of that shape.
-//   * Memory. [MemoryDiagnoser] is on and the Add category constructs the whole set, so the
-//     Allocated column is the steady-state footprint of each representation rather than incidental
-//     garbage. That column is half the reason to use this type.
+//   * Memory. [MemoryDiagnoser] is on and the Add category constructs the whole set, so its
+//     Allocated column is dominated by the structure being built rather than by incidental garbage.
+//     Read it as a comparable upper bound, not as the settled footprint: BenchmarkDotNet reports
+//     total bytes allocated per operation, which includes every intermediate array a growing
+//     collection discards along the way. Both arms start empty and grow, so both pay that, which is
+//     what keeps the column comparable — and it is why neither arm is pre-sized, quite apart from
+//     CompressedIntSet having no capacity constructor to pre-size with (it has no table to size).
+//     For the settled figure, use CompressedIntSet.MemoryUsageInBytes, or the heap measurements
+//     recorded against this type in ROADMAP.md.
 //
 // The sweep stays at the family's 1,000 / 100,000 item counts so the card sits alongside the other
 // set cards on the dashboard and the CI A/B run stays affordable. That is a *tenth* of the scale
