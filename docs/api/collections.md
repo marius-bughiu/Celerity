@@ -2113,6 +2113,188 @@ for (int start = 0; start < nodeCount; start++)
 
 ---
 
+## CompressedIntSet
+
+```csharp
+public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
+```
+
+**Two caveats first, because they decide whether this type is for you.**
+
+1. **There is no portable serialization format.** Celerity does not ship serializers, so
+   `CompressedIntSet` cannot read or write the portable **Roaring** format. The Lucene / Druid /
+   Spark posting-list interop that is the most common reason to reach for a Roaring bitmap is
+   **not available here**. This is an in-process data structure, not an interop codec — which is
+   why it is named for what it does rather than for Roaring.
+2. **This is not the only compressed integer set in .NET.** A maintained pure-C# Roaring
+   implementation exists (`Equativ.RoaringBitmaps`). What this type offers instead of novelty is
+   integration: full mutability, verified Native AOT and trim compatibility on `net8.0` /
+   `net9.0` / `net10.0`, published benchmarks against `HashSet<int>` on the project dashboard, and
+   membership of the same [`BitSet`](#bitset) / [`SparseSet`](#sparseset) / [`IntSet`](#intset)
+   family and shared test suites.
+
+With that said: it is an **exact** set of 32-bit integers that partitions the value space into
+**65,536-value chunks** and stores each chunk in the form that suits its density. Note the third
+row: run encoding is **opt-in**, not something ordinary inserts and removals reach for.
+
+| Container | Layout | Chosen when |
+|---|---|---|
+| **Sorted array** | `ushort[]` of offsets | the chunk is sparse (≤ 4096 values) |
+| **Bitmap** | 1024 × 64-bit words (8 KB) | the chunk is dense (> 4096 values) |
+| **Run-length** | `(start, length)` pairs | the chunk is clustered, runs cost less than either of the above, **and** `Optimize()` or `AddRange` has been asked to compress it |
+
+4096 is where a sorted `ushort[]` and a 1024-word bitmap both cost 8 KB, so above it the bitmap is
+never larger and answers `Contains` in `O(1)` instead of `O(log n)`.
+
+It closes a real hole in the integer-set family:
+
+| Shape | Type |
+|---|---|
+| dense and bounded | [`BitSet`](#bitset) |
+| small and bounded, cleared often | [`SparseSet`](#sparseset) |
+| unbounded, hash-probed | [`IntSet`](#intset) / `HashSet<int>` |
+| **huge and sparse, set-algebra-heavy** | **`CompressedIntSet`** |
+
+### The documented BCL-beating workload
+
+**Set algebra over large, sparse integer sets** — intersecting or unioning ~1M values drawn from a
+~100M-value space: inverted-index posting lists, bitmap analytics, column-store row-id sets, cohort
+intersection. Two mechanisms:
+
+- Inside a chunk the work is a sorted merge or a **whole-word bitmap operation** (64 values per
+  ANDed word), not one hash probe and one random memory access per element.
+- The chunk index is sorted, so an entire 65,536-value range is **skipped with a single
+  comparison** whenever one side has nothing there. Cost tracks the number of *populated chunks*,
+  not the number of elements.
+
+Memory drops roughly **10x** against `HashSet<int>` for the sparse case, and far more for dense or
+clustered data: a dense region collapses to one bit per value, a clustered one to four bytes per
+run. `MemoryUsageInBytes` reports the current footprint.
+
+`Contains` is where `HashSet<int>` still wins — a hash probe beats a binary search inside a chunk.
+If point lookups are the whole workload and memory is not a concern, stay with `IntSet` /
+`HashSet<int>`.
+
+### Enumeration order
+
+Chunk keys are the value's high 16 bits **with the sign bit flipped**, so the chunk index is sorted
+by *signed* value and the set enumerates **in ascending order** from `int.MinValue` to
+`int.MaxValue` — a guarantee `HashSet<int>` does not make. The full 32-bit range is storable,
+negatives included.
+
+### Compression is explicit
+
+Run containers are produced by `Optimize()` and by `AddRange`, never speculatively on a single
+`TryAdd`: deciding on every insert would cost more than it saves. This is the same
+"compress once it has settled" contract as Roaring's own `runOptimize`.
+
+- A single-element `TryAdd` / `Remove` landing in a run-encoded chunk **expands that chunk** back
+  to its natural form first. Call `Optimize()` again after a burst of mutation.
+- `Remove` never demotes a representation — a chunk that grew into a bitmap stays one until
+  `Optimize()` (or a bulk set operation that rewrites it) says otherwise.
+- Reading a chunk never changes it, so passing an optimized set as the *right-hand* operand of any
+  set operation leaves its representation intact.
+
+### Constructors
+
+```csharp
+CompressedIntSet()
+CompressedIntSet(IEnumerable<int> source)
+```
+
+- The default constructor allocates no chunk storage until the first value is added.
+- The `source` constructor silently deduplicates (matching BCL `HashSet<int>(IEnumerable<int>)`)
+  and throws `ArgumentNullException` when `source` is `null`. There is **no capacity and no
+  `loadFactor`** parameter — the structure has no table to pre-size.
+
+### Properties
+
+- `long Cardinality { get; }` — the number of elements. Always correct.
+- `int Count { get; }` — the same number as an `int`. **Throws `OverflowException`** when the set
+  holds more than `int.MaxValue` elements, which only a very wide `AddRange` can produce (the set
+  can hold all 2^32 `int` values). Use `Cardinality` if that is reachable for your data.
+- `long MemoryUsageInBytes { get; }` — the chunk index plus every container payload, excluding
+  object headers. A measure of how well the data compressed; watch it across `Optimize()`. It counts
+  the index's *capacity*, not just its used length, so it stays non-zero after a `Clear()` until
+  `Optimize()` trims it.
+
+### Methods
+
+- `void Add(int item)` — throws `ArgumentException` on a duplicate.
+- `bool TryAdd(int item)` — `true` if added, `false` if already present.
+- `long AddRange(int start, int endInclusive)` — adds every value in the inclusive range and
+  returns how many were **new**. A range landing in a chunk the set does not yet touch is stored as
+  a **single run pair — four bytes of payload, whatever the range's width** (plus the array header,
+  which `MemoryUsageInBytes` excludes too) — so this is the cheap way to
+  build a clustered set. Throws `ArgumentOutOfRangeException` if `endInclusive < start`.
+- `bool Contains(int item)` — `O(1)` in a bitmap chunk, `O(log n)` in an array or run chunk, and a
+  single comparison against the chunk index when nothing covers the value.
+- `bool Remove(int item)` — `true` if removed. A chunk emptied by its last removal is dropped.
+- `void Clear()` — empties the set, dropping every container payload. The chunk index keeps its
+  capacity so the set can be refilled without regrowing it, so `MemoryUsageInBytes` does not fall to
+  zero after a `Clear()` — call `Optimize()` to hand that back. A `Clear()` on an already-empty set
+  changes nothing and leaves active enumerators valid.
+- `void Optimize()` — re-encodes every chunk in its smallest form (the only thing that produces
+  run containers from existing data) and trims the chunk index and array containers to exact size.
+  Purely a representation change: no element is added or removed, and active enumerators stay
+  valid.
+- `long IntersectCount(CompressedIntSet other)` — the size of the intersection, without building
+  it. Allocation-free, and it skips a whole chunk with one key comparison wherever one side is
+  empty. Throws `ArgumentNullException` for a `null` argument.
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator, ascending signed order.
+- `void CopyTo(int[] array, int arrayIndex)` — matches `HashSet<int>.CopyTo` argument validation.
+
+### Set operations (`ISet<int>` and `IReadOnlySet<int>`)
+
+The full BCL `HashSet<int>` set-algebra surface, with `HashSet<int>` semantics exactly
+(duplicate-tolerant `other`, self-aliasing `other == this`):
+
+- **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
+- **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps`, `SetEquals`.
+
+Each throws `ArgumentNullException` when `other` is `null`. **Every one of them takes the chunk-wise
+fast path when `other` is also a `CompressedIntSet`** — that is the workload the type exists for —
+and otherwise falls back to the same element-at-a-time implementation the rest of the set family
+uses, which is correct but forfeits the whole-chunk skipping. If you are intersecting two of these
+sets, keep both as `CompressedIntSet`; do not project one through LINQ first.
+
+As with the other sets, `ISet<int>.Add(int)` returns `bool` (equivalent to `TryAdd`), the concrete
+`public void Add(int)` keeps its throw-on-duplicate behaviour, and `ICollection<int>.Add(int)`
+ignores duplicates.
+
+The type is single-threaded, and any structural mutation invalidates active enumerators.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Two inverted-index posting lists: document ids drawn from a ~100M-document corpus.
+var termA = new CompressedIntSet(PostingsFor("celerity"));
+var termB = new CompressedIntSet(PostingsFor("collections"));
+
+// The data has settled — re-encode each chunk in its smallest form.
+termA.Optimize();
+termB.Optimize();
+
+// How many documents match both? No intersection is materialized.
+long both = termA.IntersectCount(termB);
+
+// Materialize the conjunction. Chunks only one side populates are skipped by key comparison.
+termA.IntersectWith(termB);
+
+foreach (int documentId in termA) // ascending order, no allocation
+    Render(documentId);
+
+// Ranges are the cheap case: a contiguous block in a fresh chunk is one run pair.
+var recentlyIngested = new CompressedIntSet();
+recentlyIngested.AddRange(90_000_000, 99_999_999); // 10M ids
+recentlyIngested.Optimize();
+Console.WriteLine(recentlyIngested.MemoryUsageInBytes); // hundreds of bytes, not tens of megabytes
+```
+
+---
+
 ## EnumMap&lt;TEnum, TValue&gt;
 
 ```csharp

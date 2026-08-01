@@ -455,6 +455,11 @@ function escapeHtml(s) {
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'], items: [NO_SWEEP] },
     // SparseSet is a bounded-universe integer set; ClearRefill is the O(1)-clear headline win.
     { key: 'SparseSet',           title: 'SparseSet',                                vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ClearRefill', 'Remove'] },
+    // CompressedIntSet is the chunk-compressed integer set. The three Intersect arms sweep the key
+    // distribution rather than a second [Params] (which the name parser would reject), because which
+    // container form each 65,536-value chunk lands in — sorted array, bitmap or run — follows entirely
+    // from the shape of the data.
+    { key: 'CompressedIntSet',    title: 'CompressedIntSet',                         vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'IntersectSparse', 'IntersectDense', 'IntersectClustered', 'Union', 'Except'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },

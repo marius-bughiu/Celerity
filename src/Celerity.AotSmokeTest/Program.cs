@@ -568,6 +568,42 @@ void Check(bool condition, string message)
     Check(reached.Count == 4 && reached.Contains(2), "SparseSet ISet<int> union within universe");
 }
 
+// CompressedIntSet — chunk-compressed 32-bit integer set. Drive every one of the three
+// container forms (sorted array, bitmap, run-length) through the AOT compiler, plus the
+// chunk-wise set algebra, the range add that produces runs, and Optimize.
+{
+    var cis = new CompressedIntSet(new[] { 5, 5, -3, 900_000, int.MinValue, int.MaxValue });
+    Check(cis.Count == 5 && cis.Cardinality == 5, "CompressedIntSet source ctor dedupe");
+    Check(cis.Contains(int.MinValue) && cis.Contains(int.MaxValue) && !cis.Contains(0),
+        "CompressedIntSet spans the whole int range");
+
+    var order = new List<int>();
+    foreach (int x in cis) order.Add(x);
+    Check(order.Count == 5 && order[0] == int.MinValue && order[4] == int.MaxValue,
+        "CompressedIntSet enumerates in ascending signed order");
+
+    // Past the array→bitmap crossover, then back down via Optimize.
+    var dense = new CompressedIntSet();
+    for (int i = 0; i < 5000; i++) dense.TryAdd(i * 2);
+    Check(dense.Count == 5000 && dense.MemoryUsageInBytes >= 8192, "CompressedIntSet bitmap promotion");
+
+    // A range add on a fresh chunk is stored as a single run pair.
+    var runs = new CompressedIntSet();
+    Check(runs.AddRange(1_000_000, 1_100_000) == 100_001, "CompressedIntSet AddRange");
+    runs.Optimize();
+    Check(runs.Count == 100_001 && runs.MemoryUsageInBytes < 1024, "CompressedIntSet run encoding");
+    Check(runs.Contains(1_050_000) && !runs.Contains(1_100_001), "CompressedIntSet run probe");
+
+    var left = new CompressedIntSet(new[] { 1, 2, 3, 900_000 });
+    var right = new CompressedIntSet(new[] { 2, 3, 4 });
+    Check(left.IntersectCount(right) == 2, "CompressedIntSet IntersectCount");
+    left.IntersectWith(right);
+    Check(left.Count == 2 && left.Contains(2) && left.Contains(3), "CompressedIntSet chunk-wise intersect");
+    ((ISet<int>)left).UnionWith(new[] { -1, 3 });
+    Check(left.Count == 3 && left.Contains(-1), "CompressedIntSet ISet<int> union");
+    Check(((IReadOnlySet<int>)left).IsSubsetOf(new[] { -1, 2, 3, 7 }), "CompressedIntSet IReadOnlySet<int>");
+}
+
 // FenwickTree — Binary Indexed Tree over a numeric sequence. This is the one collection
 // built on generic math (INumber<T>), so the static abstract interface members resolve
 // through constrained calls the AOT compiler must specialize per T — worth pinning here
