@@ -40,6 +40,7 @@ internal static class Differential
         ("LongSet", LongSetCase),
         ("SmallSet", SmallSetCase),
         ("SparseSet", SparseSetCase),
+        ("CompressedIntSet", CompressedIntSetCase),
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
@@ -670,6 +671,122 @@ internal static class Differential
             enumerated++;
         }
         Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // CompressedIntSet is the chunk-compressed integer set, and its container state machine —
+    // sorted array ⇄ bitmap ⇄ run-length, per 65,536-value chunk — is the whole risk surface: a
+    // wrong transition loses or resurrects elements while every individual operation still looks
+    // correct. So this case deliberately interleaves single-element churn with range adds (the only
+    // path that produces a run container outside Optimize), Optimize itself, and the four mutating
+    // set operations against a second set, reconciling against a HashSet<int> oracle throughout.
+    //
+    // The key domain is narrow enough that one chunk repeatedly crosses the array→bitmap crossover
+    // at 4096, and CompressedChunkStride spreads a second band into a neighbouring chunk so the
+    // chunk-index merge is exercised as well as the containers.
+    private const int CompressedDomain = 5000;
+    private const int CompressedChunkStride = 65_536;
+
+    private static void CompressedIntSetCase(Random rng)
+    {
+        var sut = new CompressedIntSet();
+        var oracle = new HashSet<int>();
+        var other = new CompressedIntSet();
+        var otherOracle = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = CompressedValue(rng);
+            switch (rng.Next(0, 24))
+            {
+                case < 8:
+                    Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})");
+                    break;
+                case < 12:
+                    Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})");
+                    break;
+                case < 15:
+                    Check(other.TryAdd(item) == otherOracle.Add(item), $"other.Add({item})");
+                    break;
+                case < 17:
+                {
+                    int hi = item + rng.Next(0, 600);
+                    long added = sut.AddRange(item, hi);
+                    long expected = 0;
+                    for (int v = item; v <= hi; v++)
+                    {
+                        if (oracle.Add(v))
+                            expected++;
+                    }
+
+                    Check(added == expected, $"AddRange({item}, {hi}) reported {added}, expected {expected}");
+                    break;
+                }
+
+                case < 19:
+                    sut.Optimize();
+                    break;
+                case 19:
+                    sut.UnionWith(other);
+                    oracle.UnionWith(otherOracle);
+                    break;
+                case 20:
+                    sut.IntersectWith(other);
+                    oracle.IntersectWith(otherOracle);
+                    break;
+                case 21:
+                    sut.ExceptWith(other);
+                    oracle.ExceptWith(otherOracle);
+                    break;
+                case 22:
+                    sut.SymmetricExceptWith(other);
+                    oracle.SymmetricExceptWith(otherOracle);
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+
+            Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count} at op {i}");
+        }
+
+        Check(sut.Cardinality == oracle.Count, $"Cardinality {sut.Cardinality} != {oracle.Count}");
+        Check(sut.IntersectCount(other) == oracle.Count(otherOracle.Contains), "IntersectCount disagreed");
+        Check(sut.SetEquals(other) == oracle.SetEquals(otherOracle), "SetEquals disagreed");
+        Check(sut.Overlaps(other) == oracle.Overlaps(otherOracle), "Overlaps disagreed");
+        Check(sut.IsSubsetOf(other) == oracle.IsSubsetOf(otherOracle), "IsSubsetOf disagreed");
+        Check(sut.IsSupersetOf(other) == oracle.IsSupersetOf(otherOracle), "IsSupersetOf disagreed");
+
+        // Enumeration must reproduce the oracle exactly and in ascending signed order, both before
+        // and after a re-encode that changes representation only.
+        CheckContents(sut, oracle);
+        sut.Optimize();
+        CheckContents(sut, oracle);
+    }
+
+    private static int CompressedValue(Random rng) =>
+        rng.Next(0, 2) == 0
+            ? rng.Next(-CompressedDomain, CompressedDomain)
+            : CompressedChunkStride + rng.Next(0, CompressedDomain);
+
+    private static void CheckContents(CompressedIntSet sut, HashSet<int> oracle)
+    {
+        int enumerated = 0;
+        int previous = int.MinValue;
+        bool first = true;
+        foreach (int item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            Check(first || item > previous, $"enumeration went backwards at {item}");
+            previous = item;
+            first = false;
+            enumerated++;
+        }
+
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+        foreach (int item in oracle)
+            Check(sut.Contains(item), $"Contains({item}) said absent");
     }
 
     // ---- ordered (B-tree) collections ---------------------------------------

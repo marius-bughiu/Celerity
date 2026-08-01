@@ -39,8 +39,9 @@ namespace Celerity.Tests.Collections;
 ///
 /// Coverage is per concrete type rather than table-driven because the sets do not share a base
 /// class and several have distinct shapes — <see cref="SparseSet"/> is bounded by a universe,
-/// <see cref="PooledCeleritySet{T, THasher}"/> is <see cref="IDisposable"/>, and
-/// <see cref="SmallSet{T}"/> is unhashed — so each needs its own construction.
+/// <see cref="PooledCeleritySet{T, THasher}"/> is <see cref="IDisposable"/>,
+/// <see cref="SmallSet{T}"/> is unhashed, and <see cref="CompressedIntSet"/> is chunk-compressed —
+/// so each needs its own construction.
 /// </summary>
 public class SetExplicitICollectionMemberTests
 {
@@ -251,6 +252,32 @@ public class SetExplicitICollectionMemberTests
     public void ICollectionIsReadOnly_ShouldBeFalse_WhenSetIsSparseSet()
     {
         ICollection<int> collection = new SparseSet(universe: 8);
+
+        Assert.False(collection.IsReadOnly);
+    }
+
+    // ---------------------------------------------------------------- CompressedIntSet
+
+    [Fact]
+    public void ICollectionAdd_ShouldNotThrowAndKeepCountAtOne_WhenCompressedIntSetAlreadyContainsItem()
+    {
+        var set = new CompressedIntSet();
+        ICollection<int> collection = set;
+
+        collection.Add(42);
+        collection.Add(42);
+
+        Assert.Equal(1, collection.Count);
+        Assert.True(set.Contains(42));
+
+        var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
+        Assert.Equal("item", ex.ParamName);
+    }
+
+    [Fact]
+    public void ICollectionIsReadOnly_ShouldBeFalse_WhenSetIsCompressedIntSet()
+    {
+        ICollection<int> collection = new CompressedIntSet();
 
         Assert.False(collection.IsReadOnly);
     }

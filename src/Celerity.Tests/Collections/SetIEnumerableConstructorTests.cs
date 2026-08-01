@@ -8,7 +8,7 @@ namespace Celerity.Tests.Collections;
 /// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>,
 /// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
-/// and the build-once <see cref="FrozenCeleritySet{THasher}"/>.
+/// <see cref="CompressedIntSet"/>, and the build-once <see cref="FrozenCeleritySet{THasher}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
 /// equivalents, but follows BCL <see cref="HashSet{T}"/> semantics rather than
@@ -1677,6 +1677,53 @@ public class SetIEnumerableConstructorTests
         var source = new List<int> { 1, 2, 3 };
 
         var set = new BTreeSet<int>(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        foreach (int item in new[] { 1, 2, 3 })
+            Assert.True(set.Contains(item));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  CompressedIntSet — the chunk-compressed integer set
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CompressedIntSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new CompressedIntSet(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void CompressedIntSet_ShouldDedupeSource_AcrossTheWholeIntRange()
+    {
+        var set = new CompressedIntSet(new[] { 0, int.MinValue, 0, int.MaxValue, int.MinValue, -1 });
+
+        Assert.Equal(4, set.Count);
+        Assert.Equal(new[] { int.MinValue, -1, 0, int.MaxValue }, set);
+    }
+
+    [Fact]
+    public void CompressedIntSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // 5000 elements in one chunk push the container past the array→bitmap crossover while the
+        // constructor is still filling it.
+        var set = new CompressedIntSet(Enumerable.Range(0, 5000).Reverse());
+
+        Assert.Equal(5000, set.Count);
+        Assert.Equal(Enumerable.Range(0, 5000), set);
+    }
+
+    [Fact]
+    public void CompressedIntSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 3 };
+
+        var set = new CompressedIntSet(source);
         source.Clear();
 
         Assert.Equal(3, set.Count);

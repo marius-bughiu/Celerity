@@ -251,6 +251,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void CompressedIntSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var set = new CompressedIntSet();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
+    }
+
+    [Fact]
     public void EnumSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var set = new EnumSet<EnumSetColor>();

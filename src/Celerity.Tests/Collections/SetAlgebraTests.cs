@@ -42,8 +42,31 @@ public class SetAlgebraTests
         Assert.IsAssignableFrom<ISet<int>>(new HashCachingSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new SmallSet<int>());
         Assert.IsAssignableFrom<ISet<int>>(new SparseSet(16));
+        Assert.IsAssignableFrom<ISet<int>>(new CompressedIntSet());
         using var pooled = new PooledCeleritySet<int, Int32WangNaiveHasher>();
         Assert.IsAssignableFrom<ISet<int>>(pooled);
+    }
+
+    // CompressedIntSet takes a chunk-wise fast path whenever `other` is also a CompressedIntSet
+    // and falls back to the shared element-at-a-time helper for any other IEnumerable<int>. The
+    // container-pair matrix and the exhaustive differential live in
+    // CompressedIntSetSetAlgebraTests / CompressedIntSetDifferentialTests; what is pinned here is
+    // that the ISet<int> surface behaves the same through the plain-sequence path the rest of the
+    // family uses, across the whole 32-bit range this set alone covers.
+    [Fact]
+    public void CompressedIntSet_SetAlgebra_MatchesHashSet_ThroughThePlainSequencePath()
+    {
+        var set = new CompressedIntSet(new[] { 1, 2, 3, int.MinValue });
+
+        set.UnionWith(new[] { 3, 4, 5 });
+        Assert.Equal(new[] { int.MinValue, 1, 2, 3, 4, 5 }, set);
+
+        set.IntersectWith(new[] { 2, 4, 6, int.MinValue });
+        Assert.Equal(new[] { int.MinValue, 2, 4 }, set);
+
+        Assert.True(set.IsSubsetOf(new[] { 2, 4, 8, int.MinValue }));
+        Assert.True(set.Overlaps(new[] { 4, int.MaxValue }));
+        Assert.False(set.SetEquals(new[] { 2 }));
     }
 
     // SparseSet carries a bounded universe, so its ISet<int> algebra matches HashSet
