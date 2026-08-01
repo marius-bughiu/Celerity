@@ -405,6 +405,14 @@
 <script src="data.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
+// Shared by both scripts on this page. The labels in the tables below are markup-shaped
+// — a generic type name like `IntDictionary<int>` is parsed as a start tag and dropped
+// if it reaches innerHTML raw — so every one of them is escaped on its way to a sink.
+function escapeHtml(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function (ch) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+  });
+}
 (function () {
   'use strict';
 
@@ -447,6 +455,11 @@
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'], items: [NO_SWEEP] },
     // SparseSet is a bounded-universe integer set; ClearRefill is the O(1)-clear headline win.
     { key: 'SparseSet',           title: 'SparseSet',                                vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ClearRefill', 'Remove'] },
+    // CompressedIntSet is the chunk-compressed integer set. The three Intersect arms sweep the key
+    // distribution rather than a second [Params] (which the name parser would reject), because which
+    // container form each 65,536-value chunk lands in — sorted array, bitmap or run — follows entirely
+    // from the shape of the data.
+    { key: 'CompressedIntSet',    title: 'CompressedIntSet',                         vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'IntersectSparse', 'IntersectDense', 'IntersectClustered', 'Union', 'Except'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },
@@ -694,8 +707,8 @@
     panel.className = 'collection';
     panel.innerHTML =
       '<div class="collection-head">' +
-        '<h3>' + col.title + '</h3>' +
-        '<div class="vs">vs <code>' + col.vs + '</code></div>' +
+        '<h3>' + escapeHtml(col.title) + '</h3>' +
+        '<div class="vs">vs <code>' + escapeHtml(col.vs) + '</code></div>' +
       '</div>' +
       '<div class="charts" data-collection="' + col.key + '"></div>';
     var chartsEl = panel.querySelector('.charts');
@@ -743,7 +756,7 @@
       cell.dataset.op = op;
       if (primaryN != null) cell.dataset.items = String(primaryN);
       cell.innerHTML =
-        '<div class="op">' + op + '</div>' +
+        '<div class="op">' + escapeHtml(op) + '</div>' +
         '<div class="ratio ' + ratioCls + '">' + ratioStr + '</div>' +
         '<div class="detail">' + detail + '</div>' +
         '<svg class="open-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -886,7 +899,6 @@
     if (p.method === 'EqualityComparer' || p.method === 'EqualityComparer_Default') return 'EqualityComparer<T>.Default';
     return p.method;
   }
-  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
 
   var container = document.getElementById('hasher-groups');
   ordered.forEach(function (key) {
@@ -900,7 +912,7 @@
       var barCls = r.isBaseline ? 'baseline' : rl.cls;
       var pct = max > 0 ? Math.max(2, Math.round(100 * r.value / max)) : 0;
       return '<div class="hasher-row' + (r.isBaseline ? ' baseline' : '') + '">' +
-               '<div class="hasher-name" title="' + esc(r.method) + '">' + esc(methodLabel(r)) + '</div>' +
+               '<div class="hasher-name" title="' + escapeHtml(r.method) + '">' + escapeHtml(methodLabel(r)) + '</div>' +
                '<div class="hasher-track"><div class="hasher-bar ' + barCls + '" style="width:' + pct + '%"></div></div>' +
                '<div class="hasher-ratio ' + rl.cls + '">' + rl.txt + '</div>' +
                '<div class="hasher-mean">' + fmtNs(r.value) + '</div>' +
@@ -911,8 +923,8 @@
     panel.className = 'hasher-group';
     panel.innerHTML =
       '<div class="hasher-group-head">' +
-        '<h3>' + meta.title + (meta.sub ? ' <span class="vs">&middot; ' + meta.sub + '</span>' : '') + '</h3>' +
-        '<div class="vs">vs <code>' + meta.vs + '</code></div>' +
+        '<h3>' + escapeHtml(meta.title) + (meta.sub ? ' <span class="vs">&middot; ' + escapeHtml(meta.sub) + '</span>' : '') + '</h3>' +
+        '<div class="vs">vs <code>' + escapeHtml(meta.vs) + '</code></div>' +
       '</div>' +
       '<div class="hasher-rows">' + rowsHtml + '</div>';
     container.appendChild(panel);

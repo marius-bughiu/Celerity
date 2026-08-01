@@ -378,6 +378,7 @@
     { key: 'SmallSet',            title: 'SmallSet<int>',                         vs: 'HashSet<int>', items: [8, 64] },
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                        vs: 'HashSet<TEnum>', items: [NO_SWEEP] },
     { key: 'SparseSet',           title: 'SparseSet',                             vs: 'HashSet<int>' },
+    { key: 'CompressedIntSet',    title: 'CompressedIntSet',                      vs: 'HashSet<int>' },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                vs: 'HashSet<int>' },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                   vs: 'HashSet<int>' },
@@ -540,8 +541,8 @@
   function renderShell() {
     contentEl.innerHTML =
       '<div class="title-block">' +
-        '<h1 class="detail-title">' + collection.title + ' &middot; <span id="op-label"></span></h1>' +
-        '<div class="detail-sub">vs <code id="vs-label">' + collection.vs + '</code> &middot; <span id="n-label"></span></div>' +
+        '<h1 class="detail-title">' + escapeHtml(collection.title) + ' &middot; <span id="op-label"></span></h1>' +
+        '<div class="detail-sub">vs <code id="vs-label">' + escapeHtml(collection.vs) + '</code> &middot; <span id="n-label"></span></div>' +
         '<div class="toggle" id="n-toggle"></div>' +
       '</div>' +
       '<div class="headline">' +
@@ -614,8 +615,9 @@
       // Replace the dynamic region with a notice but keep the header.
       var notice = document.createElement('div');
       notice.className = 'notice';
-      // `op` is whatever the query string says, so it is escaped before it reaches innerHTML.
-      notice.innerHTML = 'No measurements recorded for <code>' + collection.title + '.' + escapeHtml(params.op) + '</code>' +
+      // The title is markup-shaped and `op` is whatever the query string says, so both are
+      // escaped before they reach innerHTML.
+      notice.innerHTML = 'No measurements recorded for <code>' + escapeHtml(collection.title) + '.' + escapeHtml(params.op) + '</code>' +
         (params.n == null ? '' : ' at ' + params.n.toLocaleString() + ' items') + ' yet. <a href="./">Back to dashboard &rarr;</a>';
       // Remove headline + chart + table; insert notice in their place.
       ['headline','chart-wrap','section-head','measurements'].forEach(function () { /* placeholder */ });
