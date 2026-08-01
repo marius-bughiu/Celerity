@@ -2224,7 +2224,8 @@ CompressedIntSet(IEnumerable<int> source)
 - `bool TryAdd(int item)` — `true` if added, `false` if already present.
 - `long AddRange(int start, int endInclusive)` — adds every value in the inclusive range and
   returns how many were **new**. A range landing in a chunk the set does not yet touch is stored as
-  a **single run pair — four bytes, whatever the range's width** — so this is the cheap way to
+  a **single run pair — four bytes of payload, whatever the range's width** (plus the array header,
+  which `MemoryUsageInBytes` excludes too) — so this is the cheap way to
   build a clustered set. Throws `ArgumentOutOfRangeException` if `endInclusive < start`.
 - `bool Contains(int item)` — `O(1)` in a bitmap chunk, `O(log n)` in an array or run chunk, and a
   single comparison against the chunk index when nothing covers the value.

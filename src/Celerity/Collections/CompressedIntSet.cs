@@ -243,7 +243,8 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// <returns>The number of values the call actually added (values already present are not counted).</returns>
     /// <remarks>
     /// A range that lands in a chunk the set does not yet touch is stored as a single run pair —
-    /// four bytes, whatever the range's width — which is why this is the cheap way to build a
+    /// four bytes of payload, whatever the range's width (plus the array header, which
+    /// <see cref="MemoryUsageInBytes"/> excludes too) — which is why this is the cheap way to build a
     /// clustered set. A range overlapping an existing chunk merges into it and the chunk is left in
     /// its natural form; call <see cref="Optimize"/> afterwards to re-compress those.
     /// </remarks>
