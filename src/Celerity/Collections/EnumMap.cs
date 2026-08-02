@@ -53,7 +53,8 @@ namespace Celerity.Collections;
 /// The type is single-threaded.
 /// </para>
 /// </remarks>
-public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
+public class EnumMap<TEnum, TValue>
+    : IDictionary<TEnum, TValue?>, IReadOnlyDictionary<TEnum, TValue?>
     where TEnum : struct, Enum
 {
     // One value slot per addressable bit position (EnumSetInfo.TotalBits), indexed by the enum's
@@ -352,6 +353,35 @@ public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
     /// </summary>
     public ValueCollection Values => new ValueCollection(this);
 
+    /// <summary>
+    /// Copies every key/value pair into <paramref name="array"/> starting at
+    /// <paramref name="arrayIndex"/>. The order matches <see cref="GetEnumerator"/>.
+    /// </summary>
+    /// <param name="array">The destination array.</param>
+    /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+    public void CopyTo(KeyValuePair<TEnum, TValue?>[] array, int arrayIndex)
+    {
+        ArgumentNullException.ThrowIfNull(array);
+        if (arrayIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                "Array index must be non-negative.");
+        if (arrayIndex > array.Length)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                "Array index is beyond the end of the destination array.");
+        if (array.Length - arrayIndex < _count)
+            throw new ArgumentException(
+                "The destination array has insufficient space for the entries.", nameof(array));
+
+        int i = arrayIndex;
+        foreach (KeyValuePair<TEnum, TValue?> entry in this)
+            array[i++] = entry;
+    }
+
     // ── Occupancy bit-vector helpers ──────────────────────────────────────────
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -429,6 +459,44 @@ public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
         => GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    // IDictionary<TEnum, TValue?> explicit interface members. Everything the mutable
+    // interface adds over the read-only one is already public — Add, Remove, Clear,
+    // the indexer, CopyTo — so these forwarders only reshape Keys / Values to
+    // ICollection<T> and supply the ICollection<KeyValuePair<,>> members, leaving
+    // every existing public signature untouched.
+    TValue? IDictionary<TEnum, TValue?>.this[TEnum key]
+    {
+        get => this[key];
+        set => this[key] = value!;
+    }
+
+    ICollection<TEnum> IDictionary<TEnum, TValue?>.Keys => Keys;
+
+    ICollection<TValue?> IDictionary<TEnum, TValue?>.Values => Values;
+
+    void IDictionary<TEnum, TValue?>.Add(TEnum key, TValue? value) => Add(key, value!);
+
+    bool ICollection<KeyValuePair<TEnum, TValue?>>.IsReadOnly => false;
+
+    void ICollection<KeyValuePair<TEnum, TValue?>>.Add(KeyValuePair<TEnum, TValue?> item) =>
+        Add(item.Key, item.Value!);
+
+    bool ICollection<KeyValuePair<TEnum, TValue?>>.Contains(KeyValuePair<TEnum, TValue?> item) =>
+        TryGetValue(item.Key, out TValue? value) && EqualityComparer<TValue?>.Default.Equals(value, item.Value);
+
+    bool ICollection<KeyValuePair<TEnum, TValue?>>.Remove(KeyValuePair<TEnum, TValue?> item)
+    {
+        // ICollection<KVP> semantics: remove only when the *pair* matches, so a stale value must not
+        // delete the current entry.
+        if (!TryGetValue(item.Key, out TValue? value) ||
+            !EqualityComparer<TValue?>.Default.Equals(value, item.Value))
+        {
+            return false;
+        }
+
+        return Remove(item.Key);
+    }
 
     /// <summary>
     /// A struct enumerator over an <see cref="EnumMap{TEnum, TValue}"/>. Because it is a struct,
@@ -523,9 +591,11 @@ public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
     /// <summary>
     /// A struct enumerable view over the keys of an <see cref="EnumMap{TEnum, TValue}"/>. Iterating
     /// it does not allocate; passing it through <see cref="IEnumerable{T}"/> will box the
-    /// enumerator and is therefore not zero-allocation.
+    /// enumerator and is therefore not zero-allocation. It is a read-only
+    /// <see cref="ICollection{T}"/>: the mutating members throw
+    /// <see cref="NotSupportedException"/>.
     /// </summary>
-    public readonly struct KeyCollection : IEnumerable<TEnum>
+    public readonly struct KeyCollection : ICollection<TEnum>
     {
         private readonly EnumMap<TEnum, TValue> _map;
 
@@ -536,13 +606,59 @@ public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
         /// </summary>
         public int Count => _map._count;
 
+        /// <summary>Gets a value indicating whether the view is read-only. Always <c>true</c>.</summary>
+        public bool IsReadOnly => true;
+
         /// <summary>
         /// Returns an allocation-free struct enumerator over the keys, in ascending order.
         /// </summary>
         public Enumerator GetEnumerator() => new Enumerator(_map);
 
+        /// <summary>Determines whether the map contains <paramref name="item"/> as a key.</summary>
+        /// <param name="item">The key to look for.</param>
+        /// <returns><c>true</c> if the key is present.</returns>
+        public bool Contains(TEnum item) => _map.ContainsKey(item);
+
+        /// <summary>
+        /// Copies the keys into <paramref name="array"/> starting at <paramref name="arrayIndex"/>,
+        /// in the map's enumeration order.
+        /// </summary>
+        /// <param name="array">The destination array.</param>
+        /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+        public void CopyTo(TEnum[] array, int arrayIndex)
+        {
+            ArgumentNullException.ThrowIfNull(array);
+            if (arrayIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index must be non-negative.");
+            if (arrayIndex > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index is beyond the end of the destination array.");
+            if (array.Length - arrayIndex < _map._count)
+                throw new ArgumentException(
+                    "The destination array has insufficient space for the keys.", nameof(array));
+
+            int i = arrayIndex;
+            foreach (KeyValuePair<TEnum, TValue?> entry in _map)
+                array[i++] = entry.Key;
+        }
+
         IEnumerator<TEnum> IEnumerable<TEnum>.GetEnumerator() => new Enumerator(_map);
         IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_map);
+
+        void ICollection<TEnum>.Add(TEnum item) =>
+            throw new NotSupportedException("The key view is read-only.");
+
+        void ICollection<TEnum>.Clear() =>
+            throw new NotSupportedException("The key view is read-only.");
+
+        bool ICollection<TEnum>.Remove(TEnum item) =>
+            throw new NotSupportedException("The key view is read-only.");
 
         /// <summary>
         /// A struct enumerator over the keys of an <see cref="EnumMap{TEnum, TValue}"/>.
@@ -572,9 +688,11 @@ public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
     /// <summary>
     /// A struct enumerable view over the values of an <see cref="EnumMap{TEnum, TValue}"/>.
     /// Iterating it does not allocate; passing it through <see cref="IEnumerable{T}"/> will box the
-    /// enumerator and is therefore not zero-allocation.
+    /// enumerator and is therefore not zero-allocation. It is a read-only
+    /// <see cref="ICollection{T}"/>: the mutating members throw
+    /// <see cref="NotSupportedException"/>.
     /// </summary>
-    public readonly struct ValueCollection : IEnumerable<TValue?>
+    public readonly struct ValueCollection : ICollection<TValue?>
     {
         private readonly EnumMap<TEnum, TValue> _map;
 
@@ -585,13 +703,59 @@ public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
         /// </summary>
         public int Count => _map._count;
 
+        /// <summary>Gets a value indicating whether the view is read-only. Always <c>true</c>.</summary>
+        public bool IsReadOnly => true;
+
         /// <summary>
         /// Returns an allocation-free struct enumerator over the values, ordered by ascending key.
         /// </summary>
         public Enumerator GetEnumerator() => new Enumerator(_map);
 
+        /// <summary>Determines whether any entry holds <paramref name="item"/>. This is an <c>O(n)</c> scan.</summary>
+        /// <param name="item">The value to look for.</param>
+        /// <returns><c>true</c> if at least one entry holds the value.</returns>
+        public bool Contains(TValue? item) => _map.ContainsValue(item);
+
+        /// <summary>
+        /// Copies the values into <paramref name="array"/> starting at <paramref name="arrayIndex"/>,
+        /// in the map's enumeration order.
+        /// </summary>
+        /// <param name="array">The destination array.</param>
+        /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+        public void CopyTo(TValue?[] array, int arrayIndex)
+        {
+            ArgumentNullException.ThrowIfNull(array);
+            if (arrayIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index must be non-negative.");
+            if (arrayIndex > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index is beyond the end of the destination array.");
+            if (array.Length - arrayIndex < _map._count)
+                throw new ArgumentException(
+                    "The destination array has insufficient space for the values.", nameof(array));
+
+            int i = arrayIndex;
+            foreach (KeyValuePair<TEnum, TValue?> entry in _map)
+                array[i++] = entry.Value;
+        }
+
         IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => new Enumerator(_map);
         IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_map);
+
+        void ICollection<TValue?>.Add(TValue? item) =>
+            throw new NotSupportedException("The value view is read-only.");
+
+        void ICollection<TValue?>.Clear() =>
+            throw new NotSupportedException("The value view is read-only.");
+
+        bool ICollection<TValue?>.Remove(TValue? item) =>
+            throw new NotSupportedException("The value view is read-only.");
 
         /// <summary>
         /// A struct enumerator over the values of an <see cref="EnumMap{TEnum, TValue}"/>.

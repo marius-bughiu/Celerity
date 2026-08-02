@@ -4,11 +4,11 @@ All collection types live in the `Celerity.Collections` namespace.
 
 ## CelerityDictionary&lt;TKey, TValue, THasher&gt;
 
-A high-performance generic dictionary parameterized on a custom hash provider. Uses open addressing with linear probing and power-of-two sizing for fast index computation. Implements `IReadOnlyDictionary<TKey, TValue?>`.
+A high-performance generic dictionary parameterized on a custom hash provider. Uses open addressing with linear probing and power-of-two sizing for fast index computation. Implements both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`.
 
 ```csharp
 public class CelerityDictionary<TKey, TValue, THasher>
-    : IReadOnlyDictionary<TKey, TValue?>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
     where THasher : struct, IHashProvider<TKey>
 ```
 
@@ -152,6 +152,41 @@ When `TKey` is `string` and the hasher also implements `ISpanHashProvider` (ever
 
 `CelerityDictionary` implements `IReadOnlyDictionary<TKey, TValue?>` via thin explicit interface forwarders on top of the existing struct `KeyCollection` / `ValueCollection` / `Enumerator` types. The zero-allocation `foreach` fast path is preserved; the interface path boxes the enumerator exactly once per `GetEnumerator()` call, matching BCL `Dictionary<,>` behaviour. The out-of-band default-key entry is surfaced through every interface member.
 
+### IDictionary&lt;TKey, TValue?&gt;
+
+`CelerityDictionary` also implements the **mutable** BCL interface, so it can be passed to any existing API whose parameter is `IDictionary<TKey, TValue>` — the same drop-in goal as `IReadOnlyDictionary<,>`, one level up. `ISet<T>` does not derive from `IReadOnlySet<T>` and `IDictionary<,>` does not derive from `IReadOnlyDictionary<,>`, so the two have to be declared separately, exactly as BCL `Dictionary<,>` does.
+
+Every member is an explicit-interface forwarder onto the existing public surface; no existing public signature changed, and the concrete indexer still returns the non-nullable `TValue`. The semantics worth knowing:
+
+| Interface member | Behaviour |
+| --- | --- |
+| `IsReadOnly` | `false`. |
+| `Add(TKey, TValue?)` | The **throwing** duplicate contract of `Dictionary<,>` — `ArgumentException` when the key is already present. `TryAdd` remains the non-throwing path on the concrete type. |
+| `this[key]` (set) | Insert-or-overwrite, matching the concrete indexer. Overwriting an existing key is not a structural change and does not invalidate a live enumerator. |
+| `Keys` / `Values` | The existing struct views, widened to `ICollection<TKey>` / `ICollection<TValue?>`. They are **read-only**: `Add`, `Clear` and `Remove` throw `NotSupportedException`, exactly as `Dictionary<,>.KeyCollection` does. |
+| `Contains(KeyValuePair<,>)` | Matches on the **pair** — a present key carrying a different value reports `false`. |
+| `Remove(KeyValuePair<,>)` | Same pair matching; a stale value must not delete the current entry. |
+| `CopyTo` | Also exposed publicly as `CopyTo(KeyValuePair<TKey, TValue?>[], int)`. Throws `ArgumentNullException` for a null array, `ArgumentOutOfRangeException` for a negative index or one past the end, and `ArgumentException` when the destination has insufficient space. |
+
+Because `IDictionary<,>` is invariant in its value type, the declared interface is `IDictionary<TKey, TValue?>` — matching the existing `IReadOnlyDictionary<TKey, TValue?>` declaration. For an unconstrained `TValue` the annotation is erased at the IL level, so a `CelerityDictionary<int, string, …>` is an `IDictionary<int, string?>`.
+
+```csharp
+// Any BCL-shaped API taking the mutable interface now accepts a Celerity dictionary.
+static void Seed(IDictionary<int, string?> target)
+{
+    target.Add(1, "one");
+    target[2] = "two";
+}
+
+var dict = new CelerityDictionary<int, string, Int32WangNaiveHasher>();
+Seed(dict);
+
+IDictionary<int, string?> view = dict;
+view.Contains(new KeyValuePair<int, string?>(1, "one"));  // true
+view.Contains(new KeyValuePair<int, string?>(1, "uno"));  // false — the pair must match
+view.Keys.Add(3);                                         // throws NotSupportedException
+```
+
 ### Default-key handling
 
 `default(TKey)` (which is `null` for reference types, `0` for `int`, `Guid.Empty` for `Guid`, etc.) cannot be stored in the regular probe table because it doubles as the empty-slot sentinel. Celerity handles this transparently via a dedicated `_hasDefaultKey` flag and a separate value slot, so callers never need to worry about it.
@@ -181,11 +216,11 @@ foreach (var value in dict.Values) { /* ... */ }
 
 ## RobinHoodDictionary&lt;TKey, TValue, THasher&gt;
 
-A drop-in peer of `CelerityDictionary` that resolves collisions with **Robin Hood** open addressing instead of plain linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
+A drop-in peer of `CelerityDictionary` that resolves collisions with **Robin Hood** open addressing instead of plain linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
 
 ```csharp
 public class RobinHoodDictionary<TKey, TValue, THasher>
-    : IReadOnlyDictionary<TKey, TValue?>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
     where THasher : struct, IHashProvider<TKey>
 ```
 
@@ -242,11 +277,11 @@ foreach (var kvp in dict)
 
 ## PooledCelerityDictionary&lt;TKey, TValue, THasher&gt;
 
-An allocation-conscious peer of `CelerityDictionary` whose backing arrays are **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. The public surface is identical to `CelerityDictionary` — same indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — with one addition: it implements `IDisposable`.
+An allocation-conscious peer of `CelerityDictionary` whose backing arrays are **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. The public surface is identical to `CelerityDictionary` — same indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>` — with one addition: it implements `IDisposable`.
 
 ```csharp
 public class PooledCelerityDictionary<TKey, TValue, THasher>
-    : IReadOnlyDictionary<TKey, TValue?>, IDisposable
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>, IDisposable
     where THasher : struct, IHashProvider<TKey>
 ```
 
@@ -310,11 +345,11 @@ using (var dict = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher
 
 ## SwissDictionary&lt;TKey, TValue, THasher&gt;
 
-A drop-in peer of `CelerityDictionary` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
+A drop-in peer of `CelerityDictionary` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probing strategy differs.
 
 ```csharp
 public class SwissDictionary<TKey, TValue, THasher>
-    : IReadOnlyDictionary<TKey, TValue?>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
     where THasher : struct, IHashProvider<TKey>
 ```
 
@@ -370,11 +405,11 @@ foreach (var kvp in dict)
 
 ## HashCachingDictionary&lt;TKey, TValue, THasher&gt;
 
-A drop-in peer of `CelerityDictionary` that pushes the **struct-of-arrays layout** one step further: alongside the parallel `keys` / `values` arrays it keeps a dense side array of 32-bit hash **fingerprints**, one per slot. A probe scan touches only that compact metadata buffer — comparing the cached fingerprint before it ever reads a key — so cache-cold lookups and lookups with expensive key equality (long strings, large structs) short-circuit on a single integer compare. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probe metadata differs.
+A drop-in peer of `CelerityDictionary` that pushes the **struct-of-arrays layout** one step further: alongside the parallel `keys` / `values` arrays it keeps a dense side array of 32-bit hash **fingerprints**, one per slot. A probe scan touches only that compact metadata buffer — comparing the cached fingerprint before it ever reads a key — so cache-cold lookups and lookups with expensive key equality (long strings, large structs) short-circuit on a single integer compare. The public surface — constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>` — is identical to `CelerityDictionary`. Only the probe metadata differs.
 
 ```csharp
 public class HashCachingDictionary<TKey, TValue, THasher>
-    : IReadOnlyDictionary<TKey, TValue?>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
     where THasher : struct, IHashProvider<TKey>
 ```
 
@@ -458,11 +493,11 @@ Same semantics and validation as `CelerityDictionary`.
 
 ## IntDictionary&lt;TValue, THasher&gt;
 
-A high-performance dictionary keyed by `int`, parameterized on a custom hash provider. This is a separate implementation from `CelerityDictionary` that avoids the boxing/equality-comparer overhead of generic key types by working directly with `int` keys and using `==` for comparisons. Implements `IReadOnlyDictionary<int, TValue?>`.
+A high-performance dictionary keyed by `int`, parameterized on a custom hash provider. This is a separate implementation from `CelerityDictionary` that avoids the boxing/equality-comparer overhead of generic key types by working directly with `int` keys and using `==` for comparisons. Implements both `IDictionary<int, TValue?>` and `IReadOnlyDictionary<int, TValue?>`.
 
 ```csharp
 public class IntDictionary<TValue, THasher>
-    : IReadOnlyDictionary<int, TValue?>
+    : IDictionary<int, TValue?>, IReadOnlyDictionary<int, TValue?>
     where THasher : struct, IHashProvider<int>
 ```
 
@@ -505,7 +540,7 @@ The method signatures and semantics match `CelerityDictionary`:
 - `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management, identical in semantics to `CelerityDictionary` (and to BCL `Dictionary<,>`): `EnsureCapacity` pre-grows the table to hold `capacity` entries without resizing; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`).
 - `Enumerator GetEnumerator()` — struct enumerator yielding `KeyValuePair<int, TValue?>`. The out-of-band zero-key entry is yielded first if present. *Structurally* mutating the dictionary during enumeration — adding a new key, removing a key, or `Clear` — throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Overwriting the value of an existing key via the indexer is *not* a structural change and does not invalidate an active enumerator. Iteration order is unspecified and may change between versions.
 
-`IntDictionary<TValue, THasher>` also implements `IReadOnlyDictionary<int, TValue?>` with the same explicit-interface forwarding pattern as `CelerityDictionary`.
+`IntDictionary<TValue, THasher>` also implements `IDictionary<int, TValue?>` and `IReadOnlyDictionary<int, TValue?>` with the same explicit-interface forwarding pattern as [`CelerityDictionary`](#idictionarytkey-tvalue).
 
 ### Zero-key handling
 
@@ -562,11 +597,11 @@ Same semantics and validation as `IntDictionary`.
 
 ## LongDictionary&lt;TValue, THasher&gt;
 
-A high-performance dictionary keyed by `long`, parameterized on a custom hash provider. Mirrors `IntDictionary` but for 64-bit keys. Defaults to `Int64WangNaiveHasher` when used through the convenience subclass. Implements `IReadOnlyDictionary<long, TValue?>`.
+A high-performance dictionary keyed by `long`, parameterized on a custom hash provider. Mirrors `IntDictionary` but for 64-bit keys. Defaults to `Int64WangNaiveHasher` when used through the convenience subclass. Implements both `IDictionary<long, TValue?>` and `IReadOnlyDictionary<long, TValue?>`.
 
 ```csharp
 public class LongDictionary<TValue, THasher>
-    : IReadOnlyDictionary<long, TValue?>
+    : IDictionary<long, TValue?>, IReadOnlyDictionary<long, TValue?>
     where THasher : struct, IHashProvider<long>
 ```
 
@@ -1652,7 +1687,7 @@ Console.WriteLine(fromSeq[3]);          // 3
 
 ```csharp
 public class SmallDictionary<TKey, TValue>
-    : IReadOnlyDictionary<TKey, TValue?>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
 ```
 
 A dictionary tuned for the **very-small** case (`n <= ~16`), where a linear scan
@@ -1680,10 +1715,11 @@ trade-offs that follow directly from that:
   is found), so the relative order of the surviving entries is not preserved.
   Enumeration order is unspecified in general.
 
-It implements `IReadOnlyDictionary<TKey, TValue?>`, ships allocation-free struct
-`Keys` / `Values` views and a struct enumerator, and accepts an
-`IEnumerable<KeyValuePair<TKey, TValue>>` source at construction — the same surface
-as the other Celerity dictionaries.
+It implements both [`IDictionary<TKey, TValue?>`](#idictionarytkey-tvalue) and
+`IReadOnlyDictionary<TKey, TValue?>`, ships allocation-free struct `Keys` / `Values`
+views (read-only `ICollection<T>`s through the interface) and a struct enumerator, and
+accepts an `IEnumerable<KeyValuePair<TKey, TValue>>` source at construction — the same
+surface as the other Celerity dictionaries.
 
 ### Constructors
 
@@ -2298,7 +2334,8 @@ Console.WriteLine(recentlyIngested.MemoryUsageInBytes); // hundreds of bytes, no
 ## EnumMap&lt;TEnum, TValue&gt;
 
 ```csharp
-public class EnumMap<TEnum, TValue> : IReadOnlyDictionary<TEnum, TValue?>
+public class EnumMap<TEnum, TValue>
+    : IDictionary<TEnum, TValue?>, IReadOnlyDictionary<TEnum, TValue?>
     where TEnum : struct, Enum
 ```
 
@@ -2342,6 +2379,14 @@ which covers the overwhelming majority of enums.
   with `ArgumentOutOfRangeException`, and reported as absent by the read surface
   (`ContainsKey` / `TryGetValue` / `Remove`; the indexer getter throws
   `KeyNotFoundException`).
+
+That bounded key universe is the one place `EnumMap` differs from the rest of the family
+when consumed as [`IDictionary<TEnum, TValue?>`](#idictionarytkey-tvalue): `Add` on an
+out-of-range cast throws instead of storing. It is still an honest implementation —
+`ArgumentOutOfRangeException` *is* an `ArgumentException`, the failure the interface
+already documents for a key it cannot accept — but code that funnels arbitrary casts
+through the interface should expect it. Every other interface member behaves exactly as it
+does on the hash-table dictionaries.
 
 ### Constructors
 

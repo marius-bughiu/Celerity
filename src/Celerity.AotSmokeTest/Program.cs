@@ -1658,6 +1658,74 @@ void Check(bool condition, string message)
     Check(report64.KeyCount == 4 && report64.DistinctHashCount == 4, "HashQualityEvaluator.Evaluate64");
 }
 
+// IDictionary<,> — the mutable BCL interface on the dictionary family. Worth pinning under ILC
+// specifically: Keys / Values are readonly structs reached through ICollection<T>, so the interface
+// path boxes them and dispatches through an unboxing stub the AOT compiler has to generate. A plain
+// foreach over the concrete type never exercises that.
+{
+    void DriveInterface(IDictionary<int, string?> map, string label)
+    {
+        map.Add(0, "zero");                                        // out-of-band default-key slot
+        map.Add(new KeyValuePair<int, string?>(1, "one"));
+        map[2] = "two";
+
+        Check(map.Count == 3 && !map.IsReadOnly, $"{label} as IDictionary: count / IsReadOnly");
+        Check(map.Contains(new KeyValuePair<int, string?>(1, "one")), $"{label} as IDictionary: Contains(pair)");
+        Check(!map.Contains(new KeyValuePair<int, string?>(1, "uno")), $"{label} as IDictionary: pair mismatch");
+
+        ICollection<int> keys = map.Keys;
+        ICollection<string?> values = map.Values;
+        Check(keys.Count == 3 && keys.Contains(0), $"{label} as IDictionary: boxed key view");
+        Check(values.Count == 3 && values.Contains("two"), $"{label} as IDictionary: boxed value view");
+
+        var keyBuffer = new int[3];
+        keys.CopyTo(keyBuffer, 0);
+        Check(keyBuffer[0] + keyBuffer[1] + keyBuffer[2] == 3, $"{label} as IDictionary: key view CopyTo");
+
+        try
+        {
+            keys.Add(9);
+            Check(false, $"{label} as IDictionary: key view is read-only");
+        }
+        catch (NotSupportedException)
+        {
+            Check(true, $"{label} as IDictionary: key view is read-only");
+        }
+
+        var pairs = new KeyValuePair<int, string?>[3];
+        map.CopyTo(pairs, 0);
+        Check(pairs.Length == 3, $"{label} as IDictionary: CopyTo");
+
+        Check(!map.Remove(new KeyValuePair<int, string?>(2, "stale")), $"{label} as IDictionary: stale pair kept");
+        Check(map.Remove(new KeyValuePair<int, string?>(2, "two")), $"{label} as IDictionary: Remove(pair)");
+        Check(map.Remove(0) && !map.ContainsKey(0), $"{label} as IDictionary: Remove(key)");
+
+        map.Clear();
+        Check(map.Count == 0, $"{label} as IDictionary: Clear");
+    }
+
+    DriveInterface(new CelerityDictionary<int, string, Int32WangNaiveHasher>(), "CelerityDictionary");
+    DriveInterface(new SwissDictionary<int, string, Int32WangNaiveHasher>(), "SwissDictionary");
+    DriveInterface(new RobinHoodDictionary<int, string, Int32WangNaiveHasher>(), "RobinHoodDictionary");
+    DriveInterface(new HashCachingDictionary<int, string, Int32WangNaiveHasher>(), "HashCachingDictionary");
+    DriveInterface(new SmallDictionary<int, string>(), "SmallDictionary");
+    DriveInterface(new IntDictionary<string>(), "IntDictionary");
+
+    using (var pooled = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>())
+        DriveInterface(pooled, "PooledCelerityDictionary");
+
+    // The two key shapes the helper cannot take: a long key and an enum key.
+    IDictionary<long, string?> longMap = new LongDictionary<string>();
+    longMap.Add(1L << 40, "high");
+    Check(longMap.Keys.Contains(1L << 40) && longMap.Values.Contains("high"),
+        "LongDictionary as IDictionary: boxed views");
+
+    IDictionary<DayOfWeek, string?> enumMap = new EnumMap<DayOfWeek, string>();
+    enumMap.Add(DayOfWeek.Monday, "mon");
+    Check(enumMap.Keys.Contains(DayOfWeek.Monday) && !enumMap.ContainsKey(DayOfWeek.Sunday),
+        "EnumMap as IDictionary: boxed key view");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");

@@ -81,7 +81,7 @@ public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangNaiveHashe
 /// <see cref="IHashProvider{T}"/> so the JIT can devirtualize and inline it.
 /// </typeparam>
 public class LongDictionary<TValue, THasher>
-    : IReadOnlyDictionary<long, TValue?>
+    : IDictionary<long, TValue?>, IReadOnlyDictionary<long, TValue?>
     where THasher : struct, IHashProvider<long>
 {
     /// <summary>
@@ -584,6 +584,35 @@ public class LongDictionary<TValue, THasher>
     public ValueCollection Values => new ValueCollection(this);
 
     /// <summary>
+    /// Copies every key/value pair into <paramref name="array"/> starting at
+    /// <paramref name="arrayIndex"/>. The order matches <see cref="GetEnumerator"/>.
+    /// </summary>
+    /// <param name="array">The destination array.</param>
+    /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+    public void CopyTo(KeyValuePair<long, TValue?>[] array, int arrayIndex)
+    {
+        ArgumentNullException.ThrowIfNull(array);
+        if (arrayIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                "Array index must be non-negative.");
+        if (arrayIndex > array.Length)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                "Array index is beyond the end of the destination array.");
+        if (array.Length - arrayIndex < _count)
+            throw new ArgumentException(
+                "The destination array has insufficient space for the entries.", nameof(array));
+
+        int i = arrayIndex;
+        foreach (KeyValuePair<long, TValue?> entry in this)
+            array[i++] = entry;
+    }
+
+    /// <summary>
     /// A struct enumerator over a <see cref="LongDictionary{TValue, THasher}"/>.
     /// Because it is a struct, iterating it via <c>foreach</c> avoids the
     /// allocation that a compiler-generated <c>IEnumerator&lt;T&gt;</c> would
@@ -694,9 +723,11 @@ public class LongDictionary<TValue, THasher>
     /// A struct enumerable view over the keys of a
     /// <see cref="LongDictionary{TValue, THasher}"/>. Iterating it does not
     /// allocate; passing it through <see cref="IEnumerable{T}"/> will box the
-    /// enumerator and is therefore not zero-allocation.
+    /// enumerator and is therefore not zero-allocation. It is a read-only
+    /// <see cref="ICollection{T}"/>: the mutating members throw
+    /// <see cref="NotSupportedException"/>.
     /// </summary>
-    public readonly struct KeyCollection : IEnumerable<long>
+    public readonly struct KeyCollection : ICollection<long>
     {
         private readonly LongDictionary<TValue, THasher> _dict;
 
@@ -707,13 +738,59 @@ public class LongDictionary<TValue, THasher>
         /// </summary>
         public int Count => _dict._count;
 
+        /// <summary>Gets a value indicating whether the view is read-only. Always <c>true</c>.</summary>
+        public bool IsReadOnly => true;
+
         /// <summary>
         /// Returns an allocation-free struct enumerator over the keys.
         /// </summary>
         public Enumerator GetEnumerator() => new Enumerator(_dict);
 
+        /// <summary>Determines whether the dictionary contains <paramref name="item"/> as a key.</summary>
+        /// <param name="item">The key to look for.</param>
+        /// <returns><c>true</c> if the key is present.</returns>
+        public bool Contains(long item) => _dict.ContainsKey(item);
+
+        /// <summary>
+        /// Copies the keys into <paramref name="array"/> starting at <paramref name="arrayIndex"/>,
+        /// in the dictionary's enumeration order.
+        /// </summary>
+        /// <param name="array">The destination array.</param>
+        /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+        public void CopyTo(long[] array, int arrayIndex)
+        {
+            ArgumentNullException.ThrowIfNull(array);
+            if (arrayIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index must be non-negative.");
+            if (arrayIndex > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index is beyond the end of the destination array.");
+            if (array.Length - arrayIndex < _dict._count)
+                throw new ArgumentException(
+                    "The destination array has insufficient space for the keys.", nameof(array));
+
+            int i = arrayIndex;
+            foreach (KeyValuePair<long, TValue?> entry in _dict)
+                array[i++] = entry.Key;
+        }
+
         IEnumerator<long> IEnumerable<long>.GetEnumerator() => new Enumerator(_dict);
         IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_dict);
+
+        void ICollection<long>.Add(long item) =>
+            throw new NotSupportedException("The key view is read-only.");
+
+        void ICollection<long>.Clear() =>
+            throw new NotSupportedException("The key view is read-only.");
+
+        bool ICollection<long>.Remove(long item) =>
+            throw new NotSupportedException("The key view is read-only.");
 
         /// <summary>
         /// A struct enumerator over the keys of a
@@ -745,9 +822,11 @@ public class LongDictionary<TValue, THasher>
     /// A struct enumerable view over the values of a
     /// <see cref="LongDictionary{TValue, THasher}"/>. Iterating it does not
     /// allocate; passing it through <see cref="IEnumerable{T}"/> will box the
-    /// enumerator and is therefore not zero-allocation.
+    /// enumerator and is therefore not zero-allocation. It is a read-only
+    /// <see cref="ICollection{T}"/>: the mutating members throw
+    /// <see cref="NotSupportedException"/>.
     /// </summary>
-    public readonly struct ValueCollection : IEnumerable<TValue?>
+    public readonly struct ValueCollection : ICollection<TValue?>
     {
         private readonly LongDictionary<TValue, THasher> _dict;
 
@@ -758,13 +837,59 @@ public class LongDictionary<TValue, THasher>
         /// </summary>
         public int Count => _dict._count;
 
+        /// <summary>Gets a value indicating whether the view is read-only. Always <c>true</c>.</summary>
+        public bool IsReadOnly => true;
+
         /// <summary>
         /// Returns an allocation-free struct enumerator over the values.
         /// </summary>
         public Enumerator GetEnumerator() => new Enumerator(_dict);
 
+        /// <summary>Determines whether any entry holds <paramref name="item"/>. This is an <c>O(n)</c> scan.</summary>
+        /// <param name="item">The value to look for.</param>
+        /// <returns><c>true</c> if at least one entry holds the value.</returns>
+        public bool Contains(TValue? item) => _dict.ContainsValue(item);
+
+        /// <summary>
+        /// Copies the values into <paramref name="array"/> starting at <paramref name="arrayIndex"/>,
+        /// in the dictionary's enumeration order.
+        /// </summary>
+        /// <param name="array">The destination array.</param>
+        /// <param name="arrayIndex">The zero-based index at which copying begins.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+        public void CopyTo(TValue?[] array, int arrayIndex)
+        {
+            ArgumentNullException.ThrowIfNull(array);
+            if (arrayIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index must be non-negative.");
+            if (arrayIndex > array.Length)
+                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
+                    "Array index is beyond the end of the destination array.");
+            if (array.Length - arrayIndex < _dict._count)
+                throw new ArgumentException(
+                    "The destination array has insufficient space for the values.", nameof(array));
+
+            int i = arrayIndex;
+            foreach (KeyValuePair<long, TValue?> entry in _dict)
+                array[i++] = entry.Value;
+        }
+
         IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => new Enumerator(_dict);
         IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_dict);
+
+        void ICollection<TValue?>.Add(TValue? item) =>
+            throw new NotSupportedException("The value view is read-only.");
+
+        void ICollection<TValue?>.Clear() =>
+            throw new NotSupportedException("The value view is read-only.");
+
+        bool ICollection<TValue?>.Remove(TValue? item) =>
+            throw new NotSupportedException("The value view is read-only.");
 
         /// <summary>
         /// A struct enumerator over the values of a
@@ -810,6 +935,44 @@ public class LongDictionary<TValue, THasher>
         => GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    // IDictionary<long, TValue?> explicit interface members. Everything the mutable
+    // interface adds over the read-only one is already public — Add, Remove, Clear,
+    // the indexer, CopyTo — so these forwarders only reshape Keys / Values to
+    // ICollection<T> and supply the ICollection<KeyValuePair<,>> members, leaving
+    // every existing public signature untouched.
+    TValue? IDictionary<long, TValue?>.this[long key]
+    {
+        get => this[key];
+        set => this[key] = value!;
+    }
+
+    ICollection<long> IDictionary<long, TValue?>.Keys => Keys;
+
+    ICollection<TValue?> IDictionary<long, TValue?>.Values => Values;
+
+    void IDictionary<long, TValue?>.Add(long key, TValue? value) => Add(key, value!);
+
+    bool ICollection<KeyValuePair<long, TValue?>>.IsReadOnly => false;
+
+    void ICollection<KeyValuePair<long, TValue?>>.Add(KeyValuePair<long, TValue?> item) =>
+        Add(item.Key, item.Value!);
+
+    bool ICollection<KeyValuePair<long, TValue?>>.Contains(KeyValuePair<long, TValue?> item) =>
+        TryGetValue(item.Key, out TValue? value) && EqualityComparer<TValue?>.Default.Equals(value, item.Value);
+
+    bool ICollection<KeyValuePair<long, TValue?>>.Remove(KeyValuePair<long, TValue?> item)
+    {
+        // ICollection<KVP> semantics: remove only when the *pair* matches, so a stale value must not
+        // delete the current entry.
+        if (!TryGetValue(item.Key, out TValue? value) ||
+            !EqualityComparer<TValue?>.Default.Equals(value, item.Value))
+        {
+            return false;
+        }
+
+        return Remove(item.Key);
+    }
 
     // Returns the slot the caller should write into. <paramref name="wasEmpty"/>
     // tells the caller whether the slot was previously empty (true → new entry,
