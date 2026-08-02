@@ -90,11 +90,13 @@
     Commit it with a comment per entry so the break is reviewed in the PR.
 
     ### AT RELEASE TIME ###
-    Bump CelerityPackageValidationBaseline below to the version you are about to
-    tag, in the same commit that moves the CHANGELOG's [Unreleased] block to
-    [X.Y.Z]. This is the part that rots: a stale baseline silently validates
-    against an older surface, so a break introduced after it goes unnoticed. The
-    ritual is written up in CONTRIBUTING.md, section "Cutting a release".
+    Bump CelerityPackageValidationBaseline below to X.Y.Z in a follow-up commit,
+    once vX.Y.Z is published and indexed on NuGet.org. It must NOT move in the
+    release commit itself: the value becomes a PackageDownload, so pointing it
+    at a version that is not published yet fails the release build's restore.
+    This is the part that rots: a stale baseline silently validates against an
+    older surface, so a break introduced after it goes unnoticed. The ritual is
+    written up in CONTRIBUTING.md, section "Cutting a release".
 
     All six shipped packages (Celerity.Collections / Celerity.Hashing /
     Celerity.Primitives / Celerity.Ring / Celerity.Sentinel / Celerity.Cardinality)
@@ -108,7 +110,7 @@
     IsPackable is known; see the comment there.
   -->
   <PropertyGroup>
-    <CelerityPackageValidationBaseline>2.4.0</CelerityPackageValidationBaseline>
+    <CelerityPackageValidationBaseline>2.5.0</CelerityPackageValidationBaseline>
   </PropertyGroup>
 
 </Project>

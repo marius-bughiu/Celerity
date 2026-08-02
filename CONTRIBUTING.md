@@ -153,11 +153,13 @@ Releases are automated. Pushing a `v`-prefixed tag fires `.github/workflows/rele
 ```bash
 # 1. Move the CHANGELOG [Unreleased] block to [X.Y.Z] (with today's date if you
 #    want one — the workflow does not require a date).
-# 2. In the SAME commit, bump <CelerityPackageValidationBaseline> in
-#    src/Directory.Build.props to X.Y.Z. See "Package validation" below.
-# 3. Commit, merge to main, then tag the merge commit and push the tag.
+# 2. Commit, merge to main, then tag the merge commit and push the tag.
 git tag -a v1.2.0 -m "Release 1.2.0"
 git push origin v1.2.0
+
+# 3. Once the packages are published and indexed on NuGet.org, bump
+#    <CelerityPackageValidationBaseline> in src/Directory.Build.props to X.Y.Z
+#    in a follow-up commit. See "Package validation" below.
 ```
 
 The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as the GitHub Release body. Two things can go wrong with that — no section exists for the tag's version, or the section exceeds GitHub's ~125k release-body cap — and both are checked in the `build` job, **before** anything is pushed to NuGet.org. A failure there means nothing shipped: fix `CHANGELOG.md` and re-tag. You can check a section before tagging:
@@ -172,7 +174,7 @@ The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as 
 
 Every `dotnet pack` validates each package against its last published version and **fails the build on any breaking API change**, across all three TFMs. Since the NuGet push is irreversible, this guard has to run before it — so it runs on every release build, and locally whenever you pack.
 
-The baseline is one property, `<CelerityPackageValidationBaseline>` in `src/Directory.Build.props`, shared by all six packages. **Bump it to the version you are about to tag, in the same commit that moves the CHANGELOG block.** This is the part that rots: a stale baseline keeps validating against an older surface, so a break introduced after it slips through.
+The baseline is one property, `<CelerityPackageValidationBaseline>` in `src/Directory.Build.props`, shared by all six packages. **Bump it to X.Y.Z in a follow-up commit, once vX.Y.Z is published and indexed on NuGet.org** — not in the release commit itself, because the value becomes a `PackageDownload` and a version that is not published yet fails the release build's restore. This is the part that rots: a stale baseline keeps validating against an older surface, so a break introduced after it slips through.
 
 Two situations need a deliberate decision rather than a workaround:
 
