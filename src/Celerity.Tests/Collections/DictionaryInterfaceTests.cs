@@ -381,6 +381,38 @@ public class DictionaryInterfaceTests
     }
 
     [Fact]
+    public void PooledCelerityDictionary_CapturedViews_ShouldThrowAfterDispose()
+    {
+        // A view captured while the dictionary was alive outlives it as a struct holding a
+        // reference, so it is the one way to reach the backing arrays after they have gone back to
+        // the pool. Every member that reads dictionary state must therefore report the disposed
+        // state itself — the contract #296 established for the dictionary's own members.
+        var dictionary = new PooledCelerityDictionary<int, string, Int32WangNaiveHasher>();
+        dictionary[1] = "one";
+
+        PooledCelerityDictionary<int, string, Int32WangNaiveHasher>.KeyCollection keys = dictionary.Keys;
+        PooledCelerityDictionary<int, string, Int32WangNaiveHasher>.ValueCollection values = dictionary.Values;
+
+        dictionary.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => keys.Count);
+        Assert.Throws<ObjectDisposedException>(() => values.Count);
+        Assert.Throws<ObjectDisposedException>(() => keys.Contains(1));
+        Assert.Throws<ObjectDisposedException>(() => values.Contains("one"));
+        Assert.Throws<ObjectDisposedException>(() => keys.GetEnumerator());
+        Assert.Throws<ObjectDisposedException>(() => values.GetEnumerator());
+
+        // CopyTo's own guard reads the count, so without the disposed check it would surface a
+        // misleading ArgumentException instead — including when the arguments are perfectly valid.
+        Assert.Throws<ObjectDisposedException>(() => keys.CopyTo(new int[4], 0));
+        Assert.Throws<ObjectDisposedException>(() => values.CopyTo(new string?[4], 0));
+
+        // IsReadOnly is a constant that touches no dictionary state, so it stays answerable.
+        Assert.True(keys.IsReadOnly);
+        Assert.True(values.IsReadOnly);
+    }
+
+    [Fact]
     public void InterfaceIndexerSetter_ShouldNotBumpVersion_OnOverwrite()
     {
         // The family rule pinned by IndexerOverwriteEnumerationTests, reached through the interface

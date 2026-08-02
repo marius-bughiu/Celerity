@@ -32,6 +32,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- A `PooledCelerityDictionary` `Keys` / `Values` view captured before `Dispose()` reported a stale `Count` and copied from returned arrays instead of throwing. Every view member that reads dictionary state now reports `ObjectDisposedException`, matching the rest of the type. Closes [#307](https://github.com/marius-bughiu/Celerity/issues/307).
+
 - `Deque<T>.Clear()` no longer invalidates active enumerators when the deque is already empty. It was the only count-based collection where a `Clear()` that removed nothing tore down live enumerators, so a defensive clear mid-enumeration threw. Clearing a populated deque still invalidates them, as before. Closes [#333](https://github.com/marius-bughiu/Celerity/issues/333).
 - The no-op-`Clear()` contract is now pinned across the whole collection family by a new cross-collection test suite, so it cannot drift again. Closes [#333](https://github.com/marius-bughiu/Celerity/issues/333).
 - **A breaking API change could ship silently.** `dotnet pack` now validates every package against its last published version across all three TFMs and fails on any break, so a removed or narrowed public member can no longer reach NuGet.org with CI green. It runs on every PR, not just at release, and intentional breaks are recorded in a reviewed suppression file. CI-only; no consumer-visible behaviour change. Closes [#315](https://github.com/marius-bughiu/Celerity/issues/315).

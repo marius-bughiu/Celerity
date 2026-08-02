@@ -807,9 +807,21 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         /// <summary>
         /// Gets the number of keys in the view (equal to the dictionary's count).
         /// </summary>
-        public int Count => _dict._count;
+        /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
+        public int Count
+        {
+            get
+            {
+                _dict.ThrowIfDisposed();
+                return _dict._count;
+            }
+        }
 
         /// <summary>Gets a value indicating whether the view is read-only. Always <c>true</c>.</summary>
+        /// <remarks>
+        /// A compile-time constant that reads no dictionary state, so — unlike <see cref="Count"/> —
+        /// it stays answerable after the dictionary is disposed.
+        /// </remarks>
         public bool IsReadOnly => true;
 
         /// <summary>
@@ -833,8 +845,10 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
         /// </exception>
         /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+        /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
         public void CopyTo(TKey[] array, int arrayIndex)
         {
+            _dict.ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(array);
             if (arrayIndex < 0)
                 throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
@@ -906,9 +920,21 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         /// <summary>
         /// Gets the number of values in the view (equal to the dictionary's count).
         /// </summary>
-        public int Count => _dict._count;
+        /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
+        public int Count
+        {
+            get
+            {
+                _dict.ThrowIfDisposed();
+                return _dict._count;
+            }
+        }
 
         /// <summary>Gets a value indicating whether the view is read-only. Always <c>true</c>.</summary>
+        /// <remarks>
+        /// A compile-time constant that reads no dictionary state, so — unlike <see cref="Count"/> —
+        /// it stays answerable after the dictionary is disposed.
+        /// </remarks>
         public bool IsReadOnly => true;
 
         /// <summary>
@@ -932,8 +958,10 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
         /// </exception>
         /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
+        /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
         public void CopyTo(TValue?[] array, int arrayIndex)
         {
+            _dict.ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(array);
             if (arrayIndex < 0)
                 throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
