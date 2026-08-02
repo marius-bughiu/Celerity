@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-02
+
 ### Added
 
 - **`IDictionary<TKey, TValue?>` on the mutable dictionaries** — the nine hash-table and dense dictionaries now implement the mutable BCL interface alongside `IReadOnlyDictionary<,>`, so they drop into any API taking `IDictionary<,>`. `Keys` / `Values` widen to read-only `ICollection<T>` views, and `Contains` / `Remove` over a `KeyValuePair<,>` match on the pair — both as `Dictionary<,>` does. Additive: no existing public signature changed. Closes [#307](https://github.com/marius-bughiu/Celerity/issues/307).
@@ -36,7 +38,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - `Deque<T>.Clear()` no longer invalidates active enumerators when the deque is already empty. It was the only count-based collection where a `Clear()` that removed nothing tore down live enumerators, so a defensive clear mid-enumeration threw. Clearing a populated deque still invalidates them, as before. Closes [#333](https://github.com/marius-bughiu/Celerity/issues/333).
 - The no-op-`Clear()` contract is now pinned across the whole collection family by a new cross-collection test suite, so it cannot drift again. Closes [#333](https://github.com/marius-bughiu/Celerity/issues/333).
-- **A breaking API change could ship silently.** `dotnet pack` now validates every package against its last published version across all three TFMs and fails on any break, so a removed or narrowed public member can no longer reach NuGet.org with CI green. It runs on every PR, not just at release, and intentional breaks are recorded in a reviewed suppression file. CI-only; no consumer-visible behaviour change. Closes [#315](https://github.com/marius-bughiu/Celerity/issues/315).
+- **An incompatible API change could ship silently.** `dotnet pack` now validates every package against its last published version across all three TFMs and fails on any break, so a removed or narrowed public member can no longer reach NuGet.org with CI green. It runs on every PR, not just at release, and intentional breaks are recorded in a reviewed suppression file. CI-only; no consumer-visible behaviour change. Closes [#315](https://github.com/marius-bughiu/Celerity/issues/315).
 - **A bad `CHANGELOG.md` could half-publish a release.** The release-notes check ran after the irreversible NuGet push, so a missing section — or one over GitHub's ~125k release-body cap, which this repo has overrun before — left six packages published and no release. It now runs before anything is pushed, with a body-size assertion added, and the validated notes are handed to the release step verbatim. Closes [#315](https://github.com/marius-bughiu/Celerity/issues/315).
 - **The `EnumMap` and `EnumSet` cards on the benchmark dashboard rendered empty.** The page required an `(ItemCount: N)` suffix on every result name, and both benchmarks deliberately declare no item-count sweep, so their measurements were published and then discarded at render time. Both cards now chart their real numbers, and unparameterized benchmarks are excluded from the headline speedup stats. Closes [#301](https://github.com/marius-bughiu/Celerity/issues/301).
 - A blank dashboard card is now a red CI check rather than a silent gap: `scripts/check_dashboard_coverage.js` fails when a published result name is unparseable, when a card has no measurements behind it, or when a charted collection is missing from either `COLLECTIONS` array or from the CI benchmark suite. Closes [#301](https://github.com/marius-bughiu/Celerity/issues/301).
@@ -558,7 +560,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.5.0
 [2.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.4.0
 [2.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.3.0
 [2.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.2.0
