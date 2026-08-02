@@ -50,7 +50,7 @@ public class DictionaryInterfaceTests
 {
     // The one scenario the issue is about: a method whose parameter type is the BCL interface.
     // Every call below was a compile error before this change.
-    private static int SumCountThroughInterface<TKey, TValue>(IDictionary<TKey, TValue> dictionary)
+    private static int CountThroughInterface<TKey, TValue>(IDictionary<TKey, TValue> dictionary)
         where TKey : notnull
         => dictionary.Count;
 
@@ -97,7 +97,7 @@ public class DictionaryInterfaceTests
         oracle[keys[2]] = values[0];
 
         Assert.Equal(oracle.Count, subject.Count);
-        Assert.Equal(oracle.Count, SumCountThroughInterface(subject));
+        Assert.Equal(oracle.Count, CountThroughInterface(subject));
 
         foreach (KeyValuePair<TKey, TValue> entry in oracle)
         {
@@ -337,7 +337,7 @@ public class DictionaryInterfaceTests
         };
 
         // The exact call the issue reports as a hard compile error on main.
-        Assert.Equal(2, SumCountThroughInterface<string, int>(dictionary));
+        Assert.Equal(2, CountThroughInterface<string, int>(dictionary));
     }
 
     // ---------------- type-specific corners ----------------
