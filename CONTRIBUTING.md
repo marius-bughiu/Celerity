@@ -108,6 +108,35 @@ node scripts/check_dashboard_coverage.js path/to/joined-report-full.json   # + v
 
 The structural half — the two `COLLECTIONS` arrays agree, every charted collection has a `{Key}Benchmark` registered in `CoreBenchmarks`, and no label reaches an `innerHTML` template unescaped — runs on every PR in `ci.yml`. The full check runs in the aggregate job of `benchmarks.yml`, against the merged report, and additionally asserts that every published name parses and that every card resolves to both a BCL and a Celerity measurement.
 
+## Documentation links
+
+Anchor links inside the docs are checked in CI, because a broken one is invisible: the markdown is well-formed, the diff looks right, and the only symptom is that clicking the link scrolls nowhere.
+
+The trap is that GitHub slugs a heading by lowercasing its **rendered** text and deleting punctuation *without substituting a separator*. Most of the API reference headings are generic type names, so this bites constantly:
+
+| Heading | Anchor | Not |
+|---|---|---|
+| `## CeleritySet&lt;T, THasher&gt;` | `#celeritysett-thasher` | `#celerityset-t-thasher` |
+| `## PooledCeleritySet<T, THasher>` | `#pooledceleritysett-thasher` | `#pooledcelerityset` |
+| `## 6. Build-once, read-many → freeze it` | `#6-build-once-read-many--freeze-it` | `#6-build-once-read-many-freeze-it` |
+
+The doubled `t` in the first two rows is `…Set` meeting `T` once the `<` between them is deleted — and it happens whether the generic is entity-encoded or written with bare angle brackets, since bare `<T, THasher>` is not a valid HTML tag and renders as text. The doubled dash in the third row is the arrow vanishing between two spaces. None of the three is what anyone writes by hand.
+
+[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown. Don't hand-write an anchor — ask the script:
+
+```bash
+node scripts/check_doc_anchors.js --list    # every anchor each file defines
+node scripts/check_doc_anchors.js           # check every link
+node scripts/check_doc_anchors.js --self-test
+```
+
+`--self-test` pins the slug rule itself against ids GitHub actually rendered, so a rewrite of the rule cannot quietly start inventing anchors. If you need to re-confirm the rule after a heading rename, ask GitHub directly:
+
+```bash
+gh api repos/marius-bughiu/Celerity/contents/docs/api/collections.md \
+  -H "Accept: application/vnd.github.html" | grep -oE 'id="user-content-[a-z0-9-]*"'
+```
+
 ## Versioning
 
 Celerity uses [MinVer](https://github.com/adamralph/minver) to derive NuGet package versions exclusively from **git tags**. There is no `<Version>` or `<PackageVersion>` property in any `.csproj` file — the single source of truth is the `v`-prefixed annotated tag on the commit that represents a release.
