@@ -29,9 +29,10 @@
 //     -H "Accept: application/vnd.github.html" | grep -oE 'id="user-content-[a-z0-9-]*"'
 //
 // Usage:
-//   node scripts/check_doc_anchors.js            # check every markdown file
-//   node scripts/check_doc_anchors.js --list     # print every file's anchors and exit
-// Run from the repository root.
+//   node scripts/check_doc_anchors.js              # check every markdown file
+//   node scripts/check_doc_anchors.js --list       # print every file's anchors and exit
+//   node scripts/check_doc_anchors.js --self-test  # pin the slug rule itself
+// CI runs the default and --self-test modes. Run from the repository root.
 
 'use strict';
 
