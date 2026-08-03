@@ -122,6 +122,24 @@ jobs:
       - name: Check dashboard wiring
         run: node scripts/check_dashboard_coverage.js
 
+  # A link to an anchor that does not exist is well-formed markdown, so nothing else in
+  # the pipeline notices it and review reliably misses it — the wrong anchor for an
+  # entity-encoded generic heading is the *intuitive* one (#339).
+  doc-anchors:
+    name: doc-anchors
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+
+      - name: Pin the slug rule against GitHub's rendering
+        run: node scripts/check_doc_anchors.js --self-test
+
+      - name: Check markdown anchors and relative links
+        run: node scripts/check_doc_anchors.js
+
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})
     runs-on: ubuntu-latest

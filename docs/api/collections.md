@@ -722,7 +722,7 @@ foreach (var id in ids) { /* ... */ }
 
 ## SwissSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
+A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
 
 ```csharp
 public class SwissSet<T, THasher> : ISet<T>
@@ -797,7 +797,7 @@ foreach (var item in seen) { /* ... */ }
 
 ## RobinHoodSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that resolves collisions with **Robin Hood open addressing** instead of plain linear probing. It is the set counterpart of `RobinHoodDictionary` — the same probe-sequence-length (PSL) machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
+A drop-in peer of `CeleritySet` that resolves collisions with **Robin Hood open addressing** instead of plain linear probing. It is the set counterpart of `RobinHoodDictionary` — the same probe-sequence-length (PSL) machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
 
 ```csharp
 public class RobinHoodSet<T, THasher> : ISet<T>
@@ -872,7 +872,7 @@ foreach (var item in seen) { /* ... */ }
 
 ## HashCachingSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that takes the struct-of-arrays layout one step further: alongside the `items` array it keeps a dense side array of 32-bit hash **fingerprints**. It is the set counterpart of `HashCachingDictionary` — the same cached-fingerprint machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — is identical to `CeleritySet`. Only the probe representation differs.
+A drop-in peer of `CeleritySet` that takes the struct-of-arrays layout one step further: alongside the `items` array it keeps a dense side array of 32-bit hash **fingerprints**. It is the set counterpart of `HashCachingDictionary` — the same cached-fingerprint machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probe representation differs.
 
 ```csharp
 public class HashCachingSet<T, THasher> : ISet<T>
@@ -888,7 +888,7 @@ Every occupied slot stores its element's hash with the top bit forced set (`hash
 
 ### When to choose it over `CeleritySet`
 
-Reach for `HashCachingSet` on **lookup-dominated** workloads — large tables, many negative "have I seen this?" checks, or elements whose equality is expensive — where the fingerprint filter earns back its four bytes of metadata per slot. On tiny tables of cheap (e.g. `int`) elements it is roughly a wash versus `CeleritySet`, so it is an opt-in type, not a default. It is complementary to the SIMD-probing [`SwissSet`](#swissset-t-thasher): both cut probe cost, one via a control-byte group compare, the other via a cached fingerprint. Both are single-threaded and make no iteration-order guarantee.
+Reach for `HashCachingSet` on **lookup-dominated** workloads — large tables, many negative "have I seen this?" checks, or elements whose equality is expensive — where the fingerprint filter earns back its four bytes of metadata per slot. On tiny tables of cheap (e.g. `int`) elements it is roughly a wash versus `CeleritySet`, so it is an opt-in type, not a default. It is complementary to the SIMD-probing [`SwissSet`](#swisssett-thasher): both cut probe cost, one via a control-byte group compare, the other via a cached fingerprint. Both are single-threaded and make no iteration-order guarantee.
 
 ### Constructors
 
@@ -948,7 +948,7 @@ foreach (var item in seen) { /* ... */ }
 
 ## PooledCeleritySet<T, THasher>
 
-An allocation-conscious peer of `CeleritySet` whose backing array is **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. It is the set counterpart of `PooledCelerityDictionary` — the same rent / return lifecycle applied to a single element array rather than parallel key/value arrays. The public surface is identical to `CeleritySet` — same constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celerityset-t-thasher)) — with one addition: it implements `IDisposable`.
+An allocation-conscious peer of `CeleritySet` whose backing array is **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. It is the set counterpart of `PooledCelerityDictionary` — the same rent / return lifecycle applied to a single element array rather than parallel key/value arrays. The public surface is identical to `CeleritySet` — same constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — with one addition: it implements `IDisposable`.
 
 ```csharp
 public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
@@ -1046,7 +1046,7 @@ Same semantics and validation as `IntSet<THasher>` (see below).
 
 ## IntSet&lt;THasher&gt;
 
-A high-performance set of `int` values, parameterized on a custom hash provider. Implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) — the full `HashSet<int>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
+A high-performance set of `int` values, parameterized on a custom hash provider. Implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) — the full `HashSet<int>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celeritysett-thasher).
 
 ```csharp
 public class IntSet<THasher> : ISet<int>
@@ -1132,7 +1132,7 @@ Same semantics and validation as `LongSet<THasher>` (see below).
 
 ## LongSet&lt;THasher&gt;
 
-A high-performance set of `long` values, parameterized on a custom hash provider. Implements `ISet<long>` (and therefore `ICollection<long>` / `IEnumerable<long>`) — the full `HashSet<long>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celerityset-t-thasher).
+A high-performance set of `long` values, parameterized on a custom hash provider. Implements `ISet<long>` (and therefore `ICollection<long>` / `IEnumerable<long>`) — the full `HashSet<long>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celeritysett-thasher).
 
 ```csharp
 public class LongSet<THasher> : ISet<long>
