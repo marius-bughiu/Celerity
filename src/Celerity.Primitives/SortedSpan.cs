@@ -19,6 +19,12 @@ namespace Celerity.Primitives;
 /// Release builds do not check it at all, which is the whole point.
 /// </para>
 /// <para>
+/// <strong>The destination must not overlap either input.</strong> The merge writes its result while it
+/// is still reading both sources, so an aliasing buffer can overwrite elements that have not been
+/// consumed yet — silently, in the same way unsorted input does. This is asserted in Debug builds and
+/// unchecked in Release, exactly as the ordering precondition is.
+/// </para>
+/// <para>
 /// The BCL has no set algebra over spans. <see cref="MemoryExtensions"/> gained <c>CommonPrefixLength</c>,
 /// <c>Split</c> and <c>SearchValues</c> but nothing that intersects two ranges, and
 /// <c>System.Numerics.Tensors.TensorPrimitives</c> has none either. The alternatives are
@@ -77,7 +83,9 @@ public static class SortedSpan
     /// <param name="a">The first source span. Must be sorted ascending.</param>
     /// <param name="b">The second source span. Must be sorted ascending.</param>
     /// <param name="destination">
-    /// Receives the result. <c>min(a.Length, b.Length)</c> elements is always enough.
+    /// Receives the result. <c>min(a.Length, b.Length)</c> elements is always enough. It must not
+    /// overlap <paramref name="a"/> or <paramref name="b"/> — the merge writes while it is still
+    /// reading both sources.
     /// </param>
     /// <returns>The number of values written — the result is <c>destination[..returned]</c>.</returns>
     /// <exception cref="ArgumentException">
@@ -90,6 +98,7 @@ public static class SortedSpan
     {
         AssertSorted(a, nameof(a));
         AssertSorted(b, nameof(b));
+        AssertNoOverlap(destination, a, b);
 
         if (a.IsEmpty || b.IsEmpty)
             return 0;
@@ -110,7 +119,9 @@ public static class SortedSpan
     /// <param name="a">The first source span. Must be sorted ascending.</param>
     /// <param name="b">The second source span. Must be sorted ascending.</param>
     /// <param name="destination">
-    /// Receives the result. <c>a.Length + b.Length</c> elements is always enough.
+    /// Receives the result. <c>a.Length + b.Length</c> elements is always enough. It must not overlap
+    /// <paramref name="a"/> or <paramref name="b"/> — the merge writes while it is still reading both
+    /// sources.
     /// </param>
     /// <returns>The number of values written — the result is <c>destination[..returned]</c>.</returns>
     /// <exception cref="ArgumentException">
@@ -123,6 +134,7 @@ public static class SortedSpan
     {
         AssertSorted(a, nameof(a));
         AssertSorted(b, nameof(b));
+        AssertNoOverlap(destination, a, b);
 
         if (a.IsEmpty)
             return AppendDistinct(b, destination, 0);
@@ -140,7 +152,11 @@ public static class SortedSpan
     /// <typeparam name="T">The element type, ordered by its own comparison operators.</typeparam>
     /// <param name="a">The span to subtract from. Must be sorted ascending.</param>
     /// <param name="b">The span of values to remove. Must be sorted ascending.</param>
-    /// <param name="destination">Receives the result. <c>a.Length</c> elements is always enough.</param>
+    /// <param name="destination">
+    /// Receives the result. <c>a.Length</c> elements is always enough. It must not overlap
+    /// <paramref name="a"/> or <paramref name="b"/> — the merge writes while it is still reading both
+    /// sources.
+    /// </param>
     /// <returns>The number of values written — the result is <c>destination[..returned]</c>.</returns>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> is too short to hold the result. Its contents are then undefined:
@@ -152,6 +168,7 @@ public static class SortedSpan
     {
         AssertSorted(a, nameof(a));
         AssertSorted(b, nameof(b));
+        AssertNoOverlap(destination, a, b);
 
         if (a.IsEmpty)
             return 0;
@@ -553,6 +570,24 @@ public static class SortedSpan
     [DoesNotReturn]
     private static void ThrowDestinationTooSmall(string paramName)
         => throw new ArgumentException("Destination is too short to hold the result.", paramName);
+
+    /// <summary>
+    /// Debug-build verification that the result buffer does not alias either input. The merge writes to
+    /// <paramref name="destination"/> while it is still reading both sources, so an overlapping buffer
+    /// can overwrite elements that have not been consumed yet and silently produce a wrong answer.
+    /// Elided from Release builds along with the rest of the precondition checking.
+    /// </summary>
+    [Conditional("DEBUG")]
+    [ExcludeFromCodeCoverage(Justification = "Debug-only precondition check whose failing path calls Debug.Assert, which no test can drive without tearing down the test host.")]
+    private static void AssertNoOverlap<T>(Span<T> destination, ReadOnlySpan<T> a, ReadOnlySpan<T> b)
+    {
+        Debug.Assert(
+            !destination.Overlaps(a),
+            "SortedSpan writes the result while still reading 'a'; 'destination' must not overlap it.");
+        Debug.Assert(
+            !destination.Overlaps(b),
+            "SortedSpan writes the result while still reading 'b'; 'destination' must not overlap it.");
+    }
 
     /// <summary>
     /// Debug-build verification of the ascending-order precondition. Elided entirely from Release builds
