@@ -538,14 +538,14 @@ public static class SortedSpan
     private static void Append<T>(Span<T> destination, ref int count, T value)
     {
         if (count == destination.Length)
-            ThrowDestinationTooSmall();
+            ThrowDestinationTooSmall(nameof(destination));
 
         destination[count++] = value;
     }
 
     [DoesNotReturn]
-    private static void ThrowDestinationTooSmall()
-        => throw new ArgumentException("Destination is too short to hold the result.", "destination");
+    private static void ThrowDestinationTooSmall(string paramName)
+        => throw new ArgumentException("Destination is too short to hold the result.", paramName);
 
     /// <summary>
     /// Debug-build verification of the ascending-order precondition. Elided entirely from Release builds
