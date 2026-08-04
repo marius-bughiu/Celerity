@@ -218,6 +218,13 @@ public static class SortedSpan
     // ---- linear two-cursor merges -------------------------------------------------------
     // Each is entered with both spans non-empty, so the cursors can be advanced before the
     // bounds are re-tested and the loop needs one length comparison per step rather than two.
+    //
+    // Intersect and Count advance one element on a mismatch rather than skipping the whole
+    // equal run. Skipping would cost an equality test per element that can only pay off on
+    // duplicates, and this branch *is* the loop on distinct inputs — measured a wash on
+    // duplicate-heavy data (1M values over a 1k / 10k domain) and 1.66x slower on
+    // interleaved-disjoint 1M x 1M spans. Union and Except skip the run instead, because
+    // they emit in that branch and must not emit the same value twice.
 
     private static int MergeIntersect<T>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, Span<T> destination)
         where T : IComparisonOperators<T, T, bool>
