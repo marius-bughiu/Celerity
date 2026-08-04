@@ -564,18 +564,22 @@ public static class SortedSpan
     private static void AssertSorted<T>(ReadOnlySpan<T> span, string paramName)
         where T : IComparisonOperators<T, T, bool>
     {
-        int unsortedAt = 0;
+        // Tested as "not ordered after" rather than "smaller than", so a pair that compares
+        // false both ways is caught too: a span containing NaN is not ordered under `<` and
+        // violates the precondition just as a descending pair does, but `span[i] < span[i - 1]`
+        // would wave it through.
+        int unorderedAt = 0;
         for (int i = 1; i < span.Length; i++)
         {
-            if (span[i] < span[i - 1])
+            if (!(span[i - 1] <= span[i]))
             {
-                unsortedAt = i;
+                unorderedAt = i;
                 break;
             }
         }
 
         Debug.Assert(
-            unsortedAt == 0,
-            $"SortedSpan requires '{paramName}' to be sorted in ascending order; element {unsortedAt} is smaller than element {unsortedAt - 1}.");
+            unorderedAt == 0,
+            $"SortedSpan requires '{paramName}' to be sorted in ascending order; element {unorderedAt} is not ordered after element {unorderedAt - 1} (it is smaller, or the two are unordered — e.g. NaN).");
     }
 }
