@@ -29,6 +29,14 @@ workload — Celerity deliberately does **not** reimplement what
 - **`FastGuid` / `GuidV7Generator`** — fast non-crypto random GUID v4 and
   RFC 9562 **big-endian** v7 (sortable, DB-index-friendly). *Not* for security —
   use `Guid.NewGuid()` for unguessable IDs.
+- **`SortedSpan`** — set algebra over **already-sorted** spans: `Intersect` /
+  `Union` / `Except` into a caller-owned `Span<T>`, plus allocation-free
+  `IntersectCount` / `Overlaps`. The BCL has no set operation over spans at all,
+  so the alternatives (`HashSet<T>.IntersectWith`, LINQ `Intersect`) allocate a
+  table and hash every element; a two-cursor merge is **4.2× faster at 1M × 1M
+  with zero allocation**, and **257× faster** on the asymmetric 1k × 10M shape
+  where it gallops. Inputs **must** be sorted ascending — unsorted input
+  silently returns a wrong answer (asserted in Debug builds only).
 
 See the [utilities API reference](https://github.com/marius-bughiu/Celerity/blob/main/docs/api/utilities.md)
 for full docs and runnable examples.

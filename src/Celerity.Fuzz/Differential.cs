@@ -1,6 +1,7 @@
 using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
+using Celerity.Primitives;
 
 namespace Celerity.Fuzz;
 
@@ -52,6 +53,7 @@ internal static class Differential
         ("XorFilter", XorFilterCase),
         ("BitSet", BitSetCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
+        ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
         ("BloomFilterMerge", BloomFilterMergeCase),
@@ -1147,6 +1149,58 @@ internal static class Differential
         // ToBitSet feeds the mutable type back in; re-indexing it must be a fixed point.
         var rebuilt = new RankSelectBitVector(sut.ToBitSet());
         Check(rebuilt.Length == length && rebuilt.Count == positions.Count, "ToBitSet round trip disagreed");
+    }
+
+
+    // ---- sorted-span set algebra --------------------------------------------
+
+    // SortedSpan is not a collection but the same differential shape applies: two sorted samples
+    // against the set algebra a HashSet computes over the same values. The generated shape is the
+    // point — a narrow domain against a long span forces heavy duplication (the collapsing paths),
+    // and independent lengths swing the ratio between the two sides across the 32x threshold at
+    // which the implementation abandons the linear merge for galloping. Each pair is checked in
+    // both argument orders, so both galloping directions are reached.
+    private static void SortedSpanCase(Random rng)
+    {
+        int domain = rng.Next(2, 500);
+        int[] a = SortedSample(rng, rng.Next(0, 300), domain);
+        int[] b = SortedSample(rng, rng.Next(0, 300), domain);
+
+        CheckSortedSpan(a, b);
+        CheckSortedSpan(b, a);
+    }
+
+    private static void CheckSortedSpan(int[] a, int[] b)
+    {
+        var setA = new HashSet<int>(a);
+        var setB = new HashSet<int>(b);
+        int[] expectedIntersect = setA.Intersect(setB).OrderBy(x => x).ToArray();
+        int[] expectedUnion = setA.Union(setB).OrderBy(x => x).ToArray();
+        int[] expectedExcept = setA.Except(setB).OrderBy(x => x).ToArray();
+
+        var destination = new int[a.Length + b.Length];
+
+        int written = SortedSpan.Intersect<int>(a, b, destination);
+        Check(destination.AsSpan(0, written).SequenceEqual(expectedIntersect), "Intersect disagreed");
+
+        written = SortedSpan.Union<int>(a, b, destination);
+        Check(destination.AsSpan(0, written).SequenceEqual(expectedUnion), "Union disagreed");
+
+        written = SortedSpan.Except<int>(a, b, destination);
+        Check(destination.AsSpan(0, written).SequenceEqual(expectedExcept), "Except disagreed");
+
+        Check(SortedSpan.IntersectCount<int>(a, b) == expectedIntersect.Length, "IntersectCount disagreed");
+        Check(SortedSpan.Overlaps<int>(a, b) == (expectedIntersect.Length != 0), "Overlaps disagreed");
+    }
+
+    private static int[] SortedSample(Random rng, int count, int domain)
+    {
+        var values = new int[count];
+        for (int i = 0; i < count; i++)
+            values[i] = rng.Next(0, domain);
+
+        Array.Sort(values);
+        return values;
     }
 
     // ---- cardinality estimator ----------------------------------------------

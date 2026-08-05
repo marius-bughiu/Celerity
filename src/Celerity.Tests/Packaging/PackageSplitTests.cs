@@ -52,6 +52,7 @@ public class PackageSplitTests
         Assert.Equal(PrimitivesAssembly, AssemblyOf(typeof(FastGuid)));
         Assert.Equal(PrimitivesAssembly, AssemblyOf(typeof(SplitMix64)));
         Assert.Equal(PrimitivesAssembly, AssemblyOf(typeof(IRandomSource)));
+        Assert.Equal(PrimitivesAssembly, AssemblyOf(typeof(SortedSpan)));
     }
 
     [Fact]

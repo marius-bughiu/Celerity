@@ -398,12 +398,14 @@
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
     // StringKeyProbe is the reference-type-key probe path (every other card here keys on int/long).
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
-    { key: 'StringKeyProbe',      title: 'String-keyed probe',                    vs: 'Dictionary<string, int> / HashSet<string>' }
+    { key: 'StringKeyProbe',      title: 'String-keyed probe',                    vs: 'Dictionary<string, int> / HashSet<string>' },
+    // SortedSpan is set algebra over already-sorted spans (Celerity.Primitives), not a collection.
+    { key: 'SortedSpan',          title: 'SortedSpan (sorted-span set algebra)',  vs: 'HashSet<int> set algebra' }
   ];
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'SortedDictionary', 'SortedSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'SortedDictionary', 'SortedSet', 'Linq']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----

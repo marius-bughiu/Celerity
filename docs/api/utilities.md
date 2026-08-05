@@ -620,3 +620,65 @@ Branchless.Select(mask, a, b, destination);
 - **The bulk overloads throw `ArgumentException`** unless `condition`, `whenTrue`, `whenFalse`, and `destination` all have the same length; `destination` may alias `whenTrue` or `whenFalse` (each element is read before it is written).
 
 The scalar overloads are aggressively inlined so they stay branch-free at the call site. Every overload is allocation-free and AOT-safe. (The #198 spike's premise — that `Math.Min`/`Max`/`Abs`/`Clamp` already get `cmov` — is why those are deliberately **not** re-shipped here: use the BCL for them.)
+
+## SortedSpan (sorted-span set algebra)
+
+```csharp
+namespace Celerity.Primitives;
+
+public static class SortedSpan
+{
+    // T : IComparisonOperators<T, T, bool> — int, long, uint, ulong, and the other primitives
+    public static int  Intersect<T>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, Span<T> destination);
+    public static int  Union<T>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, Span<T> destination);
+    public static int  Except<T>(ReadOnlySpan<T> a, ReadOnlySpan<T> b, Span<T> destination);
+    public static int  IntersectCount<T>(ReadOnlySpan<T> a, ReadOnlySpan<T> b);   // allocation-free
+    public static bool Overlaps<T>(ReadOnlySpan<T> a, ReadOnlySpan<T> b);         // allocation-free
+}
+```
+
+> **Every input span must be sorted in ascending order. Sorted by construction, or this is worthless.** The whole point is that ordering lets each element be touched once; unsorted input silently produces a **wrong answer**, not an error. Debug builds assert the precondition (an `O(n)` scan per call); Release builds do not check it at all, deliberately — a Release-mode check would cost exactly what the algorithm saves.
+
+**The BCL has no set algebra over spans.** `MemoryExtensions` gained `CommonPrefixLength`, `Split` and `SearchValues`, but nothing that intersects two ranges; `TensorPrimitives` has none either, and .NET 10 added none. The two things a developer writes today are `HashSet<T>.IntersectWith` (allocate a table, then hash and probe every element of one side) and LINQ `Intersect` (a `Set<T>` plus an iterator chain) — **neither exploits sortedness at all**. `SortedSpan` walks both sides in order instead: sequential, prefetch-friendly reads, and results written straight into caller-owned memory.
+
+**The measured win** (1,000,000 x 1,000,000 sorted, distinct `int` spans over a 2,000,000 universe, ~50% overlap):
+
+| Operation | `HashSet<int>` | LINQ | `SortedSpan` | Speedup |
+| --- | --- | --- | --- | --- |
+| Intersect | 25.7 ms | 34.8 ms | **6.1 ms** | **4.2x** / 5.7x vs LINQ |
+| Union | 26.5 ms | — | **6.6 ms** | **4.0x** |
+| Except | 17.6 ms | — | **6.4 ms** | **2.8x** |
+| Count common | 15.9 ms | — | **6.1 ms** | **2.6x** |
+
+Allocation over the same intersect: **17.9 MB** for the `HashSet` form, **17.7 MB** for LINQ, **0 bytes** for `SortedSpan`.
+
+**Galloping** turns the asymmetric posting-list shape into the real headline. When one side is at least **32x** the length of the other, `Intersect` / `Except` / `IntersectCount` / `Overlaps` abandon the linear merge for exponential ("galloping") search of the long side — `O(k log m)` instead of `O(n + m)`. At **1,000 against 10,000,000**, intersecting takes **0.37 ms** where `HashSet` takes 94.3 ms and LINQ 88.9 ms: a **257x** speedup, and **422x** for `IntersectCount`. `Union` deliberately has **no** galloping path — its result is at least as long as the longer input, so writing those elements out dominates and skipping comparisons cannot help — and `Except` gallops only when the *subtrahend* is the long side, since when the left side is the long one every element of it is a candidate output and the merge is already proportional to the result.
+
+**Workloads:** intersecting sorted ID / row-id / posting lists (inverted indexes, cohort and audience intersection, join-key pre-filters), diffing two sorted key sets, and any "do these two sorted ranges share anything" test. It composes directly with [`CompressedIntSet`](collections.md#compressedintset) and [`BTreeSet`](collections.md#btreesett-tcomparer): both enumerate in ascending order, so their contents feed straight in without a re-sort.
+
+**Usage:**
+
+```csharp
+using Celerity.Primitives;
+
+ReadOnlySpan<int> current = LoadSortedIds();   // sorted ascending, by construction
+ReadOnlySpan<int> incoming = LoadSortedIds();
+
+// Intersection into a caller-owned buffer: min(a.Length, b.Length) is always enough.
+Span<int> buffer = stackalloc int[Math.Min(current.Length, incoming.Length)];
+int count = SortedSpan.Intersect(current, incoming, buffer);
+foreach (int id in buffer[..count]) { /* ... */ }
+
+// The two questions that need no buffer at all, and allocate nothing.
+int shared = SortedSpan.IntersectCount(current, incoming);
+bool any = SortedSpan.Overlaps(current, incoming);
+```
+
+**Contract and special cases:**
+
+- **Set semantics.** Repeated equal values in an input are treated as one element, so every result is **strictly** ascending — the same answer the equivalent `HashSet<T>` operation gives. This is what makes the differential test against a `HashSet<T>` oracle meaningful.
+- **Destination sizing.** `min(a.Length, b.Length)` always suffices for `Intersect`, `a.Length` for `Except`, and `a.Length + b.Length` for `Union`. A destination that is too short raises `ArgumentException`; because the shortfall is discovered while writing rather than up front, the destination's contents are then undefined. `IntersectCount` and `Overlaps` take no destination.
+- **The destination must not overlap either input.** The merge writes its result while it is still reading both sources, so an aliasing buffer can overwrite elements that have not been consumed yet — silently, the same way unsorted input does. There is no in-place mode. Like the ordering precondition, this is asserted in Debug builds (via `MemoryExtensions.Overlaps`) and unchecked in Release.
+- **Empty inputs** are valid: an intersection with an empty side is empty, a union with one is the other side (de-duplicated), and `a \ {}` is `a` de-duplicated.
+- **Element type.** The constraint is `IComparisonOperators<T, T, bool>`, so the merge compares with the type's own `<` and `==`. For the primitive integer types the JIT specializes the generic per value type and each comparison becomes a single instruction — which is why there are no hand-written `int` / `long` / `uint` / `ulong` overloads. Floating-point types compile but are not the intended use: `NaN` compares `false` against everything, so a span containing one is not ordered under `<` and violates the precondition.
+- **No vectorized path ships.** A `Vector256` merge was scoped as opt-in only if it beat the scalar merge by >=25% on the 1M x 1M case; the scalar merge already runs at ~6 ms there (memory-bound, one sequential pass over both inputs), and merge is branch-heavy enough that vectorizing it is frequently a wash. The scalar path is the whole implementation.

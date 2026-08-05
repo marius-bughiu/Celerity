@@ -54,6 +54,7 @@ internal class Program
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
         typeof(StringKeyProbeBenchmark),
+        typeof(SortedSpanBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };

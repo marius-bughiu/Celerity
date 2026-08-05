@@ -1611,6 +1611,40 @@ void Check(bool condition, string message)
     Check(blendThrows, "Branchless.Select throws on length mismatch");
 }
 
+// SortedSpan (#313) — set algebra over already-sorted spans. Forces the generic merge, the galloping
+// path taken when one side is 32x the other, and the destination-too-short throw to compile under
+// Native AOT; the generic is constrained to IComparisonOperators<T, T, bool>, so this also pins that
+// ILC can specialize a generic-math constraint per value type without a JIT to fall back on.
+{
+    ReadOnlySpan<int> a = [1, 3, 3, 5, 7, 9];
+    ReadOnlySpan<int> b = [3, 5, 6, 9, 11];
+    Span<int> destination = stackalloc int[16];
+
+    int written = SortedSpan.Intersect(a, b, destination);
+    Check(written == 3 && destination[0] == 3 && destination[1] == 5 && destination[2] == 9,
+        "SortedSpan.Intersect collapses duplicates");
+
+    written = SortedSpan.Union(a, b, destination);
+    Check(written == 7 && destination[0] == 1 && destination[6] == 11, "SortedSpan.Union");
+
+    written = SortedSpan.Except(a, b, destination);
+    Check(written == 2 && destination[0] == 1 && destination[1] == 7, "SortedSpan.Except");
+
+    Check(SortedSpan.IntersectCount(a, b) == 3 && SortedSpan.Overlaps(a, b), "SortedSpan.IntersectCount / Overlaps");
+
+    // A long side forces the galloping path rather than the linear merge.
+    var longRun = new int[1000];
+    for (int i = 0; i < longRun.Length; i++) longRun[i] = i * 2;
+    ReadOnlySpan<int> probes = [3, 500, 4000];
+    written = SortedSpan.Intersect(probes, longRun, destination);
+    Check(written == 1 && destination[0] == 500, "SortedSpan.Intersect galloping path");
+    Check(SortedSpan.Except(probes, (ReadOnlySpan<int>)longRun, destination) == 2, "SortedSpan.Except galloping path");
+
+    bool destinationThrows = false;
+    try { _ = SortedSpan.Intersect(a, b, Span<int>.Empty); } catch (ArgumentException) { destinationThrows = true; }
+    Check(destinationThrows, "SortedSpan throws on a destination that is too short");
+}
+
 // IHashProvider64 (#304) — the 64-bit hasher surface and the sketch dispatch that selects it.
 // The dispatch is a JIT/ILC-folded type test plus a once-boxed interface reference held in a
 // static generic field, so this forces ILC to compile both the folded constant and the boxed
