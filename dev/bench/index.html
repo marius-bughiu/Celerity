@@ -498,13 +498,18 @@ function escapeHtml(s) {
     // where the JIT devirtualizes the per-probe comparison and the codegen question does not arise.
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
     // LookupMissing is the probe-heavy arm: a miss walks the cluster to the first vacant slot.
-    { key: 'StringKeyProbe',      title: 'String-keyed probe',                       vs: 'Dictionary<string, int> / HashSet<string>', ops: ['Lookup', 'LookupMissing', 'Contains'] }
+    { key: 'StringKeyProbe',      title: 'String-keyed probe',                       vs: 'Dictionary<string, int> / HashSet<string>', ops: ['Lookup', 'LookupMissing', 'Contains'] },
+    // SortedSpan is set algebra over already-sorted spans (Celerity.Primitives), not a collection: the
+    // baseline is what intersecting two sorted arrays costs with HashSet<int>, table build included.
+    // IntersectAsymmetric is the galloping shape (a short side against one 100x longer); the LINQ arms
+    // carry their own op names so they do not displace the HashSet series on the charted ops.
+    { key: 'SortedSpan',          title: 'SortedSpan (sorted-span set algebra)',     vs: 'HashSet<int> set algebra', ops: ['Intersect', 'Union', 'Except', 'IntersectCount', 'Overlaps', 'IntersectAsymmetric'] }
   ];
 
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'SortedDictionary', 'SortedSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'SortedDictionary', 'SortedSet', 'Linq']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
