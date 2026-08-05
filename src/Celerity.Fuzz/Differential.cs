@@ -1825,6 +1825,10 @@ internal static class Differential
         Check(partiallySorted.AsSpan(0, count).SequenceEqual(sorted.AsSpan(0, count)),
             "PartialSort.Sort did not order the smallest count elements");
 
+        // Snapshot before the call, and compare element-for-element afterwards: comparing sorted
+        // copies would only prove the multiset survived, which an in-place reordering also does.
+        int[] before = (int[])values.Clone();
+
         int k = Math.Min(length, rng.Next(0, 40));
         int[] top = new int[k];
         int written = PartialSort.TopK<int>(values, top.AsSpan());
@@ -1832,9 +1836,6 @@ internal static class Differential
         for (int i = 0; i < k; i++)
             Check(top[i] == sorted[length - 1 - i], $"PartialSort.TopK disagreed at {i}");
 
-        // TopK must leave its source untouched.
-        int[] untouched = (int[])values.Clone();
-        Array.Sort(untouched);
-        Check(untouched.AsSpan().SequenceEqual(sorted), "PartialSort.TopK modified its source");
+        Check(values.AsSpan().SequenceEqual(before), "PartialSort.TopK modified its source");
     }
 }

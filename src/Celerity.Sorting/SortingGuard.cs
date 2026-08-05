@@ -45,12 +45,15 @@ internal static class SortingGuard
     /// with different element types.
     /// </summary>
     /// <remarks>
-    /// Only the same-typed case is checked, and that is not a gap: two spans whose element types
-    /// differ cannot be views over one another through safe code, so the reachable overlap is
-    /// exactly the same-typed one — passing a buffer as both the keys and the payload, or handing
-    /// the same scratch to two roles. The <c>typeof</c> test is a JIT-time constant per
-    /// instantiation, so a mismatched pair (<c>int</c> keys with a <c>string</c> payload) compiles
-    /// the whole check away.
+    /// Only the same-typed case is checked. That covers every overlap ordinary code can construct —
+    /// passing one buffer as both the keys and the payload, or handing the same scratch to two roles
+    /// — because two spans of different element types can only be made to overlap by deliberately
+    /// reinterpreting one buffer as another type, via <see cref="MemoryMarshal.Cast{TFrom, TTo}(Span{TFrom})"/>
+    /// or equivalent. That is treated as <b>out of contract rather than impossible</b>: catching it
+    /// would mean a byte-level overlap test, which cannot be written for an unconstrained payload
+    /// type (a <c>Span&lt;string&gt;</c> has no byte view) and would cost a real comparison on every
+    /// call. As written, the <c>typeof</c> test is a JIT-time constant per instantiation, so a
+    /// mismatched pair — <c>int</c> keys with a <c>string</c> payload — compiles the whole check away.
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void RequireDistinctStorage<TLeft, TRight>(Span<TLeft> left, Span<TRight> right, string paramName)

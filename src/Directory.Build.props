@@ -34,10 +34,10 @@
     These apply to every project under src/, but only the shipped packages are
     <IsPackable>true</IsPackable> — the test / benchmark / fuzz / AOT-smoke
     projects all set IsPackable=false, so the symbol-package and SourceLink
-    settings below are no-ops there and only take effect on the three packages.
-    Keeping them here (rather than duplicated in three .csproj files) is what
-    makes the family release in lockstep: change a publishing rule once and all
-    three packages follow.
+    settings below are no-ops there and only take effect on the shipped ones.
+    Keeping them here (rather than duplicated in every shipped .csproj) is what
+    makes the family release in lockstep: change a publishing rule once and every
+    package follows.
 
     Symbol packages (.snupkg):
       IncludeSymbols + the snupkg format produce a separate symbol package per
