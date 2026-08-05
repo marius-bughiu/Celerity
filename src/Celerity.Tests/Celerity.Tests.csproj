@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Celerity\Celerity.csproj" />
+    <ProjectReference Include="..\Celerity.Sorting\Celerity.Sorting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

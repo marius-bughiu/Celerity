@@ -1,0 +1,58 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>$(CelerityTargetFrameworks)</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PackageProjectUrl>https://github.com/marius-bughiu/Celerity</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
+		<Authors>Marius Bughiu</Authors>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!--
+		  Native AOT / trimming compatibility (#32). See Celerity.Collections for
+		  the full rationale; every package in the family carries the same switch so
+		  the trim / AOT / single-file analyzers verify the whole graph on every build.
+		-->
+		<IsAotCompatible>true</IsAotCompatible>
+		<!--
+		  Promote CS1591 (missing XML comment) to error. Every public symbol in the
+		  package must carry an XML doc comment so the shipped .xml is complete.
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<PackageId>Celerity.Sorting</PackageId>
+		<Description>Non-comparison sorts and selection over primitive keys: LSD RadixSort for (u)int/(u)long/float/double with key+payload and key+index (argsort) forms, CountingSort for bounded key ranges, and PartialSort quickselect / bounded-heap top-k. Span-based, with caller-supplied-scratch overloads that allocate nothing. Every entry point documents the crossover below which Array.Sort wins. Part of the Celerity family.</Description>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>celerity;sorting;radix-sort;counting-sort;quickselect;top-k;argsort;span;performance</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<!--
+		  First release: no published predecessor exists on NuGet.org, so asking for a
+		  package-validation baseline fails restore. See Directory.Build.targets — drop
+		  this property once Celerity.Sorting has shipped once and the baseline in
+		  Directory.Build.props names a version that contains it.
+		-->
+		<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
+		<None Include="README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Branchless.Select gives PartialSort's heap sift a data-independent step. -->
+		<ProjectReference Include="..\Celerity.Primitives\Celerity.Primitives.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="MinVer" Version="6.0.0">
+	    <PrivateAssets>all</PrivateAssets>
+	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+	</ItemGroup>
+</Project>

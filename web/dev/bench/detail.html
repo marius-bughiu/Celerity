@@ -394,6 +394,9 @@
     { key: 'Trie',                title: 'Trie<int>',                             vs: 'Dictionary<string, int>' },
     { key: 'StringInternTable',   title: 'StringInternTable',                     vs: 'HashSet<string> / Dictionary<string, string>' },
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' },
+    { key: 'RadixSort',           title: 'RadixSort (int keys)',                  vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
+    { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
+    { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',             vs: 'SortedDictionary<int, int>' },
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
     // StringKeyProbe is the reference-type-key probe path (every other card here keys on int/long).

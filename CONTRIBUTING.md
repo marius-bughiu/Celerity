@@ -16,7 +16,7 @@ Requirements: .NET 8 SDK. Everything else is fetched via NuGet.
 
 ## Project layout
 
-As of 2.0.0 the library is split into three layered packages (`Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`); see the [migration guide](docs/migration.md#200--the-package-split).
+As of 2.0.0 the library is split into layered packages (`Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`, with `Celerity.Sorting` a second consumer of `Celerity.Primitives`); see the [migration guide](docs/migration.md#200--the-package-split).
 
 ```
 src/
@@ -25,6 +25,7 @@ src/
 │   └── TypeForwarders.cs     [TypeForwardedTo] for every type moved to a lower package (binary back-compat).
 ├── Celerity.Hashing/         The Celerity.Hashing package. IHashProvider<T>, the hashers, the evaluators.
 ├── Celerity.Primitives/      The Celerity.Primitives package. FastUtils, struct PRNGs, VarInt, FastGuid.
+├── Celerity.Sorting/         The Celerity.Sorting package. RadixSort, CountingSort, PartialSort.
 ├── Celerity.Tests/           xUnit tests (behavioural, edge-case, and property-based). Mirrors the main project's layout.
 ├── Celerity.Benchmarks/      BenchmarkDotNet project. Runs in CI on every PR and main push.
 ├── Celerity.Fuzz/            Differential fuzz harness. Nightly soak; reproduces failures from a seed.

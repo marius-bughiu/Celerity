@@ -3,9 +3,9 @@
   <!--
     Shared multi-target framework list (#189).
 
-    The three shipped packages (Celerity.Collections / Celerity.Hashing /
-    Celerity.Primitives), the test project, and the Native AOT smoke test all
-    build for this same set of TFMs so they stay in lockstep — bump the list in
+    The four core shipped packages (Celerity.Collections / Celerity.Hashing /
+    Celerity.Primitives / Celerity.Sorting), the test project, and the Native AOT
+    smoke test all build for this same set of TFMs so they stay in lockstep — bump the list in
     one place and every shipped assembly and its verification follow.
 
     Why these three:
@@ -31,14 +31,13 @@
   <!--
     Shared package-publishing settings (#190).
 
-    These apply to every project under src/, but only the three shipped packages
-    (Celerity.Collections / Celerity.Hashing / Celerity.Primitives) are
+    These apply to every project under src/, but only the shipped packages are
     <IsPackable>true</IsPackable> — the test / benchmark / fuzz / AOT-smoke
     projects all set IsPackable=false, so the symbol-package and SourceLink
-    settings below are no-ops there and only take effect on the three packages.
-    Keeping them here (rather than duplicated in three .csproj files) is what
-    makes the family release in lockstep: change a publishing rule once and all
-    three packages follow.
+    settings below are no-ops there and only take effect on the shipped ones.
+    Keeping them here (rather than duplicated in every shipped .csproj) is what
+    makes the family release in lockstep: change a publishing rule once and every
+    package follows.
 
     Symbol packages (.snupkg):
       IncludeSymbols + the snupkg format produce a separate symbol package per
@@ -98,9 +97,9 @@
     older surface, so a break introduced after it goes unnoticed. The ritual is
     written up in CONTRIBUTING.md, section "Cutting a release".
 
-    All six shipped packages (Celerity.Collections / Celerity.Hashing /
-    Celerity.Primitives / Celerity.Ring / Celerity.Sentinel / Celerity.Cardinality)
-    are published at this baseline and share it. A brand-new package has no
+    All seven shipped packages (Celerity.Collections / Celerity.Hashing /
+    Celerity.Primitives / Celerity.Sorting / Celerity.Ring / Celerity.Sentinel /
+    Celerity.Cardinality) are published at this baseline and share it. A brand-new package has no
     published predecessor to validate against, and asking for one fails the
     restore, so its .csproj sets CelerityNoPublishedBaseline to true until its
     first release ships, then drops the property.

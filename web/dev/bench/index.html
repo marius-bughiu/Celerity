@@ -489,6 +489,13 @@ function escapeHtml(s) {
     // FenwickTree is a Binary Indexed Tree benchmarked against a plain long[] holding the raw values: point
     // updates are O(1) there, but every prefix / range sum re-adds the slice (O(n)). The tree keeps both O(log n).
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] },
+    // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
+    // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
+    // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
+    // asserted. PartialSort's four ops each carry a different baseline — see PartialSortBenchmark.
+    { key: 'RadixSort',           title: 'RadixSort (int keys)',                     vs: 'Array.Sort',            ops: ['Keys', 'Pairs', 'ArgSort'], items: [100, 1000, 100000, 1000000] },
+    { key: 'CountingSort',        title: 'CountingSort (byte keys)',                 vs: 'Array.Sort',            ops: ['Keys', 'Pairs'], items: [100, 1000, 100000, 1000000] },
+    { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',                vs: 'Array.Sort / LINQ / PriorityQueue heap', ops: ['Select', 'SortPrefix', 'TopK', 'TopKHeap'], items: [100, 1000, 100000, 1000000] },
     // BTreeDictionary / BTreeSet are the ordered containers, benchmarked against the BCL's red-black trees.
     // Mixed (interleaved insert + lookup + in-order range scan) is the documented win workload; RangeScan is
     // the operation SortedDictionary cannot express at all.
