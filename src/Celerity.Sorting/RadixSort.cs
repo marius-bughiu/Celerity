@@ -100,10 +100,11 @@ public static class RadixSort
     /// <typeparam name="TValue">The payload type. Never compared; only moved.</typeparam>
     /// <param name="keys">The keys to sort in place.</param>
     /// <param name="values">The payload, parallel to <paramref name="keys"/> and at least as long. Permuted to match.</param>
-    /// <exception cref="ArgumentException"><paramref name="values"/> is shorter than <paramref name="keys"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="values"/> is shorter than <paramref name="keys"/>, or shares storage with it.</exception>
     public static void Sort<TValue>(Span<uint> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -128,19 +129,17 @@ public static class RadixSort
     /// <param name="values">The payload, parallel to <paramref name="keys"/> and at least as long. Permuted to match.</param>
     /// <param name="keyScratch">A buffer of at least <c>keys.Length</c> keys. Its contents on entry are ignored and overwritten.</param>
     /// <param name="valueScratch">A buffer of at least <c>keys.Length</c> payload slots. Its contents on entry are ignored and overwritten.</param>
-    /// <exception cref="ArgumentException">A buffer is too short, or a scratch buffer overlaps the span it serves.</exception>
+    /// <exception cref="ArgumentException">A buffer is too short, or any two of the four buffers share storage.</exception>
     public static void SortWithScratch<TValue>(Span<uint> keys, Span<TValue> values, Span<uint> keyScratch, Span<TValue> valueScratch)
     {
-        ValidatePairScratch(
-            keys.Length,
-            values.Length,
-            keyScratch.Length,
-            valueScratch.Length,
+        ValidatePairBuffers(
+            keys,
+            values,
+            keyScratch,
+            valueScratch,
             nameof(values),
             nameof(keyScratch),
             nameof(valueScratch));
-        SortingGuard.RequireNoOverlap(keys.Overlaps(keyScratch), nameof(keyScratch));
-        SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -155,7 +154,7 @@ public static class RadixSort
     /// </summary>
     /// <param name="keys">The keys to rank. Not modified.</param>
     /// <param name="indices">Receives <c>keys.Length</c> indices into <paramref name="keys"/>, in ascending key order.</param>
-    /// <exception cref="ArgumentException"><paramref name="indices"/> is shorter than <paramref name="keys"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="indices"/> is shorter than <paramref name="keys"/>, or shares storage with it.</exception>
     /// <remarks>
     /// The point of an argsort is to avoid moving a wide payload: rank once, then gather. This form
     /// rents three buffers, so a hot loop that already owns its scratch should copy the keys itself
@@ -165,6 +164,7 @@ public static class RadixSort
     public static void ArgSort(ReadOnlySpan<uint> keys, Span<int> indices)
     {
         SortingGuard.RequireLength(indices.Length, keys.Length, nameof(indices));
+        SortingGuard.RequireDistinctStorage(keys, indices, nameof(indices));
         FillIdentity(indices[..keys.Length]);
         if (keys.Length < 2)
         {
@@ -235,6 +235,7 @@ public static class RadixSort
     public static void Sort<TValue>(Span<int> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -256,16 +257,14 @@ public static class RadixSort
     /// <inheritdoc cref="SortWithScratch{TValue}(Span{uint}, Span{TValue}, Span{uint}, Span{TValue})"/>
     public static void SortWithScratch<TValue>(Span<int> keys, Span<TValue> values, Span<int> keyScratch, Span<TValue> valueScratch)
     {
-        ValidatePairScratch(
-            keys.Length,
-            values.Length,
-            keyScratch.Length,
-            valueScratch.Length,
+        ValidatePairBuffers(
+            keys,
+            values,
+            keyScratch,
+            valueScratch,
             nameof(values),
             nameof(keyScratch),
             nameof(valueScratch));
-        SortingGuard.RequireNoOverlap(keys.Overlaps(keyScratch), nameof(keyScratch));
-        SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -278,6 +277,7 @@ public static class RadixSort
     public static void ArgSort(ReadOnlySpan<int> keys, Span<int> indices)
     {
         SortingGuard.RequireLength(indices.Length, keys.Length, nameof(indices));
+        SortingGuard.RequireDistinctStorage(keys, indices, nameof(indices));
         FillIdentity(indices[..keys.Length]);
         if (keys.Length < 2)
         {
@@ -360,6 +360,7 @@ public static class RadixSort
     public static void Sort<TValue>(Span<ulong> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -381,16 +382,14 @@ public static class RadixSort
     /// <inheritdoc cref="SortWithScratch{TValue}(Span{uint}, Span{TValue}, Span{uint}, Span{TValue})"/>
     public static void SortWithScratch<TValue>(Span<ulong> keys, Span<TValue> values, Span<ulong> keyScratch, Span<TValue> valueScratch)
     {
-        ValidatePairScratch(
-            keys.Length,
-            values.Length,
-            keyScratch.Length,
-            valueScratch.Length,
+        ValidatePairBuffers(
+            keys,
+            values,
+            keyScratch,
+            valueScratch,
             nameof(values),
             nameof(keyScratch),
             nameof(valueScratch));
-        SortingGuard.RequireNoOverlap(keys.Overlaps(keyScratch), nameof(keyScratch));
-        SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -403,6 +402,7 @@ public static class RadixSort
     public static void ArgSort(ReadOnlySpan<ulong> keys, Span<int> indices)
     {
         SortingGuard.RequireLength(indices.Length, keys.Length, nameof(indices));
+        SortingGuard.RequireDistinctStorage(keys, indices, nameof(indices));
         FillIdentity(indices[..keys.Length]);
         if (keys.Length < 2)
         {
@@ -473,6 +473,7 @@ public static class RadixSort
     public static void Sort<TValue>(Span<long> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -494,16 +495,14 @@ public static class RadixSort
     /// <inheritdoc cref="SortWithScratch{TValue}(Span{uint}, Span{TValue}, Span{uint}, Span{TValue})"/>
     public static void SortWithScratch<TValue>(Span<long> keys, Span<TValue> values, Span<long> keyScratch, Span<TValue> valueScratch)
     {
-        ValidatePairScratch(
-            keys.Length,
-            values.Length,
-            keyScratch.Length,
-            valueScratch.Length,
+        ValidatePairBuffers(
+            keys,
+            values,
+            keyScratch,
+            valueScratch,
             nameof(values),
             nameof(keyScratch),
             nameof(valueScratch));
-        SortingGuard.RequireNoOverlap(keys.Overlaps(keyScratch), nameof(keyScratch));
-        SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -516,6 +515,7 @@ public static class RadixSort
     public static void ArgSort(ReadOnlySpan<long> keys, Span<int> indices)
     {
         SortingGuard.RequireLength(indices.Length, keys.Length, nameof(indices));
+        SortingGuard.RequireDistinctStorage(keys, indices, nameof(indices));
         FillIdentity(indices[..keys.Length]);
         if (keys.Length < 2)
         {
@@ -598,6 +598,7 @@ public static class RadixSort
     public static void Sort<TValue>(Span<float> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -619,16 +620,14 @@ public static class RadixSort
     /// <inheritdoc cref="SortWithScratch{TValue}(Span{uint}, Span{TValue}, Span{uint}, Span{TValue})"/>
     public static void SortWithScratch<TValue>(Span<float> keys, Span<TValue> values, Span<float> keyScratch, Span<TValue> valueScratch)
     {
-        ValidatePairScratch(
-            keys.Length,
-            values.Length,
-            keyScratch.Length,
-            valueScratch.Length,
+        ValidatePairBuffers(
+            keys,
+            values,
+            keyScratch,
+            valueScratch,
             nameof(values),
             nameof(keyScratch),
             nameof(valueScratch));
-        SortingGuard.RequireNoOverlap(keys.Overlaps(keyScratch), nameof(keyScratch));
-        SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -641,6 +640,7 @@ public static class RadixSort
     public static void ArgSort(ReadOnlySpan<float> keys, Span<int> indices)
     {
         SortingGuard.RequireLength(indices.Length, keys.Length, nameof(indices));
+        SortingGuard.RequireDistinctStorage(keys, indices, nameof(indices));
         FillIdentity(indices[..keys.Length]);
         if (keys.Length < 2)
         {
@@ -721,6 +721,7 @@ public static class RadixSort
     public static void Sort<TValue>(Span<double> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -742,16 +743,14 @@ public static class RadixSort
     /// <inheritdoc cref="SortWithScratch{TValue}(Span{uint}, Span{TValue}, Span{uint}, Span{TValue})"/>
     public static void SortWithScratch<TValue>(Span<double> keys, Span<TValue> values, Span<double> keyScratch, Span<TValue> valueScratch)
     {
-        ValidatePairScratch(
-            keys.Length,
-            values.Length,
-            keyScratch.Length,
-            valueScratch.Length,
+        ValidatePairBuffers(
+            keys,
+            values,
+            keyScratch,
+            valueScratch,
             nameof(values),
             nameof(keyScratch),
             nameof(valueScratch));
-        SortingGuard.RequireNoOverlap(keys.Overlaps(keyScratch), nameof(keyScratch));
-        SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -764,6 +763,7 @@ public static class RadixSort
     public static void ArgSort(ReadOnlySpan<double> keys, Span<int> indices)
     {
         SortingGuard.RequireLength(indices.Length, keys.Length, nameof(indices));
+        SortingGuard.RequireDistinctStorage(keys, indices, nameof(indices));
         FillIdentity(indices[..keys.Length]);
         if (keys.Length < 2)
         {
@@ -808,20 +808,34 @@ public static class RadixSort
 
     // ---- shared -------------------------------------------------------------------------------
 
-    // The three length checks every key+payload+scratch overload makes. Callers pass their own
-    // nameof() so a parameter rename cannot leave a stale name in the thrown ArgumentException.
-    private static void ValidatePairScratch(
-        int keyLength,
-        int valueLength,
-        int keyScratchLength,
-        int valueScratchLength,
+    // The whole argument contract of a key+payload+scratch overload: three lengths, and every pair
+    // of buffers the sort writes kept in distinct storage. Callers pass their own nameof() so a
+    // parameter rename cannot leave a stale name in the thrown ArgumentException.
+    //
+    // All six pairs are checked, not just the two obvious ones. The kernel ping-pongs between
+    // (keys, values) and (keyScratch, valueScratch), so on alternating passes it writes a key and a
+    // payload element to the same index of whichever pair is the destination — and if any two of
+    // those four spans share storage, the second write lands on top of the first. That corrupts the
+    // result silently rather than failing, which is exactly the failure mode worth an argument check.
+    private static void ValidatePairBuffers<TKey, TValue>(
+        Span<TKey> keys,
+        Span<TValue> values,
+        Span<TKey> keyScratch,
+        Span<TValue> valueScratch,
         string valuesName,
         string keyScratchName,
         string valueScratchName)
     {
-        SortingGuard.RequireLength(valueLength, keyLength, valuesName);
-        SortingGuard.RequireLength(keyScratchLength, keyLength, keyScratchName);
-        SortingGuard.RequireLength(valueScratchLength, keyLength, valueScratchName);
+        SortingGuard.RequireLength(values.Length, keys.Length, valuesName);
+        SortingGuard.RequireLength(keyScratch.Length, keys.Length, keyScratchName);
+        SortingGuard.RequireLength(valueScratch.Length, keys.Length, valueScratchName);
+
+        SortingGuard.RequireNoOverlap(keys.Overlaps(keyScratch), keyScratchName);
+        SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), valueScratchName);
+        SortingGuard.RequireDistinctStorage(keys, values, valuesName);
+        SortingGuard.RequireDistinctStorage(keys, valueScratch, valueScratchName);
+        SortingGuard.RequireDistinctStorage(keyScratch, values, valuesName);
+        SortingGuard.RequireDistinctStorage(keyScratch, valueScratch, valueScratchName);
     }
 
     private static void FillIdentity(Span<int> indices)

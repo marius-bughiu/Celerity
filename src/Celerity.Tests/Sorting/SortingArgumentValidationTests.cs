@@ -84,6 +84,97 @@ public class SortingArgumentValidationTests
         Assert.Equal("valueScratch", ex.ParamName);
     }
 
+    // ---- aliasing between the key-side and payload-side buffers -------------------------------
+    //
+    // The kernel ping-pongs between (keys, values) and (keyScratch, valueScratch), writing a key
+    // and a payload element to the same index of whichever pair is the destination. If any two of
+    // those four spans share storage the second write lands on top of the first, so the result is
+    // silently wrong rather than failing — which is what makes these argument checks worth having.
+    // Only a same-typed pair can alias through safe code, so `int` keys with an `int` payload is
+    // the shape every case below uses.
+
+    [Fact]
+    public void Sort_ShouldThrow_WhenThePayloadSharesStorageWithTheKeys()
+    {
+        int[] buffer = [4, 3, 2, 1];
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => RadixSort.Sort<int>(buffer.AsSpan(), buffer.AsSpan()));
+        Assert.Equal("values", ex.ParamName);
+    }
+
+    [Fact]
+    public void Sort_ShouldThrow_WhenThePayloadPartiallyOverlapsTheKeys()
+    {
+        int[] buffer = [4, 3, 2, 1];
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => RadixSort.Sort<int>(buffer.AsSpan(0, 3), buffer.AsSpan(1, 3)));
+        Assert.Equal("values", ex.ParamName);
+    }
+
+    [Fact]
+    public void Sort_ShouldThrow_WhenAScratchBufferSharesStorageAcrossTheKeyValueDivide()
+    {
+        int[] keys = [3, 2];
+        int[] values = [1, 2];
+        int[] keyScratch = new int[2];
+        int[] valueScratch = new int[2];
+
+        var keysAliasValueScratch = Assert.Throws<ArgumentException>(
+            () => RadixSort.SortWithScratch(keys.AsSpan(), values.AsSpan(), keyScratch.AsSpan(), keys.AsSpan()));
+        Assert.Equal("valueScratch", keysAliasValueScratch.ParamName);
+
+        var keyScratchAliasesValues = Assert.Throws<ArgumentException>(
+            () => RadixSort.SortWithScratch(keys.AsSpan(), values.AsSpan(), values.AsSpan(), valueScratch.AsSpan()));
+        Assert.Equal("values", keyScratchAliasesValues.ParamName);
+
+        var keyScratchAliasesValueScratch = Assert.Throws<ArgumentException>(
+            () => RadixSort.SortWithScratch(keys.AsSpan(), values.AsSpan(), keyScratch.AsSpan(), keyScratch.AsSpan()));
+        Assert.Equal("valueScratch", keyScratchAliasesValueScratch.ParamName);
+    }
+
+    [Fact]
+    public void Sort_ShouldNotThrow_WhenThePayloadIsADisjointSliceOfTheSameArray()
+    {
+        // The guard has to reject overlap, not co-residence: two halves of one buffer are fine.
+        int[] buffer = [3, 1, 2, 0, 0, 0];
+
+        RadixSort.Sort<int>(buffer.AsSpan(0, 3), buffer.AsSpan(3, 3));
+
+        Assert.Equal([1, 2, 3], buffer.Take(3));
+    }
+
+    [Fact]
+    public void ArgSort_ShouldThrow_WhenTheIndexBufferSharesStorageWithTheKeys()
+    {
+        int[] buffer = [3, 1, 2];
+
+        var ex = Assert.Throws<ArgumentException>(() => RadixSort.ArgSort(buffer, buffer.AsSpan()));
+        Assert.Equal("indices", ex.ParamName);
+    }
+
+    [Fact]
+    public void Sort_ShouldThrow_WhenACountingSortBufferSharesStorageWithTheKeys()
+    {
+        int[] buffer = [1, 0, 1];
+        int[] counts = new int[CountingSort.RequiredCounts(0, 1)];
+
+        var payloadAliasesKeys = Assert.Throws<ArgumentException>(
+            () => CountingSort.Sort<int>(buffer.AsSpan(), buffer.AsSpan(), 0, 1));
+        Assert.Equal("values", payloadAliasesKeys.ParamName);
+
+        var countsAliasKeys = Assert.Throws<ArgumentException>(
+            () => CountingSort.SortWithScratch(counts.AsSpan(), 0, 1, counts.AsSpan()));
+        Assert.Equal("counts", countsAliasKeys.ParamName);
+
+        int[] keys = [1, 0, 1];
+        int[] values = [1, 2, 3];
+        var scratchAliasesKeys = Assert.Throws<ArgumentException>(
+            () => CountingSort.SortWithScratch(keys.AsSpan(), values.AsSpan(), 0, 1, keys.AsSpan(), counts.AsSpan()));
+        Assert.Equal("valueScratch", scratchAliasesKeys.ParamName);
+    }
+
     [Fact]
     public void ArgSort_ShouldThrow_WhenTheIndexBufferIsShorterThanTheKeys()
     {

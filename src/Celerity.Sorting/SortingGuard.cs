@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Celerity.Sorting;
 
@@ -38,6 +39,61 @@ internal static class SortingGuard
             throw CountOutOfRange(count, length, paramName);
         }
     }
+
+    /// <summary>
+    /// Requires two buffers the sort writes to occupy distinct storage, even when they are declared
+    /// with different element types.
+    /// </summary>
+    /// <remarks>
+    /// Only the same-typed case is checked, and that is not a gap: two spans whose element types
+    /// differ cannot be views over one another through safe code, so the reachable overlap is
+    /// exactly the same-typed one — passing a buffer as both the keys and the payload, or handing
+    /// the same scratch to two roles. The <c>typeof</c> test is a JIT-time constant per
+    /// instantiation, so a mismatched pair (<c>int</c> keys with a <c>string</c> payload) compiles
+    /// the whole check away.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void RequireDistinctStorage<TLeft, TRight>(Span<TLeft> left, Span<TRight> right, string paramName)
+    {
+        if (typeof(TLeft) == typeof(TRight) && SharesStorage<TLeft, TRight>(left, right))
+        {
+            throw Aliases(paramName);
+        }
+    }
+
+    /// <inheritdoc cref="RequireDistinctStorage{TLeft, TRight}(Span{TLeft}, Span{TRight}, string)"/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void RequireDistinctStorage<TLeft, TRight>(ReadOnlySpan<TLeft> left, Span<TRight> right, string paramName)
+    {
+        if (typeof(TLeft) == typeof(TRight) && SharesStorage<TLeft, TRight>(left, right))
+        {
+            throw Aliases(paramName);
+        }
+    }
+
+    // Only ever reached once the caller has established that the two element types are the same, so
+    // viewing the right-hand span through the left-hand element type is a reinterpretation of an
+    // identical layout. It has to go through the element reference rather than the span: Unsafe.As
+    // cannot take a ref struct as a type argument.
+    private static bool SharesStorage<TLeft, TRight>(ReadOnlySpan<TLeft> left, Span<TRight> right)
+    {
+        if (right.IsEmpty)
+        {
+            return false;
+        }
+
+        Span<TLeft> reinterpreted = MemoryMarshal.CreateSpan(
+            ref Unsafe.As<TRight, TLeft>(ref MemoryMarshal.GetReference(right)),
+            right.Length);
+
+        return left.Overlaps(reinterpreted);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ArgumentException Aliases(string paramName) =>
+        new(
+            "The buffer must not share storage with another span the sort writes; overlapping buffers corrupt the result rather than failing.",
+            paramName);
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static ArgumentException TooShort(int buffer, int required, string paramName) =>

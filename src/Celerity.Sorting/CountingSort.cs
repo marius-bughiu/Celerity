@@ -74,10 +74,11 @@ public static class CountingSort
     /// <typeparam name="TValue">The payload type. Never compared; only moved.</typeparam>
     /// <param name="keys">The keys to sort in place.</param>
     /// <param name="values">The payload, parallel to <paramref name="keys"/> and at least as long. Permuted to match.</param>
-    /// <exception cref="ArgumentException"><paramref name="values"/> is shorter than <paramref name="keys"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="values"/> is shorter than <paramref name="keys"/>, or shares storage with it.</exception>
     public static void Sort<TValue>(Span<byte> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -100,12 +101,14 @@ public static class CountingSort
     /// <param name="keys">The keys to sort in place.</param>
     /// <param name="values">The payload, parallel to <paramref name="keys"/> and at least as long. Permuted to match.</param>
     /// <param name="valueScratch">A buffer of at least <c>keys.Length</c> payload slots. Its contents on entry are ignored and overwritten.</param>
-    /// <exception cref="ArgumentException">A buffer is too short, or <paramref name="valueScratch"/> overlaps <paramref name="values"/>.</exception>
+    /// <exception cref="ArgumentException">A buffer is too short, or two buffers share storage.</exception>
     public static void SortWithScratch<TValue>(Span<byte> keys, Span<TValue> values, Span<TValue> valueScratch)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         SortingGuard.RequireLength(valueScratch.Length, keys.Length, nameof(valueScratch));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
+        SortingGuard.RequireDistinctStorage(keys, valueScratch, nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -168,10 +171,11 @@ public static class CountingSort
     /// <summary>Sorts <paramref name="keys"/> in ascending order using a caller-supplied counter buffer, allocating nothing.</summary>
     /// <param name="keys">The keys to sort in place.</param>
     /// <param name="counts">A buffer of at least <see cref="UInt16Range"/> counters. Its contents on entry are ignored and overwritten.</param>
-    /// <exception cref="ArgumentException"><paramref name="counts"/> is too short.</exception>
+    /// <exception cref="ArgumentException"><paramref name="counts"/> is too short, or shares storage with <paramref name="keys"/>.</exception>
     public static void SortWithScratch(Span<ushort> keys, Span<int> counts)
     {
         SortingGuard.RequireLength(counts.Length, UInt16Range, nameof(counts));
+        SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
         if (keys.Length < 2)
         {
             return;
@@ -184,6 +188,7 @@ public static class CountingSort
     public static void Sort<TValue>(Span<ushort> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         if (keys.Length < 2)
         {
             return;
@@ -208,13 +213,16 @@ public static class CountingSort
     /// <param name="values">The payload, parallel to <paramref name="keys"/> and at least as long. Permuted to match.</param>
     /// <param name="valueScratch">A buffer of at least <c>keys.Length</c> payload slots. Its contents on entry are ignored and overwritten.</param>
     /// <param name="counts">A buffer of at least <see cref="UInt16Range"/> counters. Its contents on entry are ignored and overwritten.</param>
-    /// <exception cref="ArgumentException">A buffer is too short, or <paramref name="valueScratch"/> overlaps <paramref name="values"/>.</exception>
+    /// <exception cref="ArgumentException">A buffer is too short, or two buffers share storage.</exception>
     public static void SortWithScratch<TValue>(Span<ushort> keys, Span<TValue> values, Span<TValue> valueScratch, Span<int> counts)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         SortingGuard.RequireLength(valueScratch.Length, keys.Length, nameof(valueScratch));
         SortingGuard.RequireLength(counts.Length, UInt16Range, nameof(counts));
+        SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
+        SortingGuard.RequireDistinctStorage(keys, valueScratch, nameof(valueScratch));
         if (keys.Length < 2)
         {
             return;
@@ -279,11 +287,12 @@ public static class CountingSort
     /// <param name="max">The largest key that may appear.</param>
     /// <param name="counts">A buffer of at least <see cref="RequiredCounts"/> counters. Its contents on entry are ignored and overwritten.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="max"/> is less than <paramref name="min"/>, the range exceeds <see cref="int.MaxValue"/> counters, or a key falls outside <c>[min, max]</c>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="counts"/> is too short.</exception>
+    /// <exception cref="ArgumentException"><paramref name="counts"/> is too short, or shares storage with <paramref name="keys"/>.</exception>
     public static void SortWithScratch(Span<int> keys, int min, int max, Span<int> counts)
     {
         int range = ValidateRange(min, max);
         SortingGuard.RequireLength(counts.Length, range, nameof(counts));
+        SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
         SortKeysCore(keys, min, max, counts[..range]);
     }
 
@@ -293,11 +302,12 @@ public static class CountingSort
     /// <param name="values">The payload, parallel to <paramref name="keys"/> and at least as long. Permuted to match.</param>
     /// <param name="min">The smallest key that may appear.</param>
     /// <param name="max">The largest key that may appear.</param>
-    /// <exception cref="ArgumentException"><paramref name="values"/> is shorter than <paramref name="keys"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="values"/> is shorter than <paramref name="keys"/>, or shares storage with it.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="max"/> is less than <paramref name="min"/>, the range exceeds <see cref="int.MaxValue"/> counters, or a key falls outside <c>[min, max]</c>.</exception>
     public static void Sort<TValue>(Span<int> keys, Span<TValue> values, int min, int max)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         int range = ValidateRange(min, max);
 
         int[] counts = ArrayPool<int>.Shared.Rent(range);
@@ -321,15 +331,18 @@ public static class CountingSort
     /// <param name="max">The largest key that may appear.</param>
     /// <param name="valueScratch">A buffer of at least <c>keys.Length</c> payload slots. Its contents on entry are ignored and overwritten.</param>
     /// <param name="counts">A buffer of at least <see cref="RequiredCounts"/> counters. Its contents on entry are ignored and overwritten.</param>
-    /// <exception cref="ArgumentException">A buffer is too short, or <paramref name="valueScratch"/> overlaps <paramref name="values"/>.</exception>
+    /// <exception cref="ArgumentException">A buffer is too short, or two buffers share storage.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="max"/> is less than <paramref name="min"/>, the range exceeds <see cref="int.MaxValue"/> counters, or a key falls outside <c>[min, max]</c>.</exception>
     public static void SortWithScratch<TValue>(Span<int> keys, Span<TValue> values, int min, int max, Span<TValue> valueScratch, Span<int> counts)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         SortingGuard.RequireLength(valueScratch.Length, keys.Length, nameof(valueScratch));
         int range = ValidateRange(min, max);
         SortingGuard.RequireLength(counts.Length, range, nameof(counts));
+        SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
+        SortingGuard.RequireDistinctStorage(keys, valueScratch, nameof(valueScratch));
 
         SortPairsCore(keys, values, min, max, counts[..range], valueScratch);
     }

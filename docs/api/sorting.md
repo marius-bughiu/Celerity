@@ -55,8 +55,14 @@ key-and-payload the way `Array.Sort(keys, items)` does; a `Sort(keys, scratch)` 
 silently win that call whenever the payload happens to have the same element type as the keys, so
 sorting `int` ids alongside `int` indices would quietly overwrite the payload.
 
-Scratch buffers must be **at least as long as the keys** and must **not overlap** the span they
-serve — both are checked, and a violation throws `ArgumentException` before anything is written.
+Scratch buffers must be **at least as long as the keys**, and **no two of the buffers a call writes
+may share storage** — not the keys and the payload, not a scratch buffer and the span it serves, and
+not a key-side buffer and a payload-side one. All of it is checked, and a violation throws
+`ArgumentException` before anything is written. The reason it is an exception rather than a
+documented caveat: the radix passes ping-pong between the two buffer pairs, writing a key and a
+payload element to the same index of whichever pair is the destination, so aliased buffers produce a
+silently wrong answer rather than a failure. Disjoint slices of one array are fine — only genuine
+overlap is rejected.
 Radix sorting additionally uses ~4 KB (32-bit keys) or ~8 KB (64-bit keys) of stack for its digit
 histograms, in both forms.
 
