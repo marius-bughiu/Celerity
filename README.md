@@ -11,17 +11,18 @@ dotnet add package Celerity.Collections
 
 ### Packages
 
-As of 2.0.0 Celerity ships as three layered NuGet packages. **`Celerity.Collections` pulls in the other two transitively, so a single `dotnet add package Celerity.Collections` still gives you everything** — add the lower packages directly only if you want the hashers or primitives *without* the collections.
+Celerity's core ships as layered NuGet packages. **`Celerity.Collections` pulls in the hashing and primitives packages transitively, so a single `dotnet add package Celerity.Collections` still gives you everything on that line** — add the lower packages directly only if you want the hashers or primitives *without* the collections. `Celerity.Sorting` is a sibling rather than a dependency of the collections: add it when you want the sorts.
 
 | Package | What it adds | Depends on |
 |---|---|---|
 | [`Celerity.Collections`](https://www.nuget.org/packages/Celerity.Collections/) | dictionaries, sets, frozen/perfect-hash collections, streaming sketches | `Celerity.Hashing`, `Celerity.Primitives` |
 | `Celerity.Hashing` | `IHashProvider<T>` / `IHashProvider64<T>`, the struct hashers, `HashQualityEvaluator` | `Celerity.Primitives` |
 | `Celerity.Primitives` | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid` | — |
+| [`Celerity.Sorting`](https://www.nuget.org/packages/Celerity.Sorting/) | `RadixSort`, `CountingSort`, `PartialSort` — non-comparison sorts and selection over primitive keys | `Celerity.Primitives` |
 
 > **Upgrading from 1.x?** Namespaces are unchanged except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives`. See the [migration guide](docs/migration.md#200--the-package-split).
 
-All three packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet hands your project the assembly built against its own runtime. `net8.0` (LTS) is the floor — Celerity runs anywhere from .NET 8 upward.
+All four packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet hands your project the assembly built against its own runtime. `net8.0` (LTS) is the floor — Celerity runs anywhere from .NET 8 upward.
 
 ## Built with Celerity
 
@@ -594,6 +595,9 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Set of **enum** values — flag sets, permission sets, state sets over a small enum | `EnumSet<TEnum>` | Bit-vector set indexed on the enum's underlying value (the .NET `EnumSet`): `Add` / `Contains` / `Remove` are a single bit op — no hashing, no boxing — and set algebra between two `EnumSet`s is a word-wise bitwise `OR` / `AND` / `XOR`. Enumerates ascending by value; `All()` builds the full universe. For enums whose members are small non-negative integers (the default); negative or sparse `[Flags]` enums are unsupported — use `CeleritySet<TEnum, THasher>` there. |
 | Set of small **non-negative ints** over a bounded range that is **cleared & rebuilt often** — "visited" sets in graph BFS/DFS, ECS entity membership, sweep-line | `SparseSet` | Briggs–Torczon sparse set (dense value array + sparse index array): `O(1)` `Clear` that leaves the backing arrays untouched (vs `HashSet<int>` zeroing its table) and dense, cache-friendly iteration over just the present elements. `Add` / `Contains` / `Remove` are `O(1)`, no hashing. Costs `O(Universe)` memory and stores only values in `[0, Universe)`; for an unbounded or huge-and-sparse key space use `IntSet` / `HashSet<int>`. |
 | **Huge, sparse set of 32-bit ints** where the work is **set algebra**, not point lookups — inverted-index posting lists, column-store row-id sets, bitmap analytics, cohort intersection; also any int set where memory is the constraint | `CompressedIntSet` | Exact, compressed: the value space is split into 65,536-value chunks and each chunk is stored as a sorted `ushort[]`, a 1024-word bitmap, or run-length pairs — whichever is smallest. `UnionWith` / `IntersectWith` / `ExceptWith` work inside a chunk (a sorted merge, or one ANDed word per 64 values) and skip a chunk neither side populates with a single comparison, so cost tracks *populated chunks* rather than elements. Memory is ~10x below `HashSet<int>` when sparse and far lower when dense or clustered; enumeration is **in ascending order**. Point `Contains` is still faster in a hash table — use `IntSet` / `HashSet<int>` if lookups are the whole workload. `BitSet` beats it when the universe is small and dense, `SparseSet` when it is small and cleared every iteration. **No portable Roaring format** (Celerity ships no serializers), so it is not a Lucene / Druid / Spark interop path. |
+| Sorting many primitive keys — ids, join keys, timestamps — at a thousand elements and up | `RadixSort` (package `Celerity.Sorting`) | Four or eight branch-free counting passes instead of introsort's `O(n log n)` mispredicting comparisons, in keys-only, key+payload, and argsort forms. **Stable.** Needs `O(n)` scratch, which is why `Array.Sort` cannot do this at all. Below a few hundred elements `Array.Sort` wins — the crossover is measured on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/). |
+| Sorting values drawn from **few distinct keys** — enum ordinals, bucket ids, quantized scores | `CountingSort` (package `Celerity.Sorting`) | One histogram pass and one run-fill, `O(n + range)`; the keys-only forms never move an element twice and allocate nothing for `byte` keys. Loses once `range` approaches `n` — use `RadixSort` there. |
+| Only the **top / bottom *k*** of a large span is wanted | `PartialSort` (package `Celerity.Sorting`) | `O(n)` introselect for the *k* smallest in place, or an `O(n log k)` bounded heap into a destination when the source must not be reordered. Against LINQ the win is allocation and boxing, not asymptotics — `OrderBy().Take(k)` already partial-sorts. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
@@ -764,6 +768,41 @@ Branchless.Select(mask, a, b, destination);                   // destination[i] 
 
 See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.
 
+## Sorting
+
+The **`Celerity.Sorting`** package fills the one gap the BCL structurally *cannot* close. `Array.Sort` and `MemoryExtensions.Sort<T>` route through a scalar **comparison** introsort for primitive keys on every current runtime — there is no radix, counting, or selection path anywhere in the BCL — and `Array.Sort` is contractually **in-place**, while a radix sort needs `O(n)` scratch. Trading that in-place guarantee for a scratch buffer is exactly the flexibility-for-speed deal Celerity exists to make.
+
+```bash
+dotnet add package Celerity.Sorting
+```
+
+| Type | What it gives you |
+|---|---|
+| `RadixSort` | LSD radix over `uint` / `int` / `ulong` / `long` / `float` / `double`: four (32-bit) or eight (64-bit) counting passes with purely sequential reads and **no comparisons and no data-dependent branches**, where introsort's every partition step is a branch the predictor cannot learn on random data. Keys alone, keys with a parallel payload, or `ArgSort` — the index permutation that ranks without moving a wide payload (the BCL has no argsort). **Stable**, unlike `Array.Sort(keys, items)`. |
+| `CountingSort` | Bounded key ranges — `byte`, `ushort`, or `int` over a declared `[min, max]`: one histogram pass and one run-fill, `O(n + range)`, for the shape enum ordinals, bucket ids and quantized scores take. The keys-only forms never move an element twice and allocate nothing at all for `byte` keys. **Stable** with a payload. |
+| `PartialSort` | Selection instead of sorting: `Select` / `Sort` are an `O(n)` in-place introselect for the *k* smallest, `TopK` an `O(n log k)` bounded heap over a span it never writes to. A three-way partition keeps duplicate-heavy input linear; a depth budget bounds the adversarial case. |
+
+Every entry point has a **`SortWithScratch` twin that allocates nothing**, so a hot loop rents its buffers once instead of per call:
+
+```csharp
+using Celerity.Sorting;
+
+int[] ids = LoadIds();
+RadixSort.Sort(ids.AsSpan());                       // rents its scratch
+
+int[] scratch = new int[ids.Length];                // ...or supply it once
+foreach (var batch in batches)
+{
+    batch.CopyTo(ids);
+    RadixSort.SortWithScratch(ids.AsSpan(), scratch.AsSpan());
+}
+
+int[] worst = new int[10];                          // top 10 of a million,
+PartialSort.TopK<int>(latencies, worst);            // without reordering the source
+```
+
+**Where it does not win, stated plainly.** `RadixSort` **loses below a few hundred elements** — the histogram's fixed cost dominates, so use `Array.Sort` for small spans; the [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) sweeps from 100 to 1,000,000 elements precisely so the crossover is a measured number rather than a guess. `CountingSort` loses once `range` approaches `n`. And `PartialSort` is **not** asymptotically better than LINQ: `OrderBy().Take(k)` has applied its own partial-sort optimization since .NET 6, so the win there is allocation and boxing, not complexity. One more thing to know before sorting reals: `RadixSort` orders `NaN` by sign bit and `-0.0` before `+0.0`, where `Array.Sort` moves all NaNs to the front and calls the zeros equal. Full details in the [sorting API reference](docs/api/sorting.md).
+
 ## Native AOT & trimming
 
 Celerity is **Native AOT and trimming compatible** — no reflection, runtime code generation, or dynamic type loading. Every collection is a generic over a struct hasher, and the only BCL primitives on the hot paths (`MemoryMarshal`, `Unsafe`, `EqualityComparer<T>.Default`) are AOT-safe. The assembly is marked [`<IsAotCompatible>true</IsAotCompatible>`](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#aot-compatibility-analyzers), so a `PublishAot` app gets **no trim or AOT warnings**. Compatibility is enforced on every build (the trim/AOT analyzers run during compilation) and CI publishes a Native AOT smoke-test binary exercising every collection and hasher. See [`docs/aot.md`](docs/aot.md).
@@ -777,5 +816,5 @@ Full constructors, signatures, exceptions, and per-type examples: **[API referen
 ## Project docs
 
 - [`docs/`](docs/README.md) — documentation index & [API reference](docs/README.md#api-reference).
-- [Performance tuning](docs/performance.md) · [Migration guide](docs/migration.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) · [Testing & coverage](docs/testing.md).
+- [Sorting API](docs/api/sorting.md) · [Performance tuning](docs/performance.md) · [Migration guide](docs/migration.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) · [Testing & coverage](docs/testing.md).
 - [`ROADMAP.md`](ROADMAP.md) · [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [GitHub Issues](https://github.com/marius-bughiu/Celerity/issues).

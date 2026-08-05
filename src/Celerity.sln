@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Celerity.Cardinality", "Cel
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Celerity.Cardinality.Tests", "Celerity.Cardinality.Tests\Celerity.Cardinality.Tests.csproj", "{8EA767F4-A02E-4A66-8574-4C7438B890D1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Celerity.Sorting", "Celerity.Sorting\Celerity.Sorting.csproj", "{3575804C-8287-4ED7-B452-B362C368FF69}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -195,6 +197,18 @@ Global
 		{8EA767F4-A02E-4A66-8574-4C7438B890D1}.Release|x64.Build.0 = Release|Any CPU
 		{8EA767F4-A02E-4A66-8574-4C7438B890D1}.Release|x86.ActiveCfg = Release|Any CPU
 		{8EA767F4-A02E-4A66-8574-4C7438B890D1}.Release|x86.Build.0 = Release|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Debug|x64.Build.0 = Debug|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Debug|x86.Build.0 = Debug|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Release|x64.ActiveCfg = Release|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Release|x64.Build.0 = Release|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Release|x86.ActiveCfg = Release|Any CPU
+		{3575804C-8287-4ED7-B452-B362C368FF69}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

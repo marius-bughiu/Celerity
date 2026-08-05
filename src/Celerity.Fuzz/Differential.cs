@@ -1,6 +1,7 @@
 using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
+using Celerity.Sorting;
 
 namespace Celerity.Fuzz;
 
@@ -63,6 +64,9 @@ internal static class Differential
         ("XorFilterHash64", XorFilterHash64Case),
         ("HyperLogLogHash64", HyperLogLogHash64Case),
         ("CountMinSketchHash64", CountMinSketchHash64Case),
+        ("RadixSort", RadixSortCase),
+        ("CountingSort", CountingSortCase),
+        ("PartialSort", PartialSortCase),
     ];
 
     private const int MinKey = -8;
@@ -1671,5 +1675,166 @@ internal static class Differential
         foreach (var kv in oracle)
             Check(sut.EstimateCount(kv.Key) >= kv.Value,
                 $"underestimate for {kv.Key}: {sut.EstimateCount(kv.Key)} < {kv.Value}");
+    }
+
+    // ---- Celerity.Sorting ---------------------------------------------------------------------
+    //
+    // The sorters hold no long-lived state, so a case is one randomized span reconciled against
+    // Array.Sort rather than an operation sequence. What this de-risks is the key transform: the
+    // signed and IEEE-754 orderings are the part of a radix sort that fails silently, producing a
+    // plausible-looking but wrongly ordered block instead of a crash. Key domains are deliberately
+    // mixed - narrow (only the low digit differs), full-width, and duplicate-heavy.
+
+    private static void RadixSortCase(Random rng)
+    {
+        int length = rng.Next(0, 400);
+        int shape = rng.Next(0, 3);
+
+        int[] keys = new int[length];
+        for (int i = 0; i < length; i++)
+        {
+            keys[i] = shape switch
+            {
+                0 => rng.Next(0, 200),                      // one digit differs: most passes skip
+                1 => rng.Next(-6, 7),                       // duplicate-heavy, both signs
+                _ => rng.Next(int.MinValue, int.MaxValue),  // full width
+            };
+        }
+
+        int[] payload = new int[length];
+        for (int i = 0; i < length; i++)
+            payload[i] = i;
+
+        int[] expectedKeys = (int[])keys.Clone();
+        Array.Sort(expectedKeys);
+
+        int[] actualKeys = (int[])keys.Clone();
+        RadixSort.Sort(actualKeys.AsSpan());
+        Check(actualKeys.AsSpan().SequenceEqual(expectedKeys), "RadixSort key order diverged from Array.Sort");
+
+        // Key+payload: the keys must match, and equal keys must keep their input order - which
+        // Array.Sort does not promise, so stability is checked directly rather than against it.
+        int[] pairKeys = (int[])keys.Clone();
+        int[] pairValues = (int[])payload.Clone();
+        RadixSort.Sort<int>(pairKeys.AsSpan(), pairValues.AsSpan());
+        Check(pairKeys.AsSpan().SequenceEqual(expectedKeys), "RadixSort key+payload key order diverged");
+        for (int i = 1; i < length; i++)
+        {
+            Check(pairKeys[i] != pairKeys[i - 1] || pairValues[i] > pairValues[i - 1],
+                $"RadixSort key+payload was not stable at {i}");
+        }
+
+        // ArgSort must leave the keys alone and rank them into the same order as a permutation.
+        int[] indices = new int[length];
+        RadixSort.ArgSort(keys, indices.AsSpan());
+        for (int i = 0; i < length; i++)
+            Check(keys[indices[i]] == expectedKeys[i], $"RadixSort.ArgSort disagreed at {i}");
+
+        // Doubles, where the sign/exponent transform is the risky part. NaN is excluded on purpose:
+        // this type orders NaN by bit pattern where Array.Sort moves every NaN to the front.
+        double[] reals = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            reals[i] = rng.Next(0, 8) switch
+            {
+                0 => 0d,
+                1 => -0d,
+                2 => double.PositiveInfinity,
+                3 => double.NegativeInfinity,
+                _ => (rng.NextDouble() - 0.5) * Math.Pow(10, rng.Next(-30, 30)),
+            };
+        }
+
+        double[] expectedReals = (double[])reals.Clone();
+        Array.Sort(expectedReals);
+        RadixSort.Sort(reals.AsSpan());
+        for (int i = 0; i < length; i++)
+            Check(reals[i] == expectedReals[i], $"RadixSort double order diverged from Array.Sort at {i}");
+    }
+
+    private static void CountingSortCase(Random rng)
+    {
+        int length = rng.Next(0, 400);
+        int min = rng.Next(-50, 50);
+        int max = min + rng.Next(0, 60);
+
+        int[] keys = new int[length];
+        int[] payload = new int[length];
+        for (int i = 0; i < length; i++)
+        {
+            keys[i] = rng.Next(min, max + 1);
+            payload[i] = i;
+        }
+
+        int[] expected = (int[])keys.Clone();
+        Array.Sort(expected);
+
+        int[] actual = (int[])keys.Clone();
+        CountingSort.Sort(actual.AsSpan(), min, max);
+        Check(actual.AsSpan().SequenceEqual(expected), "CountingSort key order diverged from Array.Sort");
+
+        int[] pairKeys = (int[])keys.Clone();
+        int[] pairValues = (int[])payload.Clone();
+        CountingSort.Sort<int>(pairKeys.AsSpan(), pairValues.AsSpan(), min, max);
+        Check(pairKeys.AsSpan().SequenceEqual(expected), "CountingSort key+payload key order diverged");
+        for (int i = 1; i < length; i++)
+        {
+            Check(pairKeys[i] != pairKeys[i - 1] || pairValues[i] > pairValues[i - 1],
+                $"CountingSort key+payload was not stable at {i}");
+        }
+
+        // The byte-keyed form over the same data, shifted into range.
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < length; i++)
+            bytes[i] = (byte)(keys[i] - min);
+
+        byte[] expectedBytes = (byte[])bytes.Clone();
+        Array.Sort(expectedBytes);
+        CountingSort.Sort(bytes.AsSpan());
+        Check(bytes.AsSpan().SequenceEqual(expectedBytes), "CountingSort byte order diverged from Array.Sort");
+    }
+
+    private static void PartialSortCase(Random rng)
+    {
+        int length = rng.Next(0, 400);
+        int count = length == 0 ? 0 : rng.Next(0, length + 1);
+
+        int[] values = new int[length];
+        for (int i = 0; i < length; i++)
+        {
+            // Half the cases are duplicate-heavy, which is what the three-way partition exists for.
+            values[i] = rng.Next(2) == 0 ? rng.Next(-4, 5) : rng.Next();
+        }
+
+        int[] sorted = (int[])values.Clone();
+        Array.Sort(sorted);
+
+        int[] selected = (int[])values.Clone();
+        PartialSort.Select(selected.AsSpan(), count);
+        int[] prefix = selected.Take(count).ToArray();
+        Array.Sort(prefix);
+        Check(prefix.AsSpan().SequenceEqual(sorted.AsSpan(0, count)),
+            "PartialSort.Select did not bring the smallest count elements to the front");
+
+        int[] wholeSelected = (int[])selected.Clone();
+        Array.Sort(wholeSelected);
+        Check(wholeSelected.AsSpan().SequenceEqual(sorted), "PartialSort.Select did not preserve the multiset");
+
+        int[] partiallySorted = (int[])values.Clone();
+        PartialSort.Sort(partiallySorted.AsSpan(), count);
+        Check(partiallySorted.AsSpan(0, count).SequenceEqual(sorted.AsSpan(0, count)),
+            "PartialSort.Sort did not order the smallest count elements");
+
+        int k = Math.Min(length, rng.Next(0, 40));
+        int[] top = new int[k];
+        int written = PartialSort.TopK<int>(values, top.AsSpan());
+        Check(written == k, $"PartialSort.TopK wrote {written} of {k}");
+        for (int i = 0; i < k; i++)
+            Check(top[i] == sorted[length - 1 - i], $"PartialSort.TopK disagreed at {i}");
+
+        // TopK must leave its source untouched.
+        int[] untouched = (int[])values.Clone();
+        Array.Sort(untouched);
+        Check(untouched.AsSpan().SequenceEqual(sorted), "PartialSort.TopK modified its source");
     }
 }

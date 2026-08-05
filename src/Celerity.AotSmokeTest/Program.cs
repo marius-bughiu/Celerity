@@ -11,6 +11,7 @@ using Celerity;
 using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
+using Celerity.Sorting;
 
 int failures = 0;
 
@@ -1724,6 +1725,83 @@ void Check(bool condition, string message)
     enumMap.Add(DayOfWeek.Monday, "mon");
     Check(enumMap.Keys.Contains(DayOfWeek.Monday) && !enumMap.ContainsKey(DayOfWeek.Sunday),
         "EnumMap as IDictionary: boxed key view");
+}
+
+// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309).
+//
+// Every shape that forces a distinct native instantiation: both radix widths, both signed and
+// IEEE-754 key transforms, the key+payload generic over a reference payload (which is where the
+// pooled scratch has to be cleared on return), the argsort, the bounded-range counting sort, and
+// both PartialSort comparer forms — the IComparable<T> default and a caller-supplied struct
+// comparer, which is a second closed generic over the same selection code.
+{
+    int[] signed = [3, -1, int.MinValue, 0, int.MaxValue, -7, 2];
+    RadixSort.Sort(signed.AsSpan());
+    Check(signed[0] == int.MinValue && signed[^1] == int.MaxValue, "RadixSort int order");
+
+    uint[] unsigned = [7, 0, uint.MaxValue, 3];
+    RadixSort.SortWithScratch(unsigned.AsSpan(), new uint[4].AsSpan());
+    Check(unsigned[0] == 0 && unsigned[^1] == uint.MaxValue, "RadixSort uint order with scratch");
+
+    long[] wide = [1L << 40, -1L << 40, 0L];
+    RadixSort.Sort(wide.AsSpan());
+    Check(wide[0] == -(1L << 40) && wide[^1] == 1L << 40, "RadixSort long order");
+
+    ulong[] wideUnsigned = [ulong.MaxValue, 0UL, 1UL << 40];
+    RadixSort.SortWithScratch(wideUnsigned.AsSpan(), new ulong[3].AsSpan());
+    Check(wideUnsigned[0] == 0UL && wideUnsigned[^1] == ulong.MaxValue, "RadixSort ulong order with scratch");
+
+    float[] singles = [1.5f, -2.5f, 0f, float.PositiveInfinity, float.NegativeInfinity];
+    RadixSort.Sort(singles.AsSpan());
+    Check(float.IsNegativeInfinity(singles[0]) && float.IsPositiveInfinity(singles[^1]), "RadixSort float order");
+
+    double[] doubles = [1.5, -2.5, 0d, double.PositiveInfinity, double.NegativeInfinity];
+    RadixSort.Sort(doubles.AsSpan());
+    Check(double.IsNegativeInfinity(doubles[0]) && double.IsPositiveInfinity(doubles[^1]), "RadixSort double order");
+
+    // Reference-typed payload: the pooled value scratch is cleared on return for this instantiation.
+    int[] payloadKeys = [3, 1, 2];
+    string[] payload = ["three", "one", "two"];
+    RadixSort.Sort<string>(payloadKeys.AsSpan(), payload.AsSpan());
+    Check(payload[0] == "one" && payload[^1] == "three", "RadixSort key+payload");
+
+    int[] pairKeys = [5, 4, 6];
+    int[] pairValues = [50, 40, 60];
+    RadixSort.SortWithScratch(pairKeys.AsSpan(), pairValues.AsSpan(), new int[3].AsSpan(), new int[3].AsSpan());
+    Check(pairValues[0] == 40 && pairValues[^1] == 60, "RadixSort key+payload with scratch");
+
+    int[] rankKeys = [30, 10, 20];
+    int[] ranks = new int[3];
+    RadixSort.ArgSort(rankKeys, ranks.AsSpan());
+    Check(ranks[0] == 1 && ranks[^1] == 0 && rankKeys[0] == 30, "RadixSort.ArgSort ranks without reordering");
+
+    byte[] bytes = [5, 255, 0, 5, 1];
+    CountingSort.Sort(bytes.AsSpan());
+    Check(bytes[0] == 0 && bytes[^1] == 255, "CountingSort byte order");
+
+    ushort[] shorts = [40_000, 0, 65_535, 7];
+    CountingSort.Sort(shorts.AsSpan());
+    Check(shorts[0] == 0 && shorts[^1] == 65_535, "CountingSort ushort order");
+
+    int[] ranged = [3, -2, 0, 3, -5];
+    string[] rangedPayload = ["a", "b", "c", "d", "e"];
+    CountingSort.Sort<string>(ranged.AsSpan(), rangedPayload.AsSpan(), -5, 3);
+    Check(ranged[0] == -5 && rangedPayload[0] == "e", "CountingSort range key+payload");
+
+    int[] scratchRanged = [2, 1, 0];
+    CountingSort.SortWithScratch(scratchRanged.AsSpan(), 0, 2, new int[CountingSort.RequiredCounts(0, 2)].AsSpan());
+    Check(scratchRanged[0] == 0 && scratchRanged[^1] == 2, "CountingSort range with counter buffer");
+
+    int[] selection = [9, 1, 8, 2, 7, 3, 6, 4, 5, 0];
+    PartialSort.Sort(selection.AsSpan(), 3);
+    Check(selection[0] == 0 && selection[1] == 1 && selection[2] == 2, "PartialSort.Sort smallest prefix");
+
+    PartialSort.Select(selection.AsSpan(), 5, default(DescendingIntComparer));
+    Array.Sort(selection, 0, 5);
+    Check(selection[0] == 5 && selection[4] == 9, "PartialSort.Select with a struct comparer");
+
+    int[] top = new int[3];
+    Check(PartialSort.TopK<int>(selection, top.AsSpan()) == 3 && top[0] == 9 && top[^1] == 7, "PartialSort.TopK");
 }
 
 if (failures == 0)

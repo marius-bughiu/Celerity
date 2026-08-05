@@ -1,7 +1,7 @@
 name: Coverage
 
 # Code-coverage reporting and gate (issue #29). Collects line/branch coverage for
-# all six shipping Celerity packages via coverlet, renders an HTML report + badges
+# all seven shipping Celerity packages via coverlet, renders an HTML report + badges
 # with scripts/coverage_report.py (there is no ReportGenerator dependency), fails
 # the build if coverage drops below the floor, comments the summary on PRs, and
 # publishes the HTML report to gh-pages (/coverage) on main.

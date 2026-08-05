@@ -14,7 +14,7 @@
     because those projects have no PackageId to resolve a baseline for.
     Directory.Build.targets is imported *after* the project body, so the
     IsPackable=false that each dev project sets is already visible here and the
-    six shipped packages are the only ones the condition matches.
+    shipped packages are the only ones the condition matches.
 
     The baseline version itself is CelerityPackageValidationBaseline, declared in
     Directory.Build.props — that is the single line to bump at release time, and
