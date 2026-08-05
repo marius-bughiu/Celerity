@@ -8,9 +8,12 @@ using Celerity.Sorting;
 //
 // Both arms copy the pristine keys into a working buffer inside the measured method, so neither needs
 // an [IterationSetup] (which would force InvocationCount=1 and add its own noise) and the O(n) memcpy
-// is charged identically to both. The Celerity arms use the SortWithScratch overloads with buffers
-// rented once in [GlobalSetup] — the form a hot loop should use — so the rows measure the sort and
-// not ArrayPool traffic.
+// is charged identically to both. The Keys and Pairs Celerity arms use the SortWithScratch overloads
+// with buffers allocated once in [GlobalSetup] — the form a hot loop should use — so those rows
+// measure the sort and not ArrayPool traffic. ArgSort has no scratch overload by design (a caller
+// that owns its buffers should sort an identity index array as the payload instead), so that row
+// does include its three ArrayPool rents, and the baseline correspondingly pays for the key copy and
+// the identity fill inside the measured method.
 //
 // The sweep starts at 100 deliberately: radix is expected to LOSE there, and the crossover is a number
 // this benchmark is supposed to report rather than assert. ItemCount is the parameter name the

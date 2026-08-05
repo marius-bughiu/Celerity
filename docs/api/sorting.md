@@ -40,14 +40,17 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 
 ## `Sort` vs `SortWithScratch`
 
-Every entry point comes in two forms:
+`RadixSort` and `CountingSort` each expose their entry points in two forms:
 
 - **`Sort(...)`** — the convenience form. Rents whatever scratch it needs from `ArrayPool<T>.Shared`
   and returns it before returning.
 - **`SortWithScratch(...)`** — the same sort with every buffer supplied by the caller. **Allocates
   nothing**, so a hot loop rents once and reuses.
 
-They are named apart rather than overloaded on purpose. `Sort(keys, values)` has to keep meaning
+`PartialSort` has no `SortWithScratch` overloads: it needs no scratch and already allocates nothing
+in every form, so there would be nothing for a second form to supply.
+
+The two names are kept apart rather than overloaded on purpose. `Sort(keys, values)` has to keep meaning
 key-and-payload the way `Array.Sort(keys, items)` does; a `Sort(keys, scratch)` overload would
 silently win that call whenever the payload happens to have the same element type as the keys, so
 sorting `int` ids alongside `int` indices would quietly overwrite the payload.

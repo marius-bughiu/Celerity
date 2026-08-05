@@ -61,6 +61,11 @@ public static class CountingSort
     /// <param name="keys">The keys to sort in place.</param>
     public static void Sort(Span<byte> keys)
     {
+        if (keys.Length < 2)
+        {
+            return;
+        }
+
         Span<int> counts = stackalloc int[ByteRange];
         SortKeysCore(keys, counts);
     }
@@ -73,8 +78,12 @@ public static class CountingSort
     public static void Sort<TValue>(Span<byte> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        if (keys.Length < 2)
+        {
+            return;
+        }
 
-        TValue[] valueScratch = ArrayPool<TValue>.Shared.Rent(Math.Max(1, keys.Length));
+        TValue[] valueScratch = ArrayPool<TValue>.Shared.Rent(keys.Length);
         try
         {
             Span<int> counts = stackalloc int[ByteRange];
@@ -97,6 +106,10 @@ public static class CountingSort
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
         SortingGuard.RequireLength(valueScratch.Length, keys.Length, nameof(valueScratch));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
+        if (keys.Length < 2)
+        {
+            return;
+        }
 
         Span<int> counts = stackalloc int[ByteRange];
         SortPairsCore(keys, values, counts, valueScratch);
@@ -136,6 +149,11 @@ public static class CountingSort
     /// <remarks>Rents a <see cref="UInt16Range"/>-element counter array; use <see cref="SortWithScratch(Span{ushort}, Span{int})"/> to avoid it.</remarks>
     public static void Sort(Span<ushort> keys)
     {
+        if (keys.Length < 2)
+        {
+            return;
+        }
+
         int[] counts = ArrayPool<int>.Shared.Rent(UInt16Range);
         try
         {
@@ -154,6 +172,11 @@ public static class CountingSort
     public static void SortWithScratch(Span<ushort> keys, Span<int> counts)
     {
         SortingGuard.RequireLength(counts.Length, UInt16Range, nameof(counts));
+        if (keys.Length < 2)
+        {
+            return;
+        }
+
         SortKeysCore(keys, counts[..UInt16Range]);
     }
 
@@ -161,9 +184,13 @@ public static class CountingSort
     public static void Sort<TValue>(Span<ushort> keys, Span<TValue> values)
     {
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
+        if (keys.Length < 2)
+        {
+            return;
+        }
 
         int[] counts = ArrayPool<int>.Shared.Rent(UInt16Range);
-        TValue[] valueScratch = ArrayPool<TValue>.Shared.Rent(Math.Max(1, keys.Length));
+        TValue[] valueScratch = ArrayPool<TValue>.Shared.Rent(keys.Length);
         try
         {
             SortPairsCore(keys, values, counts.AsSpan(0, UInt16Range), valueScratch.AsSpan(0, keys.Length));
@@ -188,6 +215,10 @@ public static class CountingSort
         SortingGuard.RequireLength(valueScratch.Length, keys.Length, nameof(valueScratch));
         SortingGuard.RequireLength(counts.Length, UInt16Range, nameof(counts));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
+        if (keys.Length < 2)
+        {
+            return;
+        }
 
         SortPairsCore(keys, values, counts[..UInt16Range], valueScratch);
     }

@@ -24,10 +24,12 @@ scratch. That is exactly the flexibility-for-speed trade Celerity exists to make
 - **`PartialSort`** — `Select` / `Sort` are an `O(n)` in-place introselect for
   the *k* smallest; `TopK` is an `O(n log k)` bounded heap over a read-only span.
 
-Every entry point has a **`SortWithScratch` twin that allocates nothing**, so a
-hot loop rents its buffers once instead of per call. (`Sort` is the convenience
-form and rents from `ArrayPool<T>`; the two are named apart so `Sort(keys, values)`
-always means key-and-payload, the way `Array.Sort(keys, items)` does.)
+`RadixSort` and `CountingSort` pair every entry point with a **`SortWithScratch`
+twin that allocates nothing**, so a hot loop supplies its buffers once instead of
+renting per call. (`Sort` is the convenience form and rents from `ArrayPool<T>`;
+the two names are kept apart so `Sort(keys, values)` always means key-and-payload,
+the way `Array.Sort(keys, items)` does.) `PartialSort` has no scratch overloads —
+it needs no scratch and allocates nothing in any form.
 
 ## Where it wins, and where it does not
 

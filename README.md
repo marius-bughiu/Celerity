@@ -782,7 +782,7 @@ dotnet add package Celerity.Sorting
 | `CountingSort` | Bounded key ranges — `byte`, `ushort`, or `int` over a declared `[min, max]`: one histogram pass and one run-fill, `O(n + range)`, for the shape enum ordinals, bucket ids and quantized scores take. The keys-only forms never move an element twice and allocate nothing at all for `byte` keys. **Stable** with a payload. |
 | `PartialSort` | Selection instead of sorting: `Select` / `Sort` are an `O(n)` in-place introselect for the *k* smallest, `TopK` an `O(n log k)` bounded heap over a span it never writes to. A three-way partition keeps duplicate-heavy input linear; a depth budget bounds the adversarial case. |
 
-Every entry point has a **`SortWithScratch` twin that allocates nothing**, so a hot loop rents its buffers once instead of per call:
+`RadixSort` and `CountingSort` each pair their entry points with a **`SortWithScratch` twin that allocates nothing**, so a hot loop supplies its buffers once instead of renting per call. `PartialSort` needs no scratch and allocates nothing in any form:
 
 ```csharp
 using Celerity.Sorting;

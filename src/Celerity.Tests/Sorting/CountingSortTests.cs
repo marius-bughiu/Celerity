@@ -171,6 +171,36 @@ public class CountingSortTests
     }
 
     [Fact]
+    public void Sort_ShouldDoNothing_WhenAByteOrUInt16SpanHasFewerThanTwoKeys()
+    {
+        // The short-span guard is what stops a one-element ushort sort from clearing a
+        // 65,536-counter array to do nothing.
+        byte[] singleByte = [9];
+        ushort[] singleShort = [9];
+        ushort[] emptyShorts = [];
+        int[] payload = [1];
+
+        CountingSort.Sort(singleByte.AsSpan());
+        CountingSort.Sort<int>(singleByte.AsSpan(), payload.AsSpan());
+        CountingSort.SortWithScratch(singleByte.AsSpan(), payload.AsSpan(), new int[1].AsSpan());
+
+        CountingSort.Sort(emptyShorts.AsSpan());
+        CountingSort.Sort(singleShort.AsSpan());
+        CountingSort.SortWithScratch(singleShort.AsSpan(), new int[CountingSort.UInt16Range].AsSpan());
+        CountingSort.Sort<int>(singleShort.AsSpan(), payload.AsSpan());
+        CountingSort.SortWithScratch(
+            singleShort.AsSpan(),
+            payload.AsSpan(),
+            new int[1].AsSpan(),
+            new int[CountingSort.UInt16Range].AsSpan());
+
+        Assert.Equal<byte>([9], singleByte);
+        Assert.Equal<ushort>([9], singleShort);
+        Assert.Empty(emptyShorts);
+        Assert.Equal([1], payload);
+    }
+
+    [Fact]
     public void RequiredCounts_ShouldReturnTheInclusiveWidth_WhenTheRangeIsValid()
     {
         Assert.Equal(1, CountingSort.RequiredCounts(0, 0));
