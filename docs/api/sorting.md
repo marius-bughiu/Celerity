@@ -179,8 +179,12 @@ struct hashers follow. Nulls sort first under the natural order, matching `Compa
 - **Duplicate-heavy input stays linear.** The partition is three-way (Dutch national flag), so an
   all-equal span finishes in one pass rather than quadratically.
 - **Adversarial input is bounded.** `Select` is an *intro*select: past a depth budget proportional to
-  `log n` it hands the remaining range to `MemoryExtensions.Sort`, capping the worst case at
+  `log n` it falls back to an in-place heap sort of the remaining range, capping the worst case at
   `O(n log n)`. The same budget is what stops an inconsistent comparer from spinning forever.
+- **Nothing here allocates**, in any form. That is why the internal ordering is insertion sort and
+  heap sort rather than `MemoryExtensions.Sort<T, TComparer>`, which reaches the BCL's sort through
+  an `IComparer<T>`-typed helper and so boxes a `struct` comparer on every call. If you want
+  introsort's constant factor over a whole span, call the BCL directly.
 - **Not stable**, in any form.
 - **`TopK` never writes to `source`** and allocates nothing — the destination *is* the heap.
 
