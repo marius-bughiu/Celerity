@@ -269,6 +269,10 @@ public static class CountingSort
     public static void Sort(Span<int> keys, int min, int max)
     {
         int range = ValidateRange(min, max);
+        if (IsAlreadySorted(keys, min, max))
+        {
+            return;
+        }
 
         int[] counts = ArrayPool<int>.Shared.Rent(range);
         try
@@ -293,6 +297,11 @@ public static class CountingSort
         int range = ValidateRange(min, max);
         SortingGuard.RequireLength(counts.Length, range, nameof(counts));
         SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
+        if (IsAlreadySorted(keys, min, max))
+        {
+            return;
+        }
+
         SortKeysCore(keys, min, max, counts[..range]);
     }
 
@@ -309,9 +318,13 @@ public static class CountingSort
         SortingGuard.RequireLength(values.Length, keys.Length, nameof(values));
         SortingGuard.RequireDistinctStorage(keys, values, nameof(values));
         int range = ValidateRange(min, max);
+        if (IsAlreadySorted(keys, min, max))
+        {
+            return;
+        }
 
         int[] counts = ArrayPool<int>.Shared.Rent(range);
-        TValue[] valueScratch = ArrayPool<TValue>.Shared.Rent(Math.Max(1, keys.Length));
+        TValue[] valueScratch = ArrayPool<TValue>.Shared.Rent(keys.Length);
         try
         {
             SortPairsCore(keys, values, min, max, counts.AsSpan(0, range), valueScratch.AsSpan(0, keys.Length));
@@ -343,8 +356,36 @@ public static class CountingSort
         SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         SortingGuard.RequireDistinctStorage(keys, valueScratch, nameof(valueScratch));
+        if (IsAlreadySorted(keys, min, max))
+        {
+            return;
+        }
 
         SortPairsCore(keys, values, min, max, counts[..range], valueScratch);
+    }
+
+    /// <summary>
+    /// Whether a declared-range sort has nothing to do — while still honouring the range contract.
+    /// </summary>
+    /// <remarks>
+    /// A span of fewer than two keys is already sorted, but the counter buffer is sized to the range
+    /// the caller declared, not to the input: sorting one key over <c>[0, 1_000_000]</c> would
+    /// otherwise rent and clear four megabytes to do nothing. The lone key still has to be range-
+    /// checked, because the histogram pass it is skipping is what would otherwise have thrown.
+    /// </remarks>
+    private static bool IsAlreadySorted(Span<int> keys, int min, int max)
+    {
+        if (keys.Length >= 2)
+        {
+            return false;
+        }
+
+        if (keys.Length == 1)
+        {
+            _ = KeyIndex(keys[0], min, max, nameof(keys));
+        }
+
+        return true;
     }
 
     private static void SortKeysCore(Span<int> keys, int min, int max, Span<int> counts)

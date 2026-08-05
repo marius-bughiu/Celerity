@@ -201,6 +201,56 @@ public class CountingSortTests
     }
 
     [Fact]
+    public void Sort_ShouldDoNothing_WhenARangedSpanHasFewerThanTwoKeys()
+    {
+        // The declared range sizes the counter buffer, not the input, so a one-key sort over a wide
+        // range would otherwise rent and clear megabytes to do nothing.
+        int[] single = [7];
+        int[] empty = [];
+        int[] payload = [1];
+        int[] counts = new int[CountingSort.RequiredCounts(0, 1_000_000)];
+
+        CountingSort.Sort(single.AsSpan(), 0, 1_000_000);
+        CountingSort.Sort(empty.AsSpan(), 0, 1_000_000);
+        CountingSort.SortWithScratch(single.AsSpan(), 0, 1_000_000, counts.AsSpan());
+        CountingSort.Sort<int>(single.AsSpan(), payload.AsSpan(), 0, 1_000_000);
+        CountingSort.SortWithScratch(
+            single.AsSpan(),
+            payload.AsSpan(),
+            0,
+            1_000_000,
+            new int[1].AsSpan(),
+            counts.AsSpan());
+
+        Assert.Equal([7], single);
+        Assert.Empty(empty);
+        Assert.Equal([1], payload);
+    }
+
+    [Fact]
+    public void Sort_ShouldStillThrow_WhenTheLoneKeyFallsOutsideTheDeclaredRange()
+    {
+        // The fast path skips the histogram pass, so it has to carry that pass's range contract.
+        int[] single = [42];
+        int[] payload = [1];
+        int[] counts = new int[CountingSort.RequiredCounts(0, 10)];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => CountingSort.Sort(single.AsSpan(), 0, 10));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => CountingSort.SortWithScratch(single.AsSpan(), 0, 10, counts.AsSpan()));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => CountingSort.Sort<int>(single.AsSpan(), payload.AsSpan(), 0, 10));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => CountingSort.SortWithScratch(
+                single.AsSpan(),
+                payload.AsSpan(),
+                0,
+                10,
+                new int[1].AsSpan(),
+                counts.AsSpan()));
+    }
+
+    [Fact]
     public void RequiredCounts_ShouldReturnTheInclusiveWidth_WhenTheRangeIsValid()
     {
         Assert.Equal(1, CountingSort.RequiredCounts(0, 0));
