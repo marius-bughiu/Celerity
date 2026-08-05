@@ -5,19 +5,22 @@ namespace Celerity.Sorting;
 
 /// <summary>
 /// <b>Counting sort over a bounded key range</b> — one histogram pass and one rewrite, no
-/// comparisons and no scratch for the keys-only forms, where
-/// <see cref="MemoryExtensions.Sort{T}(Span{T})"/> runs a full <c>O(n log n)</c> introsort.
-/// Covers <see cref="byte"/> keys, <see cref="ushort"/> keys, and <see cref="int"/> keys over a
-/// caller-declared <c>[min, max]</c> range — the shape enum ordinals, bucket ids, small scores and
-/// quantized values take.
+/// comparisons, and no key-sized scratch at all, where
+/// <see cref="MemoryExtensions.Sort{T}(Span{T})"/> runs a full <c>O(n log n)</c> introsort. The
+/// keys-only forms rewrite each run in place from the counts, so the only buffer they need is the
+/// counters themselves — stack-allocated for <see cref="byte"/> keys, and therefore free of any
+/// allocation whatsoever. Covers <see cref="byte"/> keys, <see cref="ushort"/> keys, and
+/// <see cref="int"/> keys over a caller-declared <c>[min, max]</c> range — the shape that enum
+/// ordinals, bucket ids, small scores and quantized values take.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>The documented BCL-beating workload</b> is sorting many values drawn from few distinct keys:
 /// histogram-and-rewrite is <c>O(n + range)</c>, so at a thousand elements over 256 buckets it does
 /// a fraction of introsort's work and the gap grows linearly with <c>n</c>. The keys-only forms
-/// never move an element twice — they overwrite each run in place from the counts — and allocate
-/// nothing at all for <see cref="byte"/> keys.
+/// never move an element twice — they overwrite each run in place from the counts. The
+/// <see cref="byte"/>-keyed one allocates nothing at all; the wider ones rent their counters, or
+/// take them from the caller through <c>SortWithScratch</c>.
 /// </para>
 /// <para>
 /// <b>Where it loses:</b> when <c>range</c> approaches or exceeds <c>n</c>. The histogram costs

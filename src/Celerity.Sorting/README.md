@@ -19,7 +19,7 @@ scratch. That is exactly the flexibility-for-speed trade Celerity exists to make
   ranks without moving a wide payload. **Stable.**
 - **`CountingSort`** — bounded key ranges (`byte`, `ushort`, or `int` over a
   declared `[min, max]`): one histogram pass and one run-fill, `O(n + range)`,
-  for the shape enum ordinals, bucket ids and quantized scores take. The
+  for the shape that enum ordinals, bucket ids and quantized scores take. The
   keys-only forms never move an element twice.
 - **`PartialSort`** — `Select` / `Sort` are an `O(n)` in-place introselect for
   the *k* smallest; `TopK` is an `O(n log k)` bounded heap over a read-only span.

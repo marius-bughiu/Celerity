@@ -31,7 +31,7 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 | Sorting many primitive keys — ids, join keys, timestamps, particle indices | `RadixSort.Sort` | Four (32-bit) or eight (64-bit) counting passes with sequential reads and no comparisons, versus introsort's `O(n log n)` mispredicting branches. Stable. |
 | Sorting keys that carry a parallel payload | `RadixSort.Sort(keys, values)` | Same passes, moving the payload alongside. Unlike `Array.Sort(keys, items)` it is **stable**, so equal keys keep their payload order. |
 | Ranking without moving a wide payload | `RadixSort.ArgSort` | Produces the sorting permutation and leaves the keys untouched — gather the payload yourself afterwards. The BCL has no argsort. |
-| Sorting values drawn from **few distinct keys** — enum ordinals, bucket ids, quantized scores | `CountingSort.Sort` | One histogram pass and one run-fill, `O(n + range)`. The keys-only forms never move an element twice and allocate nothing for `byte` keys. |
+| Sorting values drawn from **few distinct keys** — enum ordinals, bucket ids, quantized scores | `CountingSort.Sort` | One histogram pass and one run-fill, `O(n + range)`. The keys-only forms never move an element twice, and the `byte`-keyed one allocates nothing at all. |
 | Only the *k* smallest of *n* are wanted, order within them irrelevant | `PartialSort.Select` | `O(n)` introselect instead of an `O(n log n)` sort of everything. |
 | Only the *k* smallest are wanted, **in order** | `PartialSort.Sort` | The same selection, then a sort of just the `k`. |
 | The *k* largest of a span you **must not reorder** | `PartialSort.TopK` | `O(n log k)` bounded heap into a caller-supplied destination; the source is never written. |
