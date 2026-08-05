@@ -57,6 +57,7 @@ internal class Program
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),
         typeof(StringKeyProbeBenchmark),
+        typeof(SortedSpanBenchmark),
         typeof(StringHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };
