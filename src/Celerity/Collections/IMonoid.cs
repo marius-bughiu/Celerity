@@ -28,6 +28,15 @@ namespace Celerity.Collections;
 /// </description></item>
 /// </list>
 /// <para>
+/// Both laws are required only over the implementation's <b>domain</b> — the set of values it declares itself
+/// defined for — not over every bit pattern <typeparamref name="T"/> can hold. An implementation that restricts
+/// its domain must say so, because a value outside it produces an unspecified aggregate rather than a thrown
+/// exception. Two shipped monoids do restrict it: <see cref="MinMonoid{T}"/> and <see cref="MaxMonoid{T}"/> are
+/// defined over the <i>finite</i> values of a floating-point <typeparamref name="T"/>, since their identity is
+/// the largest / smallest finite value and <c>NaN</c> loses every comparison. The other three are defined over
+/// all of <typeparamref name="T"/>.
+/// </para>
+/// <para>
 /// Commutativity is <b>not</b> required. <see cref="SegmentTree{T, TMonoid}"/> preserves index order when it
 /// folds, so a non-commutative operation (matrix product, "last write wins", string concatenation) is a valid
 /// monoid here.
@@ -37,21 +46,27 @@ namespace Celerity.Collections;
 /// argument:
 /// </para>
 /// <code>
-/// public readonly struct GcdMonoid : IMonoid&lt;int&gt;
+/// public readonly struct GcdMonoid : IMonoid&lt;uint&gt;
 /// {
-///     public int Identity =&gt; 0;   // gcd(0, a) == a
+///     public uint Identity =&gt; 0;   // gcd(0, a) == a
 ///
-///     public int Combine(int left, int right)
+///     public uint Combine(uint left, uint right)
 ///     {
 ///         while (right != 0)
 ///             (left, right) = (right, left % right);
 ///
-///         return Math.Abs(left);
+///         return left;
 ///     }
 /// }
 ///
-/// var tree = new SegmentTree&lt;int, GcdMonoid&gt;(values);
+/// var tree = new SegmentTree&lt;uint, GcdMonoid&gt;(values);
 /// </code>
+/// <para>
+/// That example is written over <see cref="uint"/> deliberately. A signed gcd has to normalize its sign, and
+/// the obvious <c>Math.Abs</c> throws on <see cref="int.MinValue"/> — whose true gcd with <c>0</c> is
+/// <c>2147483648</c>, a value no <see cref="int"/> can hold. Restricting the domain to unsigned values removes
+/// the corner rather than papering over it.
+/// </para>
 /// </remarks>
 public interface IMonoid<T>
 {

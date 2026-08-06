@@ -14,6 +14,11 @@ namespace Celerity.Collections;
 /// sequence that keeps changing is the headline <see cref="SegmentTree{T, TMonoid}"/> workload.
 /// </para>
 /// <para>
+/// <b>Domain.</b> For an integral <typeparamref name="T"/> the monoid laws hold over every value. For a
+/// floating-point one the domain is the <b>finite</b> values only: the identity law fails at <c>±∞</c> and
+/// <c>NaN</c>, as described next, and <see cref="IMonoid{T}"/> permits a declared domain for exactly this case.
+/// </para>
+/// <para>
 /// <b>Floating-point caveat.</b> The identity is <c>T.MaxValue</c> — the largest <i>finite</i> value — because
 /// <see cref="IMinMaxValue{TSelf}"/> is what the constraint can ask for. For <see cref="float"/> /
 /// <see cref="double"/> that means a stored <c>+∞</c> aggregates to <c>T.MaxValue</c> rather than to <c>+∞</c>.

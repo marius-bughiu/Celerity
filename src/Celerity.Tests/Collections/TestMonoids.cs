@@ -28,6 +28,26 @@ internal readonly struct FirstNonZeroMonoid : IMonoid<int>
     public int Combine(int left, int right) => left != 0 ? left : right;
 }
 
+/// <summary>
+/// The greatest common divisor, transcribed verbatim from the "write your own fold" example in
+/// <see cref="IMonoid{T}"/>'s docs, the API reference and the README. A doc sample a reader is invited to
+/// copy has to actually work, so it is pinned here rather than only inspected. It is written over
+/// <see cref="uint"/> for the reason the docs state: a signed gcd has to normalize its sign, and
+/// <c>Math.Abs(int.MinValue)</c> throws.
+/// </summary>
+internal readonly struct GcdMonoid : IMonoid<uint>
+{
+    public uint Identity => 0;   // gcd(0, a) == a
+
+    public uint Combine(uint left, uint right)
+    {
+        while (right != 0)
+            (left, right) = (right, left % right);
+
+        return left;
+    }
+}
+
 /// <summary>A monoid that carries state, so the instance-taking constructors have something to prove.</summary>
 internal readonly struct SaturatingSumMonoid : IMonoid<int>
 {

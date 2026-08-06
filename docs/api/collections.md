@@ -4277,7 +4277,7 @@ public sealed class SegmentTree<T, TMonoid> : IReadOnlyList<T>
 
 A **segment tree** is a fixed-length, array-backed sequence that answers the aggregate of any half-open range under an arbitrary **associative** operation, and applies point updates, in `O(log n)` each — over a single flat array of `2n` elements with no per-node object overhead.
 
-It is the half of the range-query space [`FenwickTree<T>`](#fenwicktreet) cannot reach. A Fenwick range query is the *difference* of two prefix folds, so the operation must have an inverse — which is why that type is constrained to `INumber<T>` and answers sums only. A segment tree stores each node's fold outright and never subtracts, so range **minimum**, **maximum**, **gcd**, bitwise **and**/**or**, and any fold you write yourself are all in reach. Where sums are what you want, prefer `FenwickTree<T>`: it does the same job in half the memory.
+It is the half of the range-query space [`FenwickTree<T>`](#fenwicktreet) cannot reach. A Fenwick range query is the *difference* of two prefix folds, so the operation must have an inverse — which is why that type is constrained to `INumber<T>` and answers sums only. A segment tree stores each node's fold outright and never subtracts, so range **minimum**, **maximum**, **gcd**, bitwise **and**/**or** — and any fold you write yourself — are all in reach. Where sums are what you want, prefer `FenwickTree<T>`: it does the same job in half the memory.
 
 The BCL has no range-aggregate structure at all, so the baseline is a plain `T[]` and a scan — `values.AsSpan(start, length).Min()` is `O(n)` per query, and precomputing the answers is `O(n)` per update.
 
@@ -4298,6 +4298,8 @@ An implementation must satisfy the two monoid laws, because the tree relies on b
 - **Associativity** — `Combine(Combine(a, b), c)` equals `Combine(a, Combine(b, c))`. The tree chooses its own bracketing, so a non-associative operation gives an unspecified answer.
 - **Identity** — `Combine(Identity, a)` and `Combine(a, Identity)` both equal `a`. `Identity` is the aggregate of an empty range and the value of every element of a freshly constructed tree.
 
+Both laws are required only over the implementation's **domain** — the set of values it declares itself defined for — not over every bit pattern `T` can hold. An implementation that restricts its domain must say so, because a value outside it produces an unspecified aggregate rather than a thrown exception. Two of the shipped monoids do restrict it: `MinMonoid<T>` and `MaxMonoid<T>` are defined over the *finite* values of a floating-point `T` (see the caveat below). The other three are defined over all of `T`.
+
 **Commutativity is not required.** The query folds the nodes it takes from the left and from the right into two separate accumulators and combines them in index order at the end, so a non-commutative operation (matrix product, "first non-zero wins", string concatenation) gets the same answer a left-to-right scan would.
 
 Five folds ship with the library:
@@ -4313,21 +4315,23 @@ Five folds ship with the library:
 Anything else is a field-free struct you write:
 
 ```csharp
-public readonly struct GcdMonoid : IMonoid<int>
+public readonly struct GcdMonoid : IMonoid<uint>
 {
-    public int Identity => 0;                 // gcd(0, a) == a
+    public uint Identity => 0;                  // gcd(0, a) == a
 
-    public int Combine(int left, int right)
+    public uint Combine(uint left, uint right)
     {
         while (right != 0)
             (left, right) = (right, left % right);
 
-        return Math.Abs(left);
+        return left;
     }
 }
 
-var tree = new SegmentTree<int, GcdMonoid>(values);
+var tree = new SegmentTree<uint, GcdMonoid>(values);
 ```
+
+That example is written over `uint` deliberately. A signed gcd has to normalize its sign, and the obvious `Math.Abs` throws on `int.MinValue` — whose true gcd with `0` is `2147483648`, a value no `int` can hold. Restricting the domain to unsigned values removes the corner rather than papering over it.
 
 **Floating-point caveat on `MinMonoid<T>` / `MaxMonoid<T>`.** The identity is `T.MaxValue` / `T.MinValue`, which for `float` and `double` are the largest and smallest *finite* values, not the infinities. A stored `+∞` therefore aggregates to `T.MaxValue` under `MinMonoid<double>`. And `NaN` loses every `<` comparison, so `Combine(NaN, x)` is `x` while `Combine(x, NaN)` is `NaN` — the aggregate of a range containing a `NaN` depends on where it sits. Both are the ordinary consequences of ordering IEEE values by `<`; if you need IEEE-exact semantics, pass a custom monoid that calls `T.Min` / `T.Max`.
 

@@ -18,7 +18,7 @@ namespace Celerity.Collections;
 /// is the <i>difference</i> of two prefix folds, so the operation must have an inverse — which is why that type
 /// is constrained to <c>INumber&lt;T&gt;</c> and answers sums only. A segment tree stores each node's fold
 /// outright and never subtracts, so range <b>minimum</b>, <b>maximum</b>, <b>gcd</b>, bitwise
-/// <b>and</b>/<b>or</b>, and any user-written associative fold are all in reach. Where sums are what you want,
+/// <b>and</b>/<b>or</b> — and any user-written associative fold — are all in reach. Where sums are what you want,
 /// prefer <see cref="FenwickTree{T}"/> — it does the same job in half the memory.
 /// </para>
 /// <para>

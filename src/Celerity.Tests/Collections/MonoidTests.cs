@@ -153,6 +153,23 @@ public class MonoidTests
     }
 
     [Fact]
+    public void SegmentTree_ShouldAnswerRangeGcd_UnderTheDocumentedUserWrittenMonoid()
+    {
+        // GcdMonoid is the "write your own fold" example printed in IMonoid's docs, the API reference and the
+        // README. Pinning it here means the sample a reader copies is one that has been run.
+        uint[] values = { 12, 18, 24, 9, 27 };
+        var tree = new SegmentTree<uint, GcdMonoid>(values);
+
+        Assert.Equal(6u, tree.Query(0, 3));    // gcd(12, 18, 24)
+        Assert.Equal(9u, tree.Query(3, 5));    // gcd(9, 27)
+        Assert.Equal(3u, tree.Aggregate);
+        Assert.Equal(0u, tree.Query(2, 2));    // the identity, and gcd(0, a) == a
+
+        tree[0] = 5;
+        Assert.Equal(1u, tree.Aggregate);
+    }
+
+    [Fact]
     public void SegmentTree_ShouldAgreeWithFenwickTree_OnRangeSums()
     {
         // The two range structures overlap on exactly one fold — addition, the only one Fenwick can do — so

@@ -572,13 +572,13 @@ book[3] = 999;                         // that order was filled, O(log n)
 Console.WriteLine(book.Query(0, 4));   // 102 — refolded
 
 // Any monoid works. Write a struct with an Identity and an associative Combine:
-public readonly struct GcdMonoid : IMonoid<int>
+public readonly struct GcdMonoid : IMonoid<uint>
 {
-    public int Identity => 0;
-    public int Combine(int left, int right)
+    public uint Identity => 0;                  // gcd(0, a) == a
+    public uint Combine(uint left, uint right)
     {
         while (right != 0) (left, right) = (right, left % right);
-        return Math.Abs(left);
+        return left;
     }
 }
 ```
