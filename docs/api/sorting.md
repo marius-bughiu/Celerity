@@ -182,6 +182,8 @@ struct hashers follow. Nulls sort first under the natural order, matching `Compa
 | `TopK<T, TComparer>(ReadOnlySpan<T> source, Span<T> destination, TComparer comparer)` | The same under a custom order — pass a reversing comparer to take the *smallest*. |
 
 **Exceptions.** `ArgumentOutOfRangeException` when `count` is negative or greater than `keys.Length`.
+`ArgumentException` when a `TopK` `destination` shares storage with its `source`. As everywhere else
+in the package, only genuine overlap is rejected — two disjoint slices of one array are fine.
 
 **Properties worth relying on.**
 
@@ -195,7 +197,8 @@ struct hashers follow. Nulls sort first under the natural order, matching `Compa
   an `IComparer<T>`-typed helper and so boxes a `struct` comparer on every call. If you want
   introsort's constant factor over a whole span, call the BCL directly.
 - **Not stable**, in any form.
-- **`TopK` never writes to `source`** and allocates nothing — the destination *is* the heap.
+- **`TopK` never writes to `source`** and allocates nothing — the destination *is* the heap, which
+  is why a `destination` overlapping `source` is rejected rather than silently answered wrongly.
 
 ```csharp
 using Celerity.Sorting;

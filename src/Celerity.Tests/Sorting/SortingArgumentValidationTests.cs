@@ -146,6 +146,30 @@ public class SortingArgumentValidationTests
     }
 
     [Fact]
+    public void TopK_ShouldThrow_WhenTheDestinationSharesStorageWithTheSource()
+    {
+        int[] buffer = [5, 1, 4, 2, 3];
+
+        var whole = Assert.Throws<ArgumentException>(
+            () => PartialSort.TopK<int>(buffer, buffer.AsSpan()));
+        Assert.Equal("destination", whole.ParamName);
+
+        var partial = Assert.Throws<ArgumentException>(
+            () => PartialSort.TopK<int>(buffer.AsSpan(0, 4), buffer.AsSpan(3, 2)));
+        Assert.Equal("destination", partial.ParamName);
+    }
+
+    [Fact]
+    public void TopK_ShouldSucceed_WhenTheDestinationOnlyNeighboursTheSource()
+    {
+        // Co-residence in one buffer is fine; only genuine overlap is rejected.
+        int[] buffer = [5, 1, 4, 2, 0, 0];
+
+        Assert.Equal(2, PartialSort.TopK<int>(buffer.AsSpan(0, 4), buffer.AsSpan(4, 2)));
+        Assert.Equal([5, 4], buffer.AsSpan(4, 2).ToArray());
+    }
+
+    [Fact]
     public void ArgSort_ShouldThrow_WhenTheIndexBufferSharesStorageWithTheKeys()
     {
         int[] buffer = [3, 1, 2];

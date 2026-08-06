@@ -51,6 +51,7 @@ internal class Program
         typeof(TrieBenchmark),
         typeof(StringInternTableBenchmark),
         typeof(FenwickTreeBenchmark),
+        typeof(SegmentTreeBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
         typeof(RadixSortBenchmark),

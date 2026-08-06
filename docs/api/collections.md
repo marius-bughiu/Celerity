@@ -4245,7 +4245,7 @@ Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `i
 
 ### Choosing it
 
-Reach for `FenwickTree<T>` when you maintain a **mutable numeric sequence** and repeatedly ask for prefix or range sums *while* the values change — running totals, rank / order-statistics counters, cumulative-frequency tables, or windowed aggregates over a history you also edit. If your data is **immutable** after you build it, a one-shot precomputed prefix-sum `T[]` answers queries in `O(1)` with less code; if you **only ever update** and never query a partial sum, a raw array is simpler. The Fenwick tree wins precisely when both happen — updates *and* partial-sum queries interleave. For range **updates** with point queries, apply the tree to the difference array; for range-update + range-query, two Fenwick trees or a segment tree are the next step (not shipped). This type is not thread-safe; concurrent callers must synchronize externally.
+Reach for `FenwickTree<T>` when you maintain a **mutable numeric sequence** and repeatedly ask for prefix or range sums *while* the values change — running totals, rank / order-statistics counters, cumulative-frequency tables, or windowed aggregates over a history you also edit. If your data is **immutable** after you build it, a one-shot precomputed prefix-sum `T[]` answers queries in `O(1)` with less code; if you **only ever update** and never query a partial sum, a raw array is simpler. The Fenwick tree wins precisely when both happen — updates *and* partial-sum queries interleave. For range **updates** with point queries, apply the tree to the difference array. For a fold with **no inverse** — minimum, maximum, gcd, bitwise and/or — a Fenwick tree cannot answer the query at all, because it computes a range as the *difference* of two prefix sums; reach for [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) instead. This type is not thread-safe; concurrent callers must synchronize externally.
 
 ### Usage example
 
@@ -4266,6 +4266,140 @@ foreach (int x in data)
 }
 
 Console.WriteLine(inversions); // 8
+```
+
+## SegmentTree&lt;T, TMonoid&gt;
+
+```csharp
+public sealed class SegmentTree<T, TMonoid> : IReadOnlyList<T>
+    where TMonoid : struct, IMonoid<T>
+```
+
+A **segment tree** is a fixed-length, array-backed sequence that answers the aggregate of any half-open range under an arbitrary **associative** operation, and applies point updates, in `O(log n)` each — over a single flat array of `2n` elements with no per-node object overhead.
+
+It is the half of the range-query space [`FenwickTree<T>`](#fenwicktreet) cannot reach. A Fenwick range query is the *difference* of two prefix folds, so the operation must have an inverse — which is why that type is constrained to `INumber<T>` and answers sums only. A segment tree stores each node's fold outright and never subtracts, so range **minimum**, **maximum**, **gcd**, bitwise **and**/**or** — and any fold you write yourself — are all in reach. Where sums are what you want, prefer `FenwickTree<T>`: it does the same job in half the memory.
+
+The BCL has no range-aggregate structure at all, so the baseline is a plain `T[]` and a loop that folds the slice element by element — `O(n)` per query, whatever the fold — while precomputing the answers instead makes every point update `O(n)`. There is not even a span helper to lean on: `Span<T>` has no `Min` or `Max`, let alone an arbitrary combine, so the loop is written out by hand. (The benchmark measures the range-**minimum** instance of it, which is the cheapest per element the baseline gets.)
+
+### The fold: `IMonoid<T>`
+
+```csharp
+public interface IMonoid<T>
+{
+    T Identity { get; }
+    T Combine(T left, T right);
+}
+```
+
+`TMonoid` is a `struct, IMonoid<T>` **type parameter** rather than an interface-typed instance, for the same reason the hashed collections take their hasher that way: the JIT specializes the tree for the concrete struct and inlines `Combine` instead of emitting an interface call, and a query or an update calls it `O(log n)` times.
+
+An implementation must satisfy the two monoid laws, because the tree relies on both to answer a query from precomputed partial folds:
+
+- **Associativity** — `Combine(Combine(a, b), c)` equals `Combine(a, Combine(b, c))`. The tree chooses its own bracketing, so a non-associative operation gives an unspecified answer.
+- **Identity** — `Combine(Identity, a)` and `Combine(a, Identity)` both equal `a`. `Identity` is the aggregate of an empty range and the value of every element of a freshly constructed tree.
+
+Both laws are required only over the implementation's **domain** — the set of values it declares itself defined for — not over every bit pattern `T` can hold. An implementation that restricts its domain must say so, because a value outside it produces an unspecified aggregate rather than a thrown exception. Two of the shipped monoids do restrict it: `MinMonoid<T>` and `MaxMonoid<T>` are defined over the *finite* values of a floating-point `T` (see the caveat below). The other three are defined over all of `T`.
+
+**Commutativity is not required.** The query folds the nodes it takes from the left and from the right into two separate accumulators and combines them in index order at the end, so a non-commutative operation (matrix product, "first non-zero wins", string concatenation) gets the same answer a left-to-right scan would.
+
+Five folds ship with the library:
+
+| Monoid | `Identity` | `Combine` | Constraint on `T` |
+| --- | --- | --- | --- |
+| `SumMonoid<T>` | `T.Zero` | `left + right` | `struct, INumberBase<T>` |
+| `MinMonoid<T>` | `T.MaxValue` | the smaller | `struct, INumber<T>, IMinMaxValue<T>` |
+| `MaxMonoid<T>` | `T.MinValue` | the larger | `struct, INumber<T>, IMinMaxValue<T>` |
+| `BitwiseAndMonoid<T>` | `~T.Zero` (all ones) | `left & right` | `struct, INumberBase<T>, IBitwiseOperators<T, T, T>` |
+| `BitwiseOrMonoid<T>` | `T.Zero` | `left \| right` | `struct, INumberBase<T>, IBitwiseOperators<T, T, T>` |
+
+Anything else is a field-free struct you write:
+
+```csharp
+public readonly struct GcdMonoid : IMonoid<uint>
+{
+    public uint Identity => 0;                  // gcd(0, a) == a
+
+    public uint Combine(uint left, uint right)
+    {
+        while (right != 0)
+            (left, right) = (right, left % right);
+
+        return left;
+    }
+}
+
+var tree = new SegmentTree<uint, GcdMonoid>(values);
+```
+
+That example is written over `uint` deliberately. A signed gcd has to normalize its sign, and the obvious `Math.Abs` throws on `int.MinValue` — whose true gcd with `0` is `2147483648`, a value no `int` can hold. Restricting the domain to unsigned values removes the corner rather than papering over it.
+
+**Floating-point caveat on `MinMonoid<T>` / `MaxMonoid<T>`.** The identity is `T.MaxValue` / `T.MinValue`, which for `float` and `double` are the largest and smallest *finite* values, not the infinities. A stored `+∞` therefore aggregates to `T.MaxValue` under `MinMonoid<double>`. And `NaN` loses every `<` comparison, so `Combine(NaN, x)` is `x` while `Combine(x, NaN)` is `NaN` — the aggregate of a range containing a `NaN` depends on where it sits. Both are the ordinary consequences of ordering IEEE values by `<`; if you need IEEE-exact semantics, pass a custom monoid that calls `T.Min` / `T.Max`.
+
+### How it works
+
+The logical element at index `i` lives at `tree[n + i]`, and every internal node `k` in `[1, n)` holds `Combine(tree[2k], tree[2k + 1])` — exactly `2n` cells, with index `0` unused. A point update writes the leaf and refolds each ancestor from its two children. A range query walks outward from both ends, taking each node that is fully inside the range and halving the bounds one level per step.
+
+The usual segment-tree layout pads the leaf count up to a power of two and pays up to `4n` cells. This one does not, and the reason it can get away with `2n` is worth stating: at a length that is not a power of two the leaves sit in a rotated order, so an internal node can span a wrapped, non-contiguous range — but a query that keeps its two directions in separate accumulators never combines such a node into the wrong side. One visible consequence is that `tree[1]` is the whole-sequence fold *only* at power-of-two lengths, which is why `Aggregate` is a query rather than a root read. The claim is pinned by an exhaustive differential sweep over every length and every range under a non-commutative fold, which is the only kind that can observe a violation.
+
+### Range updates are not supported
+
+Applying an operation to every element of a range in `O(log n)` needs lazy propagation, which needs a second monoid describing how updates compose plus a distributive law relating the two. That is a different type with a different contract, not an overload of this one. Update point by point, or apply this tree to a difference sequence.
+
+### The documented BCL-beating workload
+
+Any stream that **mixes point updates with range-aggregate queries under a non-invertible fold**: sliding-window minima and maxima over a mutating history, "cheapest offer in this price band" over a live order book, per-window capability masks (`BitwiseAndMonoid`), and range gcd. Against a plain array these are `O(n·q)`; against the segment tree they are `O(q·log n)`. Measured on the short-run local sweep at 100,000 elements: interleaved update + range-minimum **14.8x** faster than the array scan, and a batch of range-minimum queries against a pre-built tree **81x** faster. At 1,000 elements the margins narrow to **1.4x** and **3.7x** — a scan of a thousand contiguous `long`s is cache-friendly enough that `O(log n)` barely pays for itself. See the [segment-tree benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=SegmentTree) on the dashboard.
+
+### Constructors
+
+```csharp
+public SegmentTree(int length)                              // length elements, all Identity
+public SegmentTree(int length, TMonoid monoid)
+public SegmentTree(IEnumerable<T> values)                   // O(n) build seeded with values, in order
+public SegmentTree(IEnumerable<T> values, TMonoid monoid)
+```
+
+`length` must be non-negative and at most `Array.MaxLength / 2` — the layout stores two cells per element (`ArgumentOutOfRangeException` otherwise). The length is **fixed** at construction; the tree does not grow. `Clear` resets the values to the identity but keeps the length. The `IEnumerable<T>` overloads throw `ArgumentNullException` on a null source and never alias a caller-supplied array (they copy). The `monoid`-taking overloads exist for a fold that carries state; a field-free monoid needs neither, since the other two close over `default(TMonoid)`.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of logical elements (the fixed length). |
+| `T Aggregate { get; }` | The fold of every logical element — `Query(0, Count)`, and `Identity` for an empty tree. `O(log n)`, not a root read. |
+| `T this[int index] { get; set; }` | Get/set the logical value at `index`. The getter is `O(1)` (a direct leaf read); the setter is `O(log n)` (it refolds the path to the root). |
+| `void Combine(int index, T value)` | Fold `value` into the element at `index` — it becomes `Combine(current, value)` — in `O(log n)`. The monoid-native update: it needs no inverse, and the stored value stays on the left. |
+| `T Query(int start, int endExclusive)` | The fold of the logical elements in the half-open range `[start, endExclusive)`, in `O(log n)`. An empty range yields `Identity`. |
+| `void Clear()` | Reset every logical element to `Identity` (`O(n)`); the length is unchanged. |
+| `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order (`O(n)` total — the leaves are stored outright). |
+
+It implements `IReadOnlyList<T>`, not merely `IReadOnlyCollection<T>` as `FenwickTree<T>` does, because the leaves are stored outright: the indexer is a direct array read, so a consumer that indexes in a loop pays what it expects. A Fenwick tree recovers each value from a difference of prefix folds, which would make the same loop `O(n log n)`.
+
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator. **Every** mutation bumps the version: unlike `FenwickTree<T>`, an assignment that stores the value already there is not detected as a no-op, because `IMonoid<T>` carries no equality obligation and the tree will not impose one. Not thread-safe.
+
+### Choosing it
+
+Reach for `SegmentTree<T, TMonoid>` when you maintain a **mutable sequence** and repeatedly ask for the aggregate of a range *while* the values change, under a fold with **no inverse**. If the fold is addition, use `FenwickTree<T>` — same asymptotics, half the memory, shorter constant. If the sequence is **immutable** after you build it, a sparse table answers range minima in `O(1)` and a precomputed prefix array answers sums in `O(1)`, both with less code. If you **only ever update** and never query a range, a raw array is simpler. And if you need to update whole ranges at a time, this is not the type — see above. This type is not thread-safe; concurrent callers must synchronize externally.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A live order book: the cheapest ask in any price band, while prices keep moving.
+long[] asks = { 105, 102, 108, 101, 110, 103, 107, 104 };
+var book = new SegmentTree<long, MinMonoid<long>>(asks);
+
+Console.WriteLine(book.Query(0, 4));   // 101 — cheapest in the first band
+Console.WriteLine(book.Aggregate);     // 101 — cheapest overall
+
+book[3] = 999;                         // that order was filled and replaced
+
+Console.WriteLine(book.Query(0, 4));   // 102 — refolded in O(log n)
+Console.WriteLine(book.Aggregate);     // 102
+
+// A different fold over the same shape: which flags does every entry in the window still set?
+var masks = new SegmentTree<int, BitwiseAndMonoid<int>>(new[] { 0b1111, 0b1110, 0b1100, 0b0101 });
+Console.WriteLine(Convert.ToString(masks.Query(0, 3), 2));   // 1100
 ```
 
 ## BTreeDictionary&lt;TKey, TValue, TComparer&gt;

@@ -489,6 +489,9 @@ function escapeHtml(s) {
     // FenwickTree is a Binary Indexed Tree benchmarked against a plain long[] holding the raw values: point
     // updates are O(1) there, but every prefix / range sum re-adds the slice (O(n)). The tree keeps both O(log n).
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] },
+    // SegmentTree covers the folds a Fenwick tree structurally cannot — the baseline is the same plain long[],
+    // scanned for the range minimum, because the BCL has no range-aggregate structure at all.
+    { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',       vs: 'long[] (naive range min)', ops: ['Mixed', 'RangeMin'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
