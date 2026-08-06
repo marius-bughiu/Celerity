@@ -154,7 +154,13 @@ public static class RadixSort
     /// </summary>
     /// <param name="keys">The keys to rank. Not modified.</param>
     /// <param name="indices">Receives <c>keys.Length</c> indices into <paramref name="keys"/>, in ascending key order.</param>
-    /// <exception cref="ArgumentException"><paramref name="indices"/> is shorter than <paramref name="keys"/>, or shares storage with it.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="indices"/> is shorter than <paramref name="keys"/>. It is also thrown when
+    /// <paramref name="indices"/> shares storage with <paramref name="keys"/>, but only on the
+    /// <see cref="int"/>-keyed overload: the aliasing check is a same-element-type test, and for
+    /// every other key type an <see cref="int"/> index buffer can be made to overlap the keys only
+    /// by reinterpreting one buffer as another type, which is out of contract rather than checked.
+    /// </exception>
     /// <remarks>
     /// The point of an argsort is to avoid moving a wide payload: rank once, then gather. This form
     /// rents three buffers, so a hot loop that already owns its scratch should copy the keys itself
