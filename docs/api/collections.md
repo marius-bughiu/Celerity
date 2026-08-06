@@ -4279,7 +4279,7 @@ A **segment tree** is a fixed-length, array-backed sequence that answers the agg
 
 It is the half of the range-query space [`FenwickTree<T>`](#fenwicktreet) cannot reach. A Fenwick range query is the *difference* of two prefix folds, so the operation must have an inverse — which is why that type is constrained to `INumber<T>` and answers sums only. A segment tree stores each node's fold outright and never subtracts, so range **minimum**, **maximum**, **gcd**, bitwise **and**/**or** — and any fold you write yourself — are all in reach. Where sums are what you want, prefer `FenwickTree<T>`: it does the same job in half the memory.
 
-The BCL has no range-aggregate structure at all, so the baseline is a plain `T[]` and a scan — `values.AsSpan(start, length).Min()` is `O(n)` per query, and precomputing the answers is `O(n)` per update.
+The BCL has no range-aggregate structure at all, so the baseline is a plain `T[]` and a loop that folds the slice element by element — `O(n)` per query, whatever the fold — while precomputing the answers instead makes every point update `O(n)`. There is not even a span helper to lean on: `Span<T>` has no `Min` or `Max`, let alone an arbitrary combine, so the loop is written out by hand. (The benchmark measures the range-**minimum** instance of it, which is the cheapest per element the baseline gets.)
 
 ### The fold: `IMonoid<T>`
 

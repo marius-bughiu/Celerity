@@ -22,9 +22,11 @@ namespace Celerity.Collections;
 /// prefer <see cref="FenwickTree{T}"/> — it does the same job in half the memory.
 /// </para>
 /// <para>
-/// The BCL has no range-aggregate structure at all, so the baseline is a plain <c>T[]</c> and a scan:
-/// <c>values.AsSpan(start, length).Min()</c> is <c>O(n)</c> per query, and precomputing the answers is
-/// <c>O(n)</c> per update. The tree gives <b>both</b> in <c>O(log n)</c>, so it wins precisely when updates and
+/// The BCL has no range-aggregate structure at all, so the baseline is a plain <c>T[]</c> and a loop that folds
+/// the slice element by element — <c>O(n)</c> per query, whatever the fold — while precomputing the answers
+/// instead makes every point update <c>O(n)</c>. There is not even a span helper to lean on: <c>Span&lt;T&gt;</c>
+/// has no <c>Min</c> or <c>Max</c>, let alone an arbitrary combine, so the loop is written out by hand.
+/// The tree gives <b>both</b> in <c>O(log n)</c>, so it wins precisely when updates and
 /// range queries interleave — sliding-window minima and maxima over a mutating history, per-window
 /// capability masks, "cheapest offer in this price band" over a live order book, and the same rank / windowed
 /// aggregate shapes <see cref="FenwickTree{T}"/> serves for sums.

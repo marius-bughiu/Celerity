@@ -4,8 +4,10 @@ using Celerity.Collections;
 
 // SegmentTree<long, MinMonoid<long>> vs the plain-array baseline, on the fold FenwickTree structurally cannot
 // answer. A Fenwick range query is the difference of two prefix folds, so it needs an inverse; minimum has
-// none. The BCL ships no range-aggregate structure at all, so the honest baseline is a raw long[] and a scan:
-// values.AsSpan(start, length).Min() is O(n) per query, and precomputing the answers is O(n) per update.
+// none. The BCL ships no range-aggregate structure at all — not even a Span<T>.Min to lean on — so the honest
+// baseline is a raw long[] and a hand-written loop folding the slice: O(n) per query, while precomputing the
+// answers instead would make every point update O(n). Range minimum is the cheapest fold that loop can carry,
+// which makes it the baseline's best case and the fair one to measure against.
 //
 // Two categories cover the documented BCL-beating shape. Mixed interleaves point updates with range-minimum
 // queries (the headline workload: sliding-window minima over a mutating history, "cheapest offer in this
