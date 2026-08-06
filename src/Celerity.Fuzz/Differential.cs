@@ -54,6 +54,7 @@ internal static class Differential
         ("XorFilter", XorFilterCase),
         ("BitSet", BitSetCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
+        ("SegmentTree", SegmentTreeCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -1153,6 +1154,116 @@ internal static class Differential
         // ToBitSet feeds the mutable type back in; re-indexing it must be a fixed point.
         var rebuilt = new RankSelectBitVector(sut.ToBitSet());
         Check(rebuilt.Length == length && rebuilt.Count == positions.Count, "ToBitSet round trip disagreed");
+    }
+
+    // ---- segment tree --------------------------------------------------------
+
+    // The oracle is a plain array folded left to right, which is the definition the tree has to reproduce.
+    // Two things about the generated shape carry the weight. The length is drawn from a range that straddles
+    // several powers of two, because the 2n layout leaves the elements in a rotated order at every other
+    // length and that is the only place a wrapped internal node can reach the answer. And the fold is
+    // *non-commutative* — "the first non-zero value wins" — so a mis-ordered combine changes the result;
+    // under min or max it would not, which is exactly why those cannot be the oracle here.
+    private static void SegmentTreeCase(Random rng)
+    {
+        int length = rng.Next(1, 130);
+        var oracle = new int[length];
+        for (int i = 0; i < length; i++)
+            oracle[i] = rng.Next(0, 4) == 0 ? 0 : rng.Next(1, 100);   // zeroes are the identity
+
+        var sut = new SegmentTree<int, FirstNonZero>(oracle);
+
+        // Exhaustive on the freshly built tree, then sampled per operation and exhaustive again at the end.
+        // Every range on every step would make a single case quadratic in both length and op count, which
+        // would buy far fewer cases per second than it is worth.
+        CheckSegmentTree(sut, oracle, rng, exhaustive: true);
+
+        int ops = OpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int index = rng.Next(0, length);
+            int value = rng.Next(0, 4) == 0 ? 0 : rng.Next(1, 100);
+
+            switch (rng.Next(0, 10))
+            {
+                case 0:
+                    sut.Clear();
+                    Array.Clear(oracle);
+                    break;
+                case < 6:
+                    sut[index] = value;
+                    oracle[index] = value;
+                    break;
+                default:
+                    sut.Combine(index, value);
+                    oracle[index] = oracle[index] != 0 ? oracle[index] : value;
+                    break;
+            }
+
+            CheckSegmentTree(sut, oracle, rng, exhaustive: false);
+        }
+
+        CheckSegmentTree(sut, oracle, rng, exhaustive: true);
+    }
+
+    private static void CheckSegmentTree(SegmentTree<int, FirstNonZero> sut, int[] oracle, Random rng, bool exhaustive)
+    {
+        Check(sut.Count == oracle.Length, "Count disagreed");
+
+        int i = 0;
+        foreach (int value in sut)
+        {
+            Check(value == oracle[i], $"element {i} disagreed");
+            Check(sut[i] == oracle[i], $"indexer {i} disagreed");
+            i++;
+        }
+
+        Check(i == oracle.Length, "enumeration length disagreed");
+        Check(sut.Aggregate == FoldFirstNonZero(oracle, 0, oracle.Length), "Aggregate disagreed");
+
+        if (exhaustive)
+        {
+            for (int start = 0; start <= oracle.Length; start++)
+            {
+                for (int end = start; end <= oracle.Length; end++)
+                    Check(sut.Query(start, end) == FoldFirstNonZero(oracle, start, end),
+                        $"Query({start}, {end}) disagreed");
+            }
+
+            return;
+        }
+
+        for (int q = 0; q < 8; q++)
+        {
+            int a = rng.Next(0, oracle.Length + 1);
+            int b = rng.Next(0, oracle.Length + 1);
+            if (a > b)
+                (a, b) = (b, a);
+
+            Check(sut.Query(a, b) == FoldFirstNonZero(oracle, a, b), $"Query({a}, {b}) disagreed");
+        }
+    }
+
+    // The oracle: fold the half-open range left to right, exactly as the monoid's laws define it.
+    private static int FoldFirstNonZero(int[] oracle, int start, int endExclusive)
+    {
+        for (int k = start; k < endExclusive; k++)
+        {
+            if (oracle[k] != 0)
+                return oracle[k];
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// "The first non-zero value wins": associative, identity <c>0</c>, and deliberately non-commutative.
+    /// </summary>
+    private readonly struct FirstNonZero : IMonoid<int>
+    {
+        public int Identity => 0;
+
+        public int Combine(int left, int right) => left != 0 ? left : right;
     }
 
 

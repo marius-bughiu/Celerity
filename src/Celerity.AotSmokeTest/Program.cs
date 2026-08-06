@@ -639,6 +639,41 @@ void Check(bool condition, string message)
     Check(wide.Total == 499_500 && wide.PrefixSum(10) == 45, "FenwickTree int instantiation at scale");
 }
 
+// SegmentTree — range aggregates over a struct monoid. Two ILC-specific things are pinned here. The fold
+// arrives as a generic type argument, so every built-in monoid is a separate instantiation the compiler has
+// to specialize ahead of time (and MinMonoid / MaxMonoid reach static abstract IMinMaxValue<T> members for
+// their identity, the same generic-math shape as FenwickTree). And T is unconstrained, so a reference-typed
+// element type must work with no JIT to fall back on. Exercise the O(n) seeded build, the point update, the
+// range query at a non-power-of-two length (where the 2n layout's leaf rotation is live), Combine, clear and
+// the struct enumerator.
+{
+    var st = new SegmentTree<long, MinMonoid<long>>(new long[] { 3, 1, 4, 1, 5, 9, 2 });
+    Check(st.Count == 7 && st.Aggregate == 1, "SegmentTree seeded build + aggregate");
+    Check(st.Query(0, 3) == 1 && st.Query(4, 7) == 2 && st.Query(2, 2) == long.MaxValue,
+        "SegmentTree range queries + empty range");
+
+    st[1] = 8;
+    Check(st[1] == 8 && st.Query(0, 3) == 3, "SegmentTree point update refolds the path");
+
+    st.Combine(0, 0);
+    Check(st[0] == 0 && st.Aggregate == 0, "SegmentTree monoid-native update");
+
+    var values = new List<long>();
+    foreach (long v in st) values.Add(v);
+    Check(values.Count == 7 && values[1] == 8, "SegmentTree enumerates logical values");
+
+    st.Clear();
+    Check(st.Count == 7 && st.Aggregate == long.MaxValue, "SegmentTree clear resets to identity, keeps length");
+
+    // A second monoid over a second element type, so the fold really is specialized per instantiation.
+    var masks = new SegmentTree<int, BitwiseAndMonoid<int>>(new[] { 0b1111, 0b1110, 0b1100 });
+    Check(masks.Aggregate == 0b1100 && masks.Query(0, 2) == 0b1110, "SegmentTree bitwise-and instantiation");
+
+    // A reference-typed element type, which has no value-type layout for ILC to specialize around.
+    var words = new SegmentTree<string, AotConcatMonoid>(new[] { "a", "b", "c" });
+    Check(words.Aggregate == "abc" && words.Query(1, 3) == "bc", "SegmentTree reference-typed elements");
+}
+
 // BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
 // the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
 // IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the
@@ -1852,4 +1887,13 @@ return 1;
 internal readonly struct DescendingIntComparer : IComparer<int>
 {
     public int Compare(int x, int y) => y.CompareTo(x);
+}
+
+// A hand-written monoid for the SegmentTree instantiation above: a reference-typed, non-commutative fold, so
+// ILC compiles the constrained IMonoid<T> call for something other than the built-in numeric monoids.
+internal readonly struct AotConcatMonoid : IMonoid<string>
+{
+    public string Identity => string.Empty;
+
+    public string Combine(string left, string right) => left + right;
 }
