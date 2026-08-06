@@ -130,6 +130,7 @@ public static class PartialSort
     /// <param name="source">The elements to scan. Not modified.</param>
     /// <param name="destination">Receives the top <c>destination.Length</c> elements; its length is <c>k</c>.</param>
     /// <returns>The number of elements written — <c>destination.Length</c>, or <c>source.Length</c> when the source is shorter.</returns>
+    /// <exception cref="ArgumentException"><paramref name="destination"/> shares storage with <paramref name="source"/>.</exception>
     public static int TopK<T>(ReadOnlySpan<T> source, Span<T> destination)
         where T : IComparable<T> =>
         TopK<T, ComparableComparer<T>>(source, destination, default);
@@ -148,9 +149,15 @@ public static class PartialSort
     /// <param name="destination">Receives the top <c>destination.Length</c> elements; its length is <c>k</c>.</param>
     /// <param name="comparer">The comparer defining the order.</param>
     /// <returns>The number of elements written — <c>destination.Length</c>, or <c>source.Length</c> when the source is shorter.</returns>
+    /// <exception cref="ArgumentException"><paramref name="destination"/> shares storage with <paramref name="source"/>.</exception>
     public static int TopK<T, TComparer>(ReadOnlySpan<T> source, Span<T> destination, TComparer comparer)
         where TComparer : struct, IComparer<T>
     {
+        // The destination *is* the heap, so an aliasing destination would rewrite the source the
+        // method promises not to touch and read back its own partial output — a wrong answer rather
+        // than a failure, which is the same reason the two other sorters reject overlapping buffers.
+        SortingGuard.RequireDistinctStorage(source, destination, nameof(destination));
+
         int k = destination.Length;
         if (k == 0)
         {
