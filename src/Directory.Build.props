@@ -97,12 +97,18 @@
     older surface, so a break introduced after it goes unnoticed. The ritual is
     written up in CONTRIBUTING.md, section "Cutting a release".
 
-    All seven shipped packages (Celerity.Collections / Celerity.Hashing /
-    Celerity.Primitives / Celerity.Sorting / Celerity.Ring / Celerity.Sentinel /
-    Celerity.Cardinality) are published at this baseline and share it. A brand-new package has no
+    Six of the seven packages (Celerity.Collections / Celerity.Hashing /
+    Celerity.Primitives / Celerity.Ring / Celerity.Sentinel / Celerity.Cardinality)
+    are published at this baseline and share it. A brand-new package has no
     published predecessor to validate against, and asking for one fails the
     restore, so its .csproj sets CelerityNoPublishedBaseline to true until its
     first release ships, then drops the property.
+
+    Celerity.Sorting is that case right now: it is unreleased, so it carries the
+    property and is NOT validated against anything. Whoever cuts the release that
+    first publishes it must delete the property from Celerity.Sorting.csproj in
+    the same follow-up commit that bumps the baseline below, or the package keeps
+    shipping unvalidated.
 
     Only the baseline version lives here, so there is exactly one line to bump.
     Turning validation on has to happen later, in Directory.Build.targets, where
