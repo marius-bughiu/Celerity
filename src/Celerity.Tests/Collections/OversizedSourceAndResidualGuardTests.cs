@@ -20,6 +20,8 @@ namespace Celerity.Tests.Collections;
 /// than a <see cref="NotSupportedException"/> from <c>CopyTo</c>/<c>GetEnumerator</c>, or an
 /// <see cref="OutOfMemoryException"/> — is precisely the evidence that the length check runs first and that
 /// nothing is allocated or enumerated on the way to it. The whole test costs no memory at all.
+/// <see cref="SegmentTree{T, TMonoid}"/> takes the same fast path against a lower ceiling
+/// (<c>Array.MaxLength / 2</c>, since it stores two cells per element) and is pinned the same way.
 /// </para>
 ///
 /// <para>
@@ -102,6 +104,41 @@ public class OversizedSourceAndResidualGuardTests
         Assert.Equal(14, tree.Total);
         Assert.Equal(4, tree[2]);
         Assert.Equal(8, tree.PrefixSum(3));
+    }
+
+    // ---- SegmentTree: the same ceiling, half as tall ------------------------------------------------
+
+    [Fact]
+    public void SegmentTreeConstructor_ShouldThrowArgumentException_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        // The segment tree stores two cells per logical element, so its ceiling is Array.MaxLength / 2 — half
+        // the Fenwick one, and reached by the same count-first ordering.
+        var oversized = new LyingCountCollection(int.MaxValue);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(
+            () => new SegmentTree<int, SumMonoid<int>>(oversized));
+
+        Assert.Equal("values", ex.ParamName);
+        Assert.Contains("maximum supported length", ex.Message);
+    }
+
+    [Fact]
+    public void SegmentTreeConstructor_ShouldNotEnumerateOrCopy_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        var oversized = new LyingCountCollection(int.MaxValue);
+
+        Assert.Throws<ArgumentException>(() => new SegmentTree<int, SumMonoid<int>>(oversized));
+    }
+
+    [Fact]
+    public void SegmentTreeConstructor_ShouldAcceptCountedSource_WhenCountIsWithinTheMaximumLength()
+    {
+        var tree = new SegmentTree<int, MinMonoid<int>>(new List<int> { 3, 1, 4, 1, 5 });
+
+        Assert.Equal(5, tree.Count);
+        Assert.Equal(1, tree.Aggregate);
+        Assert.Equal(4, tree[2]);
+        Assert.Equal(1, tree.Query(0, 3));
     }
 
     // ---- Trie.Enumerator: the exhausted state latches ----------------------------------------------

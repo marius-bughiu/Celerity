@@ -100,9 +100,10 @@ The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `
 
 Both take their ordering as a **struct** `IComparer<T>` type parameter (`DefaultComparer<T>` by default), exactly as the hashers are struct type parameters, so the comparison inlines instead of costing a virtual call per key inspected inside a node.
 
-**Prefix sums**
+**Range aggregates**
 
 - `FenwickTree<T>` — a **Binary Indexed Tree** over a fixed-length numeric sequence (`where T : struct, INumber<T>`): **point update** and **prefix / range sum** both in `O(log n)`, in one flat array with no per-node overhead. The prefix-sum structure the BCL lacks — running aggregates, rank / order-statistics counters, cumulative-frequency tables — where a plain array is `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave.
+- `SegmentTree<T, TMonoid>` — range aggregates over an arbitrary **associative** fold: **point update** and **range query** both in `O(log n)`, in one flat array of `2n` cells. The half of the range-query space a Fenwick tree cannot reach — its query is the *difference* of two prefix folds, so it needs an inverse, while a segment tree stores each node's fold outright. That puts range **min**, **max**, **gcd**, bitwise **and**/**or** and any monoid you write in reach. The BCL has no range-aggregate structure at all, so the baseline is a plain array scanned per query. `SumMonoid` / `MinMonoid` / `MaxMonoid` / `BitwiseAndMonoid` / `BitwiseOrMonoid` ship built in, as struct type parameters so the fold inlines; non-commutative folds are safe, since the query preserves index order.
 
 **Probabilistic & bit-level**
 
@@ -556,6 +557,35 @@ Console.WriteLine(tree.Total);          // 33
 </details>
 
 <details>
+<summary><b>Range min / max / any associative fold with live updates</b> — SegmentTree</summary>
+
+`SegmentTree<T, TMonoid>` answers the aggregate of any half-open range under an arbitrary **associative** fold, with **point updates** and **range queries** both in `O(log n)`. It is the half of the range-query space `FenwickTree<T>` cannot reach: a Fenwick range query is the *difference* of two prefix sums, so the operation must have an inverse — minimum has none. The fold arrives as a **struct** type parameter, exactly like the hashers, so `Combine` inlines instead of costing a virtual call per level.
+
+```csharp
+// A live order book: the cheapest ask in any price band, while prices keep moving.
+var book = new SegmentTree<long, MinMonoid<long>>(new long[] { 105, 102, 108, 101, 110, 103 });
+
+Console.WriteLine(book.Query(0, 4));   // 101 — cheapest in the first band
+Console.WriteLine(book.Aggregate);     // 101 — cheapest overall
+
+book[3] = 999;                         // that order was filled, O(log n)
+Console.WriteLine(book.Query(0, 4));   // 102 — refolded
+
+// Any monoid works. Write a struct with an Identity and an associative Combine:
+public readonly struct GcdMonoid : IMonoid<int>
+{
+    public int Identity => 0;
+    public int Combine(int left, int right)
+    {
+        while (right != 0) (left, right) = (right, left % right);
+        return Math.Abs(left);
+    }
+}
+```
+
+</details>
+
+<details>
 <summary><b>Construct from an existing collection</b></summary>
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
@@ -623,6 +653,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Look a string key up from a `ReadOnlySpan<char>`** you already hold (route dispatch, header lookup, parse-then-map) without allocating a `string` per probe | span overloads on `FrozenCelerityDictionary` / `FrozenCeleritySet` / `CelerityDictionary<string, …>` / `CeleritySet<string, …>` / `Trie<TValue>` | `TryGetValue(ReadOnlySpan<char>, …)` / `ContainsKey` / `Contains` probe the table directly, deleting the `new string(span)` allocation and copy per lookup. Available whenever the hasher implements `ISpanHashProvider` — every built-in `String*Hasher` does. Same results as the `string` overloads (ordinal comparison); an empty span means `""`, never the `null` key. See [span-keyed lookups](docs/api/collections.md#span-keyed-lookups). |
 | **Sorted keys** — you need the entries in comparer order, or the ordered questions a hash table cannot answer: smallest / largest key, "first key at or after *x*", "every key in `[a, b)`" (time-series by timestamp, order books, LSM-style memtables, sweep-line events, interval endpoints) | `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` | B-tree with up to 31 keys per node in flat arrays: a lookup visits `log₃₂(n)` nodes instead of chasing `log₂(n)` pointers (~4 cache misses instead of ~20 at `n = 1M`), an in-order walk streams contiguous arrays rather than successor pointers, and allocation is one node per 31 entries instead of one object per entry. The BCL has no B-tree: `SortedDictionary<,>` / `SortedSet<>` are red-black trees, `SortedList<,>` is `O(n)` per middle insert, and `OrderedDictionary<,>` (.NET 9) is *insertion*-ordered, not sorted. Wins on the **interleaved insert + lookup + range-scan** load; for a few dozen entries a `SortedList<,>` is hard to beat, and if you never need order a hash table answers in `O(1)`. |
 | **Prefix / range sums over a sequence you keep mutating** — running aggregates, rank / order-statistics counters (inversions, "how many ≤ x seen"), cumulative-frequency tables | `FenwickTree<T>` | Binary Indexed Tree (`T : INumber<T>`): **point update** and **prefix / range sum** both `O(log n)`, in one array with no per-node overhead. The BCL has no prefix-sum structure; a plain array forces `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave. If the data is immutable after build, a one-shot precomputed prefix-sum array answers in `O(1)` with less code; if you only update and never query a partial sum, a raw array is simpler. |
+| **Range min / max / gcd / bit-mask over a sequence you keep mutating** — sliding-window extrema over a live history, "cheapest offer in this price band" over an order book, per-window capability masks, or any other **associative fold with no inverse** | `SegmentTree<T, TMonoid>` | Point update and range query both `O(log n)`, in one flat array of `2n` cells. `FenwickTree<T>` cannot answer these at all: it computes a range as the *difference* of two prefix folds, so the operation must be invertible. Five folds ship (`Sum` / `Min` / `Max` / `BitwiseAnd` / `BitwiseOr`) and any associative one you write is a field-free struct; non-commutative folds are safe. The BCL has no range-aggregate structure, so the alternative is an `O(n)` scan per query — **14.8× faster** on interleaved update + range-min at 100k, **81×** on a query batch, but only **1.4×** at 1k, where scanning a contiguous array is cache-friendly. If the fold is addition use `FenwickTree<T>` (half the memory); if the sequence never changes after build, a sparse table or a prefix array answers in `O(1)`. Range *updates* are not supported — that needs lazy propagation, a different contract. |
 | **Set algebra over two lists you already hold in sorted order** — intersect / union / diff sorted ID, row-id or posting lists, or just ask how many values they share (inverted indexes, cohort intersection, join-key pre-filters) | `SortedSpan.Intersect` / `Union` / `Except` / `IntersectCount` / `Overlaps` (in `Celerity.Primitives`) | Not a collection — static set algebra over spans. A two-cursor merge exploits the ordering the data already has, so it touches each element once and writes into caller-owned memory: **4.2× faster than `HashSet<int>` at 1M × 1M and 0 bytes allocated against 17.9 MB**, and **257× faster** on the asymmetric 1k × 10M shape where it gallops. `IntersectCount` / `Overlaps` need no buffer at all. ⚠️ **Both spans must be sorted ascending** — unsorted input silently returns a wrong answer. If your data is not already sorted, sorting it first to use this is usually a loss; reach for a set instead. See [sorted-span set algebra](docs/api/utilities.md#sortedspan-sorted-span-set-algebra). |
 | Need a stable iteration order or multi-threaded access | `BTreeDictionary<,>` / `BTreeSet<>` for sorted order, `Trie<TValue>` for ordered string keys; BCL `ConcurrentDictionary<,>` for concurrency | Celerity is single-threaded, and the **hash-based** collections leave iteration order unspecified. The ordered collections do promise order by contract: the B-trees iterate in comparer order, `Trie<TValue>` in ascending ordinal key order. |
 

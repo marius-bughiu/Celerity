@@ -21,7 +21,9 @@ namespace Celerity.Tests.Collections;
 /// <see cref="InvalidOperationException"/> — carrying the type's own diagnostic message, so a copy/paste
 /// slip between collections is caught — and, for <see cref="FenwickTree{T}"/>, assert the deliberate
 /// <i>exception</i> to the rule: a zero delta changes nothing observable, so by design it does not bump the
-/// version and must leave live enumerators usable.
+/// version and must leave live enumerators usable. <see cref="SegmentTree{T, TMonoid}"/> deliberately has no
+/// such exception (its fold carries no equality contract), so its companion test pins the weaker guarantee
+/// that survives: pure queries are not mutations.
 /// </para>
 ///
 /// <para>
@@ -97,6 +99,49 @@ public class EnumeratorInvalidationAndClearCoverageTests
         var second = tree.GetEnumerator();
         tree[2] = 9;
         Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
+    public void SegmentTreeEnumeratorReset_ShouldThrowInvalidOperationException_WhenTreeModified()
+    {
+        var tree = new SegmentTree<int, MinMonoid<int>>(4);
+        tree[0] = 5;
+
+        var enumerator = tree.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        tree.Combine(1, 7);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("The segment tree was modified during enumeration.", ex.Message);
+
+        var second = tree.GetEnumerator();
+        tree[2] = 9;
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
+    public void SegmentTreeEnumeratorReset_ShouldRewindWithoutThrowing_WhenTreeWasNotModified()
+    {
+        // The counterpart to the FenwickTree case below, and deliberately weaker: the segment tree has no
+        // no-op detection to lean on (IMonoid<T> carries no equality contract), so the only mutation-free
+        // window is one with no mutation in it at all. Queries must not close it.
+        var tree = new SegmentTree<int, MinMonoid<int>>(new[] { 4, 6, 1 });
+
+        var enumerator = tree.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        _ = tree.Query(0, 3);
+        _ = tree.Aggregate;
+        _ = tree[1];
+
+        enumerator.Reset();
+
+        var values = new List<int>();
+        while (enumerator.MoveNext())
+            values.Add(enumerator.Current);
+
+        Assert.Equal(new[] { 4, 6, 1 }, values);
     }
 
     [Fact]
