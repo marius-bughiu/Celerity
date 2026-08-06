@@ -39,7 +39,7 @@ jobs:
 
     # Runs before the build, and therefore long before `deploy` pushes to
     # NuGet.org (#315). A missing or over-long CHANGELOG section used to fail in
-    # `github-release`, i.e. after all six packages were already published and
+    # `github-release`, i.e. after all seven packages were already published and
     # unremovable. Failing here means nothing shipped: fix the CHANGELOG, re-tag.
     # The extracted file is handed to `github-release` as an artifact rather than
     # re-extracted there, so the release body is exactly what was validated.
@@ -86,7 +86,7 @@ jobs:
     - name: Create nuget package
       run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }} -p:ContinuousIntegrationBuild=true
 
-    # Fail loudly if any of the six packages is missing a symbol package or
+    # Fail loudly if any of the seven packages is missing a symbol package or
     # the required NuGet metadata (license, README, icon, repository URL), so a
     # mis-packed release never reaches NuGet.org.
     - name: Validate packages
