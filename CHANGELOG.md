@@ -20,7 +20,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
-- `PartialSort.TopK` now throws `ArgumentException` when its `destination` overlaps its `source`, instead of quietly returning a wrong answer and writing to the source it documents as untouched. The destination is the heap, so an aliasing buffer rewrites the source as it scans. Matches the buffer-aliasing checks `RadixSort` and `CountingSort` already make.
+- `PartialSort.TopK` now throws `ArgumentException` when its `destination` overlaps its `source`, instead of silently returning a wrong answer and writing to the source it documents as untouched. Disjoint slices of one array are still accepted, matching `RadixSort` and `CountingSort`.
 - Eight documentation links pointed at anchors that do not exist: seven `CeleritySet` / `SwissSet` references in `docs/api/collections.md` and one in `CHANGELOG.md`. GitHub deletes `<`, `>` and `,` from a heading without substituting a separator, so `CeleritySet&lt;T, THasher&gt;` anchors as `#celeritysett-thasher`, not the `#celerityset-t-thasher` everyone writes. Closes [#339](https://github.com/marius-bughiu/Celerity/issues/339).
 
 ## [2.5.0] - 2026-08-02
