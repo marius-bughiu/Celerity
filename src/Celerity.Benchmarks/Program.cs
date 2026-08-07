@@ -190,23 +190,39 @@ internal class Program
         string? replayPath = ArgumentValue(args, "--shard-classes");
         if (replayPath is not null)
         {
-            var wanted = new HashSet<string>(
-                File.ReadAllLines(replayPath)
-                    .Select(line => line.Trim())
-                    .Where(line => line.Length > 0),
-                StringComparer.Ordinal);
-
-            // Classes the replaying side does not have are simply absent — that is the PR
-            // head's newly added benchmark, which `main` cannot measure and which the
-            // comparison therefore reports as new rather than as a delta.
-            var present = new HashSet<string>(benchmarks.Select(t => t.Name), StringComparer.Ordinal);
-            var replayed = benchmarks.Where(t => wanted.Contains(t.Name)).ToArray();
-            foreach (string missing in wanted.Where(w => !present.Contains(w)).Order(StringComparer.Ordinal))
+            // Walk the file in order rather than filtering the suite by a set of names: the
+            // head wrote its classes in the order the packer produced, and running the base
+            // in a different order would reintroduce, in miniature, the systematic head/base
+            // difference this whole handoff exists to remove.
+            var byName = new Dictionary<string, Type>(StringComparer.Ordinal);
+            foreach (var type in benchmarks)
             {
-                Console.WriteLine($"Shard class '{missing}' is not in this side's core suite — skipping it.");
+                byName[type.Name] = type;
             }
 
-            return replayed;
+            var replayed = new List<Type>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string name in File.ReadLines(replayPath).Select(line => line.Trim()).Where(line => line.Length > 0))
+            {
+                if (!seen.Add(name))
+                {
+                    continue;
+                }
+
+                // A class the replaying side does not have is simply absent — that is the PR
+                // head's newly added benchmark, which `main` cannot measure and which the
+                // comparison therefore reports as new rather than as a delta.
+                if (byName.TryGetValue(name, out var type))
+                {
+                    replayed.Add(type);
+                }
+                else
+                {
+                    Console.WriteLine($"Shard class '{name}' is not in this side's core suite — skipping it.");
+                }
+            }
+
+            return replayed.ToArray();
         }
 
         int i = Array.IndexOf(args, "--shard");
