@@ -17,6 +17,12 @@ namespace Celerity.Tests.Collections;
 /// </summary>
 public class SetIEnumerableConstructorTests
 {
+    // The hash-table sets reserve an out-of-band null slot and never hash it.
+    // Keep the generic type non-nullable to match StringFnV1AHasher's contract
+    // while deliberately retaining runtime-null test data for that slot.
+    private static string[] CreateSourceWithRuntimeNulls(params string?[] values) =>
+        Array.ConvertAll(values, static value => value!);
+
     // ──────────────────────────────────────────────────────────────
     //  IntSet — source argument validation
     // ──────────────────────────────────────────────────────────────
@@ -480,7 +486,7 @@ public class SetIEnumerableConstructorTests
     public void CeleritySet_ShouldSilentlyDedupe_DuplicateNullElements()
     {
         // null is the out-of-band slot for reference-typed sets — ensure dedupe covers it.
-        var source = new[] { "a", null!, "b", null!, "c", null! };
+        var source = CreateSourceWithRuntimeNulls("a", null, "b", null, "c", null);
 
         var set = new CeleritySet<string, StringFnV1AHasher>(source);
 
@@ -509,7 +515,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void CeleritySet_ShouldCaptureNullElement_FromSource()
     {
-        var source = new[] { null!, "x", "y" };
+        var source = CreateSourceWithRuntimeNulls(null, "x", "y");
 
         var set = new CeleritySet<string, StringFnV1AHasher>(source);
 
@@ -662,7 +668,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void SwissSet_ShouldSilentlyDedupe_DuplicateNullElements()
     {
-        var source = new[] { "a", null!, "b", null!, "c", null! };
+        var source = CreateSourceWithRuntimeNulls("a", null, "b", null, "c", null);
 
         var set = new SwissSet<string, StringFnV1AHasher>(source);
 
@@ -689,7 +695,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void SwissSet_ShouldCaptureNullElement_FromSource()
     {
-        var source = new[] { null!, "x", "y" };
+        var source = CreateSourceWithRuntimeNulls(null, "x", "y");
 
         var set = new SwissSet<string, StringFnV1AHasher>(source);
 
@@ -844,7 +850,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void RobinHoodSet_ShouldSilentlyDedupe_DuplicateNullElements()
     {
-        var source = new[] { "a", null!, "b", null!, "c", null! };
+        var source = CreateSourceWithRuntimeNulls("a", null, "b", null, "c", null);
 
         var set = new RobinHoodSet<string, StringFnV1AHasher>(source);
 
@@ -871,7 +877,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void RobinHoodSet_ShouldCaptureNullElement_FromSource()
     {
-        var source = new[] { null!, "x", "y" };
+        var source = CreateSourceWithRuntimeNulls(null, "x", "y");
 
         var set = new RobinHoodSet<string, StringFnV1AHasher>(source);
 
@@ -1026,7 +1032,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void HashCachingSet_ShouldSilentlyDedupe_DuplicateNullElements()
     {
-        var source = new[] { "a", null!, "b", null!, "c", null! };
+        var source = CreateSourceWithRuntimeNulls("a", null, "b", null, "c", null);
 
         var set = new HashCachingSet<string, StringFnV1AHasher>(source);
 
@@ -1053,7 +1059,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void HashCachingSet_ShouldCaptureNullElement_FromSource()
     {
-        var source = new[] { null!, "x", "y" };
+        var source = CreateSourceWithRuntimeNulls(null, "x", "y");
 
         var set = new HashCachingSet<string, StringFnV1AHasher>(source);
 
@@ -1208,7 +1214,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void PooledCeleritySet_ShouldSilentlyDedupe_DuplicateNullElements()
     {
-        var source = new[] { "a", null!, "b", null!, "c", null! };
+        var source = CreateSourceWithRuntimeNulls("a", null, "b", null, "c", null);
 
         using var set = new PooledCeleritySet<string, StringFnV1AHasher>(source);
 
@@ -1235,7 +1241,7 @@ public class SetIEnumerableConstructorTests
     [Fact]
     public void PooledCeleritySet_ShouldCaptureNullElement_FromSource()
     {
-        var source = new[] { null!, "x", "y" };
+        var source = CreateSourceWithRuntimeNulls(null, "x", "y");
 
         using var set = new PooledCeleritySet<string, StringFnV1AHasher>(source);
 
