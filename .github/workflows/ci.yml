@@ -143,7 +143,9 @@ jobs:
   # The benchmark relevance gate decides whether an expensive sharded A/B run happens at
   # all, so the C# lexer it rests on is pinned here rather than only exercised in the
   # workflow it gates — where a wrong answer costs either runner hours or an unmeasured
-  # regression, and neither failure announces itself.
+  # regression, and neither failure announces itself. The comment builder is pinned
+  # alongside it for the same reason: it decides which rows are called a regression, and
+  # a guard that is too permissive is indistinguishable from a clean report (#351).
   benchmark-gate:
     name: benchmark-gate
     runs-on: ubuntu-latest
@@ -155,6 +157,9 @@ jobs:
 
       - name: Pin the comment-stripping lexer
         run: node scripts/benchmark_relevant_changes.js --self-test
+
+      - name: Pin the regression-flag rule
+        run: node scripts/benchmark_comment.js --self-test
 
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})
