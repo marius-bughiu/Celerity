@@ -30,7 +30,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Fixed
 
 - Pushing to a pull request now supersedes that PR's in-flight benchmark run instead of stacking another eight-runner matrix behind it, so `CI` and `Coverage` no longer queue behind superseded perf runs. Pushes to `main` are keyed per commit and never cancelled. Closes [#319](https://github.com/marius-bughiu/Celerity/issues/319).
-- A benchmark shard no longer times out on a pull request that adds a benchmark class: the `main` base now replays the class list the PR head resolved, so shard *i* is the same slice on both sides. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
+- A benchmark shard no longer times out on a pull request that adds a benchmark class: the `main` base now replays the class list the PR head resolved, so shard *i* is the same slice on both sides. The job budget was also resized to the measured slices, which the suite had outgrown. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
 - A benchmark comparison that is missing a shard now says so in the PR comment, instead of reading exactly like a complete run. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
 
 - `PartialSort.TopK` now throws `ArgumentException` when its `destination` overlaps its `source`, instead of silently returning a wrong answer and writing to the source it documents as untouched. Disjoint slices of one array are still accepted, matching `RadixSort` and `CountingSort`.

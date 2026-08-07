@@ -97,11 +97,21 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_benchmarks == 'true'
     runs-on: ubuntu-latest
-    # Measured at SHARD_TOTAL=6: slices ran 43-65 min, so head + base came to 86-130 min
-    # and the heaviest shard overran this timeout. At 8 the same work divides further,
-    # putting the heaviest shard back comfortably inside the limit. Re-measure and widen
-    # the matrix again if shard durations creep back toward it.
-    timeout-minutes: 120
+    # Sized from the measured head slices at SHARD_TOTAL=8, which ran 45.8-67.3 min. The
+    # base replays the head's slice, so a job costs about twice its head slice: 91-135 min,
+    # and the two heaviest shards exceeded the old 120 min cap on their own. That cap was
+    # set when the suite was smaller and has since been outgrown — Sorting, SortedSpan and
+    # SegmentTree all added classes — so this is sizing the budget to the measured bound
+    # rather than buying room for an imbalance (the imbalance is what the roster handoff
+    # below fixes).
+    #
+    # Widening the matrix instead was considered and rejected: the 81-case
+    # StringHasherBenchmark is a single class and sharding is by class, so it floors the
+    # heaviest slice no matter how many shards there are — and more shards means more
+    # concurrent runners, which is the contention this workflow is being changed to reduce.
+    # Re-measure if slices approach 90 min; at that point the fix is to split that class,
+    # not to raise this again.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -169,6 +179,15 @@ jobs:
         # so and skips it, and the comparison reports it as new rather than as a delta.
         # A cancellation here is a real signal (the slice genuinely exceeded the job
         # timeout) and should be investigated rather than dismissed.
+        #
+        # BOTH selectors are passed, and that is not redundant: this step runs the code in
+        # the `main` worktree, not the PR's, so it only understands flags that are already
+        # on `main`. `--shard-classes` is therefore inert until this change merges, and the
+        # base falls back to `--shard` and packs its own slice — the behaviour we have
+        # today. Drop `--shard` and a base that predates the flag silently matches nothing
+        # and runs the WHOLE suite instead of one slice, which is a multi-hour step that
+        # ends at the job timeout. Any future selector must be added the same way: ship it
+        # to `main` first, and keep the previous one alongside for one release.
         if: github.event_name == 'pull_request'
         working-directory: ${{ github.workspace }}
         run: |
@@ -178,7 +197,9 @@ jobs:
           echo "Benchmarking base (main) at $BASE_SHA, shard ${{ matrix.shard }}"
           git worktree add /tmp/base-tree "$BASE_SHA"
           cd /tmp/base-tree/src/Celerity.Benchmarks
-          dotnet run --configuration Release -- --ci --shard-classes /tmp/head-shard-classes.txt
+          dotnet run --configuration Release -- \
+            --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}" \
+            --shard-classes /tmp/head-shard-classes.txt
           report=$(ls BenchmarkDotNet.Artifacts/results/*-report-full.json 2>/dev/null | head -n 1 || true)
           if [ -z "$report" ]; then
             echo "Base produced no report for shard ${{ matrix.shard }}: it shares no benchmark"
