@@ -140,6 +140,22 @@ jobs:
       - name: Check markdown anchors and relative links
         run: node scripts/check_doc_anchors.js
 
+  # The benchmark relevance gate decides whether an expensive sharded A/B run happens at
+  # all, so the C# lexer it rests on is pinned here rather than only exercised in the
+  # workflow it gates — where a wrong answer costs either runner hours or an unmeasured
+  # regression, and neither failure announces itself.
+  benchmark-gate:
+    name: benchmark-gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+
+      - name: Pin the comment-stripping lexer
+        run: node scripts/benchmark_relevant_changes.js --self-test
+
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})
     runs-on: ubuntu-latest

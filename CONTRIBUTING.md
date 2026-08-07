@@ -82,8 +82,14 @@ dotnet run -c Release -- --filter '*' # run everything with the default (slow, h
 
 Results are parsed by [`benchmark-action/github-action-benchmark`](https://github.com/benchmark-action/github-action-benchmark) and:
 
-- **On a PR**: a comment is posted with the same-runner A/B comparison vs `main`. Rows that move by more than ±10% *and* beyond the combined standard deviation of both measurements are flagged; the flags are advisory, so a noisy row does not fail the job.
+- **On a PR**: a comment is posted with the same-runner A/B comparison vs `main`. Rows that move by more than ±10% *and* beyond the combined standard deviation of both measurements are flagged; the flags are advisory, so a noisy row does not fail the job. If any shard failed to report, the comment says so above the fold — a partial comparison is otherwise indistinguishable from a clean one.
 - **On a push to `main`**: the new measurement is appended to the `gh-pages`-stored history powering the dashboard at <https://marius-bughiu.github.io/Celerity/dev/bench/>.
+
+Three things about the run are worth knowing before you wonder why it did or did not happen:
+
+- **It supersedes itself.** Pushing to a PR cancels that PR's in-flight benchmark run rather than stacking another eight-runner matrix behind it; only the newest numbers are ever read. Pushes to `main` are keyed per commit instead, so none is ever cancelled and the published history has no gaps.
+- **It is skipped when the diff cannot move a number.** [`scripts/benchmark_relevant_changes.js`](scripts/benchmark_relevant_changes.js) gates the PR path: a diff that touches only documentation, only the test / fuzz / AOT-smoke projects, or only comments inside `.cs` files does not buy a three-hour A/B run. The gate is one-directional — anything it cannot prove inert (an added or deleted file, a `.csproj`, a git command that fails) runs the suite — and it never applies to `main`, so a wrongly-skipped PR is still measured on merge. Run it yourself with `node scripts/benchmark_relevant_changes.js <base> <head>`.
+- **Shard *i* means the same slice on both sides.** The base run replays the class list the head resolved instead of packing its own. Shard membership comes from bin-packing over the benchmark class list, so a PR that *adds* a benchmark class would otherwise pack the two sides differently and could pair a light head slice with a heavy base one.
 
 If a change is motivated by performance, include before/after numbers from a local Release run in the PR description — the CI job is a guardrail, not a precision instrument. Numbers without `-c Release` are not useful — BenchmarkDotNet refuses to run in Debug.
 

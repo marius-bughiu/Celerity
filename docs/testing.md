@@ -204,7 +204,7 @@ The `coverage` workflow (`.github/workflows/coverage.yml`) runs on every PR and 
 | [`ci.yml`](../.github/workflows/ci.yml) | push / PR | `dotnet build` + `dotnet test` on Linux, Windows, macOS; Native AOT publish + smoke run. |
 | [`coverage.yml`](../.github/workflows/coverage.yml) | push / PR | Collect + gate coverage, comment on PRs, publish report on `main`. |
 | [`fuzz.yml`](../.github/workflows/fuzz.yml) | nightly / manual | Differential fuzz soak with a time budget. |
-| [`benchmarks.yml`](../.github/workflows/benchmarks.yml) | push / PR | Same-runner A/B benchmark comparison vs `main`. |
+| [`benchmarks.yml`](../.github/workflows/benchmarks.yml) | push / PR | Same-runner A/B benchmark comparison vs `main`. On a PR it supersedes its own previous run, and is skipped entirely when the diff cannot move a measured number (see [CONTRIBUTING.md](../CONTRIBUTING.md#ci)); `main` always measures. |
 
 ## Contributing tests
 
