@@ -172,7 +172,10 @@ function buildComment(prReport, baseReport, options = {}) {
       const baseMean = baseStats.Mean;
       const pct = (prMean / baseMean - 1) * 100;
       deltaCell = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-      deltaPercents.push(Math.abs(pct));
+      // A degenerate base (a zero or missing mean) yields Infinity or NaN, which would
+      // sort to the end of the noise profile and drag its upper percentiles with it. The
+      // row still gets a delta cell and a flag; it just does not calibrate anything.
+      if (Number.isFinite(pct)) deltaPercents.push(Math.abs(pct));
 
       flag = classifyDelta(prMean, prStdDev, baseMean, baseStats.StandardDeviation, thresholdRatio, noiseSigmas);
       if (flag === 'regression') { deltaCell += ' ⚠️'; regressions++; }
@@ -267,7 +270,7 @@ function buildComment(prReport, baseReport, options = {}) {
     ...footer,
   ].join('\n');
 
-  return { body, entries, regressions, improvements, errored, noise, missingShards };
+  return { body, entries, regressions, improvements, errored, noise, missingShards, thresholdRatio, noiseSigmas };
 }
 
 // ---- self-test ------------------------------------------------------------------------
@@ -419,6 +422,26 @@ function selfTest() {
   check('clean run subtitle', clean.body.includes('No significant change vs main'), true);
   check('clean run has no highlights', clean.body.includes('**Highlights**'), false);
 
+  // Zero sigmas is a legitimate setting — the ratio gate alone — and must not be read as
+  // "unset" anywhere between the environment and the rule.
+  const noGuard = buildComment(prReport, baseReport, { noiseSigmas: 0 });
+  check('zero sigmas leaves the ratio gate alone', [noGuard.regressions, noGuard.improvements], [2, 0]);
+  check('zero sigmas is not replaced by the default', noGuard.noiseSigmas, 0);
+
+  // A degenerate base must not poison the published noise floor.
+  const degenerate = buildComment(
+    { Benchmarks: [
+      { FullName: 'ABenchmark.A_Ok(ItemCount: 8)', Statistics: statsFor(102, 1) },
+      { FullName: 'ABenchmark.A_ZeroBase(ItemCount: 8)', Statistics: statsFor(100, 1) },
+    ] },
+    { Benchmarks: [
+      { FullName: 'ABenchmark.A_Ok(ItemCount: 8)', Statistics: statsFor(100, 1) },
+      { FullName: 'ABenchmark.A_ZeroBase(ItemCount: 8)', Statistics: statsFor(0, 0) },
+    ] },
+    {},
+  );
+  check('a non-finite delta is kept out of the noise profile', [degenerate.noise.n, degenerate.noise.p95.toFixed(1)], [1, '2.0']);
+
   // An empty base (every shard's base run produced nothing) must still render.
   const noBase = buildComment(prReport, { Benchmarks: [] }, {});
   check('an empty base still renders', noBase.regressions, 0);
@@ -460,15 +483,18 @@ function main() {
     process.exit(1);
   }
 
-  const thresholdRatio = parseFloat(process.env.ALERT_THRESHOLD_RATIO || '') || DEFAULT_THRESHOLD_RATIO;
-  const noiseSigmas = parseFloat(process.env.ALERT_NOISE_SIGMAS || '') || DEFAULT_NOISE_SIGMAS;
+  const thresholdRatio = parseFloat(process.env.ALERT_THRESHOLD_RATIO || '');
+  const noiseSigmas = parseFloat(process.env.ALERT_NOISE_SIGMAS || '');
 
   const result = buildComment(
     JSON.parse(fs.readFileSync(prPath, 'utf8')),
     JSON.parse(fs.readFileSync(basePath, 'utf8')),
     {
-      thresholdRatio,
-      noiseSigmas,
+      // Number.isFinite, not `||`: setting ALERT_NOISE_SIGMAS to 0 is a legitimate way to
+      // turn the noise guard off and leave the ratio gate alone, and `0 || 3` would
+      // silently reinstate the guard instead.
+      thresholdRatio: Number.isFinite(thresholdRatio) ? thresholdRatio : DEFAULT_THRESHOLD_RATIO,
+      noiseSigmas: Number.isFinite(noiseSigmas) ? noiseSigmas : DEFAULT_NOISE_SIGMAS,
       missingShards: process.env.MISSING_SHARDS,
       baseSha: process.env.BASE_SHA,
       shardTotal: process.env.SHARD_TOTAL,
@@ -479,7 +505,7 @@ function main() {
 
   console.log(`Wrote ${outPath}: ${result.entries.length} row(s), ${result.regressions} regression(s), ` +
     `${result.improvements} improvement(s), ${result.errored} errored ` +
-    `(±${((thresholdRatio - 1) * 100).toFixed(0)}% and ${noiseSigmas}σ).`);
+    `(±${((result.thresholdRatio - 1) * 100).toFixed(0)}% and ${result.noiseSigmas}σ).`);
   if (result.noise) {
     console.log(`Measured noise floor over ${result.noise.n} paired row(s): median ` +
       `${result.noise.median.toFixed(1)}%, p90 ${result.noise.p90.toFixed(1)}%, p95 ${result.noise.p95.toFixed(1)}%.`);
