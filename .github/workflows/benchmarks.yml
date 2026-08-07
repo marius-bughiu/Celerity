@@ -337,10 +337,15 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
+            // The one definition of the marker, imported rather than copied: the string
+            // must match what the generated body carries and what the search below looks
+            // for, and a second copy here is a silent way for those to drift apart.
+            // github-script resolves a relative require against the workspace root.
+            const { COMMENT_MARKER: marker } = require('./scripts/benchmark_comment.js');
 
             const body = fs.readFileSync('/tmp/benchmark-comment.md', 'utf8');
-            // Kept in sync with COMMENT_MARKER in scripts/benchmark_comment.js.
-            const marker = '<!-- celerity-benchmarks-comment -->';
+            // Catches a truncated or empty build step, which would otherwise post a blank
+            // comment and orphan the previous one.
             if (!body.includes(marker)) {
               core.setFailed('The generated comment is missing its marker; posting it would orphan the previous one.');
               return;

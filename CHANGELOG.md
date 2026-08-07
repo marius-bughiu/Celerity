@@ -27,7 +27,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - `scripts/benchmark_relevant_changes.js` — a CI gate that skips the sharded benchmark run on a pull request whose diff cannot move a measured number: documentation, the test / fuzz / AOT-smoke projects, or comments inside `.cs` files. It skips only what it can prove inert and never applies to `main`. Closes [#335](https://github.com/marius-bughiu/Celerity/issues/335).
 - A `--shard-dry-run` switch on the benchmarks runner that resolves a shard's class list without measuring anything. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
 - `scripts/benchmark_comment.js` — the pull-request benchmark comment, moved out of `benchmarks.yml` so the rule deciding which rows count as a regression is runnable and testable, with a `--self-test` wired into `ci.yml`. Closes [#351](https://github.com/marius-bughiu/Celerity/issues/351).
-- That comment now publishes the run's own **measured noise floor** — the median, p90 and p95 of |Δ| across every paired row, of which any one pull request changes only a handful — so a flag can be read against the drift it arrived in instead of an assumed one. Closes [#351](https://github.com/marius-bughiu/Celerity/issues/351).
+- That comment now publishes the run's own **measured noise floor** — the p50, p90 and p95 of |Δ| across every paired row, of which any one pull request changes only a handful — so a flag can be read against the drift it arrived in instead of an assumed one. Closes [#351](https://github.com/marius-bughiu/Celerity/issues/351).
 
 ### Fixed
 

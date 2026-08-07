@@ -13,7 +13,7 @@
 // baseline arms whose code is the same on both sides by definition (#351).
 //
 // The measured noise floor of that run, which is the reason no purely per-row rule can
-// reach zero: |Δ| has a median of 0.7% and a p90 of 6.2%, but 43 rows exceed ±10%,
+// reach zero: |Δ| has a p50 of 0.7% and a p90 of 6.2%, but 43 rows exceed ±10%,
 // 16 exceed ±25% and the worst is 222%. The distribution is sharply peaked with a fat tail
 // of individually unstable cases — sensitive to code and data layout, which differs
 // between two builds even when their IL does not.
@@ -101,7 +101,11 @@ function classifyDelta(prMean, prStdDev, baseMean, baseStdDev, thresholdRatio, n
   return null;
 }
 
-// Nearest-rank percentile over an already-sorted ascending array.
+// Nearest-rank percentile over an already-sorted ascending array: the reported value is
+// always an |Δ| some row actually exhibited, never an interpolation between two rows. That
+// is the right choice for a noise floor — "p95 is 10.3%" should name an observed
+// measurement — but it does mean p50 is not the textbook median on an even-length sample,
+// which is why nothing below calls it one.
 function percentile(sorted, p) {
   if (sorted.length === 0) return null;
   const rank = Math.ceil((p / 100) * sorted.length);
@@ -118,7 +122,7 @@ function noiseProfile(deltaPercents) {
   const sorted = [...deltaPercents].sort((a, b) => a - b);
   return {
     n: sorted.length,
-    median: percentile(sorted, 50),
+    p50: percentile(sorted, 50),
     p90: percentile(sorted, 90),
     p95: percentile(sorted, 95),
   };
@@ -209,9 +213,15 @@ function buildComment(prReport, baseReport, options = {}) {
     subtitle += ` ⚠️ ${errored} benchmark${errored === 1 ? '' : 's'} errored (no measurements) — see the table.`;
   }
 
+  // The script is runnable outside Actions (that is the point of extracting it), where
+  // neither of these is set. Say so rather than rendering `main (``)` and `sharded -way`,
+  // which read like a bug in the report.
   const baseSha = (options.baseSha || '').slice(0, 7);
+  const baseLabel = baseSha ? `main (\`${baseSha}\`)` : 'main';
+  const shardTotal = String(options.shardTotal || '').trim();
+  const shardLabel = shardTotal ? `Same-runner A/B (sharded ${shardTotal}-way)` : 'Same-runner A/B';
   const footer = [
-    `<sub>Same-runner A/B (sharded ${options.shardTotal || ''}-way): main (\`${baseSha}\`) and this PR were ` +
+    `<sub>${shardLabel}: ${baseLabel} and this PR were ` +
     `built and benchmarked back-to-back on the same runner per shard, so hardware variance cancels out. ` +
     `⚠️ = PR mean is at least ${thresholdPct}% slower than main **and** the gap exceeds ${noiseSigmas}σ of the two ` +
     `measurements' combined standard deviation; ✅ = correspondingly faster.</sub>`,
@@ -221,12 +231,14 @@ function buildComment(prReport, baseReport, options = {}) {
   if (noise) {
     // Stated as what it is: a floor, not a verdict. A reviewer comparing a flagged row
     // against p95 can see immediately whether it stands out from the run it came in.
+    // Reported as percentiles, not as a mean and a "median": each figure is the |Δ| of an
+    // actual row (see `percentile`), and naming them p50/p90/p95 says so.
     footer.push('');
     footer.push(
       `<sub>**Measured noise floor for this run** — |Δ| across all ${noise.n} paired rows, of which a pull ` +
-      `request changes only a handful, so the rest is the runner's own drift: median ` +
-      `${noise.median.toFixed(1)}%, p90 ${noise.p90.toFixed(1)}%, p95 ${noise.p95.toFixed(1)}%. ` +
-      `Read a flag near that p95 with suspicion, and re-run before acting on it.</sub>`
+      `request changes only a handful, so the rest is the runner's own drift: p50 ` +
+      `${noise.p50.toFixed(1)}%, p90 ${noise.p90.toFixed(1)}%, p95 ${noise.p95.toFixed(1)}% ` +
+      `(nearest-rank). Read a flag near that p95 with suspicion, and re-run before acting on it.</sub>`
     );
   }
 
@@ -370,8 +382,11 @@ function selfTest() {
 
   // ---- noise profile ----
   const profile = noiseProfile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  check('noise profile', [profile.n, profile.median, profile.p90, profile.p95], [10, 5, 9, 10]);
+  check('noise profile', [profile.n, profile.p50, profile.p90, profile.p95], [10, 5, 9, 10]);
   check('noise profile of nothing', noiseProfile([]), null);
+  // Nearest-rank, so every reported figure is a value that appears in the sample. Pinned
+  // because the footer names the statistics after this definition.
+  check('percentiles are order statistics, not interpolations', noiseProfile([1, 2]).p50, 1);
 
   // ---- comment composition ----
   const prReport = {
@@ -442,6 +457,14 @@ function selfTest() {
   );
   check('a non-finite delta is kept out of the noise profile', [degenerate.noise.n, degenerate.noise.p95.toFixed(1)], [1, '2.0']);
 
+  // Run outside Actions, neither BASE_SHA nor SHARD_TOTAL is set. The footer has to stay
+  // readable rather than rendering an empty backtick pair and a shard count of nothing.
+  check('footer names the base sha when it has one', built.body.includes('main (`abcdef1`)'), true);
+  check('footer says sharded when it knows the width', built.body.includes('sharded 8-way'), true);
+  check('footer degrades without a base sha', clean.body.includes('<sub>Same-runner A/B: main and this PR'), true);
+  check('footer leaves no empty backticks', clean.body.includes('``'), false);
+  check('footer leaves no orphan shard count', clean.body.includes('-way'), false);
+
   // An empty base (every shard's base run produced nothing) must still render.
   const noBase = buildComment(prReport, { Benchmarks: [] }, {});
   check('an empty base still renders', noBase.regressions, 0);
@@ -507,8 +530,8 @@ function main() {
     `${result.improvements} improvement(s), ${result.errored} errored ` +
     `(±${((result.thresholdRatio - 1) * 100).toFixed(0)}% and ${result.noiseSigmas}σ).`);
   if (result.noise) {
-    console.log(`Measured noise floor over ${result.noise.n} paired row(s): median ` +
-      `${result.noise.median.toFixed(1)}%, p90 ${result.noise.p90.toFixed(1)}%, p95 ${result.noise.p95.toFixed(1)}%.`);
+    console.log(`Measured noise floor over ${result.noise.n} paired row(s): p50 ` +
+      `${result.noise.p50.toFixed(1)}%, p90 ${result.noise.p90.toFixed(1)}%, p95 ${result.noise.p95.toFixed(1)}%.`);
   }
 }
 
