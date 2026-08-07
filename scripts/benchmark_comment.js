@@ -127,13 +127,19 @@ function percentile(sorted, p) {
 // request — a handful of the ~750 tracked cases touched — this is a noise floor: almost
 // every row in it is the runner's own drift between the head slice and the base slice.
 //
-// It is not *only* that, which is why nothing here calls it a noise floor. A change to a
-// shared primitive or to the benchmark configuration moves many rows at once, and those
-// real effects sit in the same sample. Deriving the floor from a control group instead was
-// considered and rejected: the obvious controls are the BCL baseline arms, but a layout
-// shift moves those too, so they would understate the tail while looking authoritative.
-// Reporting the distribution and saying what is in it is the honest version.
-function noiseProfile(deltaPercents) {
+// It is not *only* that, which is why neither this function nor the footer it feeds calls
+// it a noise floor. A change to a shared primitive or to the benchmark configuration moves
+// many rows at once, and those real effects sit in the same sample. Deriving the floor from
+// a control group instead was considered and rejected: the obvious controls are the BCL
+// baseline arms, but a layout shift moves those too, so they would understate the tail
+// while looking authoritative. Reporting the distribution and saying what is in it is the
+// honest version.
+//
+// `noiseSigmas` and `ALERT_NOISE_SIGMAS` keep their names on purpose. That guard is scaled
+// by the two measurements' own standard deviations, which really are per-row measurement
+// noise — a different quantity from the run-wide distribution measured here, and one the
+// word describes correctly.
+function spreadProfile(deltaPercents) {
   if (deltaPercents.length === 0) return null;
   const sorted = [...deltaPercents].sort((a, b) => a - b);
   return {
@@ -279,8 +285,8 @@ function buildComment(prReport, baseReport, options = {}) {
     `measurements' combined standard deviation; ✅ = correspondingly faster.</sub>`,
   ];
 
-  const noise = noiseProfile(deltaPercents);
-  if (noise) {
+  const spread = spreadProfile(deltaPercents);
+  if (spread) {
     // Named for what it is rather than for what it usually is. On a narrow change this
     // reads as the run's noise floor; on a broad one it moves with the change itself, and
     // a reviewer told "this is drift" would talk themselves out of a real regression.
@@ -288,8 +294,8 @@ function buildComment(prReport, baseReport, options = {}) {
     // actual row (see `percentile`), and naming them p50/p90/p95 says so.
     footer.push('');
     footer.push(
-      `<sub>**Observed spread of this run** — |Δ| across all ${noise.n} paired rows: p50 ` +
-      `${noise.p50.toFixed(1)}%, p90 ${noise.p90.toFixed(1)}%, p95 ${noise.p95.toFixed(1)}% ` +
+      `<sub>**Observed spread of this run** — |Δ| across all ${spread.n} paired rows: p50 ` +
+      `${spread.p50.toFixed(1)}%, p90 ${spread.p90.toFixed(1)}%, p95 ${spread.p95.toFixed(1)}% ` +
       `(nearest-rank). A pull request usually touches a handful of these, so this is mostly the ` +
       `runner's own drift between the two slices — but a change to a shared primitive moves many ` +
       `rows at once and would raise these figures itself, so read it as the run's spread rather ` +
@@ -338,7 +344,7 @@ function buildComment(prReport, baseReport, options = {}) {
     ...footer,
   ].join('\n');
 
-  return { body, entries, regressions, improvements, errored, noise, missingShards, thresholdRatio, noiseSigmas };
+  return { body, entries, regressions, improvements, errored, spread, missingShards, thresholdRatio, noiseSigmas };
 }
 
 // ---- self-test ------------------------------------------------------------------------
@@ -436,13 +442,13 @@ function selfTest() {
   // 117.8) = 1614.7 against a 665.3 gap.
   check('3σ clears PooledCelerityDictionary_Lookup', classifyDelta(5372.3, 525.2, 4707.0, 117.8, 1.10, 3), null);
 
-  // ---- noise profile ----
-  const profile = noiseProfile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  check('noise profile', [profile.n, profile.p50, profile.p90, profile.p95], [10, 5, 9, 10]);
-  check('noise profile of nothing', noiseProfile([]), null);
+  // ---- spread profile ----
+  const profile = spreadProfile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  check('spread profile', [profile.n, profile.p50, profile.p90, profile.p95], [10, 5, 9, 10]);
+  check('spread profile of nothing', spreadProfile([]), null);
   // Nearest-rank, so every reported figure is a value that appears in the sample. Pinned
   // because the footer names the statistics after this definition.
-  check('percentiles are order statistics, not interpolations', noiseProfile([1, 2]).p50, 1);
+  check('percentiles are order statistics, not interpolations', spreadProfile([1, 2]).p50, 1);
 
   // ---- comment composition ----
   const prReport = {
@@ -485,7 +491,7 @@ function selfTest() {
   check('collections section excludes hashers', built.body.includes('<summary><b>Collections</b> (6)</summary>'), true);
   // The errored row has no delta, the base-errored row has no base statistics, and the new
   // row has no base at all. Four rows remain.
-  check('noise profile counts only paired rows', built.noise.n, 4);
+  check('spread profile counts only paired rows', built.spread.n, 4);
   check('the spread is published', built.body.includes('**Observed spread of this run**'), true);
   check('the spread is not called a floor', /noise floor/i.test(built.body), false);
   check('no incomplete banner by default', built.body.includes('[!WARNING]'), false);
@@ -523,7 +529,7 @@ function selfTest() {
     ] },
     {},
   );
-  check('a non-finite delta is kept out of the noise profile', [degenerate.noise.n, degenerate.noise.p95.toFixed(1)], [1, '2.0']);
+  check('a non-finite delta is kept out of the spread profile', [degenerate.spread.n, degenerate.spread.p95.toFixed(1)], [1, '2.0']);
   // A zero base makes the ratio Infinity, a zero PR mean makes it 0. Both used to clear a
   // gate; neither may now be reported as a change.
   check('a broken comparison is never flagged', [degenerate.regressions, degenerate.improvements], [0, 0]);
@@ -636,9 +642,9 @@ function main() {
   console.log(`Wrote ${outPath}: ${result.entries.length} row(s), ${result.regressions} regression(s), ` +
     `${result.improvements} improvement(s), ${result.errored} errored ` +
     `(±${((result.thresholdRatio - 1) * 100).toFixed(0)}% and ${result.noiseSigmas}σ).`);
-  if (result.noise) {
-    console.log(`Observed spread over ${result.noise.n} paired row(s): p50 ` +
-      `${result.noise.p50.toFixed(1)}%, p90 ${result.noise.p90.toFixed(1)}%, p95 ${result.noise.p95.toFixed(1)}%.`);
+  if (result.spread) {
+    console.log(`Observed spread over ${result.spread.n} paired row(s): p50 ` +
+      `${result.spread.p50.toFixed(1)}%, p90 ${result.spread.p90.toFixed(1)}%, p95 ${result.spread.p95.toFixed(1)}%.`);
   }
 }
 
@@ -646,4 +652,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { buildComment, classifyDelta, formatNs, isComparable, noiseProfile, readSetting, COMMENT_MARKER };
+module.exports = { buildComment, classifyDelta, formatNs, isComparable, spreadProfile, readSetting, COMMENT_MARKER };
