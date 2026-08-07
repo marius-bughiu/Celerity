@@ -14,8 +14,8 @@
 // changed path is one of:
 //
 //   1. outside `src/` (documentation, the dashboard, the changelog, ...);
-//   2. inside a project the benchmark process never loads — `Celerity.Tests`,
-//      `Celerity.Fuzz`, `Celerity.AotSmokeTest` are not referenced by
+//   2. inside a project the benchmark process never loads — every `*.Tests` project plus
+//      `Celerity.Fuzz` and `Celerity.AotSmokeTest`, none of which is reachable from
 //      `Celerity.Benchmarks.csproj`, so nothing they contain reaches a measurement;
 //   3. a modified `.cs` file whose text is unchanged once comments are stripped.
 //
@@ -43,14 +43,30 @@
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 
-// Projects under `src/` that `Celerity.Benchmarks.csproj` does not reference, so no
-// assembly built from them is ever loaded by the benchmark process. Keep in sync with
-// that file's <ProjectReference> list.
-const UNBENCHMARKED_PROJECTS = [
-  'src/Celerity.Tests/',
-  'src/Celerity.Fuzz/',
-  'src/Celerity.AotSmokeTest/',
-];
+// Projects whose assemblies the benchmark process loads, following
+// `Celerity.Benchmarks.csproj`'s <ProjectReference> list transitively. A change anywhere
+// in one of these can move a number.
+const BENCHMARKED_PROJECTS = new Set([
+  'Celerity',
+  'Celerity.Hashing',
+  'Celerity.Primitives',
+  'Celerity.Sorting',
+  'Celerity.Ring',
+  'Celerity.Sentinel',
+  'Celerity.Cardinality',
+  'Celerity.Benchmarks',
+]);
+
+// Everything else under `src/` is only inert if we can say *why*. Matching the repo's
+// `*.Tests` convention plus the two named harnesses covers it, and a project that fits
+// neither is treated as significant rather than assumed harmless — which is also what
+// `checkProjectRoster` in the self-test refuses to let pass silently.
+function isUnbenchmarkedProject(project) {
+  if (BENCHMARKED_PROJECTS.has(project)) return false;
+  return project.endsWith('.Tests')
+    || project === 'Celerity.Fuzz'
+    || project === 'Celerity.AotSmokeTest';
+}
 
 // Files outside `src/` that still change what the run does or checks.
 const ALWAYS_SIGNIFICANT = new Set([
@@ -69,6 +85,14 @@ const ALWAYS_SIGNIFICANT = new Set([
 // Line structure is preserved: a stripped comment leaves its newlines behind, so a line
 // that moves still reads as a change. Verbatim text inside literals is preserved exactly,
 // including whitespace, so `"a  b"` and `"a b"` are not conflated.
+//
+// A newline *inside* a literal is emitted as LITERAL_NEWLINE instead. `normalize` trims
+// per line and drops blank ones, which is right for code and wrong for a multi-line
+// verbatim or raw literal, where the indentation and the blank lines are part of the
+// string value and reach the IL. Collapsing those newlines keeps each literal on one
+// logical line, so trimming can only ever touch the code around it.
+const LITERAL_NEWLINE = '\u0000';
+
 function stripComments(source) {
   const out = [];
   const stack = [{ type: 'code', braces: 0, isHole: false }];
@@ -103,7 +127,7 @@ function stripComments(source) {
           i += k;
           continue;
         }
-        out.push(c);
+        out.push(c === '\n' ? LITERAL_NEWLINE : c);
         i++;
         continue;
       }
@@ -132,7 +156,7 @@ function stripComments(source) {
         if (c === '}' && source[i + 1] === '}') { out.push('}}'); i += 2; continue; }
       }
 
-      out.push(c);
+      out.push(c === '\n' ? LITERAL_NEWLINE : c);
       i++;
       continue;
     }
@@ -224,14 +248,22 @@ function normalize(source) {
 
 // ---- git plumbing -------------------------------------------------------------------
 
+// core.quotePath=false keeps a path with non-ASCII characters readable rather than
+// octal-escaped, so `git show <rev>:<path>` can be handed straight back what
+// `--name-status` printed. Without it such a file would fail to read and be treated as
+// significant — safe, but it would run the suite for a diff that could not move a number.
 function git(args) {
-  return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  return execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+  });
 }
 
 function classify(filePath) {
   if (ALWAYS_SIGNIFICANT.has(filePath)) return 'significant';
   if (!filePath.startsWith('src/')) return 'ignored';
-  if (UNBENCHMARKED_PROJECTS.some((prefix) => filePath.startsWith(prefix))) return 'ignored';
+  const project = filePath.slice('src/'.length).split('/')[0];
+  if (isUnbenchmarkedProject(project)) return 'ignored';
   if (!filePath.endsWith('.cs')) return 'significant';
   return 'compare';
 }
@@ -324,7 +356,7 @@ const SELF_TEST_CASES = [
   // Verbatim literals: `""` is an escaped quote, and backslashes are literal.
   ['var s = @"C:\\path"; // c', 'var s = @"C:\\path";'],
   ['var s = @"a ""//"" b"; // c', 'var s = @"a ""//"" b";'],
-  ['var s = @"line1\nline2 // still text";', 'var s = @"line1\nline2 // still text";'],
+  ['var s = @"line1\nline2 // still text";', `var s = @"line1${LITERAL_NEWLINE}line2 // still text";`],
   // Interpolation holes are code and are scanned as such, including nested literals.
   ['var s = $"{dict["k"]}"; // c', 'var s = $"{dict["k"]}";'],
   // A stripped block comment leaves one space behind, so the neighbouring spaces
@@ -343,7 +375,43 @@ const SELF_TEST_CASES = [
   ['var @class = 1; // c', 'var @class = 1;'],
   // Reindentation and blank lines are not changes; a moved statement is.
   ['        int x = 1;\n\n\n        int y = 2;', 'int x = 1;\nint y = 2;'],
+  // A multi-line literal keeps its own indentation and blank lines, because they are part
+  // of the string value. It collapses onto one logical line so the per-line trim below
+  // cannot reach inside it.
+  ['var s = @"a\n   b";', `var s = @"a${LITERAL_NEWLINE}   b";`],
+  ['var s = """\n  x\n\n  y\n  """;', `var s = """${LITERAL_NEWLINE}  x${LITERAL_NEWLINE}${LITERAL_NEWLINE}  y${LITERAL_NEWLINE}  """;`],
 ];
+
+// The set of projects under `src/` must be classified deliberately, one way or the other.
+// A new project that is neither benchmark-reachable nor a recognised harness would
+// otherwise be silently taken as significant forever (safe, but wasteful) or — the shape
+// this guard really exists for — a new test project would go on buying full benchmark
+// runs because nobody remembered this file. Fail here instead, in seconds, on every PR.
+function checkProjectRoster() {
+  const dirs = fs.readdirSync('src', { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => fs.readdirSync(`src/${name}`).some((f) => f.endsWith('.csproj')));
+
+  const unclassified = dirs.filter((d) => !BENCHMARKED_PROJECTS.has(d) && !isUnbenchmarkedProject(d));
+  if (unclassified.length > 0) {
+    console.error(`FAIL  unclassified project(s) under src/: ${unclassified.join(', ')}`);
+    console.error('      Add each to BENCHMARKED_PROJECTS if the benchmark process loads it,');
+    console.error('      or teach isUnbenchmarkedProject why it cannot reach a measurement.');
+    return 1;
+  }
+
+  // The converse: a name listed as benchmark-reachable that no longer exists means the
+  // list has drifted the other way and is quietly over-claiming.
+  const stale = [...BENCHMARKED_PROJECTS].filter((p) => !dirs.includes(p));
+  if (stale.length > 0) {
+    console.error(`FAIL  BENCHMARKED_PROJECTS names project(s) that do not exist: ${stale.join(', ')}`);
+    return 1;
+  }
+
+  console.log(`ok: ${dirs.length} project(s) under src/ classified.`);
+  return 0;
+}
 
 function selfTest() {
   let failures = 0;
@@ -370,6 +438,23 @@ function selfTest() {
     failures++;
     console.error('FAIL  a code edit normalized identically to its original');
   }
+
+  // Reindenting a multi-line literal changes the compiled string, so it must not read as
+  // "comments only" — the failure mode a per-line trim introduces if it reaches inside a
+  // literal.
+  const literal = 'var s = @"a\n   b"; // note';
+  const reindented = 'var s = @"a\n       b"; // note';
+  const literalCommentOnly = 'var s = @"a\n   b"; // reworded';
+  if (normalize(literal) === normalize(reindented)) {
+    failures++;
+    console.error('FAIL  reindenting a multi-line literal normalized identically');
+  }
+  if (normalize(literal) !== normalize(literalCommentOnly)) {
+    failures++;
+    console.error('FAIL  a comment edit beside a multi-line literal did not normalize identically');
+  }
+
+  failures += checkProjectRoster();
 
   if (failures > 0) {
     console.error(`\n${failures} lexer case(s) failed.`);

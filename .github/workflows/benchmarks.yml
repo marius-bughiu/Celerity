@@ -71,7 +71,11 @@ jobs:
 
     steps:
       # fetch-depth: 0 so the script can resolve the merge base of the two event SHAs.
+      # Skipped on the push path, which answers without consulting the repository at all:
+      # this job gates the whole matrix, so a full-history clone there would be latency
+      # on the critical path buying nothing.
       - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
 
