@@ -73,11 +73,20 @@ const DEFAULT_NOISE_SIGMAS = 3;
 const COMMENT_MARKER = '<!-- celerity-benchmarks-comment -->';
 
 function formatNs(ns) {
-  if (ns == null) return 'n/a';
+  if (ns == null || !Number.isFinite(ns)) return 'n/a';
   if (ns < 1000) return `${ns.toFixed(1)} ns`;
   if (ns < 1_000_000) return `${(ns / 1000).toFixed(2)} μs`;
   if (ns < 1_000_000_000) return `${(ns / 1_000_000).toFixed(2)} ms`;
   return `${(ns / 1_000_000_000).toFixed(2)} s`;
+}
+
+// A mean has to be finite and positive for the ratio between two of them to mean anything.
+// A zero or missing base makes the ratio Infinity, which clears the regression gate; a zero
+// PR mean makes it 0, which clears the improvement gate. Either way the row would be
+// flagged on the strength of a broken measurement, which is precisely the failure mode this
+// file exists to remove.
+function isComparable(prMean, baseMean) {
+  return Number.isFinite(prMean) && prMean > 0 && Number.isFinite(baseMean) && baseMean > 0;
 }
 
 // The flag decision for one paired row, kept as a named function so the self-test can
@@ -88,6 +97,8 @@ function formatNs(ns) {
 // behaviour the previous rule had for the same input — this decides how much evidence a
 // delta needs, and it must not silently drop a row it cannot judge.
 function classifyDelta(prMean, prStdDev, baseMean, baseStdDev, thresholdRatio, noiseSigmas) {
+  if (!isComparable(prMean, baseMean)) return null;
+
   const ratio = prMean / baseMean;
   const ps = Number.isFinite(prStdDev) ? prStdDev : 0;
   const bs = Number.isFinite(baseStdDev) ? baseStdDev : 0;
@@ -126,6 +137,25 @@ function noiseProfile(deltaPercents) {
     p90: percentile(sorted, 90),
     p95: percentile(sorted, 95),
   };
+}
+
+// A setting that silently falls back is how a gate gets weakened without anyone noticing,
+// and a setting that silently *accepts* nonsense is worse. `ALERT_THRESHOLD_RATIO=1` flags
+// every row in the run; `0.9` inverts the two gates so a speed-up is called a regression;
+// a negative `ALERT_NOISE_SIGMAS` makes the noise guard vacuously true and restores exactly
+// the behaviour this file was written to remove. None of those announce themselves in the
+// output, so they are refused here instead.
+//
+// An unset or empty variable is not an error — it means "use the calibrated default".
+function readSetting(name, raw, fallback, isValid, expectation) {
+  const text = (raw ?? '').trim();
+  if (text === '') return fallback;
+
+  const value = Number(text);
+  if (!Number.isFinite(value) || !isValid(value)) {
+    throw new Error(`${name}=${JSON.stringify(text)} is not usable: expected ${expectation}.`);
+  }
+  return value;
 }
 
 function buildComment(prReport, baseReport, options = {}) {
@@ -174,16 +204,22 @@ function buildComment(prReport, baseReport, options = {}) {
 
     if (baseStats) {
       const baseMean = baseStats.Mean;
-      const pct = (prMean / baseMean - 1) * 100;
-      deltaCell = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-      // A degenerate base (a zero or missing mean) yields Infinity or NaN, which would
-      // sort to the end of the noise profile and drag its upper percentiles with it. The
-      // row still gets a delta cell and a flag; it just does not calibrate anything.
-      if (Number.isFinite(pct)) deltaPercents.push(Math.abs(pct));
+      // A row whose ratio cannot mean anything is reported as such rather than rendered as
+      // `+Infinity%` and flagged. It is counted with the errored rows because it is the
+      // same thing from a reviewer's point of view — a case that produced no usable
+      // comparison — and a silently uncounted anomaly reads exactly like a clean report.
+      if (!isComparable(prMean, baseMean)) {
+        errored++;
+        deltaCell = '⚠️ not comparable';
+      } else {
+        const pct = (prMean / baseMean - 1) * 100;
+        deltaCell = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+        deltaPercents.push(Math.abs(pct));
 
-      flag = classifyDelta(prMean, prStdDev, baseMean, baseStats.StandardDeviation, thresholdRatio, noiseSigmas);
-      if (flag === 'regression') { deltaCell += ' ⚠️'; regressions++; }
-      else if (flag === 'improvement') { deltaCell += ' ✅'; improvements++; }
+        flag = classifyDelta(prMean, prStdDev, baseMean, baseStats.StandardDeviation, thresholdRatio, noiseSigmas);
+        if (flag === 'regression') { deltaCell += ' ⚠️'; regressions++; }
+        else if (flag === 'improvement') { deltaCell += ' ✅'; improvements++; }
+      }
     }
 
     entries.push({
@@ -210,7 +246,7 @@ function buildComment(prReport, baseReport, options = {}) {
     subtitle = `No significant change vs main (all within ±${thresholdPct}% or inside ${noiseSigmas}σ of the measurement noise).`;
   }
   if (errored > 0) {
-    subtitle += ` ⚠️ ${errored} benchmark${errored === 1 ? '' : 's'} errored (no measurements) — see the table.`;
+    subtitle += ` ⚠️ ${errored} benchmark${errored === 1 ? '' : 's'} produced no usable comparison — see the table.`;
   }
 
   // The script is runnable outside Actions (that is the point of extracting it), where
@@ -448,14 +484,27 @@ function selfTest() {
     { Benchmarks: [
       { FullName: 'ABenchmark.A_Ok(ItemCount: 8)', Statistics: statsFor(102, 1) },
       { FullName: 'ABenchmark.A_ZeroBase(ItemCount: 8)', Statistics: statsFor(100, 1) },
+      { FullName: 'ABenchmark.A_ZeroPr(ItemCount: 8)', Statistics: statsFor(0, 0) },
+      { FullName: 'ABenchmark.A_NanPr(ItemCount: 8)', Statistics: statsFor(NaN, 1) },
     ] },
     { Benchmarks: [
       { FullName: 'ABenchmark.A_Ok(ItemCount: 8)', Statistics: statsFor(100, 1) },
       { FullName: 'ABenchmark.A_ZeroBase(ItemCount: 8)', Statistics: statsFor(0, 0) },
+      { FullName: 'ABenchmark.A_ZeroPr(ItemCount: 8)', Statistics: statsFor(100, 1) },
+      { FullName: 'ABenchmark.A_NanPr(ItemCount: 8)', Statistics: statsFor(100, 1) },
     ] },
     {},
   );
   check('a non-finite delta is kept out of the noise profile', [degenerate.noise.n, degenerate.noise.p95.toFixed(1)], [1, '2.0']);
+  // A zero base makes the ratio Infinity, a zero PR mean makes it 0. Both used to clear a
+  // gate; neither may now be reported as a change.
+  check('a broken comparison is never flagged', [degenerate.regressions, degenerate.improvements], [0, 0]);
+  check('a broken comparison is counted and shown', [degenerate.errored, (degenerate.body.match(/not comparable/g) || []).length], [3, 3]);
+  check('no Infinity or NaN reaches the table', /Infinity|NaN/.test(degenerate.body), false);
+  check('the subtitle owns up to it', degenerate.body.includes('3 benchmarks produced no usable comparison'), true);
+  check('classifyDelta refuses a zero base', classifyDelta(100, 1, 0, 0, 1.10, 3), null);
+  check('classifyDelta refuses a zero pr mean', classifyDelta(0, 0, 100, 1, 1.10, 3), null);
+  check('formatNs(NaN)', formatNs(NaN), 'n/a');
 
   // Run outside Actions, neither BASE_SHA nor SHARD_TOTAL is set. The footer has to stay
   // readable rather than rendering an empty backtick pair and a shard count of nothing.
@@ -469,6 +518,26 @@ function selfTest() {
   const noBase = buildComment(prReport, { Benchmarks: [] }, {});
   check('an empty base still renders', noBase.regressions, 0);
   check('an empty base reports every row as new', (noBase.body.match(/🆕 new/g) || []).length, 5);
+
+  // ---- settings ----
+  // Unset means "use the calibrated default"; a value that would quietly change what a
+  // flag means is refused rather than accepted.
+  const ratio = (raw) => readSetting('ALERT_THRESHOLD_RATIO', raw, DEFAULT_THRESHOLD_RATIO, (v) => v > 1, 'x');
+  const sigmas = (raw) => readSetting('ALERT_NOISE_SIGMAS', raw, DEFAULT_NOISE_SIGMAS, (v) => v >= 0, 'x');
+  const refused = (fn, raw) => { try { fn(raw); return false; } catch { return true; } };
+
+  check('unset falls back to the default', [ratio(undefined), ratio(''), ratio('  ')], [1.10, 1.10, 1.10]);
+  check('a valid override is taken', [ratio('1.25'), sigmas('2.5')], [1.25, 2.5]);
+  check('zero sigmas survives the parser', sigmas('0'), 0);
+  // 1 makes every row past the gate; below 1 swaps the regression and improvement arms.
+  check('a threshold of 1 is refused', refused(ratio, '1'), true);
+  check('a threshold below 1 is refused', refused(ratio, '0.9'), true);
+  // Negative sigmas makes the noise guard vacuously true — the defect this file fixes.
+  check('negative sigmas is refused', refused(sigmas, '-1'), true);
+  check('a non-numeric setting is refused', [refused(ratio, 'high'), refused(sigmas, 'lots')], [true, true]);
+  // parseFloat('1.10abc') is 1.10; Number() is NaN. The stricter reading is the right one
+  // for a setting that decides what gets called a regression.
+  check('a partly-numeric setting is refused', refused(ratio, '1.10abc'), true);
 
   if (failures > 0) {
     console.error(`\n${failures} of ${checks} check(s) failed.`);
@@ -506,18 +575,28 @@ function main() {
     process.exit(1);
   }
 
-  const thresholdRatio = parseFloat(process.env.ALERT_THRESHOLD_RATIO || '');
-  const noiseSigmas = parseFloat(process.env.ALERT_NOISE_SIGMAS || '');
+  let thresholdRatio;
+  let noiseSigmas;
+  try {
+    thresholdRatio = readSetting(
+      'ALERT_THRESHOLD_RATIO', process.env.ALERT_THRESHOLD_RATIO, DEFAULT_THRESHOLD_RATIO,
+      (v) => v > 1, 'a ratio greater than 1 (1.10 flags a row that moved by a tenth)');
+    // Zero is allowed and means "ratio gate only" — a legitimate way to see every row past
+    // the threshold regardless of its spread.
+    noiseSigmas = readSetting(
+      'ALERT_NOISE_SIGMAS', process.env.ALERT_NOISE_SIGMAS, DEFAULT_NOISE_SIGMAS,
+      (v) => v >= 0, 'zero or more sigmas');
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
 
   const result = buildComment(
     JSON.parse(fs.readFileSync(prPath, 'utf8')),
     JSON.parse(fs.readFileSync(basePath, 'utf8')),
     {
-      // Number.isFinite, not `||`: setting ALERT_NOISE_SIGMAS to 0 is a legitimate way to
-      // turn the noise guard off and leave the ratio gate alone, and `0 || 3` would
-      // silently reinstate the guard instead.
-      thresholdRatio: Number.isFinite(thresholdRatio) ? thresholdRatio : DEFAULT_THRESHOLD_RATIO,
-      noiseSigmas: Number.isFinite(noiseSigmas) ? noiseSigmas : DEFAULT_NOISE_SIGMAS,
+      thresholdRatio,
+      noiseSigmas,
       missingShards: process.env.MISSING_SHARDS,
       baseSha: process.env.BASE_SHA,
       shardTotal: process.env.SHARD_TOTAL,
@@ -539,4 +618,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { buildComment, classifyDelta, formatNs, noiseProfile, COMMENT_MARKER };
+module.exports = { buildComment, classifyDelta, formatNs, isComparable, noiseProfile, readSetting, COMMENT_MARKER };
