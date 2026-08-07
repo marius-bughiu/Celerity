@@ -12,6 +12,20 @@ on:
       - 'src/**'
       - '.github/workflows/benchmarks.yml'
 
+# Only the newest run for a given pull request is meaningful — the dashboard and the
+# comparison comment both read the latest — so a push supersedes its predecessor rather
+# than stacking another eight-runner matrix behind it. Five pushes over one review loop
+# created five uncancelled runs and left `CI` and `Coverage`, the checks that actually
+# gate correctness, queued for ~50 minutes behind perf numbers nobody would read.
+#
+# The key is the PR number on the pull-request path and the commit SHA on the main path.
+# That makes every main push its own group, so `cancel-in-progress` can never discard one:
+# each commit's numbers are independently meaningful there, and a cancelled run would
+# leave a hole in the gh-pages time series.
+concurrency:
+  group: benchmarks-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 # The core suite is ~300 cases and, at full BenchmarkDotNet accuracy (Job.Default x2
 # launches, see CiConfig.cs), one pass takes ~3h. The PR path runs it TWICE on one
 # runner (PR head + main base, same-runner A/B, so hardware variance cancels), which
@@ -35,14 +49,69 @@ env:
   SHARD_TOTAL: '8'
 
 jobs:
+  # The `paths: src/**` trigger above is a path filter, not a semantic one: an XML
+  # doc-comment edit is a `src/**` change and buys a full sharded A/B run for a diff with
+  # zero IL in it. Two such PRs overlapping is what pushed every shard to 1.75-2.0x its
+  # baseline and one of them into the timeout, so the cheapest correct fix is not
+  # to run the suite when the diff provably cannot change what it measures.
+  #
+  # Pull requests only. A push to main always measures, so the gh-pages series never gains
+  # a hole and a wrongly-skipped PR is still measured on merge — which caps the worst case
+  # of a gate mistake at "the PR comment was missing", never "the regression was unseen".
+  changes:
+    name: relevance gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+
+    outputs:
+      run_benchmarks: ${{ steps.gate.outputs.run }}
+
+    steps:
+      # fetch-depth: 0 so the script can resolve the merge base of the two event SHAs.
+      # Skipped on the push path, which answers without consulting the repository at all:
+      # this job gates the whole matrix, so a full-history clone there would be latency
+      # on the critical path buying nothing.
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this diff can move a measured number
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Push to ${{ github.ref }} — always measured, so the published series has no gaps."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node scripts/benchmark_relevant_changes.js \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
+
   benchmark-shard:
     name: benchmark (shard ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.run_benchmarks == 'true'
     runs-on: ubuntu-latest
-    # Measured at SHARD_TOTAL=6: slices ran 43-65 min, so head + base came to 86-130 min
-    # and the heaviest shard overran this timeout. At 8 the same work divides further,
-    # putting the heaviest shard back comfortably inside the limit. Re-measure and widen
-    # the matrix again if shard durations creep back toward it.
-    timeout-minutes: 120
+    # Sized from the measured head slices at SHARD_TOTAL=8, which ran 45.8-67.3 min. The
+    # base replays the head's slice, so a job costs about twice its head slice: 91-135 min,
+    # and the two heaviest shards exceeded the old 120 min cap on their own. That cap was
+    # set when the suite was smaller and has since been outgrown — Sorting, SortedSpan and
+    # SegmentTree all added classes — so this is sizing the budget to the measured bound
+    # rather than buying room for an imbalance (the imbalance is what the roster handoff
+    # below fixes).
+    #
+    # Widening the matrix instead was considered and rejected: the 81-case
+    # StringHasherBenchmark is a single class and sharding is by class, so it floors the
+    # heaviest slice no matter how many shards there are — and more shards means more
+    # concurrent runners, which is the contention this workflow is being changed to reduce.
+    # Re-measure if slices approach 90 min; at that point the fix is to split that class,
+    # not to raise this again.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -75,8 +144,14 @@ jobs:
       - name: Run head benchmarks (shard ${{ matrix.shard }})
         # working-directory must be the project folder, not src/. BenchmarkDotNet writes
         # its artifacts to ./BenchmarkDotNet.Artifacts relative to the process CWD.
+        #
+        # --shard-classes-out records the slice the packer resolved here, so the base run
+        # below can replay it instead of packing its own. See that step for why.
         working-directory: src/Celerity.Benchmarks
-        run: dotnet run --configuration Release -- --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}"
+        run: >-
+          dotnet run --configuration Release --
+          --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}"
+          --shard-classes-out /tmp/head-shard-classes.txt
 
       - name: Stage head report
         run: |
@@ -91,11 +166,28 @@ jobs:
         # on THIS runner so hardware variance cancels (hosted runners vary 20-50%
         # run-to-run, so a stored cross-runner baseline would be noise-dominated).
         #
-        # `--shard` is on main now, so the base tip honours it and measures only this
-        # shard's slice — the transitional full-suite base run that this comment used to
-        # warn about no longer happens. A cancellation here is therefore a real signal (the
-        # slice genuinely exceeded the job timeout) rather than expected behaviour that will
-        # self-heal, and should be investigated instead of dismissed.
+        # The base REPLAYS the head's slice (--shard-classes) rather than packing its own.
+        # Shard membership comes from greedy bin-packing over the benchmark class list, and
+        # a PR that adds a benchmark class gives the two sides *different* lists — so shard
+        # `i` was not the same slice on head and base, a job could draw a light head slice
+        # and a heavy base slice, and the pair overran the timeout even though every
+        # individual slice was well inside it. Replaying makes the base a subset of
+        # the head by construction: the pair is bounded by twice the head slice, which is
+        # the quantity the packer balances, and shard `i` compares like with like.
+        #
+        # A class the PR adds is simply absent from the base's own suite; the process says
+        # so and skips it, and the comparison reports it as new rather than as a delta.
+        # A cancellation here is a real signal (the slice genuinely exceeded the job
+        # timeout) and should be investigated rather than dismissed.
+        #
+        # BOTH selectors are passed, and that is not redundant: this step runs the code in
+        # the `main` worktree, not the PR's, so it only understands flags that are already
+        # on `main`. `--shard-classes` is therefore inert until this change merges, and the
+        # base falls back to `--shard` and packs its own slice — the behaviour we have
+        # today. Drop `--shard` and a base that predates the flag silently matches nothing
+        # and runs the WHOLE suite instead of one slice, which is a multi-hour step that
+        # ends at the job timeout. Any future selector must be added the same way: ship it
+        # to `main` first, and keep the previous one alongside for one release.
         if: github.event_name == 'pull_request'
         working-directory: ${{ github.workspace }}
         run: |
@@ -105,8 +197,15 @@ jobs:
           echo "Benchmarking base (main) at $BASE_SHA, shard ${{ matrix.shard }}"
           git worktree add /tmp/base-tree "$BASE_SHA"
           cd /tmp/base-tree/src/Celerity.Benchmarks
-          dotnet run --configuration Release -- --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}"
-          report=$(ls BenchmarkDotNet.Artifacts/results/*-report-full.json | head -n 1)
+          dotnet run --configuration Release -- \
+            --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}" \
+            --shard-classes /tmp/head-shard-classes.txt
+          report=$(ls BenchmarkDotNet.Artifacts/results/*-report-full.json 2>/dev/null | head -n 1 || true)
+          if [ -z "$report" ]; then
+            echo "Base produced no report for shard ${{ matrix.shard }}: it shares no benchmark"
+            echo "class with the head slice, so every case in it is new on this PR."
+            exit 0
+          fi
           cp "$report" "/tmp/reports/base-shard-${{ matrix.shard }}.json"
           echo "Staged base shard ${{ matrix.shard }}: $report"
 
@@ -120,10 +219,11 @@ jobs:
 
   aggregate:
     name: aggregate & report
-    needs: benchmark-shard
-    # Run even if some shards were cancelled/failed (e.g. the transitional base run
-    # above) so partial results are still reported where possible.
-    if: always()
+    needs: [changes, benchmark-shard]
+    # Run even if some shards were cancelled or failed so partial results are still
+    # reported where possible — but say loudly which shards are missing (see the merge
+    # step), because a partial report otherwise reads exactly like a complete one.
+    if: always() && needs.changes.outputs.run_benchmarks == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -148,6 +248,22 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+
+          # Name the shards that did not report before anything else. `if: always()` means
+          # this job runs on a partial matrix, and the merged report is then legitimately
+          # missing whole benchmark classes — including, on the PR that motivated this,
+          # part of the new collection's own numbers. Nothing downstream could tell.
+          missing=""
+          for s in $(seq 0 $((SHARD_TOTAL - 1))); do
+            if [ ! -f "/tmp/reports/head-shard-${s}.json" ]; then
+              missing="${missing}${missing:+, }${s}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning title=Incomplete benchmark report::Shard(s) ${missing} produced no report; the comparison below is missing every benchmark class packed onto them."
+          fi
+          echo "missing_shards=${missing}" >> "$GITHUB_OUTPUT"
+
           head_files=(/tmp/reports/head-shard-*.json)
           if [ ${#head_files[@]} -eq 0 ]; then
             echo "No head shard reports found (all shards cancelled/failed) — nothing to report."
@@ -194,6 +310,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           ALERT_THRESHOLD_RATIO: '1.10'
+          MISSING_SHARDS: ${{ steps.merge.outputs.missing_shards }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -334,11 +451,27 @@ jobs:
             const collections = entries.filter(e => !e.isHasher);
             const hashers = entries.filter(e => e.isHasher);
 
+            // A partial merge otherwise reads exactly like a complete one: the tables are
+            // well-formed and simply have fewer rows, so a silently-dropped shard looks
+            // like a clean report. Say it above the fold, before any numbers.
+            const missingShards = (process.env.MISSING_SHARDS || '').trim();
+            const incomplete = missingShards.length === 0 ? [] : [
+              `> [!WARNING]`,
+              `> **Incomplete report.** Shard(s) \`${missingShards}\` produced no measurements, so every`,
+              `> benchmark class packed onto them is missing from the tables below — including, possibly,`,
+              `> the ones this PR changed. Treat the comparison as partial rather than as a clean run.`,
+              '',
+            ];
+            if (missingShards.length > 0) {
+              core.warning(`Benchmark comparison is missing shard(s) ${missingShards}.`);
+            }
+
             const marker = '<!-- celerity-benchmarks-comment -->';
             const body = [
               marker,
               '## Benchmarks',
               '',
+              ...incomplete,
               subtitle,
               '',
               ...highlights,

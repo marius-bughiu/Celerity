@@ -24,8 +24,14 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - `scripts/check_doc_anchors.js` — a CI guard that resolves every anchor link and relative file link across all tracked markdown, so a link that scrolls nowhere fails the build instead of shipping. Closes [#339](https://github.com/marius-bughiu/Celerity/issues/339).
 - A `--self-test` mode on that script, pinning the heading-slug rule against ids GitHub actually rendered, and a `doc-anchors` job in `ci.yml` that runs both modes on every PR. Closes [#339](https://github.com/marius-bughiu/Celerity/issues/339).
 - A "Documentation links" section in `CONTRIBUTING.md` covering the slug rule and how to look an anchor up rather than guess it. Closes [#339](https://github.com/marius-bughiu/Celerity/issues/339).
+- `scripts/benchmark_relevant_changes.js` — a CI gate that skips the sharded benchmark run on a pull request whose diff cannot move a measured number: documentation, the test / fuzz / AOT-smoke projects, or comments inside `.cs` files. It skips only what it can prove inert and never applies to `main`. Closes [#335](https://github.com/marius-bughiu/Celerity/issues/335).
+- A `--shard-dry-run` switch on the benchmarks runner that resolves a shard's class list without measuring anything. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
 
 ### Fixed
+
+- Pushing to a pull request now supersedes that PR's in-flight benchmark run instead of stacking another eight-runner matrix behind it, so `CI` and `Coverage` no longer queue behind superseded perf runs. Pushes to `main` are keyed per commit and never cancelled. Closes [#319](https://github.com/marius-bughiu/Celerity/issues/319).
+- A benchmark shard no longer times out on a pull request that adds a benchmark class: the `main` base now replays the class list the PR head resolved, so shard *i* is the same slice on both sides. The job budget was also resized to the measured slices, which the suite had outgrown. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
+- A benchmark comparison that is missing a shard now says so in the PR comment, instead of reading exactly like a complete run. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
 
 - `PartialSort.TopK` now throws `ArgumentException` when its `destination` overlaps its `source`, instead of silently returning a wrong answer and writing to the source it documents as untouched. Disjoint slices of one array are still accepted, matching `RadixSort` and `CountingSort`.
 - Corrected `RadixSort.ArgSort` XML documentation: only its `ReadOnlySpan<int>` overload rejects `indices` that shares storage with `keys`. Documentation only.
