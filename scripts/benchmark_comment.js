@@ -12,7 +12,7 @@
 // (8 regressions, 5 improvements) out of 757, four of them on `Dictionary<,>` / `HashSet<>`
 // baseline arms whose code is the same on both sides by definition (#351).
 //
-// The measured noise floor of that run, which is the reason no purely per-row rule can
+// The measured spread of that run, which is the reason no purely per-row rule can
 // reach zero: |Δ| has a p50 of 0.7% and a p90 of 6.2%, but 43 rows exceed ±10%,
 // 16 exceed ±25% and the worst is 222%. The distribution is sharply peaked with a fat tail
 // of individually unstable cases — sensitive to code and data layout, which differs
@@ -47,7 +47,7 @@
 // sides (`SmallDictionaryBenchmark.Dictionary_Remove(ItemCount: 64)`, +33.1% with 3.4% and
 // 3.5% relative SD). Both launches of each side agree closely, so nothing inside a single
 // A/B pass can tell it from a real change; only re-measuring against a fresh pair of builds
-// can. That residual is why the comment publishes the run's measured noise floor rather
+// can. That residual is why the comment publishes the run's own observed spread rather
 // than presenting a flag as a verdict.
 //
 // Usage:
@@ -114,7 +114,7 @@ function classifyDelta(prMean, prStdDev, baseMean, baseStdDev, thresholdRatio, n
 
 // Nearest-rank percentile over an already-sorted ascending array: the reported value is
 // always an |Δ| some row actually exhibited, never an interpolation between two rows. That
-// is the right choice for a noise floor — "p95 is 10.3%" should name an observed
+// is the right choice for a published spread — "p95 is 10.3%" should name an observed
 // measurement — but it does mean p50 is not the textbook median on an even-length sample,
 // which is why nothing below calls it one.
 function percentile(sorted, p) {
@@ -123,11 +123,16 @@ function percentile(sorted, p) {
   return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
 }
 
-// The run's own noise floor, measured rather than assumed (#351). Any one pull request
-// changes a handful of the ~750 tracked cases, so the spread of the whole delta
-// distribution is dominated by what the runner did between the head slice and the base
-// slice. Publishing it on every comment means the threshold can be argued about against
-// evidence, and a run that was unusually hostile says so instead of looking clean.
+// The run's own delta distribution, measured rather than assumed (#351). On a typical pull
+// request — a handful of the ~750 tracked cases touched — this is a noise floor: almost
+// every row in it is the runner's own drift between the head slice and the base slice.
+//
+// It is not *only* that, which is why nothing here calls it a noise floor. A change to a
+// shared primitive or to the benchmark configuration moves many rows at once, and those
+// real effects sit in the same sample. Deriving the floor from a control group instead was
+// considered and rejected: the obvious controls are the BCL baseline arms, but a layout
+// shift moves those too, so they would understate the tail while looking authoritative.
+// Reporting the distribution and saying what is in it is the honest version.
 function noiseProfile(deltaPercents) {
   if (deltaPercents.length === 0) return null;
   const sorted = [...deltaPercents].sort((a, b) => a - b);
@@ -199,10 +204,21 @@ function buildComment(prReport, baseReport, options = {}) {
     const prMean = b.Statistics.Mean;
     const prStdDev = b.Statistics.StandardDeviation;
     const baseStats = baseMap.get(name);
-    let deltaCell = baseMap.has(name) ? '⚠️ base errored' : '🆕 new';
+    let deltaCell;
     let flag = null;
 
-    if (baseStats) {
+    if (!baseStats) {
+      // Present in the base report but with no statistics means the base side of this pair
+      // errored, so there is nothing to compare against. Counted, because a subtitle
+      // reading "No significant change" over a row that could not be measured is the same
+      // false reassurance a too-permissive guard gives.
+      if (baseMap.has(name)) {
+        errored++;
+        deltaCell = '⚠️ base errored';
+      } else {
+        deltaCell = '🆕 new';
+      }
+    } else {
       const baseMean = baseStats.Mean;
       // A row whose ratio cannot mean anything is reported as such rather than rendered as
       // `+Infinity%` and flagged. It is counted with the errored rows because it is the
@@ -265,16 +281,20 @@ function buildComment(prReport, baseReport, options = {}) {
 
   const noise = noiseProfile(deltaPercents);
   if (noise) {
-    // Stated as what it is: a floor, not a verdict. A reviewer comparing a flagged row
-    // against p95 can see immediately whether it stands out from the run it came in.
+    // Named for what it is rather than for what it usually is. On a narrow change this
+    // reads as the run's noise floor; on a broad one it moves with the change itself, and
+    // a reviewer told "this is drift" would talk themselves out of a real regression.
     // Reported as percentiles, not as a mean and a "median": each figure is the |Δ| of an
     // actual row (see `percentile`), and naming them p50/p90/p95 says so.
     footer.push('');
     footer.push(
-      `<sub>**Measured noise floor for this run** — |Δ| across all ${noise.n} paired rows, of which a pull ` +
-      `request changes only a handful, so the rest is the runner's own drift: p50 ` +
+      `<sub>**Observed spread of this run** — |Δ| across all ${noise.n} paired rows: p50 ` +
       `${noise.p50.toFixed(1)}%, p90 ${noise.p90.toFixed(1)}%, p95 ${noise.p95.toFixed(1)}% ` +
-      `(nearest-rank). Read a flag near that p95 with suspicion, and re-run before acting on it.</sub>`
+      `(nearest-rank). A pull request usually touches a handful of these, so this is mostly the ` +
+      `runner's own drift between the two slices — but a change to a shared primitive moves many ` +
+      `rows at once and would raise these figures itself, so read it as the run's spread rather ` +
+      `than as a floor the PR cannot have caused. A flag that does not stand out against it is ` +
+      `worth re-running before acting on.</sub>`
     );
   }
 
@@ -432,6 +452,7 @@ function selfTest() {
       { FullName: 'ABenchmark.A_Noisy(ItemCount: 8)', Statistics: statsFor(120, 40) },
       { FullName: 'ABenchmark.A_New(ItemCount: 8)', Statistics: statsFor(50, 1) },
       { FullName: 'ABenchmark.A_Errored(ItemCount: 8)', Statistics: null, Measurements: [] },
+      { FullName: 'ABenchmark.A_BaseErrored(ItemCount: 8)', Statistics: statsFor(100, 1) },
       { FullName: 'StringHasherBenchmark.Fnv1a(Length: 8)', Statistics: statsFor(10, 0.1) },
     ],
   };
@@ -441,6 +462,8 @@ function selfTest() {
       { FullName: 'ABenchmark.A_Steady(ItemCount: 8)', Statistics: statsFor(100, 1) },
       { FullName: 'ABenchmark.A_Noisy(ItemCount: 8)', Statistics: statsFor(100, 40) },
       { FullName: 'ABenchmark.A_Errored(ItemCount: 8)', Statistics: statsFor(100, 1) },
+      // Present, but the base side of this pair produced no statistics.
+      { FullName: 'ABenchmark.A_BaseErrored(ItemCount: 8)', Statistics: null },
       { FullName: 'StringHasherBenchmark.Fnv1a(Length: 8)', Statistics: statsFor(10, 0.1) },
     ],
   };
@@ -448,18 +471,23 @@ function selfTest() {
   const built = buildComment(prReport, baseReport, { baseSha: 'abcdef1234', shardTotal: '8' });
   check('regressions', built.regressions, 1);
   check('improvements', built.improvements, 0);
-  check('errored', built.errored, 1);
+  check('errored', built.errored, 2);
   check('marker', built.body.startsWith(COMMENT_MARKER), true);
   check('highlights hold only the flagged row', (built.body.match(/A_Slow/g) || []).length, 2);
   check('a noisy row is not flagged', built.body.includes('A_Noisy(ItemCount: 8)` | 120.0 ns | 40.0 ns | 100.0 ns | +20.0% |'), true);
   check('a new row is reported as new', built.body.includes('🆕 new'), true);
   check('an errored row is reported', built.body.includes('⚠️ errored'), true);
+  // An unusable comparison must reach the count, not just the table: a subtitle reading
+  // "No significant change" over a pair that could not be compared is false reassurance.
+  check('a base-side failure is reported', built.body.includes('⚠️ base errored'), true);
+  check('a base-side failure reaches the subtitle', built.body.includes('2 benchmarks produced no usable comparison'), true);
   check('hashers get their own section', built.body.includes('<summary><b>Hashers</b> (1)</summary>'), true);
-  check('collections section excludes hashers', built.body.includes('<summary><b>Collections</b> (5)</summary>'), true);
-  // The errored row has no delta, so it is outside the noise profile; the new row has no
-  // base and is outside it too. Four rows remain.
+  check('collections section excludes hashers', built.body.includes('<summary><b>Collections</b> (6)</summary>'), true);
+  // The errored row has no delta, the base-errored row has no base statistics, and the new
+  // row has no base at all. Four rows remain.
   check('noise profile counts only paired rows', built.noise.n, 4);
-  check('noise floor is published', built.body.includes('**Measured noise floor for this run**'), true);
+  check('the spread is published', built.body.includes('**Observed spread of this run**'), true);
+  check('the spread is not called a floor', /noise floor/i.test(built.body), false);
   check('no incomplete banner by default', built.body.includes('[!WARNING]'), false);
 
   const partial = buildComment(prReport, baseReport, { missingShards: '3, 5' });
@@ -479,7 +507,7 @@ function selfTest() {
   check('zero sigmas leaves the ratio gate alone', [noGuard.regressions, noGuard.improvements], [2, 0]);
   check('zero sigmas is not replaced by the default', noGuard.noiseSigmas, 0);
 
-  // A degenerate base must not poison the published noise floor.
+  // A degenerate base must not poison the published percentiles.
   const degenerate = buildComment(
     { Benchmarks: [
       { FullName: 'ABenchmark.A_Ok(ItemCount: 8)', Statistics: statsFor(102, 1) },
@@ -517,7 +545,7 @@ function selfTest() {
   // An empty base (every shard's base run produced nothing) must still render.
   const noBase = buildComment(prReport, { Benchmarks: [] }, {});
   check('an empty base still renders', noBase.regressions, 0);
-  check('an empty base reports every row as new', (noBase.body.match(/🆕 new/g) || []).length, 5);
+  check('an empty base reports every row as new', (noBase.body.match(/🆕 new/g) || []).length, 6);
 
   // ---- settings ----
   // Unset means "use the calibrated default"; a value that would quietly change what a
@@ -609,7 +637,7 @@ function main() {
     `${result.improvements} improvement(s), ${result.errored} errored ` +
     `(±${((result.thresholdRatio - 1) * 100).toFixed(0)}% and ${result.noiseSigmas}σ).`);
   if (result.noise) {
-    console.log(`Measured noise floor over ${result.noise.n} paired row(s): p50 ` +
+    console.log(`Observed spread over ${result.noise.n} paired row(s): p50 ` +
       `${result.noise.p50.toFixed(1)}%, p90 ${result.noise.p90.toFixed(1)}%, p95 ${result.noise.p95.toFixed(1)}%.`);
   }
 }
