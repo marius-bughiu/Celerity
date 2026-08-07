@@ -305,180 +305,51 @@ jobs:
           retention-days: 30
 
       # ----- PR path: post the same-runner A/B comment -----
+      #
+      # The body is built by a script rather than inline here, because what it decides —
+      # which rows are flagged as a regression — is a statistical judgement that has to be
+      # testable. Inline in this file it was neither runnable nor pinned, and it shipped a
+      # guard that flagged 13 of 757 rows on a diff with zero IL in it (#351).
+      # `scripts/benchmark_comment.js --self-test` runs on every PR from `ci.yml` and pins
+      # the rule against the real measurements from that run.
+      - name: Build benchmark comment
+        if: github.event_name == 'pull_request' && steps.merge.outputs.have_head == 'true' && steps.merge.outputs.have_base == 'true'
+        env:
+          # A row is flagged when it moves past this ratio AND the gap exceeds
+          # ALERT_NOISE_SIGMAS times the two measurements' combined standard deviation,
+          # added in quadrature. Both defaults live in the script; they are repeated here
+          # because this is where someone tuning them will look first.
+          ALERT_THRESHOLD_RATIO: '1.10'
+          ALERT_NOISE_SIGMAS: '3'
+          MISSING_SHARDS: ${{ steps.merge.outputs.missing_shards }}
+        run: >-
+          node scripts/benchmark_comment.js
+          --pr /tmp/pr-report-full.json
+          --base /tmp/base-report-full.json
+          --out /tmp/benchmark-comment.md
+
       - name: Post benchmark comment
         if: github.event_name == 'pull_request' && steps.merge.outputs.have_head == 'true' && steps.merge.outputs.have_base == 'true'
         uses: actions/github-script@v7
         env:
-          ALERT_THRESHOLD_RATIO: '1.10'
           MISSING_SHARDS: ${{ steps.merge.outputs.missing_shards }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
 
-            const pr = JSON.parse(fs.readFileSync('/tmp/pr-report-full.json', 'utf8'));
-            const base = JSON.parse(fs.readFileSync('/tmp/base-report-full.json', 'utf8'));
-
-            // Index base results by full benchmark name.
-            const baseMap = new Map();
-            for (const b of base.Benchmarks) {
-              baseMap.set(b.FullName, b.Statistics);
+            const body = fs.readFileSync('/tmp/benchmark-comment.md', 'utf8');
+            // Kept in sync with COMMENT_MARKER in scripts/benchmark_comment.js.
+            const marker = '<!-- celerity-benchmarks-comment -->';
+            if (!body.includes(marker)) {
+              core.setFailed('The generated comment is missing its marker; posting it would orphan the previous one.');
+              return;
             }
 
-            const formatNs = (ns) => {
-              if (ns == null) return 'n/a';
-              if (ns < 1000) return `${ns.toFixed(1)} ns`;
-              if (ns < 1_000_000) return `${(ns/1000).toFixed(2)} μs`;
-              if (ns < 1_000_000_000) return `${(ns/1_000_000).toFixed(2)} ms`;
-              return `${(ns/1_000_000_000).toFixed(2)} s`;
-            };
-
-            const threshold = parseFloat(process.env.ALERT_THRESHOLD_RATIO);
-            const thresholdPct = ((threshold - 1) * 100).toFixed(0);
-            // Each entry: { name, isHasher, prCell, stdCell, baseCell, deltaCell, flag }
-            // where flag is 'regression' | 'improvement' | null.
-            const entries = [];
-            let regressions = 0;
-            let improvements = 0;
-            let errored = 0;
-
-            for (const b of pr.Benchmarks) {
-              const name = b.FullName;
-              // BenchmarkDotNet emits a benchmark with null Statistics and empty
-              // Measurements when that case errored or was not run (a throwing
-              // [GlobalSetup], a cancelled shard, an OOM, ...). Surface it as a row
-              // rather than dereferencing null — one errored case must never crash
-              // the aggregate job and red-X the whole PR gate.
-              if (b.Statistics == null) {
-                errored++;
-                const baseStats = baseMap.get(name);
-                entries.push({
-                  name,
-                  isHasher: /Hasher/.test(name),
-                  prCell: '⚠️ errored',
-                  stdCell: 'n/a',
-                  baseCell: baseStats ? formatNs(baseStats.Mean) : 'n/a',
-                  deltaCell: 'no measurements',
-                  flag: null,
-                });
-                continue;
-              }
-              const prMean = b.Statistics.Mean;
-              const prStdDev = b.Statistics.StandardDeviation;
-              const baseStats = baseMap.get(name);
-              let deltaCell = baseMap.has(name) ? '⚠️ base errored' : '🆕 new';
-              let flag = null;
-              if (baseStats) {
-                const baseMean = baseStats.Mean;
-                const baseStdDev = baseStats.StandardDeviation;
-                const ratio = prMean / baseMean;
-                const pct = (ratio - 1) * 100;
-                const sign = pct >= 0 ? '+' : '';
-                deltaCell = `${sign}${pct.toFixed(1)}%`;
-                // Flag only when the change clears the threshold AND exceeds the
-                // combined run-to-run noise of both measurements.
-                const beyondNoise = Math.abs(prMean - baseMean) > (prStdDev + baseStdDev);
-                if (ratio >= threshold && beyondNoise) {
-                  deltaCell += ' ⚠️';
-                  flag = 'regression';
-                  regressions++;
-                } else if (ratio <= (1 / threshold) && beyondNoise) {
-                  deltaCell += ' ✅';
-                  flag = 'improvement';
-                  improvements++;
-                }
-              }
-              entries.push({
-                name,
-                // Hasher throughput benchmarks (StringHasherBenchmark,
-                // IntegerHasherBenchmark) get their own section; everything else
-                // is a collection benchmark.
-                isHasher: /Hasher/.test(name),
-                prCell: formatNs(prMean),
-                stdCell: formatNs(prStdDev),
-                baseCell: baseStats ? formatNs(baseStats.Mean) : 'n/a',
-                deltaCell,
-                flag,
-              });
-            }
-
-            let subtitle;
-            if (regressions > 0) {
-              subtitle = `${regressions} regression${regressions === 1 ? '' : 's'} ⚠️ vs main` +
-                (improvements > 0 ? `, ${improvements} improvement${improvements === 1 ? '' : 's'} ✅` : '') +
-                ` (rows past ±${thresholdPct}% beyond noise).`;
-            } else if (improvements > 0) {
-              subtitle = `No regressions — ${improvements} improvement${improvements === 1 ? '' : 's'} ✅ vs main.`;
-            } else {
-              subtitle = `No significant change vs main (all within ±${thresholdPct}% or noise).`;
-            }
-            if (errored > 0) {
-              subtitle += ` ⚠️ ${errored} benchmark${errored === 1 ? '' : 's'} errored (no measurements) — see the table.`;
-            }
-
-            const baseSha = (process.env.BASE_SHA || '').slice(0, 7);
-            const footer = `<sub>Same-runner A/B (sharded ${process.env.SHARD_TOTAL || ''}-way): main (\`${baseSha}\`) and this PR were built and benchmarked back-to-back on the same runner per shard, so hardware variance cancels out. ⚠️ = PR mean ≥ +${thresholdPct}% slower than main and beyond combined std-dev; ✅ = correspondingly faster.</sub>`;
-
-            const header = ['| Benchmark | This PR | StdDev | main | Δ |', '|---|---:|---:|---:|---:|'];
-            const toRow = (e) => `| \`${e.name}\` | ${e.prCell} | ${e.stdCell} | ${e.baseCell} | ${e.deltaCell} |`;
-
-            // A collapsible section per benchmark family, collapsed by default so
-            // the (often large) tables stay below the fold.
-            const section = (title, list) => {
-              if (list.length === 0) return [];
-              return [
-                '<details>',
-                `<summary><b>${title}</b> (${list.length})</summary>`,
-                '',
-                ...header,
-                ...list.map(toRow),
-                '</details>',
-                '',
-              ];
-            };
-
-            // Highlights: only the flagged rows stay above the fold so reviewers
-            // see what actually moved without expanding either table.
-            const flagged = entries.filter(e => e.flag);
-            const highlights = flagged.length === 0 ? [] : [
-              '**Highlights**',
-              '',
-              ...header,
-              ...flagged.map(toRow),
-              '',
-            ];
-
-            const collections = entries.filter(e => !e.isHasher);
-            const hashers = entries.filter(e => e.isHasher);
-
-            // A partial merge otherwise reads exactly like a complete one: the tables are
-            // well-formed and simply have fewer rows, so a silently-dropped shard looks
-            // like a clean report. Say it above the fold, before any numbers.
             const missingShards = (process.env.MISSING_SHARDS || '').trim();
-            const incomplete = missingShards.length === 0 ? [] : [
-              `> [!WARNING]`,
-              `> **Incomplete report.** Shard(s) \`${missingShards}\` produced no measurements, so every`,
-              `> benchmark class packed onto them is missing from the tables below — including, possibly,`,
-              `> the ones this PR changed. Treat the comparison as partial rather than as a clean run.`,
-              '',
-            ];
             if (missingShards.length > 0) {
               core.warning(`Benchmark comparison is missing shard(s) ${missingShards}.`);
             }
-
-            const marker = '<!-- celerity-benchmarks-comment -->';
-            const body = [
-              marker,
-              '## Benchmarks',
-              '',
-              ...incomplete,
-              subtitle,
-              '',
-              ...highlights,
-              ...section('Collections', collections),
-              ...section('Hashers', hashers),
-              footer,
-            ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,

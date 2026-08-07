@@ -72,6 +72,7 @@ function isUnbenchmarkedProject(project) {
 const ALWAYS_SIGNIFICANT = new Set([
   '.github/workflows/benchmarks.yml',
   'scripts/benchmark_relevant_changes.js',
+  'scripts/benchmark_comment.js',
   'scripts/check_dashboard_coverage.js',
 ]);
 
