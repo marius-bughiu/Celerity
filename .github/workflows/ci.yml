@@ -78,7 +78,7 @@ jobs:
 
       # The CHANGELOG extraction is a shell script, so it sits outside
       # `dotnet test` and the coverage gate. Its size assertion is the one
-      # guarding against an over-cap release body publishing six packages and
+      # guarding against an over-cap release body publishing every package and
       # only then failing to create the release.
       - name: Test the release-notes extraction gate
         working-directory: ${{ github.workspace }}

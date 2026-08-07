@@ -13,7 +13,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
 | Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: a breaking API change fails `pack`, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
 
-All of these run in CI. Coverage is measured on all six shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
+All of these run in CI. Coverage is measured on all seven shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
 
 ## Philosophy: example tests, then adversarial tests
 
@@ -132,7 +132,7 @@ The baseline-bump ritual that keeps package validation meaningful is in [CONTRIB
 
 ## Code coverage
 
-Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) and scoped to all six shipping assemblies — `Celerity`, `Celerity.Hashing`, `Celerity.Primitives`, `Celerity.Ring`, `Celerity.Sentinel`, `Celerity.Cardinality` — via [`src/coverage.runsettings`](../src/coverage.runsettings). The test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.
+Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) and scoped to all seven shipping assemblies — `Celerity`, `Celerity.Hashing`, `Celerity.Primitives`, `Celerity.Sorting`, `Celerity.Ring`, `Celerity.Sentinel`, `Celerity.Cardinality` — via [`src/coverage.runsettings`](../src/coverage.runsettings). The test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.
 
 Four test projects contribute: `Celerity.Tests` for the three core packages, plus `Celerity.Ring.Tests` / `Celerity.Sentinel.Tests` / `Celerity.Cardinality.Tests` for the showcase tier. Their Cobertura reports are merged on (source file, line number), so a line covered by any run counts as covered — which matters because the showcase projects also exercise `Celerity.Collections` transitively.
 
