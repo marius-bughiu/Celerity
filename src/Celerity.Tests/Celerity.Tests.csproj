@@ -4,6 +4,14 @@
     <TargetFrameworks>$(CelerityTargetFrameworks)</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!--
+      #332: These assertions intentionally exercise the collection's own Contains
+      and Count implementations. Replacing them with the xUnit alternatives would
+      route through IEnumerable and stop testing the probe paths under test.
+    -->
+    <NoWarn>$(NoWarn);xUnit2013;xUnit2017;xUnit2027</NoWarn>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
