@@ -9,7 +9,9 @@ namespace Celerity.Tests.Hashing;
 /// <summary>
 /// Family-wide naming and cross-width contract for the integer hashers: every live integer
 /// hasher names its algorithm in its type name, the four key widths ship the same three
-/// mixing tiers, and an unsigned hasher agrees bit-for-bit with its signed peer.
+/// mixing tiers, and each unsigned hasher agrees bit-for-bit with its signed peer — with one
+/// documented exception, the 32-bit naive fold, whose shift is arithmetic on one side and
+/// logical on the other.
 /// </summary>
 /// <remarks>
 /// <para>
