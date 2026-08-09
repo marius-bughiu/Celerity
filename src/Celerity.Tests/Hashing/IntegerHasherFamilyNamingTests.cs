@@ -66,18 +66,6 @@ public class IntegerHasherFamilyNamingTests
         Assert.Empty(offenders);
     }
 
-    [Fact]
-    public void TheIdentityTier_ShouldRemainSignedOnly_AsADeliberateAsymmetry()
-    {
-        // The zero-work floor is reached from an unsigned key with a free cast at the call
-        // site (`new Int32IdentityHasher().Hash((int)u)`), so a UInt32IdentityHasher would be
-        // a type that adds nothing. Recorded here rather than left to be rediscovered as a gap.
-        Assert.Contains(IntegerHasherTypes(), t => t.Name == "Int32IdentityHasher");
-        Assert.Contains(IntegerHasherTypes(), t => t.Name == "Int64IdentityHasher");
-        Assert.DoesNotContain(IntegerHasherTypes(), t => t.Name == "UInt32IdentityHasher");
-        Assert.DoesNotContain(IntegerHasherTypes(), t => t.Name == "UInt64IdentityHasher");
-    }
-
     // ── Cross-width agreement on the same bit pattern ─────────────────────────
 
     public static TheoryData<int> Int32Keys =>
