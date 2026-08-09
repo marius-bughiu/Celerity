@@ -28,14 +28,11 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - A `--shard-dry-run` switch on the benchmarks runner that resolves a shard's class list without measuring anything. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
 - `scripts/benchmark_comment.js` — the pull-request benchmark comment, moved out of `benchmarks.yml` so the rule deciding which rows count as a regression is runnable and testable, with a `--self-test` wired into `ci.yml`. Closes [#351](https://github.com/marius-bughiu/Celerity/issues/351).
 - That comment now publishes the run's own **observed spread** — the p50, p90 and p95 of |Δ| across every paired row — so a flag can be read against the run it arrived in instead of an assumed floor. Closes [#351](https://github.com/marius-bughiu/Celerity/issues/351).
-- **`UInt32WangNaiveHasher`** and **`UInt64Murmur3Hasher`** in `Celerity.Hashing` — the algorithm-named replacements for `UInt32Hasher` / `UInt64Hasher`. Same hash values; every integer hasher now names its tier, so `uint` and `ulong` read the same way `int` and `long` always have. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
-- `UInt32WangNaiveHasherTests` / `UInt64Murmur3HasherTests`, plus `IntegerHasherFamilyNamingTests` — a family-wide guard that fails on a new bare-named integer hasher or a width missing a tier, and pins the signed/unsigned bit-pattern agreement (including the one pair that deliberately diverges). Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
-- API-reference sections for both new hashers, a "deprecated hasher aliases" table, and a migration-guide section. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
+- **`UInt32WangNaiveHasher`** and **`UInt64Murmur3Hasher`** in `Celerity.Hashing` — the algorithm-named replacements for `UInt32Hasher` / `UInt64Hasher`. Same hash values; every integer hasher now names its tier, so `uint` and `ulong` read the same way `int` and `long` always have. [`docs/migration.md`](docs/migration.md) covers the rename. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
 
 ### Changed
 
-- The `IntegerHasherBenchmark` arms `UInt32_Default` / `UInt64_Default` / `UInt64_Default_Hash64` are now `UInt32_WangNaive` / `UInt64_Murmur3` / `UInt64_Murmur3_Hash64`, so the hasher dashboard labels a `uint` or `ulong` bar with its algorithm like the `int` and `long` bars. The renamed rows start a new series on the tracked chart. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
-- The `--hash-quality` report and the README / API-reference hasher tables list the `ulong` hashers cheapest-first, matching the other three widths. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
+- The `uint` / `ulong` hasher benchmark arms are named after their algorithm rather than `_Default`, so the dashboard labels those bars like the `int` and `long` ones. The renamed rows start a new series on the tracked chart. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
 
 ### Deprecated
 

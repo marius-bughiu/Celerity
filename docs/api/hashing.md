@@ -738,6 +738,8 @@ public struct DefaultHasher<T> : IHashProvider<T>
 
 A general-purpose `IHashProvider<T>` that delegates to `EqualityComparer<T>.Default.GetHashCode()`. Use it when no specialized hasher exists for a key type — custom structs, reference types without a built-in hasher, or to bridge an existing `IEqualityComparer<T>`-based design into the Celerity API.
 
+It is a struct, so the JIT devirtualizes the outer call on the probe path. The inner `EqualityComparer<T>` dispatch is unavoidable but acceptable for non-hot-path types — if `Hash` is on the hot path for a known key type, write a struct-specific hasher instead.
+
 ### Deprecated hasher aliases
 
 Two unsigned hashers were renamed so that every integer hasher names its algorithm, the way the signed families always have (`Int32WangNaiveHasher` / `Int32WangHasher` / `Int32Murmur3Hasher`). The old names still ship, marked `[Obsolete]`, and forward to the new types — the hash values are unchanged.
@@ -763,7 +765,6 @@ var d64 = new CelerityDictionary<ulong, string, UInt64Murmur3Hasher>();
 
 `UInt64Hasher` still implements [`IHashProvider64<ulong>`](#ihashprovider64t), so a sketch parameterized on it keeps its 64-bit path while you migrate. Both aliases will be removed in a future major version.
 
-It is a struct, so the JIT devirtualizes the outer call on the probe path. The inner `EqualityComparer<T>` dispatch is unavoidable but acceptable for non-hot-path types — if `Hash` is on the hot path for a known key type, write a struct-specific hasher instead.
 
 ### Choosing a hasher
 
