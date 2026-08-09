@@ -78,7 +78,7 @@ The interface does **not** derive from `IHashProvider<T>`: the two contracts are
 | Key type | Hashers with `Hash64` | Relationship to `Hash` |
 |---|---|---|
 | `long` | `Int64WangHasher`, `Int64Murmur3Hasher` | `Hash` is the low 32 bits of `Hash64` |
-| `ulong` | `UInt64WangHasher`, `UInt64Murmur3Hasher` | `Hash` is the low 32 bits of `Hash64` |
+| `ulong` | `UInt64WangHasher`, `UInt64Murmur3Hasher`, `UInt64Hasher` (obsolete alias for `UInt64Murmur3Hasher`) | `Hash` is the low 32 bits of `Hash64` |
 | `Guid` | `GuidHasher` | `Hash` is the low 32 bits of `Hash64` |
 | `string` | `StringXxHash64Hasher`, `StringXxHash3Hasher`, `StringCityHash64Hasher`, `StringMetroHash64Hasher`, `StringHighwayHash64Hasher`, `StringSipHash13Hasher`, `StringSipHash24Hasher`, `StringFnV1A64Hasher`, `StringFnV164Hasher` | `Hash` is `h ^ (h >> 32)` of `Hash64` |
 
