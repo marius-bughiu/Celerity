@@ -196,7 +196,7 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("UInt32")]
-    public int UInt32_Default() => HashAll<uint, UInt32Hasher>(uintKeys);
+    public int UInt32_WangNaive() => HashAll<uint, UInt32WangNaiveHasher>(uintKeys);
 
     [Benchmark]
     [BenchmarkCategory("UInt32")]
@@ -227,7 +227,7 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("UInt64")]
-    public int UInt64_Default() => HashAll<ulong, UInt64Hasher>(ulongKeys);
+    public int UInt64_Murmur3() => HashAll<ulong, UInt64Murmur3Hasher>(ulongKeys);
 
     [Benchmark]
     [BenchmarkCategory("UInt64")]
@@ -290,7 +290,7 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("UInt64")]
-    public ulong UInt64_Default_Hash64() => HashAll64<ulong, UInt64Hasher>(ulongKeys);
+    public ulong UInt64_Murmur3_Hash64() => HashAll64<ulong, UInt64Murmur3Hasher>(ulongKeys);
 
     [Benchmark]
     [BenchmarkCategory("UInt64")]

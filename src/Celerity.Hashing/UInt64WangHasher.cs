@@ -11,15 +11,15 @@ namespace Celerity.Hashing;
 /// that provides strong avalanche for adversarially or heavily-clustered keys.
 /// It is the <see cref="ulong"/> counterpart to <see cref="Int64WangHasher"/>:
 /// the mixer uses only shifts and adds (no multiplies), so it is cheaper than
-/// the two-multiply <see cref="UInt64Hasher"/> (which is the Murmur3
+/// the two-multiply <see cref="UInt64Murmur3Hasher"/> (the Murmur3
 /// <c>fmix64</c> finalizer) while still giving every input bit influence over
 /// the result. For any given 64-bit pattern it returns exactly what
 /// <see cref="Int64WangHasher"/> returns for the same bits.
 /// <para>
-/// Prefer this hasher over <see cref="UInt64Hasher"/> when profiling shows
+/// Prefer this hasher over <see cref="UInt64Murmur3Hasher"/> when profiling shows
 /// the two 64-bit multiplies of <c>fmix64</c> are a hot-path cost and the
 /// keys are already reasonably uniform; escalate back to
-/// <see cref="UInt64Hasher"/> for adversarial workloads that need maximum
+/// <see cref="UInt64Murmur3Hasher"/> for adversarial workloads that need maximum
 /// avalanche. For an even cheaper, lower-avalanche option on already-uniform
 /// keys, drop down to the XOR-fold <see cref="UInt64WangNaiveHasher"/>.
 /// </para>

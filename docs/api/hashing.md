@@ -78,7 +78,7 @@ The interface does **not** derive from `IHashProvider<T>`: the two contracts are
 | Key type | Hashers with `Hash64` | Relationship to `Hash` |
 |---|---|---|
 | `long` | `Int64WangHasher`, `Int64Murmur3Hasher` | `Hash` is the low 32 bits of `Hash64` |
-| `ulong` | `UInt64WangHasher`, `UInt64Hasher` | `Hash` is the low 32 bits of `Hash64` |
+| `ulong` | `UInt64WangHasher`, `UInt64Murmur3Hasher`, `UInt64Hasher` (obsolete alias for `UInt64Murmur3Hasher`) | `Hash` is the low 32 bits of `Hash64` |
 | `Guid` | `GuidHasher` | `Hash` is the low 32 bits of `Hash64` |
 | `string` | `StringXxHash64Hasher`, `StringXxHash3Hasher`, `StringCityHash64Hasher`, `StringMetroHash64Hasher`, `StringHighwayHash64Hasher`, `StringSipHash13Hasher`, `StringSipHash24Hasher`, `StringFnV1A64Hasher`, `StringFnV164Hasher` | `Hash` is `h ^ (h >> 32)` of `Hash64` |
 
@@ -636,13 +636,21 @@ Thomas Wang's 64-bit integer hash for `long` keys. Faster than `Int64Murmur3Hash
 
 > Also implements [`IHashProvider64<long>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
-### UInt32Hasher
+### UInt32WangNaiveHasher
 
 ```csharp
-public struct UInt32Hasher : IHashProvider<uint>
+public struct UInt32WangNaiveHasher : IHashProvider<uint>
 ```
 
-Wang/Jenkins-style bit-mixer for `uint` keys. Counterpart to `Int32WangNaiveHasher` for unsigned 32-bit integers.
+Wang/Jenkins-style bit-mixer for `uint` keys — the cheap-default tier of the `uint` family, and the `uint` counterpart to `Int32WangNaiveHasher`. It folds the high half of the value into the low half (`key ^ (key >> 16)`) and reinterprets the 32-bit result as a signed integer. Prefer it when the key distribution is already reasonably uniform and latency matters more than collision resistance; escalate to `UInt32WangHasher` (full Thomas-Wang `hash32shift`) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys.
+
+**Algorithm:** `(int)(key ^ (key >> 16))`.
+
+**Note:** the shift is logical here and arithmetic in `Int32WangNaiveHasher`, so unlike every other unsigned/signed pair in the family the two do **not** agree on a bit pattern whose top bit is set — `-1` folds to `0`, while `0xFFFFFFFF` folds to `0xFFFF0000`.
+
+**Note:** the XOR-fold maps `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
+
+> **Renamed.** This type shipped as `UInt32Hasher` through v2.5.0. See [deprecated hasher aliases](#deprecated-hasher-aliases).
 
 ### UInt32WangHasher
 
@@ -650,7 +658,7 @@ Wang/Jenkins-style bit-mixer for `uint` keys. Counterpart to `Int32WangNaiveHash
 public struct UInt32WangHasher : IHashProvider<uint>
 ```
 
-Thomas Wang's 32-bit integer hash (`hash32shift`) for `uint` keys. The full-mixer middle tier of the `uint` family: it sits between `UInt32Hasher` (the cheap XOR-fold) and `UInt32Murmur3Hasher` on the cost-vs-avalanche curve, the `uint` counterpart to `Int32WangHasher` and mirroring the role `Int64WangHasher` plays for `long` keys. It uses a single (shift-add-encoded) multiply plus a chain of XOR-shift / shift-add rounds, so it is cheaper than the two-multiply `UInt32Murmur3Hasher` finalizer while still giving every input bit influence over the result. Bijective on `uint`, so the only source of collisions is key structure, not the mixer. Prefer it over `UInt32Hasher` when the cheap XOR-fold produces measurable clustering; escalate to `UInt32Murmur3Hasher` when even better avalanche is needed.
+Thomas Wang's 32-bit integer hash (`hash32shift`) for `uint` keys. The full-mixer middle tier of the `uint` family: it sits between `UInt32WangNaiveHasher` (the cheap XOR-fold) and `UInt32Murmur3Hasher` on the cost-vs-avalanche curve, the `uint` counterpart to `Int32WangHasher` and mirroring the role `Int64WangHasher` plays for `long` keys. It uses a single (shift-add-encoded) multiply plus a chain of XOR-shift / shift-add rounds, so it is cheaper than the two-multiply `UInt32Murmur3Hasher` finalizer while still giving every input bit influence over the result. Bijective on `uint`, so the only source of collisions is key structure, not the mixer. Prefer it over `UInt32WangNaiveHasher` when the cheap XOR-fold produces measurable clustering; escalate to `UInt32Murmur3Hasher` when even better avalanche is needed.
 
 **Algorithm:** `~key + (key << 15)`, `^ (key >> 12)`, `+ (key << 2)`, `^ (key >> 4)`, `* 2057` (encoded as `+ (key << 3) + (key << 11)`), `^ (key >> 16)`, computed on the `uint` directly and truncated to `int`. For any given 32-bit pattern it returns exactly what `Int32WangHasher` returns for the same bits.
 
@@ -662,21 +670,27 @@ Thomas Wang's 32-bit integer hash (`hash32shift`) for `uint` keys. The full-mixe
 public struct UInt32Murmur3Hasher : IHashProvider<uint>
 ```
 
-MurmurHash3 32-bit finalizer (`fmix32`) for `uint` keys. The `uint` counterpart to `Int32Murmur3Hasher`, and the strong-avalanche escalation option for `UInt32Hasher` (the cheap XOR-fold default) — every input bit affects every output bit. Prefer it over `UInt32Hasher` when the XOR-fold produces measurable clustering or collision resistance matters more than raw throughput.
+MurmurHash3 32-bit finalizer (`fmix32`) for `uint` keys. The `uint` counterpart to `Int32Murmur3Hasher`, and the strong-avalanche escalation option for `UInt32WangNaiveHasher` (the cheap XOR-fold default) — every input bit affects every output bit. Prefer it over `UInt32WangNaiveHasher` when the XOR-fold produces measurable clustering or collision resistance matters more than raw throughput.
 
 **Algorithm:** `h ^= h >> 16`, `h *= 0x85ebca6b`, `h ^= h >> 13`, `h *= 0xc2b2ae35`, `h ^= h >> 16`, computed on the `uint` directly and reinterpreted as `int`.
 
-**Note:** maps `0 → 0` (a fixed point of `fmix32`), so the dictionaries' out-of-band zero-key slot is engaged just as it is with the simpler `UInt32Hasher`.
+**Note:** maps `0 → 0` (a fixed point of `fmix32`), so the dictionaries' out-of-band zero-key slot is engaged just as it is with the simpler `UInt32WangNaiveHasher`.
 
-### UInt64Hasher
+### UInt64Murmur3Hasher
 
 ```csharp
-public struct UInt64Hasher : IHashProvider<ulong>, IHashProvider64<ulong>
+public struct UInt64Murmur3Hasher : IHashProvider<ulong>, IHashProvider64<ulong>
 ```
 
-MurmurHash3 64-bit finalizer (`fmix64`) for `ulong` keys. Counterpart to `Int64Murmur3Hasher` for unsigned 64-bit integers.
+MurmurHash3 64-bit finalizer (`fmix64`) for `ulong` keys — the strongest tier of the `ulong` family, and the `ulong` counterpart to `Int64Murmur3Hasher`. Every input bit affects every output bit, so prefer it for clustered or adversarial keys. For any given 64-bit pattern it returns exactly what `Int64Murmur3Hasher` returns for the same bits. Drop to `UInt64WangHasher` (full Thomas-Wang `hash64shift`) or `UInt64WangNaiveHasher` (XOR-fold) when the two 64-bit multiplies cost more than they buy on already-uniform keys.
+
+**Algorithm:** `key ^= key >> 33`, `key *= 0xff51afd7ed558ccd`, `key ^= key >> 33`, `key *= 0xc4ceb9fe1a85ec53`, `key ^= key >> 33`; `Hash` returns the low 32 bits reinterpreted as `int`.
+
+**Note:** maps `0 → 0` (a fixed point of `fmix64`), so the dictionaries' out-of-band zero-key slot is engaged.
 
 > Also implements [`IHashProvider64<ulong>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
+
+> **Renamed.** This type shipped as `UInt64Hasher` through v2.5.0. See [deprecated hasher aliases](#deprecated-hasher-aliases).
 
 ### UInt64WangHasher
 
@@ -684,7 +698,7 @@ MurmurHash3 64-bit finalizer (`fmix64`) for `ulong` keys. Counterpart to `Int64M
 public struct UInt64WangHasher : IHashProvider<ulong>, IHashProvider64<ulong>
 ```
 
-Thomas Wang's 64-bit integer hash (`hash64shift`) for `ulong` keys. The `ulong` counterpart to `Int64WangHasher`, and a cheaper alternative to `UInt64Hasher` (the Murmur3 `fmix64` finalizer) on the cost-vs-avalanche curve. The mixer uses only shifts and adds — no multiplies — so it is cheaper than the two 64-bit multiplies of `UInt64Hasher` while still giving every input bit influence over the result. Bijective on `ulong`, so the only source of collisions is truncation to 32 bits when the result is returned. Prefer it over `UInt64Hasher` when profiling shows the two `fmix64` multiplies are a hot-path cost and the keys are already reasonably uniform; escalate back to `UInt64Hasher` for adversarial workloads that need maximum avalanche.
+Thomas Wang's 64-bit integer hash (`hash64shift`) for `ulong` keys. The `ulong` counterpart to `Int64WangHasher`, and a cheaper alternative to `UInt64Murmur3Hasher` (the Murmur3 `fmix64` finalizer) on the cost-vs-avalanche curve. The mixer uses only shifts and adds — no multiplies — so it is cheaper than the two 64-bit multiplies of `UInt64Murmur3Hasher` while still giving every input bit influence over the result. Bijective on `ulong`, so the only source of collisions is truncation to 32 bits when the result is returned. Prefer it over `UInt64Murmur3Hasher` when profiling shows the two `fmix64` multiplies are a hot-path cost and the keys are already reasonably uniform; escalate back to `UInt64Murmur3Hasher` for adversarial workloads that need maximum avalanche.
 
 **Algorithm:** `u = ~u + (u << 21)`, `^ (u >> 24)`, `+ (u << 3) + (u << 8)`, `^ (u >> 14)`, `+ (u << 2) + (u << 4)`, `^ (u >> 28)`, `+ (u << 31)`, computed on the `ulong` directly and truncated to `int`. For any given 64-bit pattern it returns exactly what `Int64WangHasher` returns for the same bits.
 
@@ -698,7 +712,7 @@ Thomas Wang's 64-bit integer hash (`hash64shift`) for `ulong` keys. The `ulong` 
 public struct UInt64WangNaiveHasher : IHashProvider<ulong>
 ```
 
-An extremely cheap XOR-fold for `ulong` keys — the cheap-default tier of the `ulong` family, and the `ulong` counterpart to `Int64WangNaiveHasher`. Until now the `ulong` ladder jumped straight from `UInt64WangHasher` (full Thomas-Wang `hash64shift`) to `UInt64Hasher` (Murmur3 `fmix64`) with no cheap XOR-fold option, even though `int`, `long`, and `uint` all ship one. The extra `(int)(key >> 16)` fold over a naive `key.GetHashCode()` keeps a chunk of the high-half entropy in the result, which materially improves distribution on keys whose low 32 bits are sequential (e.g. monotonically allocated IDs whose upper bits carry type / shard). Prefer it when the key distribution is already reasonably uniform and latency matters more than collision resistance; escalate to `UInt64WangHasher` (full Thomas-Wang finalizer) or `UInt64Hasher` (Murmur3 `fmix64`) for clustered or adversarial keys.
+An extremely cheap XOR-fold for `ulong` keys — the cheap-default tier of the `ulong` family, and the `ulong` counterpart to `Int64WangNaiveHasher`. The `ulong` ladder once jumped straight from `UInt64WangHasher` (full Thomas-Wang `hash64shift`) to `UInt64Murmur3Hasher` (Murmur3 `fmix64`) with no cheap XOR-fold option, even though `int`, `long`, and `uint` all ship one. The extra `(int)(key >> 16)` fold over a naive `key.GetHashCode()` keeps a chunk of the high-half entropy in the result, which materially improves distribution on keys whose low 32 bits are sequential (e.g. monotonically allocated IDs whose upper bits carry type / shard). Prefer it when the key distribution is already reasonably uniform and latency matters more than collision resistance; escalate to `UInt64WangHasher` (full Thomas-Wang finalizer) or `UInt64Murmur3Hasher` (Murmur3 `fmix64`) for clustered or adversarial keys.
 
 **Algorithm:** `(int)key ^ (int)(key >> 32) ^ (int)(key >> 16)`. For any given 64-bit pattern it returns exactly what `Int64WangNaiveHasher` returns for the same bits.
 
@@ -726,6 +740,32 @@ A general-purpose `IHashProvider<T>` that delegates to `EqualityComparer<T>.Defa
 
 It is a struct, so the JIT devirtualizes the outer call on the probe path. The inner `EqualityComparer<T>` dispatch is unavoidable but acceptable for non-hot-path types — if `Hash` is on the hot path for a known key type, write a struct-specific hasher instead.
 
+### Deprecated hasher aliases
+
+Two unsigned hashers were renamed so that every integer hasher names its algorithm, the way the signed families always have (`Int32WangNaiveHasher` / `Int32WangHasher` / `Int32Murmur3Hasher`). The old names still ship, marked `[Obsolete]`, and forward to the new types — the hash values are unchanged.
+
+| Old name | New name | What it actually is |
+|---|---|---|
+| `UInt32Hasher` | [`UInt32WangNaiveHasher`](#uint32wangnaivehasher) | the **cheap** XOR-fold, `key ^ (key >> 16)` |
+| `UInt64Hasher` | [`UInt64Murmur3Hasher`](#uint64murmur3hasher) | the **strong** Murmur3 `fmix64` finalizer |
+
+The bare `UIntNN Hasher` name meant opposite ends of the escalation ladder in the two widths: cheapest for `uint`, strongest for `ulong`. Hasher choice is the main knob this library exposes and callers pick by analogy across widths, so someone who benchmarked on `uint` with `UInt32Hasher` and then moved to `ulong` keys with `UInt64Hasher` silently changed hash *strength*, not just key width.
+
+Migration is a find-and-replace; the compiler points at every site:
+
+```csharp
+// before
+var d32 = new CelerityDictionary<uint, string, UInt32Hasher>();
+var d64 = new CelerityDictionary<ulong, string, UInt64Hasher>();
+
+// after — same hash values, same performance
+var d32 = new CelerityDictionary<uint, string, UInt32WangNaiveHasher>();
+var d64 = new CelerityDictionary<ulong, string, UInt64Murmur3Hasher>();
+```
+
+`UInt64Hasher` still implements [`IHashProvider64<ulong>`](#ihashprovider64t), so a sketch parameterized on it keeps its 64-bit path while you migrate. Both aliases will be removed in a future major version.
+
+
 ### Choosing a hasher
 
 **Read this first — the hashers are not positioned on speed.** For `int` keys, `GetHashCode()` *is* the identity (zero work), so no mixing hasher can beat it on throughput; for `string` keys, `GetHashCode()` is already a purpose-built **Marvin32** with per-process random seeding. The value a Celerity struct hasher adds is **distribution quality (avalanche), determinism (reproducible across processes and runtimes), adversarial resistance, and the zero-cost devirtualized generic** — *not* raw hashing speed. Pick on those axes, not on the isolated `Hash()` microbench.
@@ -742,8 +782,8 @@ The decision reduces to a **speed-vs-quality curve**, the same tradeoff F14 / ah
 |---|---|---|
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32IdentityHasher` (the zero-work floor — *drop* to it for uniform/trusted keys like dense sequential IDs, where any mixing is pure overhead); `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
 | `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64IdentityHasher` (the zero-work floor — *drop* to it for keys whose low 32 bits are well distributed, e.g. dense sequential IDs; note it ignores the upper 32 bits); `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered, high-half-distinct, or adversarial keys |
-| `uint` | `UInt32Hasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
-| `ulong` | `UInt64Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
+| `uint` | `UInt32WangNaiveHasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
+| `ulong` | `UInt64Murmur3Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
 | `string` | `StringFnV1AHasher` | `StringDjb2Hasher` (Bernstein's djb2 — the simplest, cheapest classic, shift-and-add with no real multiply, full-character fold) when you want a familiar minimal hash on short ASCII identifiers and djb2's weaker avalanche is acceptable; `StringDjb2AHasher` (the djb2a XOR-folding variant — same `* 33` cost, but XORs the byte instead of adding it, mirroring the FNV-1/FNV-1a split; avoids djb2's low-bit carry bias for slightly cleaner diffusion at the same cheapest cost class); `StringSdbmHasher` (the sdbm classic — same cheapest cost class, `* 65599` via two shifts and a subtract, full-character fold; its larger multiplier tends to distribute slightly better than djb2 on short keys, with the same weak avalanche); `StringElfHasher` (the PJW / ELF symbol-table hash — same cheapest cost class, a shift-and-add with a top-nibble fold-back that recirculates high-order bits, full-character fold, 28-bit non-negative result; **but the [measured distribution report](#measured-distribution-quality) shows it clusters badly on ASCII keys — prefer djb2 / sdbm over it there**); `StringCrc32Hasher` (the standard CRC-32 / zlib / IEEE 802.3 checksum — the family's only table-driven member, full-character fold; a linear checksum with weaker avalanche than the designed mixers, provided primarily to reproduce a CRC-32-based key distribution exactly when matching an external system); `StringAdler32Hasher` (the standard Adler-32 / zlib / RFC 1950 checksum — table-free running 16-bit sums, full-character fold; even weaker than CRC-32 as a hash because its low 16 bits are just the byte-sum so short keys cluster, provided purely to reproduce an Adler-32-based key distribution exactly, e.g. zlib / PNG / rsync); `StringFnV1Hasher` (the original FNV-1 multiply-then-XOR ordering, full-character fold) when you specifically need FNV-1 rather than the generally preferred FNV-1a, or `StringFnV164Hasher` for that same FNV-1 ordering folded into a 64-bit accumulator when keys are long or numerous enough to cluster the 32-bit state; `StringFnV1AFullHasher` (same FNV-1a cost, folds the full character) for non-ASCII content the low-byte fold would collide; `StringFnV1A64Hasher` (full-character fold into a 64-bit accumulator) when keys are long or numerous enough to cluster the 32-bit state; `StringJenkinsOaatHasher` (Bob Jenkins' one-at-a-time hash — multiply-free, with stronger per-bit avalanche than FNV-1a at the same cheap cost class) when FNV-1a's single-multiply mixing clusters keys but a block hash is more than you want to pay; `StringMurmur3Hasher` (the `fmix32`-finalized MurmurHash3, with `StringMurmur2Hasher` as its older same-family sibling for MurmurHash2 compatibility), `StringXxHash32Hasher`, `StringXxHash64Hasher`, `StringMetroHash64Hasher`, `StringCityHash64Hasher`, or `StringXxHash3Hasher` (the throughput-oriented strong-avalanche options for longer keys — XXH64 widens the accumulators and stripe further for longer keys on 64-bit platforms, MetroHash64 is a peer worth profiling against on mid-length keys, CityHash64 is length-classed so it often edges ahead on short-to-mid keys, and XXH3 is the third-generation xxHash that is length-classed *and* runs an eight-lane bulk loop, typically the fastest across both short and long keys) for clustered / adversarial keys that need strong avalanche; `StringHalfSipHash24Hasher` (HalfSipHash-2-4, keyed — the cheaper 32-bit-word variant for short keys / 32-bit targets, with a native 32-bit output and no fold), `StringSipHash13Hasher` (SipHash-1-3, keyed — the faster reduced-round 64-bit variant Rust's `HashMap` uses by default), `StringSipHash24Hasher` (SipHash-2-4, keyed — the conservative variant), or `StringHighwayHash64Hasher` (HighwayHash64, keyed — the SIMD-oriented alternative, scalar today) when the keys are untrusted and you need hash-flooding resistance rather than maximum throughput; `DefaultHasher<string>` (uses the BCL string hasher) |
 | anything else | `DefaultHasher<T>` | a struct hasher you write |
@@ -1032,12 +1072,12 @@ For the fixed-width integer and `Guid` hashers every option — including the ch
 | `Int64WangNaiveHasher` (default) | 1.001 | 6 | 0 |
 | `Int64WangHasher` | 1.011 | 4 | 0 |
 | `Int64Murmur3Hasher` | 1.014 | 5 | 0 |
-| `UInt32Hasher` (default) | 1.020 | 5 | 0 |
+| `UInt32WangNaiveHasher` (default) | 1.020 | 5 | 0 |
 | `UInt32WangHasher` | 1.027 | 5 | 0 |
 | `UInt32Murmur3Hasher` | 0.991 | 4 | 0 |
-| `UInt64Hasher` (default) | 1.014 | 5 | 0 |
-| `UInt64WangHasher` | 1.011 | 4 | 0 |
 | `UInt64WangNaiveHasher` | 1.001 | 6 | 0 |
+| `UInt64WangHasher` | 1.011 | 4 | 0 |
+| `UInt64Murmur3Hasher` (default) | 1.014 | 5 | 0 |
 | `GuidHasher` | 0.983 | 4 | 0 |
 
 </details>

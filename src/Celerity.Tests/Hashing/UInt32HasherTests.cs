@@ -1,7 +1,15 @@
+using System.Reflection;
 using Celerity.Hashing;
+
+#pragma warning disable CS0618 // The type under test is the obsolete alias.
 
 namespace Celerity.Tests.Hashing;
 
+/// <summary>
+/// The deprecated <see cref="UInt32Hasher"/> alias. Its replacement,
+/// <see cref="UInt32WangNaiveHasher"/>, carries the behavioural suite; what is pinned here is
+/// that the alias still ships, still hashes identically, and still says it is deprecated.
+/// </summary>
 public class UInt32HasherTests
 {
     private readonly UInt32Hasher _hasher = new UInt32Hasher();
@@ -13,39 +21,34 @@ public class UInt32HasherTests
     [InlineData(65536u, 65537)]
     [InlineData(uint.MaxValue, -65536)]     // 0xFFFFFFFF ^ 0x0000FFFF = 0xFFFF0000
     [InlineData(0x80000000u, -2147450880)]  // 0x80000000 ^ 0x00008000 = 0x80008000
-    public void Hash_ReturnsExpected(uint input, int expected)
+    public void Hash_ShouldReturnTheSameCodeAsBefore_WhenCalledThroughTheAlias(uint input, int expected)
     {
-        int result = _hasher.Hash(input);
-        Assert.Equal(expected, result);
+        Assert.Equal(expected, _hasher.Hash(input));
     }
 
     [Fact]
-    public void Hash_IsDeterministic()
+    public void Hash_ShouldAgreeWithUInt32WangNaiveHasher_ForEveryKeyShape()
     {
-        uint value = 12345u;
-        int result1 = _hasher.Hash(value);
-        int result2 = _hasher.Hash(value);
-        Assert.Equal(result1, result2);
-    }
-
-    [Fact]
-    public void Hash_DoesNotThrow()
-    {
-        uint[] testValues =
+        // The alias forwards rather than repeating the mixer, so this cannot drift by
+        // construction — but a future edit that inlines the body back in would be caught here.
+        var replacement = new UInt32WangNaiveHasher();
+        foreach (uint key in new[]
+                 {
+                     0u, 1u, 16u, 255u, 65536u, 0x7FFFFFFFu, 0x80000000u,
+                     123456789u, 987654321u, uint.MaxValue,
+                 })
         {
-            0u,
-            1u,
-            uint.MaxValue,
-            0x7FFFFFFFu,
-            0x80000000u,
-            123456789u,
-            987654321u,
-        };
-
-        foreach (uint val in testValues)
-        {
-            var exception = Record.Exception(() => _hasher.Hash(val));
-            Assert.Null(exception);
+            Assert.Equal(replacement.Hash(key), _hasher.Hash(key));
         }
+    }
+
+    [Fact]
+    public void Type_ShouldBeMarkedObsolete_PointingAtItsReplacement()
+    {
+        var attribute = typeof(UInt32Hasher).GetCustomAttribute<ObsoleteAttribute>();
+
+        Assert.NotNull(attribute);
+        Assert.False(attribute.IsError, "the alias must still compile for one deprecation cycle");
+        Assert.Contains(nameof(UInt32WangNaiveHasher), attribute.Message);
     }
 }

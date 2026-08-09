@@ -3,50 +3,33 @@ using System.Runtime.CompilerServices;
 namespace Celerity.Hashing;
 
 /// <summary>
-/// A high-quality hash provider for <see cref="ulong"/> keys using the
-/// Murmur3 64-bit finalizer ("fmix64").
+/// Obsolete alias for <see cref="UInt64Murmur3Hasher"/>, kept for source compatibility.
 /// </summary>
 /// <remarks>
-/// This is the <see cref="ulong"/> counterpart to <see cref="Int64Murmur3Hasher"/>.
-/// Every input bit affects every output bit, making it a good choice for
-/// clustered or adversarial key distributions. The 64-bit result is truncated
-/// to 32 bits by taking the lower half and reinterpreting it as a signed int.
+/// The bare <c>UIntNN Hasher</c> name mapped to opposite tiers of the escalation ladder
+/// across the two unsigned families: this type was the strong Murmur3 <c>fmix64</c> finalizer
+/// for <see cref="ulong"/>, while <c>UInt32Hasher</c> was the cheap XOR-fold for
+/// <see cref="uint"/>. A caller reasoning by analogy across widths — the way the rest of the
+/// hasher surface is designed to be read — silently changed hash strength, not just key width.
+/// The signed families never had the problem, because they name the algorithm in the type
+/// (<see cref="Int64WangNaiveHasher"/> / <see cref="Int64WangHasher"/> /
+/// <see cref="Int64Murmur3Hasher"/>); the unsigned ones now do too.
 /// <para>
-/// The finalizer is a bijection on 64 bits, so the type also implements
-/// <see cref="IHashProvider64{T}"/>: <see cref="Hash64"/> returns the full mix instead
-/// of the low half, which is what the probabilistic sketches want (see
-/// <see cref="IHashProvider64{T}"/> for why the extra 32 bits matter there and not in a
-/// hash table).
+/// This alias forwards to <see cref="UInt64Murmur3Hasher"/> rather than repeating the
+/// mixer, so the two cannot drift. It will be removed in a future major version.
 /// </para>
 /// </remarks>
+[Obsolete("UInt64Hasher is the strong Murmur3 fmix64 finalizer, which its bare name does not " +
+          "say — and the same bare name means the cheap XOR-fold for uint. Use " +
+          "UInt64Murmur3Hasher, which names the algorithm and hashes identically. " +
+          "This alias will be removed in a future major version.")]
 public struct UInt64Hasher : IHashProvider<ulong>, IHashProvider64<ulong>
 {
-    private const ulong C1 = 0xff51afd7ed558ccdUL;
-    private const ulong C2 = 0xc4ceb9fe1a85ec53UL;
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Hash(ulong key) => default(UInt64Murmur3Hasher).Hash(key);
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Hash(ulong key) => (int)Hash64(key);
-
-    /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ulong Hash64(ulong key)
-    {
-        // XOR with its shifted self.
-        key ^= key >> 33;
-
-        // Multiply by a large odd constant.
-        key *= C1;
-
-        // XOR again with its shifted self.
-        key ^= key >> 33;
-
-        // Multiply by another large odd constant.
-        key *= C2;
-
-        // Final XOR.
-        key ^= key >> 33;
-
-        return key;
-    }
+    public ulong Hash64(ulong key) => default(UInt64Murmur3Hasher).Hash64(key);
 }

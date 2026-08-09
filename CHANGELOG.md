@@ -30,6 +30,15 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - A `--shard-dry-run` switch on the benchmarks runner that resolves a shard's class list without measuring anything. Closes [#300](https://github.com/marius-bughiu/Celerity/issues/300).
 - `scripts/benchmark_comment.js` — the pull-request benchmark comment, moved out of `benchmarks.yml` so the rule deciding which rows count as a regression is runnable and testable, with a `--self-test` wired into `ci.yml`. Closes [#351](https://github.com/marius-bughiu/Celerity/issues/351).
 - That comment now publishes the run's own **observed spread** — the p50, p90 and p95 of |Δ| across every paired row — so a flag can be read against the run it arrived in instead of an assumed floor. Closes [#351](https://github.com/marius-bughiu/Celerity/issues/351).
+- **`UInt32WangNaiveHasher`** and **`UInt64Murmur3Hasher`** in `Celerity.Hashing` — the algorithm-named replacements for `UInt32Hasher` / `UInt64Hasher`. Same hash values; every integer hasher now names its tier, so `uint` and `ulong` read the same way `int` and `long` always have. [`docs/migration.md`](docs/migration.md) covers the rename. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
+
+### Changed
+
+- The `uint` / `ulong` hasher benchmark arms are named after their algorithm rather than `_Default`, so the dashboard labels those bars like the `int` and `long` ones. The renamed rows start a new series on the tracked chart. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
+
+### Deprecated
+
+- **`UInt32Hasher` and `UInt64Hasher`** are `[Obsolete]` and forward to `UInt32WangNaiveHasher` / `UInt64Murmur3Hasher`. The bare name meant the *cheapest* mixer for `uint` and the *strongest* for `ulong`, so a caller moving between the two widths changed hash strength, not just key width. Both still ship — existing code compiles with a warning, and `UInt64Hasher` keeps `IHashProvider64<ulong>` so a sketch parameterized on it does not lose its 64-bit path — and both will be removed in a future major version. Closes [#297](https://github.com/marius-bughiu/Celerity/issues/297).
 
 ### Fixed
 

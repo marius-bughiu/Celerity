@@ -11,8 +11,9 @@ namespace Celerity.Hashing;
 /// an extremely cheap XOR-fold with modest avalanche but very low latency. It
 /// fills the cheap-default tier of the <see cref="ulong"/> escalation ladder,
 /// which previously jumped straight from <see cref="UInt64WangHasher"/> (the
-/// full Thomas-Wang <c>hash64shift</c> finalizer) to <see cref="UInt64Hasher"/>
-/// (the Murmur3 <c>fmix64</c> finalizer) with no cheap XOR-fold option — even
+/// full Thomas-Wang <c>hash64shift</c> finalizer) to
+/// <see cref="UInt64Murmur3Hasher"/> (the Murmur3 <c>fmix64</c> finalizer) with
+/// no cheap XOR-fold option — even
 /// though <c>int</c>, <c>long</c>, and <c>uint</c> all ship one. The extra
 /// <c>(int)(key &gt;&gt; 16)</c> fold over a naive <c>key.GetHashCode()</c>
 /// keeps a chunk of the high-half entropy in the result, which materially
@@ -27,7 +28,8 @@ namespace Celerity.Hashing;
 /// Prefer it when the key distribution is already reasonably uniform and
 /// latency matters more than collision resistance. For adversarial or
 /// heavily clustered keys, escalate to <see cref="UInt64WangHasher"/> (full
-/// Thomas-Wang finalizer) or <see cref="UInt64Hasher"/> (Murmur3 <c>fmix64</c>).
+/// Thomas-Wang finalizer) or <see cref="UInt64Murmur3Hasher"/> (Murmur3
+/// <c>fmix64</c>).
 /// </para>
 /// <para>
 /// The XOR-fold maps <c>0</c> to <c>0</c>. The dictionaries store the
