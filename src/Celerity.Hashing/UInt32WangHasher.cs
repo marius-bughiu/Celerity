@@ -10,14 +10,14 @@ namespace Celerity.Hashing;
 /// A non-cryptographic, invertible bit-mixer (Thomas Wang's <c>hash32shift</c>)
 /// that provides strong avalanche for adversarially or heavily-clustered keys.
 /// It is the <see cref="uint"/> counterpart to <see cref="Int32WangHasher"/> and
-/// fills the missing middle tier of the <see cref="uint"/> escalation ladder: it
-/// sits between <see cref="UInt32Hasher"/> (the cheap XOR-fold) and
+/// fills the middle tier of the <see cref="uint"/> escalation ladder: it
+/// sits between <see cref="UInt32WangNaiveHasher"/> (the cheap XOR-fold) and
 /// <see cref="UInt32Murmur3Hasher"/> on the cost-vs-avalanche curve, mirroring
 /// the role <see cref="Int32WangHasher"/> plays in the <see cref="int"/> family.
 /// The mixer uses a single (shift-add-encoded) multiply and a chain of
 /// XOR-shift / shift-add rounds, so it is cheaper than the two-multiply
 /// <see cref="UInt32Murmur3Hasher"/> finalizer while still giving every input bit
-/// influence over the result. Prefer it over <see cref="UInt32Hasher"/> when
+/// influence over the result. Prefer it over <see cref="UInt32WangNaiveHasher"/> when
 /// profiling shows the cheap XOR-fold is producing measurable clustering;
 /// escalate to <see cref="UInt32Murmur3Hasher"/> when even better avalanche is
 /// needed.

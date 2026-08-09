@@ -18,7 +18,9 @@ not on beating `GetHashCode()` for raw speed (for `int` keys it *can't*:
   is what makes the collections zero-cost.
 - **Integer hashers** — `Int32IdentityHasher` / `Int64IdentityHasher` (the
   zero-work floor), `*WangNaiveHasher`, `*WangHasher`, `*Murmur3Hasher` across
-  `int` / `long` / `uint` / `ulong`, plus `GuidHasher`.
+  `int` / `long` / `uint` / `ulong`, plus `GuidHasher`. Every one names its
+  algorithm; the bare-named `UInt32Hasher` / `UInt64Hasher` are `[Obsolete]`
+  aliases for `UInt32WangNaiveHasher` / `UInt64Murmur3Hasher`.
 - **String hashers** — a wide ladder from cheap (`Djb2`, `Sdbm`, `Fnv1a`) to
   strong/keyed (`Murmur3`, `xxHash3`, `SipHash13/24`, `HighwayHash64`,
   `MetroHash64`, …). See the docs for the speed-vs-quality tradeoff and the

@@ -8,10 +8,10 @@ namespace Celerity.Hashing;
 /// </summary>
 /// <remarks>
 /// This is the <see cref="uint"/> counterpart to <see cref="Int32Murmur3Hasher"/>
-/// and the strong-avalanche escalation option for <see cref="UInt32Hasher"/>
+/// and the strong-avalanche escalation option for <see cref="UInt32WangNaiveHasher"/>
 /// (the cheap XOR-fold default). Every input bit affects every output bit,
 /// making it a good choice for clustered or adversarial key distributions.
-/// Prefer it over <see cref="UInt32Hasher"/> when the cheap XOR-fold produces
+/// Prefer it over <see cref="UInt32WangNaiveHasher"/> when the cheap XOR-fold produces
 /// measurable clustering and collision resistance matters more than raw
 /// throughput.
 /// </remarks>

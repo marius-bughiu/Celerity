@@ -232,6 +232,27 @@ int slots = FastUtils.NextPowerOfTwo(n);
 
 Everything else — the hashers, `VarInt`, `FastGuid`, the PRNGs — keeps its namespace, so no other `using` changes are required.
 
+## `UInt32Hasher` / `UInt64Hasher` → the algorithm-named types
+
+The two bare-named unsigned hashers were renamed so every integer hasher says which tier of the escalation ladder it is, the way the signed families always have. The old names still ship as `[Obsolete]` aliases that forward to the new types, so this is a compiler-guided find-and-replace with **no change to any hash value**:
+
+| Old name | New name | What it always was |
+|---|---|---|
+| `UInt32Hasher` | `UInt32WangNaiveHasher` | the **cheap** XOR-fold, `key ^ (key >> 16)` |
+| `UInt64Hasher` | `UInt64Murmur3Hasher` | the **strong** Murmur3 `fmix64` finalizer |
+
+```csharp
+// Before
+var d32 = new CelerityDictionary<uint, string, UInt32Hasher>();
+var d64 = new CelerityDictionary<ulong, string, UInt64Hasher>();
+
+// After
+var d32 = new CelerityDictionary<uint, string, UInt32WangNaiveHasher>();
+var d64 = new CelerityDictionary<ulong, string, UInt64Murmur3Hasher>();
+```
+
+Worth a second look while you are in there: the same bare name meant the *cheapest* mixer for `uint` and the *strongest* one for `ulong`, so code that picked both by analogy may not have been asking for what it thought. If your `uint` keys are clustered, `UInt32WangHasher` / `UInt32Murmur3Hasher` are the escalation; if your `ulong` keys are already uniform, `UInt64WangHasher` / `UInt64WangNaiveHasher` are cheaper. `UInt64Hasher` keeps its `IHashProvider64<ulong>` implementation, so a sketch parameterized on it does not lose its 64-bit path mid-migration. Both aliases will be removed in a future major version.
+
 ## See also
 
 - [Choosing a collection](../README.md#choosing-a-collection)

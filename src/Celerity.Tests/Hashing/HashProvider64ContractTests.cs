@@ -1,6 +1,8 @@
 using System.Reflection;
 using Celerity.Hashing;
 
+#pragma warning disable CS0618 // UInt64Hasher is an obsolete alias but still on the roster.
+
 namespace Celerity.Tests.Hashing;
 
 /// <summary>
@@ -40,7 +42,8 @@ public class HashProvider64ContractTests
         nameof(StringSipHash24Hasher),
         nameof(StringXxHash3Hasher),
         nameof(StringXxHash64Hasher),
-        nameof(UInt64Hasher),
+        nameof(UInt64Hasher), // obsolete alias for UInt64Murmur3Hasher; still ships, so still here
+        nameof(UInt64Murmur3Hasher),
         nameof(UInt64WangHasher),
     ];
 
@@ -114,6 +117,7 @@ public class HashProvider64ContractTests
 
         ulong bits = (ulong)key;
         Assert.Equal(new UInt64WangHasher().Hash(bits), (int)new UInt64WangHasher().Hash64(bits));
+        Assert.Equal(new UInt64Murmur3Hasher().Hash(bits), (int)new UInt64Murmur3Hasher().Hash64(bits));
         Assert.Equal(new UInt64Hasher().Hash(bits), (int)new UInt64Hasher().Hash64(bits));
     }
 
@@ -123,6 +127,7 @@ public class HashProvider64ContractTests
     {
         ulong bits = (ulong)key;
         Assert.Equal(new Int64WangHasher().Hash64(key), new UInt64WangHasher().Hash64(bits));
+        Assert.Equal(new Int64Murmur3Hasher().Hash64(key), new UInt64Murmur3Hasher().Hash64(bits));
         Assert.Equal(new Int64Murmur3Hasher().Hash64(key), new UInt64Hasher().Hash64(bits));
     }
 
@@ -170,7 +175,7 @@ public class HashProvider64ContractTests
         // The hashers are stateless structs, so two independently-constructed instances —
         // and the `default` instance the collections and sketches build — must agree.
         Assert.Equal(new Int64WangHasher().Hash64(42L), default(Int64WangHasher).Hash64(42L));
-        Assert.Equal(new UInt64Hasher().Hash64(42UL), default(UInt64Hasher).Hash64(42UL));
+        Assert.Equal(new UInt64Murmur3Hasher().Hash64(42UL), default(UInt64Murmur3Hasher).Hash64(42UL));
         Assert.Equal(new StringXxHash64Hasher().Hash64("x"), default(StringXxHash64Hasher).Hash64("x"));
         Assert.Equal(new GuidHasher().Hash64(Guid.Empty), default(GuidHasher).Hash64(Guid.Empty));
     }

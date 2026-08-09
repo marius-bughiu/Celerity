@@ -72,16 +72,16 @@ public static class HashQualityReportRunner
         PrintTable("long hashers", i64);
 
         var u32 = new List<Row>();
-        EvalU32<UInt32Hasher>("UInt32Hasher", HasherKeySamples.UInt32(), u32);
+        EvalU32<UInt32WangNaiveHasher>("UInt32WangNaiveHasher", HasherKeySamples.UInt32(), u32);
         EvalU32<UInt32WangHasher>("UInt32WangHasher", HasherKeySamples.UInt32(), u32);
         EvalU32<UInt32Murmur3Hasher>("UInt32Murmur3Hasher", HasherKeySamples.UInt32(), u32);
         EvalU32<DefaultHasher<uint>>("DefaultHasher<uint> (BCL)", HasherKeySamples.UInt32(), u32);
         PrintTable("uint hashers", u32);
 
         var u64 = new List<Row>();
-        EvalU64<UInt64Hasher>("UInt64Hasher", HasherKeySamples.UInt64(), u64);
-        EvalU64<UInt64WangHasher>("UInt64WangHasher", HasherKeySamples.UInt64(), u64);
         EvalU64<UInt64WangNaiveHasher>("UInt64WangNaiveHasher", HasherKeySamples.UInt64(), u64);
+        EvalU64<UInt64WangHasher>("UInt64WangHasher", HasherKeySamples.UInt64(), u64);
+        EvalU64<UInt64Murmur3Hasher>("UInt64Murmur3Hasher", HasherKeySamples.UInt64(), u64);
         EvalU64<DefaultHasher<ulong>>("DefaultHasher<ulong> (BCL)", HasherKeySamples.UInt64(), u64);
         PrintTable("ulong hashers", u64);
 

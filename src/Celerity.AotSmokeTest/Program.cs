@@ -202,9 +202,9 @@ void Check(bool condition, string message)
     def[5] = 50;
     Check(def[5] == 50, "CelerityDictionary<int, DefaultHasher<int>>");
 
-    var u32 = new CelerityDictionary<uint, int, UInt32Hasher>();
+    var u32 = new CelerityDictionary<uint, int, UInt32WangNaiveHasher>();
     u32[3000000000u] = 1;
-    Check(u32.ContainsKey(3000000000u), "CelerityDictionary<uint, UInt32Hasher>");
+    Check(u32.ContainsKey(3000000000u), "CelerityDictionary<uint, UInt32WangNaiveHasher>");
 
     var u32w = new CelerityDictionary<uint, int, UInt32WangHasher>();
     u32w[3000000000u] = 1;
@@ -214,9 +214,9 @@ void Check(bool condition, string message)
     u32m[3000000000u] = 1;
     Check(u32m.ContainsKey(3000000000u), "CelerityDictionary<uint, UInt32Murmur3Hasher>");
 
-    var u64 = new CelerityDictionary<ulong, int, UInt64Hasher>();
+    var u64 = new CelerityDictionary<ulong, int, UInt64Murmur3Hasher>();
     u64[ulong.MaxValue] = 1;
-    Check(u64.ContainsKey(ulong.MaxValue), "CelerityDictionary<ulong, UInt64Hasher>");
+    Check(u64.ContainsKey(ulong.MaxValue), "CelerityDictionary<ulong, UInt64Murmur3Hasher>");
 
     var u64w = new CelerityDictionary<ulong, int, UInt64WangHasher>();
     u64w[ulong.MaxValue] = 1;
@@ -1689,8 +1689,14 @@ void Check(bool condition, string message)
     Check(new Int64WangHasher().Hash64(42L) != 0UL, "Int64WangHasher.Hash64");
     Check((int)new Int64Murmur3Hasher().Hash64(42L) == new Int64Murmur3Hasher().Hash(42L),
         "Int64Murmur3Hasher.Hash64 low half == Hash");
-    Check((int)new UInt64Hasher().Hash64(42UL) == new UInt64Hasher().Hash(42UL),
-        "UInt64Hasher.Hash64 low half == Hash");
+    Check((int)new UInt64Murmur3Hasher().Hash64(42UL) == new UInt64Murmur3Hasher().Hash(42UL),
+        "UInt64Murmur3Hasher.Hash64 low half == Hash");
+#pragma warning disable CS0618 // The obsolete alias still ships, so ILC must still compile it.
+    Check(new UInt64Hasher().Hash64(42UL) == new UInt64Murmur3Hasher().Hash64(42UL),
+        "UInt64Hasher alias agrees with UInt64Murmur3Hasher");
+    Check(new UInt32Hasher().Hash(3000000000u) == new UInt32WangNaiveHasher().Hash(3000000000u),
+        "UInt32Hasher alias agrees with UInt32WangNaiveHasher");
+#pragma warning restore CS0618
     Check((int)new UInt64WangHasher().Hash64(42UL) == new UInt64WangHasher().Hash(42UL),
         "UInt64WangHasher.Hash64 low half == Hash");
     Guid probeGuid = new Guid("12345678-1234-1234-1234-1234567890AB");
