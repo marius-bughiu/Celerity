@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-08-09
+
 ### Added
 
 - **`SegmentTree<T, TMonoid>`** in `Celerity.Collections` — range aggregates over any **associative** fold, with point update and range query both `O(log n)`. Answers the range min / max / gcd / bitwise questions `FenwickTree<T>` structurally cannot, since a Fenwick range is the *difference* of two prefix folds and so needs an inverse. Against the `O(n)` scan the BCL leaves you with: **14.8x** at 100k elements on interleaved update + range-min, **81x** on a query batch, **1.4x** at 1k. Range *updates* are not supported. Closes [#348](https://github.com/marius-bughiu/Celerity/issues/348).
@@ -597,7 +599,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.6.0
 [2.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.5.0
 [2.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.4.0
 [2.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.3.0
