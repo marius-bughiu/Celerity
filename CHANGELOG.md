@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate, and each package's shipped `.xml` is asserted to carry an entry for every public type. A malformed comment is not truncated by the doc writer — the whole member is dropped — so a warning was too weak a signal for something that silently empties a type's documentation. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
+- **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate, backed by a test that reads the shipped `.xml` back and asserts an entry for every public type. A malformed comment is not truncated by the doc writer — the whole member is dropped — so a warning was too weak a signal for something that silently empties a type's documentation. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
 
 ### Fixed
 
