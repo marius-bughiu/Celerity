@@ -75,7 +75,7 @@ The next release rounds out the `Celerity.Collections` package with missing coll
 - Cross-platform testing (Windows, Linux, macOS). Status: `done`.
 - Improve code coverage. Status: `done` — coverage reporting is gated in CI (`coverage.yml`, 100% line coverage on the library, rendered by an in-repo generator and published to the [coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/)), edge-case tests close the non-generic enumerator / throw / backward-shift corners, property-based parity tests (CsCheck) and a seedable differential fuzzer (`Celerity.Fuzz`, nightly soak) check every collection against its BCL oracle, and the approach is written up in [`docs/testing.md`](docs/testing.md). Tracked in [#29](https://github.com/marius-bughiu/Celerity/issues/29).
 - Improve documentation. Status: `done` — added a performance tuning guide, a BCL migration guide, a troubleshooting guide, and a FAQ, alongside the existing README usage examples, "choosing a collection" table, and API reference. Tracked in [#15](https://github.com/marius-bughiu/Celerity/issues/15).
-- Bump XML doc coverage; treat missing docs as warning-as-error. Status: `done` — `Celerity.csproj` promotes CS1591 to error.
+- Bump XML doc coverage; treat missing docs as warning-as-error. Status: `done` — every shipping package promotes CS1591 (missing doc comment) to error, and since [#356](https://github.com/marius-bughiu/Celerity/issues/356) CS1570 (badly formed XML in a doc comment) as well, so a doc comment must be present *and* parse.
 
 ## Milestone 1.2.0 — Performance & advanced collections
 

@@ -48,7 +48,7 @@ These are enforced by review, not by an analyzer. Reading the existing code is t
 - The packages multi-target `net8.0;net9.0;net10.0` (the shared list lives in [`src/Directory.Build.props`](src/Directory.Build.props); bump it there). `net8.0` is the lowest target, so shared code must not use net9/net10-only APIs unguarded — gate any newer-runtime path with `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` and keep a net8.0 fallback. Nullable reference types are enabled.
 - File-scoped namespaces (`namespace Celerity.Hashing;`).
 - `PascalCase` for public members, `_camelCase` for private fields, `UPPER_CASE` for constants.
-- Every public type and member has an XML doc comment. `GenerateDocumentationFile` is on, so missing docs produce warnings.
+- Every public type and member has an XML doc comment. `GenerateDocumentationFile` is on and every shipping package promotes both **CS1591** (missing doc comment) and **CS1570** (badly formed XML in a doc comment) to build errors, so a doc comment must be present *and* parse. The second gate matters because the doc writer drops the whole member element rather than truncating it, so a stray unclosed tag ships a type with no documentation at all.
 - Hash providers are structs that implement `IHashProvider<T>`. This is load-bearing: passing them as a generic constraint (`where THasher : struct, IHashProvider<T>`) lets the JIT devirtualize `hasher.Hash(...)` calls. Please do not change them to classes or interfaces.
 - Prefer explicit types over `var` where it meaningfully helps readability (e.g. in tight numeric loops). Use `var` freely for obvious right-hand-sides.
 - Avoid allocations on hot paths. If you add a new dependency or a LINQ call inside a probe loop, expect pushback.
