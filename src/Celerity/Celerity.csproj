@@ -20,12 +20,15 @@
 		<IsAotCompatible>true</IsAotCompatible>
 		<!--
 		  Promote CS1591 (missing XML comment for publicly visible type or member)
-		  from warning to error. Celerity is a public NuGet package; every public
-		  symbol must carry an XML doc comment so the generated .xml shipping in
-		  the package is complete. The library is at 100% public-symbol doc
-		  coverage today and this gate keeps it that way.
+		  and CS1570 (badly formed XML in a doc comment) from warning to error.
+		  Celerity is a public NuGet package; every public symbol must carry an XML
+		  doc comment, and that comment must parse, so the generated .xml shipping in
+		  the package is complete. A comment that is not well formed is not truncated
+		  by the doc writer, it is dropped whole, taking the member's summary with it,
+		  which is why a warning is not a strong enough signal here. The library is at
+		  100% public-symbol doc coverage today and this gate keeps it that way.
 		-->
-		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591;CS1570</WarningsAsErrors>
 		<PackageId>Celerity.Collections</PackageId>
 		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
 		<Description>High-performance .NET dictionaries, sets, frozen/perfect-hash collections, and probabilistic sketches (Bloom, HyperLogLog, Count-Min) built on zero-cost struct hashers. As of the 2.0.0 split this package transitively pulls in Celerity.Hashing and Celerity.Primitives, so existing consumers keep working unchanged.</Description>

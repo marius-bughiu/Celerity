@@ -4,6 +4,15 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate. A malformed comment is not truncated by the doc writer — the whole member is dropped from the shipped `.xml` — so a warning was too weak a signal. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
+- `XmlDocumentationTests` — asserts each shipped `.xml` parses and carries an entry for every public type of its assembly, so a type cannot silently lose its documentation again. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
+
+### Fixed
+
+- `MaxMonoid<T>` shipped with **no XML documentation at all**: an unclosed `<para>` made the doc writer drop the entire type entry, so IDE tooltips and generated reference pages showed nothing — including the floating-point caveat that a `-∞` aggregates to `T.MinValue` and that `NaN` resolves by operand position. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
+
 ## [2.6.0] - 2026-08-09
 
 ### Added

@@ -16,10 +16,12 @@
 		-->
 		<IsAotCompatible>true</IsAotCompatible>
 		<!--
-		  Promote CS1591 (missing XML comment) to error. Every public symbol in the
-		  package must carry an XML doc comment so the shipped .xml is complete.
+		  Promote CS1591 (missing XML comment) and CS1570 (badly formed XML in a doc
+		  comment) to errors. Every public symbol in the package must carry an XML doc
+		  comment and that comment must parse, so the shipped .xml is complete: the doc
+		  writer silently drops the whole member when its comment is not well formed.
 		-->
-		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591;CS1570</WarningsAsErrors>
 		<PackageId>Celerity.Cardinality</PackageId>
 		<Description>Mergeable, deterministic distinct-count (approximate COUNT DISTINCT) over managed streams: an exact small-N fast path that promotes to a fixed ~16 KB HyperLogLog past a threshold, plus a removable Cuckoo dedup filter for windowed exact-ish deduplication. Generic over the caller's key type and a zero-cost inlined Celerity hasher, with cross-shard merge that is byte-identical across runtimes. Built on Celerity.Collections.</Description>
 		<PackageIcon>icon.png</PackageIcon>

@@ -18,6 +18,7 @@ namespace Celerity.Collections;
 /// reversed: the identity is <c>T.MinValue</c>, the smallest <i>finite</i> value, so a stored <c>-∞</c>
 /// aggregates to <c>T.MinValue</c>; and <c>NaN</c> loses every <c>&gt;</c> comparison, so it is discarded from
 /// the left operand and kept from the right.
+/// </para>
 /// </remarks>
 public readonly struct MaxMonoid<T> : IMonoid<T>
     where T : struct, INumber<T>, IMinMaxValue<T>

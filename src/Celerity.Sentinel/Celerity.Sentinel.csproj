@@ -16,10 +16,12 @@
 		-->
 		<IsAotCompatible>true</IsAotCompatible>
 		<!--
-		  Promote CS1591 (missing XML comment) to error. Every public symbol in the
-		  package must carry an XML doc comment so the shipped .xml is complete.
+		  Promote CS1591 (missing XML comment) and CS1570 (badly formed XML in a doc
+		  comment) to errors. Every public symbol in the package must carry an XML doc
+		  comment and that comment must parse, so the shipped .xml is complete: the doc
+		  writer silently drops the whole member when its comment is not well formed.
 		-->
-		<WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591;CS1570</WarningsAsErrors>
 		<PackageId>Celerity.Sentinel</PackageId>
 		<Description>Streaming abuse / heavy-hitter detection in fixed memory: a single Observe(key) fans a request key into a Count-Min rate sketch, a Space-Saving top-offenders sketch, a HyperLogLog distinct-volume estimator, and a Bloom first-seen filter — all bounded so an attacker rotating keys cannot grow it unbounded. Generic over the caller's key type and a zero-cost inlined Celerity hasher, mergeable for per-core striping and fleet rollup. Built on Celerity.Collections.</Description>
 		<PackageIcon>icon.png</PackageIcon>
