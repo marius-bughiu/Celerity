@@ -28,8 +28,11 @@ namespace Celerity.Tests.Collections;
 /// <c>other</c> shapes — equal, proper superset, proper subset, disjoint, empty, partially
 /// overlapping — so each of the six queries is asserted in both its <c>true</c> and its
 /// <c>false</c> direction rather than against hardcoded expectations. Rows cover value-type,
-/// reference-type and enum elements, and each includes the out-of-band default element
-/// (<c>0</c> / <c>null</c>) that these sets store outside their main table.
+/// reference-type and enum elements, and every fixture includes the default element
+/// (<c>0</c> / <c>null</c>), whichever way its type represents it: out-of-band for the
+/// open-addressed sets, inline for <see cref="SmallSet{T}"/> (which never hashes, so it has no
+/// empty-slot sentinel to work around), and an ordinary slot in the dense array or bit vector
+/// for <see cref="SparseSet"/> and <see cref="EnumSet{TEnum}"/>.
 /// </para>
 /// </summary>
 public class ReadOnlySetInterfaceTests
@@ -212,8 +215,8 @@ public class ReadOnlySetInterfaceTests
 
     // ── Shared fixtures and drivers ───────────────────────────────────────────
 
-    // Includes 0 / null — the element every hashed set stores out-of-band rather than in its
-    // main table — so the interface reaches that slot too.
+    // Includes 0 / null so the interface reaches the default element on every type, whether
+    // that lives out-of-band, inline, or in a dense/bit-vector slot.
     private static readonly int[] IntMembers = { 0, 1, -3, 40, 999 };
     private const int IntAbsent = 7;
 
