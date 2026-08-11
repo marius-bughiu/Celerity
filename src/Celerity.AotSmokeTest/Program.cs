@@ -321,8 +321,9 @@ void Check(bool condition, string message)
     gs.Add(Guid.Empty);
     Check(gs.Contains(g) && gs.Contains(Guid.Empty), "CeleritySet<Guid>");
 
-    // The read-only interface is declared alongside ISet<T>; reaching the queries through it
-    // pins that the explicit forwarders survive trimming on a hasher-parameterized generic.
+    // The read-only interface is declared alongside ISet<T> and satisfied by the same public
+    // members; reaching the queries through it pins that dispatch survives trimming on a
+    // hasher-parameterized generic.
     IReadOnlySet<int> ro = s;
     Check(ro.Count == 2 && ro.Contains(0) && ro.IsSubsetOf(new[] { 0, 1, 9 }) && !ro.Overlaps(new[] { 7 }),
         "IntSet IReadOnlySet<int>");

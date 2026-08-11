@@ -255,8 +255,8 @@ public class ReadOnlySetInterfaceTests
             Assert.Equal(oracle.SetEquals(other), set.SetEquals(other));
         }
 
-        // The two queries that are false for every `other` a same-shape fixture would produce,
-        // spelled out so the table above cannot silently stop covering their true direction.
+        // Spelled out so the table above cannot silently stop covering the directions an
+        // always-false subset check and a tautological SetEquals would otherwise satisfy.
         Assert.True(set.IsSubsetOf(properSuperset));
         Assert.True(set.IsProperSubsetOf(properSuperset));
         Assert.False(set.SetEquals(properSubset));

@@ -6,15 +6,13 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **The ten mutable sets now implement `IReadOnlySet<T>`** alongside `ISet<T>` — `CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `SmallSet`, `IntSet`, `LongSet`, `SparseSet` and `EnumSet`. `ISet<T>` does not derive from the read-only interface, so passing any of them to an API typed against `IReadOnlySet<T>` was a compile error; every member it needs was already public, so nothing else changed. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
-- `ReadOnlySetInterfaceTests` — a row per set reaching the surface through an `IReadOnlySet<T>` reference and reconciling all six queries against a `HashSet<T>` oracle over equal / superset / subset / disjoint / empty / overlapping inputs, with value-type, `string` and enum element rows. Extended the xUnit call sites in `SetExplicitICollectionMemberTests`, `SetAlgebraTests`, `EnumSetTests` and `EnumSetEnumerationTests` that the second interface makes ambiguous, and added Native AOT smoke coverage. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
-- API-reference and README updates naming both interfaces on every set, with a runnable `IReadOnlySet<T>` example. No benchmark: this adds no code path — the interface members forward to the public ones the existing set benchmarks already cover. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
+- **The ten mutable sets now implement `IReadOnlySet<T>`** alongside `ISet<T>` — `CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `SmallSet`, `IntSet`, `LongSet`, `SparseSet` and `EnumSet`. `ISet<T>` does not derive from the read-only interface, so passing any of them to an API typed against `IReadOnlySet<T>` was a compile error; every member it needs was already public, so no behaviour changed. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
+
+- **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate, backed by a test that reads the shipped `.xml` back and asserts an entry for every public type. A malformed comment is not truncated by the doc writer — the whole member is dropped — so a warning was too weak a signal for something that silently empties a type's documentation. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
 
 ### Changed
 
 - **Source-breaking in one narrow case:** a call overloaded on both `ISet<T>` and `IReadOnlySet<T>` with no more-specific candidate now needs a cast at the call site — e.g. `Assert.Contains(x, celeritySet)` becomes `Assert.Contains(x, (IReadOnlySet<int>)celeritySet)`, or `Assert.True(celeritySet.Contains(x))`. BCL `HashSet<T>` avoids this only because such libraries ship a concrete `HashSet<T>` overload to break the tie. Binary compatibility is unaffected. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
-
-- **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate, backed by a test that reads the shipped `.xml` back and asserts an entry for every public type. A malformed comment is not truncated by the doc writer — the whole member is dropped — so a warning was too weak a signal for something that silently empties a type's documentation. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
 
 ### Fixed
 
