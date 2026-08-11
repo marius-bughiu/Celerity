@@ -643,10 +643,10 @@ Console.WriteLine(map.Count); // 3
 
 ## CeleritySet&lt;T, THasher&gt;
 
-A high-performance generic set parameterized on a custom hash provider. Set counterpart to `CelerityDictionary`. Implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), so it is a drop-in for `HashSet<T>` wherever set algebra is used.
+A high-performance generic set parameterized on a custom hash provider. Set counterpart to `CelerityDictionary`. Implements `ISet<T>` and `IReadOnlySet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), so it is a drop-in for `HashSet<T>` wherever set algebra is used.
 
 ```csharp
-public class CeleritySet<T, THasher> : ISet<T>
+public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -685,7 +685,7 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty`, `null` for reference types) is yielded first when present.
 - `void CopyTo(T[] array, int arrayIndex)` — copies every element (the out-of-band `default(T)` entry first) into `array`, matching `HashSet<T>.CopyTo` argument validation.
 
-### Set operations (`ISet<T>`)
+### Set operations (`ISet<T>` and `IReadOnlySet<T>`)
 
 The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>` semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`, and the out-of-band `default(T)`/zero element all handled):
 
@@ -695,6 +695,20 @@ The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<
 Each throws `ArgumentNullException` when `other` is `null`. The subset / equality shapes materialize `other` once into a distinct `HashSet<T>` keyed by `EqualityComparer<T>.Default` (the same equality the set itself uses); the superset / overlap shapes stream `other` directly against the set's O(1) membership test.
 
 > **`Add` note.** `ISet<T>.Add(T)` returns `bool` (the non-throwing add, equivalent to `TryAdd`). The concrete `public void Add(T)` keeps its throw-on-duplicate behaviour — cast to `ISet<T>`, or use `TryAdd`, when you want the boolean result. `ICollection<T>.Add(T)` ignores duplicates (never throws).
+
+The six query members are also reachable through `IReadOnlySet<T>`, which the set declares alongside `ISet<T>`. The two have to be declared separately — `ISet<T>` does not derive from `IReadOnlySet<T>`, exactly as `IDictionary<,>` does not derive from `IReadOnlyDictionary<,>` — and declaring both is what lets a Celerity set be passed to an API whose parameter is the read-only interface:
+
+```csharp
+static bool IsAuthorized(IReadOnlySet<string> allowed, string scope) => allowed.Contains(scope);
+
+var scopes = new CeleritySet<string, DefaultHasher<string>>();
+scopes.TryAdd("read");
+scopes.TryAdd("write");
+
+bool ok = IsAuthorized(scopes, "write"); // true
+```
+
+> **Overload-resolution caveat.** Carrying both interfaces can make a call ambiguous when a method is overloaded on `ISet<T>` *and* `IReadOnlySet<T>` and neither is more specific — the same situation BCL `HashSet<T>` has been in since .NET 5, which is why libraries that overload on both (xUnit's `Assert.Contains`, for instance) also ship a concrete `HashSet<T>` overload to break the tie. Celerity's sets get no such special-casing, so such a call site needs a cast — `Assert.Contains(x, (IReadOnlySet<int>)set)` — or the concrete member, `Assert.True(set.Contains(x))`.
 
 ### Span-keyed lookups (string elements)
 
@@ -722,10 +736,10 @@ foreach (var id in ids) { /* ... */ }
 
 ## SwissSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
+A drop-in peer of `CeleritySet` that resolves collisions with **SIMD-accelerated group probing** in the spirit of Google's Swiss Tables and Facebook's `F14`, instead of scalar linear probing. It is the set counterpart of `SwissDictionary` — the same control-byte machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` / `IReadOnlySet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
 
 ```csharp
-public class SwissSet<T, THasher> : ISet<T>
+public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -797,10 +811,10 @@ foreach (var item in seen) { /* ... */ }
 
 ## RobinHoodSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that resolves collisions with **Robin Hood open addressing** instead of plain linear probing. It is the set counterpart of `RobinHoodDictionary` — the same probe-sequence-length (PSL) machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
+A drop-in peer of `CeleritySet` that resolves collisions with **Robin Hood open addressing** instead of plain linear probing. It is the set counterpart of `RobinHoodDictionary` — the same probe-sequence-length (PSL) machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` / `IReadOnlySet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probing strategy differs.
 
 ```csharp
-public class RobinHoodSet<T, THasher> : ISet<T>
+public class RobinHoodSet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -872,10 +886,10 @@ foreach (var item in seen) { /* ... */ }
 
 ## HashCachingSet&lt;T, THasher&gt;
 
-A drop-in peer of `CeleritySet` that takes the struct-of-arrays layout one step further: alongside the `items` array it keeps a dense side array of 32-bit hash **fingerprints**. It is the set counterpart of `HashCachingDictionary` — the same cached-fingerprint machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probe representation differs.
+A drop-in peer of `CeleritySet` that takes the struct-of-arrays layout one step further: alongside the `items` array it keeps a dense side array of 32-bit hash **fingerprints**. It is the set counterpart of `HashCachingDictionary` — the same cached-fingerprint machinery with no value array. The public surface — constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` / `IReadOnlySet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — is identical to `CeleritySet`. Only the probe representation differs.
 
 ```csharp
-public class HashCachingSet<T, THasher> : ISet<T>
+public class HashCachingSet<T, THasher> : ISet<T>, IReadOnlySet<T>
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -948,10 +962,10 @@ foreach (var item in seen) { /* ... */ }
 
 ## PooledCeleritySet<T, THasher>
 
-An allocation-conscious peer of `CeleritySet` whose backing array is **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. It is the set counterpart of `PooledCelerityDictionary` — the same rent / return lifecycle applied to a single element array rather than parallel key/value arrays. The public surface is identical to `CeleritySet` — same constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — with one addition: it implements `IDisposable`.
+An allocation-conscious peer of `CeleritySet` whose backing array is **rented from [`ArrayPool<T>.Shared`](https://learn.microsoft.com/dotnet/api/system.buffers.arraypool-1)** instead of being allocated on the managed heap. It is the set counterpart of `PooledCelerityDictionary` — the same rent / return lifecycle applied to a single element array rather than parallel key/value arrays. The public surface is identical to `CeleritySet` — same constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, `CopyTo`, and the full `ISet<T>` / `IReadOnlySet<T>` set-algebra surface (see [`CeleritySet`](#celeritysett-thasher)) — with one addition: it implements `IDisposable`.
 
 ```csharp
-public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
+public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposable
     where THasher : struct, IHashProvider<T>
 ```
 
@@ -1046,10 +1060,10 @@ Same semantics and validation as `IntSet<THasher>` (see below).
 
 ## IntSet&lt;THasher&gt;
 
-A high-performance set of `int` values, parameterized on a custom hash provider. Implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) — the full `HashSet<int>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celeritysett-thasher).
+A high-performance set of `int` values, parameterized on a custom hash provider. Implements `ISet<int>` and `IReadOnlySet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`) — the full `HashSet<int>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celeritysett-thasher).
 
 ```csharp
-public class IntSet<THasher> : ISet<int>
+public class IntSet<THasher> : ISet<int>, IReadOnlySet<int>
     where THasher : struct, IHashProvider<int>
 ```
 
@@ -1132,10 +1146,10 @@ Same semantics and validation as `LongSet<THasher>` (see below).
 
 ## LongSet&lt;THasher&gt;
 
-A high-performance set of `long` values, parameterized on a custom hash provider. Implements `ISet<long>` (and therefore `ICollection<long>` / `IEnumerable<long>`) — the full `HashSet<long>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celeritysett-thasher).
+A high-performance set of `long` values, parameterized on a custom hash provider. Implements `ISet<long>` and `IReadOnlySet<long>` (and therefore `ICollection<long>` / `IEnumerable<long>`) — the full `HashSet<long>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` / `IsSubsetOf` / … / `SetEquals`, plus `CopyTo`) is available with BCL semantics; see [`CeleritySet`](#celeritysett-thasher).
 
 ```csharp
-public class LongSet<THasher> : ISet<long>
+public class LongSet<THasher> : ISet<long>, IReadOnlySet<long>
     where THasher : struct, IHashProvider<long>
 ```
 
@@ -1800,7 +1814,7 @@ foreach (var kvp in scope) { /* ("y", 2) */ }
 ## SmallSet&lt;T&gt;
 
 ```csharp
-public class SmallSet<T> : ISet<T>
+public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
 ```
 
 The set counterpart to `SmallDictionary`, tuned for the **very-small** case
@@ -1827,7 +1841,7 @@ function, because it never hashes. The trade-offs that follow directly from that
   element is found), so the relative order of the surviving elements is not
   preserved. Enumeration order is unspecified in general.
 
-It implements `ISet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), ships an
+It implements `ISet<T>` and `IReadOnlySet<T>` (and therefore `ICollection<T>` / `IEnumerable<T>`), ships an
 allocation-free struct enumerator, and accepts an `IEnumerable<T>` source at
 construction — the same surface as the other Celerity sets.
 
@@ -1867,7 +1881,7 @@ SmallSet(IEnumerable<T> source, int capacity = 4)
 - `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`,
   matching `HashSet<T>.CopyTo` argument validation.
 
-### Set operations (`ISet<T>`)
+### Set operations (`ISet<T>` and `IReadOnlySet<T>`)
 
 The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>`
 semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`):
@@ -1907,7 +1921,7 @@ foreach (var item in seen) { /* "y" */ }
 ## EnumSet&lt;TEnum&gt;
 
 ```csharp
-public class EnumSet<TEnum> : ISet<TEnum>
+public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
     where TEnum : struct, Enum
 ```
 
@@ -1981,7 +1995,7 @@ the enum (exactly the declared members, not every bit position).
 - `void CopyTo(TEnum[] array, int arrayIndex)` — copies in ascending order, matching
   `HashSet<T>.CopyTo` argument validation.
 
-### Set operations (`ISet<TEnum>`)
+### Set operations (`ISet<TEnum>` and `IReadOnlySet<TEnum>`)
 
 The full BCL `HashSet<T>` set-algebra surface is available with `HashSet<T>` semantics.
 When the operand is another `EnumSet<TEnum>`, each operation runs as word-wise bitwise
@@ -2024,7 +2038,7 @@ foreach (var p in granted) { /* ascending: Read, Write, Execute */ }
 ## SparseSet
 
 ```csharp
-public class SparseSet : ISet<int>
+public class SparseSet : ISet<int>, IReadOnlySet<int>
 ```
 
 A set of **non-negative integers over a bounded universe** `[0, Universe)`, backed by
@@ -2061,7 +2075,7 @@ The trade-offs, stated honestly:
   relative order of the surviving elements is not preserved. Enumeration order is
   unspecified in general.
 
-It implements `ISet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`), ships an
+It implements `ISet<int>` and `IReadOnlySet<int>` (and therefore `ICollection<int>` / `IEnumerable<int>`), ships an
 allocation-free struct enumerator, and accepts an `IEnumerable<int>` source at construction.
 
 ### Constructors
@@ -2100,7 +2114,7 @@ SparseSet(int universe, IEnumerable<int> source)
 - `Enumerator GetEnumerator()` — allocation-free struct enumerator over the dense array.
 - `void CopyTo(int[] array, int arrayIndex)` — matches `HashSet<int>.CopyTo` argument validation.
 
-### Set operations (`ISet<int>`)
+### Set operations (`ISet<int>` and `IReadOnlySet<int>`)
 
 The full BCL `HashSet<int>` set-algebra surface is available and follows `HashSet<int>`
 semantics exactly within the universe (duplicate-tolerant `other`, self-aliasing

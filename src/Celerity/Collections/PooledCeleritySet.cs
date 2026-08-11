@@ -46,7 +46,7 @@ namespace Celerity.Collections;
 /// member throws <see cref="ObjectDisposedException"/>.
 /// </para>
 /// </remarks>
-public class PooledCeleritySet<T, THasher> : ISet<T>, IDisposable
+public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposable
     where THasher : struct, IHashProvider<T>
 {
     /// <summary>

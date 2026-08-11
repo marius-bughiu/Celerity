@@ -57,7 +57,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42, set);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
 
         // The public entry point keeps the throw-on-duplicate contract the interface must not have.
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
@@ -82,7 +82,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42, set);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
 
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
         Assert.Equal("item", ex.ParamName);
@@ -106,7 +106,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42, set);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
 
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
         Assert.Equal("item", ex.ParamName);
@@ -130,7 +130,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42, set);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
 
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
         Assert.Equal("item", ex.ParamName);
@@ -157,7 +157,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42, set);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
 
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
         Assert.Equal("item", ex.ParamName);
@@ -181,7 +181,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42L);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42L, set);
+        Assert.Contains(42L, (IReadOnlySet<long>)set);
 
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42L));
         Assert.Equal("item", ex.ParamName);
@@ -207,7 +207,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42, set);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
 
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
         Assert.Equal("item", ex.ParamName);
@@ -231,7 +231,7 @@ public class SetExplicitICollectionMemberTests
         collection.Add(42);
 
         Assert.Equal(1, collection.Count);
-        Assert.Contains(42, set);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
 
         var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
         Assert.Equal("item", ex.ParamName);

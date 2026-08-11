@@ -180,7 +180,7 @@ public class EnumSetEnumerationTests
         var set = EnumSet<EnumSetColor>.All();
 
         Assert.Equal(Enum.GetValues<EnumSetColor>().Length, set.Count());
-        Assert.Contains(EnumSetColor.Magenta, set);
+        Assert.Contains(EnumSetColor.Magenta, (IEnumerable<EnumSetColor>)set);
         Assert.Equal(EnumSetColor.Red, set.First());
     }
 }
