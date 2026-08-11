@@ -262,10 +262,10 @@ public class SetAlgebraTests
         Assert.Equal(new[] { 1, 2, 3 }, set.OrderBy(x => x));
 
         set.UnionWith(new[] { 0 });
-        Assert.Contains(0, set);
+        Assert.Contains(0, (IReadOnlySet<int>)set);
 
         set.ExceptWith(new[] { 0 });
-        Assert.DoesNotContain(0, set);
+        Assert.DoesNotContain(0, (IReadOnlySet<int>)set);
     }
 
     [Fact]
@@ -281,10 +281,10 @@ public class SetAlgebraTests
 
         set.ExceptWith(new string[] { null! });
         Assert.Equal(2, set.Count);
-        Assert.DoesNotContain(null!, set);
+        Assert.DoesNotContain(null!, (IReadOnlySet<string>)set);
 
         set.SymmetricExceptWith(new string[] { null! }); // re-adds null
-        Assert.Contains(null!, set);
+        Assert.Contains(null!, (IReadOnlySet<string>)set);
     }
 
     // ── CopyTo ────────────────────────────────────────────────────────────────

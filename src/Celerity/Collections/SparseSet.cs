@@ -58,7 +58,7 @@ namespace Celerity.Collections;
 /// after a removal is unspecified.
 /// </para>
 /// </remarks>
-public class SparseSet : ISet<int>
+public class SparseSet : ISet<int>, IReadOnlySet<int>
 {
     // The dense array holds the present values in [0, _count); the sparse array is
     // indexed by value and, for a present value v, sparse[v] is v's slot in dense.
