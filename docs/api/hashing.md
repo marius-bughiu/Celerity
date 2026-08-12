@@ -704,7 +704,7 @@ The **zero-work floor** of the `ulong` family and the unsigned counterpart to `I
 
 Because it keeps only the low half, two keys that differ **only** in their upper 32 bits collide — unlike `UInt64WangNaiveHasher`, which folds the high half back in. That makes it the right call only when the discriminating entropy lives in the low 32 bits (dense sequential `ulong` IDs), and the wrong call when the upper bits carry the distinguishing information (type / shard tags, a timestamp in the high word). For those, escalate to `UInt64WangNaiveHasher` (cheap XOR-fold that keeps high-half entropy), `UInt64WangHasher` (full Thomas-Wang finalizer), or `UInt64Murmur3Hasher`. As with `UInt32IdentityHasher`, a cast at the call site is not a substitute — the collections invoke the hasher through the `IHashProvider<ulong>` constraint themselves.
 
-**Note:** it deliberately does **not** implement [`IHashProvider64<ulong>`](#ihashprovider64t). A truncating pass-through has no 64-bit code to publish, so a sketch parameterized on it correctly keeps the widened 32-bit path and the large-range correction that goes with it.
+**Note:** it deliberately does **not** implement [`IHashProvider64<ulong>`](#ihashprovider64t). A truncating pass-through has no 64-bit code to publish, so a sketch parameterized on it correctly keeps the 32-bit path — which for `HyperLogLog` means the classical large-range correction stays engaged rather than being skipped on a false claim of 64-bit entropy.
 
 ### UInt64Murmur3Hasher
 

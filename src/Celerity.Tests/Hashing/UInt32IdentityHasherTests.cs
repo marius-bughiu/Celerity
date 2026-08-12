@@ -76,9 +76,8 @@ public class UInt32IdentityHasherTests
     public void Hash_TopBitKeys_AreDistinctFromTheirLowCounterparts()
     {
         // The cast is a reinterpretation, not a truncation: a key with the top
-        // bit set maps to a negative code rather than colliding with the same
-        // low bits. (This is where the sibling XOR-fold differs — it folds the
-        // top half down, which is what makes the two disagree on such keys.)
+        // bit set keeps that bit — as the sign — rather than losing it, so it
+        // cannot collide with the same key without it.
         Assert.NotEqual(_hasher.Hash(1u), _hasher.Hash(1u | (1u << 31)));
         Assert.True(_hasher.Hash(0x8000_0000u) < 0);
     }
