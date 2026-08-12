@@ -43,11 +43,12 @@ using Celerity.Hashing;
 /// gh-pages dashboard can group hashers by key type.
 /// </para>
 /// <para>
-/// The <c>{Type}_Identity</c> rows (<see cref="Int32IdentityHasher"/> / <see cref="Int64IdentityHasher"/>)
+/// The <c>{Type}_Identity</c> rows (<see cref="Int32IdentityHasher"/>, <see cref="Int64IdentityHasher"/>,
+/// <see cref="UInt32IdentityHasher"/> and <see cref="UInt64IdentityHasher"/> — one per integer width)
 /// are the labelled <strong>zero-work floor</strong>: a pass-through that does no mixing. For <c>int</c>
-/// keys it should track the <c>{Type}_Bcl</c> baseline (since <c>int.GetHashCode()</c> is itself the
-/// identity), confirming that no mixing hasher can beat it on raw throughput — the honest framing of the
-/// hasher value proposition is distribution quality, not hashing speed.
+/// and <c>uint</c> keys it should track the <c>{Type}_Bcl</c> baseline (since their <c>GetHashCode()</c>
+/// is itself the identity), confirming that no mixing hasher can beat it on raw throughput — the honest
+/// framing of the hasher value proposition is distribution quality, not hashing speed.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
@@ -196,6 +197,10 @@ public class IntegerHasherBenchmark
 
     [Benchmark]
     [BenchmarkCategory("UInt32")]
+    public int UInt32_Identity() => HashAll<uint, UInt32IdentityHasher>(uintKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("UInt32")]
     public int UInt32_WangNaive() => HashAll<uint, UInt32WangNaiveHasher>(uintKeys);
 
     [Benchmark]
@@ -224,6 +229,10 @@ public class IntegerHasherBenchmark
     [Benchmark]
     [BenchmarkCategory("UInt64")]
     public int UInt64_EqualityComparer() => HashAllEqualityComparer(ulongKeys);
+
+    [Benchmark]
+    [BenchmarkCategory("UInt64")]
+    public int UInt64_Identity() => HashAll<ulong, UInt64IdentityHasher>(ulongKeys);
 
     [Benchmark]
     [BenchmarkCategory("UInt64")]
