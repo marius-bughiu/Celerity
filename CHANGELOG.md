@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`UInt32IdentityHasher` / `UInt64IdentityHasher`** complete the zero-work identity tier for the unsigned integer widths, mirroring `Int32IdentityHasher` / `Int64IdentityHasher`. A `uint`- or `ulong`-keyed collection or sketch previously could not be given a no-mixing hasher at all: the hasher is a type parameter the collection invokes itself, so there is no call site at which the key could be cast to reach the signed pair, and the cheapest reachable option was the XOR-fold. The 64-bit one keeps only the low 32 bits, and — like its signed peer — deliberately does not implement `IHashProvider64<T>`. Closes [#357](https://github.com/marius-bughiu/Celerity/issues/357).
+- **`UInt32IdentityHasher` / `UInt64IdentityHasher`** — the zero-work, no-mixing hasher tier is now reachable from `uint`- and `ulong`-keyed collections and sketches, where the cheapest option was previously the XOR-fold. `UInt64IdentityHasher` keeps only the low 32 bits, so use it only when those are the discriminating ones. Closes [#357](https://github.com/marius-bughiu/Celerity/issues/357).
 
 - **The ten mutable sets now implement `IReadOnlySet<T>`** alongside `ISet<T>` — `CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `SmallSet`, `IntSet`, `LongSet`, `SparseSet` and `EnumSet`. `ISet<T>` does not derive from the read-only interface, so passing any of them to an API typed against `IReadOnlySet<T>` was a compile error; every member it needs was already public, so no behaviour changed. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
 

@@ -21,14 +21,14 @@ public class UInt32IdentityHasherTests
     [InlineData(0x8000_0000u)]
     [InlineData(0x7FFF_FFFFu)]
     [InlineData(1234567890u)]
-    public void Hash_ReturnsKeyBitsUnchanged(uint input)
+    public void Hash_ShouldReturnTheKeyBitsUnchanged_WhenGivenAnyKey(uint input)
     {
         // The defining property of the zero-work floor: identity.
         Assert.Equal(Expected(input), _hasher.Hash(input));
     }
 
     [Fact]
-    public void Hash_MatchesUIntGetHashCode()
+    public void Hash_ShouldMatchUIntGetHashCode_ForTheSameKey()
     {
         // uint.GetHashCode() is itself this reinterpretation, so the identity
         // hasher must reproduce the framework hash exactly — that is the whole
@@ -43,14 +43,14 @@ public class UInt32IdentityHasherTests
     // ── Determinism ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossCalls()
+    public void Hash_ShouldReturnTheSameCode_WhenCalledTwiceWithTheSameKey()
     {
         uint value = 1234567890u;
         Assert.Equal(_hasher.Hash(value), _hasher.Hash(value));
     }
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossInstances()
+    public void Hash_ShouldAgreeAcrossInstances_WhenTheHasherIsDefaultConstructed()
     {
         // Hashers are stateless structs; two independent instances agree.
         uint value = 0x8000_0001u;
@@ -60,7 +60,7 @@ public class UInt32IdentityHasherTests
     // ── Distribution: bijective, so collision-free on any contiguous range ────
 
     [Fact]
-    public void Hash_ConsecutiveInputs_ProduceDistinctResults()
+    public void Hash_ShouldProduceDistinctCodes_WhenKeysAreConsecutive()
     {
         // Unlike the 64-bit identity hasher, this one loses nothing: uint and int
         // are the same width, so it is a bijection on the full 32-bit space and
@@ -73,7 +73,7 @@ public class UInt32IdentityHasherTests
     }
 
     [Fact]
-    public void Hash_TopBitKeys_AreDistinctFromTheirLowCounterparts()
+    public void Hash_ShouldKeepTheTopBitAsTheSign_WhenTheKeyExceedsIntMaxValue()
     {
         // The cast is a reinterpretation, not a truncation: a key with the top
         // bit set keeps that bit — as the sign — rather than losing it, so it
@@ -83,7 +83,7 @@ public class UInt32IdentityHasherTests
     }
 
     [Fact]
-    public void Hash_DoesNotThrow()
+    public void Hash_ShouldNotThrow_ForAnyKeyInTheValueRange()
     {
         uint[] testValues = { 0u, 1u, uint.MaxValue, 0x7FFF_FFFFu, 0x8000_0000u, 1234567890u, 987654321u };
         foreach (uint val in testValues)
@@ -101,7 +101,7 @@ public class UInt32IdentityHasherTests
     // site is not an option, because there is no call site.
 
     [Fact]
-    public void UInt32IdentityHasher_CanDriveCelerityDictionary()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCelerityDictionary()
     {
         var dict = new CelerityDictionary<uint, string, UInt32IdentityHasher>();
 
@@ -120,7 +120,7 @@ public class UInt32IdentityHasherTests
     }
 
     [Fact]
-    public void UInt32IdentityHasher_CanDriveCeleritySet()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCeleritySet()
     {
         var set = new CeleritySet<uint, UInt32IdentityHasher>();
 
@@ -138,7 +138,7 @@ public class UInt32IdentityHasherTests
     }
 
     [Fact]
-    public void UInt32IdentityHasher_CanDriveASketch()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingABloomFilter()
     {
         // The sketches carry the same constraint, so they had the same gap.
         var filter = new BloomFilter<uint, UInt32IdentityHasher>(expectedItems: 1000);
@@ -154,7 +154,7 @@ public class UInt32IdentityHasherTests
     }
 
     [Fact]
-    public void UInt32IdentityHasher_DrivesDictionary_OnDenseSequentialKeys()
+    public void Hash_ShouldRoundTripEveryEntry_WhenKeysAreDenseAndSequential()
     {
         // The workload identity is designed for: dense sequential uint keys are
         // collision-free under identity in an open-addressed power-of-two table,

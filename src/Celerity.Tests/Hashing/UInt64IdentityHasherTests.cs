@@ -21,13 +21,13 @@ public class UInt64IdentityHasherTests
     [InlineData(0x0000_FFFF_FFFF_FFFFUL)]
     [InlineData(0x1234_5678_9ABC_DEF0UL)]
     [InlineData(1234567890123456789UL)]
-    public void Hash_ReturnsLow32Bits(ulong input)
+    public void Hash_ShouldReturnTheLow32Bits_WhenGivenAnyKey(ulong input)
     {
         Assert.Equal(Expected(input), _hasher.Hash(input));
     }
 
     [Fact]
-    public void Hash_MatchesCast_OnSmallKeys()
+    public void Hash_ShouldEqualTheKey_WhenItFitsInAnInt()
     {
         // For keys that fit in an int the hash equals the key — the zero-work
         // floor for ulong keys whose discriminating entropy lives in the low 32
@@ -41,7 +41,7 @@ public class UInt64IdentityHasherTests
     // ── Documented collision: upper-32-bit-only differences truncate away ─────
 
     [Fact]
-    public void Hash_IgnoresUpper32Bits_ByDesign()
+    public void Hash_ShouldCollide_WhenTwoKeysDifferOnlyInTheUpper32Bits()
     {
         // The zero-work floor keeps only the low half, so two keys that differ
         // ONLY in the upper 32 bits collide. This is the documented tradeoff
@@ -54,7 +54,7 @@ public class UInt64IdentityHasherTests
     }
 
     [Fact]
-    public void Hash_LowBitDifferences_AreDistinct()
+    public void Hash_ShouldProduceDistinctCodes_WhenKeysDifferInTheLow32Bits()
     {
         // Conversely, anything that differs in the low 32 bits is distinguished
         // exactly — the shape identity is meant for (dense sequential IDs).
@@ -68,21 +68,21 @@ public class UInt64IdentityHasherTests
     // ── Determinism ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossCalls()
+    public void Hash_ShouldReturnTheSameCode_WhenCalledTwiceWithTheSameKey()
     {
         ulong value = 1234567890123456789UL;
         Assert.Equal(_hasher.Hash(value), _hasher.Hash(value));
     }
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossInstances()
+    public void Hash_ShouldAgreeAcrossInstances_WhenTheHasherIsDefaultConstructed()
     {
         ulong value = 0x8000_0000_0000_0001UL;
         Assert.Equal(new UInt64IdentityHasher().Hash(value), new UInt64IdentityHasher().Hash(value));
     }
 
     [Fact]
-    public void Hash_DoesNotThrow()
+    public void Hash_ShouldNotThrow_ForAnyKeyInTheValueRange()
     {
         ulong[] testValues =
         {
@@ -105,7 +105,7 @@ public class UInt64IdentityHasherTests
     // site is not an option, because there is no call site.
 
     [Fact]
-    public void UInt64IdentityHasher_CanDriveCelerityDictionary()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCelerityDictionary()
     {
         var dict = new CelerityDictionary<ulong, string, UInt64IdentityHasher>();
 
@@ -124,7 +124,7 @@ public class UInt64IdentityHasherTests
     }
 
     [Fact]
-    public void UInt64IdentityHasher_CanDriveCeleritySet()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCeleritySet()
     {
         var set = new CeleritySet<ulong, UInt64IdentityHasher>();
 
@@ -140,7 +140,7 @@ public class UInt64IdentityHasherTests
     }
 
     [Fact]
-    public void UInt64IdentityHasher_CanDriveASketch()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingABloomFilter()
     {
         // The sketches carry the same constraint, so they had the same gap.
         var filter = new BloomFilter<ulong, UInt64IdentityHasher>(expectedItems: 1000);
@@ -156,7 +156,7 @@ public class UInt64IdentityHasherTests
     }
 
     [Fact]
-    public void UInt64IdentityHasher_DrivesDictionary_OnDenseSequentialKeys()
+    public void Hash_ShouldRoundTripEveryEntry_WhenKeysAreDenseAndSequential()
     {
         // The workload identity is designed for: dense sequential ulong keys are
         // collision-free under identity (low 32 bits distinct) in an
