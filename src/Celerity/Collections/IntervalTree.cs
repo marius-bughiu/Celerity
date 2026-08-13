@@ -536,11 +536,14 @@ public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey
 
         public bool Visit(int index)
         {
+            // The entry guard is for a destination that had no room to begin with; the return value stops the
+            // walk the moment the last slot is filled, rather than letting it run on to the next match it
+            // could not write anyway.
             if (_index >= _destination.Length)
                 return false;
 
             _destination[_index++] = _tree.EntryAt(index);
-            return true;
+            return _index < _destination.Length;
         }
     }
 
