@@ -4579,7 +4579,7 @@ public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey
 public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, DefaultComparer<TKey>>
 ```
 
-An **interval tree** is a build-once, immutable index over half-open `[start, end)` ranges that answers *which ranges cover this point* and *which ranges overlap this window* in `O(log n + k)`, where `k` is the number of matches.
+An **interval tree** is a build-once, immutable index over half-open `[start, end)` ranges that answers *which ranges cover this point* and *which ranges overlap this window* in time that tracks the matches found rather than the intervals stored — `O(log n + k)` when the matches cluster, `O(min(n, k log n))` when they are scattered, where `k` is the number of matches.
 
 .NET ships nothing for this question — there is no interval tree, no interval map, and no range-overlap query anywhere in `System.Collections`, on any of `net8.0` / `net9.0` / `net10.0`. The idiomatic answer is a `List<T>` of ranges and a linear scan, which is `O(n)` per query. Keeping that list sorted by start does not rescue it: an interval that begins far to the left can still cover the query point, so the scan cannot stop early. That is the gap this type fills — booking- and scheduling-conflict checks, IP-range and CIDR-to-owner lookup, effective-dated pricing and feature-flag windows, "which trace spans were live at time `t`", and the genomics overlap query the structure is named for.
 
@@ -4608,6 +4608,8 @@ The intervals are sorted by start into flat parallel arrays, and a balanced bina
 
 Every query shape shares a single traversal that is generic over a `struct` visitor, so the JIT specializes it per call site and inlines the per-match work rather than paying a delegate or an interface call per hit — the same zero-cost-abstraction rule the struct hashers, `IMonoid<T>` and `DefaultComparer<T>` follow.
 
+**What the bound really is.** The augmentation proves only that a subtree *contains* a candidate, not where it sits, so `k` matches spread across the tree can force up to `k` separate root-to-match descents: the worst case is `O(min(n, k log n))`, not the `O(log n + k)` a *centered* interval tree with per-node sorted endpoint lists would guarantee. The clustered case is the common one here because entries are stored in start order, so overlapping ranges are neighbours and their descents share almost the whole path. What holds in every case is that the work is bounded by the matches found (times the depth) and never exceeds the full scan the baseline pays on every query. Measured against that scan at 100,000 intervals: **154x** on the point query, **78x** on the window query and **27x** on the first-overlap conflict check — but on a shape with roughly 1,250 matches per point instead of ~70, the point query falls to **8.2x**. This type is for *selective* interval sets.
+
 ### API
 
 Queries come in two tiers. The **allocation-free** tier allocates nothing at all; the **convenience** tier allocates the result array and walks the tree twice, once to size it exactly and once to fill it.
@@ -4633,7 +4635,7 @@ Intervals are kept distinct: two overlapping ranges stay two entries and a query
 ### Caveats
 
 - **Build-once.** The tree is immutable; adding an interval means building a new one, as with [`FrozenCelerityDictionary<TValue>`](#frozenceleritydictionarytvalue), `XorFilter<T, THasher>` and [`RankSelectBitVector`](#rankselectbitvector). Keeping the augmentation correct under insertion needs a rebalancing tree with a fix-up per rotation — a different type with a different cost profile, not an overload of this one.
-- **Nothing mutates, so nothing can be invalidated.** An enumerator survives any concurrent query, and concurrent *readers* are safe without synchronization. That follows from immutability rather than from locking; the mutable collections carry no such guarantee.
+- **Nothing mutates, so nothing can be invalidated.** An enumerator survives any concurrent query, and concurrent *readers* need no synchronization as far as the tree is concerned — with one caveat: every query calls `TComparer`, so a comparer that is not itself thread-safe makes concurrent queries unsafe however immutable the tree is. `DefaultComparer<T>` is stateless, so the default case is safe; a stateful comparer, which the two-argument constructor exists to accept, is yours to reason about.
 - **The comparer defines everything.** `TComparer` orders the endpoints, decides which intervals are empty, and therefore decides what overlaps what. Use the two-parameter `IntervalTree<TKey, TValue>` alias for the natural order.
 - **Build costs a sort.** Construction is `O(n log n)` and the sort is the one comparer call in the type that is not devirtualized. It is paid once; every query after it runs on the specialized path.
 

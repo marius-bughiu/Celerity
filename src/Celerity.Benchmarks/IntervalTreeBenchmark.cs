@@ -10,7 +10,8 @@ using Celerity.Collections;
 // classifies them as the reference series.
 //
 // Three query categories cover the shapes the type is for. PointQuery is the stabbing query ("which ranges
-// cover time t"), and it is the headline: the tree's cost is O(log n + k) against the baseline's O(n).
+// cover time t"), and it is the headline: the tree's cost tracks the matches it finds — O(log n + k) when they
+// cluster, O(min(n, k log n)) when they are scattered — against the baseline's O(n) on every query regardless.
 // WindowQuery is the overlap query over a half-open window, where a wider window raises k and narrows the gap
 // — worth reporting next to the point query rather than instead of it. AnyOverlap is the conflict check
 // ("is this slot already booked"), the one shape where both sides can exit early, so it is where the win is
@@ -122,7 +123,10 @@ public class IntervalTreeBenchmark
             written = 0;
             for (int j = 0; j < list.Count; j++)
             {
-                if (list[j].Start < end && start < list[j].End)
+                // The Start < End term is not padding: the generator produces zero-length intervals, which
+                // cover no point and which the tree therefore never reports. Without it the two arms would be
+                // answering different questions.
+                if (list[j].Start < end && start < list[j].End && list[j].Start < list[j].End)
                     buffer[written++] = list[j];
             }
         }
@@ -157,7 +161,9 @@ public class IntervalTreeBenchmark
             int end = start + 1_000;
             for (int j = 0; j < list.Count; j++)
             {
-                if (list[j].Start < end && start < list[j].End)
+                // Same non-empty term as the window arm, and it matters more here: an empty interval counted
+                // as a hit would let the baseline exit early on a match the tree does not report.
+                if (list[j].Start < end && start < list[j].End && list[j].Start < list[j].End)
                 {
                     hits++;
                     break;

@@ -1,3 +1,4 @@
+using System.Linq;
 using Celerity.Collections;
 
 namespace Celerity.Tests.Collections;
@@ -93,6 +94,22 @@ public class IntervalTreeTests
 
         Assert.Equal(1, enumerations);
         Assert.Equal(2, tree.Count);
+    }
+
+    [Fact]
+    public void Constructor_ShouldSizeExactly_WhenTheSourceIsCounted()
+    {
+        // An ICollection<T> source is copied straight into a right-sized array rather than going through a
+        // List<T> first. Both shapes have to produce the same tree, which is what this pins.
+        var list = new List<Interval<int, string>> { Interval(10, 20, "a"), Interval(0, 5, "b") };
+
+        var fromCounted = new IntervalTree<int, string>(list);
+        var fromUncounted = new IntervalTree<int, string>(list.Where(_ => true));
+
+        Assert.Equal(2, fromCounted.Count);
+        Assert.Equal(2, fromUncounted.Count);
+        Assert.Equal(fromCounted[0].Value, fromUncounted[0].Value);
+        Assert.True(fromCounted.ContainsPoint(15) && fromUncounted.ContainsPoint(15));
     }
 
     [Fact]
