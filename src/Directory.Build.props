@@ -109,7 +109,7 @@
     IsPackable is known; see the comment there.
   -->
   <PropertyGroup>
-    <CelerityPackageValidationBaseline>2.5.0</CelerityPackageValidationBaseline>
+    <CelerityPackageValidationBaseline>2.6.0</CelerityPackageValidationBaseline>
   </PropertyGroup>
 
 </Project>

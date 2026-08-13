@@ -27,13 +27,6 @@
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageTags>celerity;sorting;radix-sort;counting-sort;quickselect;top-k;argsort;span;performance</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<!--
-		  First release: no published predecessor exists on NuGet.org, so asking for a
-		  package-validation baseline fails restore. See Directory.Build.targets — drop
-		  this property once Celerity.Sorting has shipped once and the baseline in
-		  Directory.Build.props names a version that contains it.
-		-->
-		<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>
 	</PropertyGroup>
 
 	<PropertyGroup>
