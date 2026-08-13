@@ -25,9 +25,9 @@ using Celerity.Collections;
 // The ratio this class reports is a function of that shape, and the density is the term that matters: the tree
 // does O(log n + k) work where k is the number of matches, so as the intervals pile deeper over each point the
 // baseline's O(n) and the tree's O(k) converge. The mix here is a minority of spans covering ~1% of the domain
-// each, which puts roughly 70 matches on a point at 100,000 intervals, and the point query measures 154x. A
+// each, which puts roughly 70 matches on a point at 100,000 intervals, and the point query measures 151x. A
 // shape ten times denser (spans covering a quarter of the domain, ~1,250 matches per point) was measured too
-// and the same query fell to 8.2x. The honest reading is that this type is for selective interval sets, which
+// and the same query fell to 8.3x. The honest reading is that this type is for selective interval sets, which
 // is what the docs say next to the number.
 [MemoryDiagnoser]
 [CategoriesColumn]

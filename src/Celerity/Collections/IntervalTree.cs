@@ -72,8 +72,8 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// here because entries are stored in start order, so overlapping ranges are neighbours and their descents
 /// share almost the whole path. What holds in every case is that the work is bounded by the matches found
 /// (times the depth) and never exceeds the full scan the baseline always pays. On the selective shapes this
-/// type is for, the measured point query is 154x a linear scan at 100,000 intervals; on a shape with roughly
-/// 1,250 matches per point it is 8.2x.
+/// type is for, the measured point query is 151x a linear scan at 100,000 intervals; on a shape with roughly
+/// 1,250 matches per point it is 8.3x.
 /// </para>
 /// <para>
 /// <b>Build-once.</b> The tree is immutable; adding an interval means building a new one, as with
