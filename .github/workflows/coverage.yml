@@ -18,7 +18,7 @@ on:
       - 'src/**'
       - '.github/workflows/coverage.yml'
 
-# Coverage floor. The suite is at 100% line and 100% branch across all six
+# Coverage floor. The suite is at 100% line and 100% branch across all seven
 # shipping packages, so the floor is set to match: every reachable line and branch
 # is covered, and the handful of guards no test can reach (array-size ceilings,
 # clamps their caller's own validation already rules out) carry
