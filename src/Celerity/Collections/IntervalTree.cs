@@ -70,10 +70,19 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// root-to-match descents: the worst case is <c>O(min(n, k log n))</c>, not the <c>O(log n + k)</c> a centered
 /// interval tree with per-node sorted endpoint lists would guarantee. The clustered case is the common one
 /// here because entries are stored in start order, so overlapping ranges are neighbours and their descents
-/// share almost the whole path. What holds in every case is that the work is bounded by the matches found
-/// (times the depth) and never exceeds the full scan the baseline always pays. On the selective shapes this
-/// type is for, the measured point query is 151x a linear scan at 100,000 intervals; on a shape with roughly
-/// 1,250 matches per point it is 8.3x.
+/// share almost the whole path. A query never does more work than the full scan the baseline pays on every
+/// query regardless. On the selective shapes this type is for, the measured point query is 151x a linear scan
+/// at 100,000 intervals; on a shape with roughly 1,250 matches per point it is 8.3x.
+/// </para>
+/// <para>
+/// <b>One input defeats the pruning outright: stored empty intervals.</b> An empty <c>[x, x)</c> raises its
+/// subtree's maximum end exactly as a real interval would, but is then rejected by the per-node emptiness test
+/// <i>after</i> the walk has already descended to it — so it can never be pruned in bulk, only discarded one
+/// node at a time. A tree of nothing but empty intervals is therefore <c>O(n)</c> per query with <c>k = 0</c>
+/// matches. Neutralizing that inside the tree would need a second per-node array to mark the subtrees holding
+/// no real interval, which is a per-query cost on every caller to make a degenerate input asymptotically
+/// nicer; the trade is not worth it. If your data carries many zero-length entries and you do not need them
+/// back out of <see cref="IReadOnlyList{T}"/>, filter them before building — they can never match anything.
 /// </para>
 /// <para>
 /// <b>Build-once.</b> The tree is immutable; adding an interval means building a new one, as with
