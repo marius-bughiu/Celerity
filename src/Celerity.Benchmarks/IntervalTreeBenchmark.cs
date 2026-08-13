@@ -17,7 +17,8 @@ using Celerity.Collections;
 //
 // Three query categories cover the shapes the type is for. PointQuery is the stabbing query ("which ranges
 // cover time t"), and it is the headline: the tree's cost tracks the matches it finds — O(log n + k) when they
-// cluster, O(min(n, (k + 1) log n)) when they are scattered — against the baseline's O(n) on every query regardless.
+// cluster and O(min(n, (k + 1) log n)) when they are scattered, both assuming no stored empty intervals, which
+// defeat the pruning and make O(n) the unconditional worst case — against the baseline's O(n) on every query.
 // WindowQuery is the overlap query over a half-open window, where a wider window raises k and narrows the gap
 // — worth reporting next to the point query rather than instead of it. AnyOverlap is the conflict check
 // ("is this slot already booked"), the one shape where both sides can exit early, so it is where the win is
@@ -28,9 +29,9 @@ using Celerity.Collections;
 // what real calendars, IP tables and trace-span sets look like — and the long spans are exactly what defeats
 // the sorted-by-start shortcut a reader might otherwise expect the baseline to take.
 //
-// The ratio this class reports is a function of that shape, and the density is the term that matters: the tree
-// does O(log n + k) work where k is the number of matches, so as the intervals pile deeper over each point the
-// baseline's O(n) and the tree's O(k) converge. The mix here is a minority of spans covering ~1% of the domain
+// The ratio this class reports is a function of that shape, and the density is the term that matters: in the
+// clustered, non-degenerate case the tree's work tracks k, the number of matches, so as the intervals pile
+// deeper over each point the baseline's O(n) and the tree's cost converge. The mix here is a minority of spans covering ~1% of the domain
 // each, which puts roughly 70 matches on a point at 100,000 intervals, where the point query measures 151x the
 // unsorted scan and 13.9x the sorted one. A shape ten times denser (spans covering a quarter of the domain,
 // ~1,250 matches per point) was measured too and the same query fell to 8.3x against the unsorted scan. The honest reading is that this type is for selective interval sets, which

@@ -27,8 +27,9 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// An <b>interval tree</b>: a build-once, immutable index over half-open <c>[start, end)</c> ranges that
 /// answers <i>which ranges cover this point</i> and <i>which ranges overlap this window</i> in
 /// <c>O(log n + k)</c> when the matches cluster and <c>O(min(n, (k + 1) log n))</c> when they are scattered
-/// (<c>k</c> being the number of matches) — instead of the <c>O(n)</c> those questions otherwise cost on
-/// every query regardless.
+/// (<c>k</c> being the number of matches) — instead of the <c>O(n)</c> those questions otherwise cost on every
+/// query regardless. Those bounds assume no stored <i>empty</i> intervals; with them the worst case is
+/// <c>O(n)</c>, for the reason given below.
 /// </summary>
 /// <typeparam name="TKey">The endpoint type, ordered by <typeparamref name="TComparer"/>.</typeparam>
 /// <typeparam name="TValue">The payload carried by each interval.</typeparam>
@@ -69,8 +70,9 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// <para>
 /// <b>What the bound really is.</b> The augmentation proves only that a subtree <i>contains</i> a candidate,
 /// not where it sits, so <c>k</c> matches spread across the tree can force up to <c>k</c> separate
-/// root-to-match descents: the worst case is <c>O(min(n, (k + 1) log n))</c>, not the <c>O(log n + k)</c> a centered
-/// interval tree with per-node sorted endpoint lists would guarantee. The clustered case is the common one
+/// root-to-match descents: the bound is <c>O(min(n, (k + 1) log n))</c> — the <c>+ 1</c> because a query that
+/// matches nothing still descends — rather than the <c>O(log n + k)</c> a centered interval tree with per-node
+/// sorted endpoint lists would guarantee. The clustered case is the common one
 /// here because entries are stored in start order, so overlapping ranges are neighbours and their descents
 /// share almost the whole path. A query never does more work than the full scan the baseline pays on every
 /// query regardless. On the selective shapes this type is for, the measured point query at 100,000 intervals
@@ -79,7 +81,8 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// point it falls to 8.3x against the unsorted scan.
 /// </para>
 /// <para>
-/// <b>One input defeats the pruning outright: stored empty intervals.</b> An empty <c>[x, x)</c> raises its
+/// <b>One input defeats the pruning outright, and it is why <c>O(n)</c> is the unconditional worst case:
+/// stored empty intervals.</b> An empty <c>[x, x)</c> raises its
 /// subtree's maximum end exactly as a real interval would, but is then rejected by the per-node emptiness test
 /// <i>after</i> the walk has already descended to it — so it can never be pruned in bulk, only discarded one
 /// node at a time. A tree of nothing but empty intervals is therefore <c>O(n)</c> per query with <c>k = 0</c>
@@ -272,6 +275,12 @@ public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey
     public int CopyContaining(TKey point, Interval<TKey, TValue>[] destination, int destinationIndex = 0)
     {
         CopyVisitor visitor = CreateCopyVisitor(destination, destinationIndex);
+
+        // A buffer with no room left cannot be told to stop by the visitor, because a query that matches
+        // nothing never calls it — so without this the walk would traverse in full to write nothing.
+        if (destinationIndex == destination.Length)
+            return 0;
+
         Search(point, point, isPoint: true, ref visitor);
         return visitor.Written;
     }
@@ -295,7 +304,7 @@ public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey
     public int CopyOverlapping(TKey start, TKey end, Interval<TKey, TValue>[] destination, int destinationIndex = 0)
     {
         CopyVisitor visitor = CreateCopyVisitor(destination, destinationIndex);
-        if (IsEmptyWindow(start, end))
+        if (IsEmptyWindow(start, end) || destinationIndex == destination.Length)
             return 0;
 
         Search(start, end, isPoint: false, ref visitor);
@@ -538,14 +547,11 @@ public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey
 
         internal readonly int Written => _index - _start;
 
+        // The callers guarantee at least one free slot before starting the walk, so there is no entry guard
+        // here: the first write is always in range, and the return value stops the walk the moment the last
+        // slot is filled rather than letting it run on to a match it could not write anyway.
         public bool Visit(int index)
         {
-            // The entry guard is for a destination that had no room to begin with; the return value stops the
-            // walk the moment the last slot is filled, rather than letting it run on to the next match it
-            // could not write anyway.
-            if (_index >= _destination.Length)
-                return false;
-
             _destination[_index++] = _tree.EntryAt(index);
             return _index < _destination.Length;
         }
