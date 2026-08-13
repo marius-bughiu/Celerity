@@ -75,10 +75,10 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// sorted endpoint lists would guarantee. The clustered case is the common one
 /// here because entries are stored in start order, so overlapping ranges are neighbours and their descents
 /// share almost the whole path. A query never does more work than the full scan the baseline pays on every
-/// query regardless. On the selective shapes this type is for, the measured point query at 100,000 intervals
-/// is 151x the naive unsorted scan and <b>13.9x</b> the better hand-roll — a start-sorted list that stops once
-/// the starts pass the query — which is the number to judge it by; on a shape with roughly 1,250 matches per
-/// point it falls to 8.3x against the unsorted scan.
+/// query regardless. On the selective shapes this type is for, CI's same-runner A/B measures the point query
+/// at 100,000 intervals as 129x the naive unsorted scan and <b>19x</b> the better hand-roll — a start-sorted
+/// list that stops once the starts pass the query — which is the number to judge it by. A local control on a
+/// shape with roughly 1,250 matches per point falls to 8.3x against the unsorted scan.
 /// </para>
 /// <para>
 /// <b>One input defeats the pruning outright, and it is why <c>O(n)</c> is the unconditional worst case:
