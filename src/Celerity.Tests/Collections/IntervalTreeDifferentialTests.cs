@@ -1,4 +1,5 @@
 using Celerity.Collections;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
@@ -18,9 +19,66 @@ namespace Celerity.Tests.Collections;
 /// The generated shapes are deliberately mixed: long spanning intervals (which defeat any bound based on
 /// starts alone), tight clusters (which pile many matches on one point), empty intervals, and exact duplicates.
 /// </para>
+///
+/// <para>
+/// Three layers, narrowest first. The CsCheck property generates the interval set from its own axes — count,
+/// domain width and the fraction of long spans — so a disagreement shrinks to a minimal reproduction with the
+/// seed printed. The seeded theory below it drives longer runs at a fixed shape, and the exhaustive sweep at
+/// the end checks <i>every</i> point and <i>every</i> window of a small domain, which is the only layer that
+/// can prove no case was merely missed by sampling.
+/// </para>
 /// </summary>
 public class IntervalTreeDifferentialTests
 {
+    // The generation axes that decide which pruning paths a case can reach: how many intervals there are, how
+    // wide the value domain is (a narrow domain against many intervals piles matches on every point, a wide one
+    // makes them sparse), and what fraction of them are long spans — the shape no bound over the sorted starts
+    // can constrain, and therefore the one that decides whether pruning is even exercised.
+    private static readonly Gen<(int Count, int Domain, int SpanPercent, uint Seed)> GenIntervals =
+        Gen.Select(Gen.Int[0, 160], Gen.Int[2, 200], Gen.Int[0, 100], Gen.UInt);
+
+    [Fact]
+    public void Queries_ShouldMatchALinearScan_UnderGeneratedIntervalSets()
+    {
+        GenIntervals.Sample(spec =>
+        {
+            var rand = new Random((int)spec.Seed);
+            Interval<int, int>[] intervals = Build(rand, spec.Count, spec.Domain, spec.SpanPercent);
+            var tree = new IntervalTree<int, int>(intervals);
+
+            Assert.Equal(intervals.Length, tree.Count);
+            AssertStartOrdered(tree);
+
+            // The query domain runs past both ends of the interval domain, so the fully-pruned cases — every
+            // subtree ending before the query, every subtree starting after it — are reached as well.
+            for (int query = 0; query < 25; query++)
+            {
+                int point = rand.Next(-3, spec.Domain + 3);
+                AssertPointQuery(tree, intervals, point);
+
+                int start = rand.Next(-3, spec.Domain + 3);
+                int end = start + rand.Next(0, spec.Domain);
+                AssertWindowQuery(tree, intervals, start, end);
+            }
+        }, iter: 300);
+    }
+
+    private static Interval<int, int>[] Build(Random rand, int count, int domain, int spanPercent)
+    {
+        var intervals = new Interval<int, int>[count];
+        for (int i = 0; i < count; i++)
+        {
+            int start = rand.Next(0, domain);
+            int length = rand.Next(0, 100) < spanPercent
+                ? rand.Next(0, domain)   // a long span, which start ordering cannot bound
+                : rand.Next(0, 5);       // a tight one, and 0 draws the empty interval that must never match
+
+            intervals[i] = new Interval<int, int>(start, start + length, i);
+        }
+
+        return intervals;
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(7)]

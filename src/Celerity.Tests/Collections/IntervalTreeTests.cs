@@ -21,6 +21,17 @@ public class IntervalTreeTests
         public int Compare(string? x, string? y) => string.Compare(x, y, StringComparison.OrdinalIgnoreCase);
     }
 
+    // A stateful struct comparer, matching BTreeSetTests' DirectionalComparer: it proves the type parameter is
+    // not assumed to be default-constructed, which a field-free comparer passed as `default` cannot show.
+    private readonly struct DirectionalComparer : IComparer<int>
+    {
+        private readonly int _sign;
+
+        public DirectionalComparer(bool ascending) => _sign = ascending ? 1 : -1;
+
+        public int Compare(int x, int y) => _sign * x.CompareTo(y);
+    }
+
     private static Interval<int, string> Interval(int start, int end, string value) => new(start, end, value);
 
     // A three-interval fixture whose members deliberately nest, abut and sit apart:
@@ -142,7 +153,7 @@ public class IntervalTreeTests
     }
 
     [Fact]
-    public void Constructor_ShouldAcceptAStatefulComparer_WhenGivenOneExplicitly()
+    public void Constructor_ShouldUseACustomComparer_WhenTheKeyIsNotOrderedNaturally()
     {
         var intervals = new[]
         {
@@ -158,6 +169,32 @@ public class IntervalTreeTests
         // ["m", "q") starts exactly at the window's end under a case-insensitive order, so it does not overlap.
         Assert.Equal(1, tree.CountOverlapping("C", "M"));
         Assert.Equal(2, tree.CountOverlapping("C", "N"));
+    }
+
+    [Fact]
+    public void Constructor_ShouldUseSuppliedComparer_WhenComparerIsStateful()
+    {
+        // Descending order, carried in a field: the tree is built and queried entirely through the instance
+        // handed to the constructor, so this fails outright if the comparer argument were discarded in favour
+        // of default(TComparer) — under which "descending" intervals would be rejected as inverted.
+        var intervals = new[]
+        {
+            new Interval<int, string>(100, 50, "high"),   // [100, 50) descending: 100 precedes 50
+            new Interval<int, string>(40, 10, "low"),
+        };
+
+        var tree = new IntervalTree<int, string, DirectionalComparer>(intervals, new DirectionalComparer(ascending: false));
+
+        // Descending start order puts the interval starting at 100 first.
+        Assert.Equal(100, tree[0].Start);
+        Assert.Equal(40, tree[1].Start);
+
+        Assert.True(tree.ContainsPoint(70));
+        Assert.False(tree.ContainsPoint(45));
+        Assert.Equal("low", tree.GetContaining(20)[0].Value);
+
+        // The window runs in the comparer's direction too: [90, 30) covers both intervals' live ranges.
+        Assert.Equal(2, tree.CountOverlapping(90, 30));
     }
 
     [Fact]

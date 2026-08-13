@@ -630,6 +630,8 @@ A distance bound is not just a filter — it seeds the search's pruning radius, 
 
 ```csharp
 // A room's bookings. Build once; query many.
+DateTime day = DateTime.Today;
+
 var bookings = new IntervalTree<DateTime, string>(new[]
 {
     new Interval<DateTime, string>(day.AddHours(9),  day.AddHours(10), "standup"),
