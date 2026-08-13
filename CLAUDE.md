@@ -8,17 +8,30 @@ A .NET library of specialized, high-performance collections, hashers, and suppor
 
 ## Layout
 
-Everything lives under `src/` (three layered packages plus their support projects):
+Everything lives under `src/` (seven shipping packages plus their support projects).
+
+The core family:
 
 - `Celerity/` — the `Celerity.Collections` package (assembly `Celerity.dll`): dictionaries, sets, frozen/perfect-hash collections, sketches.
 - `Celerity.Hashing/` — `IHashProvider<T>` and the struct hashers.
-- `Celerity.Primitives/` — `FastUtils`, struct PRNGs, `VarInt`, `SpanBits`, `FastGuid`.
-- `Celerity.Tests/` — xUnit tests, mirroring the main project's layout.
+- `Celerity.Primitives/` — `FastUtils`, struct PRNGs, `VarInt`, `SpanBits`, `FastGuid`, `SortedSpan`.
+- `Celerity.Sorting/` — `RadixSort`, `CountingSort`, `PartialSort`.
+
+The showcase packages — standalone libraries built *on top of* the core family, each with its own test project:
+
+- `Celerity.Ring/` — consistent-hash and rendezvous rings.
+- `Celerity.Sentinel/` — streaming abuse / heavy-hitter detection.
+- `Celerity.Cardinality/` — mergeable approximate `COUNT(DISTINCT)` and windowed dedup.
+
+Support projects:
+
+- `Celerity.Tests/` — xUnit tests for the core family, mirroring the main project's layout.
+- `Celerity.Ring.Tests/`, `Celerity.Sentinel.Tests/`, `Celerity.Cardinality.Tests/` — the showcase packages' own suites.
 - `Celerity.Benchmarks/` — BenchmarkDotNet; runs in CI on every PR.
 - `Celerity.Fuzz/` — differential fuzz harness.
 - `Celerity.AotSmokeTest/` — Native AOT publish/run target.
 
-The three shipping packages layer as `Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`.
+The core packages layer as `Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`, with `Celerity.Sorting` a second consumer of `Celerity.Primitives`. The three showcase packages depend on `Celerity.Collections`.
 
 ## Build & test
 
@@ -29,7 +42,7 @@ dotnet test                  # xUnit
 ```
 
 - `net8.0` is the floor. Shared code must not use net9/net10-only APIs unguarded — gate newer paths with `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` and keep a net8.0 fallback. The target list lives in `src/Directory.Build.props`.
-- Coverage is gated in CI at 100% line and 100% branch across all six shipping packages. New code needs its tests. For a branch no test can reach, use `[ExcludeFromCodeCoverage(Justification = "…")]` rather than lowering the floor, and add a new shipping package's assembly to `src/coverage.runsettings` (the filter is exact-match, so an unlisted package is silently unmeasured).
+- Coverage is gated in CI at 100% line and 100% branch across all seven shipping packages. New code needs its tests. For a branch no test can reach, use `[ExcludeFromCodeCoverage(Justification = "…")]` rather than lowering the floor, and add a new shipping package's assembly to `src/coverage.runsettings` (the filter is exact-match, so an unlisted package is silently unmeasured).
 - Every public type/member needs an XML doc comment that is also well-formed XML. `GenerateDocumentationFile` is on and every shipping package promotes CS1591 (missing) and CS1570 (badly formed) to build errors — a stray unclosed tag makes the doc writer drop the whole member from the shipped `.xml`, not truncate it.
 - Hashers are `struct`s passed as generic constraints (`where THasher : struct, IHashProvider<T>`) so the JIT devirtualizes them — do not turn them into classes/interfaces.
 - Avoid allocations on hot paths.
