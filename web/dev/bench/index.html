@@ -495,6 +495,10 @@ function escapeHtml(s) {
     // KdTree indexes the plane, which no ordered structure can. Two baselines per question: the plain scan
     // over every point, and the better hand-roll that orders them by x and works outward from the query.
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',          vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards', ops: ['NearestQuery', 'NearestSorted', 'RadiusQuery', 'RadiusSlab', 'KNearest', 'Build'] },
+    // IntervalTree answers the interval questions no position-indexed structure can — the baseline is the
+    // List<T> scan a caller writes, since the BCL has no interval structure at all. AnyOverlap is the honest
+    // arm: both sides stop at the first match there, so it is where the gap is narrowest.
+    { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                   vs: 'List<T> (linear scan)', ops: ['PointQuery', 'WindowQuery', 'AnyOverlap', 'Build'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than

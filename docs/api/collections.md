@@ -4570,6 +4570,100 @@ Console.WriteLine(shown);                              // 3
 Console.WriteLine(depots.TryFindNearest(0, 0, maxDistance: 1, out _));   // False
 ```
 
+## IntervalTree&lt;TKey, TValue, TComparer&gt;
+
+```csharp
+public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey, TValue>>
+    where TComparer : struct, IComparer<TKey>
+
+public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, DefaultComparer<TKey>>
+```
+
+An **interval tree** is a build-once, immutable index over half-open `[start, end)` ranges that answers *which ranges cover this point* and *which ranges overlap this window* in `O(log n + k)`, where `k` is the number of matches.
+
+.NET ships nothing for this question — there is no interval tree, no interval map, and no range-overlap query anywhere in `System.Collections`, on any of `net8.0` / `net9.0` / `net10.0`. The idiomatic answer is a `List<T>` of ranges and a linear scan, which is `O(n)` per query. Keeping that list sorted by start does not rescue it: an interval that begins far to the left can still cover the query point, so the scan cannot stop early. That is the gap this type fills — booking- and scheduling-conflict checks, IP-range and CIDR-to-owner lookup, effective-dated pricing and feature-flag windows, "which trace spans were live at time `t`", and the genomics overlap query the structure is named for.
+
+The sibling range structures index the *position* axis and cannot answer it. [`FenwickTree<T>`](#fenwicktreet) and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) fold values stored **at** positions; neither can enumerate the intervals that stab one.
+
+### The entry type: `Interval<TKey, TValue>`
+
+```csharp
+public readonly struct Interval<TKey, TValue>
+{
+    public Interval(TKey start, TKey end, TValue? value);
+
+    public TKey Start { get; }        // inclusive
+    public TKey End { get; }          // exclusive
+    public TValue? Value { get; }
+
+    public void Deconstruct(out TKey start, out TKey end, out TValue? value);
+}
+```
+
+Intervals are **half-open**, matching `SegmentTree`'s range convention and the BCL's own start/length slicing. Two of them overlap when each starts strictly before the other ends, so adjacent ranges such as `[0, 10)` and `[10, 20)` tile a line without reporting a conflict at the seam. An interval whose endpoints are equal is **empty**: it covers no point, so no query ever reports it — but it is still stored and still appears in the `IReadOnlyList<T>` surface, so your input is never silently discarded. An interval whose end *precedes* its start is rejected at construction with `ArgumentException`.
+
+### How it works
+
+The intervals are sorted by start into flat parallel arrays, and a balanced binary search tree is laid over that array **implicitly**: the node for the index range `[lo, hi)` sits at its midpoint, and its subtree is exactly `[lo, hi)`. There are no nodes, no child pointers and no per-interval heap object — the whole structure is four arrays. Each node additionally carries the **maximum end over its subtree**, and that augmentation is what turns the scan into a search: a subtree whose maximum end is at or before the query start cannot hold a match and is skipped whole, as is one whose starts are all at or after the query end.
+
+Every query shape shares a single traversal that is generic over a `struct` visitor, so the JIT specializes it per call site and inlines the per-match work rather than paying a delegate or an interface call per hit — the same zero-cost-abstraction rule the struct hashers, `IMonoid<T>` and `DefaultComparer<T>` follow.
+
+### API
+
+Queries come in two tiers. The **allocation-free** tier allocates nothing at all; the **convenience** tier allocates the result array and walks the tree twice, once to size it exactly and once to fill it.
+
+| Member | Behaviour |
+| --- | --- |
+| `IntervalTree(IEnumerable<Interval<TKey, TValue>> intervals)` | Build over a sequence, read once and copied. `ArgumentNullException` on `null`, `ArgumentException` when an interval's end precedes its start. |
+| `IntervalTree(IEnumerable<Interval<TKey, TValue>> intervals, TComparer comparer)` | The same, with an explicit comparer — pass this only when the comparer carries state. |
+| `int Count { get; }` | Number of stored intervals, counting duplicates and empty ranges. |
+| `Interval<TKey, TValue> this[int index] { get; }` | The interval at that position in ascending start order. |
+| `bool ContainsPoint(TKey point)` | Does any interval cover `point`? Stops at the first match. |
+| `bool Overlaps(TKey start, TKey end)` | Does any interval overlap `[start, end)`? Stops at the first match — the member to use for a conflict check. |
+| `int CountContaining(TKey point)` / `CountOverlapping(TKey start, TKey end)` | How many match. |
+| `int CopyContaining(TKey point, Interval<TKey, TValue>[] destination, int destinationIndex = 0)` | Write the matches into a caller-owned buffer; returns how many were written. |
+| `int CopyOverlapping(TKey start, TKey end, Interval<TKey, TValue>[] destination, int destinationIndex = 0)` | The window form of the same. |
+| `Interval<TKey, TValue>[] GetContaining(TKey point)` / `GetOverlapping(TKey start, TKey end)` | The convenience tier: allocates and returns an exactly-sized array. |
+| `Enumerator GetEnumerator()` | Struct enumerator over every stored interval in ascending start order. |
+
+Both `Copy` methods stop when the buffer fills, so a return value equal to the remaining room may mean the matches were truncated; size the buffer with the matching `Count` method when every match is needed. The window members throw `ArgumentException` when `end` precedes `start`; an **empty** window (`start` equal to `end`) is well defined and matches nothing.
+
+Intervals are kept distinct: two overlapping ranges stay two entries and a query reports both. This is **not a coalescing interval map**, and duplicates are preserved. Two entries with the same start and end have an unspecified relative order.
+
+### Caveats
+
+- **Build-once.** The tree is immutable; adding an interval means building a new one, as with [`FrozenCelerityDictionary<TValue>`](#frozenceleritydictionarytvalue), `XorFilter<T, THasher>` and [`RankSelectBitVector`](#rankselectbitvector). Keeping the augmentation correct under insertion needs a rebalancing tree with a fix-up per rotation — a different type with a different cost profile, not an overload of this one.
+- **Nothing mutates, so nothing can be invalidated.** An enumerator survives any concurrent query, and concurrent *readers* are safe without synchronization. That follows from immutability rather than from locking; the mutable collections carry no such guarantee.
+- **The comparer defines everything.** `TComparer` orders the endpoints, decides which intervals are empty, and therefore decides what overlaps what. Use the two-parameter `IntervalTree<TKey, TValue>` alias for the natural order.
+- **Build costs a sort.** Construction is `O(n log n)` and the sort is the one comparer call in the type that is not devirtualized. It is paid once; every query after it runs on the specialized path.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A room's bookings for the day. Build once; query many.
+DateTime day = DateTime.Today;
+var bookings = new IntervalTree<DateTime, string>(new[]
+{
+    new Interval<DateTime, string>(day.AddHours(9),  day.AddHours(10), "standup"),
+    new Interval<DateTime, string>(day.AddHours(11), day.AddHours(12), "1:1"),
+    new Interval<DateTime, string>(day.AddHours(13), day.AddHours(15), "design review"),
+});
+
+// The conflict check: stops at the first overlap, allocates nothing.
+bool free = !bookings.Overlaps(day.AddHours(10), day.AddHours(11));   // true — the seam does not conflict
+
+// Who is in the room at 14:00?
+foreach (Interval<DateTime, string> meeting in bookings.GetContaining(day.AddHours(14)))
+    Console.WriteLine(meeting.Value);                                 // design review
+
+// The allocation-free form of the same query, into a buffer you own.
+var matches = new Interval<DateTime, string>[8];
+int found = bookings.CopyOverlapping(day.AddHours(9), day.AddHours(12), matches);
+Console.WriteLine(found);                                             // 2
+```
+
 ## BTreeDictionary&lt;TKey, TValue, TComparer&gt;
 
 ```csharp
