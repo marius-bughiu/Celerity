@@ -498,7 +498,7 @@ function escapeHtml(s) {
     // IntervalTree answers the interval questions no position-indexed structure can — the baseline is the
     // List<T> scan a caller writes, since the BCL has no interval structure at all. AnyOverlap is the honest
     // arm: both sides stop at the first match there, so it is where the gap is narrowest.
-    { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                   vs: 'List<T> (linear scan)', ops: ['PointQuery', 'WindowQuery', 'AnyOverlap', 'Build'] },
+    { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                   vs: 'List<T> (linear scan)', ops: ['PointQuery', 'SortedScan', 'WindowQuery', 'AnyOverlap', 'Build'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than

@@ -4,14 +4,20 @@ using Celerity.Collections;
 
 // IntervalTree<int, int> vs the linear scan it replaces. There is no BCL counterpart of any kind — .NET ships
 // no interval tree, no interval map, and no range-overlap query anywhere in System.Collections — so the honest
-// baseline is what a caller writes instead: a List<T> of ranges and a loop that filters it. Sorting that list
-// by start would not help, because an interval beginning far to the left can still cover the query point, so
-// the scan cannot stop early; the baseline arms are therefore an unsorted scan, named List_* so the dashboard
-// classifies them as the reference series.
+// baseline is what a caller writes instead: a List<T> of ranges and a loop that filters it. The baseline arms
+// are named List_* so the dashboard classifies them as the reference series.
+//
+// Two baselines, because there are two things a caller might write. The plain one is an unsorted scan, which
+// touches every interval. The better one — SortedScan below — keeps the list ordered by start and stops as
+// soon as a start passes the query, which is a real optimization and roughly halves the work on a uniformly
+// distributed query. What sorting cannot do is skip the *front* of the list: an interval beginning far to the
+// left can still cover the query point, so there is no lower bound to seek to and the scan stays linear.
+// Measuring both is the honest way to report the win, since quoting only the unsorted number would compare
+// against the weaker of the two things a caller would actually write.
 //
 // Three query categories cover the shapes the type is for. PointQuery is the stabbing query ("which ranges
 // cover time t"), and it is the headline: the tree's cost tracks the matches it finds — O(log n + k) when they
-// cluster, O(min(n, k log n)) when they are scattered — against the baseline's O(n) on every query regardless.
+// cluster, O(min(n, (k + 1) log n)) when they are scattered — against the baseline's O(n) on every query regardless.
 // WindowQuery is the overlap query over a half-open window, where a wider window raises k and narrows the gap
 // — worth reporting next to the point query rather than instead of it. AnyOverlap is the conflict check
 // ("is this slot already booked"), the one shape where both sides can exit early, so it is where the win is
@@ -25,9 +31,9 @@ using Celerity.Collections;
 // The ratio this class reports is a function of that shape, and the density is the term that matters: the tree
 // does O(log n + k) work where k is the number of matches, so as the intervals pile deeper over each point the
 // baseline's O(n) and the tree's O(k) converge. The mix here is a minority of spans covering ~1% of the domain
-// each, which puts roughly 70 matches on a point at 100,000 intervals, and the point query measures 151x. A
-// shape ten times denser (spans covering a quarter of the domain, ~1,250 matches per point) was measured too
-// and the same query fell to 8.3x. The honest reading is that this type is for selective interval sets, which
+// each, which puts roughly 70 matches on a point at 100,000 intervals, where the point query measures 151x the
+// unsorted scan and 13.9x the sorted one. A shape ten times denser (spans covering a quarter of the domain,
+// ~1,250 matches per point) was measured too and the same query fell to 8.3x against the unsorted scan. The honest reading is that this type is for selective interval sets, which
 // is what the docs say next to the number.
 [MemoryDiagnoser]
 [CategoriesColumn]
@@ -39,6 +45,7 @@ public class IntervalTreeBenchmark
 
     private Interval<int, int>[] intervals = null!;
     private List<Interval<int, int>> list = null!;
+    private List<Interval<int, int>> sorted = null!;
     private IntervalTree<int, int> tree = null!;
     private int[] points = null!;
     private int[] windowStart = null!;
@@ -65,6 +72,12 @@ public class IntervalTreeBenchmark
 
         list = new List<Interval<int, int>>(intervals);
         tree = new IntervalTree<int, int>(intervals);
+
+        // The better hand-roll: ordered by start so the scan can stop at the upper bound. It pays the same
+        // O(n log n) sort the tree's own build pays, which is why the Build arms understate the tree's cost
+        // against this alternative rather than against the plain list.
+        sorted = new List<Interval<int, int>>(intervals);
+        sorted.Sort((a, b) => a.Start.CompareTo(b.Start));
 
         points = new int[QueryCount];
         windowStart = new int[QueryCount];
@@ -101,6 +114,42 @@ public class IntervalTreeBenchmark
     [Benchmark]
     [BenchmarkCategory("PointQuery")]
     public int IntervalTree_PointQuery()
+    {
+        int matches = 0;
+        for (int i = 0; i < points.Length; i++)
+            matches += tree.CountContaining(points[i]);
+
+        return matches;
+    }
+
+    // ---- SortedScan: the same point query against the *better* hand-roll, which stops at the upper bound ----
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("SortedScan")]
+    public int List_SortedScan()
+    {
+        int matches = 0;
+        for (int i = 0; i < points.Length; i++)
+        {
+            int point = points[i];
+            for (int j = 0; j < sorted.Count; j++)
+            {
+                // Starts ascend, so once one passes the point no later interval can begin at or before it.
+                // There is no matching lower bound to seek to: a far-left interval can still reach the point.
+                if (sorted[j].Start > point)
+                    break;
+
+                if (point < sorted[j].End)
+                    matches++;
+            }
+        }
+
+        return matches;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("SortedScan")]
+    public int IntervalTree_SortedScan()
     {
         int matches = 0;
         for (int i = 0; i < points.Length; i++)

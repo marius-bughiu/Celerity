@@ -26,7 +26,7 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// <summary>
 /// An <b>interval tree</b>: a build-once, immutable index over half-open <c>[start, end)</c> ranges that
 /// answers <i>which ranges cover this point</i> and <i>which ranges overlap this window</i> in
-/// <c>O(log n + k)</c> when the matches cluster and <c>O(min(n, k log n))</c> when they are scattered
+/// <c>O(log n + k)</c> when the matches cluster and <c>O(min(n, (k + 1) log n))</c> when they are scattered
 /// (<c>k</c> being the number of matches) — instead of the <c>O(n)</c> those questions otherwise cost on
 /// every query regardless.
 /// </summary>
@@ -42,8 +42,10 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// <para>
 /// .NET ships nothing for this question — there is no interval tree, no interval map, and no range-overlap
 /// query anywhere in <c>System.Collections</c>. The idiomatic answer is a <see cref="List{T}"/> of ranges and
-/// a linear scan, which is <c>O(n)</c> per query; keeping that list sorted by start does not help, because an
-/// interval that begins far to the left can still cover the query point, so the scan cannot stop early. This
+/// a linear scan, which is <c>O(n)</c> per query. Sorting that list by start helps less than it looks: the
+/// scan can stop once a start passes the query, which roughly halves the work on a uniformly distributed
+/// query, but it cannot skip the <i>front</i> — an interval beginning far to the left can still cover the
+/// point, so there is no lower bound to seek to and the scan stays linear. Both baselines are measured. This
 /// is the gap the type fills: conflict detection over a booking calendar, IP-range and CIDR-to-owner lookup,
 /// effective-dated pricing and feature-flag windows, "which trace spans were live at time <c>t</c>", and the
 /// genomics overlap query the structure is named for.
@@ -67,12 +69,14 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// <para>
 /// <b>What the bound really is.</b> The augmentation proves only that a subtree <i>contains</i> a candidate,
 /// not where it sits, so <c>k</c> matches spread across the tree can force up to <c>k</c> separate
-/// root-to-match descents: the worst case is <c>O(min(n, k log n))</c>, not the <c>O(log n + k)</c> a centered
+/// root-to-match descents: the worst case is <c>O(min(n, (k + 1) log n))</c>, not the <c>O(log n + k)</c> a centered
 /// interval tree with per-node sorted endpoint lists would guarantee. The clustered case is the common one
 /// here because entries are stored in start order, so overlapping ranges are neighbours and their descents
 /// share almost the whole path. A query never does more work than the full scan the baseline pays on every
-/// query regardless. On the selective shapes this type is for, the measured point query is 151x a linear scan
-/// at 100,000 intervals; on a shape with roughly 1,250 matches per point it is 8.3x.
+/// query regardless. On the selective shapes this type is for, the measured point query at 100,000 intervals
+/// is 151x the naive unsorted scan and <b>13.9x</b> the better hand-roll — a start-sorted list that stops once
+/// the starts pass the query — which is the number to judge it by; on a shape with roughly 1,250 matches per
+/// point it falls to 8.3x against the unsorted scan.
 /// </para>
 /// <para>
 /// <b>One input defeats the pruning outright: stored empty intervals.</b> An empty <c>[x, x)</c> raises its
