@@ -4416,6 +4416,157 @@ var masks = new SegmentTree<int, BitwiseAndMonoid<int>>(new[] { 0b1111, 0b1110, 
 Console.WriteLine(Convert.ToString(masks.Query(0, 3), 2));   // 1100
 ```
 
+## KdTree&lt;TValue&gt;
+
+```csharp
+public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
+```
+
+A **2-D k-d tree**: a build-once, immutable spatial index over points in the plane. It answers *which point is nearest to this one*, *which points lie within this radius* and *which lie inside this box* without measuring every stored point.
+
+.NET ships nothing for this question. There is no k-d tree, no quadtree, no R-tree and no spatial index of any kind in the BCL — `System.Drawing` ships geometry *primitives* with no index over them, and `System.Numerics` ships vectors, not containers. So the idiomatic answer is an array of points and a loop that measures all of them: `O(n)` per query, on every query.
+
+The sibling range structures index one ordered axis and cannot stand in. [`BTreeSet<T, TComparer>`](#btreesett-tcomparer) orders keys and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) folds values stored at positions, but neither expresses proximity in two dimensions at once, because there is no total order on the plane under which near points are neighbours — sorting by x puts two points a hair apart vertically at opposite ends of the array.
+
+### The element: `SpatialPoint<TValue>`
+
+```csharp
+public readonly struct SpatialPoint<TValue>
+{
+    public SpatialPoint(double x, double y, TValue? value);
+
+    public double X { get; }
+    public double Y { get; }
+    public TValue? Value { get; }
+
+    public void Deconstruct(out double x, out double y, out TValue? value);
+}
+```
+
+Coordinates are `double` rather than a generic numeric type. `INumber<T>` is available on the `net8.0` floor and would admit `int` or `float` coordinates, but every query compares *squared* distances, and a squared distance silently overflows an integer type at coordinates a map or a game world reaches easily.
+
+### How it works
+
+The points are permuted into one interleaved coordinate array (`x, y, x, y, …`) and a balanced binary tree is laid over them *implicitly*: the node for the index range `[lo, hi)` sits at its midpoint and its subtree is exactly `[lo, hi)`. Each level splits on the axis the level before it did not — x, then y, then x — and the build puts the median on that axis at the midpoint, so everything left of a node is at or before it on that axis and everything right is at or after.
+
+There are no nodes, no child pointers and no per-point heap object: the whole structure is one coordinate array and one payload array. Interleaving the coordinates rather than keeping an array per axis is what holds a node to a single cache line, since every node a query reaches needs both coordinates to measure a distance. The median is found by quickselect rather than a full sort, which is what keeps the build `O(n log n)` overall rather than `O(n log² n)`.
+
+### What the complexity really is
+
+A k-d tree has **no useful worst-case query bound**. An adversarial point set forces every query to visit every node, and even on friendly data the classic `O(log n)` figure for nearest-neighbour is an average over uniformly distributed points, not a guarantee. What *is* guaranteed is that no query does more work than the linear scan the baseline pays unconditionally.
+
+The useful statement is empirical, and it is about **selectivity** rather than size: pruning works by discarding subtrees that cannot hold a result, so a query whose answer is a large fraction of the tree prunes little and converges on the scan.
+
+### Two dimensions specifically, not a generic `k`
+
+The dimensionality is a design decision rather than a type parameter. A generic-`k` tree has to take every coordinate as a `ReadOnlySpan<double>` at the API boundary and store an array per point in the layout, which costs exactly the flat-array design this type exists for. The plane is where the .NET workloads above live.
+
+### Constructors
+
+```csharp
+public KdTree(IEnumerable<SpatialPoint<TValue>> points)
+```
+
+Builds the index. The sequence is read once and copied; when it implements `ICollection<T>` it is sized and copied in one pass.
+
+**Throws:**
+
+- `ArgumentNullException` if `points` is `null`.
+- `ArgumentException` if a point has a `double.NaN` coordinate. A `NaN` coordinate has no position, so it can be neither ordered at build nor measured at query time; it is rejected rather than stored as a point no query could answer for. Infinities are accepted.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `Count` | Number of points, counting duplicate coordinates separately. |
+| `this[int index]` | The point at that position in the tree's **layout order** — deterministic for a given input, but neither insertion nor spatial order, and an implementation detail. |
+| `TryFindNearest(x, y, out point)` | The closest point by Euclidean distance. `false` only for an empty tree or a `NaN` query coordinate. Allocation-free. |
+| `TryFindNearest(x, y, maxDistance, out point)` | The closest point no further than `maxDistance` away. The bound **seeds the search's pruning radius**, so a tight bound is materially cheaper than an unbounded query followed by a distance test. |
+| `CopyNearest(x, y, destination, destinationIndex = 0)` | Fills the buffer's remaining room with that many nearest points, in ascending distance. Allocation-free. |
+| `GetNearest(x, y, count)` | The `count` nearest points in ascending distance. Allocates. |
+| `ContainsWithin(x, y, radius)` | Whether any point lies within the (inclusive) radius. Stops at the first match. |
+| `CountWithin(x, y, radius)` | How many points lie within the radius. |
+| `CopyWithin(x, y, radius, destination, destinationIndex = 0)` | Writes the matches into a caller buffer. Allocation-free. |
+| `GetWithin(x, y, radius)` | The matches as an array. Allocates. |
+| `ContainsInRectangle(minX, minY, maxX, maxY)` | Whether any point lies inside the **closed** box. Stops at the first match. |
+| `CountInRectangle(...)` / `CopyInRectangle(...)` / `GetInRectangle(...)` | The same three tiers for a box query. |
+| `GetEnumerator()` | Struct enumerator over every stored point in layout order. |
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if a radius or distance bound is negative or `NaN`, if `count` is negative, or if `destinationIndex` is outside `[0, destination.Length]`.
+- `ArgumentException` if a box's upper edge precedes its lower edge.
+- `ArgumentNullException` if a destination buffer is `null`.
+
+### Boundaries, ties and `NaN`
+
+- **Radius and distance bounds are inclusive.** A point exactly `r` away is within radius `r`, and `CountWithin(x, y, 0)` counts the points exactly at `(x, y)`.
+- **The box is closed** on all four edges, so a degenerate box with `minX == maxX` matches the points on that line.
+- **Ties are unspecified.** Which of several equidistant points a nearest query returns, and the relative order of equidistant results, are not part of the contract. The *distances* are.
+- **A `NaN` query coordinate matches nothing**: the nearest queries return `false` and the range queries return empty. Stored coordinates can never be `NaN`.
+- **Duplicate coordinates stay distinct.** Two points at the same position are two entries and every query reports both.
+- **Match order is unspecified** for the radius and box queries; only `GetNearest` and `CopyNearest` order their results, by ascending distance.
+
+### Allocation-free and convenience tiers
+
+`TryFindNearest`, the `Contains` and `Count` members and the three `Copy` methods allocate nothing at all. `GetNearest`, `GetWithin` and `GetInRectangle` are the convenience tier and allocate the result array; the two range ones walk the tree twice, once to size the array exactly and once to fill it.
+
+The k-nearest copy tier is allocation-free by a small trick worth knowing about: the caller's buffer *is* the search's bounded max-heap, and each candidate's distance is recomputed from its own stored coordinates rather than parked in a parallel array — five floating-point operations against the cache miss that array would cost. The results are heapsorted in place at the end, which is where the ascending order comes from.
+
+All queries share two traversals — one for the range queries, generic over both a `struct` region and a `struct` visitor, and one for the nearest queries — so the JIT specializes each per call site and inlines the per-match work rather than paying a delegate or an interface call per hit.
+
+### Build-once
+
+The tree is immutable; adding a point means building a new one, as with `FrozenCelerityDictionary<TValue>` and [`RankSelectBitVector`](#rankselectbitvector). Keeping a k-d tree balanced under insertion needs periodic subtree rebuilds, which is a different type with a different cost profile, not an overload of this one.
+
+Because nothing mutates, enumeration is never invalidated and concurrent readers need no synchronization — and unlike the comparer-parameterized trees there is no caveat to attach to that, since every query is arithmetic on `double` and calls nothing the caller supplied.
+
+### Choosing it
+
+Reach for `KdTree<TValue>` when you build a set of points once and then query it for proximity **repeatedly** — nearest store, driver or sensor to a coordinate; viewport and map-tile culling; collision broadphase; the neighbour queries inside k-means and DBSCAN; snap-to-nearest in an editor; duplicate-coordinate detection.
+
+Do not reach for it when the points **change constantly** — it is build-once, and rebuilding per frame costs more than the queries save — or when you have only a **few thousand points**, where the measurements below put a hand-rolled sorted scan level with it. If your queries only ever discriminate on **one** axis, an ordered array and a binary search is the smaller tool.
+
+### The documented BCL-beating workload
+
+Against the array-and-a-loop the BCL leaves you with, at 100,000 uniformly scattered points and 1,000 queries, the nearest-neighbour query is **two orders of magnitude** faster and the radius query is **56x** faster — the numbers, and the important caveat beside them, are in the README's [spatial index section](../../README.md#spatial-index).
+
+The caveat is that a **hand-rolled** partial index does much better than the naive scan: order the points by x, binary-search to the query's x and work outward, abandoning each direction once the horizontal gap alone exceeds the best distance so far. That is a real optimization and effectively a one-dimensional spatial index, and against it the tree's margin is a small constant factor rather than two orders of magnitude. Both baselines are measured, and the second is the one to judge the type by.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A depot network, indexed once and queried per request.
+var depots = new KdTree<string>(new[]
+{
+    new SpatialPoint<string>(51.51, -0.13, "London"),
+    new SpatialPoint<string>(53.48, -2.24, "Manchester"),
+    new SpatialPoint<string>(55.95, -3.19, "Edinburgh"),
+    new SpatialPoint<string>(52.49, -1.89, "Birmingham"),
+});
+
+// Which depot serves this address?
+if (depots.TryFindNearest(52.20, -2.00, out SpatialPoint<string> nearest))
+    Console.WriteLine(nearest.Value);                  // Birmingham
+
+// The three closest, nearest first — for a fallback list.
+foreach (SpatialPoint<string> depot in depots.GetNearest(52.20, -2.00, 3))
+    Console.WriteLine(depot.Value);                    // Birmingham, Manchester, London
+
+// Everything inside a delivery radius, counted without allocating.
+Console.WriteLine(depots.CountWithin(53.00, -2.00, 1.5));   // 1
+
+// Everything inside the current map viewport, into a buffer you own.
+var visible = new SpatialPoint<string>[4];
+int shown = depots.CopyInRectangle(51.0, -3.0, 54.0, 0.0, visible);
+Console.WriteLine(shown);                              // 3
+
+// A tight bound is not just a filter — it prunes the search.
+Console.WriteLine(depots.TryFindNearest(0, 0, maxDistance: 1, out _));   // False
+```
+
 ## BTreeDictionary&lt;TKey, TValue, TComparer&gt;
 
 ```csharp

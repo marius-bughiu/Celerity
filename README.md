@@ -104,6 +104,7 @@ Both take their ordering as a **struct** `IComparer<T>` type parameter (`Default
 
 - `FenwickTree<T>` — a **Binary Indexed Tree** over a fixed-length numeric sequence (`where T : struct, INumber<T>`): **point update** and **prefix / range sum** both in `O(log n)`, in one flat array with no per-node overhead. The prefix-sum structure the BCL lacks — running aggregates, rank / order-statistics counters, cumulative-frequency tables — where a plain array is `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave.
 - `SegmentTree<T, TMonoid>` — range aggregates over an arbitrary **associative** fold: **point update** and **range query** both in `O(log n)`, in one flat array of `2n` cells. The half of the range-query space a Fenwick tree cannot reach — its query is the *difference* of two prefix folds, so it needs an inverse, while a segment tree stores each node's fold outright. That puts range **min**, **max**, **gcd**, bitwise **and**/**or** and any monoid you write in reach. The BCL has no range-aggregate structure at all, so the baseline is a plain array scanned per query. `SumMonoid` / `MinMonoid` / `MaxMonoid` / `BitwiseAndMonoid` / `BitwiseOrMonoid` ship built in, as struct type parameters so the fold inlines; non-commutative folds are safe, since the query preserves index order.
+- `KdTree<TValue>` — a build-once **2-D spatial index**: *which point is nearest to this one*, *which lie within this radius*, *which lie inside this box*, without measuring every point. .NET ships **no spatial index of any kind** — no k-d tree, no quadtree, no R-tree — so the alternative is an array and a loop over all of it. The nearest, predicate, count and copy tiers allocate nothing (the k-nearest search heaps inside your own buffer), and the whole structure is one interleaved coordinate array plus the payloads, with no per-point node. Nearest store or driver, viewport culling, collision broadphase, k-means / DBSCAN neighbour queries. The ratio tracks **selectivity**, and a hand-rolled sorted scan is a much closer baseline than the naive one — see [Spatial index](#spatial-index).
 
 **Probabilistic & bit-level**
 
@@ -589,6 +590,38 @@ public readonly struct GcdMonoid : IMonoid<uint>
 </details>
 
 <details>
+<summary><b>Nearest point, points within a radius, points inside a box</b> — KdTree</summary>
+
+`KdTree<TValue>` indexes points in the plane once and then answers proximity questions without measuring every point. .NET has no spatial index at all, so the alternative is an array and a loop. The nearest, count, predicate and copy tiers allocate nothing.
+
+```csharp
+var depots = new KdTree<string>(new[]
+{
+    new SpatialPoint<string>(51.51, -0.13, "London"),
+    new SpatialPoint<string>(53.48, -2.24, "Manchester"),
+    new SpatialPoint<string>(55.95, -3.19, "Edinburgh"),
+    new SpatialPoint<string>(52.49, -1.89, "Birmingham"),
+});
+
+// Which depot serves this address?
+if (depots.TryFindNearest(52.20, -2.00, out SpatialPoint<string> nearest))
+    Console.WriteLine(nearest.Value);                    // Birmingham
+
+// The three closest, nearest first.
+foreach (var d in depots.GetNearest(52.20, -2.00, 3))
+    Console.WriteLine(d.Value);                          // Birmingham, Manchester, London
+
+// Inside a delivery radius, and inside the map viewport — neither allocates.
+Console.WriteLine(depots.CountWithin(53.00, -2.00, 1.5));                  // 1
+var visible = new SpatialPoint<string>[4];
+Console.WriteLine(depots.CopyInRectangle(51.0, -3.0, 54.0, 0.0, visible)); // 3
+```
+
+A distance bound is not just a filter — it seeds the search's pruning radius, so `TryFindNearest(x, y, maxDistance: r, out _)` is materially cheaper than an unbounded query you then test.
+
+</details>
+
+<details>
 <summary><b>Construct from an existing collection</b></summary>
 
 The dictionaries accept any `IEnumerable<KeyValuePair<TKey, TValue>>`; an `ICollection<T>` source is used to pre-size the backing storage so the bulk fill avoids resizes. Duplicate keys (including duplicate `default(TKey)`) throw `ArgumentException`, matching BCL `Dictionary<,>`.
@@ -657,6 +690,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Sorted keys** — you need the entries in comparer order, or the ordered questions a hash table cannot answer: smallest / largest key, "first key at or after *x*", "every key in `[a, b)`" (time-series by timestamp, order books, LSM-style memtables, sweep-line events, interval endpoints) | `BTreeDictionary<TKey, TValue>` / `BTreeSet<T>` | B-tree with up to 31 keys per node in flat arrays: a lookup visits `log₃₂(n)` nodes instead of chasing `log₂(n)` pointers (~4 cache misses instead of ~20 at `n = 1M`), an in-order walk streams contiguous arrays rather than successor pointers, and allocation is one node per 31 entries instead of one object per entry. The BCL has no B-tree: `SortedDictionary<,>` / `SortedSet<>` are red-black trees, `SortedList<,>` is `O(n)` per middle insert, and `OrderedDictionary<,>` (.NET 9) is *insertion*-ordered, not sorted. Wins on the **interleaved insert + lookup + range-scan** load; for a few dozen entries a `SortedList<,>` is hard to beat, and if you never need order a hash table answers in `O(1)`. |
 | **Prefix / range sums over a sequence you keep mutating** — running aggregates, rank / order-statistics counters (inversions, "how many ≤ x seen"), cumulative-frequency tables | `FenwickTree<T>` | Binary Indexed Tree (`T : INumber<T>`): **point update** and **prefix / range sum** both `O(log n)`, in one array with no per-node overhead. The BCL has no prefix-sum structure; a plain array forces `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave. If the data is immutable after build, a one-shot precomputed prefix-sum array answers in `O(1)` with less code; if you only update and never query a partial sum, a raw array is simpler. |
 | **Range min / max / gcd / bit-mask over a sequence you keep mutating** — sliding-window extrema over a live history, "cheapest offer in this price band" over an order book, per-window capability masks, or any other **associative fold with no inverse** | `SegmentTree<T, TMonoid>` | Point update and range query both `O(log n)`, in one flat array of `2n` cells. `FenwickTree<T>` cannot answer these at all: it computes a range as the *difference* of two prefix folds, so the operation must be invertible. Five folds ship (`Sum` / `Min` / `Max` / `BitwiseAnd` / `BitwiseOr`) and any associative one you write is a field-free struct; non-commutative folds are safe. The BCL has no range-aggregate structure, so the alternative is an `O(n)` scan per query — **14.8× faster** on interleaved update + range-min at 100k, **81×** on a query batch, but only **1.4×** at 1k, where scanning a contiguous array is cache-friendly. If the fold is addition use `FenwickTree<T>` (half the memory); if the sequence never changes after build, a sparse table or a prefix array answers in `O(1)`. Range *updates* are not supported — that needs lazy propagation, a different contract. |
+| **Which point is nearest, which points are within this radius or box** — nearest store / driver / sensor, viewport and map-tile culling, collision broadphase, the neighbour queries inside k-means and DBSCAN, snap-to-nearest, duplicate-coordinate detection | `KdTree<TValue>` | Build-once 2-D index over points in the plane. The BCL ships **no spatial index of any kind**, so the fallback is an array measured in full on every query; at 100,000 points the nearest query beats that scan by two orders of magnitude. Judge it, though, against the *hand-rolled* alternative — points sorted by x and scanned outward from the query — where the margin is a small constant factor and, below a few thousand points, nothing at all. Immutable: adding a point means rebuilding, so it is for point sets that are built once and queried many times, not ones that move every frame. |
 | **Set algebra over two lists you already hold in sorted order** — intersect / union / diff sorted ID, row-id or posting lists, or just ask how many values they share (inverted indexes, cohort intersection, join-key pre-filters) | `SortedSpan.Intersect` / `Union` / `Except` / `IntersectCount` / `Overlaps` (in `Celerity.Primitives`) | Not a collection — static set algebra over spans. A two-cursor merge exploits the ordering the data already has, so it touches each element once and writes into caller-owned memory: **4.2× faster than `HashSet<int>` at 1M × 1M and 0 bytes allocated against 17.9 MB**, and **257× faster** on the asymmetric 1k × 10M shape where it gallops. `IntersectCount` / `Overlaps` need no buffer at all. ⚠️ **Both spans must be sorted ascending** — unsorted input silently returns a wrong answer. If your data is not already sorted, sorting it first to use this is usually a loss; reach for a set instead. See [sorted-span set algebra](docs/api/utilities.md#sortedspan-sorted-span-set-algebra). |
 | Need a stable iteration order or multi-threaded access | `BTreeDictionary<,>` / `BTreeSet<>` for sorted order, `Trie<TValue>` for ordered string keys; BCL `ConcurrentDictionary<,>` for concurrency | Celerity is single-threaded, and the **hash-based** collections leave iteration order unspecified. The ordered collections do promise order by contract: the B-trees iterate in comparer order, `Trie<TValue>` in ascending ordinal key order. |
 
@@ -692,6 +726,27 @@ The hashing library also ships classic / compatibility hashes (djb2, sdbm, ELF/P
 The suite also includes `StringHasherBenchmark` and `IntegerHasherBenchmark` (every built-in hasher bracketed by two baselines — the direct `GetHashCode()` and `EqualityComparer<T>.Default.GetHashCode()`, the per-probe call a BCL `Dictionary<,>` actually makes; rendered under **Hash function throughput** on the dashboard; run locally with `--filter "*HasherBenchmark*"`). Treat these as a **raw-mixing-cost diagnostic only** and read them alongside the distribution metrics from `HashQualityEvaluator` — a fast hasher that clusters is not a win. The isolated `Hash()` number alone is misleading (for `int`, `GetHashCode()` is identity — *zero* work — so no mixer can beat it), so the extended suite adds `HasherEndToEndBenchmark`, which times each hasher **through the dictionary** across all four key shapes, and a deterministic probe-length report (`dotnet run -c Release -- --probe-analysis`) — the cases where a strong hasher "loses" the microbench but wins end-to-end. See [measuring probe length](docs/performance.md#measure-probe-length-not-just-hash-speed).
 
 An **extended local suite** answers the harder questions a single random-key benchmark can't: multiple key distributions (uniform / sequential / clustered / adversarial), million-item scale, allocation profiling, concurrent read scaling, cache locality, mixed read-heavy workloads, and a `FrozenDictionary<,>` comparison. These run on demand — e.g. `dotnet run -c Release -- --filter "*Distribution*"`. See the [extended benchmark suite](docs/performance.md#extended-benchmark-suite).
+
+### Spatial index
+
+`KdTree<TValue>` is the one shipped type whose headline depends entirely on **which baseline you pick**, so both are measured. At 100,000 uniformly scattered points, 1,000 queries per measurement (in-process on a dev machine — read the ratios, not the absolute times; CI numbers land on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/)):
+
+| Query | vs. the naive scan | vs. a hand-rolled sorted scan |
+| --- | --- | --- |
+| **Nearest neighbour** | 46.82 ms → 168 µs — **278x** | 317 µs → 168 µs — **1.9x** |
+| **Within a radius** (~0.1% of the domain) | 46.83 ms → 864 µs — **54x** | 2.90 ms → 857 µs — **3.4x** |
+| **10 nearest** | 79.51 ms → 927 µs — **86x** | *(baseline is already the smart one: a bounded max-heap scan)* |
+
+The naive scan is the array-and-a-loop the BCL leaves you with, and against it the tree is one to two orders of magnitude ahead. The second column is the honest one. A caller can sort the points by x, binary-search to the query and work outward, abandoning each direction once the horizontal gap alone exceeds the best distance so far — a real optimization, and effectively a **one-dimensional spatial index**. Against that, the tree wins by a small constant factor, because the second dimension is the only thing it adds.
+
+**At 1,000 points the hand-rolled scan is slightly ahead** (77 µs vs 86 µs on nearest, 53 µs vs 55 µs on radius). The tree needs tens of thousands of points before its extra dimension pays for its extra indirection.
+
+**Build is the price**, paid once: 508 µs → 14.6 ms at 100,000 points (**29x** the cost of merely copying the array, at 1.83x its memory). The sorted-scan alternative pays its own `O(n log n)` ordering, so that multiple overstates the gap against the baseline you would actually compare with.
+
+Two further caveats worth stating rather than burying:
+
+- **A k-d tree has no useful worst-case bound.** An adversarial point set makes every query visit every node; the classic `O(log n)` for nearest-neighbour is an average over uniform points, not a guarantee. What is guaranteed is that no query does more work than the scan does unconditionally.
+- **The ratio tracks selectivity, and the data's shape moves it.** Pruning discards subtrees that cannot hold a result, so a query answering with much of the tree converges on the scan. Clustered points do *not* improve the tree's showing — measured, they narrow the gap to 1.1x, because a query drawn from inside a cluster has a very near neighbour and that is exactly what lets the sorted scan stop early. `KdTreeShapeBenchmark` in the extended suite carries that measurement and the reasoning.
 
 ## Custom hashing
 

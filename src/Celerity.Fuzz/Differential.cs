@@ -55,6 +55,7 @@ internal static class Differential
         ("BitSet", BitSetCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("SegmentTree", SegmentTreeCase),
+        ("KdTree", KdTreeCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -1204,6 +1205,91 @@ internal static class Differential
         }
 
         CheckSegmentTree(sut, oracle, rng, exhaustive: true);
+    }
+
+    // KdTree against the brute-force scan a caller writes instead. The failure mode a fuzzer is here to catch
+    // is a wrong prune, which loses a match silently rather than throwing, so every query shape is reconciled
+    // against an oracle that prunes nothing. Coordinates come off a small integer grid so duplicate points and
+    // exactly-on-the-boundary queries are common instead of rare, and so every squared distance is exact.
+    private static void KdTreeCase(Random rng)
+    {
+        int count = rng.Next(0, 200);
+        int extent = rng.Next(1, 40);
+
+        var points = new SpatialPoint<int>[count];
+        for (int i = 0; i < count; i++)
+            points[i] = new SpatialPoint<int>(rng.Next(-extent, extent + 1), rng.Next(-extent, extent + 1), i);
+
+        var sut = new KdTree<int>(points);
+        Check(sut.Count == count, "KdTree Count disagreed");
+
+        var enumerated = new List<int>();
+        foreach (SpatialPoint<int> point in sut)
+            enumerated.Add(point.Value);
+
+        enumerated.Sort();
+        for (int i = 0; i < count; i++)
+            Check(enumerated[i] == i, "KdTree enumeration is not a permutation of the input");
+
+        int queries = OpCount(rng);
+        for (int q = 0; q < queries; q++)
+        {
+            double x = rng.Next(-extent, extent + 1);
+            double y = rng.Next(-extent, extent + 1);
+            double radius = rng.Next(0, extent + 1);
+
+            int expectedWithin = 0;
+            double best = double.PositiveInfinity;
+            foreach (SpatialPoint<int> point in points)
+            {
+                double distance = KdDistance(point, x, y);
+                if (distance <= radius * radius)
+                    expectedWithin++;
+                if (distance < best)
+                    best = distance;
+            }
+
+            Check(sut.CountWithin(x, y, radius) == expectedWithin, "KdTree CountWithin disagreed");
+            Check(sut.ContainsWithin(x, y, radius) == (expectedWithin > 0), "KdTree ContainsWithin disagreed");
+            Check(sut.GetWithin(x, y, radius).Length == expectedWithin, "KdTree GetWithin disagreed");
+
+            bool found = sut.TryFindNearest(x, y, out SpatialPoint<int> nearest);
+            Check(found == count > 0, "KdTree TryFindNearest disagreed on whether a point exists");
+            if (found)
+                Check(KdDistance(nearest, x, y) == best, "KdTree TryFindNearest did not return a closest point");
+
+            double minX = rng.Next(-extent, extent + 1);
+            double minY = rng.Next(-extent, extent + 1);
+            double maxX = minX + rng.Next(0, extent + 1);
+            double maxY = minY + rng.Next(0, extent + 1);
+
+            int expectedInBox = 0;
+            foreach (SpatialPoint<int> point in points)
+            {
+                if (point.X >= minX && point.X <= maxX && point.Y >= minY && point.Y <= maxY)
+                    expectedInBox++;
+            }
+
+            Check(sut.CountInRectangle(minX, minY, maxX, maxY) == expectedInBox, "KdTree CountInRectangle disagreed");
+            Check(sut.GetInRectangle(minX, minY, maxX, maxY).Length == expectedInBox, "KdTree GetInRectangle disagreed");
+
+            // The k nearest are compared by distance, not identity: ties make the winning point ambiguous but
+            // leave the sequence of distances — and therefore the ordering the type promises — exact.
+            int k = rng.Next(0, 12);
+            SpatialPoint<int>[] actual = sut.GetNearest(x, y, k);
+            double[] expected = points.Select(p => KdDistance(p, x, y)).OrderBy(d => d).Take(k).ToArray();
+
+            Check(actual.Length == expected.Length, "KdTree GetNearest returned the wrong count");
+            for (int i = 0; i < actual.Length; i++)
+                Check(KdDistance(actual[i], x, y) == expected[i], "KdTree GetNearest disagreed on distance or order");
+        }
+    }
+
+    private static double KdDistance(SpatialPoint<int> point, double x, double y)
+    {
+        double dx = point.X - x;
+        double dy = point.Y - y;
+        return (dx * dx) + (dy * dy);
     }
 
     private static void CheckSegmentTree(SegmentTree<int, FirstNonZero> sut, int[] oracle, Random rng, bool exhaustive)
