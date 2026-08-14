@@ -6,6 +6,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`UInt32IdentityHasher` / `UInt64IdentityHasher`** — the zero-work, no-mixing hasher tier is now reachable from `uint`- and `ulong`-keyed collections and sketches, where the cheapest option was previously the XOR-fold. `UInt64IdentityHasher` keeps only the low 32 bits, so use it only when those are the discriminating ones. Closes [#357](https://github.com/marius-bughiu/Celerity/issues/357).
+
 - **The ten mutable sets now implement `IReadOnlySet<T>`** alongside `ISet<T>` — `CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `SmallSet`, `IntSet`, `LongSet`, `SparseSet` and `EnumSet`. `ISet<T>` does not derive from the read-only interface, so passing any of them to an API typed against `IReadOnlySet<T>` was a compile error; every member it needs was already public, so no behaviour changed. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
 
 - **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate, backed by a test that reads the shipped `.xml` back and asserts an entry for every public type. A malformed comment is not truncated by the doc writer — the whole member is dropped — so a warning was too weak a signal for something that silently empties a type's documentation. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).

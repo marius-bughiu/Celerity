@@ -81,12 +81,15 @@ public class HashProvider64ContractTests
         // A 32-bit key type has at most 2^32 distinct values, so no mixer over it can
         // produce 64 bits of information — implementing IHashProvider64<T> here would be a
         // false claim that a sketch would act on. Same for the naive folds and for
-        // DefaultHasher<T>, which is bounded by the 32-bit object.GetHashCode().
+        // DefaultHasher<T>, which is bounded by the 32-bit object.GetHashCode(), and same
+        // for the identity hashers: the 64-bit ones truncate to the low half rather than
+        // mixing, so they have no 64-bit code to publish at all.
         Type[] offenders = AllHasherTypes()
             .Where(IsHashProvider64)
             .Where(t => t.Name.StartsWith("Int32", StringComparison.Ordinal)
                      || t.Name.StartsWith("UInt32", StringComparison.Ordinal)
                      || t.Name.Contains("Naive", StringComparison.Ordinal)
+                     || t.Name.Contains("Identity", StringComparison.Ordinal)
                      || t.Name.StartsWith("Default", StringComparison.Ordinal))
             .ToArray();
 

@@ -257,6 +257,18 @@ void Check(bool condition, string message)
     Check(identLongSet.Count == 256 && identLongSet.Contains(0L) && identLongSet.Contains(255L)
         && !identLongSet.Contains(256L), "LongSet<Int64IdentityHasher>");
 
+    var identUInt = new CelerityDictionary<uint, string, UInt32IdentityHasher>();
+    identUInt[0u] = "zero";
+    identUInt[1u] = "one";
+    identUInt[uint.MaxValue] = "max";
+    Check(identUInt[0u] == "zero" && identUInt[1u] == "one" && identUInt[uint.MaxValue] == "max"
+        && !identUInt.ContainsKey(999u), "CelerityDictionary<uint, UInt32IdentityHasher>");
+
+    var identULongSet = new CeleritySet<ulong, UInt64IdentityHasher>();
+    for (ulong i = 0; i < 256; i++) identULongSet.Add(i);
+    Check(identULongSet.Count == 256 && identULongSet.Contains(0UL) && identULongSet.Contains(255UL)
+        && !identULongSet.Contains(256UL), "CeleritySet<ulong, UInt64IdentityHasher>");
+
     var wangInt = new CelerityDictionary<int, int, Int32WangHasher>();
     wangInt[1] = 1;
     Check(wangInt.ContainsKey(1), "CelerityDictionary<int, Int32WangHasher>");

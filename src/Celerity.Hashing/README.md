@@ -16,8 +16,8 @@ not on beating `GetHashCode()` for raw speed (for `int` keys it *can't*:
 - **`IHashProvider<T>`** — the one-method (`int Hash(T)`) contract every hasher
   implements; the generic constraint `where THasher : struct, IHashProvider<T>`
   is what makes the collections zero-cost.
-- **Integer hashers** — `Int32IdentityHasher` / `Int64IdentityHasher` (the
-  zero-work floor), `*WangNaiveHasher`, `*WangHasher`, `*Murmur3Hasher` across
+- **Integer hashers** — `*IdentityHasher` (the zero-work floor),
+  `*WangNaiveHasher`, `*WangHasher`, `*Murmur3Hasher` across
   `int` / `long` / `uint` / `ulong`, plus `GuidHasher`. Every one names its
   algorithm; the bare-named `UInt32Hasher` / `UInt64Hasher` are `[Obsolete]`
   aliases for `UInt32WangNaiveHasher` / `UInt64Murmur3Hasher`.

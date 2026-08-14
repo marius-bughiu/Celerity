@@ -19,14 +19,14 @@ public class Int32IdentityHasherTests
     [InlineData(int.MinValue)]
     [InlineData(1234567890)]
     [InlineData(-987654321)]
-    public void Hash_ReturnsKeyUnchanged(int input)
+    public void Hash_ShouldReturnTheKeyUnchanged_WhenGivenAnyKey(int input)
     {
         // The defining property of the zero-work floor: identity.
         Assert.Equal(input, _hasher.Hash(input));
     }
 
     [Fact]
-    public void Hash_MatchesIntGetHashCode()
+    public void Hash_ShouldMatchIntGetHashCode_ForTheSameKey()
     {
         // int.GetHashCode() is itself the identity function, so the identity
         // hasher must reproduce the framework hash exactly — that is the whole
@@ -41,14 +41,14 @@ public class Int32IdentityHasherTests
     // ── Determinism ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossCalls()
+    public void Hash_ShouldReturnTheSameCode_WhenCalledTwiceWithTheSameKey()
     {
         int value = 1234567890;
         Assert.Equal(_hasher.Hash(value), _hasher.Hash(value));
     }
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossInstances()
+    public void Hash_ShouldAgreeAcrossInstances_WhenTheHasherIsDefaultConstructed()
     {
         // Hashers are stateless structs; two independent instances agree.
         int value = -987654321;
@@ -58,7 +58,7 @@ public class Int32IdentityHasherTests
     // ── Distribution: bijective, so collision-free on any contiguous range ────
 
     [Fact]
-    public void Hash_ConsecutiveInputs_ProduceDistinctResults()
+    public void Hash_ShouldProduceDistinctCodes_WhenKeysAreConsecutive()
     {
         // Identity is a bijection on the full 32-bit space, so it is
         // collision-free on any contiguous range — exactly the uniform/trusted
@@ -71,7 +71,7 @@ public class Int32IdentityHasherTests
     }
 
     [Fact]
-    public void Hash_DoesNotThrow()
+    public void Hash_ShouldNotThrow_ForAnyKeyInTheValueRange()
     {
         int[] testValues = { 0, 1, -1, int.MaxValue, int.MinValue, 1234567890, -987654321 };
         foreach (int val in testValues)
@@ -84,7 +84,7 @@ public class Int32IdentityHasherTests
     // ── Integration: satisfies the hasher constraint on collections ──────────
 
     [Fact]
-    public void Int32IdentityHasher_CanDriveCelerityDictionary()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCelerityDictionary()
     {
         var dict = new CelerityDictionary<int, string, Int32IdentityHasher>();
 
@@ -103,7 +103,7 @@ public class Int32IdentityHasherTests
     }
 
     [Fact]
-    public void Int32IdentityHasher_CanDriveIntDictionary()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingIntDictionary()
     {
         // The out-of-band zero-key slot is exercised end-to-end: Hash(0) == 0,
         // which is also EMPTY_KEY, but the dictionary stores key 0 out-of-band
@@ -121,7 +121,7 @@ public class Int32IdentityHasherTests
     }
 
     [Fact]
-    public void Int32IdentityHasher_CanDriveCeleritySet()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCeleritySet()
     {
         var set = new CeleritySet<int, Int32IdentityHasher>();
 
@@ -139,7 +139,7 @@ public class Int32IdentityHasherTests
     }
 
     [Fact]
-    public void Int32IdentityHasher_CanDriveIntSet()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingIntSet()
     {
         var set = new IntSet<Int32IdentityHasher>();
 
@@ -155,7 +155,7 @@ public class Int32IdentityHasherTests
     }
 
     [Fact]
-    public void Int32IdentityHasher_DrivesDictionary_OnDenseSequentialKeys()
+    public void Hash_ShouldRoundTripEveryEntry_WhenKeysAreDenseAndSequential()
     {
         // The workload identity is designed for: dense sequential int keys are
         // collision-free under identity in an open-addressed power-of-two table,

@@ -84,6 +84,8 @@ The interface does **not** derive from `IHashProvider<T>`: the two contracts are
 
 These all already computed 64 bits internally and then threw half away, so `Hash64` costs nothing extra — it is the same mixer minus the final narrowing.
 
+The 64-bit-keyed hashers that deliberately *stay out* are the ones with no 64-bit code to publish: the XOR-folds (`Int64WangNaiveHasher` / `UInt64WangNaiveHasher`) and the identity pass-throughs (`Int64IdentityHasher` / `UInt64IdentityHasher`), which truncate to the low 32 bits rather than mixing. Implementing the interface there would tell a sketch it had escaped an entropy floor it is still standing on.
+
 ### Using it with a sketch
 
 Nothing changes at the call site. Parameterize the sketch on a hasher that implements `IHashProvider64<T>` and it takes the 64-bit path automatically; parameterize it on a 32-bit-only hasher and it keeps the widened path. The selection is a compile-time type test the JIT folds away, so each instantiation compiles to a single straight-line path and neither allocates.
@@ -636,6 +638,20 @@ Thomas Wang's 64-bit integer hash for `long` keys. Faster than `Int64Murmur3Hash
 
 > Also implements [`IHashProvider64<long>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
+### UInt32IdentityHasher
+
+```csharp
+public struct UInt32IdentityHasher : IHashProvider<uint>
+```
+
+The **zero-work floor** of the `uint` family and the unsigned counterpart to `Int32IdentityHasher`: a pass-through that reinterprets the key's 32 bits as an `int` with no mixing at all. The cast is a reinterpretation, not a truncation — `uint` and `int` are the same width, so identity is a bijection here and distinct keys always produce distinct codes. Because `uint.GetHashCode()` is itself this reinterpretation, the hasher reproduces the framework's own `uint` hash exactly, and since it does *no* work, **no mixing hasher can beat it on raw throughput.**
+
+**Algorithm:** `(int)key` (identity).
+
+**Why the cast at the call site is not a substitute.** The collections and sketches take the hasher as a *type parameter* and invoke it internally (`where THasher : struct, IHashProvider<TKey>`), so a `uint`-keyed collection needs an `IHashProvider<uint>` — `Int32IdentityHasher` does not satisfy that constraint, and there is no call site to insert a cast into.
+
+**Decision rule:** uniform / trusted keys (dense sequential IDs, contiguous indices) → *skip* mixing with this hasher; clustered or adversarial keys → *mix* with `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher`. The same open-addressed-table sensitivity and the same "not a HashDoS defence" caveat as `Int32IdentityHasher` apply.
+
 ### UInt32WangNaiveHasher
 
 ```csharp
@@ -675,6 +691,20 @@ MurmurHash3 32-bit finalizer (`fmix32`) for `uint` keys. The `uint` counterpart 
 **Algorithm:** `h ^= h >> 16`, `h *= 0x85ebca6b`, `h ^= h >> 13`, `h *= 0xc2b2ae35`, `h ^= h >> 16`, computed on the `uint` directly and reinterpreted as `int`.
 
 **Note:** maps `0 → 0` (a fixed point of `fmix32`), so the dictionaries' out-of-band zero-key slot is engaged just as it is with the simpler `UInt32WangNaiveHasher`.
+
+### UInt64IdentityHasher
+
+```csharp
+public struct UInt64IdentityHasher : IHashProvider<ulong>
+```
+
+The **zero-work floor** of the `ulong` family and the unsigned counterpart to `Int64IdentityHasher`: a pass-through that returns the key's low 32 bits with no mixing, strictly cheaper than even the XOR-fold `UInt64WangNaiveHasher`.
+
+**Algorithm:** `(int)key` — keeps only the low 32 bits.
+
+Because it keeps only the low half, two keys that differ **only** in their upper 32 bits collide — unlike `UInt64WangNaiveHasher`, which folds the high half back in. That makes it the right call only when the discriminating entropy lives in the low 32 bits (dense sequential `ulong` IDs), and the wrong call when the upper bits carry the distinguishing information (type / shard tags, a timestamp in the high word). For those, escalate to `UInt64WangNaiveHasher` (cheap XOR-fold that keeps high-half entropy), `UInt64WangHasher` (full Thomas-Wang finalizer), or `UInt64Murmur3Hasher`. As with `UInt32IdentityHasher`, a cast at the call site is not a substitute — the collections invoke the hasher through the `IHashProvider<ulong>` constraint themselves.
+
+**Note:** it deliberately does **not** implement [`IHashProvider64<ulong>`](#ihashprovider64t). A truncating pass-through has no 64-bit code to publish, so a sketch parameterized on it correctly keeps the 32-bit path — which for `HyperLogLog` means the classical large-range correction stays engaged rather than being skipped on a false claim of 64-bit entropy.
 
 ### UInt64Murmur3Hasher
 
@@ -782,8 +812,8 @@ The decision reduces to a **speed-vs-quality curve**, the same tradeoff F14 / ah
 |---|---|---|
 | `int` | `Int32WangNaiveHasher` (used by `IntDictionary` / `IntSet`) | `Int32IdentityHasher` (the zero-work floor — *drop* to it for uniform/trusted keys like dense sequential IDs, where any mixing is pure overhead); `Int32WangHasher` (full Thomas-Wang finalizer) or `Int32Murmur3Hasher` for clustered or adversarial keys |
 | `long` | `Int64WangNaiveHasher` (used by `LongDictionary` / `LongSet`) | `Int64IdentityHasher` (the zero-work floor — *drop* to it for keys whose low 32 bits are well distributed, e.g. dense sequential IDs; note it ignores the upper 32 bits); `Int64WangHasher` (full Thomas-Wang finalizer) or `Int64Murmur3Hasher` for clustered, high-half-distinct, or adversarial keys |
-| `uint` | `UInt32WangNaiveHasher` | `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
-| `ulong` | `UInt64Murmur3Hasher` (Murmur3 `fmix64`) | `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
+| `uint` | `UInt32WangNaiveHasher` | `UInt32IdentityHasher` (the zero-work floor — *drop* to it for uniform/trusted keys like dense sequential IDs, where any mixing is pure overhead); `UInt32WangHasher` (full Thomas-Wang finalizer) or `UInt32Murmur3Hasher` (Murmur3 `fmix32`) for clustered or adversarial keys |
+| `ulong` | `UInt64Murmur3Hasher` (Murmur3 `fmix64`) | `UInt64IdentityHasher` (the zero-work floor — *drop* to it for keys whose low 32 bits are well distributed; note it ignores the upper 32 bits); `UInt64WangHasher` (full Thomas-Wang finalizer) when the two `fmix64` multiplies are a hot-path cost and keys are already reasonably uniform; `UInt64WangNaiveHasher` (XOR-fold) for the cheapest option on already-uniform keys |
 | `Guid` | `GuidHasher` | `DefaultHasher<Guid>` (slower but BCL-equivalent) |
 | `string` | `StringFnV1AHasher` | `StringDjb2Hasher` (Bernstein's djb2 — the simplest, cheapest classic, shift-and-add with no real multiply, full-character fold) when you want a familiar minimal hash on short ASCII identifiers and djb2's weaker avalanche is acceptable; `StringDjb2AHasher` (the djb2a XOR-folding variant — same `* 33` cost, but XORs the byte instead of adding it, mirroring the FNV-1/FNV-1a split; avoids djb2's low-bit carry bias for slightly cleaner diffusion at the same cheapest cost class); `StringSdbmHasher` (the sdbm classic — same cheapest cost class, `* 65599` via two shifts and a subtract, full-character fold; its larger multiplier tends to distribute slightly better than djb2 on short keys, with the same weak avalanche); `StringElfHasher` (the PJW / ELF symbol-table hash — same cheapest cost class, a shift-and-add with a top-nibble fold-back that recirculates high-order bits, full-character fold, 28-bit non-negative result; **but the [measured distribution report](#measured-distribution-quality) shows it clusters badly on ASCII keys — prefer djb2 / sdbm over it there**); `StringCrc32Hasher` (the standard CRC-32 / zlib / IEEE 802.3 checksum — the family's only table-driven member, full-character fold; a linear checksum with weaker avalanche than the designed mixers, provided primarily to reproduce a CRC-32-based key distribution exactly when matching an external system); `StringAdler32Hasher` (the standard Adler-32 / zlib / RFC 1950 checksum — table-free running 16-bit sums, full-character fold; even weaker than CRC-32 as a hash because its low 16 bits are just the byte-sum so short keys cluster, provided purely to reproduce an Adler-32-based key distribution exactly, e.g. zlib / PNG / rsync); `StringFnV1Hasher` (the original FNV-1 multiply-then-XOR ordering, full-character fold) when you specifically need FNV-1 rather than the generally preferred FNV-1a, or `StringFnV164Hasher` for that same FNV-1 ordering folded into a 64-bit accumulator when keys are long or numerous enough to cluster the 32-bit state; `StringFnV1AFullHasher` (same FNV-1a cost, folds the full character) for non-ASCII content the low-byte fold would collide; `StringFnV1A64Hasher` (full-character fold into a 64-bit accumulator) when keys are long or numerous enough to cluster the 32-bit state; `StringJenkinsOaatHasher` (Bob Jenkins' one-at-a-time hash — multiply-free, with stronger per-bit avalanche than FNV-1a at the same cheap cost class) when FNV-1a's single-multiply mixing clusters keys but a block hash is more than you want to pay; `StringMurmur3Hasher` (the `fmix32`-finalized MurmurHash3, with `StringMurmur2Hasher` as its older same-family sibling for MurmurHash2 compatibility), `StringXxHash32Hasher`, `StringXxHash64Hasher`, `StringMetroHash64Hasher`, `StringCityHash64Hasher`, or `StringXxHash3Hasher` (the throughput-oriented strong-avalanche options for longer keys — XXH64 widens the accumulators and stripe further for longer keys on 64-bit platforms, MetroHash64 is a peer worth profiling against on mid-length keys, CityHash64 is length-classed so it often edges ahead on short-to-mid keys, and XXH3 is the third-generation xxHash that is length-classed *and* runs an eight-lane bulk loop, typically the fastest across both short and long keys) for clustered / adversarial keys that need strong avalanche; `StringHalfSipHash24Hasher` (HalfSipHash-2-4, keyed — the cheaper 32-bit-word variant for short keys / 32-bit targets, with a native 32-bit output and no fold), `StringSipHash13Hasher` (SipHash-1-3, keyed — the faster reduced-round 64-bit variant Rust's `HashMap` uses by default), `StringSipHash24Hasher` (SipHash-2-4, keyed — the conservative variant), or `StringHighwayHash64Hasher` (HighwayHash64, keyed — the SIMD-oriented alternative, scalar today) when the keys are untrusted and you need hash-flooding resistance rather than maximum throughput; `DefaultHasher<string>` (uses the BCL string hasher) |
 | anything else | `DefaultHasher<T>` | a struct hasher you write |
@@ -942,7 +972,7 @@ The `Celerity.Benchmarks` project includes `StringHasherBenchmark`, a head-to-he
 
 The three shapes matter because the length-classed hashers (`StringCityHash64Hasher`, `StringXxHash3Hasher`) and the four-accumulator stripe hashers (`StringXxHash32Hasher`, `StringXxHash64Hasher`) behave very differently across lengths, and the full-width hashers do extra work on non-ASCII upper bytes. The benchmark is registered in `Program.cs` so it joins the CI report and the gh-pages benchmark history on every push to `main`.
 
-A companion `IntegerHasherBenchmark` does the same for the fixed-width integer and `Guid` hashers, grouped by key type (`int` / `long` / `uint` / `ulong` / `Guid`), each bracketed by two baselines — the direct `GetHashCode()` (`{Type}_Bcl`) and `EqualityComparer<T>.Default.GetHashCode()` (`{Type}_EqualityComparer`, the per-probe call a BCL `Dictionary<,>` makes). For `int` / `long` the `{Type}_Identity` row is the explicit **zero-work floor**: a passthrough that does no mixing, which for `int` tracks the `_Bcl` baseline (since `int.GetHashCode()` is itself the identity), confirming that no mixing hasher beats it on raw throughput. It has no key-shape parameter: hashing a fixed-width integer is branch-free and constant-time regardless of the key's value, so the sample's distribution affects collision *quality* but not `Hash` throughput.
+A companion `IntegerHasherBenchmark` does the same for the fixed-width integer and `Guid` hashers, grouped by key type (`int` / `long` / `uint` / `ulong` / `Guid`), each bracketed by two baselines — the direct `GetHashCode()` (`{Type}_Bcl`) and `EqualityComparer<T>.Default.GetHashCode()` (`{Type}_EqualityComparer`, the per-probe call a BCL `Dictionary<,>` makes). Each of the four integer widths carries a `{Type}_Identity` row, the explicit **zero-work floor**: a passthrough that does no mixing, which for `int` / `uint` tracks the `_Bcl` baseline (their `GetHashCode()` is itself the identity), confirming that no mixing hasher beats it on raw throughput. It has no key-shape parameter: hashing a fixed-width integer is branch-free and constant-time regardless of the key's value, so the sample's distribution affects collision *quality* but not `Hash` throughput.
 
 Both benchmarks are rendered on the [live benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) under **Hash function throughput** — one ranked bar per hasher within each key type / shape group, relative to the framework `GetHashCode()` baseline, refreshed on every push to `main`. To run them locally:
 

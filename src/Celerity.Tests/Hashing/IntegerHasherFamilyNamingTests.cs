@@ -8,8 +8,8 @@ namespace Celerity.Tests.Hashing;
 
 /// <summary>
 /// Family-wide naming and cross-width contract for the integer hashers: every live integer
-/// hasher names its algorithm in its type name, the four key widths ship the same three
-/// mixing tiers, and each unsigned hasher agrees bit-for-bit with its signed peer — with one
+/// hasher names its algorithm in its type name, the four key widths ship the same four
+/// tiers, and each unsigned hasher agrees bit-for-bit with its signed peer — with one
 /// documented exception, the 32-bit naive fold, whose shift is arithmetic on one side and
 /// logical on the other.
 /// </summary>
@@ -26,8 +26,12 @@ namespace Celerity.Tests.Hashing;
 /// </remarks>
 public class IntegerHasherFamilyNamingTests
 {
-    /// <summary>The three mixing tiers every integer width ships, cheapest first.</summary>
-    private static readonly string[] Tiers = ["WangNaive", "Wang", "Murmur3"];
+    /// <summary>
+    /// The four tiers every integer width ships, cheapest first. <c>Identity</c> is the zero-work
+    /// floor rather than a mixer, but it is part of the same ladder a caller escalates along, and
+    /// it was the one tier the unsigned widths lacked.
+    /// </summary>
+    private static readonly string[] Tiers = ["Identity", "WangNaive", "Wang", "Murmur3"];
 
     private static readonly string[] Widths = ["Int32", "UInt32", "Int64", "UInt64"];
 
@@ -44,7 +48,7 @@ public class IntegerHasherFamilyNamingTests
     [InlineData("UInt32")]
     [InlineData("Int64")]
     [InlineData("UInt64")]
-    public void EveryWidth_ShouldShipTheSameThreeMixingTiers_NamedAfterTheirAlgorithm(string width)
+    public void EveryWidth_ShouldShipTheSameFourTiers_NamedAfterTheirAlgorithm(string width)
     {
         string[] missing = Tiers
             .Select(tier => $"{width}{tier}Hasher")
@@ -81,6 +85,7 @@ public class IntegerHasherFamilyNamingTests
     public void UInt32Hashers_ShouldAgreeWithTheirSignedPeers_OnTheSameBitPattern(int key)
     {
         uint bits = (uint)key;
+        Assert.Equal(new Int32IdentityHasher().Hash(key), new UInt32IdentityHasher().Hash(bits));
         Assert.Equal(new Int32WangHasher().Hash(key), new UInt32WangHasher().Hash(bits));
         Assert.Equal(new Int32Murmur3Hasher().Hash(key), new UInt32Murmur3Hasher().Hash(bits));
     }
@@ -90,6 +95,7 @@ public class IntegerHasherFamilyNamingTests
     public void UInt64Hashers_ShouldAgreeWithTheirSignedPeers_OnTheSameBitPattern(long key)
     {
         ulong bits = (ulong)key;
+        Assert.Equal(new Int64IdentityHasher().Hash(key), new UInt64IdentityHasher().Hash(bits));
         Assert.Equal(new Int64WangNaiveHasher().Hash(key), new UInt64WangNaiveHasher().Hash(bits));
         Assert.Equal(new Int64WangHasher().Hash(key), new UInt64WangHasher().Hash(bits));
         Assert.Equal(new Int64Murmur3Hasher().Hash(key), new UInt64Murmur3Hasher().Hash(bits));

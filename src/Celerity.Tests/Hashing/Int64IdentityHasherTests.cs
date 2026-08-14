@@ -22,13 +22,13 @@ public class Int64IdentityHasherTests
     [InlineData(1234567890123456789L)]
     [InlineData(0x0000_FFFF_FFFF_FFFFL)]
     [InlineData(0x1234_5678_9ABC_DEF0L)]
-    public void Hash_ReturnsLow32Bits(long input)
+    public void Hash_ShouldReturnTheLow32Bits_WhenGivenAnyKey(long input)
     {
         Assert.Equal(Expected(input), _hasher.Hash(input));
     }
 
     [Fact]
-    public void Hash_MatchesCast_OnSmallKeys()
+    public void Hash_ShouldEqualTheKey_WhenItFitsInAnInt()
     {
         // For keys that fit in an int the hash equals the key, mirroring the
         // way int.GetHashCode() is identity — the zero-work floor for long keys
@@ -42,7 +42,7 @@ public class Int64IdentityHasherTests
     // ── Documented collision: upper-32-bit-only differences truncate away ─────
 
     [Fact]
-    public void Hash_IgnoresUpper32Bits_ByDesign()
+    public void Hash_ShouldCollide_WhenTwoKeysDifferOnlyInTheUpper32Bits()
     {
         // The zero-work floor keeps only the low half, so two keys that differ
         // ONLY in the upper 32 bits collide. This is the documented tradeoff
@@ -55,7 +55,7 @@ public class Int64IdentityHasherTests
     }
 
     [Fact]
-    public void Hash_LowBitDifferences_AreDistinct()
+    public void Hash_ShouldProduceDistinctCodes_WhenKeysDifferInTheLow32Bits()
     {
         // Conversely, anything that differs in the low 32 bits is distinguished
         // exactly — the shape identity is meant for (dense sequential IDs).
@@ -69,21 +69,21 @@ public class Int64IdentityHasherTests
     // ── Determinism ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossCalls()
+    public void Hash_ShouldReturnTheSameCode_WhenCalledTwiceWithTheSameKey()
     {
         long value = 1234567890123456789L;
         Assert.Equal(_hasher.Hash(value), _hasher.Hash(value));
     }
 
     [Fact]
-    public void Hash_IsDeterministic_AcrossInstances()
+    public void Hash_ShouldAgreeAcrossInstances_WhenTheHasherIsDefaultConstructed()
     {
         long value = -1234567890987654321L;
         Assert.Equal(new Int64IdentityHasher().Hash(value), new Int64IdentityHasher().Hash(value));
     }
 
     [Fact]
-    public void Hash_DoesNotThrow()
+    public void Hash_ShouldNotThrow_ForAnyKeyInTheValueRange()
     {
         long[] testValues =
         {
@@ -101,7 +101,7 @@ public class Int64IdentityHasherTests
     // ── Integration: satisfies the hasher constraint on collections ──────────
 
     [Fact]
-    public void Int64IdentityHasher_CanDriveCelerityDictionary()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCelerityDictionary()
     {
         var dict = new CelerityDictionary<long, string, Int64IdentityHasher>();
 
@@ -120,7 +120,7 @@ public class Int64IdentityHasherTests
     }
 
     [Fact]
-    public void Int64IdentityHasher_CanDriveLongDictionary()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingLongDictionary()
     {
         var dict = new LongDictionary<string, Int64IdentityHasher>();
 
@@ -135,7 +135,7 @@ public class Int64IdentityHasherTests
     }
 
     [Fact]
-    public void Int64IdentityHasher_CanDriveCeleritySet()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingCeleritySet()
     {
         var set = new CeleritySet<long, Int64IdentityHasher>();
 
@@ -153,7 +153,7 @@ public class Int64IdentityHasherTests
     }
 
     [Fact]
-    public void Int64IdentityHasher_CanDriveLongSet()
+    public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingLongSet()
     {
         var set = new LongSet<Int64IdentityHasher>();
 
@@ -169,7 +169,7 @@ public class Int64IdentityHasherTests
     }
 
     [Fact]
-    public void Int64IdentityHasher_DrivesDictionary_OnDenseSequentialKeys()
+    public void Hash_ShouldRoundTripEveryEntry_WhenKeysAreDenseAndSequential()
     {
         // The workload identity is designed for: dense sequential long keys are
         // collision-free under identity (low 32 bits distinct) in an
