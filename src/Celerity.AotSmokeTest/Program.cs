@@ -696,7 +696,8 @@ void Check(bool condition, string message)
 
 // KdTree — the build-once spatial index. What is ILC-specific here is the query core: both traversals are
 // generic over struct type arguments the compiler has to specialize ahead of time — the range walk over a
-// region *and* a visitor, giving four instantiations that must each be rooted with no JIT to fall back on, and
+// region *and* a visitor — two regions crossed with three visitors, so six instantiations that must each be
+// rooted with no JIT to fall back on — and
 // the nearest walk over a visitor whose bounded max-heap lives in the caller's array. Exercise the nearest,
 // k-nearest, radius and rectangle families, a reference-typed payload, and the struct enumerator.
 {

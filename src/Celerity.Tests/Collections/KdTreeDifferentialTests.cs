@@ -35,7 +35,7 @@ public class KdTreeDifferentialTests
         {
             SpatialPoint<int>[] points = Build(spec.Count, spec.Extent, spec.Seed);
             var tree = new KdTree<int>(points);
-            var rand = new Random((int)spec.Seed);
+            var rand = Queries(spec.Seed);
 
             for (int q = 0; q < 20; q++)
             {
@@ -63,7 +63,7 @@ public class KdTreeDifferentialTests
         {
             SpatialPoint<int>[] points = Build(spec.Count, spec.Extent, spec.Seed);
             var tree = new KdTree<int>(points);
-            var rand = new Random((int)spec.Seed);
+            var rand = Queries(spec.Seed);
 
             for (int q = 0; q < 20; q++)
             {
@@ -92,7 +92,7 @@ public class KdTreeDifferentialTests
         {
             SpatialPoint<int>[] points = Build(spec.Count, spec.Extent, spec.Seed);
             var tree = new KdTree<int>(points);
-            var rand = new Random((int)spec.Seed);
+            var rand = Queries(spec.Seed);
 
             for (int q = 0; q < 20; q++)
             {
@@ -120,7 +120,7 @@ public class KdTreeDifferentialTests
         {
             SpatialPoint<int>[] points = Build(spec.Count, spec.Extent, spec.Seed);
             var tree = new KdTree<int>(points);
-            var rand = new Random((int)spec.Seed);
+            var rand = Queries(spec.Seed);
 
             for (int q = 0; q < 20; q++)
             {
@@ -149,7 +149,7 @@ public class KdTreeDifferentialTests
         {
             SpatialPoint<int>[] points = Build(spec.Count, spec.Extent, spec.Seed);
             var tree = new KdTree<int>(points);
-            var rand = new Random((int)spec.Seed);
+            var rand = Queries(spec.Seed);
 
             for (int q = 0; q < 10; q++)
             {
@@ -179,7 +179,7 @@ public class KdTreeDifferentialTests
         {
             SpatialPoint<int>[] points = Build(spec.Count, spec.Extent, spec.Seed);
             var tree = new KdTree<int>(points);
-            var rand = new Random((int)spec.Seed);
+            var rand = Queries(spec.Seed);
 
             for (int q = 0; q < 10; q++)
             {
@@ -226,6 +226,12 @@ public class KdTreeDifferentialTests
 
         return points;
     }
+
+    // The queries must come off a *different* stream from the points. Seeding both from spec.Seed made the
+    // first query coordinates replay the first point's coordinates exactly, so every scenario opened with a
+    // query sitting on a stored point — the one case where nearest-neighbour pruning is trivial, handed to the
+    // suite whose job is to make pruning work for its answer.
+    private static Random Queries(uint seed) => new(unchecked((int)(seed * 2654435761u) ^ 0x5F3A));
 
     private static double Squared(SpatialPoint<int> point, double x, double y)
     {

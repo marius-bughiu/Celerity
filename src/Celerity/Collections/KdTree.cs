@@ -61,11 +61,14 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>What the bound really is.</b> A k-d tree has no useful worst-case query bound — an adversarial point set
 /// forces every query to visit every node, and even on friendly data the classic <c>O(log n)</c> figure for
-/// nearest-neighbour is an average over uniformly distributed points, not a guarantee. What is guaranteed is
-/// that no query does more work than the linear scan the baseline pays unconditionally. The useful statement
-/// is the empirical one, and it is about <b>selectivity</b> rather than size: pruning works by discarding
-/// subtrees that cannot hold a result, so a query whose answer is a large fraction of the tree prunes little
-/// and converges on the scan.
+/// nearest-neighbour is an average over uniformly distributed points, not a guarantee. What <i>is</i>
+/// guaranteed is that a query visits at most <c>n</c> nodes, so each family is bounded by the hand-written
+/// loop it replaces rather than by anything worse: <c>O(n)</c> for the nearest and range queries, whose
+/// per-node work is constant, and <c>O(n log k)</c> for the k-nearest queries, whose per-candidate work is a
+/// sift through the <c>k</c>-element heap — which is what the equivalent hand-rolled bounded-heap scan costs
+/// too. The useful statement is the empirical one, and it is about <b>selectivity</b> rather than size:
+/// pruning works by discarding subtrees that cannot hold a result, so a query whose answer is a large
+/// fraction of the tree prunes little and converges on the scan.
 /// </para>
 /// <para>
 /// <b>Which baseline you pick decides the headline, so read both.</b> Against the array-and-a-loop the BCL
@@ -576,8 +579,9 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
     // reaches it, tight enough that a degenerate one gives up early.
     private static int DepthLimit(int length) => 2 * (31 - BitOperations.LeadingZeroCount((uint)length));
 
-    // Only ever used by the depth-budget fallback, so an allocation-free struct comparer would buy nothing —
-    // Array.Sort's non-generic overload boxes it anyway, and the path runs at most once per selection.
+    // Only ever used by the depth-budget fallback, so an allocation-free struct comparer would buy nothing:
+    // Array.Sort<T>(T[], int, int, IComparer<T>) takes the comparer through an interface-typed parameter, so
+    // a struct would be boxed on the way in regardless, and the path runs at most once per selection.
     private sealed class AxisOrder : IComparer<SpatialPoint<TValue>>
     {
         internal static readonly AxisOrder ByX = new(byX: true);

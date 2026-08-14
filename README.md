@@ -745,7 +745,7 @@ The naive scan is the array-and-a-loop the BCL leaves you with, and against it t
 
 Two further caveats worth stating rather than burying:
 
-- **A k-d tree has no useful worst-case bound.** An adversarial point set makes every query visit every node; the classic `O(log n)` for nearest-neighbour is an average over uniform points, not a guarantee. What is guaranteed is that no query does more work than the scan does unconditionally.
+- **A k-d tree has no useful worst-case bound.** An adversarial point set makes every query visit every node; the classic `O(log n)` for nearest-neighbour is an average over uniform points, not a guarantee. What is guaranteed is that a query visits at most `n` nodes, so each family stays bounded by the loop it replaces — `O(n)` for the nearest and range queries, and `O(n log k)` for k-nearest, whose per-candidate heap sift the hand-rolled bounded-heap scan pays as well.
 - **The data's shape does not just move the ratio, it can reverse it.** Pruning discards subtrees that cannot hold a result, so a query answering with much of the tree converges on the scan. Clustered points — which is what real spatial data usually looks like — are measured as **worse** for the tree, not better: against the sorted scan it goes from 1.92x on uniform points to **0.94x on clustered ones, where the hand-roll wins outright**. The cause is the distance to the query's nearest neighbour rather than density: inside a cluster that neighbour is very close, and a tiny best distance is exactly what lets the scan abandon after a handful of points. `KdTreeShapeBenchmark` in the extended suite carries the measurement, the reasoning, and the sampling bias that made an earlier version of it flatter the tree.
 
 ## Custom hashing

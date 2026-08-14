@@ -4455,7 +4455,7 @@ That budget earns its keep on an input that is not exotic. A middle-element pivo
 
 ### What the complexity really is
 
-A k-d tree has **no useful worst-case query bound**. An adversarial point set forces every query to visit every node, and even on friendly data the classic `O(log n)` figure for nearest-neighbour is an average over uniformly distributed points, not a guarantee. What *is* guaranteed is that no query does more work than the linear scan the baseline pays unconditionally.
+A k-d tree has **no useful worst-case query bound**. An adversarial point set forces every query to visit every node, and even on friendly data the classic `O(log n)` figure for nearest-neighbour is an average over uniformly distributed points, not a guarantee. What *is* guaranteed is that a query visits at most `n` nodes, so each family stays bounded by the hand-written loop it replaces: `O(n)` for the nearest and range queries, whose per-node work is constant, and `O(n log k)` for the k-nearest queries, whose per-candidate work is a sift through the `k`-element heap — the same factor the equivalent hand-rolled bounded-heap scan pays.
 
 The useful statement is empirical, and it is about **selectivity** rather than size: pruning works by discarding subtrees that cannot hold a result, so a query whose answer is a large fraction of the tree prunes little and converges on the scan.
 
