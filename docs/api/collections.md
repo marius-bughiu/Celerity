@@ -4528,13 +4528,13 @@ Because nothing mutates, enumeration is never invalidated and concurrent readers
 
 Reach for `KdTree<TValue>` when you build a set of points once and then query it for proximity **repeatedly** — nearest store, driver or sensor to a coordinate; viewport and map-tile culling; collision broadphase; the neighbour queries inside k-means and DBSCAN; snap-to-nearest in an editor; duplicate-coordinate detection.
 
-Do not reach for it when the points **change constantly** — it is build-once, and rebuilding per frame costs more than the queries save — or when you have only a **few thousand points**, where the measurements below put a hand-rolled sorted scan level with it. If your queries only ever discriminate on **one** axis, an ordered array and a binary search is the smaller tool.
+Do not reach for it when the points **change constantly** — it is build-once, and rebuilding per frame costs more than the queries save — or when you have only a **few thousand points**, where the measurements below put a hand-rolled sorted scan roughly level with it. If your queries only ever discriminate on **one** axis, an ordered array and a binary search is the smaller tool.
 
 ### The documented BCL-beating workload
 
-Against the array-and-a-loop the BCL leaves you with, at 100,000 uniformly scattered points and 1,000 queries, the nearest-neighbour query is **two orders of magnitude** faster and the radius query is **54x** faster — the numbers, and the important caveat beside them, are in the README's [spatial index section](../../README.md#spatial-index).
+Against the array-and-a-loop the BCL leaves you with, at 100,000 uniformly scattered points and 1,000 queries, the nearest-neighbour query is **348x** faster and the radius query **53x** — measured on CI's same-runner A/B; the full table, and the important caveat beside it, are in the README's [spatial index section](../../README.md#spatial-index).
 
-The caveat is that a **hand-rolled** partial index does much better than the naive scan: order the points by x, binary-search to the query's x and work outward, abandoning each direction once the horizontal gap alone exceeds the best distance so far. That is a real optimization and effectively a one-dimensional spatial index, and against it the tree's margin is a small constant factor rather than two orders of magnitude. Both baselines are measured, and the second is the one to judge the type by.
+The caveat is that a **hand-rolled** partial index does much better than the naive scan: order the points by x, binary-search to the query's x and work outward, abandoning each direction once the horizontal gap alone exceeds the best distance so far. That is a real optimization and effectively a one-dimensional spatial index, and against it the tree's margin is **2.5x** on the nearest query and **3.5x** on the radius one rather than two orders of magnitude — falling to 1.4x and to nothing at all at 1,000 points. Both baselines are measured, and the second is the one to judge the type by.
 
 ### Usage example
 

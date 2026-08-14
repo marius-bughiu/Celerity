@@ -72,13 +72,14 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// <b>Which baseline you pick decides the headline, so read both.</b> Against the array-and-a-loop the BCL
-/// leaves you with, the nearest query at 100,000 uniformly scattered points measures <b>278x</b> and the radius
-/// query <b>54x</b>. Against a <i>hand-rolled</i> alternative — the points ordered by x, scanned outward from
+/// leaves you with, the nearest query at 100,000 uniformly scattered points measures <b>348x</b> and the radius
+/// query <b>53x</b>. Against a <i>hand-rolled</i> alternative — the points ordered by x, scanned outward from
 /// the query and abandoned in each direction once the horizontal gap alone exceeds the best distance so far,
-/// which is effectively a one-dimensional spatial index — the same queries measure <b>1.9x</b> and
-/// <b>3.4x</b>, and at 1,000 points that hand-roll is slightly <i>ahead</i>. The second column is the honest
-/// one: the second dimension is the only thing this type adds over it. Both are measured in
-/// <c>KdTreeBenchmark</c> and tabulated in the README.
+/// which is effectively a one-dimensional spatial index — the same queries measure only <b>2.5x</b> and
+/// <b>3.5x</b>, and at 1,000 points that margin is 1.4x on the nearest query and gone on the radius one.
+/// The second column is the honest one: the second dimension is the only thing this type adds over it.
+/// Both are measured in <c>KdTreeBenchmark</c>, quoted here from CI's same-runner A/B rather than from a
+/// development machine, and tabulated in the README.
 /// </para>
 /// <para>
 /// <b>Two dimensions specifically, not a generic <c>k</c>.</b> The dimensionality is a design decision here

@@ -33,16 +33,18 @@ using Celerity.Collections;
 // a query at 100,000 points; a radius ten times wider would narrow the gap considerably, and the docs say so
 // next to the number.
 //
-// What the two baselines actually measured, at 100,000 points (in-process on a dev machine, so the ratios are
-// the point and not the absolute times):
+// What the two baselines actually measured, at 100,000 points. These are CI's same-runner figures rather than
+// a development machine's, which matters: the two disagreed by enough to change a documented claim, and the
+// hosted runner is the number this repo quotes.
 //
-//     NearestQuery   46.82 ms -> 168 us   278x        NearestSorted   317 us -> 168 us   1.9x
-//     RadiusQuery    46.83 ms -> 864 us    54x        RadiusSlab     2.90 ms -> 857 us   3.4x
-//     KNearest       81.07 ms -> 920 us    88x        Build           508 us -> 14.6 ms  29x slower
+//     NearestQuery   103.50 ms -> 297 us   348x       NearestSorted   733 us -> 296 us   2.5x
+//     RadiusQuery    104.44 ms -> 1.98 ms   53x       RadiusSlab     6.98 ms -> 1.98 ms  3.5x
+//     KNearest       194.49 ms -> 1.81 ms  107x       Build           750 us -> 22.2 ms  30x slower
 //
-// At 1,000 points both sorted arms are a shade faster than the tree (77 us against 86 us, 53 us against 55 us):
-// the second dimension does not pay for its indirection until tens of thousands of points. That is the sort of
-// crossover this repo states rather than rounds away, so it is in the README and the API reference too.
+// At 1,000 points the second dimension has not yet paid for its indirection: the nearest margin against the
+// sorted hand-roll falls to 1.4x (141 us against 98 us) and the radius one is gone outright (117 us against
+// 120 us, the scan a hair ahead). A development machine put the tree *behind* on both of those arms, which is
+// the sort of crossover this repo states rather than rounds away — README and API reference carry it too.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
