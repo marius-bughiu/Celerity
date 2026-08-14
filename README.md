@@ -729,7 +729,7 @@ An **extended local suite** answers the harder questions a single random-key ben
 
 ### Spatial index
 
-`KdTree<TValue>` is the one shipped type whose headline depends entirely on **which baseline you pick**, so both are measured. At 100,000 uniformly scattered points, 1,000 queries per measurement (in-process on a dev machine — read the ratios, not the absolute times; CI numbers land on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/)):
+`KdTree<TValue>` is the one shipped type whose headline depends entirely on **which baseline you pick**, so both are measured. At 100,000 uniformly scattered points, 1,000 queries per measurement, taken from CI's same-runner A/B on `ubuntu-latest` — hosted runners are noisy, so treat the ratios as the signal and watch the trend on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/):
 
 | Query | vs. the naive scan | vs. a hand-rolled sorted scan |
 | --- | --- | --- |
