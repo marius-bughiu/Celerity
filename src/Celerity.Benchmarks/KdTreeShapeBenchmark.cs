@@ -21,15 +21,22 @@ using Celerity.Collections;
 // tree alternates axes and prunes the same cluster on y as readily as on x. Measured (100,000 points, 1,000
 // queries, in-process on a dev machine, so read the ratios and not the absolute times):
 //
-//     Uniform      SortedScan 274.7 us    KdTree 154.8 us    1.77x
-//     Clustered    SortedScan 195.2 us    KdTree 174.7 us    1.12x
+//     Uniform      SortedScan 305.9 us    KdTree 159.6 us    tree 1.92x faster
+//     Clustered    SortedScan 154.7 us    KdTree 164.8 us    tree 0.94x — the tree LOSES
 //
-// Clustering *narrows* the gap rather than widening it, and both arms get faster. The reason is that the
-// queries are drawn from the same distribution as the points, so inside a cluster the nearest neighbour is very
-// close indeed — and a very small best distance is exactly what makes the scan's abandon-on-the-x-gap test fire
-// after a handful of points. The scan's weakness is not density as such; it is a query whose nearest neighbour
-// is *far*, which is what forces it to widen its slab. Uniform points at this density are the shape that
-// produces the tree's best relative showing here, and the README quotes that shape rather than this one.
+// Clustering does not merely narrow the gap, it reverses it: on clustered points the one-dimensional scan is
+// the faster structure. The reason is the distance to the query's nearest neighbour, not density as such.
+// Queries here come from the same distribution as the points, so inside a cluster the nearest neighbour is very
+// close indeed, and a very small best distance is exactly what makes the scan's abandon-on-the-x-gap test fire
+// after a handful of points — while the tree still pays for its descent. What actually hurts the scan is a
+// query whose nearest neighbour is *far*, forcing it to widen its slab; uniform points at this density produce
+// more of those, which is why the tree's best relative showing is there.
+//
+// The first version of this control got that number wrong in the tree's favour (it reported 1.12x rather than a
+// loss) by *deriving* each query from a stored point plus another deviate. For the clustered shape that
+// compounds two Gaussians into centre + N(0, 2s^2), so the query cloud was sqrt(2) wider than the data and
+// queries landed disproportionately in the sparse fringe of each blob — biasing the one quantity the whole
+// comparison turns on. Queries are now drawn afresh from the same generator as the points.
 //
 //   dotnet run -c Release -- --filter '*KdTreeShape*'
 [MemoryDiagnoser]
@@ -54,13 +61,13 @@ public class KdTreeShapeBenchmark
     /// <summary>The spatial distribution of the indexed points.</summary>
     public enum Shape
     {
-        /// <summary>Points scattered uniformly. Measured as the tree's <i>best</i> relative showing, at 1.77x.</summary>
+        /// <summary>Points scattered uniformly. Measured as the tree's <i>best</i> relative showing, at 1.92x.</summary>
         Uniform,
 
         /// <summary>
         /// Points gathered into tight clusters, the shape real spatial data actually takes. Measured as the
-        /// shape most favourable to the one-dimensional baseline, at 1.12x — the opposite of the expectation
-        /// this class was written to confirm; see the note on the class.
+        /// shape where the one-dimensional baseline <i>wins</i>, at 0.94x — the reverse of the expectation this
+        /// class was written to confirm; see the note on the class.
         /// </summary>
         Clustered,
     }
@@ -74,30 +81,21 @@ public class KdTreeShapeBenchmark
     {
         var rand = new Random(42);
 
-        points = new SpatialPoint<int>[ItemCount];
-        if (Distribution == Shape.Uniform)
+        // The cluster centres are drawn even for the uniform shape so that both branches consume the same
+        // prefix of the stream, which keeps the two arms comparable rather than merely similar.
+        var centreX = new double[ClusterCount];
+        var centreY = new double[ClusterCount];
+        for (int c = 0; c < ClusterCount; c++)
         {
-            for (int i = 0; i < ItemCount; i++)
-                points[i] = new SpatialPoint<int>(rand.NextDouble() * Domain, rand.NextDouble() * Domain, i);
+            centreX[c] = rand.NextDouble() * Domain;
+            centreY[c] = rand.NextDouble() * Domain;
         }
-        else
-        {
-            var centreX = new double[ClusterCount];
-            var centreY = new double[ClusterCount];
-            for (int c = 0; c < ClusterCount; c++)
-            {
-                centreX[c] = rand.NextDouble() * Domain;
-                centreY[c] = rand.NextDouble() * Domain;
-            }
 
-            for (int i = 0; i < ItemCount; i++)
-            {
-                int c = rand.Next(ClusterCount);
-                points[i] = new SpatialPoint<int>(
-                    centreX[c] + (Gaussian(rand) * ClusterSpread),
-                    centreY[c] + (Gaussian(rand) * ClusterSpread),
-                    i);
-            }
+        points = new SpatialPoint<int>[ItemCount];
+        for (int i = 0; i < ItemCount; i++)
+        {
+            (double x, double y) = NextPosition(rand, centreX, centreY);
+            points[i] = new SpatialPoint<int>(x, y, i);
         }
 
         tree = new KdTree<int>(points);
@@ -112,16 +110,30 @@ public class KdTreeShapeBenchmark
             sortedY[i] = byX[i].Y;
         }
 
-        // Queries are drawn from the same distribution as the points, so a clustered run is asking about a
-        // crowded neighbourhood rather than about empty space between the blobs.
+        // Queries come from *exactly* the same distribution as the points, drawn afresh rather than derived
+        // from one. Deriving them — picking a stored point and adding a deviate — is the mistake this control
+        // originally made: for the clustered shape it compounds two Gaussians into centre + N(0, 2s^2), so the
+        // query cloud is sqrt(2) wider than the data it searches and queries land disproportionately in the
+        // sparse fringe of each blob. That biases exactly the quantity the comparison turns on, the distance to
+        // the query's nearest neighbour, which is what decides how early the baseline's scan can abandon.
         queryX = new double[QueryCount];
         queryY = new double[QueryCount];
         for (int i = 0; i < QueryCount; i++)
         {
-            int source = rand.Next(ItemCount);
-            queryX[i] = points[source].X + (Gaussian(rand) * ClusterSpread);
-            queryY[i] = points[source].Y + (Gaussian(rand) * ClusterSpread);
+            (double x, double y) = NextPosition(rand, centreX, centreY);
+            queryX[i] = x;
+            queryY[i] = y;
         }
+    }
+
+    // One generator for both the points and the queries, so they cannot drift apart.
+    private (double X, double Y) NextPosition(Random rand, double[] centreX, double[] centreY)
+    {
+        if (Distribution == Shape.Uniform)
+            return (rand.NextDouble() * Domain, rand.NextDouble() * Domain);
+
+        int c = rand.Next(ClusterCount);
+        return (centreX[c] + (Gaussian(rand) * ClusterSpread), centreY[c] + (Gaussian(rand) * ClusterSpread));
     }
 
     [Benchmark(Baseline = true)]
