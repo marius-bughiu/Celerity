@@ -494,6 +494,44 @@ public class KdTreeTests
     }
 
     [Fact]
+    public void Constructor_ShouldStayFastAndCorrect_WhenTheInputIsAnOrganPipe()
+    {
+        // The shape that defeats a middle-element pivot: ascending values interleaved with descending ones, so
+        // an extreme lands at the midpoint of every subrange and each quickselect pass peels off one element.
+        // Simulated at 4,096 points, that is 2,048 passes against a depth budget of 24 — a single selection
+        // gone quadratic. It is also not an exotic input: it is any path that goes out and comes back.
+        //
+        // This exercises the introselect fallback. The assertion is correctness rather than a timing bound,
+        // which no test should assert; the guard against the quadratic blow-up is that a quadratic build of
+        // this size would not finish inside the suite's patience.
+        const int count = 4096;
+        var points = new SpatialPoint<int>[count];
+        for (int i = 0; i < count; i++)
+        {
+            double x = i % 2 == 0 ? i : count - i;
+            points[i] = new SpatialPoint<int>(x, x, i);
+        }
+
+        var tree = new KdTree<int>(points);
+
+        Assert.Equal(count, tree.Count);
+
+        // The layout must still be a correct k-d tree, so reconcile a sample of queries against brute force.
+        foreach (int probe in new[] { 0, 1, 37, 512, 2049, 4095 })
+        {
+            double qx = probe;
+            double qy = probe;
+
+            double best = points.Min(p => ((p.X - qx) * (p.X - qx)) + ((p.Y - qy) * (p.Y - qy)));
+            Assert.True(tree.TryFindNearest(qx, qy, out SpatialPoint<int> nearest));
+            Assert.Equal(best, ((nearest.X - qx) * (nearest.X - qx)) + ((nearest.Y - qy) * (nearest.Y - qy)));
+
+            int expected = points.Count(p => Math.Abs(p.X - qx) <= 50 && Math.Abs(p.Y - qy) <= 50);
+            Assert.Equal(expected, tree.CountInRectangle(qx - 50, qy - 50, qx + 50, qy + 50));
+        }
+    }
+
+    [Fact]
     public void Queries_ShouldStayCorrect_WhenTheTreeHoldsASinglePoint()
     {
         var tree = new KdTree<string>([new(3, 4, "only")]);

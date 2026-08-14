@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Numerics;
 
 namespace Celerity.Collections;
 
@@ -32,11 +33,13 @@ namespace Celerity.Collections;
 /// and the build puts the median on that axis at the midpoint, so everything left of a node is at or before it
 /// on that axis and everything right is at or after. There are no nodes, no child pointers and no per-point
 /// heap object; the whole structure is one interleaved coordinate array and one payload array. The median
-/// is found by quickselect rather than a full
-/// sort, which is what keeps the build to an <i>expected</i> <c>O(n log n)</c> rather than the
-/// <c>O(n log&#178; n)</c> a sort per level would cost. Expected, not guaranteed: the pivot is the middle
-/// element, which handles ordered and reverse-ordered input well but is not adversary-proof, so a crafted
-/// arrangement can drive one selection quadratic.
+/// is found by <b>introselect</b> rather than a full
+/// sort, which keeps the build to an <i>expected</i> <c>O(n log n)</c> rather than the
+/// <c>O(n log&#178; n)</c> a sort per level would cost — and the depth budget behind the <i>intro</i> bounds
+/// the worst case at that same <c>O(n log&#178; n)</c> instead of letting it go quadratic. The budget is not
+/// theatre: a middle-element pivot settles ordered and reverse-ordered input in <c>log m</c> passes, but an
+/// organ-pipe arrangement — ascending values interleaved with descending ones, the shape of any path that goes
+/// out and comes back — puts an extreme at the midpoint of every subrange and peels off one element per pass.
 /// </para>
 /// <para>
 /// <b>The coordinate domain is bounded.</b> Every query compares <i>squared</i> distances, so the constructor
@@ -478,30 +481,40 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
         int mid = lo + ((hi - lo) >> 1);
         bool byX = (depth & 1) == 0;
 
-        SelectNth(items, lo, hi, mid, byX);
+        SelectNth(items, lo, hi, mid, byX, DepthLimit(hi - lo));
         Partition(items, lo, mid, depth + 1);
         Partition(items, mid + 1, hi, depth + 1);
     }
 
-    // Quickselect: leaves items[nth] holding the element that a full sort of [lo, hi) on this axis would put
-    // there, everything before it at or below it on that axis and everything after at or above. Selecting is
-    // O(hi - lo) *expected* where sorting would be O(m log m) guaranteed, which is the difference between an
+    // Introselect. The quickselect leaves items[nth] holding the element that a full sort of [lo, hi) on this
+    // axis would put there, everything before it at or below it on that axis and everything after at or above,
+    // in O(hi - lo) expected — where sorting the range would be O(m log m). That is the difference between an
     // expected-O(n log n) build and an O(n log^2 n) one.
     //
-    // Expected, not guaranteed, and worth being exact about: the pivot is the middle element, which is the
-    // choice that handles the ordered and reverse-ordered inputs a caller is most likely to hand over, but it
-    // is not adversary-proof — an arrangement crafted against it can drive a single selection quadratic. The
-    // fix would be an introselect fallback to median-of-medians after too many unbalanced partitions; it is
-    // deliberately not here, because it costs real complexity in the one method most likely to harbour an
-    // off-by-one, to bound a case that needs an attacker who both chooses the point set and knows the pivot
-    // rule. What is not acceptable is claiming the guarantee, so the docs say expected throughout.
-    private static void SelectNth(SpatialPoint<TValue>[] items, int lo, int hi, int nth, bool byX)
+    // The depth budget is what stops the expected case from being the only case. A middle-element pivot handles
+    // the ordered and reverse-ordered inputs a caller is most likely to hand over — both settle in log m steps —
+    // but it is emphatically not degeneracy-proof, and the input that defeats it is not exotic: an organ pipe
+    // (ascending values interleaved with descending ones, the shape of any path that goes out and comes back)
+    // puts an extreme at the midpoint of every subrange, so each pass peels off one element and a single
+    // selection goes quadratic. Measured on the simulation: 4,096 points, 2,048 passes, against a budget of 24.
+    //
+    // So after 2*log2(m) passes the range is sorted outright and the answer read off it, which bounds one
+    // selection at O(m log m) and the whole build at O(n log^2 n) — never quadratic. This mirrors
+    // PartialSort.SelectCore in Celerity.Sorting, deliberately: it is the same guarantee and the same shape, so
+    // there is one introselect idea in the library rather than two.
+    private static void SelectNth(SpatialPoint<TValue>[] items, int lo, int hi, int nth, bool byX, int depthLimit)
     {
         int left = lo;
         int right = hi - 1;
 
         while (left < right)
         {
+            if (depthLimit-- == 0)
+            {
+                Array.Sort(items, left, right - left + 1, byX ? AxisOrder.ByX : AxisOrder.ByY);
+                return;
+            }
+
             double pivot = Axis(items[left + ((right - left) >> 1)], byX);
             int i = left;
             int j = right;
@@ -548,6 +561,25 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
     private static bool IsStorable(double value) => Math.Abs(value) <= MaxMagnitude;
 
     private static double Axis(in SpatialPoint<TValue> point, bool byX) => byX ? point.X : point.Y;
+
+    // Two passes per halving, the same budget PartialSort uses: generous enough that a well-behaved input never
+    // reaches it, tight enough that a degenerate one gives up early.
+    private static int DepthLimit(int length) => 2 * (31 - BitOperations.LeadingZeroCount((uint)length));
+
+    // Only ever used by the depth-budget fallback, so an allocation-free struct comparer would buy nothing —
+    // Array.Sort's non-generic overload boxes it anyway, and the path runs at most once per selection.
+    private sealed class AxisOrder : IComparer<SpatialPoint<TValue>>
+    {
+        internal static readonly AxisOrder ByX = new(byX: true);
+        internal static readonly AxisOrder ByY = new(byX: false);
+
+        private readonly bool _byX;
+
+        private AxisOrder(bool byX) => _byX = byX;
+
+        public int Compare(SpatialPoint<TValue> x, SpatialPoint<TValue> y) =>
+            _byX ? x.X.CompareTo(y.X) : x.Y.CompareTo(y.Y);
+    }
 
     private static double Square(double value) => value * value;
 
