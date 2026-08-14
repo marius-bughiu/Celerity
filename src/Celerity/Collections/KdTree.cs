@@ -49,6 +49,16 @@ namespace Celerity.Collections;
 /// coordinate system reaches); passing one beyond the same magnitude gives distances this type cannot order.
 /// </para>
 /// <para>
+/// The same arithmetic puts a <i>floor</i> under the domain, which is documented rather than enforced
+/// because no build-time check could see it: a separation below roughly <c>1e-162</c> squares to a value
+/// below the smallest subnormal and underflows to zero, so two points that close are indistinguishable from
+/// coincident ones — a zero radius will match them and a nearest query may order them arbitrarily. Points
+/// that genuinely coincide are unaffected and well defined; it is the nonzero-but-tinier-than-<c>1e-162</c>
+/// separation that cannot be represented. Comparing squared distances is what keeps every query off the
+/// square root, and paying a scaled or <c>hypot</c>-style comparison on the hot path to resolve separations
+/// no coordinate system produces is not a trade this type makes.
+/// </para>
+/// <para>
 /// <b>What the bound really is.</b> A k-d tree has no useful worst-case query bound — an adversarial point set
 /// forces every query to visit every node, and even on friendly data the classic <c>O(log n)</c> figure for
 /// nearest-neighbour is an average over uniformly distributed points, not a guarantee. What is guaranteed is

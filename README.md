@@ -735,7 +735,7 @@ An **extended local suite** answers the harder questions a single random-key ben
 | --- | --- | --- |
 | **Nearest neighbour** | 46.82 ms → 168 µs — **278x** | 317 µs → 168 µs — **1.9x** |
 | **Within a radius** (~0.1% of the domain) | 46.83 ms → 864 µs — **54x** | 2.90 ms → 857 µs — **3.4x** |
-| **10 nearest** | 79.51 ms → 927 µs — **86x** | *(baseline is already the smart one: a bounded max-heap scan)* |
+| **10 nearest** | 81.07 ms → 920 µs — **88x** | *(baseline is already the smart one: a bounded max-heap scan, heapsorted to the same ascending order)* |
 
 The naive scan is the array-and-a-loop the BCL leaves you with, and against it the tree is one to two orders of magnitude ahead. The second column is the honest one. A caller can sort the points by x, binary-search to the query and work outward, abandoning each direction once the horizontal gap alone exceeds the best distance so far — a real optimization, and effectively a **one-dimensional spatial index**. Against that, the tree wins by a small constant factor, because the second dimension is the only thing it adds.
 

@@ -494,7 +494,7 @@ function escapeHtml(s) {
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',       vs: 'long[] (naive range min)', ops: ['Mixed', 'RangeMin'] },
     // KdTree indexes the plane, which no ordered structure can. Two baselines per question: the plain scan
     // over every point, and the better hand-roll that orders them by x and works outward from the query.
-    { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',          vs: 'SpatialPoint[] (linear scan)', ops: ['NearestQuery', 'NearestSorted', 'RadiusQuery', 'RadiusSlab', 'KNearest', 'Build'] },
+    { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',          vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards', ops: ['NearestQuery', 'NearestSorted', 'RadiusQuery', 'RadiusSlab', 'KNearest', 'Build'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than

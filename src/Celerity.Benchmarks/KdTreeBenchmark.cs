@@ -38,7 +38,7 @@ using Celerity.Collections;
 //
 //     NearestQuery   46.82 ms -> 168 us   278x        NearestSorted   317 us -> 168 us   1.9x
 //     RadiusQuery    46.83 ms -> 864 us    54x        RadiusSlab     2.90 ms -> 857 us   3.4x
-//     KNearest       79.51 ms -> 927 us    86x        Build           508 us -> 14.6 ms  29x slower
+//     KNearest       81.07 ms -> 920 us    88x        Build           508 us -> 14.6 ms  29x slower
 //
 // At 1,000 points both sorted arms are a shade faster than the tree (77 us against 86 us, 53 us against 55 us):
 // the second dimension does not pay for its indirection until tens of thousands of points. That is the sort of
@@ -380,6 +380,16 @@ public class KdTreeBenchmark
                 buffer[0] = points[i];
                 SiftDown(0, count, qx, qy);
             }
+        }
+
+        // The heap alone answers "which ten", not "which ten, nearest first" — and CopyNearest promises the
+        // second. Leaving this out would have the baseline doing strictly less work than the arm it is compared
+        // against, so the same in-place heapsort runs here. It is ten elements against a scan of n, so it
+        // changes the ratio barely at all; that is not the point. The arms have to answer the same question.
+        for (int end = count - 1; end > 0; end--)
+        {
+            (buffer[0], buffer[end]) = (buffer[end], buffer[0]);
+            SiftDown(0, end, qx, qy);
         }
 
         return count;
