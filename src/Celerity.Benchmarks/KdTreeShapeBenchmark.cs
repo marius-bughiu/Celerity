@@ -5,11 +5,10 @@ using Celerity.Collections;
 // *better* hand-roll — points ordered by x, scanned outward from the query and abandoned in each direction once
 // the horizontal gap alone exceeds the best distance so far.
 //
-// That baseline is, in effect, a one-dimensional spatial index, and on uniformly scattered points it does well:
-// there is no structure in x for the tree's second dimension to exploit that the first does not already find,
-// so the gap narrows to a small constant factor. Uniform points are therefore the shape most favourable to the
-// baseline, and quoting only that ratio would understate the type as surely as a strawman baseline would
-// overstate it.
+// That baseline is, in effect, a one-dimensional spatial index: it finds the nearest neighbour by widening an
+// x-slab around the query until the horizontal gap alone rules out anything closer. Since it is a real
+// structure rather than a strawman, the gap between it and the tree is a small constant factor, and which way
+// that factor moves with the data's shape is not obvious enough to assert — hence this class.
 //
 // Real spatial data is not uniform — cities, users, sensors, sprites and trace points cluster — so this class
 // exists to change the distribution under a fixed comparison and see what the ratio does. It rides the extended
@@ -55,10 +54,14 @@ public class KdTreeShapeBenchmark
     /// <summary>The spatial distribution of the indexed points.</summary>
     public enum Shape
     {
-        /// <summary>Points scattered uniformly, the shape most favourable to the one-dimensional baseline.</summary>
+        /// <summary>Points scattered uniformly. Measured as the tree's <i>best</i> relative showing, at 1.77x.</summary>
         Uniform,
 
-        /// <summary>Points gathered into tight clusters, the shape real spatial data actually takes.</summary>
+        /// <summary>
+        /// Points gathered into tight clusters, the shape real spatial data actually takes. Measured as the
+        /// shape most favourable to the one-dimensional baseline, at 1.12x — the opposite of the expectation
+        /// this class was written to confirm; see the note on the class.
+        /// </summary>
         Clustered,
     }
 

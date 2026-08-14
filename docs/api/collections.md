@@ -4449,7 +4449,7 @@ Coordinates are `double` rather than a generic numeric type. `INumber<T>` is ava
 
 The points are permuted into one interleaved coordinate array (`x, y, x, y, …`) and a balanced binary tree is laid over them *implicitly*: the node for the index range `[lo, hi)` sits at its midpoint and its subtree is exactly `[lo, hi)`. Each level splits on the axis the level before it did not — x, then y, then x — and the build puts the median on that axis at the midpoint, so everything left of a node is at or before it on that axis and everything right is at or after.
 
-There are no nodes, no child pointers and no per-point heap object: the whole structure is one coordinate array and one payload array. Interleaving the coordinates rather than keeping an array per axis is what holds a node to a single cache line, since every node a query reaches needs both coordinates to measure a distance. The median is found by quickselect rather than a full sort, which is what keeps the build `O(n log n)` overall rather than `O(n log² n)`.
+There are no nodes, no child pointers and no per-point heap object: the whole structure is one coordinate array and one payload array. The coordinates are interleaved (`x, y, x, y, …`) rather than kept in an array per axis, which keeps a node contiguous; that was measured against the split layout and came out inside the run-to-run spread, so it is a simpler invariant rather than a speed win, and the field comment says so. The median is found by quickselect rather than a full sort, which keeps the build to an *expected* `O(n log n)` rather than the `O(n log² n)` a sort per level would cost — expected and not guaranteed, because the middle-element pivot handles ordered input well but is not adversary-proof.
 
 ### What the complexity really is
 
@@ -4472,7 +4472,7 @@ Builds the index. The sequence is read once and copied; when it implements `ICol
 **Throws:**
 
 - `ArgumentNullException` if `points` is `null`.
-- `ArgumentException` if a point has a `double.NaN` coordinate. A `NaN` coordinate has no position, so it can be neither ordered at build nor measured at query time; it is rejected rather than stored as a point no query could answer for. Infinities are accepted.
+- `ArgumentException` if a point has a coordinate that is **not finite**, or that exceeds **`1e153`** in magnitude. A `NaN` coordinate has no position, so it can be neither ordered at build nor measured at query time; an infinite one measures `NaN` against *itself* (`Infinity - Infinity`), so a stored infinite point could not be found even by a query for its own coordinates. The magnitude bound exists because every query compares *squared* distances: past ~`1e153` a squared separation overflows to infinity, at which point two far-apart points compare equal rather than merely losing precision. All three are rejected at build rather than stored as points no query could answer for.
 
 ### Methods and properties
 
@@ -4503,7 +4503,7 @@ Builds the index. The sequence is read once and copied; when it implements `ICol
 - **Radius and distance bounds are inclusive.** A point exactly `r` away is within radius `r`, and `CountWithin(x, y, 0)` counts the points exactly at `(x, y)`.
 - **The box is closed** on all four edges, so a degenerate box with `minX == maxX` matches the points on that line.
 - **Ties are unspecified.** Which of several equidistant points a nearest query returns, and the relative order of equidistant results, are not part of the contract. The *distances* are.
-- **A `NaN` query coordinate matches nothing**: the nearest queries return `false` and the range queries return empty. Stored coordinates can never be `NaN`.
+- **A `NaN` query coordinate matches nothing**: the nearest queries return `false` and the range queries return empty. Stored coordinates can never be `NaN`, infinite, or past the magnitude bound. *Query* coordinates are not range-checked — that would be a per-query cost for a case no real coordinate system reaches — so a query beyond the same magnitude yields distances the type cannot order.
 - **Duplicate coordinates stay distinct.** Two points at the same position are two entries and every query reports both.
 - **Match order is unspecified** for the radius and box queries; only `GetNearest` and `CopyNearest` order their results, by ascending distance.
 
@@ -4529,7 +4529,7 @@ Do not reach for it when the points **change constantly** — it is build-once, 
 
 ### The documented BCL-beating workload
 
-Against the array-and-a-loop the BCL leaves you with, at 100,000 uniformly scattered points and 1,000 queries, the nearest-neighbour query is **two orders of magnitude** faster and the radius query is **56x** faster — the numbers, and the important caveat beside them, are in the README's [spatial index section](../../README.md#spatial-index).
+Against the array-and-a-loop the BCL leaves you with, at 100,000 uniformly scattered points and 1,000 queries, the nearest-neighbour query is **two orders of magnitude** faster and the radius query is **54x** faster — the numbers, and the important caveat beside them, are in the README's [spatial index section](../../README.md#spatial-index).
 
 The caveat is that a **hand-rolled** partial index does much better than the naive scan: order the points by x, binary-search to the query's x and work outward, abandoning each direction once the horizontal gap alone exceeds the best distance so far. That is a real optimization and effectively a one-dimensional spatial index, and against it the tree's margin is a small constant factor rather than two orders of magnitude. Both baselines are measured, and the second is the one to judge the type by.
 
@@ -4556,7 +4556,7 @@ foreach (SpatialPoint<string> depot in depots.GetNearest(52.20, -2.00, 3))
     Console.WriteLine(depot.Value);                    // Birmingham, Manchester, London
 
 // Everything inside a delivery radius, counted without allocating.
-Console.WriteLine(depots.CountWithin(53.00, -2.00, 1.5));   // 1
+Console.WriteLine(depots.CountWithin(53.00, -2.00, 1.5));   // 2 — Manchester and Birmingham
 
 // Everything inside the current map viewport, into a buffer you own.
 var visible = new SpatialPoint<string>[4];

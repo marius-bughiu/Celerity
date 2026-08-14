@@ -612,7 +612,7 @@ foreach (var d in depots.GetNearest(52.20, -2.00, 3))
     Console.WriteLine(d.Value);                          // Birmingham, Manchester, London
 
 // Inside a delivery radius, and inside the map viewport — neither allocates.
-Console.WriteLine(depots.CountWithin(53.00, -2.00, 1.5));                  // 1
+Console.WriteLine(depots.CountWithin(53.00, -2.00, 1.5));                  // 2 — Manchester and Birmingham
 var visible = new SpatialPoint<string>[4];
 Console.WriteLine(depots.CopyInRectangle(51.0, -3.0, 54.0, 0.0, visible)); // 3
 ```

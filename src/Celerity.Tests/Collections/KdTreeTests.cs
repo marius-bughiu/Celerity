@@ -52,14 +52,46 @@ public class KdTreeTests
         Assert.Equal("e", nearest.Value);
     }
 
-    [Fact]
-    public void Constructor_ShouldAcceptInfiniteCoordinates_BecauseOnlyNaNHasNoPosition()
+    [Theory]
+    [InlineData(double.PositiveInfinity, 0)]
+    [InlineData(double.NegativeInfinity, 0)]
+    [InlineData(0, double.PositiveInfinity)]
+    public void Constructor_ShouldThrowArgumentException_WhenACoordinateIsInfinite(double x, double y)
     {
-        var tree = new KdTree<string>([new(0, 0, "origin"), new(double.PositiveInfinity, 0, "far")]);
+        // An infinite coordinate measures NaN against itself (Infinity - Infinity), so a stored infinite point
+        // could not be found even by a query for its own coordinates. Rejecting beats storing that.
+        var points = new SpatialPoint<int>[] { new(1, 1, 1), new(x, y, 2) };
 
-        Assert.Equal(2, tree.Count);
-        Assert.True(tree.TryFindNearest(1, 0, out SpatialPoint<string> nearest));
-        Assert.Equal("origin", nearest.Value);
+        Assert.Throws<ArgumentException>(() => new KdTree<int>(points));
+    }
+
+    [Theory]
+    [InlineData(1e154, 0)]
+    [InlineData(-1e154, 0)]
+    [InlineData(0, 1e200)]
+    public void Constructor_ShouldThrowArgumentException_WhenACoordinateIsTooLargeToSquare(double x, double y)
+    {
+        // Past ~1e153 a squared separation overflows to Infinity, at which point two far-apart points compare
+        // equal and a radius that also overflows reports them as matches. The bound is what keeps every
+        // comparison in this type meaningful, so it is enforced rather than documented and hoped for.
+        var points = new SpatialPoint<int>[] { new(1, 1, 1), new(x, y, 2) };
+
+        Assert.Throws<ArgumentException>(() => new KdTree<int>(points));
+    }
+
+    [Fact]
+    public void Constructor_ShouldAcceptCoordinatesAtTheMagnitudeLimit_WhereSquaringStillHolds()
+    {
+        var tree = new KdTree<string>([new(-1e153, -1e153, "min"), new(1e153, 1e153, "max"), new(0, 0, "origin")]);
+
+        Assert.Equal(3, tree.Count);
+        Assert.True(tree.TryFindNearest(1e153, 1e153, out SpatialPoint<string> nearest));
+        Assert.Equal("max", nearest.Value);
+
+        // The whole point of the bound: the far corner is genuinely outside a large radius and is reported so,
+        // rather than both distances collapsing to Infinity and comparing equal.
+        Assert.Equal(1, tree.CountWithin(1e153, 1e153, 1e152));
+        Assert.Equal(3, tree.CountWithin(0, 0, 1e154));
     }
 
     [Fact]

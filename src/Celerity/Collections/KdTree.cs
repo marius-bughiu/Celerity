@@ -33,7 +33,17 @@ namespace Celerity.Collections;
 /// on that axis and everything right is at or after. There are no nodes, no child pointers and no per-point
 /// heap object; the whole structure is one interleaved coordinate array and one payload array. The median
 /// is found by quickselect rather than a full
-/// sort, which is what keeps the build <c>O(n log n)</c> overall rather than <c>O(n log&#178; n)</c>.
+/// sort, which is what keeps the build to an <i>expected</i> <c>O(n log n)</c> rather than the
+/// <c>O(n log&#178; n)</c> a sort per level would cost. Expected, not guaranteed: the pivot is the middle
+/// element, which handles ordered and reverse-ordered input well but is not adversary-proof, so a crafted
+/// arrangement can drive one selection quadratic.
+/// </para>
+/// <para>
+/// <b>The coordinate domain is bounded.</b> Every query compares <i>squared</i> distances, so the constructor
+/// rejects a coordinate that is not finite or exceeds <c>1e153</c> in magnitude — beyond that a squared
+/// separation overflows to infinity, and two far-apart points would compare equal instead of merely losing
+/// precision. Query coordinates are not checked (that would be a per-query cost for a case no real
+/// coordinate system reaches); passing one beyond the same magnitude gives distances this type cannot order.
 /// </para>
 /// <para>
 /// <b>What the bound really is.</b> A k-d tree has no useful worst-case query bound — an adversarial point set
@@ -87,8 +97,9 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// A query coordinate of <see cref="double.NaN"/> has no position and matches nothing: the nearest queries
-/// report no result and the range queries report an empty one. Stored coordinates cannot be
-/// <see cref="double.NaN"/> — the constructor rejects them.
+/// report no result and the range queries report an empty one. A stored coordinate can never be
+/// <see cref="double.NaN"/> or infinite — the constructor rejects both, along with any magnitude past the
+/// bound described above.
 /// </para>
 /// </remarks>
 public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
@@ -113,7 +124,10 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
     /// <summary>Builds a tree over <paramref name="points"/>.</summary>
     /// <param name="points">The points to index. The sequence is read once and copied.</param>
     /// <exception cref="ArgumentNullException"><paramref name="points"/> is <c>null</c>.</exception>
-    /// <exception cref="ArgumentException">A point has a <see cref="double.NaN"/> coordinate.</exception>
+    /// <exception cref="ArgumentException">
+    /// A point has a coordinate that is not finite, or exceeds <c>1e153</c> in magnitude — the bound past which
+    /// a squared distance overflows and the queries can no longer order one distance against another.
+    /// </exception>
     public KdTree(IEnumerable<SpatialPoint<TValue>> points)
     {
         ArgumentNullException.ThrowIfNull(points);
@@ -435,8 +449,11 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
     {
         for (int i = 0; i < items.Length; i++)
         {
-            if (double.IsNaN(items[i].X) || double.IsNaN(items[i].Y))
-                throw new ArgumentException("A point's coordinates must not be NaN.", paramName);
+            if (!IsStorable(items[i].X) || !IsStorable(items[i].Y))
+            {
+                throw new ArgumentException(
+                    "A point's coordinates must be finite and at most 1e153 in magnitude.", paramName);
+            }
         }
 
         Partition(items, 0, items.Length, depth: 0);
@@ -468,9 +485,16 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
 
     // Quickselect: leaves items[nth] holding the element that a full sort of [lo, hi) on this axis would put
     // there, everything before it at or below it on that axis and everything after at or above. Selecting is
-    // O(hi - lo) where sorting would be O(m log m), which is the difference between an O(n log n) build and an
-    // O(n log^2 n) one. The midpoint pivot is the one that degrades gracefully on the already-ordered input a
-    // caller is most likely to hand over.
+    // O(hi - lo) *expected* where sorting would be O(m log m) guaranteed, which is the difference between an
+    // expected-O(n log n) build and an O(n log^2 n) one.
+    //
+    // Expected, not guaranteed, and worth being exact about: the pivot is the middle element, which is the
+    // choice that handles the ordered and reverse-ordered inputs a caller is most likely to hand over, but it
+    // is not adversary-proof — an arrangement crafted against it can drive a single selection quadratic. The
+    // fix would be an introselect fallback to median-of-medians after too many unbalanced partitions; it is
+    // deliberately not here, because it costs real complexity in the one method most likely to harbour an
+    // off-by-one, to bound a case that needs an attacker who both chooses the point set and knows the pivot
+    // rule. What is not acceptable is claiming the guarantee, so the docs say expected throughout.
     private static void SelectNth(SpatialPoint<TValue>[] items, int lo, int hi, int nth, bool byX)
     {
         int left = lo;
@@ -508,6 +532,20 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
                 return;
         }
     }
+
+    // Every query compares *squared* distances, so a coordinate large enough for a squared separation to
+    // overflow to Infinity would break the comparisons rather than merely lose precision: two far-apart points
+    // would both measure Infinity, compare equal, and a radius that also squares to Infinity would report them
+    // as matches. Bounding the stored magnitude removes that whole class of answer. The largest separation
+    // between two stored points on one axis is 2 * MaxMagnitude, so the largest squared distance is
+    // 8 * MaxMagnitude^2 = 8e306, comfortably inside double.MaxValue (~1.8e308).
+    //
+    // Non-finite coordinates fail the same test, which is the point: NaN has no position to order or measure,
+    // and an infinity measures NaN against itself (Infinity - Infinity), so a stored infinite point could not
+    // even be found by a query for its own coordinates.
+    private const double MaxMagnitude = 1e153;
+
+    private static bool IsStorable(double value) => Math.Abs(value) <= MaxMagnitude;
 
     private static double Axis(in SpatialPoint<TValue> point, bool byX) => byX ? point.X : point.Y;
 

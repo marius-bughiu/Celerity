@@ -14,8 +14,10 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// A coordinate of <see cref="double.NaN"/> has no position, so it cannot be ordered, indexed, or measured
-/// against. <see cref="KdTree{TValue}"/> rejects such a point when it is built rather than storing one that no
-/// query could answer for.
+/// against, and an infinite one measures <see cref="double.NaN"/> against itself. <see cref="KdTree{TValue}"/>
+/// rejects both when it is built, rather than storing a point no query could answer for — along with any
+/// coordinate past <c>1e153</c> in magnitude, beyond which a squared distance overflows and two far-apart
+/// points stop comparing as far apart.
 /// </para>
 /// </remarks>
 public readonly struct SpatialPoint<TValue>
@@ -25,8 +27,8 @@ public readonly struct SpatialPoint<TValue>
     /// <param name="y">The vertical coordinate.</param>
     /// <param name="value">The payload to carry. May be <c>null</c> for a reference type.</param>
     /// <remarks>
-    /// The coordinates are not validated here. <see cref="KdTree{TValue}"/> rejects a <see cref="double.NaN"/>
-    /// coordinate when it is built, which is the point at which one first has to be ordered.
+    /// The coordinates are not validated here. <see cref="KdTree{TValue}"/> rejects a coordinate that is not
+    /// finite, or too large to square, when it is built — the point at which one first has to be ordered.
     /// </remarks>
     public SpatialPoint(double x, double y, TValue? value)
     {
