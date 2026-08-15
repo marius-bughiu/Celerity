@@ -737,6 +737,46 @@ void Check(bool condition, string message)
     Check(sensors.TryFindNearest(4, 4, out var sensor) && sensor.Value == 2, "KdTree value-typed payload");
 }
 
+// IntervalTree — the build-once stabbing/overlap index. What is ILC-specific here is the query core: every
+// query shares one traversal that is generic over a private struct visitor, so each query shape is a separate
+// specialization the compiler has to produce ahead of time, over a struct comparer that is itself a generic
+// type argument. Exercise a value-typed key with the default order, a reference-typed key with a hand-written
+// comparer, both query shapes across all three tiers, and the struct enumerator.
+{
+    var bookings = new IntervalTree<int, string>(new[]
+    {
+        new Interval<int, string>(0, 100, "span"),
+        new Interval<int, string>(10, 20, "first"),
+        new Interval<int, string>(30, 40, "second"),
+    });
+
+    Check(bookings.Count == 3 && bookings[0].Start == 0, "IntervalTree build orders entries by start");
+    Check(bookings.ContainsPoint(15) && !bookings.ContainsPoint(100), "IntervalTree point query is half-open");
+    Check(bookings.CountContaining(15) == 2 && bookings.CountOverlapping(30, 31) == 2, "IntervalTree counts");
+    // [20, 30) meets [10, 20) and [30, 40) at their seams, so only the spanning interval overlaps it.
+    Check(bookings.CountOverlapping(20, 30) == 1 && bookings.CountOverlapping(19, 21) == 2,
+        "IntervalTree window query is half-open at both seams");
+    Check(!bookings.Overlaps(200, 300) && bookings.Overlaps(99, 300), "IntervalTree window query");
+
+    var buffer = new Interval<int, string>[4];
+    Check(bookings.CopyOverlapping(0, 100, buffer) == 3 && buffer[1].Value == "first", "IntervalTree copy tier");
+    Check(bookings.GetContaining(35)[0].Value == "span", "IntervalTree convenience tier");
+
+    int entries = 0;
+    foreach (var interval in bookings) entries++;
+    Check(entries == 3, "IntervalTree enumerates every entry");
+
+    // A reference-typed key under a hand-written struct comparer, so the traversal specializes for something
+    // other than DefaultComparer<int>.
+    var owners = new IntervalTree<string, int, DescendingStrings>(new[]
+    {
+        new Interval<string, int>("m", "d", 1),
+        new Interval<string, int>("c", "a", 2),
+    });
+
+    Check(owners.CountContaining("f") == 1 && owners.Count == 2, "IntervalTree custom comparer instantiation");
+}
+
 // BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
 // the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
 // IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the
@@ -1956,6 +1996,13 @@ return 1;
 internal readonly struct DescendingIntComparer : IComparer<int>
 {
     public int Compare(int x, int y) => y.CompareTo(x);
+}
+
+// A hand-written struct comparer over a reference-typed key for the IntervalTree instantiation above, so its
+// traversal is specialized for a key type ILC has no value-type layout to work from.
+internal readonly struct DescendingStrings : IComparer<string>
+{
+    public int Compare(string? x, string? y) => string.CompareOrdinal(y, x);
 }
 
 // A hand-written monoid for the SegmentTree instantiation above: a reference-typed, non-commutative fold, so

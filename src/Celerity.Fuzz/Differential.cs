@@ -56,6 +56,7 @@ internal static class Differential
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("SegmentTree", SegmentTreeCase),
         ("KdTree", KdTreeCase),
+        ("IntervalTree", IntervalTreeCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -1352,6 +1353,78 @@ internal static class Differential
         public int Combine(int left, int right) => left != 0 ? left : right;
     }
 
+
+    // ---- interval tree -------------------------------------------------------
+
+    // The oracle is the linear scan the type replaces: filter every interval by the overlap predicate. What
+    // is on trial is the pruning, which is invisible to a fixture — a bound that skips too much drops matches
+    // a small example is unlikely to hold, and one that skips too little only costs time. The generated shape
+    // therefore mixes long spans (which no bound over the sorted starts can constrain), tight clusters (which
+    // pile many matches on one point), empty intervals (which must never match) and duplicates, and the query
+    // domain runs past both ends of the interval domain so the fully-pruned cases are reached too.
+    private static void IntervalTreeCase(Random rng)
+    {
+        int domain = rng.Next(2, 120);
+        int count = rng.Next(0, 200);
+
+        var intervals = new Interval<int, int>[count];
+        for (int i = 0; i < count; i++)
+        {
+            int start = rng.Next(0, domain);
+            int length = rng.Next(0, 10) switch
+            {
+                0 => 0,
+                < 4 => rng.Next(0, domain),
+                _ => rng.Next(0, 5),
+            };
+
+            intervals[i] = new Interval<int, int>(start, start + length, i);
+        }
+
+        var sut = new IntervalTree<int, int>(intervals);
+        Check(sut.Count == count, "IntervalTree Count disagreed");
+
+        for (int i = 1; i < sut.Count; i++)
+            Check(sut[i - 1].Start <= sut[i].Start, "IntervalTree entries are not in start order");
+
+        int queries = rng.Next(1, 60);
+        for (int q = 0; q < queries; q++)
+        {
+            int point = rng.Next(-5, domain + 5);
+            CheckIntervalMatches(sut.GetContaining(point), intervals, point, point, isPoint: true);
+            Check(sut.CountContaining(point) == sut.GetContaining(point).Length, "CountContaining disagreed");
+            Check(sut.ContainsPoint(point) == (sut.GetContaining(point).Length > 0), "ContainsPoint disagreed");
+
+            int start = rng.Next(-5, domain + 5);
+            int end = start + rng.Next(0, domain);
+            CheckIntervalMatches(sut.GetOverlapping(start, end), intervals, start, end, isPoint: false);
+            Check(sut.CountOverlapping(start, end) == sut.GetOverlapping(start, end).Length, "CountOverlapping disagreed");
+            Check(sut.Overlaps(start, end) == (sut.GetOverlapping(start, end).Length > 0), "Overlaps disagreed");
+
+            // The allocation-free tier has to agree with the convenience one it is the fast path for.
+            var buffer = new Interval<int, int>[intervals.Length];
+            Check(sut.CopyOverlapping(start, end, buffer) == sut.GetOverlapping(start, end).Length,
+                "CopyOverlapping disagreed with GetOverlapping");
+        }
+    }
+
+    private static void CheckIntervalMatches(Interval<int, int>[] actual, Interval<int, int>[] oracle, int start, int end, bool isPoint)
+    {
+        var expected = new HashSet<int>();
+        foreach (var interval in oracle)
+        {
+            bool matches = isPoint
+                ? interval.Start <= start && start < interval.End
+                : start < end && interval.Start < end && start < interval.End && interval.Start < interval.End;
+
+            if (matches)
+                expected.Add(interval.Value);
+        }
+
+        Check(actual.Length == expected.Count, $"interval match count disagreed for [{start}, {end})");
+        foreach (var match in actual)
+            Check(expected.Contains(match.Value), $"unexpected match {match.Value} for [{start}, {end})");
+    }
 
     // ---- sorted-span set algebra --------------------------------------------
 
