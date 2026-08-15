@@ -12,7 +12,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate, backed by a test that reads the shipped `.xml` back and asserts an entry for every public type. A malformed comment is not truncated by the doc writer — the whole member is dropped — so a warning was too weak a signal for something that silently empties a type's documentation. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
 
-- **A CI guard on the package-validation baseline.** The binary-compatibility gate compares each package against a baseline version that is bumped by hand after every release, and the bump was skipped for v2.6.0 — so every package spent the cycle validated against its 2.5.0 predecessor, and `Celerity.Sorting` against nothing at all. The new `package-baseline` job checks the baseline against what is actually published on NuGet.org, on every PR. No effect on the shipped packages; it makes the guard that protects them harder to lose. Closes [#364](https://github.com/marius-bughiu/Celerity/issues/364).
+- **A CI guard on the package-validation baseline.** The binary-compatibility gate compares each package against a hand-bumped baseline version, and nothing checked that the bump had happened — it was skipped for v2.6.0. The new `package-baseline` job verifies the baseline against what is published on NuGet.org, on every PR. No change to the shipped packages. Closes [#364](https://github.com/marius-bughiu/Celerity/issues/364).
 
 ### Changed
 
