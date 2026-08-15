@@ -217,7 +217,15 @@ The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as 
 
 Every `dotnet pack` validates each package against its last published version and **fails the build on any breaking API change**, across all three TFMs. Since the NuGet push is irreversible, this guard has to run before it — so it runs on every release build, and locally whenever you pack.
 
-The baseline is one property, `<CelerityPackageValidationBaseline>` in `src/Directory.Build.props`, shared by every package that has shipped at least once — all seven today, now that `Celerity.Sorting` has had its first release and come off the escape hatch below. **Bump it to X.Y.Z in a follow-up commit, once vX.Y.Z is published and indexed on NuGet.org** — not in the release commit itself, because the value becomes a `PackageDownload` and a version that is not published yet fails the release build's restore. This is the part that rots: a stale baseline keeps validating against an older surface, so a break introduced after it slips through.
+The baseline is one property, `<CelerityPackageValidationBaseline>` in `src/Directory.Build.props`, shared by every package that has shipped at least once — all seven today, now that `Celerity.Sorting` has had its first release and come off the escape hatch below. **Bump it to X.Y.Z in a follow-up commit, once vX.Y.Z is published and indexed on NuGet.org** — not in the release commit itself, because the value becomes a `PackageDownload` and a version that is not published yet fails the release build's restore.
+
+This is the part that rots: a stale baseline keeps validating against an older surface, so a break introduced after it slips through — and it did, for the whole v2.6.0 cycle. Since [#364](https://github.com/marius-bughiu/Celerity/issues/364) the `package-baseline` CI job checks it on every PR, comparing the property against what NuGet.org has actually published rather than against the newest tag, so the bump comes due exactly when the release is indexed. You can run it yourself:
+
+```bash
+node scripts/check_package_baseline.js
+```
+
+If it fails, the message names the value to set. See [docs/testing.md](docs/testing.md#the-baseline-guard).
 
 Two situations need a deliberate decision rather than a workaround:
 

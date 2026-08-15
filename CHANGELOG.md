@@ -14,6 +14,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **CS1570 (badly formed XML in a doc comment) is now a build error** in all seven shipping packages, alongside the existing CS1591 gate, backed by a test that reads the shipped `.xml` back and asserts an entry for every public type. A malformed comment is not truncated by the doc writer — the whole member is dropped — so a warning was too weak a signal for something that silently empties a type's documentation. Closes [#356](https://github.com/marius-bughiu/Celerity/issues/356).
 
+- **A CI guard on the package-validation baseline.** The binary-compatibility gate compares each package against a hand-bumped baseline version, and nothing checked that the bump had happened — it was skipped for v2.6.0. The new `package-baseline` job verifies the baseline against what is published on NuGet.org, on every PR. No change to the shipped packages. Closes [#364](https://github.com/marius-bughiu/Celerity/issues/364).
+
 ### Changed
 
 - **Source-breaking in one narrow case:** a call overloaded on both `ISet<T>` and `IReadOnlySet<T>` with no more-specific candidate now needs a cast at the call site — e.g. `Assert.Contains(x, celeritySet)` becomes `Assert.Contains(x, (IReadOnlySet<int>)celeritySet)`, or `Assert.True(celeritySet.Contains(x))`. BCL `HashSet<T>` avoids this only because such libraries ship a concrete `HashSet<T>` overload to break the tie. Binary compatibility is unaffected. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
