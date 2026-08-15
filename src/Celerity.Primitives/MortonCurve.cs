@@ -48,7 +48,9 @@ namespace Celerity.Primitives;
 /// (<see cref="MaxCoordinate3D"/>) and produces a 63-bit code; bit 63 is always clear.
 /// </para>
 /// <para>
-/// Every method is static, allocation-free, branch-free and AOT-safe. The implementation is the portable
+/// Every method is static, allocation-free and AOT-safe, and the spread / compact arithmetic itself is
+/// branch-free — <see cref="Encode3D"/> adds the three range checks its domain guard needs, and nothing
+/// else branches. The implementation is the portable
 /// magic-number bit-spread rather than the x86 <c>BMI2</c> <c>PDEP</c> / <c>PEXT</c> pair: see the
 /// <see href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/utilities.md">API reference</see>
 /// for the measurement and the reasoning behind that choice.

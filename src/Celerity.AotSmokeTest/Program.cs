@@ -1581,7 +1581,7 @@ void Check(bool condition, string message)
 }
 
 // MortonCurve / HilbertCurve (#369) — the space-filling-curve codecs. Forces the magic-number bit spread
-// and Skilling's stackalloc-backed transpose transform to compile under Native AOT, and confirms on the
+// and Skilling's branchless, register-resident transpose transform to compile under Native AOT, and confirms on the
 // native runtime that both curves round-trip in 2-D and 3-D, that the 3-D forms leave the top bit clear,
 // that the domain guard still throws, and that Hilbert's adjacency guarantee holds.
 {

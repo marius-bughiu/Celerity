@@ -741,7 +741,9 @@ The benchmark arm stays so the decision remains a measurement rather than an ass
 
 ### The measured payoff
 
-A codec nobody builds on does not earn a place in the library, so `SpaceFillingCurveLocalityBenchmark` measures the thing a curve is actually *for*: laying spatially-near points near each other in memory. It buckets a point set into a uniform cell grid, then walks an aligned block of cells summing the weights of each cell's points and its eight neighbours. Four arms run that identical sweep over identical indirection; the **only** difference is the order the point records are stored in.
+A codec nobody builds on does not earn a place in the library, so `SpaceFillingCurveLocalityBenchmark` measures the thing a curve is actually *for*: laying spatially-near points near each other in memory. It buckets a point set into a uniform cell grid, then runs a batch of 20,000 **randomly located** neighbourhood queries, each summing the weights of the points in one cell and its eight neighbours. Four arms run that identical batch over identical indirection; the **only** difference is the order the point records are stored in.
+
+The queries are random, and that is load-bearing. The first version of this benchmark swept one aligned block of cells and measured *no difference at all* between the four layouts — the block touched a small enough slice of the point set to stay resident in L2 whatever order it was stored in, so there were no misses left for a better layout to save.
 
 | Point layout | 2 M points (32 MB) | 100 k points (1.6 MB, in cache) |
 | --- | ---: | ---: |
@@ -777,4 +779,4 @@ var (nx, ny) = HilbertCurve.Decode2D(index + 1);   // always one cell away, alon
 - **Orientation.** The Hilbert curve starts at the origin and ends at `(2^32 - 1, 0)` in 2-D — the conventional orientation, and the traversal the textbook `d2xy` produces, which the tests pin cell by cell over the first sixteen indices.
 - **Morton's axis order.** `Encode2D` puts `x` on the even bit positions and `y` on the odd ones; `Encode3D` assigns bit position modulo three to `x`, `y`, `z` in that order. Swapping the arguments transposes the curve, which is harmless but changes every key you have already stored.
 - **Locality is not distance.** Neither curve promises that nearby indices are the *nearest* points, only that the mapping keeps regions together. Two points either side of a top-level boundary can be adjacent in space and far apart in index — this is a property of every space-filling curve, and Hilbert's adjacency guarantee runs the other way (index-adjacent implies space-adjacent, not the converse).
-- Every method is static, allocation-free and AOT-safe. Hilbert's transform runs in a two- or three-word `stackalloc` scratch.
+- Every method is static, allocation-free and AOT-safe. Hilbert's transform runs entirely in local scalars, with each per-level decision routed through `Branchless.Select` — the deciding bit is one bit of a coordinate, so the branch would be a coin flip the predictor cannot learn.
