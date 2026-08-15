@@ -395,6 +395,7 @@
     { key: 'StringInternTable',   title: 'StringInternTable',                     vs: 'HashSet<string> / Dictionary<string, string>' },
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' },
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',    vs: 'long[] (naive range min)' },
+    { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',       vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards' },
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                  vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },
