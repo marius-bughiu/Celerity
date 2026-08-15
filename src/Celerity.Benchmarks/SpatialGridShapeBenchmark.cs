@@ -19,8 +19,8 @@ using Celerity.Collections;
 //     Wide        ~10 points per cell, ~25 matches    Dictionary  6.65 ms   SpatialGrid  5.92 ms   1.12x
 //     Clustered   200 blobs, hundreds per cell        Dictionary 12.37 ms   SpatialGrid 21.38 ms   0.58x
 //
-// The wide shape is not a pathological one — cell size still equals the query radius, which is the tuning rule
-// the type documents. It is simply a query that answers with twenty-five points instead of two, and at that
+// The wide shape is not a pathological one — a 100-unit cell against a 90-unit radius, still sized just above
+// it, which is the tuning rule the type documents. It is simply a query that answers with twenty-five points instead of two, and at that
 // point both structures are memory-bound on the candidates' coordinates and neither layout can pull ahead.
 // That is the honest ceiling on this type's time advantage.
 //
@@ -84,8 +84,8 @@ public class SpatialGridShapeBenchmark
         Tight,
 
         /// <summary>
-        /// About ten points per cell and twenty-five matches per query. Still a tuned grid (cell size equals
-        /// the query radius); the candidates simply dominate. Measured at 1.12x — the honest ceiling.
+        /// About ten points per cell and twenty-five matches per query. Still a tuned grid — a 100-unit cell
+        /// against a 90-unit radius; the candidates simply dominate. Measured at 1.12x — the honest ceiling.
         /// </summary>
         Wide,
 
