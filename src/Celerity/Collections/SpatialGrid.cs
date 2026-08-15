@@ -125,6 +125,16 @@ namespace Celerity.Collections;
 /// far apart. <see cref="Add"/> and <see cref="Move"/> reject anything outside it.
 /// </para>
 /// <para>
+/// The same arithmetic puts a <i>floor</i> under the domain, documented rather than enforced because no check
+/// could see it, and identical to the one <see cref="KdTree{TValue}"/> carries: a separation below roughly
+/// <c>1e-162</c> squares below the smallest subnormal and underflows to zero, so two points that close are
+/// indistinguishable from coincident ones — a zero radius matches them and a nearest query may order them
+/// arbitrarily. Points that genuinely coincide are unaffected and well defined; it is the
+/// nonzero-but-tinier-than-<c>1e-162</c> separation that cannot be represented. Comparing squared distances is
+/// what keeps every query off the square root, and paying a scaled comparison on the hot path to resolve
+/// separations no coordinate system produces is not a trade this type makes either.
+/// </para>
+/// <para>
 /// <b>Query coordinates are not range-checked</b>, exactly as on <see cref="KdTree{TValue}"/>: that would be a
 /// per-query cost for a case no real coordinate system reaches. Passing one beyond the same magnitude does not
 /// throw — it yields distances this type cannot order, so the answer is meaningless rather than merely
