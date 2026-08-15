@@ -4665,14 +4665,15 @@ Creates an empty grid over the world rectangle `[minX, maxX] × [minY, maxY]`, d
 **Throws:**
 
 - `ArgumentException` if a handle does not address a live entry of this grid, or if a box's upper edge precedes its lower edge.
-- `ArgumentOutOfRangeException` if a coordinate is not finite or exceeds `1e153` in magnitude, if a radius or distance bound is negative or `NaN`, or if `destinationIndex` is outside `[0, destination.Length]`.
+- `ArgumentOutOfRangeException` if a coordinate passed to `Add` or `Move` is not finite or exceeds `1e153` in magnitude, if a radius or distance bound is negative or `NaN`, or if `destinationIndex` is outside `[0, destination.Length]`. **Query** coordinates are not range-checked — see below.
 - `ArgumentNullException` if a destination buffer is `null`.
 
 ### Boundaries, ties and `NaN`
 
 - **Radius, distance bounds and the box are inclusive**, matching `KdTree`: a point exactly `r` away is within radius `r`, and a degenerate box matches the points on its line.
-- **Coordinates must be finite and at most `1e153` in magnitude** — the same domain `SpatialPoint<TValue>` documents, and for the same reason: every query compares *squared* distances, and past that bound a squared separation overflows and two far-apart points stop comparing as far apart.
-- **A `NaN` query coordinate matches nothing**: the nearest queries return `false` and the range queries return empty.
+- **Stored coordinates must be finite and at most `1e153` in magnitude** — the same domain `SpatialPoint<TValue>` documents, and for the same reason: every query compares *squared* distances, and past that bound a squared separation overflows and two far-apart points stop comparing as far apart. `Add` and `Move` reject anything outside it.
+- **Query coordinates are *not* range-checked**, exactly as on [`KdTree<TValue>`](#kdtreetvalue) — that would be a per-query cost for a case no real coordinate system reaches. One beyond the same magnitude does not throw; it yields distances the type cannot order, so the answer is meaningless rather than merely imprecise.
+- **A `NaN` query coordinate matches nothing**: the nearest queries return `false` and the range queries return empty. That is the one query coordinate that *is* special-cased.
 - **Ties are unspecified.** Which of several equidistant points a nearest query returns is not part of the contract; the *distance* is.
 - **Duplicate coordinates stay distinct.** Two points at the same position are two entries with two handles, and every query reports both.
 - **Match order is unspecified** for the radius and box queries.

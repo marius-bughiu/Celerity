@@ -119,10 +119,17 @@ namespace Celerity.Collections;
 /// to the free list for reuse, but keeps it.
 /// </para>
 /// <para>
-/// A coordinate must be finite and at most <c>1e153</c> in magnitude, the same domain
+/// A <i>stored</i> coordinate must be finite and at most <c>1e153</c> in magnitude — the same domain
 /// <see cref="SpatialPoint{TValue}"/> documents and for the same reason: every query compares <i>squared</i>
 /// distances, and beyond that bound a squared separation overflows and two far-apart points stop comparing as
-/// far apart. A query coordinate of <see cref="double.NaN"/> has no position and matches nothing.
+/// far apart. <see cref="Add"/> and <see cref="Move"/> reject anything outside it.
+/// </para>
+/// <para>
+/// <b>Query coordinates are not range-checked</b>, exactly as on <see cref="KdTree{TValue}"/>: that would be a
+/// per-query cost for a case no real coordinate system reaches. Passing one beyond the same magnitude does not
+/// throw — it yields distances this type cannot order, so the answer is meaningless rather than merely
+/// imprecise. The one query coordinate that <i>is</i> special-cased is <see cref="double.NaN"/>, which has no
+/// position and matches nothing: the nearest queries report no result and the range queries an empty one.
 /// </para>
 /// <para>
 /// Enumeration yields every live entry in an unspecified order and is invalidated by <see cref="Add"/>,
