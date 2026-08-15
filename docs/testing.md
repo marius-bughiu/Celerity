@@ -141,10 +141,12 @@ The `package-baseline` job asserts one invariant:
 
 Stating it against what NuGet.org has actually indexed, rather than against the newest git tag, is what removes the need for a grace period. Between tagging `vX.Y.Z` and the packages being indexed the baseline is legitimately one release behind — and a tag-based rule could only tolerate that by permitting a one-release lag in general, which is exactly the drift that went unnoticed. Asking NuGet instead makes the bump due the moment the release is indexed and not before, and catches a bump that lands too *early* as well, which fails the next restore.
 
-Two consequences fall out of the same rule. Packages still on `CelerityNoPublishedBaseline` are excluded from the intersection rather than counted as unpublished, so an eighth package can be added without invalidating everyone else's baseline — but leaving that property set once the package *has* shipped is flagged, because it removes the package from the gate. And the seven package ids are discovered from the `.csproj` files rather than listed in the script, so a new package cannot join the repository without joining the check.
+Two consequences fall out of the same rule. Packages still on `CelerityNoPublishedBaseline` are excluded from the intersection rather than counted as unpublished, so an eighth package can be added without invalidating everyone else's baseline — but leaving that property set once the package *has* shipped is flagged, because it removes the package from the gate. And the package set is discovered from the `.csproj` files rather than listed in the script — by the same `IsPackable != false` test the gate itself applies, deriving the SDK's default `PackageId` where a project declares none — so a new package cannot join the repository without joining the check.
+
+Everything that decides pass or fail is a pure function of the baseline and the resolved package list, which is what lets `--self-test` drive all of it from fixtures: the version rules, the discovery rules, and each failure direction — stale baseline, bump landed before indexing, prerelease or malformed baseline, escape hatch left on after shipping, gated-but-never-published — alongside the shapes that must *not* fail, including the release window and the eighth-package-on-the-hatch case. Without that, the only case CI would ever execute is today's all-equal happy path, and a regression in any failure branch would leave both steps green — the same "a guard that is too permissive is indistinguishable from a clean report" problem the `benchmark-gate` job exists for.
 
 ```bash
-node scripts/check_package_baseline.js --self-test  # pin the version-comparison rules
+node scripts/check_package_baseline.js --self-test  # pin the rules against fixtures
 node scripts/check_package_baseline.js --offline    # skip the NuGet lookup
 node scripts/check_package_baseline.js
 ```

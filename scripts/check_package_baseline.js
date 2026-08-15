@@ -49,16 +49,25 @@
 //   1. (offline) the baseline property exists, parses, and is a stable version — a
 //      prerelease baseline silently validates against a nightly preview;
 //   2. (offline) every shipped package is discovered from the repository rather than from
-//      a hardcoded list, so an eighth package cannot join without joining this check too;
+//      a hardcoded list — by the same `IsPackable != false` test the gate itself uses, with
+//      the SDK's default PackageId derived rather than treated as an absence, so an eighth
+//      package cannot join without joining this check too;
 //   3. (network) the baseline equals the highest stable version published by all the gated
 //      ones;
 //   4. (network) no package sets CelerityNoPublishedBaseline while it *has* a published
 //      stable release — the condition that removes it from the gate entirely.
 //
+// Everything that decides pass or fail is a pure function of (baseline, packages), so
+// --self-test drives all of it from fixtures: the version rules, the project-discovery
+// rules, and every failure direction listed above. Without that, the only case CI ever
+// executed was the all-equal happy path, and a regression in any failure branch would have
+// left both steps green — the same "a guard too permissive reads exactly like a clean
+// report" problem that ci.yml's benchmark-gate comment records.
+//
 // Usage:
 //   node scripts/check_package_baseline.js              # offline checks + NuGet
 //   node scripts/check_package_baseline.js --offline    # skip the network half
-//   node scripts/check_package_baseline.js --self-test  # pin the version rules
+//   node scripts/check_package_baseline.js --self-test  # pin the rules against fixtures
 // CI runs the default and --self-test modes. Run from the repository root.
 
 'use strict';
@@ -86,8 +95,16 @@ function fail(message) {
 // 2.6.0.1 is *newer* than 2.6.0; and a prerelease sorts below the release it precedes,
 // which is why they are filtered out entirely rather than ranked.
 
+// A prerelease or metadata suffix is dot-separated *non-empty* identifiers, not "any run
+// of those characters" — `2.6.0-.`, `2.6.0-foo..bar` and `2.6.0+.` are malformed, and a
+// lenient class would accept `2.6.0+.` as a stable 2.6.0 that restore then cannot resolve.
+// Rejecting them outright routes such a baseline to the "not a version number" problem
+// instead of letting it compare equal to a real release.
+const IDENTIFIERS = '[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*';
+const VERSION = new RegExp(`^(\\d+(?:\\.\\d+){0,3})(?:-(${IDENTIFIERS}))?(?:\\+${IDENTIFIERS})?$`);
+
 function parseVersion(text) {
-  const m = /^(\d+(?:\.\d+){0,3})(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(text).trim());
+  const m = VERSION.exec(String(text).trim());
   if (!m) return null;
   const parts = m[1].split('.').map(Number);
   while (parts.length < 4) parts.push(0);
@@ -154,6 +171,36 @@ function readBaseline() {
 // A project ships when it has a PackageId and has not opted out with IsPackable=false —
 // which is exactly the condition Directory.Build.targets applies when it sets
 // PackageValidationBaselineVersion.
+// Returns the package a project ships, or null when it ships nothing.
+//
+// The packable test is `IsPackable != false`, which is exactly the condition
+// Directory.Build.targets applies when it sets PackageValidationBaselineVersion — so this
+// sees the same set the gate does. Deciding it on the *presence of a PackageId* instead
+// would leave a hole shaped like the one this whole check exists to close: the SDK defaults
+// PackageId to AssemblyName, and AssemblyName to the project's file name, so a new project
+// with no explicit <PackageId> element packs and ships perfectly well — possibly with the
+// escape hatch set — while a PackageId-keyed guard skipped it silently and forever.
+//
+// The default is therefore *derived* rather than treated as an absence. Resolving it the
+// way MSBuild would means evaluating the project, which is a restore this seconds-long
+// check has no business doing; the two-step SDK default is reproduced instead, and the
+// explicit element still wins where there is one (Celerity.csproj ships as
+// Celerity.Collections, which is precisely why the element cannot be assumed away).
+function readProject(source, projectPath) {
+  if (/<IsPackable>\s*false\s*<\/IsPackable>/i.test(source)) return null;
+
+  const explicit = /<PackageId>\s*([^<\s]+)\s*<\/PackageId>/.exec(source);
+  const assembly = /<AssemblyName>\s*([^<\s]+)\s*<\/AssemblyName>/.exec(source);
+  const fileName = projectPath.split(/[\\/]/).pop().replace(/\.csproj$/i, '');
+
+  return {
+    id: explicit ? explicit[1] : (assembly ? assembly[1] : fileName),
+    implicitId: !explicit,
+    project: projectPath.split(path.sep).join('/'),
+    noBaseline: /<CelerityNoPublishedBaseline>\s*true\s*<\/CelerityNoPublishedBaseline>/i.test(source),
+  };
+}
+
 function discoverPackages() {
   const projects = [];
   for (const entry of fs.readdirSync(SRC, { withFileTypes: true })) {
@@ -166,18 +213,8 @@ function discoverPackages() {
     for (const file of fs.readdirSync(dir)) {
       if (!file.toLowerCase().endsWith('.csproj')) continue;
       const proj = path.join(dir, file);
-
-      const source = fs.readFileSync(proj, 'utf8');
-      if (/<IsPackable>\s*false\s*<\/IsPackable>/i.test(source)) continue;
-
-      const id = /<PackageId>\s*([^<\s]+)\s*<\/PackageId>/.exec(source);
-      if (!id) continue;
-
-      projects.push({
-        id: id[1],
-        project: proj.split(path.sep).join('/'),
-        noBaseline: /<CelerityNoPublishedBaseline>\s*true\s*<\/CelerityNoPublishedBaseline>/i.test(source),
-      });
+      const found = readProject(fs.readFileSync(proj, 'utf8'), proj);
+      if (found) projects.push(found);
     }
   }
   return projects.sort((a, b) => a.id.localeCompare(b.id));
@@ -301,13 +338,108 @@ function selfTest() {
   ]);
   if (newcomer !== '2.6.0') failures.push(`  commonBaseline ignoring the escape hatch expected "2.6.0", got "${newcomer}"`);
 
+  for (const [label, source, file, expected] of PROJECT_CASES) {
+    const actual = readProject(source, file);
+    const got = actual === null ? 'none' : `${actual.id}${actual.noBaseline ? ' (hatched)' : ''}`;
+    if (got !== expected) failures.push(`  readProject/${label} expected "${expected}", got "${got}"`);
+  }
+
+  for (const [label, baseline, packages, expected] of ANALYSIS_CASES) {
+    const found = analyze(baseline, packages, true).length;
+    if (found !== expected) {
+      failures.push(
+        `  analyze/${label} expected ${expected} problem(s), got ${found}` +
+        (found > 0 ? `:\n      ${analyze(baseline, packages, true).join('\n      ')}` : '')
+      );
+    }
+  }
+
+  // The offline half must report the baseline's own shape and nothing else — a package
+  // list with no version data cannot be allowed to invent a stale-baseline finding.
+  const offline = analyze('2.5.0', [{ id: 'A', project: 'a', noBaseline: false }], false);
+  if (offline.length !== 0) failures.push(`  analyze/offline expected 0 problems, got ${offline.length}`);
+
   if (failures.length > 0) {
-    console.error('error: the version rules no longer hold.\n');
+    console.error('error: the package-baseline rules no longer hold.\n');
     console.error(failures.join('\n'));
     process.exit(1);
   }
-  console.log(`ok: ${VERSION_CASES.length + STABILITY_CASES.length + 5} version case(s) pinned.`);
+  const total =
+    VERSION_CASES.length + STABILITY_CASES.length + 5 + PROJECT_CASES.length + ANALYSIS_CASES.length + 1;
+  console.log(`ok: ${total} case(s) pinned.`);
 }
+
+// ---- Self-test fixtures --------------------------------------------------------------
+
+// Project shapes, as csproj text. The implicit-PackageId rows are the ones that matter:
+// the gate keys on IsPackable alone, so a project the SDK names for itself still ships and
+// must still be seen here.
+const PROJECT_CASES = [
+  ['explicit id wins over the file name',
+    '<Project><PropertyGroup><PackageId>Celerity.Collections</PackageId></PropertyGroup></Project>',
+    'src/Celerity/Celerity.csproj', 'Celerity.Collections'],
+  ['implicit id falls back to the file name',
+    '<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>',
+    'src/Celerity.Statistics/Celerity.Statistics.csproj', 'Celerity.Statistics'],
+  ['implicit id prefers AssemblyName',
+    '<Project><PropertyGroup><AssemblyName>Celerity.Renamed</AssemblyName></PropertyGroup></Project>',
+    'src/Celerity.Statistics/Celerity.Statistics.csproj', 'Celerity.Renamed'],
+  ['IsPackable=false ships nothing',
+    '<Project><PropertyGroup><IsPackable>false</IsPackable></PropertyGroup></Project>',
+    'src/Celerity.Tests/Celerity.Tests.csproj', 'none'],
+  ['the escape hatch is detected',
+    '<Project><PropertyGroup><PackageId>Celerity.Sorting</PackageId>' +
+    '<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline></PropertyGroup></Project>',
+    'src/Celerity.Sorting/Celerity.Sorting.csproj', 'Celerity.Sorting (hatched)'],
+];
+
+// Every documented failure direction, plus the two shapes that must *not* fail. Before
+// these existed the only case CI ever ran was `healthy`.
+const shipped = (id, stable, noBaseline) => ({ id, project: `src/${id}/${id}.csproj`, stable, noBaseline });
+
+const ANALYSIS_CASES = [
+  ['healthy', '2.6.0',
+    [shipped('Celerity.Collections', ['2.5.0', '2.6.0']), shipped('Celerity.Sorting', ['2.6.0'])], 0],
+
+  // The v2.6.0 miss itself: baseline left a release behind, and the newest package still
+  // on the hatch. Two independent findings, which is how it actually presented.
+  ['the v2.6.0 miss', '2.5.0',
+    [shipped('Celerity.Collections', ['2.5.0', '2.6.0']), shipped('Celerity.Sorting', ['2.6.0'], true)], 2],
+
+  ['stale by one release', '2.5.0',
+    [shipped('Celerity.Collections', ['2.5.0', '2.6.0']), shipped('Celerity.Sorting', ['2.6.0'])], 1],
+
+  ['bumped before the release was indexed', '2.7.0',
+    [shipped('Celerity.Collections', ['2.6.0']), shipped('Celerity.Sorting', ['2.6.0'])], 1],
+
+  ['a prerelease baseline', '2.6.1-beta.6',
+    [shipped('Celerity.Collections', ['2.6.0']), shipped('Celerity.Sorting', ['2.6.0'])], 1],
+
+  ['a malformed baseline', '2.6.0+.',
+    [shipped('Celerity.Collections', ['2.6.0']), shipped('Celerity.Sorting', ['2.6.0'])], 1],
+
+  ['the hatch left on after shipping', '2.6.0',
+    [shipped('Celerity.Collections', ['2.6.0']), shipped('Celerity.Sorting', ['2.6.0'], true)], 1],
+
+  ['gated but never published', '2.6.0',
+    [shipped('Celerity.Collections', ['2.6.0']), shipped('Celerity.Statistics', [])], 2],
+
+  // The eighth package, correctly hatched: out of the gate, so it neither empties the
+  // intersection nor drags the baseline down.
+  ['an eighth package on the hatch', '2.6.0',
+    [shipped('Celerity.Collections', ['2.6.0']), shipped('Celerity.Statistics', [], true)], 0],
+
+  // The release window: tagged but not yet indexed, so being one behind is correct.
+  ['the release window', '2.6.0',
+    [shipped('Celerity.Collections', ['2.6.0']), shipped('Celerity.Sorting', ['2.6.0'])], 0],
+
+  // Sorting's 2.6.0 is the only version both have; the maximum on NuGet is not resolvable.
+  ['the intersection, not the maximum', '2.6.0',
+    [shipped('Celerity.Collections', ['2.5.0', '2.6.0']), shipped('Celerity.Sorting', ['2.6.0'])], 0],
+
+  ['a first release, every package hatched', '2.6.0',
+    [shipped('Celerity.Collections', [], true), shipped('Celerity.Sorting', [], true)], 0],
+];
 
 // The highest stable version that every *gated* package has published — the newest value
 // the shared baseline can take and still resolve a PackageDownload for all of them.
@@ -328,15 +460,13 @@ function commonBaseline(packages) {
 }
 
 // ---- Checks -------------------------------------------------------------------------
+// Pure: everything that decides pass or fail takes the baseline string and the resolved
+// package list and returns the problems, with no filesystem, network or process.exit in
+// reach. That is what lets the self-test drive every failure direction below — without it,
+// the only path CI ever executed was today's all-equal happy path, and a regression in any
+// of the failure branches would have left both steps green.
 
-async function main() {
-  if (process.argv.includes('--self-test')) {
-    selfTest();
-    return;
-  }
-
-  const baseline = readBaseline();
-  const packages = discoverPackages();
+function analyze(baseline, packages, online) {
   const problems = [];
 
   // (1) A baseline that is not a stable version resolves to a preview package, so the
@@ -350,42 +480,18 @@ async function main() {
     );
   }
 
-  // (2) Nothing ships without being discoverable here.
-  if (packages.length === 0) {
-    fail(
-      `found no shipped packages under ${SRC}/. A project ships when it declares <PackageId> ` +
-      `and does not set <IsPackable>false</IsPackable>; if that convention changed, update ` +
-      `${SELF} and src/Directory.Build.targets together.`
-    );
-  }
-
-  if (process.argv.includes('--offline')) {
-    report(problems, packages, baseline, null);
-    return;
-  }
-
-  let resolved;
-  try {
-    resolved = await Promise.all(
-      packages.map(async (p) => ({ ...p, stable: (await publishedVersions(p.id)).filter(isStable) }))
-    );
-  } catch (e) {
-    // Reported, not failed: see the header. The offline findings still stand.
-    console.warn(`warning: could not reach NuGet.org (${e.message}); skipped the published-version checks.`);
-    report(problems, packages, baseline, null);
-    return;
-  }
+  if (!online) return problems;
 
   // Only the gated packages constrain the baseline. A package on the escape hatch resolves
   // no PackageDownload at all, so an unpublished newcomer must not be allowed to empty the
   // intersection and pronounce every other package's correct baseline wrong — which is the
   // shape of drift this check would itself have introduced.
-  const gated = resolved.filter((p) => !p.noBaseline);
+  const gated = packages.filter((p) => !p.noBaseline);
   const expected = commonBaseline(gated);
 
   // (4) The escape hatch is only correct while a package has never shipped. Left in place
   // afterwards it does not narrow the gate, it removes the package from it.
-  for (const p of resolved) {
+  for (const p of packages) {
     if (p.noBaseline && p.stable.length > 0) {
       problems.push(
         `${p.project} still sets <CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>, ` +
@@ -404,7 +510,14 @@ async function main() {
     }
   }
 
-  // (3) The bump itself.
+  // (3) The bump itself — but only once the baseline is a version this can rank. Comparing
+  // a prerelease or a malformed string against a release compares release parts alone, so
+  // `2.6.1-beta.6` would report as "ahead of 2.6.0" on top of the finding that already says
+  // what is actually wrong with it. One clear problem beats two, one of which misleads.
+  if (!isStable(baseline)) {
+    return problems;
+  }
+
   if (expected === null) {
     if (gated.length > 0) {
       problems.push(
@@ -429,10 +542,49 @@ async function main() {
     );
   }
 
-  report(problems, resolved, baseline, expected);
+  return problems;
 }
 
-function report(problems, packages, baseline, expected) {
+// The one place the process is allowed to end.
+async function main() {
+  if (process.argv.includes('--self-test')) {
+    selfTest();
+    return;
+  }
+
+  const baseline = readBaseline();
+  const packages = discoverPackages();
+
+  // (2) Nothing ships without being discoverable here.
+  if (packages.length === 0) {
+    fail(
+      `found no shipped packages under ${SRC}/. A project ships when it does not set ` +
+      `<IsPackable>false</IsPackable>; if that convention changed, update ${SELF} and ` +
+      `src/Directory.Build.targets together.`
+    );
+  }
+
+  if (process.argv.includes('--offline')) {
+    report(analyze(baseline, packages, false), packages, baseline, false);
+    return;
+  }
+
+  let resolved;
+  try {
+    resolved = await Promise.all(
+      packages.map(async (p) => ({ ...p, stable: (await publishedVersions(p.id)).filter(isStable) }))
+    );
+  } catch (e) {
+    // Reported, not failed: see the header. The offline findings still stand.
+    console.warn(`warning: could not reach NuGet.org (${e.message}); skipped the published-version checks.`);
+    report(analyze(baseline, packages, false), packages, baseline, false);
+    return;
+  }
+
+  report(analyze(baseline, resolved, true), resolved, baseline, true);
+}
+
+function report(problems, packages, baseline, online) {
   if (problems.length > 0) {
     console.error(`Package-baseline check failed (${problems.length} problem(s)):\n`);
     for (const p of problems) console.error(`  - ${p}`);
@@ -448,9 +600,9 @@ function report(problems, packages, baseline, expected) {
   console.log(
     `Package baseline OK: ${gated}/${packages.length} shipped package(s) validate against ` +
     `${normalize(baseline)}` +
-    (expected === null
-      ? ` (offline — published versions not checked).`
-      : `, the newest release published by all of them.`)
+    (online
+      ? `, the newest release published by all of them.`
+      : ` (offline — published versions not checked).`)
   );
 }
 
