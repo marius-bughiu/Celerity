@@ -4576,7 +4576,7 @@ Console.WriteLine(depots.TryFindNearest(0, 0, maxDistance: 1, out _));   // Fals
 public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValue>>
 ```
 
-A **mutable uniform-cell spatial index** over points in the plane: constant-time `Add`, `Move` and `Remove`, and radius, rectangle and nearest queries that touch only the cells the query covers. It is the counterpart to [`KdTree<TValue>`](#kdtreetvalue) for points that **move**, and it shares that type's element, [`SpatialPoint<TValue>`](#the-element-spatialpointtvalue).
+A **mutable uniform-cell spatial index** over points in the plane: constant-time `Move` and `Remove`, amortized constant-time `Add`, and radius, rectangle and nearest queries that touch only the cells the query covers. It is the counterpart to [`KdTree<TValue>`](#kdtreetvalue) for points that **move**, and it shares that type's element, [`SpatialPoint<TValue>`](#the-element-spatialpointtvalue).
 
 `KdTree` is build-once and its own documentation says where that leaves you: *do not reach for it when the points change constantly — it is build-once, and rebuilding per frame costs more than the queries save*. That is a hole the docs point at and nothing filled, and it is the **commonest** spatial workload rather than an edge case — game entities and projectiles, drivers and couriers on a map, cursors and drag targets, particles in a simulation, agents in a model. All of them move every tick, and all of them ask *what is near me* every tick. .NET has nothing here either.
 
@@ -4625,7 +4625,7 @@ The first is worse than "it degrades to a scan", and it is measured rather than 
 
 ### What the complexity really is
 
-`Add`, `Move`, `Remove` and `TryGetPoint` are `O(1)` outright, amortized only over the entry array's growth. A range query is `O(cells touched + points in them)` — a statement about density rather than about `Count`. That is asymptotic and nothing more: the clustered measurement above is the reminder that a matching bound does not mean matching time, since the intrusive list adds a dependent load per candidate that a contiguous bucket does not.
+`Move`, `Remove` and `TryGetPoint` are `O(1)` outright. `Add` is `O(1)` **amortized**: the one call in a growth cycle that finds the free list empty and the entry array full resizes and copies both backing arrays, which is `O(n)` for that call. A range query is `O(cells touched + points in them)` — a statement about density rather than about `Count`. That is asymptotic and nothing more: the clustered measurement above is the reminder that a matching bound does not mean matching time, since the intrusive list adds a dependent load per candidate that a contiguous bucket does not.
 
 The nearest query expands square rings outward from the query's cell and stops once the next ring's own distance floor cannot beat what it has, so on a populated grid it settles in a handful of rings. On a **sparse** one it can walk out to the world's edge, which is `O(cells)`; pass the `maxDistance` overload when there is a distance beyond which the answer does not interest you, since the bound caps the ring expansion rather than merely filtering the result.
 
@@ -4649,7 +4649,7 @@ Creates an empty grid over the world rectangle `[minX, maxX] × [minY, maxY]`, d
 | `Count` | Number of points currently in the grid. |
 | `CellSize` / `Columns` / `Rows` | The cell side, and how many cells span the world's width and height. Always at least one of each. |
 | `MinX` / `MinY` / `MaxX` / `MaxY` | The declared world rectangle. |
-| `Add(x, y, value)` | Adds a point and returns its handle. `O(1)`. |
+| `Add(x, y, value)` | Adds a point and returns its handle. `O(1)` amortized — the call that grows the entry array is `O(n)`. |
 | `Move(handle, x, y)` | Relocates the entry. `O(1)`: two coordinate writes, plus an unlink and relink only if the cell changed. |
 | `Remove(handle)` | Removes the entry and retires the handle. `O(1)`. |
 | `TryGetPoint(handle, out point)` | Reads the point back, or `false` when the handle is not live. Also the way to test a handle without risking an exception. |

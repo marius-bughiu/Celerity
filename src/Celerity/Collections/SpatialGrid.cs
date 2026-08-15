@@ -5,8 +5,8 @@ using System.Runtime.CompilerServices;
 namespace Celerity.Collections;
 
 /// <summary>
-/// A <b>mutable uniform-cell spatial index</b> over points in the plane: constant-time
-/// <see cref="Add"/>, <see cref="Move"/> and <see cref="Remove"/>, and radius, rectangle and nearest queries
+/// A <b>mutable uniform-cell spatial index</b> over points in the plane: constant-time <see cref="Move"/> and
+/// <see cref="Remove"/>, amortized constant-time <see cref="Add"/>, and radius, rectangle and nearest queries
 /// that touch only the cells the query covers — the index for points that <i>move</i>, which
 /// <see cref="KdTree{TValue}"/> is explicitly not.
 /// </summary>
@@ -96,8 +96,10 @@ namespace Celerity.Collections;
 /// <c>SpatialGridShapeBenchmark</c>, and tabulated in the README.
 /// </para>
 /// <para>
-/// <b>What the bound really is.</b> <see cref="Add"/>, <see cref="Move"/>, <see cref="Remove"/> and
-/// <see cref="TryGetPoint"/> are <c>O(1)</c> outright, amortized only over the entry array's growth. A range
+/// <b>What the bound really is.</b> <see cref="Move"/>, <see cref="Remove"/> and <see cref="TryGetPoint"/>
+/// are <c>O(1)</c> outright. <see cref="Add"/> is <c>O(1)</c> <i>amortized</i>: the one call in a growth cycle
+/// that finds the free list empty and the entry array full resizes and copies both backing arrays, which is
+/// <c>O(n)</c> for that call. A range
 /// query is <c>O(cells touched + points in them)</c>, which is a statement about density rather than about
 /// <see cref="Count"/>. That is an asymptotic statement and nothing more: the clustered measurement above is
 /// the reminder that a matching bound does not mean matching time, since the intrusive list adds a dependent
