@@ -787,9 +787,10 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
     // handle, which this type documents as always rejected. The modulo keeps that guarantee absolute without
     // a branch the coverage gate could never see taken.
     //
-    // What it does not fix, because no fixed-width version can: after a full cycle of 2^32 vacations of the
-    // *same* slot, a handle retired that long ago starts matching again. That is the standing limitation of
-    // every generational slot map and it is documented on SpatialGridHandle rather than papered over.
+    // What it does not fix, because no fixed-width version can: the versions cycle through [1, uint.MaxValue],
+    // so after 4,294,967,295 vacations of the *same* slot they repeat and a handle retired exactly that long
+    // ago starts matching again. That is the standing limitation of every generational slot map, and it is
+    // documented on SpatialGridHandle rather than papered over.
     private static uint NextVersion(uint version) => (version % uint.MaxValue) + 1;
 
     private void Vacate(int slot)

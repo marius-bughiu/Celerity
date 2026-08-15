@@ -26,10 +26,10 @@ namespace Celerity.Collections;
 /// version the <c>default</c> handle carries.
 /// </para>
 /// <para>
-/// The one limitation a fixed-width version cannot escape, stated rather than left to be discovered: after
-/// <c>2&#178;&#178;</c>&#8202;— that is, 2^32 — vacations of the <i>same</i> slot the versions repeat, and a
-/// handle retired that long ago starts resolving again. Every generational slot map has this ceiling. It takes
-/// four billion removals of entries that all land back in one slot to reach.
+/// The one limitation a fixed-width version cannot escape, stated rather than left to be discovered: the
+/// versions cycle through <c>[1, uint.MaxValue]</c>, so they repeat after <b>4,294,967,295</b> vacations of
+/// the <i>same</i> slot, and a handle retired exactly that long ago starts resolving again. Every generational
+/// slot map has this ceiling; reaching it takes four billion removals whose slots all land back on the one.
 /// </para>
 /// </remarks>
 public readonly struct SpatialGridHandle : IEquatable<SpatialGridHandle>

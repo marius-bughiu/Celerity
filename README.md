@@ -812,27 +812,27 @@ Two further caveats worth stating rather than burying:
 
 ### Moving points
 
-`SpatialGrid<TValue>` answers the workload `KdTree` documents itself out of. The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. Both baselines are hand-rolls, because the BCL has nothing here either — the `Dictionary<(int, int), List<int>>` bucketed grid a competent developer writes, and rebuilding a `KdTree` every frame, which is what this library offered before. At 100,000 entities over a 10,000-unit square, cell size equal to the query radius:
+`SpatialGrid<TValue>` answers the workload `KdTree` documents itself out of. The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. Both baselines are hand-rolls, because the BCL has nothing here either — the `Dictionary<(int, int), List<int>>` bucketed grid a competent developer writes, and rebuilding a `KdTree` every frame, which is what this library offered before. At 100,000 entities over a 10,000-unit square, with a 30-unit cell and a 25-unit query radius — the cell sized just over the radius, which is the tuning rule the type documents:
 
 | Per frame | vs. the bucketed `Dictionary` hand-roll | vs. rebuilding a `KdTree` |
 | --- | --- | --- |
-| **Move a tenth, then query each** | 6.11 ms → 1.10 ms — **5.5x** | 17.72 ms → 1.08 ms — **16.4x** |
-| **Query only, nothing moving** | 4.72 ms → 0.98 ms — **4.8x** | — |
-| **Churn a tenth (remove + re-add)** | 826 µs → 109 µs — **7.6x** | — |
+| **Move a tenth, then query each** | 7.12 ms → 1.30 ms — **5.5x** | 17.71 ms → 1.10 ms — **16.1x** |
+| **Query only, nothing moving** | 5.11 ms → 1.01 ms — **5.1x** | — |
+| **Churn a tenth (remove + re-add)** | 922 µs → 110 µs — **8.4x** | — |
 
-At 1,000 entities the margins are *wider*, not narrower — 10.2x on the frame — because the cells are emptier still.
+At 1,000 entities the margins are *wider*, not narrower — 10.9x on the frame — because the cells are emptier still.
 
 **The margin is a property of how full the cells are, not of the type**, and that belongs next to the headline rather than under it. Both structures walk the same cells and run the same distance test on the same candidates; everything the grid saves is **per cell** — an array index instead of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated `List<T>` — so the ratio is per-cell overhead against per-candidate work, and it collapses as the cells fill:
 
 | Shape at 100,000 entities | Ratio |
 | --- | --- |
 | **Tight** — ~1 point per cell, ~2 matches per query (the broadphase shape, and the one charted) | **5.9x** |
-| **Wide** — ~10 points per cell, ~25 matches, cell size still tuned to the radius | **1.14x** |
-| **Clustered** — 200 blobs, hundreds of points per cell | **0.57x** — the hand-roll wins |
+| **Wide** — ~10 points per cell, ~25 matches, cell still sized to the radius (100 and 90) | **1.12x** |
+| **Clustered** — 200 blobs, hundreds of points per cell | **0.58x** — the hand-roll wins |
 
 The clustered row is the one worth reading twice, and it is the opposite of what the class was written to show. The expectation was that clustering would hurt both structures equally, since the baseline is the same grid. It does not: inside a dense cell the layouts genuinely differ. The hand-roll walks a contiguous `List<int>` and issues two independent loads per candidate, which the processor overlaps; the grid walks an intrusive linked list, so each step is a load that must complete before the next address is known — a cell holding five hundred entries is a five-hundred-long chain of dependent cache misses. So the documented failure mode is sharper than "it degrades to a scan": it degrades to a scan the hand-roll does faster. **Clustered points belong in `KdTree`** — which is the exact mirror of the row above, where clustering is what makes the *tree* lose to *its* hand-roll. `SpatialGridShapeBenchmark` in the extended suite carries all three shapes.
 
-One more number worth stating plainly because it was predicted otherwise: the issue that asked for this type expected **≥50x** over the per-frame `KdTree` rebuild and called it the easy bar. It is 16.4x. A frame is not only the rebuild — both arms also run 10,000 radius queries, and that shared work sits in the denominator however cheap the index makes it.
+One more number worth stating plainly because it was predicted otherwise: the issue that asked for this type expected **≥50x** over the per-frame `KdTree` rebuild and called it the easy bar. It is 16.1x. A frame is not only the rebuild — both arms also run 10,000 radius queries, and that shared work sits in the denominator however cheap the index makes it.
 
 ## Custom hashing
 

@@ -34,8 +34,8 @@ using Celerity.Collections;
 //   Churn     — remove and re-add a tenth of the population per frame, the shape where the baseline pays a
 //               List<T> lookup and an O(cell) List.Remove for every entry that leaves.
 //
-// The cell size equals the query radius, which is the tuning rule the type documents; both sides use the same
-// one, so neither is measuring a different grid. That leaves about one point per cell at 100,000 entities and
+// The cell is 30 units against a 25-unit query radius — sized just over the radius, which is the tuning rule
+// the type documents; both sides use the same one, so neither is measuring a different grid. That leaves about one point per cell at 100,000 entities and
 // about two matches per query, which is the broadphase shape — a query that answers with a handful of
 // neighbours rather than with a slice of the population.
 //
