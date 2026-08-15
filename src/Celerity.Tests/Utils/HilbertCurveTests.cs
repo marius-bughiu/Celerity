@@ -81,6 +81,33 @@ public class HilbertCurveTests
         AssertAdjacent3D(start, 2_000);
     }
 
+    [Fact]
+    public void Decode2D_ShouldWrapRatherThanStep_WhenTheFinalIndexIsIncremented()
+    {
+        // The one place adjacency does not hold, pinned so the docs' carve-out is executable rather than
+        // merely asserted: the index space is finite, so the last index has no successor. Incrementing it
+        // wraps to 0 and lands back at the origin, a whole domain away from the curve's endpoint.
+        var (endX, endY) = HilbertCurve.Decode2D(ulong.MaxValue);
+        var (wrapX, wrapY) = HilbertCurve.Decode2D(unchecked(ulong.MaxValue + 1));
+
+        Assert.Equal((uint.MaxValue, 0u), (endX, endY));
+        Assert.Equal((0u, 0u), (wrapX, wrapY));
+        Assert.NotEqual(1L, Math.Abs((long)wrapX - endX) + Math.Abs((long)wrapY - endY));
+    }
+
+    [Fact]
+    public void Decode3D_ShouldWrapRatherThanStep_WhenTheFinalIndexIsIncremented()
+    {
+        // Same carve-out one dimension up, and it arrives by a different route: 2^63 - 1 increments to
+        // 2^63, whose only set bit is the one Decode3D ignores, so it decodes as index 0.
+        const ulong Last = (1UL << 63) - 1;
+        var (endX, endY, endZ) = HilbertCurve.Decode3D(Last);
+        var (wrapX, wrapY, wrapZ) = HilbertCurve.Decode3D(Last + 1);
+
+        Assert.Equal((0u, 0u, 0u), (wrapX, wrapY, wrapZ));
+        Assert.NotEqual(1L, Math.Abs((long)wrapX - endX) + Math.Abs((long)wrapY - endY) + Math.Abs((long)wrapZ - endZ));
+    }
+
     // ── Round-trip ───────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -773,7 +773,10 @@ Array.Sort(keys, points);
 
 // Hilbert, when a run of indices has to be a connected region.
 ulong index = HilbertCurve.Encode2D(cellX, cellY);
-var (nx, ny) = HilbertCurve.Decode2D(index + 1);   // always one cell away, along one axis
+if (index < ulong.MaxValue)                        // the last index has no successor — it wraps to 0
+{
+    var (nx, ny) = HilbertCurve.Decode2D(index + 1);   // one cell away, along one axis
+}
 ```
 
 **Contract and special cases:**

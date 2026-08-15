@@ -14,8 +14,11 @@ namespace Celerity.Primitives;
 /// </para>
 /// <para>
 /// <strong>The property that distinguishes it, and the only reason to pay for it:</strong> consecutive
-/// indices are always <em>neighbouring cells</em>. Step the index by one and the coordinate moves by
-/// exactly one unit along exactly one axis, everywhere on the curve, at every scale. Morton cannot
+/// indices are <em>neighbouring cells</em>. Step the index by one and the coordinate moves by exactly one
+/// unit along exactly one axis, at every scale, for every index below the last one —
+/// <see cref="ulong.MaxValue"/> in 2-D and <c>2^63 - 1</c> in 3-D. The index space is finite, so the last
+/// index has no successor: incrementing it wraps to <c>0</c> and lands back at the origin, which is a wrap
+/// rather than a step along the curve. Morton cannot
 /// promise that — its Z pattern jumps a whole quadrant every time it crosses one — which is why Morton
 /// is the better locality-preserving <em>sort key</em> and Hilbert the better order to back a
 /// <em>range query</em>: a contiguous run of Hilbert indices is a compact, connected region of the
@@ -56,8 +59,12 @@ namespace Celerity.Primitives;
 /// ulong index = HilbertCurve.Encode2D(x: 3, y: 5);
 /// var (x, y) = HilbertCurve.Decode2D(index);   // (3, 5)
 ///
-/// // Consecutive indices are neighbouring cells — always, at every scale.
-/// var (nx, ny) = HilbertCurve.Decode2D(index + 1);
+/// // Consecutive indices are neighbouring cells, at every scale — up to the final index, which has no
+/// // successor to step to.
+/// if (index &lt; ulong.MaxValue)
+/// {
+///     var (nx, ny) = HilbertCurve.Decode2D(index + 1);
+/// }
 /// </code>
 /// </example>
 public static class HilbertCurve

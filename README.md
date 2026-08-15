@@ -901,9 +901,14 @@ bool any = SortedSpan.Overlaps(a, b);         // allocation-free, early-exit
 Finally, **`MortonCurve`** and **`HilbertCurve`** are the **space-filling curves** — map a 2-D or 3-D integer coordinate to one `ulong` whose ordering keeps nearby points nearby, and back. This is the primitive that lets a *one-dimensional* structure answer a spatially local question: sort a point set by its curve key and a plain array, a `BTreeSet<T>` or a `SortedSpan` becomes a cache-coherent spatial container; it is also the standard packing order for a bounding-volume index and the standard way to build a tile key that survives a sort or a hash-partition. **The BCL has neither** — `BitOperations` ships popcount and rotates but no bit-interleave, and there is no Hilbert anything — so today a caller writes the bit-twiddling themselves, and the shipped spread runs **9.8×** the bit-by-bit interleave that is the obvious way to write it by hand. **Morton** is the cheap default: a straight-line bit spread that keeps each axis monotone. **Hilbert** costs **43×** more per conversion (a loop over the bit levels) and buys the one property Morton cannot give — **consecutive indices are always neighbouring cells**, at every scale — which is what you want when the ordering itself backs a range query rather than just a sort. The payoff is the layout, not the conversion: sorting a 2 M-point set by its curve key made an identical batch of randomly-located neighbourhood queries **1.8× faster** than the same points unsorted — but only **1.19×** against the row-major cell key a caller would otherwise sort by, which is the number to judge it on, and **nothing at all** at a size that fits in cache — that control ships as a benchmark parameter rather than a footnote. 2-D is lossless over both `uint` axes; 3-D packs three axes into the same 64 bits, so it is capped at 21 bits each and `Encode3D` throws above that rather than silently masking.
 
 ```csharp
-ulong key = MortonCurve.Encode2D(cellX, cellY);   // a cell id that sorts spatially
-Array.Sort(keys, points);                         // neighbours in space are now neighbours in memory
-var (nx, ny) = HilbertCurve.Decode2D(index + 1);  // Hilbert: always one cell away, along one axis
+ulong key = MortonCurve.Encode2D(cellX, cellY);     // a cell id that sorts spatially
+Array.Sort(keys, points);                           // neighbours in space are now neighbours in memory
+
+ulong index = HilbertCurve.Encode2D(cellX, cellY);
+if (index < ulong.MaxValue)                         // the last index has no successor — it wraps to 0
+{
+    var (nx, ny) = HilbertCurve.Decode2D(index + 1);  // Hilbert: one cell away, along one axis
+}
 ```
 
 See [`docs/api/utilities.md`](docs/api/utilities.md#fastmod--fastdiv) for the full surface and the generator-selection table.
