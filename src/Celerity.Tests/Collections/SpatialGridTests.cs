@@ -360,6 +360,33 @@ public class SpatialGridTests
     }
 
     [Fact]
+    public void Clear_ShouldOnlyStepTheVersionsOfLiveSlots_WhenSomeWereAlreadyVacated()
+    {
+        // A vacated slot's version must move only when that slot is vacated. Stepping it again on every
+        // unrelated Clear would walk it back round to a value a long-retired handle still holds in far fewer
+        // operations than the documented period.
+        SpatialGrid<int> grid = Grid();
+        SpatialGridHandle removed = grid.Add(1, 1, 1);
+        SpatialGridHandle live = grid.Add(2, 2, 2);
+        grid.Remove(removed);
+
+        grid.Clear();
+
+        Assert.Equal(0, grid.Count);
+        Assert.False(grid.TryGetPoint(removed, out _));
+        Assert.False(grid.TryGetPoint(live, out _));
+
+        // Both slots are back on the free list and hand out versions that collide with neither handle.
+        SpatialGridHandle first = grid.Add(3, 3, 3);
+        SpatialGridHandle second = grid.Add(4, 4, 4);
+        Assert.NotEqual(removed, first);
+        Assert.NotEqual(removed, second);
+        Assert.NotEqual(live, first);
+        Assert.NotEqual(live, second);
+        Assert.Equal(2, grid.Count);
+    }
+
+    [Fact]
     public void Clear_ShouldReleaseThePayloads_WhenTheValueTypeIsAReferenceType()
     {
         var grid = new SpatialGrid<string>(0, 0, 10, 10, 1);

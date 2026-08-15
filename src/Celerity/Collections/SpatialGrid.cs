@@ -139,8 +139,11 @@ namespace Celerity.Collections;
 /// The same arithmetic puts a <i>floor</i> under the domain, documented rather than enforced because no check
 /// could see it, and identical to the one <see cref="KdTree{TValue}"/> carries: a separation below roughly
 /// <c>1e-162</c> squares below the smallest subnormal and underflows to zero, so two points that close are
-/// indistinguishable from coincident ones — a zero radius matches them and a nearest query may order them
-/// arbitrarily. Points that genuinely coincide are unaffected and well defined; it is the
+/// indistinguishable from coincident ones <i>by the distance test</i>, and a nearest query may order them
+/// arbitrarily. Whether a query even reaches the other point is a second question with no promise attached:
+/// the cell range is derived from the same coordinates, so two points astride a cell boundary at that
+/// separation land in different cells and a zero-radius query visits only one of them. Below this scale the
+/// type says nothing either way. Points that genuinely coincide are unaffected and well defined; it is the
 /// nonzero-but-tinier-than-<c>1e-162</c> separation that cannot be represented. Comparing squared distances is
 /// what keeps every query off the square root, and paying a scaled comparison on the hot path to resolve
 /// separations no coordinate system produces is not a trade this type makes either.
@@ -403,8 +406,17 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
         // would start at version 1 again and could collide with a handle the caller is still holding.
         for (int i = 0; i < _slotCount; i++)
         {
-            _entries[i].Cell = -1;
-            _entries[i].Version = NextVersion(_entries[i].Version);
+            // Only a *live* slot needs its version stepped. Vacate already retired the free ones, and stepping
+            // them again would churn a vacated slot's version on every unrelated Clear — walking it back round
+            // to a value some long-retired handle still holds after far fewer operations than that slot's own
+            // vacations would take. The version a handle is checked against must move only when its own slot
+            // is vacated, or the documented period is not the real one.
+            if (_entries[i].Cell >= 0)
+            {
+                _entries[i].Cell = -1;
+                _entries[i].Version = NextVersion(_entries[i].Version);
+            }
+
             _entries[i].Next = i - 1;
         }
 
