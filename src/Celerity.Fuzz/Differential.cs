@@ -73,6 +73,7 @@ internal static class Differential
         ("RadixSort", RadixSortCase),
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
+        ("SpaceFillingCurve", SpaceFillingCurveCase),
     ];
 
     private const int MinKey = -8;
@@ -2288,5 +2289,107 @@ internal static class Differential
             Check(top[i] == sorted[length - 1 - i], $"PartialSort.TopK disagreed at {i}");
 
         Check(values.AsSpan().SequenceEqual(before), "PartialSort.TopK modified its source");
+    }
+
+    // MortonCurve / HilbertCurve against a bit-by-bit interleave and the properties each curve promises.
+    // The oracle here is not a BCL type — the BCL has no bit-interleave at all, which is why these ship —
+    // so it is the slow, literal definition of the encoding, written out one bit at a time.
+    private static void SpaceFillingCurveCase(Random rng)
+    {
+        uint x = NextCoordinate(rng, uint.MaxValue);
+        uint y = NextCoordinate(rng, uint.MaxValue);
+
+        ulong morton = MortonCurve.Encode2D(x, y);
+        Check(morton == NaiveInterleave2D(x, y), $"MortonCurve.Encode2D({x}, {y}) diverged from a bit-by-bit interleave");
+        Check(MortonCurve.Decode2D(morton) == (x, y), $"MortonCurve.Decode2D did not recover ({x}, {y})");
+
+        ulong hilbert = HilbertCurve.Encode2D(x, y);
+        Check(HilbertCurve.Decode2D(hilbert) == (x, y), $"HilbertCurve.Decode2D did not recover ({x}, {y})");
+
+        // Both 2-D forms fill the 64-bit key exactly, so an arbitrary key must survive the other direction too.
+        ulong key = ((ulong)(uint)rng.Next() << 32) | (uint)rng.Next();
+        var (mx, my) = MortonCurve.Decode2D(key);
+        Check(MortonCurve.Encode2D(mx, my) == key, $"MortonCurve is not a bijection at {key}");
+        var (hx, hy) = HilbertCurve.Decode2D(key);
+        Check(HilbertCurve.Encode2D(hx, hy) == key, $"HilbertCurve is not a bijection at {key}");
+
+        // Adjacency is the property Hilbert exists for: stepping the index moves one cell along one axis.
+        AssertHilbertRun2D(key & ~0xFFUL);
+
+        uint x3 = NextCoordinate(rng, MortonCurve.MaxCoordinate3D);
+        uint y3 = NextCoordinate(rng, MortonCurve.MaxCoordinate3D);
+        uint z3 = NextCoordinate(rng, MortonCurve.MaxCoordinate3D);
+
+        ulong morton3 = MortonCurve.Encode3D(x3, y3, z3);
+        Check(morton3 == NaiveInterleave3D(x3, y3, z3), $"MortonCurve.Encode3D({x3}, {y3}, {z3}) diverged from a bit-by-bit interleave");
+        Check(morton3 < 1UL << 63, "MortonCurve.Encode3D set the unused top bit");
+        Check(MortonCurve.Decode3D(morton3) == (x3, y3, z3), $"MortonCurve.Decode3D did not recover ({x3}, {y3}, {z3})");
+
+        ulong hilbert3 = HilbertCurve.Encode3D(x3, y3, z3);
+        Check(hilbert3 < 1UL << 63, "HilbertCurve.Encode3D set the unused top bit");
+        Check(HilbertCurve.Decode3D(hilbert3) == (x3, y3, z3), $"HilbertCurve.Decode3D did not recover ({x3}, {y3}, {z3})");
+
+        AssertHilbertRun3D(hilbert3 & ~0xFFUL);
+    }
+
+    // Half the draws hug a power-of-two boundary, where a bit-spread that is off by one lane shows up.
+    private static uint NextCoordinate(Random rng, uint max)
+    {
+        if (rng.Next(2) == 0)
+        {
+            int bit = rng.Next(0, 32);
+            return (uint)Math.Clamp((1L << bit) + rng.Next(-1, 2), 0, max);
+        }
+
+        return (uint)rng.NextInt64(0, (long)max + 1);
+    }
+
+    private static void AssertHilbertRun2D(ulong start)
+    {
+        var (x, y) = HilbertCurve.Decode2D(start);
+        for (ulong i = 1; i <= 64; i++)
+        {
+            var (nx, ny) = HilbertCurve.Decode2D(start + i);
+            long step = Math.Abs((long)nx - x) + Math.Abs((long)ny - y);
+            Check(step == 1, $"HilbertCurve 2-D adjacency broke stepping to index {start + i}");
+            (x, y) = (nx, ny);
+        }
+    }
+
+    private static void AssertHilbertRun3D(ulong start)
+    {
+        var (x, y, z) = HilbertCurve.Decode3D(start);
+        for (ulong i = 1; i <= 64; i++)
+        {
+            var (nx, ny, nz) = HilbertCurve.Decode3D(start + i);
+            long step = Math.Abs((long)nx - x) + Math.Abs((long)ny - y) + Math.Abs((long)nz - z);
+            Check(step == 1, $"HilbertCurve 3-D adjacency broke stepping to index {start + i}");
+            (x, y, z) = (nx, ny, nz);
+        }
+    }
+
+    private static ulong NaiveInterleave2D(uint x, uint y)
+    {
+        ulong code = 0;
+        for (int bit = 0; bit < 32; bit++)
+        {
+            code |= (ulong)((x >> bit) & 1) << (2 * bit);
+            code |= (ulong)((y >> bit) & 1) << ((2 * bit) + 1);
+        }
+
+        return code;
+    }
+
+    private static ulong NaiveInterleave3D(uint x, uint y, uint z)
+    {
+        ulong code = 0;
+        for (int bit = 0; bit < 21; bit++)
+        {
+            code |= (ulong)((x >> bit) & 1) << (3 * bit);
+            code |= (ulong)((y >> bit) & 1) << ((3 * bit) + 1);
+            code |= (ulong)((z >> bit) & 1) << ((3 * bit) + 2);
+        }
+
+        return code;
     }
 }

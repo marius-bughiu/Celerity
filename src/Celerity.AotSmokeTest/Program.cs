@@ -1631,6 +1631,53 @@ void Check(bool condition, string message)
     Check(!VarInt.TryReadVarInt(truncated, out uint _, out int r) && r == 0, "VarInt truncated read fails");
 }
 
+// MortonCurve / HilbertCurve (#369) — the space-filling-curve codecs. Forces the magic-number bit spread
+// and Skilling's branchless, register-resident transpose transform to compile under Native AOT, and confirms on the
+// native runtime that both curves round-trip in 2-D and 3-D, that the 3-D forms leave the top bit clear,
+// that the domain guard still throws, and that Hilbert's adjacency guarantee holds.
+{
+    (uint X, uint Y)[] points = { (0, 0), (1, 0), (0, 1), (3, 5), (uint.MaxValue, 0), (0, uint.MaxValue), (uint.MaxValue, uint.MaxValue) };
+
+    bool mOk = true;
+    foreach (var (x, y) in points)
+    {
+        if (MortonCurve.Decode2D(MortonCurve.Encode2D(x, y)) != (x, y)) { mOk = false; break; }
+        if (HilbertCurve.Decode2D(HilbertCurve.Encode2D(x, y)) != (x, y)) { mOk = false; break; }
+    }
+    Check(mOk, "MortonCurve / HilbertCurve 2-D round-trip");
+    Check(MortonCurve.Encode2D(3, 5) == 39, "MortonCurve.Encode2D interleaves as documented");
+    Check(HilbertCurve.Decode2D(2) == (1u, 1u), "HilbertCurve traces the textbook order-2 curve");
+
+    const uint Max3D = MortonCurve.MaxCoordinate3D;
+    (uint X, uint Y, uint Z)[] cells = { (0, 0, 0), (1, 2, 3), (Max3D, 0, 0), (Max3D, Max3D, Max3D) };
+
+    bool cOk = true;
+    foreach (var (x, y, z) in cells)
+    {
+        ulong m = MortonCurve.Encode3D(x, y, z);
+        ulong h = HilbertCurve.Encode3D(x, y, z);
+        if (m >= 1UL << 63 || h >= 1UL << 63) { cOk = false; break; }
+        if (MortonCurve.Decode3D(m) != (x, y, z) || HilbertCurve.Decode3D(h) != (x, y, z)) { cOk = false; break; }
+    }
+    Check(cOk, "MortonCurve / HilbertCurve 3-D round-trip inside the 21-bit domain");
+
+    bool guarded = false;
+    try { MortonCurve.Encode3D(Max3D + 1, 0, 0); }
+    catch (ArgumentOutOfRangeException) { guarded = true; }
+    Check(guarded, "MortonCurve.Encode3D rejects an out-of-domain coordinate");
+
+    // Adjacency: stepping the Hilbert index moves exactly one cell along exactly one axis.
+    bool adjacent = true;
+    var (px, py) = HilbertCurve.Decode2D(0);
+    for (ulong i = 1; i <= 256; i++)
+    {
+        var (nx, ny) = HilbertCurve.Decode2D(i);
+        if (Math.Abs((long)nx - px) + Math.Abs((long)ny - py) != 1) { adjacent = false; break; }
+        (px, py) = (nx, ny);
+    }
+    Check(adjacent, "HilbertCurve consecutive indices are neighbouring cells");
+}
+
 // BitWriter / BitReader — sequential sub-byte bit I/O. Forces the ref-struct cursors, the LSB-first
 // clear-then-set write loop, the multi-byte-straddling field path, and the bounds-safe failure paths to
 // compile under Native AOT and confirms a mixed-width field record round-trips on the native runtime.

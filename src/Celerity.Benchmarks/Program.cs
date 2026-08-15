@@ -94,6 +94,8 @@ internal class Program
         typeof(SpanBitsBenchmark),
         typeof(SimdReductionsBenchmark),
         typeof(BranchlessBenchmark),
+        typeof(SpaceFillingCurveBenchmark),
+        typeof(SpaceFillingCurveLocalityBenchmark),
         typeof(EnsureCapacityBenchmark),
         typeof(KdTreeShapeBenchmark),
         typeof(SpatialGridShapeBenchmark),
