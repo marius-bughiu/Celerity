@@ -396,6 +396,7 @@
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' },
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',    vs: 'long[] (naive range min)' },
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',       vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards' },
+    { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                vs: 'List<T> (linear scan)' },
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                  vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },
@@ -410,7 +411,7 @@
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'SortedDictionary', 'SortedSet', 'Linq']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----
