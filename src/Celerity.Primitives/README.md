@@ -37,6 +37,14 @@ workload — Celerity deliberately does **not** reimplement what
   with zero allocation**, and **257× faster** on the asymmetric 1k × 10M shape
   where it gallops. Inputs **must** be sorted ascending — unsorted input
   silently returns a wrong answer (asserted in Debug builds only).
+- **`MortonCurve` / `HilbertCurve`** — space-filling curves: map a 2-D or 3-D
+  integer coordinate to one `ulong` whose ordering keeps nearby points nearby,
+  and back. `BitOperations` has no bit-interleave and the BCL has no Hilbert
+  anything, so sorting a point set into a cache-coherent layout, packing a
+  bounding-volume index, or building a tile key all start with hand-written
+  magic numbers today. Morton is the cheap default; Hilbert costs a loop over
+  the bit levels and buys the property Morton cannot give — consecutive indices
+  are always neighbouring cells.
 
 See the [utilities API reference](https://github.com/marius-bughiu/Celerity/blob/main/docs/api/utilities.md)
 for full docs and runnable examples.
