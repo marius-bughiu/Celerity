@@ -906,26 +906,32 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
     // one row and the column range is empty, so the same code covers the centre cell without a special case.
     private void VisitRing(int ring, int centreColumn, int centreRow, double x, double y, ref double best, ref int bestSlot)
     {
-        int left = centreColumn - ring;
-        int right = centreColumn + ring;
-        int top = centreRow - ring;
-        int bottom = centreRow + ring;
+        // The ring's edges are computed in long deliberately. A grid may legally be nearly Array.MaxLength
+        // cells across on one axis, and an unbounded nearest search from a cell in the far half of it reaches
+        // rings as wide as the grid — at which point `centre + ring` overflows int and wraps *negative*, sails
+        // through the `< _columns` guard below, and indexes _cellHeads at a negative cell. Widening costs
+        // nothing next to the cell walk that follows, and every narrowing cast back is bounded by the guard
+        // that precedes it.
+        long left = (long)centreColumn - ring;
+        long right = (long)centreColumn + ring;
+        long top = (long)centreRow - ring;
+        long bottom = (long)centreRow + ring;
 
-        int firstColumn = Math.Max(left, 0);
-        int lastColumn = Math.Min(right, _columns - 1);
+        int firstColumn = (int)Math.Max(left, 0);
+        int lastColumn = (int)Math.Min(right, _columns - 1L);
 
         if (top >= 0)
-            VisitRow(top, firstColumn, lastColumn, x, y, ref best, ref bestSlot);
+            VisitRow((int)top, firstColumn, lastColumn, x, y, ref best, ref bestSlot);
         if (bottom != top && bottom < _rows)
-            VisitRow(bottom, firstColumn, lastColumn, x, y, ref best, ref bestSlot);
+            VisitRow((int)bottom, firstColumn, lastColumn, x, y, ref best, ref bestSlot);
 
-        int firstRow = Math.Max(top + 1, 0);
-        int lastRow = Math.Min(bottom - 1, _rows - 1);
+        int firstRow = (int)Math.Max(top + 1, 0);
+        int lastRow = (int)Math.Min(bottom - 1, _rows - 1L);
 
         if (left >= 0)
-            VisitColumn(left, firstRow, lastRow, x, y, ref best, ref bestSlot);
+            VisitColumn((int)left, firstRow, lastRow, x, y, ref best, ref bestSlot);
         if (right != left && right < _columns)
-            VisitColumn(right, firstRow, lastRow, x, y, ref best, ref bestSlot);
+            VisitColumn((int)right, firstRow, lastRow, x, y, ref best, ref bestSlot);
     }
 
     private void VisitRow(int row, int firstColumn, int lastColumn, double x, double y, ref double best, ref int bestSlot)
