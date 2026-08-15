@@ -683,16 +683,22 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
 
     // Clamped on both sides, which is what makes an out-of-world point storable and — because the clamp is
     // monotone and a query's own cell range is clamped the same way — keeps every query exactly correct.
-    // The comparisons are made in double before the cast so that no out-of-range conversion is ever performed.
+    //
+    // Every comparison is made in double before the cast, so no out-of-range conversion is ever performed. The
+    // order also decides what a NaN does: it fails both tests and falls through to cell zero, rather than
+    // reaching the cast and relying on how a NaN converts. Nothing stored can be NaN and no query with one
+    // starts a walk, but the multiply itself can produce one — 0 times an infinite reciprocal, which a cell
+    // size small enough to invert to infinity gives on a degenerate world — and an arithmetic accident is a
+    // poor reason to depend on conversion semantics.
     private int AxisIndex(double offset, int limit)
     {
         double index = offset * _inverseCellSize;
-        if (index <= 0)
-            return 0;
         if (index >= limit)
             return limit - 1;
+        if (index > 0)
+            return (int)index;
 
-        return (int)index;
+        return 0;
     }
 
     private int CellOf(double x, double y) => (RowOf(y) * _columns) + ColumnOf(x);
