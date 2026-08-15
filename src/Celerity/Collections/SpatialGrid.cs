@@ -253,7 +253,7 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
         // caller who asked for a metre-wide cell over a planet-sized world deserves the reason rather than a
         // negative length.
         double cells = (double)_columns * _rows;
-        if (cells > MaxCells)
+        if (cells > Array.MaxLength)
         {
             throw new ArgumentOutOfRangeException(nameof(cellSize), cellSize,
                 "The world rectangle and cell size together call for more cells than an array can hold. Use a larger cell size.");
@@ -668,10 +668,6 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
     // overflows to infinity, and two far-apart points would compare equal rather than merely lose precision.
     private const double MaxMagnitude = 1e153;
 
-    // Array.MaxLength for a non-byte element type. Named rather than inlined because the message the caller
-    // gets names it as an array limit.
-    private const int MaxCells = 0x7FFFFFC7;
-
     private static void ValidateEdge(double value, string paramName)
     {
         if (!(Math.Abs(value) <= MaxMagnitude))
@@ -695,8 +691,11 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
     // "too many cells" message rather than a wrapped count.
     private static int AxisCells(double extent, double cellSize, string paramName)
     {
+        // Array.MaxLength rather than a hand-copied literal: it is the runtime's own ceiling, it is what
+        // IndexedPriorityQueue.ClampGrowth compares against, and hardcoding it invites exactly the argument
+        // about which of the several historical limits applies to an int[].
         double cells = Math.Ceiling(extent / cellSize);
-        if (cells > MaxCells)
+        if (cells > Array.MaxLength)
             throw new ArgumentOutOfRangeException(paramName, cellSize, "The world rectangle and cell size together call for more cells than an array can hold. Use a larger cell size.");
 
         // A degenerate extent — a point or a line — is one cell across rather than none, so a grid always has
