@@ -82,10 +82,11 @@ namespace Celerity.Collections;
 /// <b>The margin is a property of how full the cells are, not of the type.</b> Both this type and the
 /// hand-roll walk the same cells and run the same distance test on the same candidates; everything gained here
 /// is <i>per cell</i>, so the ratio is per-cell overhead against per-candidate work and it thins as the cells
-/// fill. On the frame workload above at 100,000 entities it is <b>5.5x</b> with about one point per cell and
+/// fill. On the frame workload above at 100,000 entities it is <b>5.0x</b> with about one point per cell and
 /// two matches per query — the broadphase shape — and <b>1.12x</b> at ten points per cell and twenty-five
 /// matches, with the cell size still tuned to the radius. Rebuilding a <see cref="KdTree{TValue}"/> every
-/// frame instead measures <b>16.1x</b>. All three are in <c>SpatialGridBenchmark</c> and
+/// frame instead measures <b>13.3x</b>. The frame figure is from CI's same-runner A/B; the shape sweep rides
+/// the extended suite and is a development-machine measurement. Both are in <c>SpatialGridBenchmark</c> and
 /// <c>SpatialGridShapeBenchmark</c>, and tabulated in the README.
 /// </para>
 /// <para>

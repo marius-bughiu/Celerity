@@ -43,22 +43,28 @@ using Celerity.Collections;
 // same distance test on the same candidates; everything this type saves is *per cell* — an array index instead
 // of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated List<T> — so the
 // margin is the ratio of per-cell overhead to per-candidate work and it collapses as the cells fill up. At ten
-// points per cell it is 1.12x rather than 5.5x, and on clustered data the grid *loses*. SpatialGridShapeBenchmark
+// points per cell it is 1.12x rather than 5.0x, and on clustered data the grid *loses*. SpatialGridShapeBenchmark
 // in the extended suite carries both of those measurements, and the README and API reference quote them next
 // to the headline rather than underneath it.
 //
-// Measured at 100,000 entities ON A DEVELOPMENT MACHINE — read the ratios, not the absolute times, and treat
-// even the ratios as provisional until CI's same-runner A/B replaces them: on KdTree the two disagreed by
-// enough to flip a documented claim.
+// Measured at 100,000 entities on CI's same-runner A/B (ubuntu-latest), which is what this repo quotes — a
+// development machine put every one of these ratios 8-20% higher, which is exactly the disagreement that
+// forced a documented KdTree claim to be corrected after the fact:
 //
-//     Frame    7.12 ms -> 1.30 ms   5.5x        Query      5.11 ms -> 1.01 ms   5.1x
-//     Churn     922 us ->  110 us   8.4x        Rebuild   17.71 ms -> 1.10 ms  16.1x
+//     Frame    9.83 ms -> 1.96 ms   5.0x        Query      8.27 ms -> 1.72 ms   4.8x
+//     Churn    1.34 ms ->  184 us   7.3x        Rebuild   26.15 ms -> 1.96 ms  13.3x
 //
-// At 1,000 entities the margins are wider, not narrower (10.9x on the frame), because the cells are emptier
+// At 1,000 entities the margins are wider, not narrower (11.9x on the frame), because the cells are emptier
 // still and the per-cell overhead is then nearly all of the baseline's work.
 //
+// READ THE FRAME NUMBER CAREFULLY. The issue's hard bar was ">= 5x or it does not ship", and 9.83/1.96 is
+// 5.02x — cleared by 0.4%, against a combined run spread of about 1.5% on the two measurements. It passes,
+// and it passes by less than the noise, so it should be read as *met, marginally* rather than comfortably.
+// A development machine said 5.5x; that is the number this comment would have carried if the CI requote had
+// been skipped, and it would have been the wrong one.
+//
 // The Rebuild number is worth reading against the issue that asked for this type, which predicted ">= 50x" over
-// rebuilding a KdTree per frame and called it the easy bar. It is 16.1x, and the reason the prediction missed
+// rebuilding a KdTree per frame and called it the easy bar. It is 13.3x, and the reason the prediction missed
 // is that a frame is not only the rebuild: both arms also run 10,000 radius queries, and that shared work sits
 // in the denominator of the ratio however cheap the index makes it. Comparing the builds alone would give a
 // larger number and a less useful one, since nobody rebuilds without then querying.
