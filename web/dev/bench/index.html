@@ -495,6 +495,12 @@ function escapeHtml(s) {
     // KdTree indexes the plane, which no ordered structure can. Two baselines per question: the plain scan
     // over every point, and the better hand-roll that orders them by x and works outward from the query.
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',          vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards', ops: ['NearestQuery', 'NearestSorted', 'RadiusQuery', 'RadiusSlab', 'KNearest', 'Build'] },
+    // SpatialGrid is the mutable counterpart: points that move. The baseline is the bucketed
+    // Dictionary-of-Lists a caller writes, which is a genuinely reasonable structure rather than a strawman.
+    // The "vs rebuilding a KdTree per frame" arm is measured in the benchmark but deliberately not charted:
+    // the parsers classify a series by the type name in the arm's name, and KdTree is one of ours, so it
+    // would land as a second Celerity series in one bucket and silently displace the other.
+    { key: 'SpatialGrid',         title: 'SpatialGrid<int> (moving points)',         vs: 'Dictionary<(int, int), List<int>> (bucketed grid)', ops: ['Frame', 'Query', 'Churn'] },
     // IntervalTree answers the interval questions no position-indexed structure can — the baseline is the
     // List<T> scan a caller writes, since the BCL has no interval structure at all. AnyOverlap is the honest
     // arm: both sides stop at the first match there, so it is where the gap is narrowest.

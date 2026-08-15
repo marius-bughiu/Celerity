@@ -4570,6 +4570,173 @@ Console.WriteLine(shown);                              // 3
 Console.WriteLine(depots.TryFindNearest(0, 0, maxDistance: 1, out _));   // False
 ```
 
+## SpatialGrid&lt;TValue&gt;
+
+```csharp
+public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValue>>
+```
+
+A **mutable uniform-cell spatial index** over points in the plane: constant-time `Add`, `Move` and `Remove`, and radius, rectangle and nearest queries that touch only the cells the query covers. It is the counterpart to [`KdTree<TValue>`](#kdtreetvalue) for points that **move**, and it shares that type's element, [`SpatialPoint<TValue>`](#the-element-spatialpointtvalue).
+
+`KdTree` is build-once and its own documentation says where that leaves you: *do not reach for it when the points change constantly — it is build-once, and rebuilding per frame costs more than the queries save*. That is a hole the docs point at and nothing filled, and it is the **commonest** spatial workload rather than an edge case — game entities and projectiles, drivers and couriers on a map, cursors and drag targets, particles in a simulation, agents in a model. All of them move every tick, and all of them ask *what is near me* every tick. .NET has nothing here either.
+
+### The baseline is not a strawman
+
+What a caller writes instead is a bucketed grid:
+
+```csharp
+var cells = new Dictionary<(int, int), List<Entity>>();
+```
+
+Insert by `(x / cellSize, y / cellSize)`, query by walking the cells the radius covers. That is a genuinely reasonable structure — the same cell idea, the same query shape — and it is the baseline this type is measured against, not the linear scan. What it costs is a tuple hash per cell touched, a `List<T>` allocated per occupied cell (again every time a cell that emptied out refills), a pointer chase per cell into separately allocated storage, garbage every time the population churns, and a teardown proportional to the occupied cells.
+
+### How it works
+
+A populated grid is two arrays and no per-cell or per-entry object. One array holds the cells' list heads; the other holds fixed-size entry records — coordinates, owning cell, and the two links that thread the entry through its cell's **intrusive doubly-linked list**. Payloads live in a third array the cell walk never touches, so a query reads coordinates and links without dragging `TValue` through the cache.
+
+The double links are what make `Remove` and a cell-crossing `Move` unlink in constant time instead of scanning the cell to find the predecessor. A vacated slot goes on a free list and is reused by the next `Add`.
+
+The world rectangle and the cell size are **declared up front**, which buys a dense cell array and index arithmetic in place of hashing a cell key. A point outside the declared world is *clamped* into the nearest edge cell rather than rejected: the clamp is monotone, and a query's own cell range is clamped the same way, so every query stays exactly correct — but a population that drifts outside piles onto the edge cells and degrades to a scan of them.
+
+### Handles
+
+```csharp
+public readonly struct SpatialGridHandle : IEquatable<SpatialGridHandle>
+```
+
+`Add` returns a handle, and `Move` / `Remove` / `TryGetPoint` take one. That is what makes `Move` a coordinate write plus — only when the point crossed a cell boundary — an unlink and a relink, rather than a search: there is no hash of the coordinates and no comparison of `TValue`, so the type needs no equality contract on its payload and holds duplicates happily. It is the same idea that makes [`IndexedPriorityQueue`](#indexedpriorityqueuetelement-tpriority-thasher)'s decrease-key addressable.
+
+A handle stays valid, addressing the same entry, for as long as that entry is in the grid — through any number of moves, and through other entries being added and removed around it. `Remove` and `Clear` **retire** it: each slot carries a version that is stepped when the slot is vacated, so a stale handle is rejected rather than silently addressing whatever reused the storage. The `default` handle refers to nothing and is always rejected.
+
+A handle belongs to the grid that issued it. Passing one to a *different* `SpatialGrid<TValue>` is a programming error the type cannot detect, because the versions are per-grid — keep handles with their grid, as you would an index into an array.
+
+### The two failure modes
+
+A uniform grid is the right structure for **evenly spread** moving objects and the wrong one for heavily clustered ones. Both are stated on the type rather than left to be discovered:
+
+1. **Non-uniform density.** If most of the population lands in one cell, every query in that neighbourhood degenerates to a scan of that cell. Note that this is the *opposite* of a k-d tree's preference, whose pruning tightens as points cluster — the two types are **complements rather than rivals**, and a clustered point set belongs in the tree.
+2. **A query radius much larger than the cell.** The number of cells a query touches grows with the square of `radius / cellSize`, so a wide query over a fine grid is worse than a scan.
+
+The first is worse than "it degrades to a scan", and it is measured rather than rounded to a caveat: on clustered data this type is **1.75x slower than the hand-roll it replaces**. Inside a cell the two layouts genuinely differ — the hand-roll walks a contiguous `List<T>` and issues independent loads per candidate, which the processor overlaps, while this type walks an intrusive linked list, so each step is a load that must complete before the next address is known. A cell holding two entries never shows that; a cell holding five hundred is a five-hundred-long chain of dependent cache misses.
+
+`cellSize` is the knob that trades these against each other, and it is a constructor parameter for that reason: roughly one that puts a handful of points in the average cell, and no smaller than the typical query radius.
+
+### What the complexity really is
+
+`Add`, `Move`, `Remove` and `TryGetPoint` are `O(1)` outright, amortized only over the entry array's growth. A range query is `O(cells touched + points in them)` — a statement about density rather than about `Count` — and never exceeds the scan it replaces by more than the cells' own cost.
+
+The nearest query expands square rings outward from the query's cell and stops once the next ring's own distance floor cannot beat what it has, so on a populated grid it settles in a handful of rings. On a **sparse** one it can walk out to the world's edge, which is `O(cells)`; pass the `maxDistance` overload when there is a distance beyond which the answer does not interest you, since the bound caps the ring expansion rather than merely filtering the result.
+
+### Constructors
+
+```csharp
+public SpatialGrid(double minX, double minY, double maxX, double maxY, double cellSize, int capacity = 0)
+```
+
+Creates an empty grid over the world rectangle `[minX, maxX] × [minY, maxY]`, divided into square cells of side `cellSize`. `capacity` pre-sizes the entry storage; it grows as needed. A degenerate world — a point, or a line — is a legal one-cell or one-row grid rather than an error.
+
+**Throws:**
+
+- `ArgumentException` if an upper edge precedes its lower edge.
+- `ArgumentOutOfRangeException` if an edge is not finite or exceeds `1e153` in magnitude, if `cellSize` is not a positive finite number, if `capacity` is negative, or if the world and cell size together call for more cells than an array can hold.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `Count` | Number of points currently in the grid. |
+| `CellSize` / `Columns` / `Rows` | The cell side, and how many cells span the world's width and height. Always at least one of each. |
+| `MinX` / `MinY` / `MaxX` / `MaxY` | The declared world rectangle. |
+| `Add(x, y, value)` | Adds a point and returns its handle. `O(1)`. |
+| `Move(handle, x, y)` | Relocates the entry. `O(1)`: two coordinate writes, plus an unlink and relink only if the cell changed. |
+| `Remove(handle)` | Removes the entry and retires the handle. `O(1)`. |
+| `TryGetPoint(handle, out point)` | Reads the point back, or `false` when the handle is not live. Also the way to test a handle without risking an exception. |
+| `Clear()` | Removes every entry and retires every handle. Storage is kept and returned to the free list. |
+| `ContainsWithin(x, y, radius)` | Whether any point lies within the (inclusive) radius. Stops at the first match. |
+| `CountWithin(x, y, radius)` | How many points lie within the radius. |
+| `CopyWithin(x, y, radius, destination, destinationIndex = 0)` | Writes the matches into a caller buffer. Allocation-free. |
+| `GetWithin(x, y, radius)` | The matches as an array. Allocates. |
+| `ContainsInRectangle(minX, minY, maxX, maxY)` | Whether any point lies inside the **closed** box. Stops at the first match. |
+| `CountInRectangle(...)` / `CopyInRectangle(...)` / `GetInRectangle(...)` | The same three tiers for a box query. |
+| `TryFindNearest(x, y, out point)` | The closest point by Euclidean distance. `false` only for an empty grid or a `NaN` query coordinate. |
+| `TryFindNearest(x, y, maxDistance, out point)` | The closest point no further than `maxDistance` away. The bound **caps the ring expansion**, so it is materially cheaper than an unbounded query followed by a distance test. |
+| `GetEnumerator()` | Struct enumerator over every live entry, in an unspecified order. |
+
+**Throws:**
+
+- `ArgumentException` if a handle does not address a live entry of this grid, or if a box's upper edge precedes its lower edge.
+- `ArgumentOutOfRangeException` if a coordinate is not finite or exceeds `1e153` in magnitude, if a radius or distance bound is negative or `NaN`, or if `destinationIndex` is outside `[0, destination.Length]`.
+- `ArgumentNullException` if a destination buffer is `null`.
+
+### Boundaries, ties and `NaN`
+
+- **Radius, distance bounds and the box are inclusive**, matching `KdTree`: a point exactly `r` away is within radius `r`, and a degenerate box matches the points on its line.
+- **Coordinates must be finite and at most `1e153` in magnitude** — the same domain `SpatialPoint<TValue>` documents, and for the same reason: every query compares *squared* distances, and past that bound a squared separation overflows and two far-apart points stop comparing as far apart.
+- **A `NaN` query coordinate matches nothing**: the nearest queries return `false` and the range queries return empty.
+- **Ties are unspecified.** Which of several equidistant points a nearest query returns is not part of the contract; the *distance* is.
+- **Duplicate coordinates stay distinct.** Two points at the same position are two entries with two handles, and every query reports both.
+- **Match order is unspecified** for the radius and box queries.
+
+### Mutation and enumeration
+
+Enumeration yields every live entry in slot order — deterministic for a given sequence of operations, but neither insertion nor spatial order, and an implementation detail. It is invalidated by `Add`, `Remove` and a `Clear` that removes something.
+
+`Move` deliberately does **not** invalidate it. Moving neither adds nor removes an entry nor changes which slot holds it, so the sequence an enumerator is walking is unaffected — an entry not yet reached is simply reported at its new position. That is the family's own rule (an operation that changes nothing about the sequence must not invalidate) applied to the operation this type exists for.
+
+### Capacity only grows, and k-nearest is absent
+
+There is no `TrimExcess`: a handle *is* a position in the entry array, so compacting it would invalidate every handle a caller is holding, which is the one thing this type promises not to do. `Clear` retires all outstanding handles and returns the storage to the free list for reuse, but keeps it.
+
+There is no k-nearest query either. Bounding a ring search by the *k*-th best rather than the best turns it into a heap walk whose ring bound is much weaker, and the workload this type exists for — one proximity query per moving entity per frame — is a radius query. Use `CopyWithin`, or `KdTree<TValue>` when the point set is static enough to build.
+
+### Choosing it
+
+Reach for `SpatialGrid<TValue>` when the points **move** and you query them as often as you move them, and when they are spread reasonably evenly over a world whose extent you can declare.
+
+Reach for [`KdTree<TValue>`](#kdtreetvalue) instead when the point set is **static** enough to build once, when it is heavily **clustered**, when you need **k-nearest** rather than a radius, or when there is no natural world rectangle to declare.
+
+### The documented BCL-beating workload
+
+The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. `SpatialGridBenchmark` measures that against the `Dictionary<(int, int), List<int>>` hand-roll above and against rebuilding a `KdTree` each frame, at 1,000 and 100,000 entities over a 10,000-unit square with the cell size equal to the query radius. At 100,000 entities the frame measures **5.5x** the hand-roll and **16.4x** the per-frame `KdTree` rebuild.
+
+**The margin is a property of how full the cells are, not of the type**, and the README carries that next to the headline rather than underneath it. Both structures walk the same cells and run the same distance test on the same candidates; everything gained here is *per cell*, so the ratio is per-cell overhead against per-candidate work and it thins as the cells fill. The figure above is the broadphase shape — about one point per cell, about two matches per query. At ten points per cell and twenty-five matches, with the cell size still tuned to the radius, it is **1.14x**; on clustered points it is **0.57x** and the hand-roll wins. `SpatialGridShapeBenchmark` in the extended suite carries all three. Full tables are in the README's [spatial index section](../../README.md#spatial-index), quoted from CI's same-runner A/B rather than from a development machine.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A world 10,000 units square, in 100-unit cells — roughly the query radius, which is the tuning rule.
+var world = new SpatialGrid<string>(0, 0, 10_000, 10_000, cellSize: 100, capacity: 4);
+
+SpatialGridHandle courier = world.Add(120, 340, "courier-7");
+SpatialGridHandle rider   = world.Add(180, 300, "rider-3");
+world.Add(9_000, 9_000, "depot");
+
+// Every tick: move what moved. No search, no rehash — the handle addresses the entry directly.
+world.Move(courier, 150, 320);
+
+// ...then ask what is near it, without allocating.
+Console.WriteLine(world.CountWithin(150, 320, 90));          // 2 — the courier itself and the rider
+
+var nearby = new SpatialPoint<string>[8];
+int found = world.CopyWithin(150, 320, 90, nearby);
+Console.WriteLine(found);                                     // 2
+
+// Nearest, with a bound that caps the search rather than just filtering it.
+if (world.TryFindNearest(150, 320, maxDistance: 200, out SpatialPoint<string> closest))
+    Console.WriteLine(closest.Value);                         // courier-7
+
+Console.WriteLine(world.TryFindNearest(5_000, 5_000, maxDistance: 100, out _));   // False
+
+// Everything in the current viewport.
+Console.WriteLine(world.CountInRectangle(0, 0, 1_000, 1_000)); // 2
+
+// Removing retires the handle: it is rejected afterwards rather than addressing a recycled slot.
+world.Remove(rider);
+Console.WriteLine(world.TryGetPoint(rider, out _));           // False
+```
+
 ## IntervalTree&lt;TKey, TValue, TComparer&gt;
 
 ```csharp

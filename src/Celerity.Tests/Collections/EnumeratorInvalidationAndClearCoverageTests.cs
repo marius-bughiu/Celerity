@@ -189,6 +189,53 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void SpatialGridEnumeratorReset_ShouldThrowInvalidOperationException_WhenGridModified()
+    {
+        var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);
+        grid.Add(1, 1, 1);
+        grid.Add(2, 2, 2);
+
+        var enumerator = grid.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        grid.Add(3, 3, 3);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        var second = grid.GetEnumerator();
+        grid.Add(4, 4, 4);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    /// <summary>
+    /// The grid's own deliberate exception to the rule, and the reason it needs pinning next to
+    /// <see cref="FenwickTree{T}"/>'s: a <c>Move</c> relocates a point but changes neither the set of entries
+    /// nor the slot each one occupies, so the sequence an enumerator is walking is untouched and invalidating
+    /// would be gratuitous. This is the mutation the type exists for, so the guarantee is load-bearing rather
+    /// than incidental.
+    /// </summary>
+    [Fact]
+    public void SpatialGridMove_ShouldNotBumpTheVersion_BecauseTheSequenceIsUnchanged()
+    {
+        var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);
+        var handle = grid.Add(1, 1, 1);
+        grid.Add(2, 2, 2);
+
+        var enumerator = grid.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        grid.Move(handle, 9, 9);
+
+        enumerator.Reset();
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(2, seen);
+    }
+
+    [Fact]
     public void LruCacheEnumeratorReset_ShouldThrowInvalidOperationException_WhenCacheModified()
     {
         var cache = new LruCache<int, string, Int32WangHasher>(4);
@@ -340,6 +387,50 @@ public class EnumeratorInvalidationAndClearCoverageTests
         while (enumerator.MoveNext())
             seen++;
         Assert.Equal(0, seen);
+    }
+
+    [Fact]
+    public void SpatialGridClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
+    {
+        var grid = new SpatialGrid<int>(0, 0, 10, 10, 1, capacity: 4);
+        var handle = grid.Add(1, 1, 1);
+        grid.Remove(handle);
+        Assert.Equal(0, grid.Count);
+
+        var enumerator = grid.GetEnumerator();
+        grid.Clear();
+
+        Assert.Equal(0, grid.Count);
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(0, seen);
+    }
+
+    [Fact]
+    public void SpatialGridClearAndRemove_ShouldReleaseThePayloads_WhenTheValueIsReferenceTyped()
+    {
+        var grid = new SpatialGrid<string>(0, 0, 10, 10, 1);
+        var alpha = grid.Add(1, 1, "alpha");
+        grid.Add(2, 2, "beta");
+        grid.Add(3, 3, "gamma");
+
+        // The removal arm of the reference-clearing guard.
+        grid.Remove(alpha);
+        Assert.Equal(2, grid.Count);
+        Assert.False(grid.TryGetPoint(alpha, out SpatialPoint<string> vacated));
+        Assert.Null(vacated.Value);
+
+        // ...and the Clear() arm, which vacates every slot at once.
+        grid.Clear();
+        Assert.Equal(0, grid.Count);
+        Assert.Empty(grid);
+
+        // The storage is retained and reused, so a refilled grid still reads back correctly.
+        var reused = grid.Add(4, 4, "delta");
+        Assert.True(grid.TryGetPoint(reused, out SpatialPoint<string> point));
+        Assert.Equal("delta", point.Value);
     }
 
     [Fact]
