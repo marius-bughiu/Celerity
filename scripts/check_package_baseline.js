@@ -145,6 +145,28 @@ function maxStable(versions) {
 }
 
 // ---- Reading the repository ---------------------------------------------------------
+// These are text scans, not an MSBuild evaluation — which is the right trade for a check
+// that has to answer in seconds, but it means the scan has to agree with MSBuild about
+// what is *live*. A commented-out element is inert to MSBuild and must be inert here too,
+// or the guard reads a value the build never sees: a stale `<CelerityPackageValidationBaseline>`
+// left in an example above the real one would be matched first and reported as correct,
+// and a commented `<IsPackable>false</IsPackable>` would drop a shipping package out of the
+// guard while the gate went on validating it. Both fail green, which is the one direction
+// this file is not allowed to fail in.
+//
+// This repository invites exactly that: the props file carries a long comment block about
+// the bump ritual directly above the property it describes.
+
+function stripXmlComments(source) {
+  return source.replace(/<!--[\s\S]*?-->/g, '');
+}
+
+// Pure, so the self-test can drive it; readBaseline() adds the file handling.
+function findBaseline(source) {
+  const m = /<CelerityPackageValidationBaseline>\s*([^<\s]+)\s*<\/CelerityPackageValidationBaseline>/
+    .exec(stripXmlComments(source));
+  return m ? m[1] : null;
+}
 
 function readBaseline() {
   let source;
@@ -153,24 +175,17 @@ function readBaseline() {
   } catch (e) {
     fail(`could not read ${PROPS}: ${e.message}`);
   }
-  const m = /<CelerityPackageValidationBaseline>\s*([^<\s]+)\s*<\/CelerityPackageValidationBaseline>/.exec(source);
-  if (!m) {
+  const found = findBaseline(source);
+  if (found === null) {
     fail(
       `could not find <CelerityPackageValidationBaseline> in ${PROPS}. Either the property ` +
       `was renamed — in which case update ${SELF} and src/Directory.Build.targets together — ` +
       `or the binary-compatibility gate has lost its baseline entirely.`
     );
   }
-  return m[1];
+  return found;
 }
 
-// The shipped set is derived, never listed. A hardcoded roster is the same failure this
-// check exists to prevent: it would go stale the moment an eighth package is added, and
-// the new package would be the one silently outside the gate.
-//
-// A project ships when it has a PackageId and has not opted out with IsPackable=false —
-// which is exactly the condition Directory.Build.targets applies when it sets
-// PackageValidationBaselineVersion.
 // Returns the package a project ships, or null when it ships nothing.
 //
 // The packable test is `IsPackable != false`, which is exactly the condition
@@ -186,7 +201,8 @@ function readBaseline() {
 // check has no business doing; the two-step SDK default is reproduced instead, and the
 // explicit element still wins where there is one (Celerity.csproj ships as
 // Celerity.Collections, which is precisely why the element cannot be assumed away).
-function readProject(source, projectPath) {
+function readProject(raw, projectPath) {
+  const source = stripXmlComments(raw);
   if (/<IsPackable>\s*false\s*<\/IsPackable>/i.test(source)) return null;
 
   const explicit = /<PackageId>\s*([^<\s]+)\s*<\/PackageId>/.exec(source);
@@ -226,7 +242,14 @@ function discoverPackages() {
 // the package id has never been published — so it is mapped to "no versions" rather than
 // to an error. Anything else is a transport problem and stops the network half.
 
-function getJson(url, attempt = 1) {
+// `validate` runs on the parsed body and turns an unexpected *shape* into a transport
+// failure. That distinction is load-bearing: a 404 means "never published" and is an answer
+// this check acts on, while a 200 carrying something other than the expected document means
+// the lookup did not work — and treating the latter as "no versions" would report a
+// perfectly healthy package as gated-but-never-published, a hard repository failure, on the
+// strength of a bad response. Raising it inside the promise puts it on the retry-then-warn
+// path with every other transport problem.
+function getJson(url, validate, attempt = 1) {
   return new Promise((resolve, reject) => {
     const request = https.get(url, { timeout: 15000 }, (response) => {
       const { statusCode } = response;
@@ -242,13 +265,23 @@ function getJson(url, attempt = 1) {
       }
       let body = '';
       response.setEncoding('utf8');
+      // A connection dropped after the headers emits on the *response*, not the request.
+      // Without this listener Node raises it as an unhandled 'error' event and takes the
+      // process down — skipping the retry-and-warn policy this file documents.
+      response.on('error', reject);
+      response.on('aborted', () => reject(new Error(`response aborted: ${url}`)));
       response.on('data', (chunk) => { body += chunk; });
       response.on('end', () => {
+        let parsed;
         try {
-          resolve(JSON.parse(body));
+          parsed = JSON.parse(body);
         } catch (e) {
           reject(new Error(`malformed JSON from ${url}: ${e.message}`));
+          return;
         }
+        const complaint = validate ? validate(parsed) : null;
+        if (complaint) reject(new Error(`${complaint}: ${url}`));
+        else resolve(parsed);
       });
     });
     request.on('timeout', () => request.destroy(new Error(`timed out after 15s: ${url}`)));
@@ -257,13 +290,21 @@ function getJson(url, attempt = 1) {
     // One retry, because the alternative to tolerating a blip is a red pull request that
     // says nothing about the repository.
     if (attempt >= 2) throw e;
-    return new Promise((resolve) => setTimeout(resolve, 2000)).then(() => getJson(url, attempt + 1));
+    return new Promise((resolve) => setTimeout(resolve, 2000)).then(() => getJson(url, validate, attempt + 1));
   });
 }
 
+function validateIndex(body) {
+  if (body === null || typeof body !== 'object' || !Array.isArray(body.versions)) {
+    return 'flat-container index has no versions array';
+  }
+  return null;
+}
+
 async function publishedVersions(id) {
-  const index = await getJson(`${FLAT_CONTAINER}/${id.toLowerCase()}/index.json`);
-  return index && Array.isArray(index.versions) ? index.versions : [];
+  // null is the 404: the package id has never been published, which is a real answer.
+  const index = await getJson(`${FLAT_CONTAINER}/${id.toLowerCase()}/index.json`, validateIndex);
+  return index === null ? [] : index.versions;
 }
 
 // ---- Self-test ----------------------------------------------------------------------
@@ -344,6 +385,25 @@ function selfTest() {
     if (got !== expected) failures.push(`  readProject/${label} expected "${expected}", got "${got}"`);
   }
 
+  for (const [label, source, expected] of BASELINE_CASES) {
+    const actual = findBaseline(source);
+    if (actual !== expected) failures.push(`  findBaseline/${label} expected ${expected}, got ${actual}`);
+  }
+
+  // A 200 whose body is not a flat-container index is a failed lookup, not an unpublished
+  // package — misreading it turns a healthy package into a hard "never published" failure.
+  for (const [label, body, shouldComplain] of [
+    ['a real index', { versions: ['2.6.0'] }, false],
+    ['an empty index', { versions: [] }, false],
+    ['no versions array', { message: 'blocked' }, true],
+    ['not an object', 'nope', true],
+    ['null', null, true],
+  ]) {
+    if ((validateIndex(body) !== null) !== shouldComplain) {
+      failures.push(`  validateIndex/${label} expected complain=${shouldComplain}`);
+    }
+  }
+
   for (const [label, baseline, packages, expected] of ANALYSIS_CASES) {
     const found = analyze(baseline, packages, true).length;
     if (found !== expected) {
@@ -365,7 +425,8 @@ function selfTest() {
     process.exit(1);
   }
   const total =
-    VERSION_CASES.length + STABILITY_CASES.length + 5 + PROJECT_CASES.length + ANALYSIS_CASES.length + 1;
+    VERSION_CASES.length + STABILITY_CASES.length + 5 + PROJECT_CASES.length +
+    BASELINE_CASES.length + 5 + ANALYSIS_CASES.length + 1;
   console.log(`ok: ${total} case(s) pinned.`);
 }
 
@@ -391,6 +452,35 @@ const PROJECT_CASES = [
     '<Project><PropertyGroup><PackageId>Celerity.Sorting</PackageId>' +
     '<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline></PropertyGroup></Project>',
     'src/Celerity.Sorting/Celerity.Sorting.csproj', 'Celerity.Sorting (hatched)'],
+
+  // A commented element is inert to MSBuild and must be inert here. Getting this wrong
+  // fails green: the package silently leaves the guard while the gate goes on validating it.
+  ['a commented IsPackable does not unship a package',
+    '<Project><PropertyGroup><!-- <IsPackable>false</IsPackable> -->' +
+    '<PackageId>Celerity.Collections</PackageId></PropertyGroup></Project>',
+    'src/Celerity/Celerity.csproj', 'Celerity.Collections'],
+  ['a commented PackageId does not name the package',
+    '<Project><PropertyGroup><!-- <PackageId>Celerity.Old</PackageId> --></PropertyGroup></Project>',
+    'src/Celerity.Statistics/Celerity.Statistics.csproj', 'Celerity.Statistics'],
+  ['a commented escape hatch does not hatch the package',
+    '<Project><PropertyGroup><PackageId>Celerity.Sorting</PackageId>' +
+    '<!-- <CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline> --></PropertyGroup></Project>',
+    'src/Celerity.Sorting/Celerity.Sorting.csproj', 'Celerity.Sorting'],
+];
+
+// The props file carries a long comment block about the bump ritual directly above the
+// property, so an example element written in it is the realistic way this goes wrong — and
+// it goes wrong green, reporting a stale baseline as correct.
+const BASELINE_CASES = [
+  ['the plain property', '<Project><PropertyGroup><CelerityPackageValidationBaseline>2.6.0' +
+    '</CelerityPackageValidationBaseline></PropertyGroup></Project>', '2.6.0'],
+  ['a commented example above the live one',
+    '<Project><!-- e.g. <CelerityPackageValidationBaseline>2.5.0</CelerityPackageValidationBaseline> -->' +
+    '<PropertyGroup><CelerityPackageValidationBaseline>2.6.0</CelerityPackageValidationBaseline>' +
+    '</PropertyGroup></Project>', '2.6.0'],
+  ['a commented-out property and no live one',
+    '<Project><!-- <CelerityPackageValidationBaseline>2.6.0</CelerityPackageValidationBaseline> --></Project>',
+    null],
 ];
 
 // Every documented failure direction, plus the two shapes that must *not* fail. Before
