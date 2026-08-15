@@ -59,18 +59,24 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// 1. <b>Non-uniform density.</b> If most of the population lands in one cell, every query in that
-/// neighbourhood degenerates to a scan of that cell. Note that this is the <i>opposite</i> of
-/// <see cref="KdTree{TValue}"/>'s preference, whose pruning tightens as points cluster — the two types are
-/// complements rather than rivals, and a static clustered point set belongs in the tree.
+/// neighbourhood degenerates to a scan of that cell.
 /// </para>
 /// <para>
-/// The first is worse than "it degrades to a scan", and the benchmark says so rather than rounding it to a
-/// caveat: on clustered data this type is measured <b>1.75x slower</b> than the very hand-roll it replaces.
+/// That is worse than "it degrades to a scan", and the benchmark says so rather than rounding it to a caveat:
+/// on clustered data this type is measured <b>about twice as slow</b> as the very hand-roll it replaces.
 /// Inside a cell the two layouts genuinely differ — the hand-roll walks a contiguous <c>List&lt;T&gt;</c> and
 /// issues independent loads per candidate, while this type walks an intrusive linked list, so each step is a
 /// load that must complete before the next address is known. A cell holding two entries never shows that; a
-/// cell holding five hundred is a five-hundred-long dependency chain. Cluster your points and you want
-/// <see cref="KdTree{TValue}"/>, which prefers exactly the distribution this type dislikes.
+/// cell holding five hundred is a five-hundred-long dependency chain.
+/// </para>
+/// <para>
+/// <b>And there is no consolation elsewhere in this library, which was worth measuring rather than assuming.</b>
+/// An earlier draft of these docs sent clustered points to <see cref="KdTree{TValue}"/>, reasoning that its
+/// pruning adapts to density where a fixed cell size cannot. The measurement does not support it: on clustered
+/// moving points a per-frame <see cref="KdTree{TValue}"/> rebuild is <i>level</i> with this type, both about
+/// twice the hand-roll's time, and <c>KdTreeShapeBenchmark</c> separately finds the tree losing to <i>its</i>
+/// own hand-roll under clustering. So the honest advice for heavily clustered points that move is the
+/// unflattering one: the bucketed <c>Dictionary</c> of contiguous lists wins, and neither type here helps.
 /// </para>
 /// <para>
 /// 2. <b>A query radius much larger than the cell.</b> The number of cells a query touches grows with the
@@ -93,7 +99,9 @@ namespace Celerity.Collections;
 /// <b>What the bound really is.</b> <see cref="Add"/>, <see cref="Move"/>, <see cref="Remove"/> and
 /// <see cref="TryGetPoint"/> are <c>O(1)</c> outright, amortized only over the entry array's growth. A range
 /// query is <c>O(cells touched + points in them)</c>, which is a statement about density rather than about
-/// <see cref="Count"/>; it never exceeds the scan it replaces by more than the cells' own cost. The nearest
+/// <see cref="Count"/>. That is an asymptotic statement and nothing more: the clustered measurement above is
+/// the reminder that a matching bound does not mean matching time, since the intrusive list adds a dependent
+/// load per candidate that a contiguous bucket does not. The nearest
 /// query expands square rings outward and stops once the next ring cannot beat what it has, so on a populated
 /// grid it settles in a handful of rings — but on a sparse one it can walk out to the world's edge, which is
 /// <c>O(cells)</c>. Pass the <c>maxDistance</c> overload when there is a distance beyond which the answer does

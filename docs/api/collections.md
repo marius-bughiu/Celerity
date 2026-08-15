@@ -4614,16 +4614,18 @@ A handle belongs to the grid that issued it. Passing one to a *different* `Spati
 
 A uniform grid is the right structure for **evenly spread** moving objects and the wrong one for heavily clustered ones. Both are stated on the type rather than left to be discovered:
 
-1. **Non-uniform density.** If most of the population lands in one cell, every query in that neighbourhood degenerates to a scan of that cell. Note that this is the *opposite* of a k-d tree's preference, whose pruning tightens as points cluster — the two types are **complements rather than rivals**, and a clustered point set belongs in the tree.
+1. **Non-uniform density.** If most of the population lands in one cell, every query in that neighbourhood degenerates to a scan of that cell.
 2. **A query radius much larger than the cell.** The number of cells a query touches grows with the square of `radius / cellSize`, so a wide query over a fine grid is worse than a scan.
 
-The first is worse than "it degrades to a scan", and it is measured rather than rounded to a caveat: on clustered data this type is **1.75x slower than the hand-roll it replaces**. Inside a cell the two layouts genuinely differ — the hand-roll walks a contiguous `List<T>` and issues independent loads per candidate, which the processor overlaps, while this type walks an intrusive linked list, so each step is a load that must complete before the next address is known. A cell holding two entries never shows that; a cell holding five hundred is a five-hundred-long chain of dependent cache misses.
+The first is worse than "it degrades to a scan", and it is measured rather than rounded to a caveat: on clustered data this type is **about twice as slow as the hand-roll it replaces**. Inside a cell the two layouts genuinely differ — the hand-roll walks a contiguous `List<T>` and issues independent loads per candidate, which the processor overlaps, while this type walks an intrusive linked list, so each step is a load that must complete before the next address is known. A cell holding two entries never shows that; a cell holding five hundred is a five-hundred-long chain of dependent cache misses.
+
+**And there is no consolation elsewhere in this library**, which was worth measuring rather than assuming. An earlier draft of this page sent clustered points to [`KdTree<TValue>`](#kdtreetvalue), reasoning that pruning adapts to density where a fixed cell size cannot. The measurement does not support it: on clustered *moving* points a per-frame `KdTree` rebuild is **level with this type** (24.3 ms against 24.0 ms), both about twice the hand-roll's 12.5 ms — and `KdTreeShapeBenchmark` separately finds the tree losing to *its* own hand-roll under clustering. So the honest advice for heavily clustered points that move is the unflattering one: the bucketed `Dictionary` of contiguous lists wins, and neither type here helps.
 
 `cellSize` is the knob that trades these against each other, and it is a constructor parameter for that reason: roughly one that puts a handful of points in the average cell, and no smaller than the typical query radius.
 
 ### What the complexity really is
 
-`Add`, `Move`, `Remove` and `TryGetPoint` are `O(1)` outright, amortized only over the entry array's growth. A range query is `O(cells touched + points in them)` — a statement about density rather than about `Count` — and never exceeds the scan it replaces by more than the cells' own cost.
+`Add`, `Move`, `Remove` and `TryGetPoint` are `O(1)` outright, amortized only over the entry array's growth. A range query is `O(cells touched + points in them)` — a statement about density rather than about `Count`. That is asymptotic and nothing more: the clustered measurement above is the reminder that a matching bound does not mean matching time, since the intrusive list adds a dependent load per candidate that a contiguous bucket does not.
 
 The nearest query expands square rings outward from the query's cell and stops once the next ring's own distance floor cannot beat what it has, so on a populated grid it settles in a handful of rings. On a **sparse** one it can walk out to the world's edge, which is `O(cells)`; pass the `maxDistance` overload when there is a distance beyond which the answer does not interest you, since the bound caps the ring expansion rather than merely filtering the result.
 
@@ -4695,7 +4697,7 @@ There is no k-nearest query either. Bounding a ring search by the *k*-th best ra
 
 Reach for `SpatialGrid<TValue>` when the points **move** and you query them as often as you move them, and when they are spread reasonably evenly over a world whose extent you can declare.
 
-Reach for [`KdTree<TValue>`](#kdtreetvalue) instead when the point set is **static** enough to build once, when it is heavily **clustered**, when you need **k-nearest** rather than a radius, or when there is no natural world rectangle to declare.
+Reach for [`KdTree<TValue>`](#kdtreetvalue) instead when the point set is **static** enough to build once, when you need **k-nearest** rather than a radius, or when there is no natural world rectangle to declare. Do **not** reach for it merely because your points are clustered and moving — measured, it is level with this type there and both lose to the hand-roll.
 
 ### The documented BCL-beating workload
 
