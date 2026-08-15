@@ -694,6 +694,49 @@ void Check(bool condition, string message)
     Check(words.Aggregate == "abc" && words.Query(1, 3) == "bc", "SegmentTree reference-typed elements");
 }
 
+// KdTree — the build-once spatial index. What is ILC-specific here is the query core: both traversals are
+// generic over struct type arguments the compiler has to specialize ahead of time — the range walk over a
+// region *and* a visitor — two regions crossed with three visitors, so six instantiations that must each be
+// rooted with no JIT to fall back on — and
+// the nearest walk over a visitor whose bounded max-heap lives in the caller's array. Exercise the nearest,
+// k-nearest, radius and rectangle families, a reference-typed payload, and the struct enumerator.
+{
+    var stores = new KdTree<string>(new[]
+    {
+        new SpatialPoint<string>(0, 0, "depot"),
+        new SpatialPoint<string>(10, 0, "east"),
+        new SpatialPoint<string>(0, 10, "north"),
+        new SpatialPoint<string>(30, 30, "outpost"),
+    });
+
+    Check(stores.Count == 4, "KdTree build");
+    Check(stores.TryFindNearest(1, 1, out var closest) && closest.Value == "depot", "KdTree nearest query");
+    Check(stores.TryFindNearest(9, 1, 2, out var bounded) && bounded.Value == "east", "KdTree bounded nearest");
+    Check(!stores.TryFindNearest(100, 100, 5, out _), "KdTree bounded nearest rejects a distant point");
+
+    Check(stores.CountWithin(0, 0, 10) == 3 && stores.CountWithin(0, 0, 9) == 1, "KdTree radius is inclusive");
+    Check(stores.ContainsWithin(29, 29, 2) && !stores.ContainsWithin(50, 50, 5), "KdTree radius predicate");
+    Check(stores.CountInRectangle(-1, -1, 11, 11) == 3, "KdTree rectangle query");
+    Check(stores.ContainsInRectangle(30, 30, 30, 30), "KdTree rectangle is closed");
+
+    var nearest = stores.GetNearest(0, 0, 2);
+    Check(nearest.Length == 2 && nearest[0].Value == "depot", "KdTree k-nearest convenience tier");
+
+    var buffer = new SpatialPoint<string>[3];
+    Check(stores.CopyNearest(0, 0, buffer) == 3 && buffer[0].Value == "depot", "KdTree k-nearest copy tier");
+    Check(stores.CopyWithin(0, 0, 10, buffer) == 3, "KdTree radius copy tier");
+    Check(stores.GetWithin(0, 0, 10).Length == 3 && stores.GetInRectangle(20, 20, 40, 40).Length == 1,
+        "KdTree convenience tiers");
+
+    int visited = 0;
+    foreach (var point in stores) visited += point.Value!.Length;
+    Check(visited == 21, "KdTree enumerates every entry");
+
+    // A value-typed payload, so the entry layout really is specialized per instantiation.
+    var sensors = new KdTree<int>(new[] { new SpatialPoint<int>(-5, -5, 1), new SpatialPoint<int>(5, 5, 2) });
+    Check(sensors.TryFindNearest(4, 4, out var sensor) && sensor.Value == 2, "KdTree value-typed payload");
+}
+
 // BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
 // the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
 // IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the

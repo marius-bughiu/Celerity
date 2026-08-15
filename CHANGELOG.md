@@ -6,6 +6,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`KdTree<TValue>`** in `Celerity.Collections` — a build-once, immutable **2-D spatial index** over `SpatialPoint<TValue>`: nearest-neighbour, k-nearest, within-a-radius and inside-a-box queries without measuring every point. The BCL ships no spatial index of any kind, so the fallback is an array scanned per query, which the nearest query beats by **348x** at 100,000 points — but only by **2.5x** against a hand-rolled sorted scan, and at a thousand points that margin is all but gone. Every tier but the three `Get` helpers allocates nothing. Immutable: adding a point means rebuilding. Closes [#366](https://github.com/marius-bughiu/Celerity/issues/366).
+
 - **`UInt32IdentityHasher` / `UInt64IdentityHasher`** — the zero-work, no-mixing hasher tier is now reachable from `uint`- and `ulong`-keyed collections and sketches, where the cheapest option was previously the XOR-fold. `UInt64IdentityHasher` keeps only the low 32 bits, so use it only when those are the discriminating ones. Closes [#357](https://github.com/marius-bughiu/Celerity/issues/357).
 
 - **The ten mutable sets now implement `IReadOnlySet<T>`** alongside `ISet<T>` — `CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `SmallSet`, `IntSet`, `LongSet`, `SparseSet` and `EnumSet`. `ISet<T>` does not derive from the read-only interface, so passing any of them to an API typed against `IReadOnlySet<T>` was a compile error; every member it needs was already public, so no behaviour changed. Closes [#306](https://github.com/marius-bughiu/Celerity/issues/306).
