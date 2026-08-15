@@ -682,3 +682,106 @@ bool any = SortedSpan.Overlaps(current, incoming);
 - **Empty inputs** are valid: an intersection with an empty side is empty, a union with one is the other side (de-duplicated), and `a \ {}` is `a` de-duplicated.
 - **Element type.** The constraint is `IComparisonOperators<T, T, bool>`, so the merge compares with the type's own `<` and `==`. For the primitive integer types the JIT specializes the generic per value type and each comparison becomes a single instruction — which is why there are no hand-written `int` / `long` / `uint` / `ulong` overloads. Floating-point types compile but are not the intended use: `NaN` compares `false` against everything, so a span containing one is not ordered under `<` and violates the precondition.
 - **No vectorized path ships.** A `Vector256` merge was scoped as opt-in only if it beat the scalar merge by >=25% on the 1M x 1M case; the scalar merge already runs at ~6 ms there (memory-bound, one sequential pass over both inputs), and merge is branch-heavy enough that vectorizing it is frequently a wash. The scalar path is the whole implementation.
+
+## MortonCurve / HilbertCurve (space-filling curves)
+
+```csharp
+namespace Celerity.Primitives;
+
+public static class MortonCurve
+{
+    public const uint MaxCoordinate3D = (1u << 21) - 1;   // 2,097,151
+
+    public static ulong                  Encode2D(uint x, uint y);          // 32 bits per axis, bijective
+    public static (uint X, uint Y)       Decode2D(ulong code);
+    public static ulong                  Encode3D(uint x, uint y, uint z);  // 21 bits per axis, 63-bit code
+    public static (uint X, uint Y, uint Z) Decode3D(ulong code);
+}
+
+public static class HilbertCurve
+{
+    public const uint MaxCoordinate3D = MortonCurve.MaxCoordinate3D;
+
+    public static ulong                  Encode2D(uint x, uint y);
+    public static (uint X, uint Y)       Decode2D(ulong index);
+    public static ulong                  Encode3D(uint x, uint y, uint z);
+    public static (uint X, uint Y, uint Z) Decode3D(ulong index);
+}
+```
+
+A space-filling curve maps a 2-D or 3-D coordinate to **one integer** such that points near each other in space get numbers near each other in the ordering. That is what lets a one-dimensional structure answer a spatially local question: sort points by their curve index and a plain sorted array, a `BTreeSet<T>` or a `SortedSpan` becomes a cache-coherent spatial container; the same order is the standard packing order for bulk-loading a bounding-volume index, and the standard way to build a tile / cell key that survives a sort or a hash-partition.
+
+**The BCL has no bit-interleave.** `BitOperations` ships popcount, leading/trailing-zero counts and rotates, but nothing that scatters a value's bits across a mask, so a caller who wants a Morton code writes the magic-number sequence themselves. There is no Hilbert anything.
+
+### Which curve
+
+|  | `MortonCurve` (Z-order) | `HilbertCurve` |
+| --- | --- | --- |
+| **Aligned `2^k` cell is a contiguous index range** | yes | yes |
+| **Consecutive indices are neighbouring cells** | **no** — the Z pattern jumps a quadrant width at every crossing | **yes**, at every scale |
+| **Index rises with one axis while the other is fixed** | **yes** | no — the curve folds back on itself |
+| **Cost** | a straight-line bit spread | a loop over the bit levels |
+
+Reach for **Morton** when you want *a* locality-preserving sort key, a cell id, or a packing order — it is the cheaper of the two and the right default. Reach for **Hilbert** when the ordering itself backs a range query, because a contiguous run of Hilbert indices is a compact, connected region of the plane rather than a set of scattered strips.
+
+### Precision
+
+2-D is lossless over the whole `uint` range on both axes: 32 bits per axis fill the 64-bit key exactly, and both `Encode2D` methods are **bijections** onto `ulong` — every key decodes, and re-encodes to itself. 3-D packs three axes into the same 64 bits, so it is capped at 21 bits per axis (`MaxCoordinate3D`) and produces a 63-bit key with bit 63 always clear. `Encode3D` **throws `ArgumentOutOfRangeException`** on a larger coordinate rather than keeping the low 21 bits, because silently masking would round-trip a *different* point back to the caller. `Decode3D` ignores bit 63, so every `ulong` decodes.
+
+The curves are fixed-precision — there is no order parameter. You do not need one to work in a smaller universe: both curves are self-similar, so coordinates confined to an aligned `2^k`-sided sub-square still land in one contiguous run of indices. What you do not get is agreement with an independently-computed order-`k` curve, since the sub-square is traversed in whatever rotation the enclosing curve reaches it in.
+
+### Why there is no BMI2 path
+
+x86 `BMI2` computes a Morton code in two instructions — `PDEP` to scatter each axis across its mask, `PEXT` to gather it back — and `SpaceFillingCurveBenchmark` carries that implementation as its own arm. It is **3.8× faster than the portable spread** that ships, measured, not assumed. It is still not what ships, for two reasons:
+
+- **`Bmi2.IsSupported` is true on hardware where the instruction is a trap.** On AMD Zen 1 and Zen 2, `PDEP` / `PEXT` are microcoded and roughly an order of magnitude *slower* than the ten-instruction portable sequence. .NET exposes nothing that tells those parts apart from the ones where the intrinsic wins, so dispatching on `IsSupported` alone trades a win on one vendor for a large regression on another.
+- **A hardware dispatch cannot be held to this repository's coverage gate.** Coverage is enforced at 100% line *and* branch across the shipping packages, and exactly one arm of an `IsSupported` branch is reachable on any given runner — so the other ships unexecuted by the suite. `[ExcludeFromCodeCoverage]` would be excluding the arithmetic itself rather than a guard, which is not what that attribute is for here.
+
+The benchmark arm stays so the decision remains a measurement rather than an assumption, and can be revisited if either constraint changes. In the meantime the portable spread is already **9.8× the bit-by-bit loop** it replaces, at roughly 1.9 ns per conversion — small enough that in a real spatial workload the memory traffic, not the codec, is where the time goes. Which is the point of the next section.
+
+### The measured payoff
+
+A codec nobody builds on does not earn a place in the library, so `SpaceFillingCurveLocalityBenchmark` measures the thing a curve is actually *for*: laying spatially-near points near each other in memory. It buckets a point set into a uniform cell grid, then runs a batch of 20,000 **randomly located** neighbourhood queries, each summing the weights of the points in one cell and its eight neighbours. Four arms run that identical batch over identical indirection; the **only** difference is the order the point records are stored in.
+
+The queries are random, and that is load-bearing. The first version of this benchmark swept one aligned block of cells and measured *no difference at all* between the four layouts — the block touched a small enough slice of the point set to stay resident in L2 whatever order it was stored in, so there were no misses left for a better layout to save.
+
+| Point layout | 2 M points (32 MB) | 100 k points (1.6 MB, in cache) |
+| --- | ---: | ---: |
+| Unsorted (insertion order) | 3.00 ms | 558 µs |
+| Sorted by row-major cell id — *the hand-roll* | 1.95 ms (1.54×) | 547 µs (1.02×) |
+| Sorted by `MortonCurve.Encode2D` | 1.69 ms (**1.77×**) | 541 µs (1.03×) |
+| Sorted by `HilbertCurve.Encode2D` | 1.63 ms (**1.84×**) | 535 µs (1.04×) |
+
+Against unsorted the curves win **1.8×**. Against row-major — the baseline that matters — they win **1.15×** (Morton) and **1.19×** (Hilbert). Hilbert's extra 4% over Morton is its better locality showing up exactly where the theory says it should, on the query that straddles a boundary.
+
+Those figures come from one machine (an Intel Core Ultra 7 265KF, 30 MB last-level cache). Cache sizes vary enough across hardware to move where the crossover sits, so read the 100 k column as the control it is — a size at which there is nothing for a layout to win — rather than as a portable constant.
+
+Two things in that table matter more than the headline. The baseline it should be judged against is **row-major**, not unsorted — a caller who wants locality and has no curve sorts by `y * side + x`, which gets the horizontal neighbours for free and loses on the vertical ones, a whole grid row away. And the small size is a **control, not a footnote**: the win is a memory-hierarchy effect, so when the point set fits in cache there is nothing to win and the arms measure the same.
+
+**Usage:**
+
+```csharp
+using Celerity.Primitives;
+
+// A cell key that sorts spatially.
+ulong code = MortonCurve.Encode2D(cellX, cellY);
+var (x, y) = MortonCurve.Decode2D(code);
+
+// Lay a point set out along the curve so neighbours are neighbours in memory.
+ulong[] keys = points.Select(p => MortonCurve.Encode2D(Quantize(p.X), Quantize(p.Y))).ToArray();
+Array.Sort(keys, points);
+
+// Hilbert, when a run of indices has to be a connected region.
+ulong index = HilbertCurve.Encode2D(cellX, cellY);
+if (index < ulong.MaxValue)                        // the last index has no successor — it wraps to 0
+{
+    var (nx, ny) = HilbertCurve.Decode2D(index + 1);   // one cell away, along one axis
+}
+```
+
+**Contract and special cases:**
+
+- **Orientation.** The Hilbert curve starts at the origin and ends at `(2^32 - 1, 0)` in 2-D — the conventional orientation, and the traversal the textbook `d2xy` produces, which the tests pin cell by cell over the first sixteen indices.
+- **Morton's axis order.** `Encode2D` puts `x` on the even bit positions and `y` on the odd ones; `Encode3D` assigns bit position modulo three to `x`, `y`, `z` in that order. Swapping the arguments transposes the curve, which is harmless but changes every key you have already stored.
+- **Locality is not distance.** Neither curve promises that nearby indices are the *nearest* points, only that the mapping keeps regions together. Two points either side of a top-level boundary can be adjacent in space and far apart in index — this is a property of every space-filling curve, and Hilbert's adjacency guarantee runs the other way (index-adjacent implies space-adjacent, not the converse).
+- Every method is static, allocation-free and AOT-safe. Hilbert's transform runs entirely in local scalars, with each per-level decision routed through `Branchless.Select` — the deciding bit is one bit of a coordinate, so the branch would be a coin flip the predictor cannot learn.
