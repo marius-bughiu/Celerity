@@ -754,6 +754,8 @@ The queries are random, and that is load-bearing. The first version of this benc
 
 Against unsorted the curves win **1.8×**. Against row-major — the baseline that matters — they win **1.15×** (Morton) and **1.19×** (Hilbert). Hilbert's extra 4% over Morton is its better locality showing up exactly where the theory says it should, on the query that straddles a boundary.
 
+Those figures come from one machine (an Intel Core Ultra 7 265KF, 30 MB last-level cache). Cache sizes vary enough across hardware to move where the crossover sits, so read the 100 k column as the control it is — a size at which there is nothing for a layout to win — rather than as a portable constant.
+
 Two things in that table matter more than the headline. The baseline it should be judged against is **row-major**, not unsorted — a caller who wants locality and has no curve sorts by `y * side + x`, which gets the horizontal neighbours for free and loses on the vertical ones, a whole grid row away. And the small size is a **control, not a footnote**: the win is a memory-hierarchy effect, so when the point set fits in cache there is nothing to win and the arms measure the same.
 
 **Usage:**

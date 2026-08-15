@@ -49,8 +49,11 @@ using Celerity.Primitives;
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
 public class SpaceFillingCurveLocalityBenchmark
 {
-    // 16 bytes per point, so the large parameter puts 32 MB behind each layout — past any current L3 —
-    // while the small one fits comfortably inside L2.
+    // 16 bytes per point, so the large parameter puts 32 MB behind each layout: far past any core's private
+    // L2, and past the 30 MB last-level cache of the machine the quoted figures came from. Last-level cache
+    // sizes vary a lot across the hardware an extended-suite run may land on, so the small parameter is the
+    // control rather than a second data point — 1.6 MB of points plus its index arrays, which stayed
+    // resident on the measured machine and showed no separation between the four layouts.
     private struct Point
     {
         public float X;
