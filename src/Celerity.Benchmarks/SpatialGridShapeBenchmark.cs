@@ -12,11 +12,12 @@ using Celerity.Collections;
 // the margin is the ratio of per-cell overhead to per-candidate work, and it collapses as the cells fill up.
 //
 // Measured at 100,000 entities, one frame = move 10% then one radius query per moved entity, in-process on a
-// development machine (read the ratios, not the absolute times — CI's same-runner A/B is what the docs quote):
+// development machine — read the ratios, not the absolute times, and treat even the ratios as provisional
+// until CI's same-runner A/B replaces them:
 //
-//     Tight       ~1 point per cell, ~2 matches       Dictionary  6.38 ms   SpatialGrid  1.08 ms   5.9x
-//     Wide        ~10 points per cell, ~25 matches    Dictionary  6.66 ms   SpatialGrid  5.86 ms   1.14x
-//     Clustered   200 blobs, hundreds per cell        Dictionary 12.59 ms   SpatialGrid 22.06 ms   0.57x
+//     Tight       ~1 point per cell, ~2 matches       Dictionary  6.58 ms   SpatialGrid  1.12 ms   5.9x
+//     Wide        ~10 points per cell, ~25 matches    Dictionary  6.65 ms   SpatialGrid  5.92 ms   1.12x
+//     Clustered   200 blobs, hundreds per cell        Dictionary 12.37 ms   SpatialGrid 21.38 ms   0.58x
 //
 // The wide shape is not a pathological one — cell size still equals the query radius, which is the tuning rule
 // the type documents. It is simply a query that answers with twenty-five points instead of two, and at that
@@ -84,13 +85,13 @@ public class SpatialGridShapeBenchmark
 
         /// <summary>
         /// About ten points per cell and twenty-five matches per query. Still a tuned grid (cell size equals
-        /// the query radius); the candidates simply dominate. Measured at 1.14x — the honest ceiling.
+        /// the query radius); the candidates simply dominate. Measured at 1.12x — the honest ceiling.
         /// </summary>
         Wide,
 
         /// <summary>
         /// The type's own documented failure mode: the same points gathered into 200 tight blobs, so most of
-        /// the population lands in a handful of cells. Measured at 0.57x — the grid <i>loses</i>, because a
+        /// the population lands in a handful of cells. Measured at 0.58x — the grid <i>loses</i>, because a
         /// long cell list is a serial chain of dependent loads where the baseline's contiguous list is not.
         /// </summary>
         Clustered,
@@ -142,13 +143,17 @@ public class SpatialGridShapeBenchmark
     public int Dictionary_Frame()
     {
         int start = NextCursor();
-        int matches = 0;
 
         for (int i = 0; i < MoveCount; i++)
         {
-            int entity = (start + i) % ItemCount;
             int at = (start + i) & (PoolSize - 1);
-            BucketMove(entity, poolX[at], poolY[at]);
+            BucketMove((start + i) % ItemCount, poolX[at], poolY[at]);
+        }
+
+        int matches = 0;
+        for (int i = 0; i < MoveCount; i++)
+        {
+            int at = (start + i) & (PoolSize - 1);
             matches += BucketCountWithin(poolX[at], poolY[at]);
         }
 
@@ -159,13 +164,17 @@ public class SpatialGridShapeBenchmark
     public int SpatialGrid_Frame()
     {
         int start = NextCursor();
-        int matches = 0;
 
         for (int i = 0; i < MoveCount; i++)
         {
-            int entity = (start + i) % ItemCount;
             int at = (start + i) & (PoolSize - 1);
-            grid.Move(handles[entity], poolX[at], poolY[at]);
+            grid.Move(handles[(start + i) % ItemCount], poolX[at], poolY[at]);
+        }
+
+        int matches = 0;
+        for (int i = 0; i < MoveCount; i++)
+        {
+            int at = (start + i) & (PoolSize - 1);
             matches += grid.CountWithin(poolX[at], poolY[at], queryRadius);
         }
 

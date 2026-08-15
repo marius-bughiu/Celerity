@@ -43,21 +43,22 @@ using Celerity.Collections;
 // same distance test on the same candidates; everything this type saves is *per cell* — an array index instead
 // of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated List<T> — so the
 // margin is the ratio of per-cell overhead to per-candidate work and it collapses as the cells fill up. At ten
-// points per cell it is 1.14x rather than 5.5x, and on clustered data the grid *loses*. SpatialGridShapeBenchmark
+// points per cell it is 1.12x rather than 5.5x, and on clustered data the grid *loses*. SpatialGridShapeBenchmark
 // in the extended suite carries both of those measurements, and the README and API reference quote them next
 // to the headline rather than underneath it.
 //
-// Measured at 100,000 entities on a development machine — read the ratios, not the absolute times; CI's
-// same-runner A/B is what the docs quote, and on KdTree the two disagreed enough to flip a documented claim:
+// Measured at 100,000 entities ON A DEVELOPMENT MACHINE — read the ratios, not the absolute times, and treat
+// even the ratios as provisional until CI's same-runner A/B replaces them: on KdTree the two disagreed by
+// enough to flip a documented claim.
 //
-//     Frame    6.11 ms -> 1.10 ms   5.5x        Query      4.72 ms -> 0.98 ms   4.8x
-//     Churn     826 us ->  109 us   7.6x        Rebuild   17.72 ms -> 1.08 ms  16.4x
+//     Frame    7.12 ms -> 1.30 ms   5.5x        Query      5.11 ms -> 1.01 ms   5.1x
+//     Churn     922 us ->  110 us   8.4x        Rebuild   17.71 ms -> 1.10 ms  16.1x
 //
-// At 1,000 entities the margins are wider, not narrower (10.2x on the frame), because the cells are emptier
+// At 1,000 entities the margins are wider, not narrower (10.9x on the frame), because the cells are emptier
 // still and the per-cell overhead is then nearly all of the baseline's work.
 //
 // The Rebuild number is worth reading against the issue that asked for this type, which predicted ">= 50x" over
-// rebuilding a KdTree per frame and called it the easy bar. It is 16.4x, and the reason the prediction missed
+// rebuilding a KdTree per frame and called it the easy bar. It is 16.1x, and the reason the prediction missed
 // is that a frame is not only the rebuild: both arms also run 10,000 radius queries, and that shared work sits
 // in the denominator of the ratio however cheap the index makes it. Comparing the builds alone would give a
 // larger number and a less useful one, since nobody rebuilds without then querying.
@@ -140,15 +141,18 @@ public class SpatialGridBenchmark
     public int Dictionary_Frame()
     {
         int start = NextCursor();
-        int matches = 0;
 
         for (int i = 0; i < moveCount; i++)
         {
-            int entity = (start + i) % ItemCount;
-            double x = poolX[(start + i) & (PoolSize - 1)];
-            double y = poolY[(start + i) & (PoolSize - 1)];
-            BucketMove(entity, x, y);
-            matches += BucketCountWithin(x, y, QueryRadius);
+            int at = (start + i) & (PoolSize - 1);
+            BucketMove((start + i) % ItemCount, poolX[at], poolY[at]);
+        }
+
+        int matches = 0;
+        for (int i = 0; i < moveCount; i++)
+        {
+            int at = (start + i) & (PoolSize - 1);
+            matches += BucketCountWithin(poolX[at], poolY[at], QueryRadius);
         }
 
         return matches;
@@ -159,15 +163,18 @@ public class SpatialGridBenchmark
     public int SpatialGrid_Frame()
     {
         int start = NextCursor();
-        int matches = 0;
 
         for (int i = 0; i < moveCount; i++)
         {
-            int entity = (start + i) % ItemCount;
-            double x = poolX[(start + i) & (PoolSize - 1)];
-            double y = poolY[(start + i) & (PoolSize - 1)];
-            grid.Move(handles[entity], x, y);
-            matches += grid.CountWithin(x, y, QueryRadius);
+            int at = (start + i) & (PoolSize - 1);
+            grid.Move(handles[(start + i) % ItemCount], poolX[at], poolY[at]);
+        }
+
+        int matches = 0;
+        for (int i = 0; i < moveCount; i++)
+        {
+            int at = (start + i) & (PoolSize - 1);
+            matches += grid.CountWithin(poolX[at], poolY[at], QueryRadius);
         }
 
         return matches;
@@ -239,13 +246,17 @@ public class SpatialGridBenchmark
     public int SpatialGrid_Rebuild()
     {
         int start = NextCursor();
-        int matches = 0;
 
         for (int i = 0; i < moveCount; i++)
         {
-            int entity = (start + i) % ItemCount;
             int at = (start + i) & (PoolSize - 1);
-            grid.Move(handles[entity], poolX[at], poolY[at]);
+            grid.Move(handles[(start + i) % ItemCount], poolX[at], poolY[at]);
+        }
+
+        int matches = 0;
+        for (int i = 0; i < moveCount; i++)
+        {
+            int at = (start + i) & (PoolSize - 1);
             matches += grid.CountWithin(poolX[at], poolY[at], QueryRadius);
         }
 
@@ -307,8 +318,9 @@ public class SpatialGridBenchmark
         (int, int) key = Key(x, y);
         if (!buckets.TryGetValue(key, out List<int>? bucket))
         {
-            // The allocation this type exists to avoid: one list per occupied cell, created again every time
-            // a cell that emptied out refills.
+            // One list object per occupied cell. Note it is created once and then kept: an emptied cell keeps
+            // its list, so this is resident memory rather than steady-state garbage, and the measurement says
+            // so — neither side allocates once the grid is warm.
             bucket = new List<int>();
             buckets[key] = bucket;
         }

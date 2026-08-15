@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Celerity.Collections;
@@ -30,11 +31,11 @@ namespace Celerity.Collections;
 /// and per-cell work rather than garbage.
 /// </para>
 /// <para>
-/// <b>Layout.</b> A populated grid is two arrays and no per-cell or per-entry object. One array holds the
-/// cells' list heads; the other holds fixed-size entry records — coordinates, owning cell, and the two links
-/// that thread the entry through its cell's intrusive doubly-linked list. Payloads live in a third array the
-/// cell walk never touches, so a query reads coordinates and links without dragging <typeparamref name="TValue"/>
-/// through the cache. The double links are what make <see cref="Remove"/> and a cell-changing <see cref="Move"/>
+/// <b>Layout.</b> A populated grid is three arrays and no per-cell or per-entry object. One holds the cells'
+/// list heads; one holds fixed-size entry records — coordinates, owning cell, and the two links that thread
+/// the entry through its cell's intrusive doubly-linked list; and one holds the payloads, kept separate
+/// precisely so the cell walk never touches them and a query reads coordinates and links without dragging
+/// <typeparamref name="TValue"/> through the cache. The double links are what make <see cref="Remove"/> and a cell-changing <see cref="Move"/>
 /// unlink in constant time instead of scanning the cell to find the predecessor.
 /// </para>
 /// <para>
@@ -82,10 +83,10 @@ namespace Celerity.Collections;
 /// hand-roll walk the same cells and run the same distance test on the same candidates; everything gained here
 /// is <i>per cell</i>, so the ratio is per-cell overhead against per-candidate work and it thins as the cells
 /// fill. On the frame workload above at 100,000 entities it is <b>5.5x</b> with about one point per cell and
-/// two matches per query — the broadphase shape — and <b>1.14x</b> at ten points per cell and twenty-five
+/// two matches per query — the broadphase shape — and <b>1.12x</b> at ten points per cell and twenty-five
 /// matches, with the cell size still tuned to the radius. Rebuilding a <see cref="KdTree{TValue}"/> every
-/// frame instead measures <b>16.4x</b>. All three are in <c>SpatialGridBenchmark</c> and
-/// <c>SpatialGridShapeBenchmark</c>, quoted from CI's same-runner A/B, and tabulated in the README.
+/// frame instead measures <b>16.1x</b>. All three are in <c>SpatialGridBenchmark</c> and
+/// <c>SpatialGridShapeBenchmark</c>, and tabulated in the README.
 /// </para>
 /// <para>
 /// <b>What the bound really is.</b> <see cref="Add"/>, <see cref="Move"/>, <see cref="Remove"/> and
@@ -375,7 +376,7 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
         for (int i = 0; i < _slotCount; i++)
         {
             _entries[i].Cell = -1;
-            _entries[i].Version++;
+            _entries[i].Version = NextVersion(_entries[i].Version);
             _entries[i].Next = i - 1;
         }
 
@@ -725,9 +726,32 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
 
     private void Grow()
     {
-        int capacity = _entries.Length == 0 ? 4 : _entries.Length * 2;
+        // Double the capacity, but clamp to Array.MaxLength and guard the int overflow a naive `* 2` would hit
+        // once the entry array passes ~1 billion slots (the doubled value wraps negative), the same shape
+        // IndexedPriorityQueue.Grow uses.
+        int current = _entries.Length;
+        int capacity = ClampGrowth(current == 0 ? 4 : current * 2, current);
+
         Array.Resize(ref _entries, capacity);
         Array.Resize(ref _values, capacity);
+    }
+
+    // The growth ceiling, split out because neither arm is reachable from the public API. Grow() has exactly
+    // one caller — AllocateSlot(), and only when the free list is empty and every slot is live — so the clamp
+    // needs 2^30 simultaneously live entries. Each is a 32-byte record, which puts _entries past the 2 GiB
+    // single-object array limit long before the count gets there, at any available memory. The throw needs the
+    // array already at Array.MaxLength, which is harder still. Both are kept because they are the only thing
+    // between a saturated grid and a silently negative capacity.
+    [ExcludeFromCodeCoverage(Justification = "Unreachable: needs 2^30 live entries of 32 bytes each, which " +
+        "exceeds the 2 GiB single-object array limit regardless of available memory.")]
+    private static int ClampGrowth(int capacity, int current)
+    {
+        if ((uint)capacity > (uint)Array.MaxLength)
+            capacity = Array.MaxLength;
+        if (capacity <= current)
+            throw new InvalidOperationException("The spatial grid has reached its maximum capacity.");
+
+        return capacity;
     }
 
     private void Link(int slot, int cell)
@@ -757,10 +781,21 @@ public sealed class SpatialGrid<TValue> : IReadOnlyCollection<SpatialPoint<TValu
             _entries[next].Prev = previous;
     }
 
+    // Steps a vacated slot's version, cycling through [1, uint.MaxValue] and never through 0. A plain
+    // increment would eventually wrap to 0 — 2^32 vacations of one slot, which a tight add/clear loop reaches
+    // in minutes, not geological time — and a slot sitting at version 0 would be addressable by the `default`
+    // handle, which this type documents as always rejected. The modulo keeps that guarantee absolute without
+    // a branch the coverage gate could never see taken.
+    //
+    // What it does not fix, because no fixed-width version can: after a full cycle of 2^32 vacations of the
+    // *same* slot, a handle retired that long ago starts matching again. That is the standing limitation of
+    // every generational slot map and it is documented on SpatialGridHandle rather than papered over.
+    private static uint NextVersion(uint version) => (version % uint.MaxValue) + 1;
+
     private void Vacate(int slot)
     {
         _entries[slot].Cell = -1;
-        _entries[slot].Version++;
+        _entries[slot].Version = NextVersion(_entries[slot].Version);
         _entries[slot].Next = _freeHead;
         _freeHead = slot;
 

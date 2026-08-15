@@ -4588,11 +4588,11 @@ What a caller writes instead is a bucketed grid:
 var cells = new Dictionary<(int, int), List<Entity>>();
 ```
 
-Insert by `(x / cellSize, y / cellSize)`, query by walking the cells the radius covers. That is a genuinely reasonable structure — the same cell idea, the same query shape — and it is the baseline this type is measured against, not the linear scan. What it costs is a tuple hash per cell touched, a `List<T>` allocated per occupied cell (again every time a cell that emptied out refills), a pointer chase per cell into separately allocated storage, garbage every time the population churns, and a teardown proportional to the occupied cells.
+Insert by `(x / cellSize, y / cellSize)`, query by walking the cells the radius covers. That is a genuinely reasonable structure — the same cell idea, the same query shape — and it is the baseline this type is measured against, not the linear scan. What it costs is a tuple hash and a bucket probe per cell touched, a `List<T>` object per occupied cell, and a pointer chase into it. One honest qualification the benchmark insists on: in steady state neither side allocates, because a cell that empties keeps its list, so the difference is resident memory and per-cell work rather than garbage.
 
 ### How it works
 
-A populated grid is two arrays and no per-cell or per-entry object. One array holds the cells' list heads; the other holds fixed-size entry records — coordinates, owning cell, and the two links that thread the entry through its cell's **intrusive doubly-linked list**. Payloads live in a third array the cell walk never touches, so a query reads coordinates and links without dragging `TValue` through the cache.
+A populated grid is three arrays and no per-cell or per-entry object. One holds the cells' list heads; one holds fixed-size entry records — coordinates, owning cell, and the two links that thread the entry through its cell's **intrusive doubly-linked list**; and one holds the payloads, kept separate precisely so the cell walk never touches them and a query reads coordinates and links without dragging `TValue` through the cache.
 
 The double links are what make `Remove` and a cell-crossing `Move` unlink in constant time instead of scanning the cell to find the predecessor. A vacated slot goes on a free list and is reused by the next `Add`.
 
@@ -4697,9 +4697,9 @@ Reach for [`KdTree<TValue>`](#kdtreetvalue) instead when the point set is **stat
 
 ### The documented BCL-beating workload
 
-The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. `SpatialGridBenchmark` measures that against the `Dictionary<(int, int), List<int>>` hand-roll above and against rebuilding a `KdTree` each frame, at 1,000 and 100,000 entities over a 10,000-unit square with the cell size equal to the query radius. At 100,000 entities the frame measures **5.5x** the hand-roll and **16.4x** the per-frame `KdTree` rebuild.
+The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. `SpatialGridBenchmark` measures that against the `Dictionary<(int, int), List<int>>` hand-roll above and against rebuilding a `KdTree` each frame, at 1,000 and 100,000 entities over a 10,000-unit square with the cell size equal to the query radius. At 100,000 entities the frame measures **5.5x** the hand-roll and **16.1x** the per-frame `KdTree` rebuild.
 
-**The margin is a property of how full the cells are, not of the type**, and the README carries that next to the headline rather than underneath it. Both structures walk the same cells and run the same distance test on the same candidates; everything gained here is *per cell*, so the ratio is per-cell overhead against per-candidate work and it thins as the cells fill. The figure above is the broadphase shape — about one point per cell, about two matches per query. At ten points per cell and twenty-five matches, with the cell size still tuned to the radius, it is **1.14x**; on clustered points it is **0.57x** and the hand-roll wins. `SpatialGridShapeBenchmark` in the extended suite carries all three. Full tables are in the README's [spatial index section](../../README.md#spatial-index), quoted from CI's same-runner A/B rather than from a development machine.
+**The margin is a property of how full the cells are, not of the type**, and the README carries that next to the headline rather than underneath it. Both structures walk the same cells and run the same distance test on the same candidates; everything gained here is *per cell*, so the ratio is per-cell overhead against per-candidate work and it thins as the cells fill. The figure above is the broadphase shape — about one point per cell, about two matches per query. At ten points per cell and twenty-five matches, with the cell size still tuned to the radius, it is **1.12x**; on clustered points it is **0.58x** and the hand-roll wins. `SpatialGridShapeBenchmark` in the extended suite carries all three. Full tables are in the README's [spatial index section](../../README.md#spatial-index).
 
 ### Usage example
 

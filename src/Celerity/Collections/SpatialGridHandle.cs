@@ -21,7 +21,15 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// The <c>default</c> handle refers to nothing and is rejected by every grid, so a field that has not been
-/// assigned yet fails loudly rather than addressing the first entry.
+/// assigned yet fails loudly rather than addressing the first entry. That guarantee is absolute: a slot's
+/// version cycles through <c>[1, uint.MaxValue]</c> and never reaches zero, so no live entry can ever wear the
+/// version the <c>default</c> handle carries.
+/// </para>
+/// <para>
+/// The one limitation a fixed-width version cannot escape, stated rather than left to be discovered: after
+/// <c>2&#178;&#178;</c>&#8202;— that is, 2^32 — vacations of the <i>same</i> slot the versions repeat, and a
+/// handle retired that long ago starts resolving again. Every generational slot map has this ceiling. It takes
+/// four billion removals of entries that all land back in one slot to reach.
 /// </para>
 /// </remarks>
 public readonly struct SpatialGridHandle : IEquatable<SpatialGridHandle>
@@ -38,26 +46,32 @@ public readonly struct SpatialGridHandle : IEquatable<SpatialGridHandle>
 
     internal uint Version { get; }
 
-    /// <summary>Determines whether two handles refer to the same entry of the same grid.</summary>
+    /// <summary>Determines whether two handles carry the same slot and version.</summary>
     /// <param name="left">The first handle.</param>
     /// <param name="right">The second handle.</param>
     /// <returns><c>true</c> when the handles are equal; otherwise <c>false</c>.</returns>
+    /// <remarks>
+    /// Equality is on the token, not on identity: a handle carries no grid, so two equal handles refer to the
+    /// same entry only when they came from the same grid. Comparing handles issued by different grids is
+    /// meaningless, and can compare equal.
+    /// </remarks>
     public static bool operator ==(SpatialGridHandle left, SpatialGridHandle right) => left.Equals(right);
 
-    /// <summary>Determines whether two handles refer to different entries.</summary>
+    /// <summary>Determines whether two handles carry a different slot or version.</summary>
     /// <param name="left">The first handle.</param>
     /// <param name="right">The second handle.</param>
     /// <returns><c>true</c> when the handles differ; otherwise <c>false</c>.</returns>
     public static bool operator !=(SpatialGridHandle left, SpatialGridHandle right) => !left.Equals(right);
 
-    /// <summary>Determines whether this handle refers to the same entry as <paramref name="other"/>.</summary>
+    /// <summary>Determines whether this handle carries the same slot and version as <paramref name="other"/>.</summary>
     /// <param name="other">The handle to compare against.</param>
     /// <returns><c>true</c> when both the slot and its version match; otherwise <c>false</c>.</returns>
+    /// <remarks>Token equality, with the cross-grid caveat described on <see cref="op_Equality"/>.</remarks>
     public bool Equals(SpatialGridHandle other) => Index == other.Index && Version == other.Version;
 
-    /// <summary>Determines whether <paramref name="obj"/> is an equal handle.</summary>
+    /// <summary>Determines whether <paramref name="obj"/> is a handle carrying the same slot and version.</summary>
     /// <param name="obj">The object to compare against.</param>
-    /// <returns><c>true</c> when it is a <see cref="SpatialGridHandle"/> referring to the same entry.</returns>
+    /// <returns><c>true</c> when it is an equal <see cref="SpatialGridHandle"/>; otherwise <c>false</c>.</returns>
     public override bool Equals(object? obj) => obj is SpatialGridHandle other && Equals(other);
 
     /// <summary>Returns a hash code for the handle.</summary>
