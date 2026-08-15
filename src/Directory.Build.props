@@ -97,6 +97,12 @@
     older surface, so a break introduced after it goes unnoticed. The ritual is
     written up in CONTRIBUTING.md, section "Cutting a release".
 
+    It rotted once, for the whole v2.6.0 cycle, so the ritual is now checked
+    rather than merely documented: the package-baseline job in ci.yml runs
+    scripts/check_package_baseline.js on every PR, which compares the value
+    below against what NuGet.org has actually published. That is why the bump
+    is due the moment the release is indexed, and why bumping it early fails.
+
     All seven shipped packages (Celerity.Collections / Celerity.Hashing /
     Celerity.Primitives / Celerity.Sorting / Celerity.Ring / Celerity.Sentinel /
     Celerity.Cardinality) are published at this baseline and share it. A brand-new package has no

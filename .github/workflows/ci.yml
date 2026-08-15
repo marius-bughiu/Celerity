@@ -161,6 +161,30 @@ jobs:
       - name: Pin the regression-flag rule
         run: node scripts/benchmark_comment.js --self-test
 
+  # The binary-compatibility baseline is bumped by a manual follow-up commit after each
+  # release, and until now nothing checked that it happened. When it was skipped for v2.6.0
+  # every package went on validating against its 2.5.0 predecessor and packed green anyway
+  # (#364) — the same silent-config-drift shape as the coverage filter, the doc anchors and
+  # the dashboard tables, and the only one still unguarded.
+  #
+  # This job is separate from release-gates, which packs, rather than a step inside it: the
+  # answer costs seconds and should not queue behind a three-TFM restore. It reaches
+  # NuGet.org, so it is written to skip its network half rather than fail on an outage.
+  package-baseline:
+    name: package-baseline
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+
+      - name: Pin the version-comparison rules
+        run: node scripts/check_package_baseline.js --self-test
+
+      - name: Check the baseline against the published packages
+        run: node scripts/check_package_baseline.js
+
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})
     runs-on: ubuntu-latest
