@@ -406,6 +406,63 @@ public class RTreeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => tree.CopyAtPoint(0, 0, buffer, index));
     }
 
+    // ---- the coordinate domain ---------------------------------------------------------------------
+
+    [Fact]
+    public void Constructor_ShouldIndexBoxesNearTheTopOfTheDoubleRange_BecauseThereIsNoMagnitudeBound()
+    {
+        // Unlike KdTree, which bounds stored coordinates at 1e153 because it squares separations, this type
+        // only ever compares — so it documents the whole finite range as usable, and this is what holds it to
+        // that. The magnitudes are chosen so that min + max overflows: two coordinates near 1e308 sum past
+        // double.MaxValue, which is the case the packing's centre calculation is written to survive.
+        const double Base = 1.0e308;
+        const double Step = 1.0e305;
+
+        // Past the fanout, so the packing sorts on those centres rather than dropping everything in one leaf.
+        var boxes = new SpatialBox<int>[100];
+        for (int i = 0; i < boxes.Length; i++)
+            boxes[i] = new SpatialBox<int>(Base + (i * Step), Base + (i * Step), Base + ((i + 1) * Step), Base + ((i + 1) * Step), i);
+
+        var tree = new RTree<int>(boxes);
+
+        Assert.Equal(100, tree.Count);
+        Assert.Equal(Enumerable.Range(0, 100), tree.Select(b => b.Value).OrderBy(v => v));
+
+        // Every box is still findable by a query for its own extent, and the extents survive the round trip.
+        for (int i = 0; i < boxes.Length; i++)
+        {
+            SpatialBox<int> box = boxes[i];
+            Assert.Contains(i, tree.GetOverlapping(box.MinX, box.MinY, box.MaxX, box.MaxY).Select(b => b.Value));
+        }
+
+        // A selective query at this magnitude: boxes 10 and 11 share the corner at Base + 11 * Step.
+        Assert.Equal([10, 11], tree.GetAtPoint(Base + (11 * Step), Base + (11 * Step)).Select(b => b.Value).OrderBy(v => v));
+
+        Assert.True(tree.TryGetBounds(out double minX, out double minY, out double maxX, out double maxY));
+        Assert.Equal(Base, minX);
+        Assert.Equal(Base, minY);
+        Assert.Equal(Base + (100 * Step), maxX);
+        Assert.Equal(Base + (100 * Step), maxY);
+    }
+
+    [Fact]
+    public void Constructor_ShouldIndexBoxesSpanningTheWholeFiniteRange_WhenEdgesSitAtOppositeExtremes()
+    {
+        // The mirror case: edges at opposite ends of the range, where the difference rather than the sum is
+        // what overflows. A box this wide overlaps every query inside it, which is the observable claim.
+        SpatialBox<int>[] boxes =
+        [
+            new SpatialBox<int>(double.MinValue, double.MinValue, double.MaxValue, double.MaxValue, 0),
+            new SpatialBox<int>(-1, -1, 1, 1, 1),
+        ];
+
+        var tree = new RTree<int>(boxes);
+
+        Assert.Equal([0, 1], tree.GetAtPoint(0, 0).Select(b => b.Value).OrderBy(v => v));
+        Assert.Equal([0], tree.GetAtPoint(1e300, -1e300).Select(b => b.Value));
+        Assert.Equal(2, tree.CountOverlapping(-1, -1, 1, 1));
+    }
+
     // ---- payloads ----------------------------------------------------------------------------------
 
     [Fact]

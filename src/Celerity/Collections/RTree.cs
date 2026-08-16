@@ -456,6 +456,15 @@ public sealed class RTree<TValue> : IReadOnlyList<SpatialBox<TValue>>
     // Halving each edge before adding them cannot overflow for any pair of finite doubles, where the obvious
     // (min + max) / 2 overflows to infinity near the top of the range and would hand the sort a key it cannot
     // order against its neighbours.
+    //
+    // This is a PACKING-QUALITY invariant, not a correctness one, and the distinction is worth stating because
+    // it decides what a test can be asked to prove. Substituting the naive form on coordinates near 1e308
+    // collapses every centre to the same infinity, so the sort stops separating anything and the leaves come
+    // out arbitrary — but queries still answer correctly, because Cover folds the real stored edges and Tile
+    // cuts on index ranges rather than on key values. Verified by making the substitution and running the
+    // suite: all of it passes. So the extreme-coordinate tests pin the documented contract that the whole
+    // finite range is usable; nothing short of measuring the resulting tree's shape would catch a regression
+    // here, and this comment is the guard instead.
     private static double Centre(double min, double max) => (min * 0.5) + (max * 0.5);
 
     // Copies the packed entries into the flat arrays, then folds the bounding boxes upward: each leaf over the
