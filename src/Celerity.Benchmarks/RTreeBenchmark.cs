@@ -39,18 +39,23 @@ using Celerity.Collections;
 // CheckSelectivity below fails the run rather than letting a later change to the data shape move either figure
 // in silence — the boxes are seeded, so both counts are exact on any machine.
 //
-// What the two baselines actually measured, at 100,000 boxes:
+// What the two baselines actually measured, at 100,000 boxes. These are CI's same-runner figures rather than
+// a development machine's, which matters: on KdTree the two disagreed by enough to change a documented claim,
+// and the hosted runner is the number this repo quotes.
 //
-//     OverlapQuery  296.42 ms -> 1.69 ms  175x      OverlapSorted  17.38 ms -> 1.71 ms  10.2x   (0.0835%)
-//     PointQuery    270.08 ms -> 0.90 ms  301x      PointSorted     9.36 ms -> 0.90 ms  10.4x   (0.0050%)
-//     Build            1.29 ms -> 34.77 ms  27x slower
+//     OverlapQuery  433.74 ms -> 3.08 ms  141x      OverlapSorted  29.77 ms -> 3.09 ms   9.6x   (0.0835%)
+//     PointQuery    401.29 ms -> 1.67 ms  240x      PointSorted    17.78 ms -> 1.67 ms  10.6x   (0.0050%)
+//     Build          436.05 us -> 62.60 ms  144x slower
 //
 // Both bars the issue set before implementation are cleared, and the one that mattered — 3x over the sorted
 // hand-roll, set modestly because KdTree's analogous baseline came in at 2.5x — is cleared with room to spare.
 //
-// At 1,000 boxes the index has not yet paid for its indirection against that hand-roll: 1.35x on the overlap
-// query and 1.12x on the point one. The crossover is stated rather than rounded away, in the README and the
-// API reference as well as here.
+// AT 1,000 BOXES THE POINT QUERY LOSES OUTRIGHT, which the development machine did not show and which is the
+// reason this repo quotes CI. Against the sorted hand-roll the overlap query is 1.48x there, but the point
+// query is 0.91x — the scan is ahead. The index has not paid for its indirection at that size, and a slab
+// scan over a thousand boxes is a handful of cache lines. Stated rather than rounded away, in the README and
+// the API reference as well as here. The build multiple is also far worse on CI (144x against the dev
+// machine's 27x), because the hosted runner's array copy is quicker and its sorts are slower.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]

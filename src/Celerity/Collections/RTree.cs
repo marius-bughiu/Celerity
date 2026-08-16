@@ -64,17 +64,19 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Which baseline you pick decides the headline, so read both.</b> At 100,000 boxes whose extents span
 /// three orders of magnitude, with a query selecting 0.0835% of them, the overlap query measures
-/// <b>175x</b> against the array-and-a-loop the BCL leaves you with, and <b>10.2x</b> against a
+/// <b>141x</b> against the array-and-a-loop the BCL leaves you with, and <b>9.6x</b> against a
 /// <i>hand-rolled</i> alternative — the boxes ordered by <c>minX</c>, binary-searched to
 /// <c>query.minX - maxWidth</c> and scanned forward while <c>minX &#8804; query.maxX</c>, which is effectively
 /// a one-dimensional R-tree. The second column is the honest one: the second dimension and the extent
-/// hierarchy are the only things this type adds over it. <b>At 1,000 boxes that margin falls to 1.35x</b> —
-/// the index has not yet paid for its indirection, and the crossover is stated rather than rounded away. The
-/// ratios track <b>selectivity</b> rather than size, so a query ten times wider narrows them considerably.
-/// The point query measures 301x and 10.4x on the same data, but it is <i>not</i> a like-for-like row: a point
-/// query's answer size is fixed by the extents alone rather than by a query box, and on this distribution it
-/// is twenty times more selective (0.0050%), which flatters its ratio. Measured in <c>RTreeBenchmark</c>,
-/// which fails its own run if either selectivity drifts, and tabulated in the README.
+/// hierarchy are the only things this type adds over it. <b>At 1,000 boxes that margin falls to 1.48x, and
+/// the point query loses outright at 0.91x</b> — the index has not paid for its indirection at that size, and
+/// a slab scan over a thousand boxes is a handful of cache lines. The crossover is stated rather than rounded
+/// away. The ratios track <b>selectivity</b> rather than size, so a query ten times wider narrows them
+/// considerably. The point query measures 240x and 10.6x at 100,000, but it is <i>not</i> a like-for-like row:
+/// a point query's answer size is fixed by the extents alone rather than by a query box, and on this
+/// distribution it is twenty times more selective (0.0050%), which flatters its ratio. All figures are from
+/// CI's same-runner A/B rather than a development machine, which disagreed with it on the 1,000-box sign.
+/// Measured in <c>RTreeBenchmark</c>, which fails its own run if either selectivity drifts.
 /// </para>
 /// <para>
 /// <b>Build-once.</b> The tree is immutable; adding a box means building a new one, as with

@@ -4705,16 +4705,18 @@ At 100,000 boxes whose extents span three orders of magnitude, 1,000 queries per
 
 | Query | Selectivity | vs naive scan | vs sorted hand-roll |
 | --- | --- | --- | --- |
-| Overlap (`CountOverlapping`) | 0.0835% (83.5 matches) | **175x** | **10.2x** |
-| Point (`CountAtPoint`) | 0.0050% (5.04 matches) | **301x** | **10.4x** |
+| Overlap (`CountOverlapping`) | 0.0835% (83.5 matches) | **141x** | **9.6x** |
+| Point (`CountAtPoint`) | 0.0050% (5.04 matches) | **240x** | **10.6x** |
+
+All figures are from CI's same-runner A/B on `ubuntu-latest` rather than a development machine, which matters here: the two disagreed on the *sign* of the 1,000-box point comparison below.
 
 **The two rows are not like-for-like.** The query box is tuned so the overlap query lands on the ~0.1% the kill criterion names; a point query has no such knob, because its answer size is fixed by the extents alone. On this distribution it is twenty times more selective, which flatters its ratio — a more selective query prunes more. Raising it to 0.1% would need boxes that blanket the map, and would drag the overlap arm far above 0.1% in the process, so the difference is inherent rather than an oversight. `RTreeBenchmark` fails its own run if either figure drifts out of band.
 
 The second column is the honest one, and it was the bar set **before** implementation: the hand-roll orders the boxes by `minX`, binary-searches to `query.minX` less the widest stored box, and scans forward while `minX` stays at or below `query.maxX`. That is effectively a one-dimensional R-tree, and the second dimension plus the extent hierarchy are the whole of what this type adds over it.
 
-Building the index costs **~27x** what merely copying the box array costs, which is what the queries above amortize.
+Building the index costs **~144x** what merely copying the box array costs (436 µs → 62.6 ms), which is what the queries above amortize. A sort per level is what "Sort-Tile-Recursive" costs, and the multiple is much worse on CI than on a development machine because the hosted runner's array copy is quicker and its sorts slower.
 
-**The small-`n` crossover is real.** At 1,000 boxes the margin against that hand-roll falls to **1.35x** on the overlap query and **1.12x** on the point query — the index has not yet paid for its indirection. And the ratios track **selectivity**: a query ten times wider narrows the gap considerably, because a query answering with much of the tree prunes little.
+**The small-`n` crossover is real, and on the point query it goes negative.** At 1,000 boxes the margin against that hand-roll falls to **1.48x** on the overlap query, and the point query **loses outright at 0.91x** — the scan is ahead. The index has not paid for its indirection at that size, and a slab scan over a thousand boxes is a handful of cache lines. And the ratios track **selectivity**: a query ten times wider narrows the gap considerably, because a query answering with much of the tree prunes little.
 
 Figures are measured in `RTreeBenchmark`; the README's [extent index section](../../README.md#extent-index) carries the same table.
 
