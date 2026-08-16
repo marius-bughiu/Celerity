@@ -26,14 +26,23 @@ using Celerity.Collections;
 //
 // The ratio these arms report is a function of selectivity, not just of size. Pruning works by discarding
 // subtrees whose bounding box misses the query, so as a query's answer grows toward the whole tree its cost
-// converges on the scan's. The query box here selects roughly a thousandth of the boxes, which puts about a
-// hundred matches on a query at 100,000; a query ten times wider would narrow the gap considerably, and the
-// docs say so next to the number.
+// converges on the scan's. A query ten times wider would narrow the gap considerably.
+//
+// THE TWO FAMILIES DO NOT SIT AT THE SAME SELECTIVITY, and that is inherent rather than an oversight. QuerySide
+// is tuned so the overlap query lands on the ~0.1% the issue's criterion names — measured at 83.5 matches per
+// query, 0.0835%, at 100,000 boxes. A point query has no such knob: its answer size is fixed by the extents
+// alone, and on this distribution it comes to 5.04 matches per query, 0.0050% — twenty times more selective.
+// Bringing it to 0.1% would need a mean extent near 316 units in a 10,000-unit world, which is not "a few huge
+// boxes among many small ones" but boxes that blanket the map, and it would drag the overlap arm far above
+// 0.1% in the process. So the point ratio is measured on a more selective query than the overlap one and is
+// flattered accordingly; the two columns are not like-for-like, and every surface quoting them says so.
+// CheckSelectivity below fails the run rather than letting a later change to the data shape move either figure
+// in silence — the boxes are seeded, so both counts are exact on any machine.
 //
 // What the two baselines actually measured, at 100,000 boxes:
 //
-//     OverlapQuery  296.42 ms -> 1.69 ms  175x      OverlapSorted  17.38 ms -> 1.71 ms  10.2x
-//     PointQuery    270.08 ms -> 0.90 ms  301x      PointSorted     9.36 ms -> 0.90 ms  10.4x
+//     OverlapQuery  296.42 ms -> 1.69 ms  175x      OverlapSorted  17.38 ms -> 1.71 ms  10.2x   (0.0835%)
+//     PointQuery    270.08 ms -> 0.90 ms  301x      PointSorted     9.36 ms -> 0.90 ms  10.4x   (0.0050%)
 //     Build            1.29 ms -> 34.77 ms  27x slower
 //
 // Both bars the issue set before implementation are cleared, and the one that mattered — 3x over the sorted
@@ -115,6 +124,23 @@ public class RTreeBenchmark
         {
             queryX[i] = rand.NextDouble() * Domain;
             queryY[i] = rand.NextDouble() * Domain;
+        }
+
+        // Every ratio this class reports is a claim about a query of a stated selectivity, so the selectivity
+        // is checked rather than asserted in a comment. The bands are wide enough to survive a harmless tweak
+        // and tight enough to catch a change that silently makes a query answer with much more of the tree —
+        // which would move the ratios without moving anything a reader could see.
+        CheckSelectivity(RTree_OverlapQuery(), 0.0005, 0.002, "overlap");
+        CheckSelectivity(RTree_PointQuery(), 0.00002, 0.0002, "point");
+    }
+
+    private void CheckSelectivity(int matches, double low, double high, string family)
+    {
+        double fraction = (double)matches / QueryCount / ItemCount;
+        if (fraction < low || fraction > high)
+        {
+            throw new InvalidOperationException(
+                $"RTreeBenchmark: the {family} query selects {fraction:P4} of {ItemCount} boxes, outside [{low:P4}, {high:P4}].");
         }
     }
 

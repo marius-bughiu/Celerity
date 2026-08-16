@@ -30,7 +30,7 @@ namespace Celerity.Collections;
 /// size, because then a cell size exists that fits them all — and that an R-tree earns its keep only when
 /// extents vary by orders of magnitude. <c>RTreeShapeBenchmark</c> measures that rather than repeating it, and
 /// it does not hold on query cost: against a bucketed grid sized by the standard mean-extent heuristic, this
-/// type is 1.25x ahead on the varying shape and <i>1.98x</i> ahead on the uniform one, because a grid's query
+/// type is 1.29x ahead on the varying shape and <i>2.03x</i> ahead on the uniform one, because a grid's query
 /// cost is dominated by the cells the query covers rather than the boxes in them, while an R-tree's node boxes
 /// get tighter as the extents get more alike. A grid tuned to a known query size would close some of that gap.
 /// What remains a real reason to reach for a grid is that it is mutable and this type is not.
@@ -63,15 +63,18 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// <b>Which baseline you pick decides the headline, so read both.</b> At 100,000 boxes whose extents span
-/// three orders of magnitude, with a query selecting roughly a thousandth of them, the overlap query measures
+/// three orders of magnitude, with a query selecting 0.0835% of them, the overlap query measures
 /// <b>175x</b> against the array-and-a-loop the BCL leaves you with, and <b>10.2x</b> against a
 /// <i>hand-rolled</i> alternative — the boxes ordered by <c>minX</c>, binary-searched to
 /// <c>query.minX - maxWidth</c> and scanned forward while <c>minX &#8804; query.maxX</c>, which is effectively
 /// a one-dimensional R-tree. The second column is the honest one: the second dimension and the extent
-/// hierarchy are the only things this type adds over it. <b>At 1,000 boxes that margin falls to 1.35x</b>, and
-/// on the point query to 1.12x — the index has not yet paid for its indirection, and the crossover is stated
-/// rather than rounded away. The ratios also track <b>selectivity</b> rather than size, so a query ten times
-/// wider narrows them considerably. Measured in <c>RTreeBenchmark</c> and tabulated in the README.
+/// hierarchy are the only things this type adds over it. <b>At 1,000 boxes that margin falls to 1.35x</b> —
+/// the index has not yet paid for its indirection, and the crossover is stated rather than rounded away. The
+/// ratios track <b>selectivity</b> rather than size, so a query ten times wider narrows them considerably.
+/// The point query measures 301x and 10.4x on the same data, but it is <i>not</i> a like-for-like row: a point
+/// query's answer size is fixed by the extents alone rather than by a query box, and on this distribution it
+/// is twenty times more selective (0.0050%), which flatters its ratio. Measured in <c>RTreeBenchmark</c>,
+/// which fails its own run if either selectivity drifts, and tabulated in the README.
 /// </para>
 /// <para>
 /// <b>Build-once.</b> The tree is immutable; adding a box means building a new one, as with
@@ -485,8 +488,9 @@ public sealed class RTree<TValue> : IReadOnlyList<SpatialBox<TValue>>
         {
             int below = _levelStart[level - 1];
             int belowCount = _levelStart[level] - below;
+            int here = _levelStart[level + 1] - _levelStart[level];
 
-            for (int node = 0; node < _levelStart[level + 1] - _levelStart[level]; node++)
+            for (int node = 0; node < here; node++)
             {
                 int start = node * NodeCapacity;
                 Cover(_nodes, below + start, below + Math.Min(belowCount, start + NodeCapacity), _levelStart[level] + node);
@@ -601,8 +605,8 @@ public sealed class RTree<TValue> : IReadOnlyList<SpatialBox<TValue>>
             return true;
         }
 
-        int lastChild = Math.Min(_levelStart[level] - _levelStart[level - 1], start + NodeCapacity);
-        for (int child = start; child < lastChild; child++)
+        int childEnd = Math.Min(_levelStart[level] - _levelStart[level - 1], start + NodeCapacity);
+        for (int child = start; child < childEnd; child++)
         {
             if (!Walk(level - 1, child, in region, ref visitor))
                 return false;

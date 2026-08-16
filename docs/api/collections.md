@@ -4627,14 +4627,14 @@ The standard advice is that an R-tree earns its keep only when **extents vary by
 
 | Extents | vs sorted hand-roll | vs bucketed grid |
 | --- | --- | --- |
-| Varying (three orders of magnitude) | 10.2x | 1.25x |
-| Uniform | **12.8x** | **1.98x** |
+| Varying (three orders of magnitude) | 9.9x | 1.29x |
+| Uniform | **11.9x** | **2.03x** |
 
 The R-tree's margin is *widest* on the shape it was expected to give way on. The reason is that a grid's query cost is dominated by the cells a query covers rather than by the boxes in them: cells sized to the data are much smaller than the query box, so a query walks tens of cells and pays a deduplication write per candidate to undo the replication — while an R-tree's node boxes get **tighter** as the extents get more alike, so the same query settles in a short descent.
 
 The honest qualification is that a grid's cell size is a tuning knob, and this one is sized by the data (twice the mean extent, the standard heuristic) rather than by the query; a grid tuned to a known query size would close some of that gap. **What is not supported is the flat claim that uniform extents belong to the grid.** The real reason to reach for a grid is that it is *mutable* and this type is not.
 
-The same benchmark also settles the **packing** choice rather than assuming it: against ordering the boxes along a Hilbert curve and cutting the result into runs — the standard alternative, on a common harness where only the permutation differs — sort-tile is level on varying extents and 1.19x ahead on uniform ones.
+The same benchmark also settles the **packing** choice rather than assuming it: against ordering the boxes along a Hilbert curve and cutting the result into runs — the standard alternative, on a common harness where only the permutation differs — sort-tile is 1.05x ahead on varying extents and 1.23x ahead on uniform ones.
 
 ### Constructors
 
@@ -4701,12 +4701,14 @@ Note that *uniform* extents are **not** a reason to avoid it, despite the receiv
 
 ### The documented BCL-beating workload
 
-At 100,000 boxes whose extents span three orders of magnitude, with 1,000 queries each selecting roughly a thousandth of the set:
+At 100,000 boxes whose extents span three orders of magnitude, 1,000 queries per measurement:
 
-| Query | vs naive scan | vs sorted hand-roll |
-| --- | --- | --- |
-| Overlap (`CountOverlapping`) | **175x** | **10.2x** |
-| Point (`CountAtPoint`) | **301x** | **10.4x** |
+| Query | Selectivity | vs naive scan | vs sorted hand-roll |
+| --- | --- | --- | --- |
+| Overlap (`CountOverlapping`) | 0.0835% (83.5 matches) | **175x** | **10.2x** |
+| Point (`CountAtPoint`) | 0.0050% (5.04 matches) | **301x** | **10.4x** |
+
+**The two rows are not like-for-like.** The query box is tuned so the overlap query lands on the ~0.1% the kill criterion names; a point query has no such knob, because its answer size is fixed by the extents alone. On this distribution it is twenty times more selective, which flatters its ratio — a more selective query prunes more. Raising it to 0.1% would need boxes that blanket the map, and would drag the overlap arm far above 0.1% in the process, so the difference is inherent rather than an oversight. `RTreeBenchmark` fails its own run if either figure drifts out of band.
 
 The second column is the honest one, and it was the bar set **before** implementation: the hand-roll orders the boxes by `minX`, binary-searches to `query.minX` less the widest stored box, and scans forward while `minX` stays at or below `query.maxX`. That is effectively a one-dimensional R-tree, and the second dimension plus the extent hierarchy are the whole of what this type adds over it.
 
@@ -4714,7 +4716,7 @@ Building the index costs **~27x** what merely copying the box array costs, which
 
 **The small-`n` crossover is real.** At 1,000 boxes the margin against that hand-roll falls to **1.35x** on the overlap query and **1.12x** on the point query — the index has not yet paid for its indirection. And the ratios track **selectivity**: a query ten times wider narrows the gap considerably, because a query answering with much of the tree prunes little.
 
-Figures are measured in `RTreeBenchmark`; the README's [spatial index section](../../README.md#spatial-index) carries the same table.
+Figures are measured in `RTreeBenchmark`; the README's [extent index section](../../README.md#extent-index) carries the same table.
 
 ### Usage example
 

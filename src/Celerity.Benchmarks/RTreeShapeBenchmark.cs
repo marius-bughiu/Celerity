@@ -233,9 +233,15 @@ public class RTreeShapeBenchmark
         return matches;
     }
 
-    private double Extent(Random rand) => Extents == Shape.Uniform
-        ? UniformExtent
-        : MinExtent * Math.Pow(MaxExtent / MinExtent, rand.NextDouble());
+    // The deviate is drawn on both shapes even though the uniform one ignores it, so the two draw the same
+    // numbers in the same order from the same seed and the box *positions* are identical between them. Without
+    // that the RNG streams diverge and the comparison quietly varies position as well as extent — which is the
+    // shape of the sampling bias that made an earlier KdTreeShapeBenchmark flatter its own type.
+    private double Extent(Random rand)
+    {
+        double deviate = rand.NextDouble();
+        return Extents == Shape.Uniform ? UniformExtent : MinExtent * Math.Pow(MaxExtent / MinExtent, deviate);
+    }
 
     private int LowerBound(double value)
     {
