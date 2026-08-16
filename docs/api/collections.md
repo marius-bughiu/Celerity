@@ -4746,7 +4746,7 @@ Console.WriteLine(features.ContainsAtPoint(-3.19, 55.95));             // True
 // Into a buffer you own, on a hot path.
 var visible = new SpatialBox<string>[8];
 int shown = features.CopyOverlapping(-4.0, 55.0, 2.0, 61.0, visible);
-Console.WriteLine(shown);                                              // 3
+Console.WriteLine(shown);                              // 2 — the UK and Edinburgh Old Town
 
 // The root's extent, free — the cheapest way to reject a query outright.
 features.TryGetBounds(out double minX, out double minY, out double maxX, out double maxY);

@@ -31,7 +31,7 @@ using Celerity.Collections;
 // cutting the result into runs is the standard alternative, and the issue that asked for this type asked for
 // the two to be measured rather than for either to be assumed better. Since Celerity.Primitives now ships
 // HilbertCurve, that measurement is available rather than hypothetical — and it comes out for the shipped
-// choice: sort-tile is level with the Hilbert order on varying extents and 1.19x ahead on uniform ones.
+// choice: sort-tile is 1.05x ahead of the Hilbert order on varying extents and 1.23x ahead on uniform ones.
 //
 // The packing arms run on a COMMON HARNESS — one PackedTree below, built and queried by identical code, with
 // only the initial permutation differing. That is the whole reason it exists: comparing the shipped RTree
@@ -42,11 +42,11 @@ using Celerity.Collections;
 // Measured (100,000 boxes, 1,000 queries, in-process on a dev machine, so read the ratios and not the absolute
 // times):
 //
-//     Varying    SortedScan 17.18 ms    RTree 1.69 ms   10.2x     Grid 2.12 ms    tree 1.25x ahead of the grid
-//     Uniform    SortedScan  8.05 ms    RTree 0.63 ms   12.8x     Grid 1.24 ms    tree 1.98x ahead of the grid
+//     Varying    SortedScan 16.78 ms    RTree 1.69 ms    9.9x     Grid 2.19 ms    tree 1.29x ahead of the grid
+//     Uniform    SortedScan  7.31 ms    RTree 0.62 ms   11.9x     Grid 1.25 ms    tree 2.03x ahead of the grid
 //
-//     Varying    Packed_SortTile 1.70 ms    Packed_Hilbert 1.74 ms    sort-tile 1.02x
-//     Uniform    Packed_SortTile 0.63 ms    Packed_Hilbert 0.75 ms    sort-tile 1.19x
+//     Varying    Packed_SortTile 1.68 ms    Packed_Hilbert 1.76 ms    sort-tile 1.05x
+//     Uniform    Packed_SortTile 0.62 ms    Packed_Hilbert 0.77 ms    sort-tile 1.23x
 //
 //   dotnet run -c Release -- --filter '*RTreeShape*'
 [MemoryDiagnoser]
@@ -87,14 +87,14 @@ public class RTreeShapeBenchmark
         /// <summary>
         /// Extents spanning three orders of magnitude — a few huge boxes among many small ones, the shape real
         /// map and scene data takes and the one this type is supposed to exist for. This is what
-        /// RTreeBenchmark measures. Measured at 10.2x the sorted hand-roll and 1.25x the bucketed grid.
+        /// RTreeBenchmark measures. Measured at 9.9x the sorted hand-roll and 1.29x the bucketed grid.
         /// </summary>
         Varying,
 
         /// <summary>
         /// Every box the same size, at the geometric mean of the varying range so the two shapes cover
         /// comparable total area. Included as the shape where this type was expected to give way, and measured
-        /// as the shape where its margin is <i>widest</i> instead — 12.8x the sorted hand-roll and 1.98x the
+        /// as the shape where its margin is <i>widest</i> instead — 11.9x the sorted hand-roll and 2.03x the
         /// bucketed grid. See the note on the class.
         /// </summary>
         Uniform,
