@@ -4627,14 +4627,16 @@ The standard advice is that an R-tree earns its keep only when **extents vary by
 
 | Extents | vs sorted hand-roll | vs bucketed grid |
 | --- | --- | --- |
-| Varying (three orders of magnitude) | 9.9x | 1.29x |
-| Uniform | **11.9x** | **2.03x** |
+| Varying (three orders of magnitude) | 10.0x | 1.30x |
+| Uniform | **13.4x** | **3.01x** |
 
-The R-tree's margin is *widest* on the shape it was expected to give way on. The reason is that a grid's query cost is dominated by the cells a query covers rather than by the boxes in them: cells sized to the data are much smaller than the query box, so a query walks tens of cells and pays a deduplication write per candidate to undo the replication — while an R-tree's node boxes get **tighter** as the extents get more alike, so the same query settles in a short descent.
+Both shapes hold the same **mean extent** (the log-uniform range's arithmetic mean, 72.3), so they carry the same expected box area and the same grid cell size, and the control varies only the spread. An earlier version used the *geometric* mean instead and was confounded: those boxes had 21x less area, which shrank the grid's cells and made it walk 48 cells per query instead of 2.3. The conclusion survived the correction and strengthened — but it was not established until the control stopped moving two things at once.
+
+The R-tree's margin is *widest* on the shape it was expected to give way on. An R-tree's node boxes get **tighter** as the extents get more alike, so the same query settles in a shorter descent — the tree goes from 1.71 ms to 0.74 ms across the two shapes. The grid barely moves (2.21 ms to 2.24 ms), because with the mean extent held equal its cell size is the same on both and its query cost is dominated by the cells a query covers rather than the boxes in them.
 
 The honest qualification is that a grid's cell size is a tuning knob, and this one is sized by the data (twice the mean extent, the standard heuristic) rather than by the query; a grid tuned to a known query size would close some of that gap. **What is not supported is the flat claim that uniform extents belong to the grid.** The real reason to reach for a grid is that it is *mutable* and this type is not.
 
-The same benchmark also settles the **packing** choice rather than assuming it: against ordering the boxes along a Hilbert curve and cutting the result into runs — the standard alternative, on a common harness where only the permutation differs — sort-tile is 1.05x ahead on varying extents and 1.23x ahead on uniform ones.
+The same benchmark also settles the **packing** choice rather than assuming it: against ordering the boxes along a Hilbert curve and cutting the result into runs — the standard alternative, on a common harness where only the permutation differs — sort-tile is 1.04x ahead on varying extents and 1.21x ahead on uniform ones.
 
 ### Constructors
 

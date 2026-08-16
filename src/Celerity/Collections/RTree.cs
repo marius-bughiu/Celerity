@@ -29,10 +29,11 @@ namespace Celerity.Collections;
 /// shape.</b> The received wisdom is that bucketing extents into fixed cells wins when they are all about one
 /// size, because then a cell size exists that fits them all — and that an R-tree earns its keep only when
 /// extents vary by orders of magnitude. <c>RTreeShapeBenchmark</c> measures that rather than repeating it, and
-/// it does not hold on query cost: against a bucketed grid sized by the standard mean-extent heuristic, this
-/// type is 1.29x ahead on the varying shape and <i>2.03x</i> ahead on the uniform one, because a grid's query
-/// cost is dominated by the cells the query covers rather than the boxes in them, while an R-tree's node boxes
-/// get tighter as the extents get more alike. A grid tuned to a known query size would close some of that gap.
+/// it does not hold on query cost: against a bucketed grid sized by the standard mean-extent heuristic, and
+/// with the two shapes holding the same mean extent so only the spread differs, this type is 1.30x ahead on
+/// the varying shape and <i>3.01x</i> ahead on the uniform one — because an R-tree's node boxes get tighter as
+/// the extents get more alike, while the grid barely moves between the two. A grid tuned to a known query size
+/// would close some of that gap.
 /// What remains a real reason to reach for a grid is that it is mutable and this type is not.
 /// </para>
 /// <para>

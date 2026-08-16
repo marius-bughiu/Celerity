@@ -16,22 +16,33 @@ using Celerity.Collections;
 // in place saying so. The expectation was that uniform extents would be where the R-tree gives way — a cell
 // size exists that fits them all, so the grid should win, and the one-dimensional hand-roll should close much
 // of its gap too because its slab then holds far fewer boxes that cannot match. What the numbers say is that
-// the R-tree's own advantage *grows* on the uniform shape rather than shrinking, in both comparisons.
+// the R-tree's own advantage *grows* on the uniform shape rather than shrinking, in both comparisons: 1.30x
+// ahead of the grid on varying extents and 3.01x ahead on uniform ones.
 //
-// The reason is that the grid's query cost is dominated by the cells a query covers, not by the boxes in them.
-// Cells sized to the data (twice the mean extent, the standard heuristic) are much smaller than the query box
-// here, so a uniform-shape query walks about fifty cells and pays a stamp-array write per candidate to undo
-// the replication — while the R-tree, whose node boxes get *tighter* as the extents get more alike, settles
-// the same query in a short descent. The honest qualification is that a grid's cell size is a tuning knob and
-// this one is sized by the data rather than by the query; a grid tuned to a known query size would close some
-// of that gap. What is not supported is the flat claim that uniform extents belong to the grid — at least not
-// on query-cost grounds. The reason to reach for a grid remains that it is mutable and this type is not.
+// The reason is that an R-tree's node boxes get *tighter* as the extents get more alike, so the same query
+// settles in a shorter descent — the tree goes from 1.71 ms to 0.74 ms across the two shapes — while the grid
+// barely moves (2.21 ms to 2.24 ms), because with the mean extent held equal its cell size is the same on both
+// and its query cost is dominated by the cells a query covers rather than the boxes in them. The honest
+// qualification is that a grid's cell size is a tuning knob sized here by the data rather than by the query; a
+// grid tuned to a known query size would close some of that gap. What is not supported is the flat claim that
+// uniform extents belong to the grid — at least not on query-cost grounds. The reason to reach for a grid
+// remains that it is mutable and this type is not.
+//
+// REVIEW CAUGHT THE FIRST VERSION OF THIS CONTROL CONFOUNDING ITSELF, and the correction is worth recording
+// because it is the same failure KdTreeShapeBenchmark had. The uniform extent was set to the log-uniform
+// range's *geometric* mean, 15.81, on the reasoning that it is the middle of a log scale. But expected area
+// goes as E[w]^2, so those boxes carried 21x less area than the varying ones; the grid's cells shrank from 145
+// units to 32, and a 220-unit query walked 48 cells instead of 2.3. The control was varying size and
+// selectivity along with spread, and the grid was being charged for a cell size the control itself had shrunk.
+// At the arithmetic mean (72.31) both shapes carry the same expected extent and area. The conclusion survived
+// the fix and got *stronger* — the confounded run reported 1.25x/1.98x against the grid, this one 1.30x/3.01x
+// — but it was not established until the control stopped moving two things at once.
 //
 // SECOND, THE PACKING. STR is a sort into tiles per level; ordering the boxes along a space-filling curve and
 // cutting the result into runs is the standard alternative, and the issue that asked for this type asked for
 // the two to be measured rather than for either to be assumed better. Since Celerity.Primitives now ships
 // HilbertCurve, that measurement is available rather than hypothetical — and it comes out for the shipped
-// choice: sort-tile is 1.05x ahead of the Hilbert order on varying extents and 1.23x ahead on uniform ones.
+// choice: sort-tile is 1.04x ahead of the Hilbert order on varying extents and 1.21x ahead on uniform ones.
 //
 // The packing arms run on a COMMON HARNESS — one PackedTree below, built and queried by identical code, with
 // only the initial permutation differing. That is the whole reason it exists: comparing the shipped RTree
@@ -42,11 +53,11 @@ using Celerity.Collections;
 // Measured (100,000 boxes, 1,000 queries, in-process on a dev machine, so read the ratios and not the absolute
 // times):
 //
-//     Varying    SortedScan 16.78 ms    RTree 1.69 ms    9.9x     Grid 2.19 ms    tree 1.29x ahead of the grid
-//     Uniform    SortedScan  7.31 ms    RTree 0.62 ms   11.9x     Grid 1.25 ms    tree 2.03x ahead of the grid
+//     Varying    SortedScan 17.02 ms    RTree 1.71 ms   10.0x     Grid 2.21 ms    tree 1.30x ahead of the grid
+//     Uniform    SortedScan  9.96 ms    RTree 0.74 ms   13.4x     Grid 2.24 ms    tree 3.01x ahead of the grid
 //
-//     Varying    Packed_SortTile 1.68 ms    Packed_Hilbert 1.76 ms    sort-tile 1.05x
-//     Uniform    Packed_SortTile 0.62 ms    Packed_Hilbert 0.77 ms    sort-tile 1.23x
+//     Varying    Packed_SortTile 1.70 ms    Packed_Hilbert 1.76 ms    sort-tile 1.04x
+//     Uniform    Packed_SortTile 0.72 ms    Packed_Hilbert 0.87 ms    sort-tile 1.21x
 //
 //   dotnet run -c Release -- --filter '*RTreeShape*'
 [MemoryDiagnoser]
@@ -60,11 +71,20 @@ public class RTreeShapeBenchmark
     private const double QuerySide = 220;
 
     // The varying shape: three orders of magnitude, log-uniform, so small boxes dominate by count and large
-    // ones by area. The uniform shape holds every box at the geometric mean of that range, so the two shapes
-    // cover comparable total area and the comparison is about the spread rather than about the size.
+    // ones by area.
+    //
+    // The uniform shape holds every box at the log-uniform distribution's ARITHMETIC mean, (b - a) / ln(b / a)
+    // = 72.3, which is what makes this a control over spread alone. The first version used the geometric mean
+    // (15.81) on the reasoning that it is the "middle" of a log-uniform range, and that was wrong in a way that
+    // decided the result: expected area goes as E[w]^2 for independent edges, so geometric-mean boxes carry
+    // 21x less area than the varying ones, the grid's "twice the mean" cells shrink from 145 units to 32, and a
+    // 220-unit query then walks 48 cells instead of 2.3. The control was varying size and selectivity as well
+    // as spread, and the grid was being charged for a cell size the comparison itself had shrunk. At the
+    // arithmetic mean both shapes carry the same expected extent and the same expected area, so the grid gets
+    // the same cell size on both and only the spread differs.
     private const double MinExtent = 0.5;
     private const double MaxExtent = 500;
-    private const double UniformExtent = 15.8;
+    private const double UniformExtent = 72.31;
 
     private SpatialBox<int>[] boxes = null!;
     private RTree<int> tree = null!;
@@ -87,15 +107,15 @@ public class RTreeShapeBenchmark
         /// <summary>
         /// Extents spanning three orders of magnitude — a few huge boxes among many small ones, the shape real
         /// map and scene data takes and the one this type is supposed to exist for. This is what
-        /// RTreeBenchmark measures. Measured at 9.9x the sorted hand-roll and 1.29x the bucketed grid.
+        /// RTreeBenchmark measures. Measured at 10.0x the sorted hand-roll and 1.30x the bucketed grid.
         /// </summary>
         Varying,
 
         /// <summary>
-        /// Every box the same size, at the geometric mean of the varying range so the two shapes cover
-        /// comparable total area. Included as the shape where this type was expected to give way, and measured
-        /// as the shape where its margin is <i>widest</i> instead — 11.9x the sorted hand-roll and 2.03x the
-        /// bucketed grid. See the note on the class.
+        /// Every box the same size, at the varying range's <i>arithmetic</i> mean so the two shapes carry the
+        /// same expected extent and area and only the spread differs. Included as the shape where this type
+        /// was expected to give way, and measured as the shape where its margin is <i>widest</i> instead —
+        /// 13.4x the sorted hand-roll and 3.01x the bucketed grid. See the note on the class.
         /// </summary>
         Uniform,
     }
