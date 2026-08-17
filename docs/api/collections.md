@@ -4741,6 +4741,193 @@ world.Remove(rider);
 Console.WriteLine(world.TryGetPoint(rider, out _));           // False
 ```
 
+## RTree&lt;TValue&gt;
+
+```csharp
+public sealed class RTree<TValue> : IReadOnlyList<SpatialBox<TValue>>
+```
+
+An **R-tree**: a build-once, immutable spatial index over axis-aligned *rectangles*. It answers *which of these boxes overlap this box* and *which contain this point* without testing every stored box.
+
+.NET ships nothing for this question either. There is no R-tree, no bounding-volume hierarchy and no spatial index of any kind in the BCL — `System.Drawing` ships a `Rectangle` with an `IntersectsWith` on it and no index over a *collection* of them. So the idiomatic answer is an array of boxes and a loop that tests all of them: `O(n)` per query, on every query.
+
+[`KdTree<TValue>`](#kdtreetvalue) cannot stand in. A point index answers *what is near this coordinate*; it has nothing to say about an object that **occupies an area**, because a box can overlap the query while its centre sits far outside it — a long thin road segment crossing the viewport is the ordinary case, not a contrived one. That is the two-dimensional form of exactly the argument that made [`IntervalTree`](#intervaltreetkey-tvalue-tcomparer) necessary next to `BTreeSet` on one axis.
+
+### The element: `SpatialBox<TValue>`
+
+```csharp
+public readonly struct SpatialBox<TValue>
+{
+    public SpatialBox(double minX, double minY, double maxX, double maxY, TValue? value);
+
+    public double MinX { get; }
+    public double MinY { get; }
+    public double MaxX { get; }
+    public double MaxY { get; }
+    public TValue? Value { get; }
+
+    public void Deconstruct(out double minX, out double minY, out double maxX, out double maxY, out TValue? value);
+}
+```
+
+The edges are **closed**: a box covers `[MinX, MaxX] × [MinY, MaxY]`, so two boxes sharing only an edge or a corner do overlap and a point exactly on an edge is inside. A box may be degenerate — equal edges make it a point, equal edges on one axis make it a segment — which is deliberate, since that is how a point is filed alongside extents in the same index.
+
+Coordinates are `double`, matching `SpatialPoint<TValue>` so the two spatial element types agree at the boundary. Unlike the point, nothing here is ever squared — every query is a comparison — so there is **no magnitude bound**; only finiteness and non-inverted edges are required.
+
+### How it works
+
+The boxes are permuted by **STR (Sort-Tile-Recursive) packing** and a fixed-fanout tree (16 children) is laid over them *implicitly*: leaf `i` owns entries `[i×16, i×16+16)`, and a node at any level above owns the same fixed run of the level below it. There are no per-node heap objects and no child pointers — the whole structure is one flat array of entry extents, one payload array, and one flat array of node bounding boxes with the leaf level first and the root last.
+
+STR is what makes the implicit layout legitimate. Sorting a level by centre-x, cutting it into `√(node count)` vertical slices and sorting each slice by centre-y puts spatially near boxes at adjacent indices, so a run of consecutive entries has a **tight** bounding box rather than an arbitrary one. The `√` is what leaves the tiles roughly square, which is what keeps a node's box tight in *both* axes instead of one.
+
+The packing is applied **recursively from the root down** rather than once per level, which is what keeps the tree implicit: the tiling at the root partitions the entries into the subtree-sized runs its children own, and each run is then tiled again for the level below. A sort per level makes the build `O(n log n)` times the level count — five sorts at 100,000 boxes — which is the price of the index and what a caller amortizes by querying it repeatedly.
+
+The sort is `Array.Sort` over a `(double[] keys, SpatialBox<TValue>[] items)` pair rather than an `IComparer<SpatialBox<TValue>>`, which would box on the way in and pay an interface call per comparison on the one path whose whole cost *is* comparisons. Centres are computed as `0.5·min + 0.5·max` rather than `(min + max) / 2`, which cannot overflow for any pair of finite doubles.
+
+### What the complexity really is
+
+An R-tree has **no useful worst-case query bound**. Overlapping node boxes mean a query can descend into several children at each level, and an adversarial box set forces it into all of them. What *is* guaranteed is that a query visits each node and each entry at most once, so every family is `O(n)` — bounded by the hand-written loop it replaces rather than by anything worse.
+
+The useful statement is empirical and about **selectivity**: pruning discards subtrees whose bounding box misses the query, so a query whose answer is a large fraction of the tree prunes little and converges on the scan.
+
+### The shape of the data — measured, and not what the received wisdom says
+
+The standard advice is that an R-tree earns its keep only when **extents vary by orders of magnitude** — a few huge boxes among many small ones, which is what real map and scene data looks like — and that for boxes of roughly **uniform** size a bucketed uniform-cell grid is the simpler and faster answer, because then a cell size exists that fits them all.
+
+`RTreeShapeBenchmark` measures that rather than repeating it, with a bucketed grid as its own arm, and **it does not hold on query cost**. At 100,000 boxes and 1,000 queries:
+
+| Extents | vs sorted hand-roll | vs bucketed grid |
+| --- | --- | --- |
+| Varying (three orders of magnitude) | 10.0x | 1.30x |
+| Uniform | **13.4x** | **3.01x** |
+
+Both shapes hold the same **mean extent** (the log-uniform range's arithmetic mean, 72.3), so they carry the same expected box area and the same grid cell size, and the control varies only the spread. An earlier version used the *geometric* mean instead and was confounded: those boxes had 21x less area, which shrank the grid's cells and made it walk 48 cells per query instead of 2.3. The conclusion survived the correction and strengthened — but it was not established until the control stopped moving two things at once.
+
+The R-tree's margin is *widest* on the shape it was expected to give way on. An R-tree's node boxes get **tighter** as the extents get more alike, so the same query settles in a shorter descent — the tree goes from 1.71 ms to 0.74 ms across the two shapes. The grid barely moves (2.21 ms to 2.24 ms), because with the mean extent held equal its cell size is the same on both and its query cost is dominated by the cells a query covers rather than the boxes in them.
+
+The honest qualification is that a grid's cell size is a tuning knob, and this one is sized by the data (twice the mean extent, the standard heuristic) rather than by the query; a grid tuned to a known query size would close some of that gap. **What is not supported is the flat claim that uniform extents belong to the grid.** The real reason to reach for a grid is that it is *mutable* and this type is not.
+
+The same benchmark also settles the **packing** choice rather than assuming it: against ordering the boxes along a Hilbert curve and cutting the result into runs — the standard alternative, on a common harness where only the permutation differs — sort-tile is 1.04x ahead on varying extents and 1.21x ahead on uniform ones.
+
+### Constructors
+
+```csharp
+public RTree(IEnumerable<SpatialBox<TValue>> boxes)
+```
+
+Builds the index. The sequence is read once and copied; when it implements `ICollection<T>` it is sized and copied in one pass.
+
+**Throws:**
+
+- `ArgumentNullException` if `boxes` is `null`.
+- `ArgumentException` if a box has a coordinate that is **not finite**, or an **upper edge that precedes its lower edge**. A `NaN` edge fails every comparison, so such a box could not be found even by a query for its own extent; an infinite one would overlap every query while giving the packing a centre it cannot order. An inverted box describes no region at all.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `Count` | Number of boxes, counting duplicate extents separately. |
+| `this[int index]` | The box at that position in the tree's **packed order** — deterministic for a given input, but neither insertion nor spatial order, and an implementation detail. |
+| `TryGetBounds(out minX, out minY, out maxX, out maxY)` | The bounding box of every stored box, read straight off the root, so it costs nothing. `false` for an empty tree. The cheapest way to reject a query that cannot match anything. |
+| `ContainsOverlapping(minX, minY, maxX, maxY)` | Whether any stored box overlaps the **closed** query box. Stops at the first match. |
+| `CountOverlapping(...)` | How many stored boxes overlap the query. |
+| `CopyOverlapping(..., destination, destinationIndex = 0)` | Writes the matches into a caller buffer. Allocation-free. |
+| `GetOverlapping(...)` | The matches as an array. Allocates. |
+| `ContainsAtPoint(x, y)` | Whether any stored box contains the point, edges included. Stops at the first match. |
+| `CountAtPoint(x, y)` / `CopyAtPoint(...)` / `GetAtPoint(x, y)` | The same three tiers for a point query. |
+| `GetEnumerator()` | Struct enumerator over every stored box in packed order. |
+
+**Throws:**
+
+- `ArgumentException` if a query box's upper edge precedes its lower edge.
+- `ArgumentOutOfRangeException` if `destinationIndex` is outside `[0, destination.Length]`, or an indexer index is outside `[0, Count)`.
+- `ArgumentNullException` if a destination buffer is `null`.
+
+### Boundaries, degenerate boxes and `NaN`
+
+- **Edges are closed** on all four sides, so boxes touching along an edge or at a corner do overlap, and a point exactly on an edge is inside. That is also what makes a point query an overlap query against a degenerate box rather than one that matches nothing.
+- **Degenerate boxes are legal.** Equal edges on both axes store a point; equal edges on one axis store a segment. Both are indexed and queried like any other extent.
+- **A `NaN` query coordinate matches nothing** — it fails every comparison, so the query prunes the root and reports nothing rather than throwing. Stored coordinates can never be `NaN` or infinite.
+- **Duplicate extents stay distinct.** Two boxes with the same edges are two entries and every query reports both.
+- **Match order is unspecified** for every query. There is no distance ordering here to fall back on, as there is for a nearest query.
+- **Writing stops when the buffer is full**, so a `Copy*` return value equal to the remaining room may mean the matches were truncated. Size the buffer with the matching `Count*` when every match is needed.
+
+### Allocation-free and convenience tiers
+
+The `Contains` and `Count` members and the two `Copy` methods allocate nothing at all. `GetOverlapping` and `GetAtPoint` are the convenience tier and allocate the result array, walking the tree twice — once to size the array exactly and once to fill it.
+
+All queries share **one** traversal, generic over a `struct` visitor, so the JIT specializes it per call site and inlines the per-match work rather than paying a delegate or an interface call per hit. There is one query *region* rather than two, because a point query is an overlap query against a degenerate box and splitting them would buy nothing.
+
+### Build-once
+
+The tree is immutable; adding a box means building a new one, as with [`KdTree<TValue>`](#kdtreetvalue), `FrozenCelerityDictionary<TValue>` and [`RankSelectBitVector`](#rankselectbitvector). Keeping an R-tree balanced under insertion needs node splits and reinsertion, which is a different type with a different cost profile, not an overload of this one.
+
+Because nothing mutates, enumeration is never invalidated and concurrent readers need no synchronization, with no comparer caveat to attach to that: every query is a comparison on `double` and calls nothing the caller supplied.
+
+### Choosing it
+
+Reach for `RTree<TValue>` when you build a set of **sized** objects once and then query it **repeatedly** — collision broadphase for bodies with an extent rather than particles; map label and marker placement; hit-testing a UI or a canvas; viewport culling of sized objects; spatial joins between two box sets.
+
+Do not reach for it when the extents **change every frame** — it is build-once, and rebuilding per frame costs more than the queries save, which is the case a mutable bucketed grid exists for. Do not reach for it for **points** — that is [`KdTree<TValue>`](#kdtreetvalue), which additionally answers nearest-neighbour, a question an extent index does not. And do not reach for it for **a few thousand boxes**, where the measurements below put a hand-rolled sorted scan nearly level with it.
+
+Note that *uniform* extents are **not** a reason to avoid it, despite the received wisdom — see the section above, where that claim is measured and does not survive.
+
+### The documented BCL-beating workload
+
+At 100,000 boxes whose extents span three orders of magnitude, 1,000 queries per measurement:
+
+| Query | Selectivity | vs naive scan | vs sorted hand-roll |
+| --- | --- | --- | --- |
+| Overlap (`CountOverlapping`) | 0.0835% (83.5 matches) | **141x** | **9.6x** |
+| Point (`CountAtPoint`) | 0.0050% (5.04 matches) | **240x** | **10.6x** |
+
+All figures are from CI's same-runner A/B on `ubuntu-latest` rather than a development machine, which matters here: the two disagreed on the *sign* of the 1,000-box point comparison below.
+
+**The two rows are not like-for-like.** The query box is tuned so the overlap query lands on the ~0.1% the kill criterion names; a point query has no such knob, because its answer size is fixed by the extents alone. On this distribution it is twenty times more selective, which flatters its ratio — a more selective query prunes more. Raising it to 0.1% would need boxes that blanket the map, and would drag the overlap arm far above 0.1% in the process, so the difference is inherent rather than an oversight. `RTreeBenchmark` fails its own run if either figure drifts out of band.
+
+The second column is the honest one, and it was the bar set **before** implementation: the hand-roll orders the boxes by `minX`, binary-searches to `query.minX` less the widest stored box, and scans forward while `minX` stays at or below `query.maxX`. That is effectively a one-dimensional R-tree, and the second dimension plus the extent hierarchy are the whole of what this type adds over it.
+
+Building the index costs **~144x** what merely copying the box array costs (436 µs → 62.6 ms), which is what the queries above amortize. A sort per level is what "Sort-Tile-Recursive" costs, and the multiple is much worse on CI than on a development machine because the hosted runner's array copy is quicker and its sorts slower.
+
+**The small-`n` crossover is real, and on the point query it goes negative.** At 1,000 boxes the margin against that hand-roll falls to **1.48x** on the overlap query, and the point query **loses outright at 0.91x** — the scan is ahead. The index has not paid for its indirection at that size, and a slab scan over a thousand boxes is a handful of cache lines. And the ratios track **selectivity**: a query ten times wider narrows the gap considerably, because a query answering with much of the tree prunes little.
+
+Figures are measured in `RTreeBenchmark`; the README's [extent index section](../../README.md#extent-index) carries the same table.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Map features, indexed once and queried per frame. Note the extents: a country-sized box
+// alongside street-sized ones is exactly the shape this type is for.
+var features = new RTree<string>(new[]
+{
+    new SpatialBox<string>(-8.6, 49.9, 1.8, 60.9, "United Kingdom"),
+    new SpatialBox<string>(-0.51, 51.28, 0.33, 51.69, "Greater London"),
+    new SpatialBox<string>(-0.14, 51.50, -0.12, 51.51, "Covent Garden"),
+    new SpatialBox<string>(-3.20, 55.94, -3.18, 55.96, "Edinburgh Old Town"),
+});
+
+// Which features cover this coordinate? Every enclosing extent, whatever its size.
+foreach (SpatialBox<string> feature in features.GetAtPoint(-0.13, 51.51))
+    Console.WriteLine(feature.Value);        // United Kingdom, Greater London, Covent Garden
+
+// Which features are visible in the current viewport, counted without allocating.
+Console.WriteLine(features.CountOverlapping(-1.0, 51.0, 0.5, 52.0));   // 3
+
+// Hit-testing: stop at the first match rather than collecting them all.
+Console.WriteLine(features.ContainsAtPoint(-3.19, 55.95));             // True
+
+// Into a buffer you own, on a hot path.
+var visible = new SpatialBox<string>[8];
+int shown = features.CopyOverlapping(-4.0, 55.0, 2.0, 61.0, visible);
+Console.WriteLine(shown);                              // 2 — the UK and Edinburgh Old Town
+
+// The root's extent, free — the cheapest way to reject a query outright.
+features.TryGetBounds(out double minX, out double minY, out double maxX, out double maxY);
+Console.WriteLine($"{minX}, {minY} .. {maxX}, {maxY}");                // -8.6, 49.9 .. 1.8, 60.9
+```
+
 ## IntervalTree&lt;TKey, TValue, TComparer&gt;
 
 ```csharp

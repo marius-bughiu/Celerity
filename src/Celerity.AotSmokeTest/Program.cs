@@ -1,4 +1,4 @@
-// Native AOT smoke test for Celerity (#32).
+﻿// Native AOT smoke test for Celerity (#32).
 //
 // This console app exercises every collection shape and a representative spread
 // of hashers so that `dotnet publish /p:PublishAot=true` is forced to compile
@@ -786,6 +786,52 @@ void Check(bool condition, string message)
     particles.Move(particle, 4, 4);
     Check(particles.TryFindNearest(5, 5, out var found) && found.Value == 2, "SpatialGrid value-typed payload");
     Check(particles.CountWithin(4.5, 4.5, 1) == 2, "SpatialGrid value-typed radius query");
+}
+
+// RTree — the build-once extent index. What is ILC-specific here is the query core: one traversal generic over
+// a struct visitor, so each of the three visitors is a separate specialization the compiler has to produce
+// ahead of time with no JIT to fall back on, and the build's Array.Sort over a (double[], SpatialBox<T>[]) key
+// pair is itself a generic instantiation ILC has to root. Exercise both query families across all three tiers,
+// a tree deep enough to descend rather than sit in one leaf, a reference-typed payload, and the enumerator.
+{
+    var regions = new RTree<string>(new[]
+    {
+        new SpatialBox<string>(0, 0, 100, 100, "world"),
+        new SpatialBox<string>(0, 0, 10, 10, "quad"),
+        new SpatialBox<string>(4, 4, 6, 6, "cell"),
+        new SpatialBox<string>(50, 50, 60, 60, "far"),
+    });
+
+    Check(regions.Count == 4, "RTree build");
+    Check(regions.TryGetBounds(out var minX, out var minY, out var maxX, out var maxY) &&
+        minX == 0 && minY == 0 && maxX == 100 && maxY == 100, "RTree root bounds");
+
+    // The nested case: three extents of very different sizes cover the same coordinate.
+    Check(regions.CountAtPoint(5, 5) == 3, "RTree point query");
+    Check(regions.ContainsAtPoint(55, 55) && !regions.ContainsAtPoint(-1, -1), "RTree point predicate");
+    Check(regions.CountAtPoint(100, 100) == 1, "RTree edges are closed");
+
+    Check(regions.CountOverlapping(9, 9, 51, 51) == 3, "RTree overlap query");
+    Check(regions.ContainsOverlapping(10, 10, 10, 10) && !regions.ContainsOverlapping(200, 200, 300, 300),
+        "RTree overlap predicate");
+    Check(regions.GetOverlapping(4, 4, 6, 6).Length == 3 && regions.GetAtPoint(0, 0).Length == 2,
+        "RTree convenience tiers");
+
+    var boxBuffer = new SpatialBox<string>[4];
+    Check(regions.CopyAtPoint(5, 5, boxBuffer) == 3 && regions.CopyOverlapping(0, 0, 100, 100, boxBuffer) == 4,
+        "RTree copy tier");
+
+    int covered = 0;
+    foreach (var box in regions) covered += box.Value!.Length;
+    Check(covered == 16, "RTree enumerates every entry");
+
+    // A tree past the fanout, so the walk really descends levels rather than scanning one leaf, and a
+    // value-typed payload so the entry layout is specialized per instantiation.
+    var tiles = new SpatialBox<int>[300];
+    for (int i = 0; i < tiles.Length; i++) tiles[i] = new SpatialBox<int>(i, 0, i + 1, 1, i);
+    var strip = new RTree<int>(tiles);
+    Check(strip.Count == 300 && strip.CountAtPoint(150.5, 0.5) == 1, "RTree multi-level descent");
+    Check(strip.CountOverlapping(10, 0, 20, 1) == 12, "RTree multi-level overlap query");
 }
 
 // IntervalTree — the build-once stabbing/overlap index. What is ILC-specific here is the query core: every

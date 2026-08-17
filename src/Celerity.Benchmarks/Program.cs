@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Running;
@@ -54,6 +54,7 @@ internal class Program
         typeof(SegmentTreeBenchmark),
         typeof(KdTreeBenchmark),
         typeof(SpatialGridBenchmark),
+        typeof(RTreeBenchmark),
         typeof(IntervalTreeBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
@@ -99,6 +100,7 @@ internal class Program
         typeof(EnsureCapacityBenchmark),
         typeof(KdTreeShapeBenchmark),
         typeof(SpatialGridShapeBenchmark),
+        typeof(RTreeShapeBenchmark),
 
         // "Built with Celerity" showcase packages (separate NuGet packages built on the core family):
         // isolated perf demos, so they ride the extended suite alongside the primitive benchmarks.

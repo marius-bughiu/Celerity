@@ -501,6 +501,13 @@ function escapeHtml(s) {
     // the parsers classify a series by the type name in the arm's name, and KdTree is one of ours, so it
     // would land as a second Celerity series in one bucket and silently displace the other.
     { key: 'SpatialGrid',         title: 'SpatialGrid<int> (moving points)',         vs: 'Dictionary<(int, int), List<int>> (bucketed grid)', ops: ['Frame', 'Query', 'Churn'] },
+    // RTree indexes extents rather than points, which KdTree structurally cannot — a box can overlap the query
+    // while its centre sits far outside it. Same two-baseline treatment: the plain scan over every box, and the
+    // better hand-roll that orders them by minX and scans the slab the query can still reach. The boxes here
+    // span three orders of magnitude of extent, which is the shape an R-tree is supposed to earn its keep on.
+    // RTreeShapeBenchmark, in the extended suite, measures the uniform shape too — and refutes the received
+    // wisdom that it belongs to a bucketed grid.
+    { key: 'RTree',               title: 'RTree<int> (2-D extent index)',            vs: 'SpatialBox[] scan — naive, or minX-sorted on the Sorted cards', ops: ['OverlapQuery', 'OverlapSorted', 'PointQuery', 'PointSorted', 'Build'] },
     // IntervalTree answers the interval questions no position-indexed structure can — the baseline is the
     // List<T> scan a caller writes, since the BCL has no interval structure at all. AnyOverlap is the honest
     // arm: both sides stop at the first match there, so it is where the gap is narrowest.

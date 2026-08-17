@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
@@ -57,6 +57,7 @@ internal static class Differential
         ("SegmentTree", SegmentTreeCase),
         ("KdTree", KdTreeCase),
         ("SpatialGrid", SpatialGridCase),
+        ("RTree", RTreeCase),
         ("IntervalTree", IntervalTreeCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
@@ -1287,6 +1288,88 @@ internal static class Differential
                 Check(KdDistance(actual[i], x, y) == expected[i], "KdTree GetNearest disagreed on distance or order");
         }
     }
+
+    // RTree against the brute-force scan a caller writes instead. Same failure mode as KdTree's case and the
+    // same reason for an oracle that prunes nothing — a wrong prune loses a match silently rather than
+    // throwing — but the surface under test is wider here, because an R-tree's node boxes are computed by the
+    // packing rather than implied by a split plane, so a mis-packed entry and an over-eager prune both show up
+    // only as a missing result. Counts run past 256 so the generated trees are three levels deep and the
+    // recursive tiling is exercised rather than only the single-node case. Edges come off a small integer grid
+    // so zero-area boxes, duplicate extents and exactly-on-the-edge queries are common instead of rare, which
+    // is where the closed-edge rule is decided.
+    private static void RTreeCase(Random rng)
+    {
+        int count = rng.Next(0, 400);
+        int extent = rng.Next(1, 40);
+        int span = rng.Next(0, 12);
+
+        var boxes = new SpatialBox<int>[count];
+        for (int i = 0; i < count; i++)
+        {
+            double minX = rng.Next(-extent, extent + 1);
+            double minY = rng.Next(-extent, extent + 1);
+            boxes[i] = new SpatialBox<int>(minX, minY, minX + rng.Next(0, span + 1), minY + rng.Next(0, span + 1), i);
+        }
+
+        var sut = new RTree<int>(boxes);
+        Check(sut.Count == count, "RTree Count disagreed");
+
+        var enumerated = new List<int>();
+        foreach (SpatialBox<int> box in sut)
+            enumerated.Add(box.Value);
+
+        enumerated.Sort();
+        for (int i = 0; i < count; i++)
+            Check(enumerated[i] == i, "RTree enumeration is not a permutation of the input");
+
+        bool bounded = sut.TryGetBounds(out double rootMinX, out double rootMinY, out double rootMaxX, out double rootMaxY);
+        Check(bounded == count > 0, "RTree TryGetBounds disagreed on whether the tree is empty");
+        if (bounded)
+        {
+            Check(rootMinX == boxes.Min(b => b.MinX) && rootMinY == boxes.Min(b => b.MinY), "RTree bounds lower edge disagreed");
+            Check(rootMaxX == boxes.Max(b => b.MaxX) && rootMaxY == boxes.Max(b => b.MaxY), "RTree bounds upper edge disagreed");
+        }
+
+        var buffer = new SpatialBox<int>[Math.Max(1, count)];
+        int queries = OpCount(rng);
+        for (int q = 0; q < queries; q++)
+        {
+            double minX = rng.Next(-extent, extent + 1);
+            double minY = rng.Next(-extent, extent + 1);
+            double maxX = minX + rng.Next(0, span + 1);
+            double maxY = minY + rng.Next(0, span + 1);
+
+            int expectedOverlap = 0;
+            foreach (SpatialBox<int> box in boxes)
+            {
+                if (BoxesMeet(box, minX, minY, maxX, maxY))
+                    expectedOverlap++;
+            }
+
+            Check(sut.CountOverlapping(minX, minY, maxX, maxY) == expectedOverlap, "RTree CountOverlapping disagreed");
+            Check(sut.ContainsOverlapping(minX, minY, maxX, maxY) == (expectedOverlap > 0), "RTree ContainsOverlapping disagreed");
+            Check(sut.GetOverlapping(minX, minY, maxX, maxY).Length == expectedOverlap, "RTree GetOverlapping disagreed");
+            Check(sut.CopyOverlapping(minX, minY, maxX, maxY, buffer) == expectedOverlap, "RTree CopyOverlapping disagreed");
+
+            double x = rng.Next(-extent, extent + 1);
+            double y = rng.Next(-extent, extent + 1);
+
+            int expectedAtPoint = 0;
+            foreach (SpatialBox<int> box in boxes)
+            {
+                if (BoxesMeet(box, x, y, x, y))
+                    expectedAtPoint++;
+            }
+
+            Check(sut.CountAtPoint(x, y) == expectedAtPoint, "RTree CountAtPoint disagreed");
+            Check(sut.ContainsAtPoint(x, y) == (expectedAtPoint > 0), "RTree ContainsAtPoint disagreed");
+            Check(sut.GetAtPoint(x, y).Length == expectedAtPoint, "RTree GetAtPoint disagreed");
+            Check(sut.CopyAtPoint(x, y, buffer) == expectedAtPoint, "RTree CopyAtPoint disagreed");
+        }
+    }
+
+    private static bool BoxesMeet(SpatialBox<int> box, double minX, double minY, double maxX, double maxY)
+        => box.MinX <= maxX && box.MaxX >= minX && box.MinY <= maxY && box.MaxY >= minY;
 
     private static double KdDistance(SpatialPoint<int> point, double x, double y)
     {
