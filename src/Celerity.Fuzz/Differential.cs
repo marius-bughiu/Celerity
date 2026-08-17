@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
@@ -56,6 +56,7 @@ internal static class Differential
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("SegmentTree", SegmentTreeCase),
         ("KdTree", KdTreeCase),
+        ("SpatialGrid", SpatialGridCase),
         ("RTree", RTreeCase),
         ("IntervalTree", IntervalTreeCase),
         ("SortedSpan", SortedSpanCase),
@@ -1374,6 +1375,132 @@ internal static class Differential
     {
         double dx = point.X - x;
         double dy = point.Y - y;
+        return (dx * dx) + (dy * dy);
+    }
+
+    // SpatialGrid against the same brute-force scan, but driven by a randomized *operation sequence* rather
+    // than by a fixed point set. That is the difference that matters for a mutable structure: the queries can
+    // only lose a match by visiting the wrong cells, while the mutations can corrupt a cell's intrusive list —
+    // a Move that unlinks from the cell the entry used to be in, a Remove that takes its neighbour with it —
+    // and a corrupted list shows up as a silently missing point many operations later. Handles are held onto
+    // deliberately, so a stale one is offered back to the grid after its slot has been reused.
+    private static void SpatialGridCase(Random rng)
+    {
+        int extent = rng.Next(4, 32);
+        double cellSize = rng.Next(1, 6);
+
+        var sut = new SpatialGrid<int>(0, 0, extent, extent, cellSize);
+        var live = new List<(SpatialGridHandle Handle, double X, double Y, int Value)>();
+        var retired = new List<SpatialGridHandle>();
+        int next = 0;
+
+        int operations = OpCount(rng);
+        for (int op = 0; op < operations; op++)
+        {
+            int roll = rng.Next(100);
+
+            if (roll < 45 || live.Count == 0)
+            {
+                // A slice of the coordinates falls outside the declared world, so the clamped edge cells are
+                // exercised rather than assumed to be unreachable.
+                double x = rng.Next(-2, extent + 3);
+                double y = rng.Next(-2, extent + 3);
+                live.Add((sut.Add(x, y, next), x, y, next));
+                next++;
+            }
+            else if (roll < 85)
+            {
+                int index = rng.Next(live.Count);
+                double x = rng.Next(-2, extent + 3);
+                double y = rng.Next(-2, extent + 3);
+                sut.Move(live[index].Handle, x, y);
+                live[index] = (live[index].Handle, x, y, live[index].Value);
+            }
+            else if (roll < 97)
+            {
+                int index = rng.Next(live.Count);
+                sut.Remove(live[index].Handle);
+                retired.Add(live[index].Handle);
+                live.RemoveAt(index);
+            }
+            else
+            {
+                sut.Clear();
+                foreach (var entry in live)
+                    retired.Add(entry.Handle);
+
+                live.Clear();
+            }
+
+            Check(sut.Count == live.Count, "SpatialGrid Count disagreed");
+
+            foreach (SpatialGridHandle stale in retired)
+                Check(!sut.TryGetPoint(stale, out _), "SpatialGrid resolved a retired handle");
+
+            foreach (var entry in live)
+            {
+                Check(sut.TryGetPoint(entry.Handle, out SpatialPoint<int> point), "SpatialGrid lost a live handle");
+                Check(point.X == entry.X && point.Y == entry.Y, "SpatialGrid disagreed on a live entry's position");
+            }
+
+            double qx = rng.Next(-2, extent + 3);
+            double qy = rng.Next(-2, extent + 3);
+            double radius = rng.Next(0, extent + 1);
+
+            int expectedWithin = 0;
+            double best = double.PositiveInfinity;
+            foreach (var entry in live)
+            {
+                double distance = SpatialGridDistance(entry.X, entry.Y, qx, qy);
+                if (distance <= radius * radius)
+                    expectedWithin++;
+                if (distance < best)
+                    best = distance;
+            }
+
+            Check(sut.CountWithin(qx, qy, radius) == expectedWithin, "SpatialGrid CountWithin disagreed");
+            Check(sut.ContainsWithin(qx, qy, radius) == (expectedWithin > 0), "SpatialGrid ContainsWithin disagreed");
+            Check(sut.GetWithin(qx, qy, radius).Length == expectedWithin, "SpatialGrid GetWithin disagreed");
+
+            bool found = sut.TryFindNearest(qx, qy, out SpatialPoint<int> nearest);
+            Check(found == live.Count > 0, "SpatialGrid TryFindNearest disagreed on whether a point exists");
+            if (found)
+            {
+                Check(SpatialGridDistance(nearest.X, nearest.Y, qx, qy) == best,
+                    "SpatialGrid TryFindNearest did not return a closest point");
+            }
+
+            double minX = rng.Next(-2, extent + 3);
+            double minY = rng.Next(-2, extent + 3);
+            double maxX = minX + rng.Next(0, extent + 1);
+            double maxY = minY + rng.Next(0, extent + 1);
+
+            int expectedInBox = 0;
+            foreach (var entry in live)
+            {
+                if (entry.X >= minX && entry.X <= maxX && entry.Y >= minY && entry.Y <= maxY)
+                    expectedInBox++;
+            }
+
+            Check(sut.CountInRectangle(minX, minY, maxX, maxY) == expectedInBox, "SpatialGrid CountInRectangle disagreed");
+            Check(sut.GetInRectangle(minX, minY, maxX, maxY).Length == expectedInBox, "SpatialGrid GetInRectangle disagreed");
+        }
+
+        var enumerated = new List<int>();
+        foreach (SpatialPoint<int> point in sut)
+            enumerated.Add(point.Value);
+
+        enumerated.Sort();
+        int[] expectedValues = live.Select(e => e.Value).OrderBy(v => v).ToArray();
+        Check(enumerated.Count == expectedValues.Length, "SpatialGrid enumeration did not yield every live entry");
+        for (int i = 0; i < expectedValues.Length; i++)
+            Check(enumerated[i] == expectedValues[i], "SpatialGrid enumeration disagreed with the live entries");
+    }
+
+    private static double SpatialGridDistance(double px, double py, double x, double y)
+    {
+        double dx = px - x;
+        double dy = py - y;
         return (dx * dx) + (dy * dy);
     }
 

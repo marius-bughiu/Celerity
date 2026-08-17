@@ -25,16 +25,16 @@ namespace Celerity.Collections;
 /// <see cref="IntervalTree{TKey, TValue}"/> necessary next to <see cref="BTreeSet{T, TComparer}"/> on one axis.
 /// </para>
 /// <para>
-/// <b>A uniform-cell grid is the other neighbour, and the reason to prefer one is mutability rather than
-/// shape.</b> The received wisdom is that bucketing extents into fixed cells wins when they are all about one
-/// size, because then a cell size exists that fits them all — and that an R-tree earns its keep only when
-/// extents vary by orders of magnitude. <c>RTreeShapeBenchmark</c> measures that rather than repeating it, and
+/// <b><see cref="SpatialGrid{TValue}"/> is the other neighbour, and the reason to prefer it is mutability
+/// rather than shape.</b> The received wisdom is that bucketing extents into fixed cells wins when they are all
+/// about one size, because then a cell size exists that fits them all — and that an R-tree earns its keep
+/// only when extents vary by orders of magnitude. <c>RTreeShapeBenchmark</c> measures that rather than repeating it, and
 /// it does not hold on query cost: against a bucketed grid sized by the standard mean-extent heuristic, and
 /// with the two shapes holding the same mean extent so only the spread differs, this type is 1.30x ahead on
 /// the varying shape and <i>3.01x</i> ahead on the uniform one — because an R-tree's node boxes get tighter as
 /// the extents get more alike, while the grid barely moves between the two. A grid tuned to a known query size
-/// would close some of that gap.
-/// What remains a real reason to reach for a grid is that it is mutable and this type is not.
+/// would close some of that gap. What remains a real reason to reach for the grid is that it is mutable and
+/// this type is not.
 /// </para>
 /// <para>
 /// <b>Layout.</b> The boxes are permuted by <b>STR (Sort-Tile-Recursive) packing</b> and a fixed-fanout tree is
@@ -83,10 +83,10 @@ namespace Celerity.Collections;
 /// <b>Build-once.</b> The tree is immutable; adding a box means building a new one, as with
 /// <see cref="KdTree{TValue}"/>, <see cref="FrozenCelerityDictionary{TValue}"/> and
 /// <see cref="RankSelectBitVector"/>. Keeping an R-tree balanced under insertion needs node splits and
-/// reinsertion, which is a different type with a different cost profile, not an overload of this one — do not
-/// reach for it when the extents move every frame, since rebuilding per frame costs more than the queries
-/// save. Because nothing mutates, enumeration is never invalidated and concurrent readers need no
-/// synchronization, with no comparer caveat to attach to that: every query is a comparison on
+/// reinsertion, which is a different type with a different cost profile, not an overload of this one — reach
+/// for <see cref="SpatialGrid{TValue}"/> when the extents move every frame, since rebuilding per frame costs
+/// more than the queries save. Because nothing mutates, enumeration is never invalidated and concurrent
+/// readers need no synchronization, with no comparer caveat to attach to that: every query is a comparison on
 /// <see cref="double"/> and calls nothing the caller supplied.
 /// </para>
 /// <para>

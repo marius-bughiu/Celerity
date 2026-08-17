@@ -1,4 +1,4 @@
-// Native AOT smoke test for Celerity (#32).
+﻿// Native AOT smoke test for Celerity (#32).
 //
 // This console app exercises every collection shape and a representative spread
 // of hashers so that `dotnet publish /p:PublishAot=true` is forced to compile
@@ -735,6 +735,57 @@ void Check(bool condition, string message)
     // A value-typed payload, so the entry layout really is specialized per instantiation.
     var sensors = new KdTree<int>(new[] { new SpatialPoint<int>(-5, -5, 1), new SpatialPoint<int>(5, 5, 2) });
     Check(sensors.TryFindNearest(4, 4, out var sensor) && sensor.Value == 2, "KdTree value-typed payload");
+}
+
+// SpatialGrid — the mutable counterpart. The ILC-specific parts are the same shared range walk generic over a
+// struct region *and* a struct visitor (two regions crossed with three visitors, six instantiations rooted
+// with no JIT to fall back on), plus the entry record itself: a private generic struct whose layout the
+// compiler has to lay out ahead of time per instantiation, and the RuntimeHelpers.IsReferenceOrContainsReferences
+// guard whose two arms ILC resolves at compile time rather than at run time. Exercise the handle-addressed
+// mutations, the radius, rectangle and nearest families, a reference-typed payload, and the struct enumerator.
+{
+    var world = new SpatialGrid<string>(0, 0, 100, 100, 10);
+
+    var depot = world.Add(5, 5, "depot");
+    var courier = world.Add(50, 50, "courier");
+    world.Add(95, 95, "outpost");
+
+    Check(world.Count == 3, "SpatialGrid add");
+    Check(world.Columns == 10 && world.Rows == 10, "SpatialGrid cell counts");
+    Check(world.TryGetPoint(courier, out var read) && read.Value == "courier", "SpatialGrid handle read-back");
+
+    world.Move(courier, 6, 6);
+    Check(world.CountWithin(5, 5, 2) == 2, "SpatialGrid move relocates into the queried cell");
+    Check(world.ContainsWithin(95, 95, 0) && !world.ContainsWithin(30, 30, 5), "SpatialGrid radius predicate");
+    Check(world.CountInRectangle(0, 0, 10, 10) == 2, "SpatialGrid rectangle query");
+    Check(world.GetWithin(5, 5, 2).Length == 2 && world.GetInRectangle(90, 90, 100, 100).Length == 1,
+        "SpatialGrid convenience tiers");
+
+    var buffer = new SpatialPoint<string>[3];
+    Check(world.CopyWithin(5, 5, 2, buffer) == 2, "SpatialGrid radius copy tier");
+    Check(world.CopyInRectangle(0, 0, 100, 100, buffer) == 3, "SpatialGrid rectangle copy tier");
+
+    Check(world.TryFindNearest(40, 40, out var nearest) && nearest.Value == "courier", "SpatialGrid nearest query");
+    Check(world.TryFindNearest(94, 94, 3, out var bounded) && bounded.Value == "outpost", "SpatialGrid bounded nearest");
+    Check(!world.TryFindNearest(50, 50, 1, out _), "SpatialGrid bounded nearest rejects a distant point");
+
+    world.Remove(depot);
+    Check(world.Count == 2 && !world.TryGetPoint(depot, out _), "SpatialGrid remove retires its handle");
+
+    int visited = 0;
+    foreach (var point in world) visited += point.Value!.Length;
+    Check(visited == 14, "SpatialGrid enumerates every live entry");
+
+    world.Clear();
+    Check(world.Count == 0 && !world.TryGetPoint(courier, out _), "SpatialGrid clear retires every handle");
+
+    // A value-typed payload, so the entry layout really is specialized per instantiation.
+    var particles = new SpatialGrid<int>(-10, -10, 10, 10, 5);
+    var particle = particles.Add(-5, -5, 1);
+    particles.Add(5, 5, 2);
+    particles.Move(particle, 4, 4);
+    Check(particles.TryFindNearest(5, 5, out var found) && found.Value == 2, "SpatialGrid value-typed payload");
+    Check(particles.CountWithin(4.5, 4.5, 1) == 2, "SpatialGrid value-typed radius query");
 }
 
 // RTree — the build-once extent index. What is ILC-specific here is the query core: one traversal generic over

@@ -495,6 +495,12 @@ function escapeHtml(s) {
     // KdTree indexes the plane, which no ordered structure can. Two baselines per question: the plain scan
     // over every point, and the better hand-roll that orders them by x and works outward from the query.
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',          vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards', ops: ['NearestQuery', 'NearestSorted', 'RadiusQuery', 'RadiusSlab', 'KNearest', 'Build'] },
+    // SpatialGrid is the mutable counterpart: points that move. The baseline is the bucketed
+    // Dictionary-of-Lists a caller writes, which is a genuinely reasonable structure rather than a strawman.
+    // The "vs rebuilding a KdTree per frame" arm is measured in the benchmark but deliberately not charted:
+    // the parsers classify a series by the type name in the arm's name, and KdTree is one of ours, so it
+    // would land as a second Celerity series in one bucket and silently displace the other.
+    { key: 'SpatialGrid',         title: 'SpatialGrid<int> (moving points)',         vs: 'Dictionary<(int, int), List<int>> (bucketed grid)', ops: ['Frame', 'Query', 'Churn'] },
     // RTree indexes extents rather than points, which KdTree structurally cannot — a box can overlap the query
     // while its centre sits far outside it. Same two-baseline treatment: the plain scan over every box, and the
     // better hand-roll that orders them by minX and scans the slab the query can still reach. The boxes here
