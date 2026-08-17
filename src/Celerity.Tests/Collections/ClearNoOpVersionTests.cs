@@ -326,6 +326,14 @@ public class ClearNoOpVersionTests
             () => deque.GetEnumerator(), deque.Clear, () => deque.Count, () => deque.PushBack(1));
     }
 
+    [Fact]
+    public void SpatialGridClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => grid.GetEnumerator(), grid.Clear, () => grid.Count, () => grid.Add(1, 1, 1));
+    }
+
     // ---- The two documented exceptions ------------------------------------------------------------
 
     [Fact]

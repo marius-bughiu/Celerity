@@ -53,6 +53,7 @@ internal class Program
         typeof(FenwickTreeBenchmark),
         typeof(SegmentTreeBenchmark),
         typeof(KdTreeBenchmark),
+        typeof(SpatialGridBenchmark),
         typeof(IntervalTreeBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
@@ -97,6 +98,7 @@ internal class Program
         typeof(SpaceFillingCurveLocalityBenchmark),
         typeof(EnsureCapacityBenchmark),
         typeof(KdTreeShapeBenchmark),
+        typeof(SpatialGridShapeBenchmark),
 
         // "Built with Celerity" showcase packages (separate NuGet packages built on the core family):
         // isolated perf demos, so they ride the extended suite alongside the primitive benchmarks.
