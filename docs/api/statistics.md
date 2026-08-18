@@ -205,7 +205,7 @@ fed one item at a time and the caller does not have to be able to seek forward i
 | `ReservoirSampler<T, TRng>(int capacity, TRng rng)` | Any `struct` `IRandomSource` — `Xoshiro256StarStar`, `WyRand`, … |
 | `Add(T item)` | Returns whether the item was retained. |
 | `Add(ReadOnlySpan<T> items)` | Every item in the span, in order. |
-| `Sample` | A `ReadOnlySpan<T>` over the sampler's own storage — no copy, no allocation. |
+| `Sample` | A `ReadOnlySpan<T>` over the sampler's own storage — no copy, no allocation. Prefer it to enumerating, which allocates an iterator. |
 | `Count` / `Capacity` / `TotalSeen` / `IsFull` | Retained, budget, stream length, and whether the reservoir filled. |
 | `this[int index]`, `GetEnumerator()` | The type implements `IReadOnlyList<T>`. |
 | `Clear()` | Discards the sample and the stream position, leaving the generator where it is. |
@@ -341,5 +341,6 @@ next to the winning ones so the crossovers can be read off rather than guessed.
   `TopKSketch`) that summarize a stream's *cardinality* and *frequencies* rather than its
   distribution.
 - [Utilities API](utilities.md) — the seedable struct PRNGs the sampler is parameterized on.
-- [Testing & coverage](../testing.md) — the differential and fuzz targets that reconcile each of
-  these against an exact oracle.
+- [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch` and `RunningStatistics`
+  reconcile against exact oracles; the sampler's is invariant fuzzing, because uniformity is
+  distributional and no single case can measure it.
