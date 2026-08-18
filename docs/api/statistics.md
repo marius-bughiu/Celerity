@@ -322,8 +322,18 @@ lose:
   small absolute one, and far from zero a large one. That is the right shape for latencies and
   sizes, and the wrong shape for a value that can be any magnitude with equal significance.
 - **`ReservoirSampler` has no `Merge`**, for the reason above.
-- **`RunningStatistics` wins on accuracy, not speed.** The `sum` / `sumOfSquares` shortcut is a
-  shade cheaper per value. It is also the thing that returns a negative variance.
+- **`ReservoirSampler` loses on short streams.** Algorithm L pays several transcendentals per
+  replacement, and at a thousand items that is most of the work: CI measures it **6.2× slower**
+  than materializing and shuffling. By a hundred thousand it is **1.7× faster** and holds 100
+  items instead of 100,000. The crossover is around ten thousand — below that, materialize.
+- **`RunningStatistics` is slower than LINQ, measurably.** CI puts `Moments` at **1.9× the
+  two-pass LINQ shape** at both sizes, because the accumulator maintains all four moments on
+  every `Add` while that caller reads two. It buys a single pass over a stream it never
+  retains, and an answer the `sum` / `sumOfSquares` shortcut gets wrong — not speed.
+
+The numbers above are the CI-tracked ones from the
+[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/); the losing arms are charted
+next to the winning ones so the crossovers can be read off rather than guessed.
 
 ## See also
 

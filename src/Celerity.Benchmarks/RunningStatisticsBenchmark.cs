@@ -11,20 +11,23 @@ using Celerity.Statistics;
 // rather than letting the chart imply it:
 //
 //   Moments    — mean and variance over a span that is already in memory. The LINQ baseline is the two-pass
-//                shape everyone writes: Average, then Sum of squared deviations. It reads the data twice and
-//                allocates two delegates and an enumerator; Welford reads it once and allocates nothing. The
-//                accumulator should win, but by a factor near one — this is memory traffic, not asymptotics.
+//                shape everyone writes: Average, then Sum of squared deviations. Welford reads the data once
+//                and allocates nothing, and it still LOSES: CI measures 909 us against 469 us at 100k, a
+//                consistent 1.9x, because this accumulator maintains all four moments on every Add while the
+//                caller here reads two. Two tight LINQ passes beat one pass doing twice the arithmetic. That
+//                is the honest shape of this type — it buys correctness and streaming, not speed.
 //   Accumulate — the streaming shape: values arrive one at a time and there is nothing to enumerate twice.
-//                The baseline is the List<double> a two-pass computation must build first, and its cost is
-//                the retention, which is what the accumulator removes. The memory column is the real result
-//                here: eight bytes per value against a fixed-size struct.
+//                The baseline is the List<double> a two-pass computation must build first. It loses here too
+//                on time (650 us against 368 us at 100k), for the same reason; the memory column is the real
+//                result — 1 KB against 2 MB at 100k, and flat as the stream grows.
 //
 // What no arm can show is the reason to prefer Welford, because it is not a speed property. The one-pass
 // shortcut a developer reaches for instead — accumulate sum and sumOfSquares, subtract — is faster than
 // both arms here and catastrophically wrong when the mean is large relative to the spread: at 1e10 ± 6, the
 // two terms agree to fifteen digits and the answer is assembled entirely out of rounding error. That is
 // covered by a test, not a benchmark, because "returns a negative variance" is not a number this chart can
-// draw. The honest summary is that this type buys correctness at roughly the cost of the thing that is wrong.
+// draw. The honest summary: this type is the slowest of the three ways to compute a variance and the only one
+// that always gets it right.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]

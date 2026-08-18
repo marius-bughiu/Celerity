@@ -45,10 +45,14 @@ means keeping the stream, which is the one thing a stream will not let you do.
   a hypergeometric draw over the two stream lengths; replaying one side's
   retained items into the other over-weights the shorter stream. Rather than
   ship a subtly biased merge, it ships without one.
-- **`RunningStatistics` wins on accuracy, not on speed.** A `sum` /
-  `sumOfSquares` accumulator is a shade cheaper per value and catastrophically
-  wrong when the mean is large relative to the spread — it can return a negative
-  variance. Welford is the version that is still right.
+- **`RunningStatistics` wins on accuracy, not on speed.** It is measurably
+  *slower* than the two-pass LINQ shape — CI puts it at 1.9× — because it
+  maintains all four moments on every `Add`. What it buys is a single pass over
+  a stream it never retains, and an answer the `sum` / `sumOfSquares` shortcut
+  gets wrong: that one is cheaper still and can return a negative variance.
+- **`ReservoirSampler` loses on short streams**, where Algorithm L's
+  transcendentals dominate: 6.2× slower than materializing at a thousand items,
+  1.7× faster at a hundred thousand. The crossover is around ten thousand.
 
 ## Quick start
 
