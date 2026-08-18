@@ -110,11 +110,16 @@ public sealed class DDSketch
     public const double MinRelativeAccuracy = 1e-6d;
 
     /// <summary>
-    /// The largest bin budget the sketch accepts: <c>2^26</c>. The whole reachable bucket
-    /// range at <see cref="MinRelativeAccuracy"/> is an order of magnitude wider than this, so
-    /// a larger budget could never bind — and it keeps the floor arithmetic clear of
-    /// <see cref="int"/> overflow.
+    /// The largest bin budget the sketch accepts: <c>2^26</c>.
     /// </summary>
+    /// <remarks>
+    /// This is a resource and arithmetic bound, not a "could never bind" one — at
+    /// <see cref="MinRelativeAccuracy"/> the reachable index span is about 727 million buckets,
+    /// ten times the cap, so a budget this large can still collapse. What it buys is that one
+    /// ladder cannot ask for more than 512&#160;MB, and that the floor arithmetic —
+    /// <c>index − maxBins + 1</c> against indices reaching ±3.7e8 — stays clear of
+    /// <see cref="int"/> overflow, which a budget near <see cref="int.MaxValue"/> would not.
+    /// </remarks>
     public const int MaxBinBudget = 1 << 26;
 
     private readonly double _gamma;

@@ -32,7 +32,7 @@ in the collections.
 | p50 / p90 / p99 latency over a stream that never ends | `DDSketch` | A relative error bound at every quantile, in memory proportional to the log of the value range rather than to the sample count. |
 | Percentiles per shard, combined into a global one | `DDSketch.Merge` | Two sketches of the same accuracy merge without re-reading either input — bucket-exactly, unless an operand has already collapsed. |
 | An exact median of data you already hold and will not add to | `Array.Sort` + index | Nothing beats a pre-sorted array indexed in `O(1)`. The sketch is for the case where you cannot keep the data or it keeps changing. |
-| A bounded sample of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` | `O(k)` memory and `O(k · log(n / k))` random draws, exactly uniform, and it never needs to know `n`. |
+| A bounded sample of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` | `O(k)` memory and `O(k · log(n / k))` random draws, uniform to the precision of the generator, and it never needs to know `n`. |
 | Mean and standard deviation of a stream, or of one bucket among many | `RunningStatistics` | One pass, no allocation, numerically stable, and a `struct` so per-bucket accumulators live inline. |
 | Skewness / kurtosis | `RunningStatistics` | Welford extended to the fourth moment (Terriberry). There is no BCL equivalent at all. |
 | Mean of a sequence you can enumerate twice and that fits in memory | `Enumerable.Average` | If the two-pass shape is available and the magnitudes are ordinary, LINQ is fine. |
@@ -174,8 +174,19 @@ retained. The sampler never needs to know `n` in advance and never stores more t
 
 The textbook reservoir sampler (Algorithm R) draws one random number per item. This is Li's
 **Algorithm L**, which draws a geometric *skip* and jumps over the items that cannot win, so it
-makes `O(k · log(n / k))` draws over the whole stream instead of `n`. Both are exactly uniform — the
-difference is only the cost. The skip counter is maintained inside `Add`, so the sampler is still
+makes `O(k · log(n / k))` draws over the whole stream instead of `n`. As algorithms both are exactly
+uniform — the difference is only the cost.
+
+**Uniform to the precision of the generator, not beyond it.** The retention probabilities are exact
+in real arithmetic, but the skip is drawn by comparing logarithms of draws taken from a 2^52-point
+grid, so each decision lands within about `2^-53` of its true probability. On a two-item stream at
+capacity 1, for instance, the second item is retained exactly when `U₁ + U₂ > 1`; the tie at `1` has
+nonzero mass on a discrete grid, so the realized probability differs from `½` by about `2^-53`.
+Which way that tie falls is decided by the last bit of the library logarithms and is not fixed
+across runtimes — the same reason this type promises no cross-platform reproducibility. Algorithm R
+would have none of this, its decision being an exact integer comparison, but it costs a draw per
+item, which is the entire reason this type is Algorithm L. The deviation sits around fourteen orders
+of magnitude below the sampling noise a k-item sample already carries. The skip counter is maintained inside `Add`, so the sampler is still
 fed one item at a time and the caller does not have to be able to seek forward in its source.
 
 ### Surface

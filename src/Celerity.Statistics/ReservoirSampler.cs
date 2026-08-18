@@ -24,9 +24,23 @@ namespace Celerity.Statistics;
 /// This is Li's <strong>Algorithm L</strong>, not the textbook Algorithm R. Algorithm R draws
 /// one random number per item; Algorithm L draws a geometric <em>skip</em> and jumps over the
 /// items that cannot win, so it makes <c>O(k · log(n / k))</c> draws over the whole stream
-/// instead of <c>n</c>. Both are exactly uniform — the difference is only the cost. The skip
-/// counter is maintained inside <see cref="Add(T)"/>, so the sampler is still fed one item at
-/// a time and a caller does not have to be able to skip forward in its source.
+/// instead of <c>n</c>. As algorithms both are exactly uniform — the difference is only the
+/// cost. The skip counter is maintained inside <see cref="Add(T)"/>, so the sampler is still
+/// fed one item at a time and a caller does not have to be able to skip forward in its source.
+/// </para>
+/// <para>
+/// <strong>Uniform to the precision of the generator, not beyond it.</strong> Algorithm L's
+/// retention probabilities are exact in real arithmetic, but the skip is drawn by comparing
+/// logarithms of draws taken from a 2^52-point grid, so each decision lands within about
+/// <c>2^-53</c> of its true probability. On a two-item stream at capacity 1, for instance, the
+/// second item is retained exactly when <c>U₁ + U₂ &gt; 1</c>; the tie at <c>1</c> has nonzero
+/// mass on a discrete grid, so the realized probability differs from <c>½</c> by about
+/// <c>2^-53</c>. Which way that tie falls is decided by the last bit of the library
+/// logarithms and is not fixed across runtimes — the same reason this type promises no
+/// cross-platform reproducibility. Algorithm R would have none of this, its decision being an
+/// exact integer comparison with no floating point anywhere, but it costs a draw per item,
+/// which is the entire reason this type is Algorithm L. The deviation sits some fourteen
+/// orders of magnitude below the sampling noise a k-item sample already carries.
 /// </para>
 /// <para>
 /// Sampling is <strong>seeded</strong>: the sampler owns a seedable struct PRNG from
@@ -91,7 +105,8 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// The logarithm of Algorithm L's acceptance weight, rather than the weight itself.
     /// </summary>
     /// <remarks>
-    /// Holding the log is what keeps the sampler exactly uniform at both ends. The weight is a
+    /// Holding the log is what keeps the sampler from altering its own draws at either end of
+    /// the range. The weight is a
     /// running product of <c>U^(1/k)</c> factors, and formed directly it rounds to 1 for every
     /// draw within <c>k · 2^-54</c> of the top — collapsing a range of distinct draws, wider
     /// the larger the reservoir, onto one acceptance decision — and underflows to 0 at the
