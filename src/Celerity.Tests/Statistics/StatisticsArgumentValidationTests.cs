@@ -116,6 +116,25 @@ public class StatisticsArgumentValidationTests
         Assert.Equal(3, sketch.Count);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void RunningStatisticsAdd_ShouldThrow_WhenTheValueIsNotFinite(double value)
+    {
+        var stats = new RunningStatistics();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => stats.Add(value));
+        Assert.Equal(0, stats.Count);
+    }
+
+    [Fact]
+    public void RunningStatisticsConstructor_ShouldThrow_WhenTheSpanHoldsANonFiniteValue()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new RunningStatistics([1d, double.NaN]));
+    }
+
     [Fact]
     public void EmptySpans_ShouldBeANoOpEverywhere()
     {

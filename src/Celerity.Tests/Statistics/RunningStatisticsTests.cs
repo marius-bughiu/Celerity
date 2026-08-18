@@ -271,44 +271,78 @@ public class RunningStatisticsTests
         Assert.Equal(0, perBucket[0].Count);
     }
 
-    [Fact]
-    public void NaN_ShouldPoisonTheExtrema_AlongWithEveryOtherStatistic()
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Add_ShouldRejectNonFiniteValues_RatherThanAccumulatingThem(double value)
     {
-        // A comparison against NaN is false either way, so without a deliberate check the
-        // extrema would keep reporting the earlier finite values while every other statistic
-        // went NaN — which contradicts the documented contract.
-        var stats = new RunningStatistics([1d, 5d, 9d]);
-        Assert.Equal(1d, stats.Min);
-        Assert.Equal(9d, stats.Max);
+        // The domain is the finite doubles, as it is for DDSketch in the same package. A
+        // recurrence over deltas has no good answer for the alternatives: NaN poisons the
+        // moments while leaving the extrema untouched (a comparison against NaN is false either
+        // way), and a second infinity evaluates the infinity - infinity a first one survived.
+        var stats = new RunningStatistics([1d, 2d, 3d]);
 
-        stats.Add(double.NaN);
+        Assert.Throws<ArgumentOutOfRangeException>(() => stats.Add(value));
+        Assert.Throws<ArgumentOutOfRangeException>(() => stats.Add(new[] { 4d, value }));
 
+        // The values that were valid are still there, and the rejected one is not.
         Assert.Equal(4, stats.Count);
-        Assert.True(double.IsNaN(stats.Mean));
-        Assert.True(double.IsNaN(stats.Min));
-        Assert.True(double.IsNaN(stats.Max));
-        Assert.True(double.IsNaN(stats.Variance));
+        Assert.Equal(1d, stats.Min);
+        Assert.Equal(4d, stats.Max);
     }
 
     [Fact]
-    public void OpposedInfinities_ShouldPoisonTheStatisticsTheSameWay()
+    public void Add_ShouldThrow_WhenTheAccumulatorIsAlreadyFull()
     {
-        var stats = new RunningStatistics([double.PositiveInfinity, double.NegativeInfinity]);
+        RunningStatistics full = SaturatedCount();
 
-        Assert.True(double.IsNaN(stats.Mean));
-        Assert.True(double.IsNaN(stats.Min));
-        Assert.True(double.IsNaN(stats.Max));
+        Assert.Equal(long.MaxValue, full.Count);
+        Assert.Throws<InvalidOperationException>(() => full.Add(1d));
+        Assert.Equal(long.MaxValue, full.Count);
     }
 
     [Fact]
-    public void SingleInfinity_ShouldStillReportAnExtremum()
+    public void Merge_ShouldThrow_WhenTheCombinedCountWouldOverflow()
     {
-        var stats = new RunningStatistics();
-        stats.Add(double.PositiveInfinity);
+        // Merging an accumulator into itself doubles its count, so long.MaxValue is sixty-odd
+        // calls away rather than unreachable — which is what makes the guard worth having.
+        var doubling = new RunningStatistics();
+        doubling.Add(7d);
+        for (int i = 0; i < 62; i++)
+        {
+            doubling.Merge(doubling);
+        }
 
-        Assert.Equal(double.PositiveInfinity, stats.Mean);
-        Assert.Equal(double.PositiveInfinity, stats.Min);
-        Assert.Equal(double.PositiveInfinity, stats.Max);
+        Assert.Equal(1L << 62, doubling.Count);
+        Assert.Throws<ArgumentException>(() => doubling.Merge(doubling));
+
+        // Rejected before anything was written.
+        Assert.Equal(1L << 62, doubling.Count);
+        Assert.Equal(7d, doubling.Mean);
+    }
+
+    /// <summary>
+    /// An accumulator holding exactly <see cref="long.MaxValue"/> values, built as the sum of
+    /// every power of two below it — which is what <c>2^63 - 1</c> is.
+    /// </summary>
+    private static RunningStatistics SaturatedCount()
+    {
+        var power = new RunningStatistics();
+        power.Add(7d);
+
+        var total = new RunningStatistics();
+        for (int i = 0; i < 63; i++)
+        {
+            total.Merge(power);
+
+            if (i < 62)
+            {
+                power.Merge(power);
+            }
+        }
+
+        return total;
     }
 
     /// <summary>The two-pass population skewness, computed directly for comparison.</summary>

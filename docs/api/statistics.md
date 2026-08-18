@@ -244,9 +244,19 @@ forms a large intermediate to subtract away.
 
 Every statistic that is undefined for the number of values seen returns `NaN` rather than throwing:
 `Mean` / `Min` / `Max` on an empty accumulator, `Variance` below two values, `Skewness` below three,
-`Kurtosis` below four, and both shape statistics when every value was identical. A `NaN` *input*
-poisons every subsequent statistic, as it would in any accumulation; filter the stream if it can
-contain one.
+`Kurtosis` below four, and both shape statistics when every value was identical.
+
+**The domain is the finite doubles.** `Add` rejects `NaN` and the infinities with an
+`ArgumentOutOfRangeException`, as `DDSketch.Add` does. A recurrence over deltas has no good answer
+for them: `NaN` poisons the moments while leaving the extrema untouched, because a comparison
+against `NaN` is false either way; and `∞ − ∞` is `NaN`, so a second infinity destroys the mean a
+first one survived, and merging an infinite accumulator gives a different answer depending on which
+side it is on. Rejecting at the boundary turns a silently poisoned statistic into a stack trace at
+the value that caused it.
+
+`Add` also throws `InvalidOperationException` once the accumulator holds `long.MaxValue` values, and
+`Merge` throws `ArgumentException` when the combined count would overflow — reachable in sixty-odd
+calls, because merging an accumulator into itself doubles its count.
 
 ### It is a mutable struct, deliberately
 

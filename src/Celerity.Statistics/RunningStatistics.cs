@@ -21,9 +21,9 @@ namespace Celerity.Statistics;
 /// <para>
 /// This type uses Welford's recurrence extended to the fourth moment (Terriberry), which
 /// updates the mean and the central moments directly and never forms a large intermediate to
-/// subtract away. Adding a value is a handful of multiplications with no allocation and no
-/// branch on the data, and the accumulated state is seven fields regardless of how many
-/// values pass through it.
+/// subtract away. Adding a value is a handful of multiplications and comparisons with no
+/// allocation, and the accumulated state is seven fields regardless of how many values pass
+/// through it.
 /// </para>
 /// <para>
 /// <strong>This is a mutable struct, deliberately.</strong> It makes <c>default</c> a valid
@@ -34,15 +34,20 @@ namespace Celerity.Statistics;
 /// for a dictionary value, or a plain array element, which is already a <c>ref</c>.
 /// </para>
 /// <para>
+/// <strong>The domain is the finite doubles.</strong> <see cref="Add(double)"/> rejects
+/// <see cref="double.NaN"/> and the infinities rather than accumulating them, matching
+/// <c>DDSketch</c> in the same package. A recurrence over deltas has no good answer for them —
+/// <c>∞ − ∞</c> is <see cref="double.NaN"/>, so a second infinity destroys the mean a first one
+/// survived, and merging an infinite accumulator gives a different answer depending on which
+/// side it is on. Rejecting at the boundary is the only version of that whose behaviour can be
+/// stated in a sentence, and it turns a silently poisoned statistic into a stack trace at the
+/// value that caused it.
+/// </para>
+/// <para>
 /// Every statistic that is undefined for the number of values seen returns
 /// <see cref="double.NaN"/> rather than throwing: <see cref="Mean"/>, <see cref="Min"/> and
 /// <see cref="Max"/> on an empty accumulator, <see cref="Variance"/> below two values,
-/// <see cref="Skewness"/> below three and <see cref="Kurtosis"/> below four. A
-/// <see cref="double.NaN"/> <em>input</em> poisons every subsequent statistic — the extrema
-/// included, which takes a deliberate check because a comparison against
-/// <see cref="double.NaN"/> is false either way — as it would in any accumulation; filter the
-/// stream if it can contain one. Mixing <c>+∞</c> and <c>−∞</c> poisons the mean the same way
-/// and is reported the same way.
+/// <see cref="Skewness"/> below three and <see cref="Kurtosis"/> below four.
 /// </para>
 /// <para>
 /// Two accumulators over disjoint parts of a stream combine exactly with
@@ -111,22 +116,14 @@ public struct RunningStatistics
     public readonly double Sum => _count == 0 ? 0d : _mean * _count;
 
     /// <summary>
-    /// Gets the smallest value added, or <see cref="double.NaN"/> if none have been or the
-    /// accumulation has been poisoned.
+    /// Gets the smallest value added, or <see cref="double.NaN"/> if none have been.
     /// </summary>
-    /// <remarks>
-    /// Gated on <see cref="Mean"/> rather than tested per value: a <see cref="double.NaN"/>
-    /// input makes every comparison against it false, so the extrema would otherwise survive a
-    /// poisoning that took every other statistic with it. Checking here rather than in
-    /// <see cref="Add(double)"/> keeps the cost off the add path entirely.
-    /// </remarks>
-    public readonly double Min => double.IsNaN(Mean) ? double.NaN : _min;
+    public readonly double Min => _count == 0 ? double.NaN : _min;
 
     /// <summary>
-    /// Gets the largest value added, or <see cref="double.NaN"/> if none have been or the
-    /// accumulation has been poisoned. See <see cref="Min"/> for why the two travel together.
+    /// Gets the largest value added, or <see cref="double.NaN"/> if none have been.
     /// </summary>
-    public readonly double Max => double.IsNaN(Mean) ? double.NaN : _max;
+    public readonly double Max => _count == 0 ? double.NaN : _max;
 
     /// <summary>
     /// Gets the sample variance (the unbiased, <c>n − 1</c> denominator estimator), or
@@ -193,10 +190,31 @@ public struct RunningStatistics
     }
 
     /// <summary>Accumulates a single value.</summary>
-    /// <param name="value">The value to accumulate.</param>
+    /// <param name="value">The value to accumulate. Must be finite.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="value"/> is <see cref="double.NaN"/> or infinite.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The accumulator already holds <see cref="long.MaxValue"/> values.
+    /// </exception>
     public void Add(double value)
     {
+        if (!double.IsFinite(value))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(value),
+                value,
+                "Only finite values can be accumulated.");
+        }
+
         long n1 = _count;
+
+        if (n1 == long.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "The accumulator already holds long.MaxValue values and cannot take another.");
+        }
+
         _count = n1 + 1;
 
         if (n1 == 0)
@@ -231,7 +249,11 @@ public struct RunningStatistics
     }
 
     /// <summary>Accumulates every value in a span, in order.</summary>
-    /// <param name="values">The values to accumulate.</param>
+    /// <param name="values">The values to accumulate. All must be finite.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// One of <paramref name="values"/> is <see cref="double.NaN"/> or infinite. Values before
+    /// it have already been accumulated.
+    /// </exception>
     public void Add(ReadOnlySpan<double> values)
     {
         foreach (double value in values)
@@ -245,6 +267,11 @@ public struct RunningStatistics
     /// been added to this accumulator.
     /// </summary>
     /// <param name="other">The accumulator to fold in. Merging an empty one is a no-op.</param>
+    /// <exception cref="ArgumentException">
+    /// The combined <see cref="Count"/> would overflow. Repeatedly merging an accumulator into
+    /// itself doubles the count, so this is reachable in sixty-odd calls rather than by
+    /// accumulating that many values.
+    /// </exception>
     /// <remarks>
     /// Uses Chan's parallel formulas for the central moments, so the result does not depend on
     /// how the stream was split — only on floating-point associativity, which makes it close
@@ -265,6 +292,15 @@ public struct RunningStatistics
 
         long nA = _count;
         long nB = other._count;
+
+        // Checked before anything is written, so a rejected merge leaves the accumulator whole.
+        if (nB > long.MaxValue - nA)
+        {
+            throw new ArgumentException(
+                "Merging these accumulators would overflow the count.",
+                nameof(other));
+        }
+
         long n = nA + nB;
 
         double delta = other._mean - _mean;

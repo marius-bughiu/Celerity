@@ -14,7 +14,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: a breaking API change fails `pack`, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
 | Package-baseline guard | `scripts/check_package_baseline.js`, the `package-baseline` CI job | The version that package validation compares against is still the last published release — so the gate cannot quietly narrow after a release, or drop a package entirely. | `node scripts/check_package_baseline.js` |
 
-All of these run in CI. Coverage is measured on all seven shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
+All of these run in CI. Coverage is measured on all eight shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
 
 ## Philosophy: example tests, then adversarial tests
 

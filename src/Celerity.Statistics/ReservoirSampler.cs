@@ -61,7 +61,7 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     where TRng : struct, IRandomSource
 {
     /// <summary>
-    /// The skip returned once the acceptance weight has collapsed â€” large enough that no stream
+    /// The skip returned once the acceptance weight has collapsed — large enough that no stream
     /// reaches it, small enough that adding a stream position to it cannot overflow.
     /// </summary>
     private const long FrozenSkip = long.MaxValue / 2;
@@ -247,23 +247,31 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
         }
 
         // Both logs are negative, so the quotient is non-negative, and it is bounded above by
-        // |log(2^-54)| / |log(1 - 2^-53)| â€” about 3.4e17 â€” so the cast cannot overflow.
+        // |log(2^-53)| / |log(1 - 2^-53)| — about 3.3e17 — so the cast cannot overflow.
         return (long)Math.Floor(Math.Log(NextUnitInterval()) / denominator);
     }
 
     /// <summary>
-    /// Draws a uniform double strictly inside <c>(0, 1)</c>: the 53-bit grid offset by half a
-    /// step.
+    /// Draws a uniform double strictly inside <c>(0, 1)</c>: the 52-bit grid offset by half a
+    /// step, so the draws run from <c>2^-53</c> to <c>1 − 2^-53</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The offset is what makes the draw unbiased at the ends. <c>NextDouble</c> covers
     /// <c>[0, 1)</c>, and both logarithms here are undefined at zero, so a zero has to become
-    /// something â€” and substituting a subnormal would hand that one outcome in 2^53 a skip
+    /// something — and substituting a subnormal would hand that one outcome in 2^53 a skip
     /// astronomically larger than its neighbours, which is a bias, not a rounding detail.
-    /// Shifting the whole grid by half a step gives 2^53 equiprobable interior points instead,
-    /// with no outcome needing special treatment.
+    /// Shifting the whole grid by half a step gives equiprobable interior points instead, with
+    /// no outcome needing special treatment.
+    /// </para>
+    /// <para>
+    /// It is 52 bits rather than 53 so that <em>both</em> endpoints are representable. Half a
+    /// step below 1 on the 53-bit grid is a midpoint that rounds to exactly <c>1.0</c>, which
+    /// would make that draw's acceptance weight exactly one — and a weight of one never shrinks
+    /// again, so the sampler would replace on every later item for the rest of the stream.
+    /// </para>
     /// </remarks>
-    private double NextUnitInterval() => ((_rng.NextUInt64() >> 11) + 0.5d) * (1.0d / (1UL << 53));
+    private double NextUnitInterval() => ((_rng.NextUInt64() >> 12) + 0.5d) * (1.0d / (1UL << 52));
 }
 
 /// <summary>
