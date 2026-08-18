@@ -124,7 +124,7 @@ public class Int32WangHasherTests
     {
         var dict = new IntDictionary<string, Int32WangHasher>();
 
-        dict[0]  = "zero";    // 0 collides with EMPTY_KEY — out-of-band slot
+        dict[0]  = "zero";    // 0 collides with EmptyKey — out-of-band slot
         dict[1]  = "one";
         dict[-1] = "neg-one";
 

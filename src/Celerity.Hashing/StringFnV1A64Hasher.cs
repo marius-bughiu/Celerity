@@ -114,19 +114,19 @@ public struct StringFnV1A64Hasher : IHashProvider<string>, IHashProvider64<strin
     private static ulong Hash64Core(ReadOnlySpan<char> key)
     {
         // The FNV-1a 64-bit parameters.
-        const ulong fnvPrime = 1099511628211UL;
-        const ulong offsetBasis = 14695981039346656037UL;
+        const ulong FnvPrime = 1099511628211UL;
+        const ulong OffsetBasis = 14695981039346656037UL;
 
-        ulong hash = offsetBasis;
+        ulong hash = OffsetBasis;
         foreach (char c in key)
         {
             // Fold the low byte then the high byte of each 16-bit code unit —
             // i.e. FNV-1a over the character's little-endian UTF-16 bytes, exactly
             // as StringFnV1AFullHasher does, but into a 64-bit accumulator.
             hash ^= (byte)(c & 0xFF);
-            hash *= fnvPrime;
+            hash *= FnvPrime;
             hash ^= (byte)(c >> 8);
-            hash *= fnvPrime;
+            hash *= FnvPrime;
         }
 
         // Xor-fold the 64-bit state down to 32 bits, keeping the high-half entropy.

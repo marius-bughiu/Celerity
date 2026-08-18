@@ -44,7 +44,7 @@ public class LruCache<TKey, TValue, THasher>
     where THasher : struct, IHashProvider<TKey>
 {
     // Sentinel for "no node" in the intrusive list / free stack.
-    private const int NIL = -1;
+    private const int Nil = -1;
 
     // Key -> node slot index. Dogfoods CelerityDictionary; because a node slot index is stable
     // across recency reordering, a cache hit (which only relinks the list) never mutates this map.
@@ -59,9 +59,9 @@ public class LruCache<TKey, TValue, THasher>
 
     private readonly int _capacity;
     private int _count;
-    private int _head;      // most-recently-used node, or NIL when empty
-    private int _tail;      // least-recently-used node, or NIL when empty
-    private int _freeHead;  // top of the free-node stack, or NIL when full
+    private int _head;      // most-recently-used node, or Nil when empty
+    private int _tail;      // least-recently-used node, or Nil when empty
+    private int _freeHead;  // top of the free-node stack, or Nil when full
 
     // Incremented on every structural mutation (insert, evict, remove, clear) and on every recency
     // reorder, so active enumerators can detect concurrent modification and throw.
@@ -84,8 +84,8 @@ public class LruCache<TKey, TValue, THasher>
         _next = new int[capacity];
 
         InitFreeStack();
-        _head = NIL;
-        _tail = NIL;
+        _head = Nil;
+        _tail = Nil;
         _count = 0;
 
         // Pre-size the index for the full capacity so it never resizes during steady-state churn.
@@ -303,8 +303,8 @@ public class LruCache<TKey, TValue, THasher>
         Array.Clear(_nodeKeys, 0, _nodeKeys.Length);
         Array.Clear(_nodeValues, 0, _nodeValues.Length);
         InitFreeStack();
-        _head = NIL;
-        _tail = NIL;
+        _head = Nil;
+        _tail = Nil;
         _count = 0;
         _version++;
     }
@@ -318,7 +318,7 @@ public class LruCache<TKey, TValue, THasher>
     /// <returns><c>true</c> if the cache is non-empty; otherwise <c>false</c>.</returns>
     public bool TryPeekLeastRecentlyUsed(out TKey? key, out TValue? value)
     {
-        if (_tail == NIL)
+        if (_tail == Nil)
         {
             key = default;
             value = default;
@@ -337,7 +337,7 @@ public class LruCache<TKey, TValue, THasher>
     /// <returns><c>true</c> if the cache is non-empty; otherwise <c>false</c>.</returns>
     public bool TryPeekMostRecentlyUsed(out TKey? key, out TValue? value)
     {
-        if (_head == NIL)
+        if (_head == Nil)
         {
             key = default;
             value = default;
@@ -372,7 +372,7 @@ public class LruCache<TKey, TValue, THasher>
     {
         for (int i = 0; i < _capacity - 1; i++)
             _next[i] = i + 1;
-        _next[_capacity - 1] = NIL;
+        _next[_capacity - 1] = Nil;
         _freeHead = 0;
     }
 
@@ -415,18 +415,18 @@ public class LruCache<TKey, TValue, THasher>
     {
         int p = _prev[node];
         int n = _next[node];
-        if (p != NIL) _next[p] = n; else _head = n;
-        if (n != NIL) _prev[n] = p; else _tail = p;
+        if (p != Nil) _next[p] = n; else _head = n;
+        if (n != Nil) _prev[n] = p; else _tail = p;
     }
 
     // Links an unlinked node at the head (most-recently-used) of the chain.
     private void LinkAtHead(int node)
     {
-        _prev[node] = NIL;
+        _prev[node] = Nil;
         _next[node] = _head;
-        if (_head != NIL) _prev[_head] = node;
+        if (_head != Nil) _prev[_head] = node;
         _head = node;
-        if (_tail == NIL) _tail = node;
+        if (_tail == Nil) _tail = node;
     }
 
     // Promotes an occupied node to most-recently-used. Returns false (no relink) when it is already
@@ -457,7 +457,7 @@ public class LruCache<TKey, TValue, THasher>
         {
             _cache = cache;
             _version = cache._version;
-            _node = NIL;
+            _node = Nil;
             _started = false;
             _current = default;
         }
@@ -477,13 +477,13 @@ public class LruCache<TKey, TValue, THasher>
             if (_version != _cache._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
-            if (_started && _node == NIL)
+            if (_started && _node == Nil)
                 return false; // already exhausted
 
             _node = _started ? _cache._next[_node] : _cache._head;
             _started = true;
 
-            if (_node == NIL)
+            if (_node == Nil)
             {
                 _current = default;
                 return false;
@@ -500,7 +500,7 @@ public class LruCache<TKey, TValue, THasher>
             if (_version != _cache._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
-            _node = NIL;
+            _node = Nil;
             _started = false;
             _current = default;
         }

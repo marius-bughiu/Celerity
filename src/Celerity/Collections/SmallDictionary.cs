@@ -45,7 +45,7 @@ public class SmallDictionary<TKey, TValue>
     /// The capacity the dictionary grows to on its first insert when constructed
     /// with no (or a zero) capacity hint.
     /// </summary>
-    protected const int DEFAULT_CAPACITY = 4;
+    protected const int DefaultCapacity = 4;
 
     private TKey?[] _keys;
     private TValue?[] _values;
@@ -68,7 +68,7 @@ public class SmallDictionary<TKey, TValue>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="capacity"/> is negative.
     /// </exception>
-    public SmallDictionary(int capacity = DEFAULT_CAPACITY)
+    public SmallDictionary(int capacity = DefaultCapacity)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -98,7 +98,7 @@ public class SmallDictionary<TKey, TValue>
     /// </exception>
     public SmallDictionary(
         IEnumerable<KeyValuePair<TKey, TValue>> source,
-        int capacity = DEFAULT_CAPACITY)
+        int capacity = DefaultCapacity)
         : this(InitialCapacityForSource(source, capacity))
     {
         foreach (KeyValuePair<TKey, TValue> kvp in source)
@@ -432,7 +432,7 @@ public class SmallDictionary<TKey, TValue>
 
     private void Grow()
     {
-        int newCapacity = _keys.Length == 0 ? DEFAULT_CAPACITY : FastUtils.DoubleCapacity(_keys.Length);
+        int newCapacity = _keys.Length == 0 ? DefaultCapacity : FastUtils.DoubleCapacity(_keys.Length);
         Array.Resize(ref _keys, newCapacity);
         Array.Resize(ref _values, newCapacity);
     }

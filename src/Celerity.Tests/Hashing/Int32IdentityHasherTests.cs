@@ -106,7 +106,7 @@ public class Int32IdentityHasherTests
     public void Hash_ShouldSatisfyTheHasherConstraint_WhenDrivingIntDictionary()
     {
         // The out-of-band zero-key slot is exercised end-to-end: Hash(0) == 0,
-        // which is also EMPTY_KEY, but the dictionary stores key 0 out-of-band
+        // which is also EmptyKey, but the dictionary stores key 0 out-of-band
         // so it never reaches the hasher in a way that aliases the sentinel.
         var dict = new IntDictionary<string, Int32IdentityHasher>();
 

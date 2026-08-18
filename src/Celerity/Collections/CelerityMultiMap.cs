@@ -50,12 +50,12 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// <summary>
     /// The default initial capacity of the map if no capacity is specified.
     /// </summary>
-    private const int DEFAULT_CAPACITY = 16;
+    private const int DefaultCapacity = 16;
 
     /// <summary>
     /// The default load factor of the map if no load factor is specified.
     /// </summary>
-    private const float DEFAULT_LOAD_FACTOR = 0.75f;
+    private const float DefaultLoadFactor = 0.75f;
 
     private int _count = 0;
     private int _valueCount = 0;
@@ -93,8 +93,8 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// is not in the open interval (0, 1).
     /// </exception>
     public CelerityMultiMap(
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -137,8 +137,8 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// </exception>
     public CelerityMultiMap(
         IEnumerable<KeyValuePair<TKey, TValue>> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (KeyValuePair<TKey, TValue> kvp in source)

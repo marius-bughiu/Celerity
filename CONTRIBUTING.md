@@ -50,11 +50,12 @@ src/
 
 ## Coding conventions
 
-These are enforced by review, not by an analyzer. Reading the existing code is the fastest way to get a feel for the style.
+Most of these are enforced by review rather than by an analyzer — the constant-naming rule is the exception, and has a CI check behind it. Reading the existing code is the fastest way to get a feel for the style.
 
 - The packages multi-target `net8.0;net9.0;net10.0` (the shared list lives in [`src/Directory.Build.props`](src/Directory.Build.props); bump it there). `net8.0` is the lowest target, so shared code must not use net9/net10-only APIs unguarded — gate any newer-runtime path with `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` and keep a net8.0 fallback. Nullable reference types are enabled.
 - File-scoped namespaces (`namespace Celerity.Hashing;`).
-- `PascalCase` for public members, `_camelCase` for private fields, `UPPER_CASE` for constants.
+- `PascalCase` for public members, `_camelCase` for private fields.
+- `PascalCase` for **every** `const` too — any accessibility, field or method-local. See [Constant naming](#constant-naming) below; it is checked in CI.
 - Every public type and member has an XML doc comment. `GenerateDocumentationFile` is on and every shipping package promotes both **CS1591** (missing doc comment) and **CS1570** (badly formed XML in a doc comment) to build errors, so a doc comment must be present *and* parse. The second gate matters because the doc writer drops the whole member element rather than truncating it, so a stray unclosed tag ships a type with no documentation at all.
 - Hash providers are structs that implement `IHashProvider<T>`. This is load-bearing: passing them as a generic constraint (`where THasher : struct, IHashProvider<T>`) lets the JIT devirtualize `hasher.Hash(...)` calls. Please do not change them to classes or interfaces.
 - Prefer explicit types over `var` where it meaningfully helps readability (e.g. in tight numeric loops). Use `var` freely for obvious right-hand-sides.
@@ -151,6 +152,25 @@ node scripts/check_doc_anchors.js --self-test
 gh api repos/marius-bughiu/Celerity/contents/docs/api/collections.md \
   -H "Accept: application/vnd.github.html" | grep -oE 'id="user-content-[a-z0-9-]*"'
 ```
+
+## Constant naming
+
+Every `const` in the shipping packages is `PascalCase`, whatever its accessibility and whether it is a field or a method-local: `DefaultCapacity`, `MaxKicks`, `Ln2Squared`, `FnvPrime`. Not `DEFAULT_CAPACITY`, not `fnvPrime`. This is [dotnet/runtime's own rule](https://github.com/dotnet/runtime/blob/main/docs/coding-guidelines/coding-style.md), and it replaces the `UPPER_CASE` this guide used to state — which the code had never actually followed. The split this produced was invisible enough that `XorFilter` carried both spellings inside one type, and that the same concept shipped as `HyperLogLog.DEFAULT_PRECISION` in one package and `Distinct.DefaultPrecision` in another.
+
+Two allowances exist, both for constants transcribed from a published algorithm, so the code can be read against its reference:
+
+- a name of at most two characters may be all upper-case — `C1`, `K0`, `M`, `R`;
+- a trailing `_<digits>` index is kept — `Prime64_1`, `Prime32_3`.
+
+[`scripts/check_constant_naming.js`](scripts/check_constant_naming.js) enforces this in the `constant-naming` CI job, over the eight shipping packages only. Test, benchmark, fuzz and AOT-smoke code is exempt: a throwaway `const int n = 5;` in a test tells a consumer nothing, and renaming a few hundred of them would bury the rule it was meant to serve.
+
+```bash
+node scripts/check_constant_naming.js             # check the shipping packages
+node scripts/check_constant_naming.js --list      # every constant it can see
+node scripts/check_constant_naming.js --self-test # pin the name rule and the scan
+```
+
+`--self-test` pins both halves — the name rule (including the two allowances) and the declaration scan that has to tell a real `const` from one inside a comment or a string literal — so a later rewrite cannot quietly stop finding violations. It also fails on a project under `src/` that the script cannot classify, which is how a newly added package gets covered instead of silently skipped.
 
 ## Versioning
 

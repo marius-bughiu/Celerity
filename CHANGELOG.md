@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **Every constant is now named in `PascalCase`**, replacing the `UPPER_CASE` spelling `CONTRIBUTING.md` asked for and most of the code never used, and `scripts/check_constant_naming.js` now fails CI on a constant that is not. **Source-breaking:** `DEFAULT_CAPACITY`, `DEFAULT_LOAD_FACTOR`, `DEFAULT_FALSE_POSITIVE_RATE`, `DEFAULT_EPSILON`, `DEFAULT_DELTA`, `DEFAULT_PRECISION`, `MIN_PRECISION`, `MAX_PRECISION` and `FINGERPRINT_BITS` each take their obvious `PascalCase` form, with values and meanings unchanged; a `const` is inlined at compile time, so already-compiled consumers are unaffected. `XorFilter`'s instance `FingerprintBits` property is removed, having duplicated the constant that now carries that name — read `XorFilter<T, THasher>.FingerprintBits`. See the [migration guide](docs/migration.md#upper_case-constants---pascalcase). Closes [#298](https://github.com/marius-bughiu/Celerity/issues/298).
+
 ## [2.7.0] - 2026-08-18
 
 ### Added

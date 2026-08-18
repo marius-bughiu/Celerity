@@ -70,7 +70,7 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// The width in bits of each stored fingerprint. Fixed at 8, giving a false-positive probability of
     /// <c>1 / 2^8 ≈ 0.39%</c>.
     /// </summary>
-    public const int FINGERPRINT_BITS = 8;
+    public const int FingerprintBits = 8;
 
     // Upper bound on peel-retry attempts before construction gives up. With the 1.23x slot factor the first
     // attempt succeeds with high probability and a handful of reseeds cover the rest; this bound only guards
@@ -171,16 +171,11 @@ public class XorFilter<T, THasher> where THasher : struct, IHashProvider<T>
     public int SlotCount => _fingerprints.Length;
 
     /// <summary>
-    /// Gets the width in bits of each stored fingerprint (<see cref="FINGERPRINT_BITS"/>, 8).
-    /// </summary>
-    public int FingerprintBits => FINGERPRINT_BITS;
-
-    /// <summary>
     /// Gets the theoretical false-positive probability of the filter: <c>1 / 2^FingerprintBits ≈ 0.39%</c>.
     /// Independent of the element count (unlike a Bloom filter, an xor filter does not degrade as it fills —
     /// it is sized exactly for its element set at build time).
     /// </summary>
-    public double FalsePositiveRate => 1.0 / (1 << FINGERPRINT_BITS);
+    public double FalsePositiveRate => 1.0 / (1 << FingerprintBits);
 
     /// <summary>
     /// Gets the storage cost in bits per represented element (<c>SlotCount · 8 / Count</c>), ≈ 9.84 for a

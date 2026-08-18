@@ -232,7 +232,7 @@ void Check(bool condition, string message)
     Check(murmurInt.ContainsKey(1), "CelerityDictionary<int, Int32Murmur3Hasher>");
 
     // Identity hashers — the zero-work floor. Exercise the out-of-band zero-key
-    // slot (Hash(0) == 0 == EMPTY_KEY) plus a dense sequential fill, the shape
+    // slot (Hash(0) == 0 == EmptyKey) plus a dense sequential fill, the shape
     // identity is designed for.
     var identInt = new IntDictionary<string, Int32IdentityHasher>();
     identInt[0] = "zero";
@@ -1323,7 +1323,7 @@ void Check(bool condition, string message)
     Check(filter.Contains(42) && filter.Contains(0) && filter.Contains(-3), "XorFilter build/contains");
     Check(filter.Count == 5, "XorFilter count");
     Check(filter.SlotCount % 3 == 0 && filter.SlotCount >= filter.Count, "XorFilter slot count");
-    Check(filter.FingerprintBits == 8, "XorFilter fingerprint width");
+    Check(XorFilter<int, Int32WangNaiveHasher>.FingerprintBits == 8, "XorFilter fingerprint width");
 
     // No false negatives across a larger fill (exercises the peel + reseed path).
     var big = new XorFilter<int, Int32WangNaiveHasher>(Enumerable.Range(1, 2000).Select(i => i * 3).ToArray());
@@ -1445,7 +1445,7 @@ void Check(bool condition, string message)
     hll.Add(0); // zero is an ordinary element, not a sentinel
     hll.Add(42); // duplicate collapses
     Check(hll.EstimateCardinality() == 2, "HyperLogLog distinct count");
-    Check(hll.Precision == HyperLogLog<int, Int32WangNaiveHasher>.DEFAULT_PRECISION,
+    Check(hll.Precision == HyperLogLog<int, Int32WangNaiveHasher>.DefaultPrecision,
         "HyperLogLog default precision");
     Check(hll.RegisterCount == 1 << 14, "HyperLogLog register count");
     Check(hll.StandardError > 0d, "HyperLogLog standard error");

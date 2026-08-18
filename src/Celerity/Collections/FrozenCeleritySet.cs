@@ -89,11 +89,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     // Number of distinct mixing seeds tried per candidate table size before giving
     // up on that size and trying the next-larger one. The search is one-time build
     // work, so a generous budget is cheap insurance for the single-probe fast path.
-    private const int SEED_BUDGET = 512;
+    private const int SeedBudget = 512;
 
     // Largest power-of-two multiple of NextPowerOfTwo(n) the perfect-hash search will
     // grow the table to before falling back. 8 means up to 8× the minimum table size.
-    private const int MAX_SIZE_MULTIPLIER = 8;
+    private const int MaxSizeMultiplier = 8;
 
     private readonly string?[] _items;
     private readonly int _mask;
@@ -391,14 +391,14 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         int n = itemList.Count;
         int minSize = FastUtils.NextPowerOfTwo(n == 0 ? 1 : n);
 
-        // Probe candidate table sizes minSize, 2·minSize, … up to MAX_SIZE_MULTIPLIER·minSize.
+        // Probe candidate table sizes minSize, 2·minSize, … up to MaxSizeMultiplier·minSize.
         // Advance via the overflow-safe TryDoubleCapacity rather than a bare `size <<= 1`: once
         // a candidate reaches the 2^30 ceiling the shift would wrap negative and the next
         // `new string?[size]` would throw OverflowException instead of cleanly falling back.
-        for (int size = minSize, mult = 1; mult <= MAX_SIZE_MULTIPLIER; mult <<= 1)
+        for (int size = minSize, mult = 1; mult <= MaxSizeMultiplier; mult <<= 1)
         {
             int m = size - 1;
-            for (int s = 0; s <= SEED_BUDGET; s++)
+            for (int s = 0; s <= SeedBudget; s++)
             {
                 if (TryPlace(itemList, baseHashes, size, m, s, out items))
                 {

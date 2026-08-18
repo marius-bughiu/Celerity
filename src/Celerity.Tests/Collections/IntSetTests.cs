@@ -72,7 +72,7 @@ public class IntSetTests
         Assert.True(set.Contains(4));
     }
 
-    // Regression: zero collides with EMPTY_SLOT sentinel.
+    // Regression: zero collides with EmptySlot sentinel.
     [Fact]
     public void TryAdd_ShouldHandleZero()
     {

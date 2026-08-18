@@ -253,6 +253,33 @@ var d64 = new CelerityDictionary<ulong, string, UInt64Murmur3Hasher>();
 
 Worth a second look while you are in there: the same bare name meant the *cheapest* mixer for `uint` and the *strongest* one for `ulong`, so code that picked both by analogy may not have been asking for what it thought. If your `uint` keys are clustered, `UInt32WangHasher` / `UInt32Murmur3Hasher` are the escalation; if your `ulong` keys are already uniform, `UInt64WangHasher` / `UInt64WangNaiveHasher` are cheaper. `UInt64Hasher` keeps its `IHashProvider64<ulong>` implementation, so a sketch parameterized on it does not lose its 64-bit path mid-migration. Both aliases will be removed in a future major version.
 
+## `UPPER_CASE` constants -> `PascalCase`
+
+Every public and protected constant that was spelled `UPPER_CASE` now has a `PascalCase` name. The values, the types and the meanings are unchanged; only the spelling moved, so this is a compiler-guided find-and-replace. The rule is mechanical — `DEFAULT_LOAD_FACTOR` becomes `DefaultLoadFactor` — and these are the distinct names affected:
+
+| Old name | New name | Where |
+|---|---|---|
+| `DEFAULT_CAPACITY` | `DefaultCapacity` | the seventeen dictionaries, sets and tables that expose it, plus `TopKSketch` |
+| `DEFAULT_LOAD_FACTOR` | `DefaultLoadFactor` | the same seventeen, less the two `Small*` types |
+| `DEFAULT_FALSE_POSITIVE_RATE` | `DefaultFalsePositiveRate` | `BloomFilter`, `CuckooFilter` |
+| `DEFAULT_EPSILON` / `DEFAULT_DELTA` | `DefaultEpsilon` / `DefaultDelta` | `CountMinSketch` |
+| `DEFAULT_PRECISION` / `MIN_PRECISION` / `MAX_PRECISION` | `DefaultPrecision` / `MinPrecision` / `MaxPrecision` | `HyperLogLog` |
+| `FINGERPRINT_BITS` | `FingerprintBits` | `XorFilter` |
+
+Unlike the hasher rename above, there are no `[Obsolete]` aliases: a `const` is inlined into the calling assembly at compile time, so an already-compiled consumer is unaffected either way, and carrying forty-one deprecated spellings forward would have made the surface harder to read than the migration is to perform.
+
+**One member is gone rather than renamed.** `XorFilter<T, THasher>` had both a constant and an instance property naming the same fixed number, and once the constant is `FingerprintBits` the property cannot share the name. The constant is what remains, because the width is fixed at 8 for every instance:
+
+```csharp
+// Before
+int bits = filter.FingerprintBits;
+
+// After
+int bits = XorFilter<int, Int32WangNaiveHasher>.FingerprintBits;
+```
+
+`CuckooFilter.FingerprintBits` is untouched — its width really is chosen per filter, so it stays an instance property.
+
 ## See also
 
 - [Choosing a collection](../README.md#choosing-a-collection)
