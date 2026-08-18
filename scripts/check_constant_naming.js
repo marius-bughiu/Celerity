@@ -24,6 +24,9 @@
 //     `ParseXML` do not, and are spelled `XmlParser` / `ParseXml`;
 //   - carries no underscore, except a trailing `_<digits>` index, which keeps
 //     xxHash's `Prime64_1` family recognisable against the reference implementation.
+// Case is judged in Unicode, not ASCII, and an identifier written with `\uXXXX` escapes
+// is judged as the letters it means — a name the scan cannot read is one it cannot
+// reject, which is the failure worth avoiding in a gate.
 //
 // Usage:
 //   node scripts/check_constant_naming.js              # check every shipping package
@@ -64,13 +67,23 @@ const SKIP_DIRS = new Set(['bin', 'obj', 'artifacts', 'TestResults']);
 
 // ---- The name rule ------------------------------------------------------------------
 
-const PASCAL_CASE = /^[A-Z][A-Za-z0-9]*(_[0-9]+)?$/;
-const UPPER_RUN = /[A-Z]+/g;
+const PASCAL_CASE = /^\p{Lu}[\p{L}\p{Nd}]*(_[0-9]+)?$/u;
+const UPPER_RUN = /\p{Lu}+/gu;
 const MAX_ACRONYM = 2;
+
+// C# identifiers are Unicode, and a character may also be written as an escape, so
+// `échec` and `échec` are the same name. Both are judged as the letters they mean:
+// the rule is about the reader, who sees the letter either way.
+function decodeEscapes(name) {
+  return name.replace(
+    /\\u([0-9A-Fa-f]{4})|\\U([0-9A-Fa-f]{8})/g,
+    (_, short, long) => String.fromCodePoint(parseInt(short || long, 16)),
+  );
+}
 
 function isCompliant(name) {
   // `@` only escapes an identifier from the keyword list; the name is what follows it.
-  const bare = name.startsWith('@') ? name.slice(1) : name;
+  const bare = decodeEscapes(name.startsWith('@') ? name.slice(1) : name);
   if (!PASCAL_CASE.test(bare)) return false;
 
   UPPER_RUN.lastIndex = 0;
@@ -78,7 +91,7 @@ function isCompliant(name) {
   while ((run = UPPER_RUN.exec(bare)) !== null) {
     // A run followed by a lower-case letter spends its last character on the next word,
     // so `IOStream` holds a two-letter acronym and `XMLParser` a three-letter one.
-    const opensNextWord = /[a-z]/.test(bare[run.index + run[0].length] || '');
+    const opensNextWord = /\p{Ll}/u.test(bare[run.index + run[0].length] || '');
     if (run[0].length - (opensNextWord ? 1 : 0) > MAX_ACRONYM) return false;
   }
   return true;
@@ -238,9 +251,16 @@ function strip(source) {
 // same statement. The type may be alias-qualified (`global::System.Int32`), and either
 // identifier may be `@`-escaped, which is only a way past the keyword list and no part of
 // the name — a `const int @bad_name` the pattern failed to match would walk past this
-// gate untouched.
+// gate untouched. The same goes for the Unicode a C# identifier is allowed: a declaration
+// the pattern cannot see is not judged at all, which is worse than one it rejects, so the
+// identifier class here is the language's rather than ASCII.
 
-const CONST_DECL = /\bconst\s+@?[A-Za-z_][A-Za-z_0-9.:<>,\[\]\?\s]*?\s+(@?[A-Za-z_][A-Za-z_0-9]*)\s*=/g;
+const ID_CHAR = '(?:[\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}\\p{Cf}]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})';
+const IDENTIFIER = `@?${ID_CHAR}+`;
+const CONST_DECL = new RegExp(
+  `\\bconst\\s+(?:${ID_CHAR}|[@.:<>,\\[\\]?\\\\\\s])+?\\s+(${IDENTIFIER})\\s*=`,
+  'gu',
+);
 
 function findConstants(source) {
   const stripped = strip(source);
@@ -260,7 +280,7 @@ function findConstants(source) {
     const tailStart = CONST_DECL.lastIndex;
     const semicolon = stripped.indexOf(';', match.index);
     const tail = stripped.slice(tailStart, semicolon === -1 ? undefined : semicolon);
-    const extra = /,\s*(@?[A-Za-z_][A-Za-z_0-9]*)\s*=/g;
+    const extra = new RegExp(`,\\s*(${IDENTIFIER})\\s*=`, 'gu');
     let more;
     while ((more = extra.exec(tail)) !== null) {
       found.push({
@@ -332,6 +352,10 @@ const NAME_CASES = [
   ['XMLParser', false],   // a three-letter acronym is PascalCased: XmlParser
   ['ParseXML', false],    // still three letters when it ends the name
   ['@bad_name', false],   // the escape is not part of the name
+  ['Écran', true],     // the rule is Unicode: an upper-case letter is one
+  ['échec', false],
+  ['\\u00e9chec', false],   // ...and as an escape, it is still that letter
+  ['\\u00c9cran', true],
 ];
 
 const SCAN_CASES = [
@@ -343,6 +367,10 @@ const SCAN_CASES = [
   ['class C { private const int?  Wide = null; }', ['Wide']],
   ['class C { const int @bad_name = 1; }', ['@bad_name']],
   ['class C { const global::System.Int32 Ok = 1; }', ['Ok']],
+  // A declaration the scan cannot see is never judged, which is the worse failure:
+  // Unicode identifiers are found and then rejected by the name rule, not skipped.
+  ['class C { const int échec = 1; }', ['échec']],
+  ['class C { const int \\u00e9chec = 1; }', ['\\u00e9chec']],
   // Comments and literals are not declarations, however much they look like one.
   ['class C { /* const int Ghost = 1; */ }', []],
   ['class C { // const int Ghost = 1;\n }', []],

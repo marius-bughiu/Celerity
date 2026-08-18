@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- **Every constant is now named in `PascalCase`**, and CI fails on one that is not. **Source-breaking:** the nine `UPPER_CASE` spellings on the public surface (`DEFAULT_CAPACITY`, `MIN_PRECISION`, `FINGERPRINT_BITS`, …) become their obvious `PascalCase` form, values unchanged. `XorFilter`'s instance `FingerprintBits` property is removed as a duplicate of the constant that now holds that name, and an unrecompiled caller of it throws `MissingMethodException`. Compiled code that read a constant is unaffected (constants inline), except where it looked one up by name: the old fields are gone from metadata, so reflection returns `null`. Full list and migration: [the migration guide](docs/migration.md#upper_case-constants---pascalcase). Closes [#298](https://github.com/marius-bughiu/Celerity/issues/298).
+- **Every constant is now named in `PascalCase`**, and CI fails on one that is not. **Source-breaking:** the nine `UPPER_CASE` spellings on the public surface (`DEFAULT_CAPACITY`, `MIN_PRECISION`, `FINGERPRINT_BITS`, …) take their obvious `PascalCase` form, values unchanged, and `XorFilter`'s duplicate instance `FingerprintBits` property is gone — a binary break, unlike the constants, which inline. Reflection by name is the one exception: the old fields are gone from metadata. [Migration guide](docs/migration.md#upper_case-constants---pascalcase). Closes [#298](https://github.com/marius-bughiu/Celerity/issues/298).
 
 ## [2.7.0] - 2026-08-18
 
