@@ -130,12 +130,14 @@ public class DDSketchBenchmark
             list.Add(value);
         }
 
-        double[] ordered = [.. list];
-        Array.Sort(ordered);
+        // Sorted in place. Copying to an array first would charge the baseline a second
+        // full-size allocation it does not need, which would flatter the sketch on the very
+        // column — allocation — that the comparison turns on.
+        list.Sort();
 
-        return ordered[(int)(0.5d * (ordered.Length - 1))]
-            + ordered[(int)(0.9d * (ordered.Length - 1))]
-            + ordered[(int)(0.99d * (ordered.Length - 1))];
+        return list[(int)(0.5d * (list.Count - 1))]
+            + list[(int)(0.9d * (list.Count - 1))]
+            + list[(int)(0.99d * (list.Count - 1))];
     }
 
     [BenchmarkCategory("Mixed")]
