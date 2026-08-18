@@ -217,17 +217,20 @@ public sealed class DDSketch
     /// <remarks>
     /// <para>
     /// Accumulated with Neumaier compensation rather than as a plain running total, so it is
-    /// correct to the last bit or two whatever order the values arrive in. A plain total is not
-    /// a matter of exotic inputs: <c>1e16</c>, then <c>1</c>, then <c>-1e16</c> loses the 1
-    /// entirely and reports <c>0</c>, because the 1 falls below the spacing of <c>1e16</c> and
-    /// the cancellation that follows has nothing left to recover it. The correction term keeps
-    /// what each addition dropped and is applied when the sum is read.
+    /// correct to the last bit or two rather than drifting. A plain total is not a matter of
+    /// exotic inputs: <c>1e16</c>, then <c>1</c>, then <c>-1e16</c> loses the 1 entirely and
+    /// reports <c>0</c>, because the 1 falls below the spacing of <c>1e16</c> and the
+    /// cancellation that follows has nothing left to recover it. The correction term keeps what
+    /// each addition dropped and is applied when the sum is read.
     /// </para>
     /// <para>
-    /// Where the true sum is not a <see cref="double"/> at all — two
-    /// <see cref="double.MaxValue"/> entries, say — this is <c>±∞</c>, which is the right
-    /// answer to a question with no representable one, and the correction is not applied
-    /// (it would be <see cref="double.NaN"/>).
+    /// What compensation cannot survive is the <em>running</em> total leaving the range, which
+    /// can happen before the final sum would have: <see cref="double.MaxValue"/> twice and then
+    /// <c>-double.MaxValue</c> reports <c>∞</c>, though the values sum to
+    /// <see cref="double.MaxValue"/>. Once the total is infinite the correction is
+    /// <see cref="double.NaN"/> and is not applied, so <c>±∞</c> here means the running total
+    /// overflowed at some point — not necessarily that the final sum is unrepresentable.
+    /// Recovering that would need a superaccumulator, which is a different type than this one.
     /// </para>
     /// </remarks>
     public double Sum => double.IsFinite(_sum) ? _sum + _sumCompensation : _sum;
@@ -442,7 +445,8 @@ public sealed class DDSketch
     /// <paramref name="quantiles"/>.
     /// </param>
     /// <exception cref="ArgumentException">
-    /// <paramref name="destination"/> is shorter than <paramref name="quantiles"/>.
+    /// <paramref name="destination"/> is shorter than <paramref name="quantiles"/>, or shares
+    /// storage with it.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// One of <paramref name="quantiles"/> is outside <c>[0, 1]</c> or is
@@ -454,6 +458,18 @@ public sealed class DDSketch
         {
             throw new ArgumentException(
                 "The destination is shorter than the quantile list.",
+                nameof(destination));
+        }
+
+        // Writing forward into a destination that starts inside the quantile list would
+        // overwrite a quantile before it is read — a wrong answer rather than a failure, which
+        // is why Celerity.Sorting rejects overlapping buffers too. Disjoint slices of one array
+        // are still fine.
+        if (quantiles.Overlaps(destination))
+        {
+            throw new ArgumentException(
+                "The destination must not share storage with the quantile list; it is written " +
+                "while the list is still being read.",
                 nameof(destination));
         }
 

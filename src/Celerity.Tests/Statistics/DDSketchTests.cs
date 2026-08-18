@@ -413,6 +413,49 @@ public class DDSketchTests
     }
 
     [Fact]
+    public void GetQuantiles_ShouldThrow_WhenTheDestinationOverlapsTheQuantileList()
+    {
+        // Writing forward into a destination that starts inside the list would overwrite a
+        // quantile before it is read — a wrong answer rather than a failure.
+        var sketch = new DDSketch(0.01d);
+        for (int i = 1; i <= 100; i++)
+        {
+            sketch.Add(i);
+        }
+
+        double[] buffer = [0.1d, 0.5d, 0.9d, 0d];
+
+        Assert.Throws<ArgumentException>(
+            () => sketch.GetQuantiles(buffer.AsSpan(0, 3), buffer.AsSpan(1, 3)));
+
+        // Disjoint slices of one array are still accepted, matching Celerity.Sorting.
+        double[] shared = [0.1d, 0.5d, 0d, 0d];
+        sketch.GetQuantiles(shared.AsSpan(0, 2), shared.AsSpan(2, 2));
+        Assert.Equal(sketch.GetQuantile(0.1d), shared[2]);
+        Assert.Equal(sketch.GetQuantile(0.5d), shared[3]);
+    }
+
+    [Fact]
+    public void Sum_ShouldReportInfinity_WhenTheRunningTotalOverflowsBeforeTheFinalSumWould()
+    {
+        // Compensation keeps what each addition dropped; it cannot resurrect a total that has
+        // already left the range. These three values sum to double.MaxValue, but the running
+        // total passes through infinity on the way and never comes back.
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(double.MaxValue);
+        sketch.Add(double.MaxValue);
+        sketch.Add(-double.MaxValue);
+
+        Assert.Equal(3, sketch.Count);
+        Assert.Equal(double.PositiveInfinity, sketch.Sum);
+
+        // The quantiles are read off the buckets and are unaffected either way.
+        Assert.Equal(-double.MaxValue, sketch.Min);
+        Assert.Equal(double.MaxValue, sketch.Max);
+        QuantileGuarantee.Holds(double.MaxValue, sketch.GetQuantile(1d), 0.01d, "q=1");
+    }
+
+    [Fact]
     public void Sum_ShouldSurviveCancellationThatAPlainRunningTotalLoses()
     {
         // Not an exotic input: 1 falls below the spacing of 1e16, so a plain running total

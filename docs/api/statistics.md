@@ -97,8 +97,8 @@ to say about either. Only `NaN` and the infinities are rejected, with an
 | Member | Returns |
 |---|---|
 | `GetQuantile(double quantile)` | The bucketed value at that quantile, or `NaN` if the sketch is empty. |
-| `GetQuantiles(ReadOnlySpan<double> quantiles, Span<double> destination)` | Several at once, into a caller-owned span. Allocates nothing. |
-| `Count` / `Sum` / `Average` / `Min` / `Max` | Tracked directly rather than read off the buckets, so none of them is subject to `α`. `Count`, `Min` and `Max` are exact; `Sum` is accumulated with Neumaier compensation, which makes it correct to the last bit or two rather than exact, and is `±∞` when the true sum is not a `double`. `Average` derives from `Sum`. |
+| `GetQuantiles(ReadOnlySpan<double> quantiles, Span<double> destination)` | Several at once, into a caller-owned span. Allocates nothing. The destination must not share storage with the quantile list — it is written while the list is still being read — though disjoint slices of one array are fine. |
+| `Count` / `Sum` / `Average` / `Min` / `Max` | Tracked directly rather than read off the buckets, so none of them is subject to `α`. `Count`, `Min` and `Max` are exact; `Sum` is accumulated with Neumaier compensation, which makes it correct to the last bit or two rather than exact, and is `±∞` once the *running* total leaves the range — which can happen before the final sum would have, since compensation cannot recover an already-infinite total. `Average` derives from `Sum`. |
 | `BinCount` | Live buckets across both ladders — the memory footprint, in buckets. |
 | `HasCollapsed` | Whether the bin budget has bound. See below. |
 | `RelativeAccuracy` / `MaxBins` | What the sketch was built with. |
