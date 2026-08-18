@@ -50,7 +50,10 @@ namespace Celerity.Statistics;
 /// </para>
 /// <para>
 /// <see cref="Count"/>, <see cref="Sum"/>, <see cref="Min"/> and <see cref="Max"/> are tracked
-/// exactly and are not subject to <c>α</c>; only the quantiles are approximate. Note that
+/// directly rather than read off the buckets, so they are exact and not subject to <c>α</c>;
+/// only the quantiles are approximate. <see cref="Sum"/> is exact wherever the sum is itself a
+/// <see cref="double"/>, and <see cref="Average"/> is derived from it — see the remarks there
+/// for the one case that costs. Note that
 /// <c>GetQuantile(0)</c> and <c>GetQuantile(1)</c> return the <em>bucketed</em> extremes, so
 /// use <see cref="Min"/> / <see cref="Max"/> when the exact ones are wanted.
 /// </para>
@@ -201,13 +204,32 @@ public sealed class DDSketch
     /// <summary>Gets the exact number of values added.</summary>
     public long Count => _count;
 
-    /// <summary>Gets the exact sum of the values added, or <c>0</c> if none have been.</summary>
+    /// <summary>
+    /// Gets the sum of the values added, or <c>0</c> if none have been.
+    /// </summary>
+    /// <remarks>
+    /// Accumulated rather than reconstructed from the buckets, so it is exact wherever the sum
+    /// itself is a <see cref="double"/>. Where it is not — two <see cref="double.MaxValue"/>
+    /// entries, say — this is <c>±∞</c>, which is the right answer to a question with no
+    /// representable one.
+    /// </remarks>
     public double Sum => _sum;
 
     /// <summary>
-    /// Gets the exact arithmetic mean of the values added, or <see cref="double.NaN"/> if none
-    /// have been.
+    /// Gets the arithmetic mean of the values added, or <see cref="double.NaN"/> if none have
+    /// been.
     /// </summary>
+    /// <remarks>
+    /// Derived from <see cref="Sum"/>, so it inherits that overflow in the one case where the
+    /// mean itself would have been representable: two <see cref="double.MaxValue"/> entries
+    /// average to <see cref="double.MaxValue"/> but report <c>∞</c>. Carrying an incremental
+    /// mean instead would fix that at the cost of a division on every <see cref="Add(double)"/>
+    /// — on the hot path of a type whose documented workloads (latencies, sizes, durations)
+    /// cannot reach it — and would not even be a complete fix, because the weighted mean that
+    /// <see cref="Merge(DDSketch)"/> would then need overflows its own subtraction on operands
+    /// of opposite extreme sign. <see cref="Count"/>, <see cref="Min"/> and <see cref="Max"/>
+    /// are unaffected either way.
+    /// </remarks>
     public double Average => _count == 0 ? double.NaN : _sum / _count;
 
     /// <summary>

@@ -1080,7 +1080,7 @@ foreach (double ms in requestLatencies)
 
 Console.WriteLine($"p99 {latencies.GetQuantile(0.99):F2} ms");
 
-foreach (DDSketch shard in perShardSketches)   // exact cross-shard merge
+foreach (DDSketch shard in perShardSketches)   // bucket-exact cross-shard merge
     latencies.Merge(shard);
 
 // A 1,000-item uniform sample of a stream of unknown length.

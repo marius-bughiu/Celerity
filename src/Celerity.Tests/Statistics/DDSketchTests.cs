@@ -413,6 +413,26 @@ public class DDSketchTests
     }
 
     [Fact]
+    public void SumAndAverage_ShouldOverflowTogether_WhenTheSumIsNotRepresentable()
+    {
+        // Pinning the documented limit rather than a fix. The sum of two double.MaxValues is
+        // genuinely not a double, so Sum reporting infinity is the right answer; Average is
+        // derived from it and inherits that, in the one case where the mean itself would have
+        // been representable. Count, Min and Max are unaffected, and the quantiles — the thing
+        // the type is actually for — are read off the buckets and never touch the sum.
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(double.MaxValue);
+        sketch.Add(double.MaxValue);
+
+        Assert.Equal(2, sketch.Count);
+        Assert.Equal(double.PositiveInfinity, sketch.Sum);
+        Assert.Equal(double.PositiveInfinity, sketch.Average);
+        Assert.Equal(double.MaxValue, sketch.Min);
+        Assert.Equal(double.MaxValue, sketch.Max);
+        QuantileGuarantee.Holds(double.MaxValue, sketch.GetQuantile(0.5d), 0.01d, "the median");
+    }
+
+    [Fact]
     public void GetQuantile_ShouldStayInsideTheObservedRange()
     {
         // A bucket representative can sit outside the values that landed in it; the true
