@@ -244,6 +244,47 @@ public class DDSketchBucketWindowTests
     }
 
     [Fact]
+    public void Window_ShouldFoldABelowFloorValueToTheFloor_NotToACurrentMinimumThatLaterBucketsUndercut()
+    {
+        // The window can be narrower than the budget when a far-below value arrives. Folding
+        // that value into whatever the minimum happens to be right then puts its count above
+        // buckets that arrive afterwards and legitimately sit lower — inverting their rank, and
+        // dropping collapsed low-tail mass into the upper quantiles.
+        //
+        // Bucket 100, then 50 (below the floor of 97), then 98. Bucket 98 is inside the budget
+        // and must rank above the collapsed value, not below it.
+        var sketch = new DDSketch(Gamma3Accuracy, 4);
+
+        sketch.Add(DDSketchTests.AtBucket(100));
+        sketch.Add(DDSketchTests.AtBucket(50));
+        sketch.Add(DDSketchTests.AtBucket(98));
+
+        Assert.Equal(3, sketch.Count);
+        Assert.True(sketch.HasCollapsed);
+
+        // Ranks are collapsed-value, then 98, then 100. The middle one was never collapsed, so
+        // it is still owed the guarantee — and it is the assertion that fails when the fold
+        // lands on the wrong bucket.
+        QuantileGuarantee.Holds(
+            DDSketchTests.AtBucket(98),
+            sketch.GetQuantile(0.5d),
+            Gamma3Accuracy,
+            "the uncollapsed middle value");
+
+        QuantileGuarantee.Holds(
+            DDSketchTests.AtBucket(100),
+            sketch.GetQuantile(1d),
+            Gamma3Accuracy,
+            "the top value");
+
+        // And the collapsed one still sorts below both, which is the whole point of folding to
+        // the floor rather than to the current minimum.
+        Assert.True(
+            sketch.GetQuantile(0d) < sketch.GetQuantile(0.5d),
+            "the collapsed value should still rank lowest");
+    }
+
+    [Fact]
     public void Merge_ShouldCarryEveryLiveBucket_WhenTheSourceWindowHasGaps()
     {
         var source = new DDSketch(Gamma3Accuracy, 64);

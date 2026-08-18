@@ -804,6 +804,19 @@ public sealed class DDSketch
 
             if (index <= _maxIndex - _maxBins)
             {
+                // Fold into the budget's floor, not into whatever the minimum happens to be.
+                // The window can still be narrower than the budget — nothing has yet arrived
+                // low enough to grow it — and folding into that minimum would put this count
+                // above buckets that arrive later and legitimately sit lower, inverting their
+                // rank and dropping collapsed low-tail mass into the upper quantiles.
+                int floor = _maxIndex - _maxBins + 1;
+
+                if (floor < _minIndex)
+                {
+                    EnsureWindow(floor, _maxIndex);
+                    _minIndex = floor;
+                }
+
                 HasCollapsed = true;
                 return _minIndex - _offset;
             }
