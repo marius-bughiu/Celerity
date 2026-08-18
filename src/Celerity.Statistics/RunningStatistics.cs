@@ -110,7 +110,11 @@ public struct RunningStatistics
     /// <summary>
     /// Initializes an accumulator that has already consumed the specified values.
     /// </summary>
-    /// <param name="values">The values to accumulate.</param>
+    /// <param name="values">The values to accumulate. All must be finite.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// One of <paramref name="values"/> is <see cref="double.NaN"/> or infinite. Values before
+    /// it have already been accumulated.
+    /// </exception>
     public RunningStatistics(ReadOnlySpan<double> values)
     {
         this = default;
@@ -280,6 +284,10 @@ public struct RunningStatistics
     /// One of <paramref name="values"/> is <see cref="double.NaN"/> or infinite. Values before
     /// it have already been accumulated.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The accumulator reaches <see cref="long.MaxValue"/> values partway through. The values
+    /// before that point have already been accumulated.
+    /// </exception>
     public void Add(ReadOnlySpan<double> values)
     {
         foreach (double value in values)
@@ -368,6 +376,10 @@ public struct RunningStatistics
     /// <param name="left">The first accumulator.</param>
     /// <param name="right">The second accumulator.</param>
     /// <returns>The combined accumulator.</returns>
+    /// <exception cref="ArgumentException">
+    /// The combined <see cref="Count"/> would overflow — see <see cref="Merge(in RunningStatistics)"/>,
+    /// which this delegates to, for why that is reachable.
+    /// </exception>
     public static RunningStatistics Combine(in RunningStatistics left, in RunningStatistics right)
     {
         RunningStatistics combined = left;

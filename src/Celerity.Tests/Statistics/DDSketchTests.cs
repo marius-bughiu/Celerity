@@ -245,10 +245,22 @@ public class DDSketchTests
         narrow.Add(5d);
         narrow.Add(500d);
 
+        Assert.True(narrow.HasCollapsed);
+
         wide.Merge(narrow);
 
         Assert.Equal(2, wide.Count);
         Assert.Equal(4_096, wide.MaxBins);
+
+        // The narrow operand had already folded its low bucket away, and the wider budget
+        // cannot unfold it — which is why the merge is documented as bucket-exact rather than
+        // as replaying the operand's stream. The top of the range survived; the bottom did not,
+        // and the inherited loss is reported rather than hidden.
+        Assert.True(wide.HasCollapsed);
+        QuantileGuarantee.Holds(500d, wide.GetQuantile(1d), 0.01d, "the surviving high bucket");
+        Assert.True(
+            wide.GetQuantile(0d) > 100d,
+            $"the collapsed low value should read far above its true 5, got {wide.GetQuantile(0d)}.");
     }
 
     [Fact]

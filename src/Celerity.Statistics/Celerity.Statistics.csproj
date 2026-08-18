@@ -23,7 +23,7 @@
 		-->
 		<WarningsAsErrors>$(WarningsAsErrors);CS1591;CS1570</WarningsAsErrors>
 		<PackageId>Celerity.Statistics</PackageId>
-		<Description>Streaming summary statistics in bounded memory: DDSketch for relative-error quantiles over an unbounded stream, ReservoirSampler for a fixed-size uniform sample of a stream of unknown length (Algorithm L), and RunningStatistics for numerically stable single-pass mean / variance / skewness / kurtosis. The BCL ships no quantile, sampling, or higher-moment type at all. DDSketch merges exactly across shards and RunningStatistics up to floating-point rounding; ReservoirSampler does not merge at all (a uniform merge needs a hypergeometric draw). Querying allocates nothing; adding allocates only when a sketch ladder grows. Part of the Celerity family.</Description>
+		<Description>Streaming summary statistics in bounded memory: DDSketch for relative-error quantiles over an unbounded stream, ReservoirSampler for a fixed-size uniform sample of a stream of unknown length (Algorithm L), and RunningStatistics for numerically stable single-pass mean / variance / skewness / kurtosis. The BCL ships no quantile, sampling, or higher-moment type at all. DDSketch merges bucket-exactly across shards (unless an operand has already collapsed) and RunningStatistics up to floating-point rounding; ReservoirSampler does not merge at all (a uniform merge needs a hypergeometric draw). Querying allocates nothing; adding allocates only when a sketch ladder grows. Part of the Celerity family.</Description>
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageTags>celerity;statistics;quantile;ddsketch;percentile;reservoir-sampling;welford;streaming;sketch;performance</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>

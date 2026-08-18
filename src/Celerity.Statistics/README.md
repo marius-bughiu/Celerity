@@ -15,7 +15,8 @@ means keeping the stream, which is the one thing a stream will not let you do.
   value is within `α` of the true one at **every** quantile, in memory
   proportional to the log of the value range rather than to the sample count.
   1% of 10 ms and 1% of 10 s, which is what latency work wants. Handles
-  negatives and zero, merges exactly across shards, and says out loud
+  negatives and zero, merges bucket-exactly across shards unless an operand
+  has already collapsed, and says out loud
   (`HasCollapsed`) when its bin budget has run out and the guarantee has
   stopped holding for the low tail.
 - **`ReservoirSampler<T>`** — a fixed-size uniform sample of a stream of unknown

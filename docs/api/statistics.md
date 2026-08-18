@@ -30,7 +30,7 @@ in the collections.
 | Your workload | Use | Why |
 |---|---|---|
 | p50 / p90 / p99 latency over a stream that never ends | `DDSketch` | A relative error bound at every quantile, in memory proportional to the log of the value range rather than to the sample count. |
-| Percentiles per shard, combined into a global one | `DDSketch.Merge` | Two sketches of the same accuracy merge exactly, without re-reading either input. |
+| Percentiles per shard, combined into a global one | `DDSketch.Merge` | Two sketches of the same accuracy merge without re-reading either input — bucket-exactly, unless an operand has already collapsed. |
 | An exact median of data you already hold and will not add to | `Array.Sort` + index | Nothing beats a pre-sorted array indexed in `O(1)`. The sketch is for the case where you cannot keep the data or it keeps changing. |
 | A bounded sample of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` | `O(k)` memory and `O(k · log(n / k))` random draws, exactly uniform, and it never needs to know `n`. |
 | Mean and standard deviation of a stream, or of one bucket among many | `RunningStatistics` | One pass, no allocation, numerically stable, and a `struct` so per-bucket accumulators live inline. |
@@ -139,8 +139,15 @@ foreach (DDSketch shard in perShardSketches)
 ```
 
 `Merge` requires the same `RelativeAccuracy` on both sides — the ladders must line up — and throws
-`ArgumentException` otherwise. The two may differ in `MaxBins`; the result keeps the target's
-budget. The operand is left unchanged, and merging an empty sketch is a no-op.
+`ArgumentException` otherwise, or when the combined `Count` would overflow. The operand is left
+unchanged, and merging an empty sketch is a no-op.
+
+Bucket counts add, so the result is identical to a sketch that consumed both streams —
+**as long as neither operand has collapsed**. A collapsed operand arrives carrying only the buckets
+that survived, and no merge can unfold them however wide the target's budget is; `HasCollapsed`
+travels with the counts so the result says so. The two may differ in `MaxBins` and the result keeps
+the target's budget, but a shard fleet that wants replay-equivalent merges should give every shard
+the same budget as well as the same accuracy.
 
 ## ReservoirSampler
 

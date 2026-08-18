@@ -25,9 +25,10 @@ namespace Celerity.Statistics;
 /// <para>
 /// The guarantee holds for <em>any</em> quantile of <em>any</em> distribution, without the
 /// data being sorted, seen twice, or known in advance — and unlike a t-digest it holds at the
-/// median as strongly as at the tail. Two sketches built with the same accuracy merge
-/// exactly with <see cref="Merge(DDSketch)"/>, so per-shard sketches combine into a global
-/// one without re-reading anything.
+/// median as strongly as at the tail. Two sketches built with the same accuracy merge with
+/// <see cref="Merge(DDSketch)"/>, so per-shard sketches combine into a global one without
+/// re-reading anything; the merge is bucket-exact as long as neither operand has collapsed,
+/// which is the only thing that can have thrown resolution away before it arrives.
 /// </para>
 /// <para>
 /// <strong>Negative values and zero are handled, not rejected.</strong> Negatives go into a
@@ -309,8 +310,9 @@ public sealed class DDSketch
     /// <summary>Adds every value in a span to the sketch.</summary>
     /// <param name="values">The values to add. All must be finite.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// One of <paramref name="values"/> is <see cref="double.NaN"/> or infinite. Values before
-    /// it have already been added.
+    /// One of <paramref name="values"/> is <see cref="double.NaN"/> or infinite, or adding one
+    /// would overflow <see cref="Count"/>. Either way the values before it have already been
+    /// added.
     /// </exception>
     public void Add(ReadOnlySpan<double> values)
     {
@@ -436,8 +438,22 @@ public sealed class DDSketch
     /// overflow.
     /// </exception>
     /// <remarks>
+    /// <para>
+    /// Bucket counts add, so the result is identical to a sketch that consumed both streams —
+    /// <strong>as long as neither operand has collapsed</strong>. A collapsed operand has
+    /// already folded its lowest buckets together and arrives carrying only what survived; no
+    /// merge can unfold that, however wide the target's budget is. This is why merging is
+    /// described as bucket-exact rather than replay-equivalent, and why
+    /// <see cref="HasCollapsed"/> travels with the counts: a result that inherited a loss says
+    /// so.
+    /// </para>
+    /// <para>
     /// The two sketches may differ in <see cref="MaxBins"/>; the result keeps this sketch's
-    /// budget, and collapses if the union exceeds it.
+    /// budget, and collapses if the union exceeds it. A narrower operand is accepted rather
+    /// than rejected because a merge that reports its own loss is more useful than one that
+    /// refuses the data — but a shard fleet that wants replay-equivalent merges should give
+    /// every shard the same budget as well as the same accuracy.
+    /// </para>
     /// </remarks>
     public void Merge(DDSketch other)
     {
