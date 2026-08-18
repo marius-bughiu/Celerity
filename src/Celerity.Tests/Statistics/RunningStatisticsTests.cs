@@ -323,6 +323,37 @@ public class RunningStatisticsTests
     }
 
     [Fact]
+    public void ShapeStatistics_ShouldSurviveRawMomentsThatDoNotFitTheirOwnProducts()
+    {
+        // The stored moments and the answer are all ordinary numbers here; only the
+        // intermediates overflow. Forming `n * _m4` and `_m2 * _m2` gives infinity over
+        // infinity — NaN — for a distribution whose excess kurtosis is exactly -2, and the same
+        // happens to `sqrt(n) * _m3` over `_m2^1.5`. Normalizing before scaling avoids both.
+
+        // Symmetric about zero at 1e70, merged out to a count of ~1.15e18: kurtosis is -2 for
+        // any two-point symmetric distribution, whatever the scale.
+        var symmetric = new RunningStatistics([1e70, -1e70]);
+        for (int i = 0; i < 59; i++)
+        {
+            symmetric.Merge(symmetric);
+        }
+
+        Assert.Equal(1L << 60, symmetric.Count);
+        Assert.Equal(-2d, symmetric.Kurtosis, 1e-9);
+
+        // Asymmetric {-a, -a, 2a} at 1e95, merged out to a count of ~3.4e15: skewness is
+        // 1 / sqrt(2), again independent of the scale.
+        var skewed = new RunningStatistics([-1e95, -1e95, 2e95]);
+        for (int i = 0; i < 50; i++)
+        {
+            skewed.Merge(skewed);
+        }
+
+        Assert.Equal(3L << 50, skewed.Count);
+        Assert.Equal(1d / Math.Sqrt(2d), skewed.Skewness, 1e-9);
+    }
+
+    [Fact]
     public void ExtremeMagnitudes_ShouldBehaveAsDocumented_WhereTheMomentsStopBeingRepresentable()
     {
         // Pinning the documented limit rather than a fix. A central moment squares its

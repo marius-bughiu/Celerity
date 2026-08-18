@@ -186,7 +186,11 @@ public struct RunningStatistics
                 return double.NaN;
             }
 
-            return Math.Sqrt((double)_count) * _m3 / Math.Pow(_m2, 1.5);
+            // Divided down before either factor is formed. `sqrt(n) * _m3` and `_m2^1.5` can
+            // each overflow while the ratio between them is an ordinary number — a sample near
+            // 1e95 merged out to a count of 1e15 gets there — and infinity over infinity is
+            // NaN, so the shape of a perfectly representable distribution would be lost.
+            return _m3 / _m2 / Math.Sqrt(_m2) * Math.Sqrt((double)_count);
         }
     }
 
@@ -204,7 +208,10 @@ public struct RunningStatistics
                 return double.NaN;
             }
 
-            return (double)_count * _m4 / (_m2 * _m2) - 3d;
+            // Normalized before scaling, for the reason given on Skewness: `n * _m4` and
+            // `_m2 * _m2` both overflow for a symmetric sample near 1e70 at a count of 1e18,
+            // where the excess kurtosis itself is exactly -2.
+            return (_m4 / _m2 / _m2 * _count) - 3d;
         }
     }
 
