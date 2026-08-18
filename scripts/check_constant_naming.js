@@ -97,7 +97,7 @@ function isCompliant(name) {
 function strip(source) {
   const out = [];
   const n = source.length;
-  const stack = [{ kind: 'code', braces: 0, hole: false }];
+  const stack = [{ kind: 'code', braces: 0, parens: 0, hole: false }];
   let i = 0;
 
   const blank = (text) => text.replace(/[^\n]/g, ' ');
@@ -123,7 +123,7 @@ function strip(source) {
           while (source[i + k] === '{') k++;
           if (k >= frame.dollars) {
             emit(frame.dollars);
-            stack.push({ kind: 'code', braces: 0, hole: true });
+            stack.push({ kind: 'code', braces: 0, parens: 0, hole: true });
             continue;
           }
           emit(k);
@@ -151,7 +151,7 @@ function strip(source) {
         if (c === '{') {
           if (source[i + 1] === '{') { emit(2); continue; }
           emit(1);
-          stack.push({ kind: 'code', braces: 0, hole: true });
+          stack.push({ kind: 'code', braces: 0, parens: 0, hole: true });
           continue;
         }
         if (c === '}' && source[i + 1] === '}') { emit(2); continue; }
@@ -208,6 +208,21 @@ function strip(source) {
         i++;
         continue;
       }
+      if (c === '(' || c === '[') { frame.parens++; out.push(c); i++; continue; }
+      if (c === ')' || c === ']') { frame.parens--; out.push(c); i++; continue; }
+
+      // A colon at the top level of a hole ends the expression and opens a format
+      // specifier, whose text is literal — `$"{42:const int bad_name = 1;}"` declares
+      // nothing. This is unambiguous precisely because C# rejects an unparenthesized
+      // conditional in a hole for the same reason, so any ternary colon is inside the
+      // parentheses that tracking above accounts for. `::` is qualification, not a
+      // separator.
+      if (c === ':' && frame.parens === 0 && frame.braces === 0
+          && source[i + 1] !== ':' && source[i - 1] !== ':') {
+        const close = source.indexOf('}', i);
+        emit((close === -1 ? n : close) - i);
+        continue;
+      }
     }
 
     out.push(c);
@@ -220,11 +235,12 @@ function strip(source) {
 // ---- The scan -----------------------------------------------------------------------
 // A declaration is `const <type> <name> = ...`, where the type may be generic, an array,
 // nullable or qualified, and where further `, <name> = ...` declarators may follow on the
-// same statement. Either identifier may be `@`-escaped, which is only a way past the
-// keyword list and no part of the name — a `const int @bad_name` the pattern failed to
-// match would walk past this gate untouched.
+// same statement. The type may be alias-qualified (`global::System.Int32`), and either
+// identifier may be `@`-escaped, which is only a way past the keyword list and no part of
+// the name — a `const int @bad_name` the pattern failed to match would walk past this
+// gate untouched.
 
-const CONST_DECL = /\bconst\s+@?[A-Za-z_][A-Za-z_0-9.<>,\[\]\?\s]*?\s+(@?[A-Za-z_][A-Za-z_0-9]*)\s*=/g;
+const CONST_DECL = /\bconst\s+@?[A-Za-z_][A-Za-z_0-9.:<>,\[\]\?\s]*?\s+(@?[A-Za-z_][A-Za-z_0-9]*)\s*=/g;
 
 function findConstants(source) {
   const stripped = strip(source);
@@ -318,6 +334,7 @@ const SCAN_CASES = [
   ['class C { private const Vector128<sbyte> Mask = default; }', ['Mask']],
   ['class C { private const int?  Wide = null; }', ['Wide']],
   ['class C { const int @bad_name = 1; }', ['@bad_name']],
+  ['class C { const global::System.Int32 Ok = 1; }', ['Ok']],
   // Comments and literals are not declarations, however much they look like one.
   ['class C { /* const int Ghost = 1; */ }', []],
   ['class C { // const int Ghost = 1;\n }', []],
@@ -333,6 +350,12 @@ const SCAN_CASES = [
   ['class C { string s = $"""{Format("const int Ghost = 1;")}"""; }', []],
   // The converse: a real declaration inside a hole is still a declaration.
   ['class C { string s = $"{Run(() => { const int Held = 1; return Held; })}"; }', ['Held']],
+  // Text after a top-level colon in a hole is a format specifier, so it is literal...
+  ['class C { string s = $"{42:const int Ghost = 1;}"; }', []],
+  // ...while a colon inside parentheses is not one. C# rejects the unparenthesized
+  // conditional that would make the two ambiguous, so the code after it is still scanned.
+  ['class C { string s = $"{(f ? 0 : Run(() => { const int Held = 1; return Held; }))}"; }', ['Held']],
+  ['class C { string s = $"{global::C.M()}"; const int Ok = 1; }', ['Ok']],
   // `const` as part of a longer word is not the keyword.
   ['class C { int nonconstant = 1; }', []],
 ];
