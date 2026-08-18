@@ -238,41 +238,41 @@ public class ReservoirSamplerTests
     }
 
     [Fact]
-    public void Add_ShouldFreezeTheReservoir_WhenTheAcceptanceWeightCollapses()
+    public void Add_ShouldFreezeTheReservoir_WhenTheDrawnSkipOutgrowsWhatALongCanHold()
     {
-        // Algorithm L's weight is a running product, so over a long enough stream it shrinks
-        // past the point where 1 - w differs from 1 and no later item can be accepted. The
-        // script drives that in a few hundred items instead of a few hundred million.
+        // The skip is |log(u)| / w, so it saturates when the acceptance weight is small and the
+        // draw is not. Reaching that needs the weight driven down without the stream having to
+        // traverse the skips in between — decay alone cannot do it, because the skip grows as
+        // the weight shrinks and the stream stops arriving at the next index long before the
+        // quotient leaves long's range.
         //
-        // A replacement draws exactly three times — the slot to overwrite, the weight factor,
-        // then the skip — and the fill draws the last two, so a three-word cycle gives each
-        // draw a fixed role from the first replacement onward: a weight factor of ~0.75, a skip
-        // numerator of ~1 (so every item is a replacement), and a slot selector that a
-        // one-element reservoir ignores.
+        // So the script forces it in two replacements. A minimum draw (0) is a weight factor of
+        // 2^-53; a maximum draw is a skip numerator of 2^-53, which keeps the first skip at 1.
+        // The second replacement multiplies the weight to 2^-106 and then draws the *largest*
+        // numerator, |log(2^-53)| = 36.7, putting the quotient at about 3e33.
         //
-        // 0.75^n crosses 2^-54 at n = 131, so 400 items is comfortably past the collapse. What
-        // is being pinned is that the sampler stops rather than dividing log(u) by zero and
-        // computing a negative next index — which would replace on every subsequent item.
-        const ulong ThreeQuarters = 6_755_399_441_055_744UL << 11;
+        // A replacement draws three times (slot, weight, skip) and the fill draws the last two,
+        // so a five-word cycle gives each draw its role.
         var sampler = new ReservoirSampler<int, ScriptedRandom>(
             1,
-            new ScriptedRandom([ThreeQuarters, ulong.MaxValue, 0UL]));
+            new ScriptedRandom([0UL, ulong.MaxValue, 0UL, 0UL, 0UL]));
 
-        for (int i = 0; i < 400; i++)
+        for (int i = 0; i < 10; i++)
         {
             sampler.Add(i);
         }
 
-        Assert.Equal(400, sampler.TotalSeen);
+        Assert.Equal(10, sampler.TotalSeen);
         Assert.Equal(1, sampler.Count);
 
         int frozenAt = sampler[0];
-        for (int i = 400; i < 500; i++)
+        for (int i = 10; i < 200; i++)
         {
-            Assert.False(sampler.Add(i), $"item {i} was accepted after the weight collapsed");
+            Assert.False(sampler.Add(i), $"item {i} was accepted after the skip saturated");
         }
 
         Assert.Equal(frozenAt, sampler[0]);
+        Assert.Equal(200, sampler.TotalSeen);
     }
 
     [Fact]

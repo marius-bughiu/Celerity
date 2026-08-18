@@ -71,8 +71,8 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     where TRng : struct, IRandomSource
 {
     /// <summary>
-    /// The skip returned once the acceptance weight has collapsed — large enough that no stream
-    /// reaches it, small enough that adding a stream position to it cannot overflow.
+    /// The skip returned when the drawn one is past what a stream position can hold — large
+    /// enough that no stream reaches it, small enough that adding a position cannot overflow.
     /// </summary>
     private const long FrozenSkip = long.MaxValue / 2;
 
@@ -260,19 +260,47 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// </summary>
     private long NextSkip()
     {
-        double denominator = Math.Log(1d - _w);
+        // Log1P, not Math.Log(1 - w). Once the weight drops below the spacing of 1 the direct
+        // form collapses to exactly zero, and a sampler that read that as a zero acceptance
+        // probability would stop accepting while the real one is still positive. That is not
+        // unreachable: the probability tracks k / n, so it passes 2^-54 at around k · 2^54
+        // items — a stream length TotalSeen can still count.
+        double denominator = Log1P(-_w);
+        double skip = Math.Floor(Math.Log(NextUnitInterval()) / denominator);
 
-        if (denominator == 0d)
+        // Saturate only when the drawn skip is genuinely past what a stream position holds.
+        // Both logs are negative and neither can be zero — the draw is strictly inside (0, 1)
+        // and the weight is strictly inside (0, 1 - 2^-53] — so the quotient is a positive
+        // finite number, and this is the only way it can leave long's range. It is also
+        // reached well before the weight itself could underflow to zero: the numerator is at
+        // least 2^-53 in magnitude, so the quotient passes long.MaxValue / 2 while the weight
+        // is still around 1e-35.
+        return skip >= FrozenSkip ? FrozenSkip : (long)skip;
+    }
+
+    /// <summary>
+    /// <c>log(1 + x)</c>, accurate for an <paramref name="x"/> far below the precision of
+    /// <c>1 + x</c>.
+    /// </summary>
+    /// <remarks>
+    /// .NET ships no true <c>log1p</c> — <c>double.LogP1</c> is defined as
+    /// <c>Math.Log(x + 1)</c>, which returns exactly zero once <c>x</c> falls under the spacing
+    /// of 1, so it is no help here. This is Kahan's correction: <c>log(u) / (u − 1)</c> is well
+    /// conditioned even where <c>u − 1</c> has lost most of its bits to cancellation, so
+    /// scaling it by the exact <paramref name="x"/> puts them back.
+    /// </remarks>
+    /// <param name="x">The offset from 1. Greater than <c>-1</c>.</param>
+    /// <returns><c>log(1 + x)</c>.</returns>
+    private static double Log1P(double x)
+    {
+        double shifted = 1d + x;
+
+        if (shifted == 1d)
         {
-            // The acceptance weight has shrunk past the point where 1 - w is distinguishable
-            // from 1, so the probability that any later item wins has collapsed to zero. Say so
-            // with a skip nothing will reach, rather than dividing into a negative index.
-            return FrozenSkip;
+            return x;
         }
 
-        // Both logs are negative, so the quotient is non-negative, and it is bounded above by
-        // |log(2^-53)| / |log(1 - 2^-53)| — about 3.3e17 — so the cast cannot overflow.
-        return (long)Math.Floor(Math.Log(NextUnitInterval()) / denominator);
+        return x * (Math.Log(shifted) / (shifted - 1d));
     }
 
     /// <summary>
