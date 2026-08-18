@@ -157,7 +157,7 @@ The check reaches the network, where the other three script guards ([`check_doc_
 
 Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) and scoped to all seven shipping assemblies — `Celerity`, `Celerity.Hashing`, `Celerity.Primitives`, `Celerity.Sorting`, `Celerity.Ring`, `Celerity.Sentinel`, `Celerity.Cardinality` — via [`src/coverage.runsettings`](../src/coverage.runsettings). The test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.
 
-Four test projects contribute: `Celerity.Tests` for the four core packages, plus `Celerity.Ring.Tests` / `Celerity.Sentinel.Tests` / `Celerity.Cardinality.Tests` for the showcase tier. Their Cobertura reports are merged on (source file, line number), so a line covered by any run counts as covered — which matters because the showcase projects also exercise `Celerity.Collections` transitively.
+Four test projects contribute: `Celerity.Tests` for the five core packages, plus `Celerity.Ring.Tests` / `Celerity.Sentinel.Tests` / `Celerity.Cardinality.Tests` for the showcase tier. Their Cobertura reports are merged on (source file, line number), so a line covered by any run counts as covered — which matters because the showcase projects also exercise `Celerity.Collections` transitively.
 
 The suite covers **100% of lines and 100% of branches** across all seven. A small number of guards are excluded at the source with `[ExcludeFromCodeCoverage(Justification = "…")]`, and only where no test could ever reach them:
 
@@ -179,7 +179,7 @@ The rule for new code: exclusions are for genuinely unreachable code and must ca
 Collect and render a report locally:
 
 ```bash
-# 1. collect Cobertura coverage for the four core packages.
+# 1. collect Cobertura coverage for the five core packages.
 #    Clear stale results first: the four reports are merged by source-file path, and
 #    SourceLink resolves those paths from the build's git state — so mixing reports
 #    from different commits makes the same file appear twice under two spellings and

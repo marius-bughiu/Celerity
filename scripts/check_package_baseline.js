@@ -23,7 +23,7 @@
 //     the baseline == the highest stable version published by *every gated* package.
 //
 // Not "the highest version on NuGet", and not "the newest git tag". The baseline is a
-// single shared property, so it resolves to a PackageDownload for all seven packages at
+// single shared property, so it resolves to a PackageDownload for all gated packages at
 // once and has to be a version each of them actually has — Celerity.Sorting first shipped
 // at 2.6.0 and has no 2.5.0 to download, so the intersection is the constraint and the
 // maximum is not. "Gated" excludes a package still on the escape hatch, which resolves no

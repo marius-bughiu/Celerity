@@ -1,0 +1,303 @@
+using Celerity.Statistics;
+
+namespace Celerity.Tests.Statistics;
+
+/// <summary>
+/// Behavioural tests for <see cref="DDSketch"/> — the relative-accuracy guarantee itself, the
+/// three value regions (positive ladder, mirrored negative ladder, the separate zero counter),
+/// the exact-versus-approximate split (<c>Count</c> / <c>Sum</c> / <c>Min</c> / <c>Max</c> are
+/// exact; only the quantiles are bucketed), and merging.
+/// </summary>
+public class DDSketchTests
+{
+    [Fact]
+    public void Constructor_ShouldUseTheDocumentedDefaults_WhenNoneAreGiven()
+    {
+        var sketch = new DDSketch();
+
+        Assert.Equal(DDSketch.DefaultRelativeAccuracy, sketch.RelativeAccuracy);
+        Assert.Equal(DDSketch.DefaultMaxBins, sketch.MaxBins);
+        Assert.Equal(0, sketch.Count);
+        Assert.Equal(0, sketch.BinCount);
+        Assert.False(sketch.HasCollapsed);
+    }
+
+    [Fact]
+    public void Constructor_ShouldKeepTheDefaultBinBudget_WhenOnlyTheAccuracyIsGiven()
+    {
+        var sketch = new DDSketch(0.005d);
+
+        Assert.Equal(0.005d, sketch.RelativeAccuracy);
+        Assert.Equal(DDSketch.DefaultMaxBins, sketch.MaxBins);
+    }
+
+    [Fact]
+    public void EmptySketch_ShouldReportNothingRatherThanThrow()
+    {
+        var sketch = new DDSketch();
+
+        Assert.Equal(0, sketch.Count);
+        Assert.Equal(0d, sketch.Sum);
+        Assert.True(double.IsNaN(sketch.Average));
+        Assert.True(double.IsNaN(sketch.Min));
+        Assert.True(double.IsNaN(sketch.Max));
+        Assert.True(double.IsNaN(sketch.GetQuantile(0.5d)));
+    }
+
+    [Theory]
+    [InlineData(0.001d)]
+    [InlineData(0.01d)]
+    [InlineData(0.1d)]
+    public void GetQuantile_ShouldStayWithinTheRelativeAccuracy_AcrossFourDecades(double accuracy)
+    {
+        // Values spanning 0.5 to 5,000 — the shape a relative guarantee exists for, where an
+        // absolute error bound would be meaningless at one end and useless at the other.
+        double[] values = new double[10_000];
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = 0.5d + i;
+        }
+
+        // The budget is sized to the range: 2048 bins cover four decades at 1% but not at
+        // 0.1%, and the guarantee is only claimed while nothing has collapsed.
+        var sketch = new DDSketch(accuracy, 16_384);
+        sketch.Add(values);
+        Assert.False(sketch.HasCollapsed);
+
+        double[] sorted = [.. values.Order()];
+
+        foreach (double quantile in new[] { 0d, 0.01d, 0.25d, 0.5d, 0.75d, 0.9d, 0.99d, 1d })
+        {
+            double expected = sorted[(int)(quantile * (sorted.Length - 1))];
+            QuantileGuarantee.Holds(expected, sketch.GetQuantile(quantile), accuracy, $"q={quantile}");
+        }
+    }
+
+    [Fact]
+    public void GetQuantile_ShouldHoldTheGuaranteeAcrossTwelveDecades_WhereAnAbsoluteBoundCouldNot()
+    {
+        var sketch = new DDSketch(0.01d);
+        double[] values = new double[13];
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = Math.Pow(10d, i - 6);
+            sketch.Add(values[i]);
+        }
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            double quantile = (double)i / (values.Length - 1);
+            QuantileGuarantee.Holds(values[i], sketch.GetQuantile(quantile), 0.01d, $"q={quantile}");
+        }
+    }
+
+    [Fact]
+    public void GetQuantile_ShouldOrderNegativesBeforeZerosBeforePositives()
+    {
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(-100d);
+        sketch.Add(-1d);
+        sketch.Add(0d);
+        sketch.Add(1d);
+        sketch.Add(100d);
+
+        Assert.Equal(5, sketch.Count);
+        Assert.Equal(-100d, sketch.GetQuantile(0d), 1d);
+        Assert.Equal(-1d, sketch.GetQuantile(0.25d), 0.02d);
+        Assert.Equal(0d, sketch.GetQuantile(0.5d));
+        Assert.Equal(1d, sketch.GetQuantile(0.75d), 0.02d);
+        Assert.Equal(100d, sketch.GetQuantile(1d), 1d);
+    }
+
+    [Fact]
+    public void GetQuantile_ShouldWalkTheNegativeLadderToItsLowestBucket_WhenTheRankSitsThere()
+    {
+        // Negative-only, with gaps: the descending walk has to run past empty buckets and fall
+        // out at the smallest live index rather than break early.
+        var sketch = new DDSketch(0.5d);
+        sketch.Add(-AtBucket(5));
+        sketch.Add(-AtBucket(3));
+        sketch.Add(-AtBucket(1));
+
+        Assert.Equal(-AtBucket(5), sketch.GetQuantile(0d), Math.Abs(AtBucket(5)) * 0.5d);
+        Assert.Equal(-AtBucket(1), sketch.GetQuantile(1d), Math.Abs(AtBucket(1)) * 0.5d);
+        Assert.True(sketch.GetQuantile(0d) < sketch.GetQuantile(1d));
+    }
+
+    [Fact]
+    public void GetQuantile_ShouldReturnZero_WhenTheRankFallsInTheZeroCounter()
+    {
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(-5d);
+        sketch.Add(0d, 8L);
+        sketch.Add(5d);
+
+        Assert.Equal(10, sketch.Count);
+        Assert.Equal(0d, sketch.GetQuantile(0.5d));
+    }
+
+    [Fact]
+    public void Add_ShouldTrackCountSumMinAndMaxExactly_NotBucketed()
+    {
+        var sketch = new DDSketch(0.1d);
+        sketch.Add(1.234d);
+        sketch.Add(-7.5d);
+        sketch.Add(0d);
+        sketch.Add(1000.125d);
+
+        Assert.Equal(4, sketch.Count);
+        Assert.Equal(1.234d - 7.5d + 1000.125d, sketch.Sum, 1e-9);
+        Assert.Equal((1.234d - 7.5d + 1000.125d) / 4d, sketch.Average, 1e-9);
+        Assert.Equal(-7.5d, sketch.Min);
+        Assert.Equal(1000.125d, sketch.Max);
+    }
+
+    [Fact]
+    public void Add_ShouldCountAMultiplicityAsThatManyValues()
+    {
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(3d, 1_000L);
+        sketch.Add(9d, 1L);
+
+        Assert.Equal(1_001, sketch.Count);
+        Assert.Equal(3d * 1_000d + 9d, sketch.Sum, 1e-9);
+        Assert.Equal(3d, sketch.GetQuantile(0.5d), 0.03d);
+        Assert.Equal(9d, sketch.GetQuantile(1d), 0.09d);
+    }
+
+    [Fact]
+    public void GetQuantiles_ShouldMatchTheSingleQuantileQueries()
+    {
+        var sketch = new DDSketch(0.01d);
+        for (int i = 1; i <= 1_000; i++)
+        {
+            sketch.Add(i);
+        }
+
+        double[] quantiles = [0.5d, 0.9d, 0.99d];
+        Span<double> results = stackalloc double[3];
+        sketch.GetQuantiles(quantiles, results);
+
+        for (int i = 0; i < quantiles.Length; i++)
+        {
+            Assert.Equal(sketch.GetQuantile(quantiles[i]), results[i]);
+        }
+    }
+
+    [Fact]
+    public void Merge_ShouldEqualASketchFedTheWholeStream()
+    {
+        double[] left = new double[500];
+        double[] right = new double[700];
+        for (int i = 0; i < left.Length; i++)
+        {
+            left[i] = 1d + i;
+        }
+
+        for (int i = 0; i < right.Length; i++)
+        {
+            right[i] = -(1d + i);
+        }
+
+        var whole = new DDSketch(0.01d);
+        whole.Add(left);
+        whole.Add(right);
+        whole.Add(0d, 3L);
+
+        var merged = new DDSketch(0.01d);
+        merged.Add(left);
+        var other = new DDSketch(0.01d);
+        other.Add(right);
+        other.Add(0d, 3L);
+        merged.Merge(other);
+
+        Assert.Equal(whole.Count, merged.Count);
+        Assert.Equal(whole.Sum, merged.Sum, 1e-9);
+        Assert.Equal(whole.Min, merged.Min);
+        Assert.Equal(whole.Max, merged.Max);
+
+        foreach (double quantile in new[] { 0d, 0.1d, 0.5d, 0.9d, 1d })
+        {
+            Assert.Equal(whole.GetQuantile(quantile), merged.GetQuantile(quantile), 1e-9);
+        }
+
+        // The operand is left untouched.
+        Assert.Equal(703, other.Count);
+    }
+
+    [Fact]
+    public void Merge_ShouldBeANoOp_WhenTheOtherSketchIsEmpty()
+    {
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(42d);
+
+        sketch.Merge(new DDSketch(0.01d));
+
+        Assert.Equal(1, sketch.Count);
+        Assert.Equal(42d, sketch.Max);
+    }
+
+    [Fact]
+    public void Merge_ShouldAcceptADifferentBinBudget_WhenTheAccuracyMatches()
+    {
+        var wide = new DDSketch(0.01d, 4_096);
+        var narrow = new DDSketch(0.01d, 16);
+        narrow.Add(5d);
+        narrow.Add(500d);
+
+        wide.Merge(narrow);
+
+        Assert.Equal(2, wide.Count);
+        Assert.Equal(4_096, wide.MaxBins);
+    }
+
+    [Fact]
+    public void Clear_ShouldEmptyTheSketchButKeepItsConfiguration()
+    {
+        var sketch = new DDSketch(0.02d, 64);
+        sketch.Add(-1d);
+        sketch.Add(0d);
+        sketch.Add(1d);
+
+        sketch.Clear();
+
+        Assert.Equal(0, sketch.Count);
+        Assert.Equal(0, sketch.BinCount);
+        Assert.False(sketch.HasCollapsed);
+        Assert.True(double.IsNaN(sketch.GetQuantile(0.5d)));
+        Assert.Equal(0.02d, sketch.RelativeAccuracy);
+        Assert.Equal(64, sketch.MaxBins);
+
+        sketch.Add(10d);
+        Assert.Equal(1, sketch.Count);
+        Assert.Equal(10d, sketch.GetQuantile(0.5d), 0.2d);
+    }
+
+    [Fact]
+    public void BinCount_ShouldGrowWithTheValueRangeRatherThanTheSampleCount()
+    {
+        var few = new DDSketch(0.01d);
+        var many = new DDSketch(0.01d);
+
+        for (int i = 0; i < 100; i++)
+        {
+            few.Add(1d + (i * 0.01d));
+        }
+
+        for (int i = 0; i < 100_000; i++)
+        {
+            many.Add(1d + ((i % 100) * 0.01d));
+        }
+
+        Assert.Equal(100_000, many.Count);
+        Assert.Equal(few.BinCount, many.BinCount);
+        Assert.True(many.BinCount < 100, $"Expected a handful of buckets, got {many.BinCount}.");
+    }
+
+    /// <summary>
+    /// A positive value that lands in bucket <paramref name="index"/> when the sketch's
+    /// relative accuracy is 0.5 (so <c>γ = 3</c>). Chosen away from a bucket boundary so no
+    /// rounding of <c>log₃</c> can move it.
+    /// </summary>
+    internal static double AtBucket(int index) => 2d * Math.Pow(3d, index - 1);
+}

@@ -12,6 +12,7 @@ using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
 using Celerity.Sorting;
+using Celerity.Statistics;
 
 int failures = 0;
 
@@ -2124,6 +2125,55 @@ void Check(bool condition, string message)
 
     int[] top = new int[3];
     Check(PartialSort.TopK<int>(selection, top.AsSpan()) == 3 && top[0] == 9 && top[^1] == 7, "PartialSort.TopK");
+}
+
+// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377).
+//
+// The shapes that force distinct native instantiations: the sketch's two ladders and its zero
+// counter, the sampler over both a value-typed and a reference-typed element (and over a second
+// generator, so the struct-PRNG generic is closed twice), and the moment accumulator, which is a
+// mutable struct whose ref-accumulation path is the one a caller is meant to use.
+{
+    var sketch = new DDSketch(0.01d, 1024);
+    for (int i = 1; i <= 1_000; i++)
+    {
+        sketch.Add(i);
+        sketch.Add(-i);
+    }
+
+    sketch.Add(0d, 5L);
+    Check(sketch.Count == 2_005 && sketch.Min == -1_000d && sketch.Max == 1_000d, "DDSketch exact tiers");
+    Check(Math.Abs(sketch.GetQuantile(0.5d)) <= 1d, "DDSketch median of a symmetric stream");
+    Check(sketch.GetQuantile(0.99d) > 900d, "DDSketch upper quantile");
+
+    Span<double> quantiles = stackalloc double[2];
+    sketch.GetQuantiles([0.9d, 0.99d], quantiles);
+    Check(quantiles[1] >= quantiles[0], "DDSketch batched quantiles");
+
+    var shard = new DDSketch(0.01d, 1024);
+    shard.Add(5_000d);
+    sketch.Merge(shard);
+    Check(sketch.Max == 5_000d && !sketch.HasCollapsed, "DDSketch merge");
+
+    var numbers = new ReservoirSampler<int>(capacity: 8, seed: 42UL);
+    for (int i = 0; i < 5_000; i++)
+    {
+        numbers.Add(i);
+    }
+
+    Check(numbers.Count == 8 && numbers.TotalSeen == 5_000 && numbers.IsFull, "ReservoirSampler over a value type");
+
+    var words = new ReservoirSampler<string, Xoshiro256StarStar>(3, new Xoshiro256StarStar(7UL));
+    words.Add(["alpha", "beta", "gamma", "delta"]);
+    Check(words.Count == 3 && words[0] is not null, "ReservoirSampler over a reference type and a second generator");
+
+    RunningStatistics[] perBucket = new RunningStatistics[2];
+    perBucket[1].Add([2d, 4d, 4d, 4d, 5d, 5d, 7d, 9d]);
+    Check(perBucket[1].Count == 8 && Math.Abs(perBucket[1].Mean - 5d) < 1e-9, "RunningStatistics accumulated through a ref");
+    Check(Math.Abs(perBucket[1].PopulationStandardDeviation - 2d) < 1e-9, "RunningStatistics population deviation");
+
+    RunningStatistics combined = RunningStatistics.Combine(perBucket[1], new RunningStatistics([1d, 9d]));
+    Check(combined.Count == 10 && combined.Min == 1d && combined.Max == 9d, "RunningStatistics merge");
 }
 
 if (failures == 0)

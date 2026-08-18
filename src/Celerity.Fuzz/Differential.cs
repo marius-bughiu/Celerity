@@ -3,6 +3,7 @@ using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
 using Celerity.Sorting;
+using Celerity.Statistics;
 
 namespace Celerity.Fuzz;
 
@@ -75,6 +76,9 @@ internal static class Differential
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
         ("SpaceFillingCurve", SpaceFillingCurveCase),
+        ("DDSketch", DDSketchCase),
+        ("RunningStatistics", RunningStatisticsCase),
+        ("ReservoirSampler", ReservoirSamplerCase),
     ];
 
     private const int MinKey = -8;
@@ -2475,4 +2479,194 @@ internal static class Differential
 
         return code;
     }
+
+    // ---- Celerity.Statistics ------------------------------------------------------------------
+
+    /// <summary>
+    /// Reconciles <see cref="DDSketch"/> against the exact answer: every value it consumed, sorted.
+    /// The bin budget is far wider than the value range the case generates, so nothing collapses and
+    /// the relative-accuracy guarantee is claimed everywhere it is checked.
+    /// </summary>
+    private static void DDSketchCase(Random rng)
+    {
+        double accuracy = rng.Next(3) switch
+        {
+            0 => 0.01,
+            1 => 0.05,
+            _ => 0.2,
+        };
+
+        int length = rng.Next(1, 400);
+        double[] values = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            // Magnitudes inside [1e-3, 1e3], with a share of negatives and of exact zeros, so both
+            // ladders and the zero counter are exercised.
+            double magnitude = Math.Pow(10, (rng.NextDouble() * 6) - 3);
+            values[i] = rng.Next(8) switch
+            {
+                0 => 0d,
+                1 or 2 => -magnitude,
+                _ => magnitude,
+            };
+        }
+
+        var sketch = new DDSketch(accuracy, 16384);
+        foreach (double value in values)
+            sketch.Add(value);
+
+        Check(!sketch.HasCollapsed, "DDSketch collapsed on a range its budget was sized for");
+        Check(sketch.Count == length, "DDSketch lost values");
+        Check(sketch.Min == values.Min(), "DDSketch reported the wrong minimum");
+        Check(sketch.Max == values.Max(), "DDSketch reported the wrong maximum");
+
+        double[] sorted = (double[])values.Clone();
+        Array.Sort(sorted);
+
+        foreach (double quantile in new[] { 0d, 0.1, 0.25, 0.5, 0.75, 0.9, 1d })
+        {
+            double expected = sorted[(int)(quantile * (sorted.Length - 1))];
+            double actual = sketch.GetQuantile(quantile);
+            double magnitude = Math.Abs(expected);
+
+            // The bound is attained with equality for a value sitting on a bucket boundary, so the
+            // comparison carries a few ulps of slack.
+            Check(
+                Math.Abs(actual - expected) <= (accuracy * magnitude) + (magnitude * 1e-12),
+                FormattableString.Invariant($"DDSketch q={quantile} reported {actual}, outside {accuracy} of {expected}"));
+        }
+
+        // Sharding the same stream must produce bucket-identical state, so every quantile matches
+        // exactly rather than approximately.
+        var merged = new DDSketch(accuracy, 16384);
+        var shardA = new DDSketch(accuracy, 16384);
+        var shardB = new DDSketch(accuracy, 16384);
+        for (int i = 0; i < length; i++)
+            ((i % 2 == 0) ? shardA : shardB).Add(values[i]);
+
+        merged.Merge(shardA);
+        merged.Merge(shardB);
+
+        Check(merged.Count == sketch.Count, "DDSketch merge lost values");
+        foreach (double quantile in new[] { 0d, 0.5, 1d })
+        {
+            Check(
+                merged.GetQuantile(quantile) == sketch.GetQuantile(quantile),
+                FormattableString.Invariant($"DDSketch merge diverged from a whole-stream sketch at q={quantile}"));
+        }
+    }
+
+    /// <summary>
+    /// Reconciles <see cref="RunningStatistics"/> against a two-pass computation of the same
+    /// moments, and its merge against a single pass over the whole stream.
+    /// </summary>
+    private static void RunningStatisticsCase(Random rng)
+    {
+        int length = rng.Next(4, 400);
+        double offset = rng.Next(4) switch
+        {
+            0 => 0d,
+            1 => 1e6,
+            2 => -1e5,
+            _ => 1e9,
+        };
+
+        double[] values = new double[length];
+        for (int i = 0; i < length; i++)
+            values[i] = offset + ((rng.NextDouble() * 200) - 100);
+
+        var stats = new RunningStatistics(values);
+
+        // The reference mean is summed in a shifted frame with Kahan compensation. A plain sum of
+        // 1e9-scale values loses enough of the mean for the reference m3 to be wrong by more than
+        // the accumulator being checked — which is the whole reason this type exists.
+        double shift = values[0];
+        double sum = 0;
+        double compensation = 0;
+        foreach (double value in values)
+        {
+            double y = (value - shift) - compensation;
+            double t = sum + y;
+            compensation = (t - sum) - y;
+            sum = t;
+        }
+
+        double mean = shift + (sum / length);
+
+        double m2 = 0;
+        double m3 = 0;
+        foreach (double value in values)
+        {
+            double d = value - mean;
+            m2 += d * d;
+            m3 += d * d * d;
+        }
+
+        m2 /= length;
+        m3 /= length;
+
+        Check(stats.Count == length, "RunningStatistics lost values");
+        Check(Close(stats.Mean, mean, 1e-9), "RunningStatistics diverged on the mean");
+        Check(Close(stats.PopulationVariance, m2, 1e-7), "RunningStatistics diverged on the variance");
+        Check(stats.Min == values.Min(), "RunningStatistics reported the wrong minimum");
+        Check(stats.Max == values.Max(), "RunningStatistics reported the wrong maximum");
+
+        if (m2 > 0)
+        {
+            // Skewness is a ratio whose numerator is an almost total cancellation, so both sides
+            // of this comparison carry real absolute error even though neither is wrong. The
+            // floor is set for a dimensionless quantity: a mis-derived recurrence is off by
+            // order one, not by a nanosecond of rounding.
+            double skewness = m3 / Math.Pow(m2, 1.5);
+            Check(
+                Math.Abs(stats.Skewness - skewness) <= 1e-6 + (Math.Abs(skewness) * 1e-5),
+                "RunningStatistics diverged on the skewness");
+        }
+
+        // An uneven split, because Chan's formulas weight each side by its own count.
+        int cut = rng.Next(1, length);
+        var merged = new RunningStatistics(values.AsSpan(0, cut));
+        merged.Merge(new RunningStatistics(values.AsSpan(cut)));
+
+        Check(merged.Count == length, "RunningStatistics merge lost values");
+        Check(Close(merged.Mean, stats.Mean, 1e-9), "RunningStatistics merge diverged on the mean");
+        Check(Close(merged.PopulationVariance, stats.PopulationVariance, 1e-7),
+            "RunningStatistics merge diverged on the variance");
+    }
+
+    /// <summary>
+    /// Checks the invariants a uniform sampler must hold whatever its draws are: it retains exactly
+    /// <c>min(seen, capacity)</c> items, every retained item came from the stream and appears once,
+    /// and a stream no longer than the reservoir is retained whole and in order.
+    /// </summary>
+    private static void ReservoirSamplerCase(Random rng)
+    {
+        int capacity = rng.Next(1, 40);
+        int length = rng.Next(0, 500);
+
+        var sampler = new ReservoirSampler<int>(capacity, (ulong)rng.NextInt64());
+        for (int i = 0; i < length; i++)
+            sampler.Add(i);
+
+        Check(sampler.TotalSeen == length, "ReservoirSampler miscounted the stream");
+        Check(sampler.Count == Math.Min(length, capacity), "ReservoirSampler retained the wrong number of items");
+        Check(sampler.IsFull == (length >= capacity), "ReservoirSampler misreported fullness");
+
+        var retained = new HashSet<int>();
+        foreach (int item in sampler.Sample.ToArray())
+        {
+            Check(item >= 0 && item < length, "ReservoirSampler retained an item that was never added");
+            Check(retained.Add(item), "ReservoirSampler retained the same item twice");
+        }
+
+        if (length <= capacity)
+        {
+            for (int i = 0; i < length; i++)
+                Check(sampler[i] == i, "ReservoirSampler reordered an unfilled reservoir");
+        }
+    }
+
+    private static bool Close(double actual, double expected, double relative)
+        => Math.Abs(actual - expected) <= (Math.Abs(expected) * relative) + 1e-9;
+
 }

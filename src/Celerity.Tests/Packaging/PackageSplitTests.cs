@@ -4,6 +4,7 @@ using System.Reflection;
 using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
+using Celerity.Statistics;
 using Xunit;
 
 namespace Celerity.Tests.Packaging;
@@ -22,6 +23,7 @@ public class PackageSplitTests
     private const string CollectionsAssembly = "Celerity";
     private const string HashingAssembly = "Celerity.Hashing";
     private const string PrimitivesAssembly = "Celerity.Primitives";
+    private const string StatisticsAssembly = "Celerity.Statistics";
 
     private static string AssemblyOf(Type t) => t.Assembly.GetName().Name!;
 
@@ -80,6 +82,22 @@ public class PackageSplitTests
             .GetReferencedAssemblies().Select(a => a.Name!).ToArray();
 
         Assert.Contains(PrimitivesAssembly, referenced);
+        Assert.DoesNotContain(CollectionsAssembly, referenced);
+    }
+
+    [Fact]
+    public void Statistics_references_primitives_but_neither_hashing_nor_collections()
+    {
+        // Celerity.Statistics is the second sibling consumer of Celerity.Primitives, alongside
+        // Celerity.Sorting: it takes the seedable struct PRNGs and nothing above them.
+        string[] referenced = typeof(DDSketch).Assembly
+            .GetReferencedAssemblies().Select(a => a.Name!).ToArray();
+
+        Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(DDSketch)));
+        Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(RunningStatistics)));
+        Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(ReservoirSampler<int>)));
+        Assert.Contains(PrimitivesAssembly, referenced);
+        Assert.DoesNotContain(HashingAssembly, referenced);
         Assert.DoesNotContain(CollectionsAssembly, referenced);
     }
 

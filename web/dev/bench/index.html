@@ -533,7 +533,22 @@ function escapeHtml(s) {
     // baseline is what intersecting two sorted arrays costs with HashSet<int>, table build included.
     // IntersectAsymmetric is the galloping shape (a short side against one 100x longer); the LINQ arms
     // carry their own op names so they do not displace the HashSet series on the charted ops.
-    { key: 'SortedSpan',          title: 'SortedSpan (sorted-span set algebra)',     vs: 'HashSet<int> set algebra', ops: ['Intersect', 'Union', 'Except', 'IntersectCount', 'Overlaps', 'IntersectAsymmetric'] }
+    { key: 'SortedSpan',          title: 'SortedSpan (sorted-span set algebra)',     vs: 'HashSet<int> set algebra', ops: ['Intersect', 'Union', 'Except', 'IntersectCount', 'Overlaps', 'IntersectAsymmetric'] },
+    // The three Celerity.Statistics cards summarize a stream in bounded memory, and none of them has a
+    // BCL counterpart — the baselines are the idioms that fill the gap, so the reference series are
+    // List / Array / Linq rather than a type name.
+    //
+    // DDSketch charts four ops on purpose, two of which it loses. Add is a log() against a List append,
+    // and QueryPresorted is a bucket walk against an array index on data that has not changed since the
+    // last query. Query (the stream moved, so the list has to be re-sorted) and Mixed (ingest then read
+    // p50/p90/p99) are the shapes the type is for. The memory column carries the rest of the argument.
+    { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',      vs: 'List<double> sort + index', ops: ['Add', 'Query', 'QueryPresorted', 'Mixed'] },
+    // The sampler's baseline is the good hand-roll — materialize the stream, partial Fisher-Yates — not
+    // the OrderBy(random).Take(k) that would flatter it. The win is the footprint, not the asymptotics.
+    { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',        vs: 'List<T> + partial Fisher-Yates', ops: ['Sample', 'Accumulate'] },
+    // Welford against the LINQ two-pass. Expect a factor near one on Moments: the reason to prefer this
+    // type is that the faster one-pass shortcut is numerically wrong, which a chart cannot show.
+    { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',      vs: 'LINQ two-pass mean / variance', ops: ['Moments', 'Accumulate'] }
   ];
 
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.

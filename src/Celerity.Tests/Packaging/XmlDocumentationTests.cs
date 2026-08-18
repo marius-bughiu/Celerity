@@ -8,6 +8,7 @@ using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
 using Celerity.Sorting;
+using Celerity.Statistics;
 using Xunit;
 
 namespace Celerity.Tests.Packaging;
@@ -38,6 +39,7 @@ public class XmlDocumentationTests
         typeof(IHashProvider<int>), // Celerity.Hashing
         typeof(FastUtils),          // Celerity.Primitives
         typeof(RadixSort),          // Celerity.Sorting
+        typeof(DDSketch),           // Celerity.Statistics
     ];
 
     public static TheoryData<string> ShippingAssemblies
