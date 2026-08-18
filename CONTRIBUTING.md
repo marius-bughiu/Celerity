@@ -159,7 +159,7 @@ Every `const` in the shipping packages is `PascalCase`, whatever its accessibili
 
 Two allowances exist, both for constants transcribed from a published algorithm, so the code can be read against its reference:
 
-- a name of at most two characters may be all upper-case — `C1`, `K0`, `M`, `R`;
+- an acronym of at most two letters stays upper-case — `C1`, `K0`, `M`, `R`, and `IOStream` in the general case. Three or more are PascalCased the way the framework guidelines ask: `XmlParser`, not `XMLParser`;
 - a trailing `_<digits>` index is kept — `Prime64_1`, `Prime32_3`.
 
 [`scripts/check_constant_naming.js`](scripts/check_constant_naming.js) enforces this in the `constant-naming` CI job, over the eight shipping packages only. Test, benchmark, fuzz and AOT-smoke code is exempt: a throwaway `const int n = 5;` in a test tells a consumer nothing, and renaming a few hundred of them would bury the rule it was meant to serve.

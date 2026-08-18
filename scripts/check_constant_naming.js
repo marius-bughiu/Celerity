@@ -16,9 +16,12 @@
 //
 // What counts as PascalCase here:
 //   - starts with an upper-case letter;
-//   - contains a lower-case letter, so SCREAMING names such as `NIL` are rejected —
-//     unless the whole name is at most two characters, which lets the transcribed
-//     algorithm constants `C1`, `K0`, `M`, `R` keep the names their specifications use;
+//   - no upper-case run longer than a two-letter acronym, which is the .NET rule and the
+//     one that rejects `NIL`, `EMPTY` and `DefaultCAPACITY` while keeping the transcribed
+//     algorithm constants `C1`, `K0`, `M`, `R`. A run is measured as the acronym it
+//     contains: in `IOStream` the run `IOS` ends a letter early, because that `S` opens
+//     the next word, so the acronym is `IO` and it passes — where `XMLParser` and
+//     `ParseXML` do not, and are spelled `XmlParser` / `ParseXml`;
 //   - carries no underscore, except a trailing `_<digits>` index, which keeps
 //     xxHash's `Prime64_1` family recognisable against the reference implementation.
 //
@@ -62,92 +65,149 @@ const SKIP_DIRS = new Set(['bin', 'obj', 'artifacts', 'TestResults']);
 // ---- The name rule ------------------------------------------------------------------
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9]*(_[0-9]+)?$/;
+const UPPER_RUN = /[A-Z]+/g;
+const MAX_ACRONYM = 2;
 
 function isCompliant(name) {
-  if (!PASCAL_CASE.test(name)) return false;
-  if (name.length <= 2) return true;
-  return /[a-z]/.test(name);
+  // `@` only escapes an identifier from the keyword list; the name is what follows it.
+  const bare = name.startsWith('@') ? name.slice(1) : name;
+  if (!PASCAL_CASE.test(bare)) return false;
+
+  UPPER_RUN.lastIndex = 0;
+  let run;
+  while ((run = UPPER_RUN.exec(bare)) !== null) {
+    // A run followed by a lower-case letter spends its last character on the next word,
+    // so `IOStream` holds a two-letter acronym and `XMLParser` a three-letter one.
+    const opensNextWord = /[a-z]/.test(bare[run.index + run[0].length] || '');
+    if (run[0].length - (opensNextWord ? 1 : 0) > MAX_ACRONYM) return false;
+  }
+  return true;
 }
 
 // ---- C# comment and literal stripping -----------------------------------------------
 // `const` occurs inside comments and strings often enough that a raw regex over the file
-// reports constants that do not exist. This blanks comments and literal bodies while
+// reports constants that do not exist. This blanks comments and literal *bodies* while
 // preserving every newline, so reported line numbers stay exact.
+//
+// It is a mode stack rather than a scan for the next quote, because an interpolation hole
+// is code that may hold further literals: in `$"{Format("const int Ghost = 1;")}"` the
+// inner literal closes the outer one if you only count quotes, and the text between them
+// resurfaces as a declaration nobody wrote.
 
 function strip(source) {
   const out = [];
   const n = source.length;
+  const stack = [{ kind: 'code', braces: 0, hole: false }];
   let i = 0;
 
-  const keepLines = (text) => text.replace(/[^\n]/g, ' ');
+  const blank = (text) => text.replace(/[^\n]/g, ' ');
+  const emit = (count) => { out.push(blank(source.slice(i, i + count))); i += count; };
 
   while (i < n) {
+    const frame = stack[stack.length - 1];
     const c = source[i];
-    const next = source[i + 1];
 
-    if (c === '/' && next === '/') {
-      const end = source.indexOf('\n', i);
-      const stop = end === -1 ? n : end;
-      out.push(keepLines(source.slice(i, stop)));
-      i = stop;
-      continue;
-    }
-
-    if (c === '/' && next === '*') {
-      const end = source.indexOf('*/', i + 2);
-      const stop = end === -1 ? n : end + 2;
-      out.push(keepLines(source.slice(i, stop)));
-      i = stop;
-      continue;
-    }
-
-    // Raw string literal: closes on at least as many quotes as opened it. Interpolation
-    // holes inside one are blanked along with the rest; a `const` declaration cannot
-    // appear in a hole, so nothing is lost by not descending into it.
-    if (c === '"' && next === '"' && source[i + 2] === '"') {
-      let open = 0;
-      while (source[i + open] === '"') open++;
-      let j = i + open;
-      for (; j < n; j++) {
-        if (source[j] !== '"') continue;
-        let close = 0;
-        while (source[j + close] === '"') close++;
-        if (close >= open) { j += close; break; }
-        j += close - 1;
-      }
-      const stop = Math.min(j, n);
-      out.push(keepLines(source.slice(i, stop)));
-      i = stop;
-      continue;
-    }
-
-    if (c === '@' && next === '"') {
-      let j = i + 2;
-      while (j < n) {
-        if (source[j] === '"') {
-          if (source[j + 1] === '"') { j += 2; continue; }
-          j++;
-          break;
+    if (frame.kind === 'string') {
+      if (frame.quotes >= 3) {
+        // A raw literal closes on at least as many quotes as opened it, and needs as many
+        // braces to open a hole as it has dollars.
+        if (c === '"') {
+          let k = 0;
+          while (source[i + k] === '"') k++;
+          emit(k);
+          if (k >= frame.quotes) stack.pop();
+          continue;
         }
-        j++;
+        if (frame.dollars > 0 && c === '{') {
+          let k = 0;
+          while (source[i + k] === '{') k++;
+          if (k >= frame.dollars) {
+            emit(frame.dollars);
+            stack.push({ kind: 'code', braces: 0, hole: true });
+            continue;
+          }
+          emit(k);
+          continue;
+        }
+        emit(1);
+        continue;
       }
-      out.push(keepLines(source.slice(i, j)));
-      i = j;
+
+      if (frame.verbatim) {
+        if (c === '"') {
+          if (source[i + 1] === '"') { emit(2); continue; }   // an escaped quote
+          emit(1);
+          stack.pop();
+          continue;
+        }
+      } else {
+        if (c === '\\') { emit(2); continue; }
+        if (c === frame.quote) { emit(1); stack.pop(); continue; }
+        // A non-verbatim literal cannot span a line; resync rather than run away.
+        if (c === '\n') { out.push('\n'); i++; stack.pop(); continue; }
+      }
+
+      if (frame.dollars > 0) {
+        if (c === '{') {
+          if (source[i + 1] === '{') { emit(2); continue; }
+          emit(1);
+          stack.push({ kind: 'code', braces: 0, hole: true });
+          continue;
+        }
+        if (c === '}' && source[i + 1] === '}') { emit(2); continue; }
+      }
+
+      emit(1);
       continue;
     }
 
-    if (c === '"' || c === '\'') {
-      let j = i + 1;
-      while (j < n) {
-        if (source[j] === '\\') { j += 2; continue; }
-        if (source[j] === c) { j++; break; }
-        // A non-verbatim literal cannot span a line; resync rather than run away.
-        if (source[j] === '\n') break;
-        j++;
-      }
-      out.push(keepLines(source.slice(i, j)));
-      i = j;
+    if (c === '/' && source[i + 1] === '/') {
+      const end = source.indexOf('\n', i);
+      emit((end === -1 ? n : end) - i);
       continue;
+    }
+
+    if (c === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      emit((end === -1 ? n : end + 2) - i);
+      continue;
+    }
+
+    // A literal may carry any mix of `$` and `@` in front of it: `$@"`, `@$"`, `$$"""`.
+    const prefix = /^[$@]*/.exec(source.slice(i, i + 8))[0];
+    if (source[i + prefix.length] === '"') {
+      let k = 0;
+      while (source[i + prefix.length + k] === '"') k++;
+      const dollars = (prefix.match(/\$/g) || []).length;
+      const quotes = k >= 3 ? k : 1;
+      emit(prefix.length + quotes);
+      stack.push({
+        kind: 'string',
+        quote: '"',
+        verbatim: prefix.includes('@'),
+        dollars: k >= 3 ? dollars : Math.min(dollars, 1),
+        quotes,
+      });
+      continue;
+    }
+
+    if (c === "'") {
+      emit(1);
+      stack.push({ kind: 'string', quote: "'", verbatim: false, dollars: 0, quotes: 1 });
+      continue;
+    }
+
+    if (frame.hole) {
+      // The hole ends at the `}` matching the brace that opened it, handing the rest of
+      // the literal back to the string frame underneath.
+      if (c === '{') { frame.braces++; out.push(c); i++; continue; }
+      if (c === '}') {
+        if (frame.braces === 0) { emit(1); stack.pop(); continue; }
+        frame.braces--;
+        out.push(c);
+        i++;
+        continue;
+      }
     }
 
     out.push(c);
@@ -159,10 +219,12 @@ function strip(source) {
 
 // ---- The scan -----------------------------------------------------------------------
 // A declaration is `const <type> <name> = ...`, where the type may be generic, an array,
-// nullable or qualified, and where further `, <name> = ...` declarators may follow on
-// the same statement.
+// nullable or qualified, and where further `, <name> = ...` declarators may follow on the
+// same statement. Either identifier may be `@`-escaped, which is only a way past the
+// keyword list and no part of the name — a `const int @bad_name` the pattern failed to
+// match would walk past this gate untouched.
 
-const CONST_DECL = /\bconst\s+[A-Za-z_][A-Za-z_0-9.<>,\[\]\?\s]*?\s+([A-Za-z_][A-Za-z_0-9]*)\s*=/g;
+const CONST_DECL = /\bconst\s+@?[A-Za-z_][A-Za-z_0-9.<>,\[\]\?\s]*?\s+(@?[A-Za-z_][A-Za-z_0-9]*)\s*=/g;
 
 function findConstants(source) {
   const stripped = strip(source);
@@ -177,7 +239,7 @@ function findConstants(source) {
     // Trailing declarators: `const int A = 1, B = 2;` declares B as well.
     const semicolon = stripped.indexOf(';', match.index);
     const tail = stripped.slice(CONST_DECL.lastIndex, semicolon === -1 ? undefined : semicolon);
-    const extra = /,\s*([A-Za-z_][A-Za-z_0-9]*)\s*=/g;
+    const extra = /,\s*(@?[A-Za-z_][A-Za-z_0-9]*)\s*=/g;
     let more;
     while ((more = extra.exec(tail)) !== null) {
       found.push({ name: more[1], line });
@@ -226,20 +288,26 @@ const NAME_CASES = [
   ['MaxKicks', true],
   ['Ln2Squared', true],
   ['Bits2D', true],
-  ['Prime64_1', true],   // transcribed from the xxHash reference
+  ['Prime64_1', true],    // transcribed from the xxHash reference
   ['Prime32_3', true],
-  ['C1', true],          // two-character algorithm symbols keep their spec names
+  ['C1', true],           // two-character algorithm symbols keep their spec names
   ['K0', true],
   ['M', true],
+  ['IOStream', true],     // a two-letter acronym; the `S` belongs to the next word
+  ['@Ok', true],
   ['DEFAULT_CAPACITY', false],
   ['MAX_GRID', false],
   ['TWO_POW_32', false],
   ['EMPTY', false],
-  ['NIL', false],        // three characters is past the acronym allowance
+  ['NIL', false],         // three characters is past the acronym allowance
   ['fnvPrime', false],
   ['offsetBasis', false],
   ['_seed', false],
-  ['Max_Kicks', false],  // an underscore may only introduce a digit index
+  ['Max_Kicks', false],   // an underscore may only introduce a digit index
+  ['DefaultCAPACITY', false],  // half-converted, and what a looser rule lets through
+  ['XMLParser', false],   // a three-letter acronym is PascalCased: XmlParser
+  ['ParseXML', false],    // still three letters when it ends the name
+  ['@bad_name', false],   // the escape is not part of the name
 ];
 
 const SCAN_CASES = [
@@ -249,12 +317,22 @@ const SCAN_CASES = [
   ['class C { const int A = 1, B = 2; }', ['A', 'B']],
   ['class C { private const Vector128<sbyte> Mask = default; }', ['Mask']],
   ['class C { private const int?  Wide = null; }', ['Wide']],
+  ['class C { const int @bad_name = 1; }', ['@bad_name']],
   // Comments and literals are not declarations, however much they look like one.
   ['class C { /* const int Ghost = 1; */ }', []],
   ['class C { // const int Ghost = 1;\n }', []],
   ['class C { string s = "const int Ghost = 1;"; }', []],
   ['class C { string s = @"const int Ghost = 1;"; }', []],
   ['class C { string s = """const int Ghost = 1;"""; }', []],
+  ['class C { char c = \'"\'; const int Ok = 1; }', ['Ok']],
+  // An interpolation hole is code, so a literal inside one does not close the literal
+  // around it. Count quotes instead of tracking holes and the text between the two inner
+  // quotes reads as a declaration.
+  ['class C { string s = $"{Format("const int Ghost = 1;")}"; }', []],
+  ['class C { string s = $@"{Format("const int Ghost = 1;")}"; }', []],
+  ['class C { string s = $"""{Format("const int Ghost = 1;")}"""; }', []],
+  // The converse: a real declaration inside a hole is still a declaration.
+  ['class C { string s = $"{Run(() => { const int Held = 1; return Held; })}"; }', ['Held']],
   // `const` as part of a longer word is not the keyword.
   ['class C { int nonconstant = 1; }', []],
 ];
@@ -343,7 +421,7 @@ function main() {
 
   if (violations.length > 0) {
     console.error('Constants in the shipping packages are named in PascalCase (CONTRIBUTING.md,');
-    console.error('"Coding conventions"). These are not:\n');
+    console.error('"Constant naming"). These are not:\n');
     for (const v of violations) {
       console.error(`  ${v.file}:${v.line}  ${v.name}`);
     }

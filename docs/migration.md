@@ -278,6 +278,8 @@ int bits = filter.FingerprintBits;
 int bits = XorFilter<int, Int32WangNaiveHasher>.FingerprintBits;
 ```
 
+This one **is** a binary break, unlike the constants above: an assembly compiled against 2.7.0 holds a reference to `get_FingerprintBits`, and calling it against the new `Celerity.dll` throws `MissingMethodException`. Recompiling after changing the call site is required, not optional.
+
 `CuckooFilter.FingerprintBits` is untouched — its width really is chosen per filter, so it stays an instance property.
 
 ## See also
