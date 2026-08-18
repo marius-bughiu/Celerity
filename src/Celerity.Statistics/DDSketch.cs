@@ -54,6 +54,18 @@ namespace Celerity.Statistics;
 /// use <see cref="Min"/> / <see cref="Max"/> when the exact ones are wanted.
 /// </para>
 /// <para>
+/// <strong>The guarantee is bounded by what a <see cref="double"/> can represent.</strong> In
+/// the subnormal range — below about <c>2.2e-308</c> — consecutive representable values are up
+/// to 100% apart, so an <c>α</c> tighter than that spacing cannot be met by <em>any</em>
+/// returned value, this sketch's or another's. In practice that costs nothing, because a
+/// narrow bucket down there holds a single representable value and the sketch returns it
+/// exactly: at the default 1% accuracy the bound holds all the way to
+/// <see cref="double.Epsilon"/>, which is asserted by a test. It is reachable only with an
+/// <c>α</c> close to 1, where one bucket spans several subnormals and the representative can
+/// round to a neighbour of the true value. The top of the range has the mirror-image caveat,
+/// noted on <see cref="MaxBinBudget"/>'s neighbour <see cref="ValueOf"/>.
+/// </para>
+/// <para>
 /// Adding a value is a <c>log</c>, a <c>ceil</c> and an array increment; it allocates only
 /// when a ladder has to grow. Not thread-safe.
 /// </para>

@@ -187,8 +187,12 @@ fed one item at a time and the caller does not have to be able to seek forward i
 The retained items are in arbitrary order, not stream order. The `Sample` span is invalidated by any
 subsequent `Add` or `Clear`.
 
-Sampling is reproducible: the same seed and the same stream produce the same sample on every OS,
-architecture and runtime.
+Sampling is seeded: the same seed and the same stream produce the same sample on the same runtime
+and platform. It is deliberately **not** promised byte-identical *across* platforms the way
+`Celerity.Ring` is — the skip arithmetic goes through `Math.Log` and `Math.Exp`, whose last bit .NET
+does not contractually fix across runtime versions or architectures, and one ulp either side of a
+`Math.Floor` boundary changes the next replacement index and every draw after it. The PRNG is
+exactly portable; the transcendentals on top of it are not.
 
 There is no `IEnumerable<T>` overload of `Add`, because an overload set holding both a span and a
 sequence makes an array argument ambiguous under C# 12. A sequence is a one-line `foreach`.

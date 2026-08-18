@@ -319,6 +319,40 @@ public class DDSketchTests
     }
 
     [Fact]
+    public void GetQuantile_ShouldHoldTheGuaranteeDownToTheSubnormalFloor_AtTheDefaultAccuracy()
+    {
+        // The lower mirror of the double-range caveat. Below about 2.2e-308 consecutive
+        // representable values are up to 100% apart, so a tight relative bound cannot be met by
+        // *any* returned value — but a bucket that narrow holds a single representable value,
+        // so the sketch returns it exactly and the bound holds all the way down. The error is
+        // computed as a ratio rather than against `accuracy * expected`, because that product
+        // underflows in this range and would compare against zero.
+        double[] values =
+        [
+            double.Epsilon,
+            3d * double.Epsilon,
+            7d * double.Epsilon,
+            1e-320,
+            1e-315,
+        ];
+
+        var sketch = new DDSketch(0.01d, 1 << 20);
+        sketch.Add(values);
+        Assert.False(sketch.HasCollapsed);
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            double quantile = (double)i / (values.Length - 1);
+            double actual = sketch.GetQuantile(quantile);
+            double relativeError = Math.Abs(actual - values[i]) / values[i];
+
+            Assert.True(
+                relativeError <= 0.01d,
+                $"q={quantile}: expected {values[i]:E3}, got {actual:E3} (relative {relativeError:G4}).");
+        }
+    }
+
+    [Fact]
     public void GetQuantile_ShouldStayInsideTheObservedRange()
     {
         // A bucket representative can sit outside the values that landed in it; the true

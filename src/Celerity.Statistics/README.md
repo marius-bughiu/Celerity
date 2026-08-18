@@ -20,8 +20,10 @@ means keeping the stream, which is the one thing a stream will not let you do.
   stopped holding for the low tail.
 - **`ReservoirSampler<T>`** — a fixed-size uniform sample of a stream of unknown
   length, via Li's **Algorithm L**: `O(k)` memory and `O(k · log(n / k))` random
-  draws over the whole stream, not one per item. Seedable, so the sample is
-  reproducible across OS, architecture and runtime.
+  draws over the whole stream, not one per item. Seeded, so the sample is
+  reproducible on a given runtime and platform — but not promised byte-identical
+  across them, because the skip arithmetic runs through `Math.Log` / `Math.Exp`,
+  whose last bit .NET does not fix across runtimes.
 - **`RunningStatistics`** — count, mean, variance, standard deviation, skewness,
   kurtosis, min and max in a **single pass**, using Welford's recurrence
   extended to the fourth moment. A mutable struct, so `default` is a valid empty

@@ -29,10 +29,20 @@ namespace Celerity.Statistics;
 /// a time and a caller does not have to be able to skip forward in its source.
 /// </para>
 /// <para>
-/// Sampling is reproducible: the sampler owns a seedable struct PRNG from
-/// <c>Celerity.Primitives</c>, so the same seed and the same stream produce the same sample
-/// on every OS, architecture and runtime. <see cref="ReservoirSampler{T}"/> is the
+/// Sampling is <strong>seeded</strong>: the sampler owns a seedable struct PRNG from
+/// <c>Celerity.Primitives</c>, so the same seed and the same stream produce the same sample on
+/// the same runtime and platform — reproducible runs, reproducible tests, a reproducible
+/// investigation of a sample somebody kept. <see cref="ReservoirSampler{T}"/> is the
 /// convenience form that fixes the generator to <see cref="Pcg32"/>.
+/// </para>
+/// <para>
+/// It is deliberately <em>not</em> promised to be byte-identical <em>across</em> platforms, the
+/// way <c>Celerity.Ring</c> is. The skip arithmetic runs through <c>Math.Log</c> and
+/// <c>Math.Exp</c>, whose last bit .NET does not contractually fix across runtime
+/// versions or architectures, and a single ulp either side of a <c>Math.Floor</c>
+/// boundary changes the next replacement index and every draw after it. The PRNG itself is
+/// exactly portable; the transcendentals on top of it are not, so the guarantee stops where
+/// they start.
 /// </para>
 /// <para>
 /// There is deliberately <strong>no <c>Merge</c></strong>. Combining two reservoirs into one
@@ -289,7 +299,9 @@ public sealed class ReservoirSampler<T> : ReservoirSampler<T, Pcg32>
 {
     /// <summary>
     /// Initializes a sampler retaining up to <paramref name="capacity"/> items, seeded from
-    /// the specified seed so the sample is reproducible.
+    /// the specified seed so the sample is reproducible on a given runtime and platform. See
+    /// <see cref="ReservoirSampler{T, TRng}"/> for why that stops short of a cross-platform
+    /// guarantee.
     /// </summary>
     /// <param name="capacity">The maximum number of items to retain. Must be positive.</param>
     /// <param name="seed">The seed for the underlying <see cref="Pcg32"/> generator.</param>
