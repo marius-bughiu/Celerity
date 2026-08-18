@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-18
+
 ### Added
 
 - **`Celerity.Statistics`** — a new package for the stream summaries `System.Linq` stops short of: `DDSketch` (quantiles within a **relative** `α` at every quantile, in memory that tracks the log of the value range rather than the sample count, mergeable across shards), `ReservoirSampler<T>` (a fixed-size uniform sample of a stream of unknown length, seeded and reproducible on a given runtime) and `RunningStatistics` (mean through kurtosis in one pass, where the `sum` / `sumOfSquares` shortcut returns a negative variance). The BCL has no quantile type, no sampler and no higher moment at all. `DDSketch` and `RunningStatistics` both merge across shards; `ReservoirSampler` does not, and `HasCollapsed` reports when a sketch's bin budget has voided its guarantee. The arms where the sketch loses to a sorted `List<double>` are on the dashboard alongside the ones where it wins. Closes [#377](https://github.com/marius-bughiu/Celerity/issues/377).
@@ -637,7 +639,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.7.0
 [2.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.6.0
 [2.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.5.0
 [2.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.4.0
