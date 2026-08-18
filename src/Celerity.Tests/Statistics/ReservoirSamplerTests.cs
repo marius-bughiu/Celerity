@@ -318,19 +318,31 @@ public class ReservoirSamplerTests
     public void NextUnitInterval_ShouldNeverProduceZeroOrOne_ForTheExtremeDraws()
     {
         // Both logarithms in the skip arithmetic are undefined at zero, and a weight of exactly
-        // one divides by log(0). The draw is the 53-bit grid offset by half a step precisely so
-        // neither endpoint is reachable; these are the two draws that would hit them.
-        foreach (ulong bits in new[] { 0UL, ulong.MaxValue })
+        // one divides by log(0). The draw is a half-offset grid precisely so neither endpoint is
+        // reachable, and the weight is carried as its logarithm so no draw has to be clamped
+        // back off them either.
+        //
+        // The capacities matter: the top-end draws that a directly-held weight would have
+        // rounded to 1 span a range proportional to the capacity, so 64 is where that collapse
+        // was widest and 1 is where the skip arithmetic is most extreme.
+        foreach (int capacity in new[] { 1, 4, 64 })
         {
-            var sampler = new ReservoirSampler<int, ScriptedRandom>(4, new ScriptedRandom([bits]));
-
-            for (int i = 0; i < 1_000; i++)
+            foreach (ulong bits in new[] { 0UL, ulong.MaxValue })
             {
-                sampler.Add(i);
-            }
+                var sampler = new ReservoirSampler<int, ScriptedRandom>(
+                    capacity,
+                    new ScriptedRandom([bits]));
 
-            Assert.Equal(4, sampler.Count);
-            Assert.All(sampler.Sample.ToArray(), item => Assert.InRange(item, 0, 999));
+                for (int i = 0; i < 1_000; i++)
+                {
+                    sampler.Add(i);
+                }
+
+                Assert.Equal(capacity, sampler.Count);
+                Assert.Equal(1_000, sampler.TotalSeen);
+                Assert.All(sampler.Sample.ToArray(), item => Assert.InRange(item, 0, 999));
+                Assert.Equal(capacity, sampler.Sample.ToArray().Distinct().Count());
+            }
         }
     }
 

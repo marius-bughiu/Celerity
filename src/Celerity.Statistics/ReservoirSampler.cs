@@ -83,24 +83,23 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// </remarks>
     private const long ClosedIndex = long.MaxValue;
 
-    /// <summary>
-    /// The largest value the acceptance weight may take: <c>1 − 2^-53</c>, the double below 1.
-    /// </summary>
-    /// <remarks>
-    /// A weight of exactly 1 is a state the recurrence cannot leave — <c>log(1 − w)</c> is
-    /// <c>−∞</c> so every skip is zero, and <c>w *= factor</c> with a factor that also rounds
-    /// to 1 never decays — so the sampler would accept every remaining item for the rest of the
-    /// stream. Reaching it takes only a maximal draw: at a capacity of two or more, the
-    /// exponent of <c>log(1 − 2^-53) / k</c> is close enough to zero that <c>Math.Exp</c> rounds
-    /// back up to 1.
-    /// </remarks>
-    private const double MaxAcceptanceWeight = 1d - (1d / (1UL << 53));
-
     private readonly T[] _items;
     private TRng _rng;
     private long _seen;
     private long _nextIndex;
-    private double _w;
+    /// <summary>
+    /// The logarithm of Algorithm L's acceptance weight, rather than the weight itself.
+    /// </summary>
+    /// <remarks>
+    /// Holding the log is what keeps the sampler exactly uniform at both ends. The weight is a
+    /// running product of <c>U^(1/k)</c> factors, and formed directly it rounds to 1 for every
+    /// draw within <c>k · 2^-54</c> of the top — collapsing a range of distinct draws, wider
+    /// the larger the reservoir, onto one acceptance decision — and underflows to 0 at the
+    /// other end. In log space it is a running <em>sum</em> of strictly negative terms: it
+    /// cannot reach either boundary, so no draw has to be clamped and the distribution is left
+    /// alone.
+    /// </remarks>
+    private double _logWeight;
     private int _filled;
 
     /// <summary>
@@ -191,7 +190,7 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
             if (_filled == _items.Length)
             {
                 // The reservoir just filled: start the skip sequence from this point.
-                _w = NextW();
+                _logWeight = NextLogWeight();
                 _nextIndex = NextIndexAfter(_items.Length - 1);
             }
 
@@ -204,7 +203,7 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
         }
 
         _items[_rng.NextInt(_items.Length)] = item;
-        _w *= NextW();
+        _logWeight += NextLogWeight();
         _nextIndex = NextIndexAfter(position);
         return true;
     }
@@ -250,16 +249,15 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
 
     private void ResetSkipState()
     {
-        _w = 1d;
+        _logWeight = 0d;
         _nextIndex = long.MaxValue;
     }
 
     /// <summary>
-    /// Draws the multiplicative factor <c>exp(ln(U) / k)</c> that shrinks the acceptance
-    /// window after each replacement.
+    /// Draws the log of the factor <c>U^(1/k)</c> that shrinks the acceptance window after each
+    /// replacement — <c>ln(U) / k</c>, which needs no exponential and so cannot round to zero.
     /// </summary>
-    private double NextW()
-        => Math.Min(Math.Exp(Math.Log(NextUnitInterval()) / _items.Length), MaxAcceptanceWeight);
+    private double NextLogWeight() => Math.Log(NextUnitInterval()) / _items.Length;
 
     /// <summary>
     /// Draws the stream position of the next replacement: <paramref name="position"/> plus one,
@@ -272,12 +270,13 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// </returns>
     private long NextIndexAfter(long position)
     {
-        // Log1P, not Math.Log(1 - w). Once the weight drops below the spacing of 1 the direct
-        // form collapses to exactly zero, and a sampler that read that as a zero acceptance
-        // probability would stop accepting while the real one is still positive. That is not
-        // unreachable: the probability tracks k / n, so it passes 2^-54 at around k · 2^54
-        // items — a stream length TotalSeen can still count.
-        double denominator = Log1P(-_w);
+        // log(1 - e^L) computed from the log-weight directly, so neither end of the range
+        // has to be approximated by a representable weight. The naive form collapses to zero
+        // once the weight drops below the spacing of 1 — and a sampler reading that as a zero
+        // acceptance probability would stop accepting while the real one is still positive,
+        // which is reachable: the probability tracks k / n, so it passes 2^-54 at around
+        // k · 2^54 items, a stream length TotalSeen can still count.
+        double denominator = LogOneMinusExp(_logWeight);
         double skip = Math.Floor(Math.Log(NextUnitInterval()) / denominator);
 
         // Close the reservoir only when the skip runs past the last addressable position.
@@ -288,6 +287,54 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
         // magnitude, so the quotient outgrows the stream while the weight is still near 1e-35.
         long remaining = ClosedIndex - position - 1;
         return skip >= remaining ? ClosedIndex : position + 1 + (long)skip;
+    }
+
+    /// <summary>
+    /// <c>log(1 − e^x)</c> for a strictly negative <paramref name="x"/>, accurate at both ends
+    /// of its range.
+    /// </summary>
+    /// <remarks>
+    /// Neither single form works throughout. Near zero, <c>e^x</c> is close to 1 and the
+    /// subtraction cancels, so the difference has to come from <c>expm1</c>. Far from zero,
+    /// <c>1 − e^x</c> is close to 1 and it is the logarithm that loses its bits, so it has to
+    /// come from <c>log1p</c>. The split is at <c>e^x = ½</c>, where both are well conditioned.
+    /// </remarks>
+    /// <param name="x">The log of the weight. Strictly negative.</param>
+    /// <returns><c>log(1 − e^x)</c>.</returns>
+    private static double LogOneMinusExp(double x)
+    {
+        const double LogHalf = -0.6931471805599453d;
+
+        if (x > LogHalf)
+        {
+            return Math.Log(-ExpM1(x));
+        }
+
+        return Log1P(-Math.Exp(x));
+    }
+
+    /// <summary>
+    /// <c>e^x − 1</c> for an <paramref name="x"/> in <c>(−0.7, 0]</c>, accurate where the
+    /// subtraction alone would cancel.
+    /// </summary>
+    /// <remarks>
+    /// .NET's <c>double.ExpM1</c> is <c>Math.Exp(x) - 1</c> and gives nothing back here, the
+    /// same way <c>double.LogP1</c> is <c>Math.Log(x + 1)</c>. This is Kahan's form: the ratio
+    /// <c>(u − 1) / log(u)</c> stays well conditioned where <c>u − 1</c> does not, so scaling
+    /// it by the exact <paramref name="x"/> restores the lost bits.
+    /// </remarks>
+    /// <param name="x">The exponent. In <c>(−0.7, 0]</c>, so <c>e^x</c> never approaches 0.</param>
+    /// <returns><c>e^x − 1</c>.</returns>
+    private static double ExpM1(double x)
+    {
+        double u = Math.Exp(x);
+
+        if (u == 1d)
+        {
+            return x;
+        }
+
+        return (u - 1d) * x / Math.Log(u);
     }
 
     /// <summary>
