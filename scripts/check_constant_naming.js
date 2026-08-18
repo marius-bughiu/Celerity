@@ -245,20 +245,28 @@ const CONST_DECL = /\bconst\s+@?[A-Za-z_][A-Za-z_0-9.:<>,\[\]\?\s]*?\s+(@?[A-Za-
 function findConstants(source) {
   const stripped = strip(source);
   const found = [];
+  const lineAt = (index) => stripped.slice(0, index).split('\n').length;
 
   CONST_DECL.lastIndex = 0;
   let match;
   while ((match = CONST_DECL.exec(stripped)) !== null) {
-    const line = stripped.slice(0, match.index).split('\n').length;
-    found.push({ name: match[1], line });
+    // Locate the identifier itself, not the start of the statement: a declaration may
+    // wrap, and the line reported is the line someone will open.
+    found.push({ name: match[1], line: lineAt(match.index + match[0].lastIndexOf(match[1])) });
 
-    // Trailing declarators: `const int A = 1, B = 2;` declares B as well.
+    // Trailing declarators: `const int A = 1, B = 2;` declares B as well. Each is located
+    // on its own, because a statement may wrap and reporting the first declarator's line
+    // for all of them sends a contributor to the wrong one.
+    const tailStart = CONST_DECL.lastIndex;
     const semicolon = stripped.indexOf(';', match.index);
-    const tail = stripped.slice(CONST_DECL.lastIndex, semicolon === -1 ? undefined : semicolon);
+    const tail = stripped.slice(tailStart, semicolon === -1 ? undefined : semicolon);
     const extra = /,\s*(@?[A-Za-z_][A-Za-z_0-9]*)\s*=/g;
     let more;
     while ((more = extra.exec(tail)) !== null) {
-      found.push({ name: more[1], line });
+      found.push({
+        name: more[1],
+        line: lineAt(tailStart + more.index + more[0].lastIndexOf(more[1])),
+      });
     }
   }
 
@@ -413,13 +421,22 @@ function selfTest() {
     console.error(`FAIL  expected the constant on line 4, got ${only ? only.line : 'nothing'}`);
   }
 
+  // A wrapped statement puts its declarators on different lines, and each has to report
+  // its own — the first one's line is where a contributor would look and find nothing.
+  const wrapped = 'class C {\n  const int Ok = 1,\n    AlsoOk = 2;\n}';
+  const declarators = findConstants(wrapped).map((c) => `${c.name}:${c.line}`).join(' ');
+  if (declarators !== 'Ok:2 AlsoOk:3') {
+    failures++;
+    console.error(`FAIL  expected "Ok:2 AlsoOk:3" from a wrapped declaration, got "${declarators}"`);
+  }
+
   failures += checkProjectRoster();
 
   if (failures > 0) {
     console.error(`\n${failures} case(s) failed.`);
     process.exit(1);
   }
-  console.log(`ok: ${NAME_CASES.length + SCAN_CASES.length + 1} constant-naming case(s) pinned.`);
+  console.log(`ok: ${NAME_CASES.length + SCAN_CASES.length + 2} constant-naming case(s) pinned.`);
 }
 
 // ---- entry point --------------------------------------------------------------------

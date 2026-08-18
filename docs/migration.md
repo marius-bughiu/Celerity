@@ -266,7 +266,9 @@ Every public and protected constant that was spelled `UPPER_CASE` now has a `Pas
 | `DEFAULT_PRECISION` / `MIN_PRECISION` / `MAX_PRECISION` | `DefaultPrecision` / `MinPrecision` / `MaxPrecision` | `HyperLogLog` |
 | `FINGERPRINT_BITS` | `FingerprintBits` | `XorFilter` |
 
-Unlike the hasher rename above, there are no `[Obsolete]` aliases: a `const` is inlined into the calling assembly at compile time, so an already-compiled consumer is unaffected either way, and carrying forty-one deprecated spellings forward would have made the surface harder to read than the migration is to perform.
+Unlike the hasher rename above, there are no `[Obsolete]` aliases: a `const` is inlined into the calling assembly at compile time, so an already-compiled consumer that *reads* one keeps running against the new assembly, and carrying forty-one deprecated spellings forward would have made the surface harder to read than the migration is to perform.
+
+The exception is reflection. The old fields are gone from metadata, not merely deprecated, so a lookup by name — `typeof(HyperLogLog<int, Int32Murmur3Hasher>).GetField("DEFAULT_PRECISION")` — now returns `null` where it used to return a field, and does so at run time rather than at compile time. If you enumerate or fetch these constants by name, that is the one place the rename can reach code you have already shipped.
 
 **One member is gone rather than renamed.** `XorFilter<T, THasher>` had both a constant and an instance property naming the same fixed number, and once the constant is `FingerprintBits` the property cannot share the name. The constant is what remains, because the width is fixed at 8 for every instance:
 
