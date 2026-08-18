@@ -2635,10 +2635,18 @@ internal static class Differential
     }
 
     /// <summary>
-    /// Checks the invariants a uniform sampler must hold whatever its draws are: it retains exactly
-    /// <c>min(seen, capacity)</c> items, every retained item came from the stream and appears once,
-    /// and a stream no longer than the reservoir is retained whole and in order.
+    /// Invariant fuzzing, not a differential check — unlike the other two statistics targets this
+    /// one has no exact oracle to reconcile against.
     /// </summary>
+    /// <remarks>
+    /// It asserts what must hold whatever the draws are: exactly <c>min(seen, capacity)</c> items
+    /// retained, every one of them from the stream and appearing once, and a stream no longer than
+    /// the reservoir kept whole and in order. What it deliberately cannot see is a biased
+    /// replacement probability — the sampler's defining property — because that is distributional
+    /// and no single case can measure it. That check lives in
+    /// <c>ReservoirSamplerTests.Add_ShouldProduceAUniformSample_OverManyIndependentRuns</c>, which
+    /// aggregates 5,000 seeded runs and bounds every item's retention frequency.
+    /// </remarks>
     private static void ReservoirSamplerCase(Random rng)
     {
         int capacity = rng.Next(1, 40);

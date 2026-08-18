@@ -5,8 +5,9 @@ namespace Celerity.Tests.Statistics;
 /// <summary>
 /// Behavioural tests for <see cref="DDSketch"/> — the relative-accuracy guarantee itself, the
 /// three value regions (positive ladder, mirrored negative ladder, the separate zero counter),
-/// the exact-versus-approximate split (<c>Count</c> / <c>Sum</c> / <c>Min</c> / <c>Max</c> are
-/// exact; only the quantiles are bucketed), and merging.
+/// the split between what is tracked directly and what is bucketed (<c>Count</c>,
+/// <c>Min</c> and <c>Max</c> are exact, <c>Sum</c> is compensated rather than exact, and only
+/// the quantiles carry <c>α</c>), and merging.
 /// </summary>
 public class DDSketchTests
 {
