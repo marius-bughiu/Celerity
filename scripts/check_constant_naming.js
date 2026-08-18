@@ -72,8 +72,8 @@ const UPPER_RUN = /\p{Lu}+/gu;
 const MAX_ACRONYM = 2;
 
 // C# identifiers are Unicode, and a character may also be written as an escape, so
-// `échec` and `échec` are the same name. Both are judged as the letters they mean:
-// the rule is about the reader, who sees the letter either way.
+// `échec` and `\u00e9chec` are one name spelled two ways. Both are judged as the
+// letters they mean: the rule is about the reader, who sees the letter either way.
 function decodeEscapes(name) {
   return name.replace(
     /\\u([0-9A-Fa-f]{4})|\\U([0-9A-Fa-f]{8})/g,
