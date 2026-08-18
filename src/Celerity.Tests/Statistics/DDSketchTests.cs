@@ -294,6 +294,77 @@ public class DDSketchTests
         Assert.True(many.BinCount < 100, $"Expected a handful of buckets, got {many.BinCount}.");
     }
 
+    [Fact]
+    public void GetQuantile_ShouldStayFinite_AtTheTopOfTheDoubleRange()
+    {
+        // double.MaxValue lands in bucket 35,488, whose g^i overflows: forming the power before
+        // applying the accuracy multiplier returned infinity for a finite input. Evaluated in
+        // log space the two exponents cancel and the representative is finite — and still
+        // inside the relative bound, which is the contract that actually matters.
+        // 1 to double.MaxValue is 308 decades, which needs 35,489 buckets — well past the
+        // default budget, so the budget is sized to it rather than letting a collapse hide the
+        // arithmetic under test.
+        var sketch = new DDSketch(0.01d, 65_536);
+        sketch.Add(double.MaxValue);
+        sketch.Add(1d);
+        Assert.False(sketch.HasCollapsed);
+
+        double top = sketch.GetQuantile(1d);
+        Assert.True(double.IsFinite(top), $"expected a finite quantile, got {top}.");
+        QuantileGuarantee.Holds(double.MaxValue, top, 0.01d, "q=1 at the top of the double range");
+
+        // And at the other end the clamp does bite: bucket 0's representative is 0.99, below
+        // the smallest value actually seen, so it is pulled up to it.
+        Assert.Equal(1d, sketch.GetQuantile(0d));
+    }
+
+    [Fact]
+    public void GetQuantile_ShouldStayInsideTheObservedRange()
+    {
+        // A bucket representative can sit outside the values that landed in it; the true
+        // quantile never can, so clamping to [Min, Max] can only move the answer closer.
+        var sketch = new DDSketch(0.5d);
+        for (int i = 1; i <= 50; i++)
+        {
+            sketch.Add(i * 3d);
+        }
+
+        foreach (double quantile in new[] { 0d, 0.25d, 0.5d, 0.75d, 1d })
+        {
+            double actual = sketch.GetQuantile(quantile);
+            Assert.InRange(actual, sketch.Min, sketch.Max);
+        }
+    }
+
+    [Fact]
+    public void Add_ShouldThrow_WhenTheMultiplicityWouldOverflowTheExactCount()
+    {
+        var sketch = new DDSketch();
+        sketch.Add(1d, long.MaxValue);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => sketch.Add(2d));
+
+        // Rejected before anything was mutated.
+        Assert.Equal(long.MaxValue, sketch.Count);
+        Assert.Equal(1d, sketch.Max);
+    }
+
+    [Fact]
+    public void Merge_ShouldThrow_WhenTheCombinedCountWouldOverflow()
+    {
+        var left = new DDSketch(0.01d);
+        left.Add(1d, long.MaxValue);
+
+        var right = new DDSketch(0.01d);
+        right.Add(2d);
+
+        Assert.Throws<ArgumentException>(() => left.Merge(right));
+
+        // And neither store was touched on the way to the throw.
+        Assert.Equal(long.MaxValue, left.Count);
+        Assert.Equal(1d, left.Max);
+    }
+
     /// <summary>
     /// A positive value that lands in bucket <paramref name="index"/> when the sketch's
     /// relative accuracy is 0.5 (so <c>γ = 3</c>). Chosen away from a bucket boundary so no

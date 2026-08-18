@@ -16,7 +16,7 @@ Requirements: .NET 8 SDK. Everything else is fetched via NuGet.
 
 ## Project layout
 
-As of 2.0.0 the library is split into layered packages (`Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`, with `Celerity.Sorting` a second consumer of `Celerity.Primitives`); see the [migration guide](docs/migration.md#200--the-package-split). On top of that core sit three standalone **showcase** packages — `Celerity.Ring`, `Celerity.Sentinel` and `Celerity.Cardinality` — which depend on `Celerity.Collections` and carry their own test projects. Seven packages ship in total.
+As of 2.0.0 the library is split into layered packages (`Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`, with `Celerity.Sorting` and `Celerity.Statistics` two further consumers of `Celerity.Primitives`); see the [migration guide](docs/migration.md#200--the-package-split). On top of that core sit three standalone **showcase** packages — `Celerity.Ring`, `Celerity.Sentinel` and `Celerity.Cardinality` — which depend on `Celerity.Collections` and carry their own test projects. Eight packages ship in total.
 
 ```
 src/
@@ -26,6 +26,7 @@ src/
 ├── Celerity.Hashing/         The Celerity.Hashing package. IHashProvider<T>, the hashers, the evaluators.
 ├── Celerity.Primitives/      The Celerity.Primitives package. FastUtils, struct PRNGs, VarInt, FastGuid.
 ├── Celerity.Sorting/         The Celerity.Sorting package. RadixSort, CountingSort, PartialSort.
+├── Celerity.Statistics/      The Celerity.Statistics package. DDSketch, ReservoirSampler, RunningStatistics.
 ├── Celerity.Ring/            The Celerity.Ring package. Consistent-hash and rendezvous rings.
 ├── Celerity.Sentinel/        The Celerity.Sentinel package. Streaming abuse / heavy-hitter detection.
 ├── Celerity.Cardinality/     The Celerity.Cardinality package. Approximate COUNT(DISTINCT) and windowed dedup.

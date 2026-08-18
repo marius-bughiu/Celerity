@@ -38,8 +38,11 @@ namespace Celerity.Statistics;
 /// <see cref="double.NaN"/> rather than throwing: <see cref="Mean"/>, <see cref="Min"/> and
 /// <see cref="Max"/> on an empty accumulator, <see cref="Variance"/> below two values,
 /// <see cref="Skewness"/> below three and <see cref="Kurtosis"/> below four. A
-/// <see cref="double.NaN"/> <em>input</em> poisons every subsequent statistic, as it would in
-/// any accumulation; filter the stream if it can contain one.
+/// <see cref="double.NaN"/> <em>input</em> poisons every subsequent statistic — the extrema
+/// included, which takes a deliberate check because a comparison against
+/// <see cref="double.NaN"/> is false either way — as it would in any accumulation; filter the
+/// stream if it can contain one. Mixing <c>+∞</c> and <c>−∞</c> poisons the mean the same way
+/// and is reported the same way.
 /// </para>
 /// <para>
 /// Two accumulators over disjoint parts of a stream combine exactly with
@@ -108,14 +111,22 @@ public struct RunningStatistics
     public readonly double Sum => _count == 0 ? 0d : _mean * _count;
 
     /// <summary>
-    /// Gets the smallest value added, or <see cref="double.NaN"/> if none have been.
+    /// Gets the smallest value added, or <see cref="double.NaN"/> if none have been or the
+    /// accumulation has been poisoned.
     /// </summary>
-    public readonly double Min => _count == 0 ? double.NaN : _min;
+    /// <remarks>
+    /// Gated on <see cref="Mean"/> rather than tested per value: a <see cref="double.NaN"/>
+    /// input makes every comparison against it false, so the extrema would otherwise survive a
+    /// poisoning that took every other statistic with it. Checking here rather than in
+    /// <see cref="Add(double)"/> keeps the cost off the add path entirely.
+    /// </remarks>
+    public readonly double Min => double.IsNaN(Mean) ? double.NaN : _min;
 
     /// <summary>
-    /// Gets the largest value added, or <see cref="double.NaN"/> if none have been.
+    /// Gets the largest value added, or <see cref="double.NaN"/> if none have been or the
+    /// accumulation has been poisoned. See <see cref="Min"/> for why the two travel together.
     /// </summary>
-    public readonly double Max => _count == 0 ? double.NaN : _max;
+    public readonly double Max => double.IsNaN(Mean) ? double.NaN : _max;
 
     /// <summary>
     /// Gets the sample variance (the unbiased, <c>n − 1</c> denominator estimator), or

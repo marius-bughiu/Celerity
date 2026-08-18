@@ -18,8 +18,9 @@ namespace Celerity.Statistics;
 /// returned quantile is guaranteed accurate to a <strong>relative</strong> <c>α</c> —
 /// <c>|reported − actual| ≤ α · |actual|</c> — which is the guarantee latency work actually
 /// wants: 1% of 10&#160;ms and 1% of 10&#160;s, not a fixed number of milliseconds that is
-/// meaningless at one end of the range and useless at the other. At the default 1% accuracy,
-/// covering nanoseconds to hours takes a few hundred buckets.
+/// meaningless at one end of the range and useless at the other. At the default 1% accuracy a
+/// bucket spans 2%, so covering nanoseconds to hours takes about 1,500 of them — inside the
+/// default budget.
 /// </para>
 /// <para>
 /// The guarantee holds for <em>any</em> quantile of <em>any</em> distribution, without the
@@ -31,7 +32,10 @@ namespace Celerity.Statistics;
 /// <para>
 /// <strong>Negative values and zero are handled, not rejected.</strong> Negatives go into a
 /// mirrored second ladder and zero into its own counter, because <c>log</c> has nothing to
-/// say about either. Only NaN and the infinities are rejected.
+/// say about either. The mirror is a true one: a negative value is filed under the
+/// <em>negated</em> index of its magnitude, so the second ladder runs in ascending value order
+/// like the first and its bin budget discards the most negative values rather than the ones
+/// nearest zero. Only NaN and the infinities are rejected.
 /// </para>
 /// <para>
 /// <strong>Memory is capped, and the cap is visible.</strong> A stream spanning an
@@ -97,8 +101,9 @@ public sealed class DDSketch
     public const int MaxBinBudget = 1 << 26;
 
     private readonly double _gamma;
+    private readonly double _logGamma;
     private readonly double _indexMultiplier;
-    private readonly double _valueMultiplier;
+    private readonly double _logValueMultiplier;
     private readonly BucketStore _positive;
     private readonly BucketStore _negative;
     private long _zeroCount;
@@ -167,8 +172,9 @@ public sealed class DDSketch
         RelativeAccuracy = relativeAccuracy;
         MaxBins = maxBins;
         _gamma = (1d + relativeAccuracy) / (1d - relativeAccuracy);
-        _indexMultiplier = 1d / Math.Log(_gamma);
-        _valueMultiplier = 1d - relativeAccuracy;
+        _logGamma = Math.Log(_gamma);
+        _indexMultiplier = 1d / _logGamma;
+        _logValueMultiplier = Math.Log(1d - relativeAccuracy);
         _positive = new BucketStore(maxBins);
         _negative = new BucketStore(maxBins);
     }
@@ -228,7 +234,8 @@ public sealed class DDSketch
     /// <param name="count">How many occurrences of the value to add. Must be positive.</param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="value"/> is <see cref="double.NaN"/> or infinite, or
-    /// <paramref name="count"/> is not positive.
+    /// <paramref name="count"/> is not positive, or adding it would overflow
+    /// <see cref="Count"/>.
     /// </exception>
     public void Add(double value, long count)
     {
@@ -248,13 +255,25 @@ public sealed class DDSketch
                 "The multiplicity must be positive.");
         }
 
+        // Checked before anything is mutated: a wrapped count makes every subsequent quantile
+        // rank meaningless, and a half-applied Add would be worse than a rejected one.
+        if (count > long.MaxValue - _count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(count),
+                count,
+                "Adding this many occurrences would overflow the sketch's exact count.");
+        }
+
         if (value > 0d)
         {
             _positive.Add(IndexOf(value), count);
         }
         else if (value < 0d)
         {
-            _negative.Add(IndexOf(-value), count);
+            // Negated, so the ladder is ordered by value rather than by magnitude: the most
+            // negative value takes the lowest index, which is what the store collapses first.
+            _negative.Add(-IndexOf(-value), count);
         }
         else
         {
@@ -295,7 +314,8 @@ public sealed class DDSketch
     /// </summary>
     /// <param name="quantile">The quantile to query, in <c>[0, 1]</c> — <c>0.99</c> for p99.</param>
     /// <returns>
-    /// The bucketed value at that quantile, or <see cref="double.NaN"/> if the sketch is empty.
+    /// The bucketed value at that quantile, clamped to <see cref="Min"/>..<see cref="Max"/>, or
+    /// <see cref="double.NaN"/> if the sketch is empty.
     /// </returns>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="quantile"/> is outside <c>[0, 1]</c> or is <see cref="double.NaN"/>.
@@ -322,8 +342,8 @@ public sealed class DDSketch
         if (rank < _negative.Total)
         {
             long cumulative = 0;
-            int index = _negative.MaxIndex;
-            for (; index > _negative.MinIndex; index--)
+            int index = _negative.MinIndex;
+            for (; index < _negative.MaxIndex; index++)
             {
                 cumulative += _negative.CountAt(index);
                 if (cumulative > rank)
@@ -332,7 +352,7 @@ public sealed class DDSketch
                 }
             }
 
-            return -ValueOf(index);
+            return ClampToObserved(-ValueOf(-index));
         }
 
         rank -= _negative.Total;
@@ -355,7 +375,7 @@ public sealed class DDSketch
             }
         }
 
-        return ValueOf(positiveIndex);
+        return ClampToObserved(ValueOf(positiveIndex));
     }
 
     /// <summary>
@@ -399,7 +419,8 @@ public sealed class DDSketch
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="other"/> was built with a different <see cref="RelativeAccuracy"/>, so
-    /// its buckets do not line up with this sketch's.
+    /// its buckets do not line up with this sketch's, or the combined <see cref="Count"/> would
+    /// overflow.
     /// </exception>
     /// <remarks>
     /// The two sketches may differ in <see cref="MaxBins"/>; the result keeps this sketch's
@@ -420,6 +441,15 @@ public sealed class DDSketch
         if (other._count == 0)
         {
             return;
+        }
+
+        // Before either store is touched, for the same reason Add checks first: a merge that
+        // wrapped the count halfway through would leave the sketch neither merged nor intact.
+        if (other._count > long.MaxValue - _count)
+        {
+            throw new ArgumentException(
+                "Merging these sketches would overflow the exact count.",
+                nameof(other));
         }
 
         _positive.Merge(other._positive);
@@ -451,12 +481,33 @@ public sealed class DDSketch
     /// within a relative <c>α</c> of every value the bucket can hold.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Written as <c>(1 − α)·γ^i</c> rather than the algebraically identical
     /// <c>2·γ^i / (γ + 1)</c>: the latter reconstructs <c>1 − α</c> through two more roundings,
     /// which is enough to push a value sitting exactly on a bucket boundary a hair outside the
     /// guarantee it is supposed to meet exactly.
+    /// </para>
+    /// <para>
+    /// And evaluated in log space rather than as <c>(1 − α) · Math.Pow(γ, i)</c>, because the
+    /// power alone overflows before the multiplier can bring it back: at the default accuracy
+    /// <see cref="double.MaxValue"/> lands in bucket 35,488, whose <c>γ^i</c> is not a finite
+    /// <see cref="double"/>. <see cref="ClampToObserved"/> catches what is still out of range
+    /// after that.
+    /// </para>
     /// </remarks>
-    private double ValueOf(int index) => _valueMultiplier * Math.Pow(_gamma, index);
+    private double ValueOf(int index) => Math.Exp((index * _logGamma) + _logValueMultiplier);
+
+    /// <summary>
+    /// Pulls a bucket representative back inside the values actually seen.
+    /// </summary>
+    /// <remarks>
+    /// The true quantile is between <see cref="Min"/> and <see cref="Max"/> by definition, so
+    /// this can only move an estimate closer to it — a bucket representative sits at a fixed
+    /// point in its bucket and the values that landed there need not surround it. It is cheap
+    /// insurance rather than a correction: what keeps the top of the <see cref="double"/> range
+    /// finite is evaluating <see cref="ValueOf"/> in log space.
+    /// </remarks>
+    private double ClampToObserved(double value) => Math.Clamp(value, _min, _max);
 
     /// <summary>
     /// A contiguous count-per-bucket window over a range of bucket indices, which grows to
@@ -520,6 +571,10 @@ public sealed class DDSketch
 
         internal void Merge(BucketStore other)
         {
+            // A collapse in the source is not undone by copying its surviving buckets, so the
+            // flag has to travel with them or the result would claim an accuracy it lost.
+            HasCollapsed |= other.HasCollapsed;
+
             for (int index = other._minIndex; index <= other._maxIndex; index++)
             {
                 long count = other.CountAt(index);

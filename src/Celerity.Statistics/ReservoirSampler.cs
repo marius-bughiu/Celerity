@@ -60,6 +60,12 @@ namespace Celerity.Statistics;
 public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     where TRng : struct, IRandomSource
 {
+    /// <summary>
+    /// The skip returned once the acceptance weight has collapsed â€” large enough that no stream
+    /// reaches it, small enough that adding a stream position to it cannot overflow.
+    /// </summary>
+    private const long FrozenSkip = long.MaxValue / 2;
+
     private readonly T[] _items;
     private TRng _rng;
     private long _seen;
@@ -230,27 +236,34 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// </summary>
     private long NextSkip()
     {
-        double skip = Math.Floor(Math.Log(NextUnitInterval()) / Math.Log(1d - _w));
+        double denominator = Math.Log(1d - _w);
 
-        // w is in (0, 1), so log(1 - w) is negative and the quotient is non-negative; the
-        // clamp guards the degenerate ends (w rounding to 0 or 1) rather than the normal path.
-        if (!(skip >= 0d) || skip > long.MaxValue / 2d)
+        if (denominator == 0d)
         {
-            return long.MaxValue / 2;
+            // The acceptance weight has shrunk past the point where 1 - w is distinguishable
+            // from 1, so the probability that any later item wins has collapsed to zero. Say so
+            // with a skip nothing will reach, rather than dividing into a negative index.
+            return FrozenSkip;
         }
 
-        return (long)skip;
+        // Both logs are negative, so the quotient is non-negative, and it is bounded above by
+        // |log(2^-54)| / |log(1 - 2^-53)| â€” about 3.4e17 â€” so the cast cannot overflow.
+        return (long)Math.Floor(Math.Log(NextUnitInterval()) / denominator);
     }
 
     /// <summary>
-    /// Draws a uniform double in <c>(0, 1)</c>. Both logarithms above are undefined at zero,
-    /// so the open interval is the contract, not a rounding detail.
+    /// Draws a uniform double strictly inside <c>(0, 1)</c>: the 53-bit grid offset by half a
+    /// step.
     /// </summary>
-    private double NextUnitInterval()
-    {
-        double u = _rng.NextDouble();
-        return u <= 0d ? double.Epsilon : u;
-    }
+    /// <remarks>
+    /// The offset is what makes the draw unbiased at the ends. <c>NextDouble</c> covers
+    /// <c>[0, 1)</c>, and both logarithms here are undefined at zero, so a zero has to become
+    /// something â€” and substituting a subnormal would hand that one outcome in 2^53 a skip
+    /// astronomically larger than its neighbours, which is a bias, not a rounding detail.
+    /// Shifting the whole grid by half a step gives 2^53 equiprobable interior points instead,
+    /// with no outcome needing special treatment.
+    /// </remarks>
+    private double NextUnitInterval() => ((_rng.NextUInt64() >> 11) + 0.5d) * (1.0d / (1UL << 53));
 }
 
 /// <summary>

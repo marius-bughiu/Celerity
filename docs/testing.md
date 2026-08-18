@@ -155,11 +155,11 @@ The check reaches the network, where the other three script guards ([`check_doc_
 
 ## Code coverage
 
-Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) and scoped to all seven shipping assemblies — `Celerity`, `Celerity.Hashing`, `Celerity.Primitives`, `Celerity.Sorting`, `Celerity.Ring`, `Celerity.Sentinel`, `Celerity.Cardinality` — via [`src/coverage.runsettings`](../src/coverage.runsettings). The test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.
+Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) and scoped to all eight shipping assemblies — `Celerity`, `Celerity.Hashing`, `Celerity.Primitives`, `Celerity.Sorting`, `Celerity.Statistics`, `Celerity.Ring`, `Celerity.Sentinel`, `Celerity.Cardinality` — via [`src/coverage.runsettings`](../src/coverage.runsettings). The test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.
 
 Four test projects contribute: `Celerity.Tests` for the five core packages, plus `Celerity.Ring.Tests` / `Celerity.Sentinel.Tests` / `Celerity.Cardinality.Tests` for the showcase tier. Their Cobertura reports are merged on (source file, line number), so a line covered by any run counts as covered — which matters because the showcase projects also exercise `Celerity.Collections` transitively.
 
-The suite covers **100% of lines and 100% of branches** across all seven. A small number of guards are excluded at the source with `[ExcludeFromCodeCoverage(Justification = "…")]`, and only where no test could ever reach them:
+The suite covers **100% of lines and 100% of branches** across all eight. A small number of guards are excluded at the source with `[ExcludeFromCodeCoverage(Justification = "…")]`, and only where no test could ever reach them:
 
 | Guard | Why no test can reach it |
 |---|---|

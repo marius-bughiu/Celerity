@@ -24,7 +24,7 @@ using Celerity.Statistics;
 //                    the type is actually for.
 //
 // The memory column is the other half of the story and the reason the type exists: the baseline's footprint
-// is 8 bytes per sample and unbounded, while the sketch's is a few hundred buckets whatever the sample count
+// is 8 bytes per sample and unbounded, while the sketch's tracks the log of the value range whatever the sample count
 // — the difference between summarizing a million latencies and summarizing a stream that never ends.
 //
 // The generated values are lognormal, which is what request latencies actually look like: a dense body and a

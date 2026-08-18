@@ -66,7 +66,8 @@ than uniform, every reported quantile is within a **relative** `α` of the true 
 That is the guarantee latency work wants — 1% of 10 ms and 1% of 10 s, not a fixed number of
 milliseconds that is meaningless at one end of the range and useless at the other. It holds for any
 quantile of any distribution, and unlike a t-digest it holds at the median as strongly as at the
-tail. At the default 1% accuracy, covering nanoseconds to hours takes a few hundred buckets.
+tail. At the default 1% accuracy a bucket spans 2%, so covering nanoseconds to hours takes about
+1,500 buckets — inside the default 2,048 budget.
 
 ### Constructors
 

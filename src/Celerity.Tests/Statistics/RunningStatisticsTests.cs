@@ -271,6 +271,46 @@ public class RunningStatisticsTests
         Assert.Equal(0, perBucket[0].Count);
     }
 
+    [Fact]
+    public void NaN_ShouldPoisonTheExtrema_AlongWithEveryOtherStatistic()
+    {
+        // A comparison against NaN is false either way, so without a deliberate check the
+        // extrema would keep reporting the earlier finite values while every other statistic
+        // went NaN — which contradicts the documented contract.
+        var stats = new RunningStatistics([1d, 5d, 9d]);
+        Assert.Equal(1d, stats.Min);
+        Assert.Equal(9d, stats.Max);
+
+        stats.Add(double.NaN);
+
+        Assert.Equal(4, stats.Count);
+        Assert.True(double.IsNaN(stats.Mean));
+        Assert.True(double.IsNaN(stats.Min));
+        Assert.True(double.IsNaN(stats.Max));
+        Assert.True(double.IsNaN(stats.Variance));
+    }
+
+    [Fact]
+    public void OpposedInfinities_ShouldPoisonTheStatisticsTheSameWay()
+    {
+        var stats = new RunningStatistics([double.PositiveInfinity, double.NegativeInfinity]);
+
+        Assert.True(double.IsNaN(stats.Mean));
+        Assert.True(double.IsNaN(stats.Min));
+        Assert.True(double.IsNaN(stats.Max));
+    }
+
+    [Fact]
+    public void SingleInfinity_ShouldStillReportAnExtremum()
+    {
+        var stats = new RunningStatistics();
+        stats.Add(double.PositiveInfinity);
+
+        Assert.Equal(double.PositiveInfinity, stats.Mean);
+        Assert.Equal(double.PositiveInfinity, stats.Min);
+        Assert.Equal(double.PositiveInfinity, stats.Max);
+    }
+
     /// <summary>The two-pass population skewness, computed directly for comparison.</summary>
     private static double Skewness(double[] values)
     {

@@ -148,6 +148,66 @@ public class DDSketchBucketWindowTests
     }
 
     [Fact]
+    public void Window_ShouldCollapseTheMostNegativeValues_NotTheOnesNearestZero()
+    {
+        // The negative ladder is filed under the negated magnitude index, so "collapse the
+        // lowest buckets" means the same thing on both sides: discard resolution in the low
+        // tail. Filing it under the magnitude instead would collapse the values nearest zero —
+        // the *upper* quantiles of an all-negative stream — which is the opposite of what the
+        // type documents.
+        var sketch = new DDSketch(Gamma3Accuracy, 4);
+
+        sketch.Add(-DDSketchTests.AtBucket(40));   // by far the most negative
+        sketch.Add(-DDSketchTests.AtBucket(3));
+        sketch.Add(-DDSketchTests.AtBucket(2));
+        sketch.Add(-DDSketchTests.AtBucket(1));    // closest to zero
+
+        Assert.Equal(4, sketch.Count);
+        Assert.True(sketch.HasCollapsed);
+
+        // The near-zero values kept their buckets and are still accurate. Rank 1 is bucket 3 and
+        // rank 2 is bucket 2, because the collapsed value still sorts below both.
+        foreach ((double quantile, int bucket) in new[] { (1d / 3d, 3), (2d / 3d, 2) })
+        {
+            double expected = -DDSketchTests.AtBucket(bucket);
+            QuantileGuarantee.Holds(expected, sketch.GetQuantile(quantile), Gamma3Accuracy, $"q={quantile}");
+        }
+
+        QuantileGuarantee.Holds(
+            -DDSketchTests.AtBucket(1),
+            sketch.GetQuantile(1d),
+            Gamma3Accuracy,
+            "the value nearest zero");
+
+        // The most negative one is what lost resolution — and it is still counted, and still
+        // the smallest value reported.
+        Assert.Equal(-DDSketchTests.AtBucket(40), sketch.Min);
+        Assert.True(
+            sketch.GetQuantile(0d) < -DDSketchTests.AtBucket(3),
+            "the collapsed value should still sort below the buckets that survived");
+    }
+
+    [Fact]
+    public void HasCollapsed_ShouldTravelWithAMerge()
+    {
+        // Copying the surviving buckets does not restore the ones that were folded away, so a
+        // wide sketch that absorbs a collapsed narrow one has still lost the guarantee.
+        var collapsed = new DDSketch(Gamma3Accuracy, 2);
+        collapsed.Add(DDSketchTests.AtBucket(1));
+        collapsed.Add(DDSketchTests.AtBucket(30));
+        Assert.True(collapsed.HasCollapsed);
+
+        var wide = new DDSketch(Gamma3Accuracy, 4_096);
+        wide.Add(DDSketchTests.AtBucket(5));
+        Assert.False(wide.HasCollapsed);
+
+        wide.Merge(collapsed);
+
+        Assert.True(wide.HasCollapsed);
+        Assert.Equal(3, wide.Count);
+    }
+
+    [Fact]
     public void Merge_ShouldCarryEveryLiveBucket_WhenTheSourceWindowHasGaps()
     {
         var source = new DDSketch(Gamma3Accuracy, 64);

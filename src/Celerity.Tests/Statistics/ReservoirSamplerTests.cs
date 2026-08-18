@@ -13,10 +13,9 @@ namespace Celerity.Tests.Statistics;
 public class ReservoirSamplerTests
 {
     /// <summary>
-    /// A generator that replays a fixed script of 64-bit words, repeating the last one once the
-    /// script runs out. It exists to drive the skip arithmetic to its extremes — a real
-    /// generator reaches them with probability that rounds to zero, and they are exactly the
-    /// cases where a missing clamp would spin or overflow.
+    /// A generator that cycles a fixed script of 64-bit words. It exists to drive the
+    /// acceptance weight down far faster than a real generator would, so the collapsed-weight
+    /// path is reached in a few hundred items rather than a few hundred million.
     /// </summary>
     private struct ScriptedRandom : IRandomSource
     {
@@ -31,7 +30,7 @@ public class ReservoirSamplerTests
 
         public ulong NextUInt64()
         {
-            ulong value = _script[Math.Min(_position, _script.Length - 1)];
+            ulong value = _script[_position % _script.Length];
             _position++;
             return value;
         }
@@ -239,39 +238,61 @@ public class ReservoirSamplerTests
     }
 
     [Fact]
-    public void Add_ShouldFreezeTheReservoir_WhenTheSkipArithmeticUnderflowsToNoSkipAtAll()
+    public void Add_ShouldFreezeTheReservoir_WhenTheAcceptanceWeightCollapses()
     {
-        // Every draw returns zero, so the acceptance weight collapses below the point where
-        // 1 − w is distinguishable from 1 and the skip is computed as −∞. Without the clamp
-        // that is a negative next-index, i.e. a replacement on every subsequent item.
-        var sampler = new ReservoirSampler<int, ScriptedRandom>(1, new ScriptedRandom([0UL]));
+        // Algorithm L's weight is a running product, so over a long enough stream it shrinks
+        // past the point where 1 - w differs from 1 and no later item can be accepted. The
+        // script drives that in a few hundred items instead of a few hundred million.
+        //
+        // A replacement draws exactly three times — the slot to overwrite, the weight factor,
+        // then the skip — and the fill draws the last two, so a three-word cycle gives each
+        // draw a fixed role from the first replacement onward: a weight factor of ~0.75, a skip
+        // numerator of ~1 (so every item is a replacement), and a slot selector that a
+        // one-element reservoir ignores.
+        //
+        // 0.75^n crosses 2^-54 at n = 131, so 400 items is comfortably past the collapse. What
+        // is being pinned is that the sampler stops rather than dividing log(u) by zero and
+        // computing a negative next index — which would replace on every subsequent item.
+        const ulong ThreeQuarters = 6_755_399_441_055_744UL << 11;
+        var sampler = new ReservoirSampler<int, ScriptedRandom>(
+            1,
+            new ScriptedRandom([ThreeQuarters, ulong.MaxValue, 0UL]));
 
-        Assert.True(sampler.Add(1));
-        for (int i = 2; i <= 100; i++)
+        for (int i = 0; i < 400; i++)
         {
-            Assert.False(sampler.Add(i));
+            sampler.Add(i);
         }
 
-        Assert.Equal(1, sampler[0]);
-        Assert.Equal(100, sampler.TotalSeen);
+        Assert.Equal(400, sampler.TotalSeen);
+        Assert.Equal(1, sampler.Count);
+
+        int frozenAt = sampler[0];
+        for (int i = 400; i < 500; i++)
+        {
+            Assert.False(sampler.Add(i), $"item {i} was accepted after the weight collapsed");
+        }
+
+        Assert.Equal(frozenAt, sampler[0]);
     }
 
     [Fact]
-    public void Add_ShouldFreezeTheReservoir_WhenTheSkipExceedsWhatALongCanHold()
+    public void NextUnitInterval_ShouldNeverProduceZeroOrOne_ForTheExtremeDraws()
     {
-        // 1845248 >> 11 is 901, so the first draw is a weight of about 1e-16 — small enough
-        // that log(1 − w) is a single ulp and the skip lands past long.MaxValue / 2.
-        var sampler = new ReservoirSampler<int, ScriptedRandom>(
-            1,
-            new ScriptedRandom([1_845_248UL, 0UL]));
-
-        Assert.True(sampler.Add(1));
-        for (int i = 2; i <= 100; i++)
+        // Both logarithms in the skip arithmetic are undefined at zero, and a weight of exactly
+        // one divides by log(0). The draw is the 53-bit grid offset by half a step precisely so
+        // neither endpoint is reachable; these are the two draws that would hit them.
+        foreach (ulong bits in new[] { 0UL, ulong.MaxValue })
         {
-            Assert.False(sampler.Add(i));
-        }
+            var sampler = new ReservoirSampler<int, ScriptedRandom>(4, new ScriptedRandom([bits]));
 
-        Assert.Equal(1, sampler[0]);
+            for (int i = 0; i < 1_000; i++)
+            {
+                sampler.Add(i);
+            }
+
+            Assert.Equal(4, sampler.Count);
+            Assert.All(sampler.Sample.ToArray(), item => Assert.InRange(item, 0, 999));
+        }
     }
 
     [Theory]
