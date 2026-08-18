@@ -42,9 +42,13 @@ namespace Celerity.Statistics;
 /// <strong>Memory is capped, and the cap is visible.</strong> A stream spanning an
 /// unexpectedly wide range would otherwise allocate a bucket per decade forever, so a bin
 /// budget bounds each ladder. When it is exhausted the <em>lowest</em> buckets collapse
-/// together — the choice that protects the high quantiles people actually query — and
+/// together — the low end of <em>that ladder</em>, which is where a geometric ladder packs
+/// its buckets most densely and so loses the least by folding them — and
 /// <see cref="HasCollapsed"/> turns <c>true</c>, at which point the <c>α</c> guarantee no
-/// longer holds for values in the collapsed low tail. It is reported rather than hidden so a
+/// longer holds for any quantile resolving to a collapsed bucket. That is not necessarily a
+/// low quantile of the <em>stream</em>: the two ladders are budgeted independently, so if most
+/// of the stream is negative, a collapsed bucket in the positive ladder sits at a high global
+/// rank. It is reported rather than hidden so a
 /// caller can widen <c>maxBins</c> instead of trusting a number that has quietly stopped
 /// being accurate.
 /// </para>
@@ -274,7 +278,8 @@ public sealed class DDSketch
     /// <summary>
     /// Gets a value indicating whether the bin budget has been exhausted and low buckets have
     /// been collapsed together. Once <c>true</c>, the <see cref="RelativeAccuracy"/>
-    /// guarantee no longer holds for quantiles that fall in the collapsed low tail.
+    /// guarantee no longer holds for any quantile resolving to a collapsed bucket — in either
+    /// ladder, which is not the same as a low quantile of the stream.
     /// </summary>
     public bool HasCollapsed => _positive.HasCollapsed || _negative.HasCollapsed;
 
@@ -445,8 +450,8 @@ public sealed class DDSketch
     /// <paramref name="quantiles"/>.
     /// </param>
     /// <exception cref="ArgumentException">
-    /// <paramref name="destination"/> is shorter than <paramref name="quantiles"/>, or shares
-    /// storage with it.
+    /// <paramref name="destination"/> is shorter than <paramref name="quantiles"/>, or overlaps
+    /// it. Disjoint slices of one array are accepted.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// One of <paramref name="quantiles"/> is outside <c>[0, 1]</c> or is
@@ -468,8 +473,8 @@ public sealed class DDSketch
         if (quantiles.Overlaps(destination))
         {
             throw new ArgumentException(
-                "The destination must not share storage with the quantile list; it is written " +
-                "while the list is still being read.",
+                "The destination must not overlap the quantile list; it is written while the " +
+                "list is still being read.",
                 nameof(destination));
         }
 

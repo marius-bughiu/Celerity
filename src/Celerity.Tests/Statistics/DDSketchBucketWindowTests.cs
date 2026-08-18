@@ -208,6 +208,42 @@ public class DDSketchBucketWindowTests
     }
 
     [Fact]
+    public void Window_ShouldLetACollapsedBucketSitAtAHighGlobalRank_BecauseTheLaddersAreSeparate()
+    {
+        // The collapse takes the lowest buckets of the *ladder*, not of the stream. With the
+        // ladders budgeted independently, a stream that is mostly negative puts its positive
+        // values at the top of the global order — so a collapsed positive bucket lands at a
+        // high global rank, and p99 can resolve to it. That is why the docs describe the loss
+        // as "any quantile resolving to a collapsed bucket" rather than as a low tail.
+        var sketch = new DDSketch(Gamma3Accuracy, 1);
+
+        for (int i = 0; i < 98; i++)
+        {
+            sketch.Add(-DDSketchTests.AtBucket(2));
+        }
+
+        sketch.Add(DDSketchTests.AtBucket(1));
+        sketch.Add(DDSketchTests.AtBucket(40));
+
+        Assert.Equal(100, sketch.Count);
+        Assert.True(sketch.HasCollapsed);
+
+        // The two positive values shared a one-bin ladder, so the small one now reads as the
+        // large one — and it is the 99th percentile that is wrong, not the first.
+        double p99 = sketch.GetQuantile(0.99d);
+        Assert.True(
+            p99 > DDSketchTests.AtBucket(30),
+            $"expected the collapsed positive bucket at p99, got {p99}.");
+
+        // Meanwhile the negative bulk, which is the *low* end of the stream, is untouched.
+        QuantileGuarantee.Holds(
+            -DDSketchTests.AtBucket(2),
+            sketch.GetQuantile(0d),
+            Gamma3Accuracy,
+            "the low end of the stream");
+    }
+
+    [Fact]
     public void Merge_ShouldCarryEveryLiveBucket_WhenTheSourceWindowHasGaps()
     {
         var source = new DDSketch(Gamma3Accuracy, 64);

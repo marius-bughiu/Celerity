@@ -17,8 +17,8 @@ means keeping the stream, which is the one thing a stream will not let you do.
   1% of 10 ms and 1% of 10 s, which is what latency work wants. Handles
   negatives and zero, merges bucket-exactly across shards unless an operand
   has already collapsed, and says out loud
-  (`HasCollapsed`) when its bin budget has run out and the guarantee has
-  stopped holding for the low tail.
+  (`HasCollapsed`) when a bin budget has run out and the guarantee has stopped
+  holding for the quantiles that resolve to a collapsed bucket.
 - **`ReservoirSampler<T>`** — a fixed-size uniform sample of a stream of unknown
   length, via Li's **Algorithm L**: `O(k)` memory and `O(k · log(n / k))` random
   draws over the whole stream, not one per item. Seeded, so the sample is

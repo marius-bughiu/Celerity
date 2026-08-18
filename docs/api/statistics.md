@@ -97,7 +97,7 @@ to say about either. Only `NaN` and the infinities are rejected, with an
 | Member | Returns |
 |---|---|
 | `GetQuantile(double quantile)` | The bucketed value at that quantile, or `NaN` if the sketch is empty. |
-| `GetQuantiles(ReadOnlySpan<double> quantiles, Span<double> destination)` | Several at once, into a caller-owned span. Allocates nothing. The destination must not share storage with the quantile list — it is written while the list is still being read — though disjoint slices of one array are fine. |
+| `GetQuantiles(ReadOnlySpan<double> quantiles, Span<double> destination)` | Several at once, into a caller-owned span. Allocates nothing. The destination must not overlap the quantile list — it is written while the list is still being read — though disjoint slices of one array are fine. |
 | `Count` / `Sum` / `Average` / `Min` / `Max` | Tracked directly rather than read off the buckets, so none of them is subject to `α`. `Count`, `Min` and `Max` are exact; `Sum` is accumulated with Neumaier compensation, which makes it correct to the last bit or two rather than exact, and is `±∞` once the *running* total leaves the range — which can happen before the final sum would have, since compensation cannot recover an already-infinite total. `Average` derives from `Sum`. |
 | `BinCount` | Live buckets across both ladders — the memory footprint, in buckets. |
 | `HasCollapsed` | Whether the bin budget has bound. See below. |
@@ -109,9 +109,16 @@ exact ones are wanted.
 ### The bin budget, and when the guarantee stops holding
 
 A stream spanning an unexpectedly wide range would allocate a bucket per decade forever, so a bin
-budget bounds each ladder. When it is exhausted the **lowest** buckets collapse together — the
-choice that protects the high quantiles people actually query — and `HasCollapsed` turns `true`, at
-which point the `α` guarantee no longer holds for values in the collapsed low tail.
+budget bounds each ladder. When it is exhausted the **lowest** buckets collapse together — the low
+end of *that ladder*, which is where a geometric ladder packs its buckets most densely and so loses
+the least by folding them — and `HasCollapsed` turns `true`, at which point the `α` guarantee no
+longer holds for any quantile resolving to a collapsed bucket.
+
+That is **not** necessarily a low quantile of the stream. The positive and negative ladders are
+budgeted independently, so if most of the stream is negative, a collapsed bucket in the positive
+ladder sits at a high global rank — p99 can land in it. `HasCollapsed` tells you the sketch has lost
+resolution somewhere; it does not tell you which quantiles are affected, so treat it as a signal to
+widen the budget rather than as a bound on where to trust the answer.
 
 The range a budget covers is proportional to `maxBins × α`, so it shrinks as the accuracy tightens:
 2048 bins span about 17 decades at the default 1% accuracy and under two at 0.1%. If you tighten
@@ -123,7 +130,8 @@ var precise = new DDSketch(relativeAccuracy: 0.001, maxBins: 16_384);
 
 if (precise.HasCollapsed)
 {
-    // The low tail is no longer accurate to 0.1%; widen the budget.
+    // Some buckets were folded together; quantiles resolving to them are no longer
+    // accurate to 0.1%. Widen the budget.
 }
 ```
 
