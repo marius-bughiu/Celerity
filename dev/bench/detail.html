@@ -408,7 +408,12 @@
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
     { key: 'StringKeyProbe',      title: 'String-keyed probe',                    vs: 'Dictionary<string, int> / HashSet<string>' },
     // SortedSpan is set algebra over already-sorted spans (Celerity.Primitives), not a collection.
-    { key: 'SortedSpan',          title: 'SortedSpan (sorted-span set algebra)',  vs: 'HashSet<int> set algebra' }
+    { key: 'SortedSpan',          title: 'SortedSpan (sorted-span set algebra)',  vs: 'HashSet<int> set algebra' },
+    // Celerity.Statistics: streaming summaries with no BCL counterpart, so the reference series are the
+    // idioms a caller writes instead (List / Array / Linq) rather than a type name.
+    { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',   vs: 'List<double> sort + index' },
+    { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',     vs: 'List<T> + partial Fisher-Yates' },
+    { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',   vs: 'LINQ two-pass mean / variance' }
   ];
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
