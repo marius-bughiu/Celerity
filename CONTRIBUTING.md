@@ -237,7 +237,7 @@ Both gates, plus the package-metadata check, also run on every PR as the `releas
 
 ## Scope
 
-Celerity is narrowly scoped: specialized high-performance collections, hashers, and the minimal supporting utilities they need. We are unlikely to accept:
+Celerity is narrowly scoped: specialized high-performance collections, hashers, non-comparison sorts, streaming summary statistics, and the minimal supporting utilities they need. The common thread is a workload where the BCL either has no counterpart or structurally cannot host one — not breadth for its own sake. We are unlikely to accept:
 
 - General-purpose extension methods that aren't used by a collection in the library.
 - Wrappers around BCL types that don't add a performance benefit backed by benchmarks.

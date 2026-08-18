@@ -322,6 +322,33 @@ public class RunningStatisticsTests
         Assert.Equal(7d, doubling.Mean);
     }
 
+    [Fact]
+    public void ExtremeMagnitudes_ShouldBehaveAsDocumented_WhereTheMomentsStopBeingRepresentable()
+    {
+        // Pinning the documented limit rather than a fix. A central moment squares its
+        // deviations, so past about sqrt(double.MaxValue) the variance is infinity whichever
+        // algorithm computes it — and the two one-pass shapes then fail on *opposite* inputs,
+        // so neither is the safe one to have chosen.
+
+        // Welford subtracts, so opposite extremes overflow the delta. A running sum would have
+        // reported 0 here.
+        var opposed = new RunningStatistics([double.MaxValue, -double.MaxValue]);
+        Assert.Equal(double.NegativeInfinity, opposed.Mean);
+        Assert.Equal(double.PositiveInfinity, opposed.PopulationVariance);
+
+        // And same-sign extremes are the case a running sum gets wrong (it overflows to
+        // infinity) and this recurrence gets right.
+        var aligned = new RunningStatistics([double.MaxValue, double.MaxValue]);
+        Assert.Equal(double.MaxValue, aligned.Mean);
+        Assert.Equal(0d, aligned.PopulationVariance);
+
+        // Below the squaring limit but above its square root, the mean survives and the
+        // variance does not — for either algorithm.
+        var wide = new RunningStatistics([1e154, -1e154]);
+        Assert.Equal(0d, wide.Mean);
+        Assert.Equal(double.PositiveInfinity, wide.PopulationVariance);
+    }
+
     /// <summary>
     /// An accumulator holding exactly <see cref="long.MaxValue"/> values, built as the sum of
     /// every power of two below it — which is what <c>2^63 - 1</c> is.

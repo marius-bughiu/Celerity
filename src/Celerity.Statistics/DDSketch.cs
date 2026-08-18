@@ -336,7 +336,8 @@ public sealed class DDSketch
         }
 
         // Rank of the requested element in ascending value order: the negative ladder first
-        // (most negative is the largest bucket index), then the zeros, then the positives.
+        // (filed under the negated magnitude, so the most negative value takes the *smallest*
+        // index and this walk ascends like the positive one), then the zeros, then the rest.
         double rank = quantile * (_count - 1);
 
         if (rank < _negative.Total)

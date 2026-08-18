@@ -50,6 +50,25 @@ namespace Celerity.Statistics;
 /// <see cref="Skewness"/> below three and <see cref="Kurtosis"/> below four.
 /// </para>
 /// <para>
+/// <strong>Magnitudes are bounded by what the moments can represent, not by what a
+/// <see cref="double"/> can hold.</strong> A central moment squares its deviations, so once the
+/// spread approaches <c>sqrt(double.MaxValue)</c> — about <c>1.3e154</c> —
+/// <see cref="Variance"/> is infinity no matter which algorithm computes it. Past that, the two
+/// one-pass shapes fail on opposite inputs rather than one being safe: this recurrence
+/// subtracts, so <c>{double.MaxValue, -double.MaxValue}</c> overflows its delta and reports a
+/// mean of <c>−∞</c> where a running sum would have reported <c>0</c>; a running sum adds, so
+/// <c>{double.MaxValue, double.MaxValue}</c> overflows to <c>∞</c> where this recurrence
+/// reports the correct mean and a variance of zero. Neither is the safe one, and the variance
+/// is gone in every such case regardless.
+/// </para>
+/// <para>
+/// So it is documented rather than guarded. No fixed threshold expresses the limit — whether
+/// the second moment fits depends on how many values there are as well as how far apart they
+/// are — and special-casing the mean would rescue one statistic, leave an infinite variance
+/// beside it, and charge every ordinary <see cref="Add(double)"/> a branch for the privilege.
+/// Values at that scale are outside the type's useful domain; scale them before accumulating.
+/// </para>
+/// <para>
 /// Two accumulators over disjoint parts of a stream combine exactly with
 /// <see cref="Merge(in RunningStatistics)"/>, which applies Chan's parallel formulas rather
 /// than replaying either side, so a sharded or parallel pass produces the same moments as a
