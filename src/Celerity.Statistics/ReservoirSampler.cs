@@ -71,10 +71,17 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     where TRng : struct, IRandomSource
 {
     /// <summary>
-    /// The skip returned when the drawn one is past what a stream position can hold — large
-    /// enough that no stream reaches it, small enough that adding a position cannot overflow.
+    /// The next-replacement index used once the drawn skip runs past the end of what a stream
+    /// can address: a position no item can occupy, so the reservoir is closed rather than
+    /// merely postponed.
     /// </summary>
-    private const long FrozenSkip = long.MaxValue / 2;
+    /// <remarks>
+    /// This is an absolute index rather than a large skip on purpose. Truncating the skip
+    /// instead would leave a real index behind it — a long enough stream would arrive there and
+    /// take a replacement the algorithm never sampled — and adding a truncated skip to a
+    /// position already past the midpoint would wrap the sum negative.
+    /// </remarks>
+    private const long ClosedIndex = long.MaxValue;
 
     /// <summary>
     /// The largest value the acceptance weight may take: <c>1 − 2^-53</c>, the double below 1.
@@ -185,7 +192,7 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
             {
                 // The reservoir just filled: start the skip sequence from this point.
                 _w = NextW();
-                _nextIndex = _items.Length + NextSkip();
+                _nextIndex = NextIndexAfter(_items.Length - 1);
             }
 
             return true;
@@ -198,7 +205,7 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
 
         _items[_rng.NextInt(_items.Length)] = item;
         _w *= NextW();
-        _nextIndex = position + 1 + NextSkip();
+        _nextIndex = NextIndexAfter(position);
         return true;
     }
 
@@ -255,10 +262,15 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
         => Math.Min(Math.Exp(Math.Log(NextUnitInterval()) / _items.Length), MaxAcceptanceWeight);
 
     /// <summary>
-    /// Draws the number of items to skip before the next replacement,
-    /// <c>floor(ln(U) / ln(1 − w))</c>.
+    /// Draws the stream position of the next replacement: <paramref name="position"/> plus one,
+    /// plus a geometric skip of <c>floor(ln(U) / ln(1 − w))</c>.
     /// </summary>
-    private long NextSkip()
+    /// <param name="position">The position just consumed.</param>
+    /// <returns>
+    /// The next position to replace at, or <see cref="ClosedIndex"/> when the drawn skip runs
+    /// past the end of the stream.
+    /// </returns>
+    private long NextIndexAfter(long position)
     {
         // Log1P, not Math.Log(1 - w). Once the weight drops below the spacing of 1 the direct
         // form collapses to exactly zero, and a sampler that read that as a zero acceptance
@@ -268,14 +280,14 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
         double denominator = Log1P(-_w);
         double skip = Math.Floor(Math.Log(NextUnitInterval()) / denominator);
 
-        // Saturate only when the drawn skip is genuinely past what a stream position holds.
+        // Close the reservoir only when the skip runs past the last addressable position.
         // Both logs are negative and neither can be zero — the draw is strictly inside (0, 1)
-        // and the weight is strictly inside (0, 1 - 2^-53] — so the quotient is a positive
-        // finite number, and this is the only way it can leave long's range. It is also
-        // reached well before the weight itself could underflow to zero: the numerator is at
-        // least 2^-53 in magnitude, so the quotient passes long.MaxValue / 2 while the weight
-        // is still around 1e-35.
-        return skip >= FrozenSkip ? FrozenSkip : (long)skip;
+        // and the weight strictly inside (0, 1 - 2^-53] — so the quotient is a positive finite
+        // number and this is the only way it can leave long's range. It is also reached well
+        // before the weight itself could underflow to zero: the numerator is at least 2^-53 in
+        // magnitude, so the quotient outgrows the stream while the weight is still near 1e-35.
+        long remaining = ClosedIndex - position - 1;
+        return skip >= remaining ? ClosedIndex : position + 1 + (long)skip;
     }
 
     /// <summary>

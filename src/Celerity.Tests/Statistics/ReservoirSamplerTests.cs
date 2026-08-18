@@ -238,7 +238,7 @@ public class ReservoirSamplerTests
     }
 
     [Fact]
-    public void Add_ShouldFreezeTheReservoir_WhenTheDrawnSkipOutgrowsWhatALongCanHold()
+    public void Add_ShouldCloseTheReservoir_WhenTheDrawnSkipOutgrowsTheStream()
     {
         // The skip is |log(u)| / w, so it saturates when the acceptance weight is small and the
         // draw is not. Reaching that needs the weight driven down without the stream having to
@@ -273,6 +273,45 @@ public class ReservoirSamplerTests
 
         Assert.Equal(frozenAt, sampler[0]);
         Assert.Equal(200, sampler.TotalSeen);
+    }
+
+    [Fact]
+    public void Add_ShouldNotResumeReplacing_WhenTheStreamRunsPastAnySaturatedSkip()
+    {
+        // The closed reservoir is an index no position can occupy, not a large-but-real skip.
+        // A truncated skip would sit at a genuine position that a long enough stream reaches,
+        // taking a replacement the algorithm never sampled — and this asserts the sampler is
+        // closed rather than postponed, by driving it far past where a truncated skip would
+        // have landed relative to the stream it has actually seen.
+        const ulong ThreeQuarters = 6_755_399_441_055_744UL << 11;
+        var sampler = new ReservoirSampler<int, ScriptedRandom>(
+            1,
+            new ScriptedRandom([0UL, ulong.MaxValue, 0UL, 0UL, 0UL]));
+
+        for (int i = 0; i < 10; i++)
+        {
+            sampler.Add(i);
+        }
+
+        int closedAt = sampler[0];
+
+        for (int i = 10; i < 20_000; i++)
+        {
+            Assert.False(sampler.Add(i), $"item {i} was accepted after the reservoir closed");
+        }
+
+        Assert.Equal(closedAt, sampler[0]);
+        Assert.Equal(20_000, sampler.TotalSeen);
+
+        // And a sampler that has not saturated is unaffected by the same change.
+        var ordinary = new ReservoirSampler<int, ScriptedRandom>(2, new ScriptedRandom([ThreeQuarters]));
+        for (int i = 0; i < 1_000; i++)
+        {
+            ordinary.Add(i);
+        }
+
+        Assert.Equal(2, ordinary.Count);
+        Assert.Equal(1_000, ordinary.TotalSeen);
     }
 
     [Fact]
