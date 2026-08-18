@@ -413,6 +413,41 @@ public class DDSketchTests
     }
 
     [Fact]
+    public void Sum_ShouldSurviveCancellationThatAPlainRunningTotalLoses()
+    {
+        // Not an exotic input: 1 falls below the spacing of 1e16, so a plain running total
+        // absorbs it and the cancellation that follows has nothing left to give back. The
+        // compensation term keeps what each addition dropped.
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(1e16d);
+        sketch.Add(1d);
+        sketch.Add(-1e16d);
+
+        Assert.Equal(3, sketch.Count);
+        Assert.Equal(1d, sketch.Sum);
+        Assert.Equal(1d / 3d, sketch.Average, 1e-12);
+    }
+
+    [Fact]
+    public void Sum_ShouldStayCompensatedAcrossAMerge()
+    {
+        // Each operand carries its own correction, so the merged total is no worse conditioned
+        // than one that consumed both streams.
+        var left = new DDSketch(0.01d);
+        left.Add(1e16d);
+        left.Add(1d);
+
+        var right = new DDSketch(0.01d);
+        right.Add(-1e16d);
+        right.Add(1d);
+
+        left.Merge(right);
+
+        Assert.Equal(4, left.Count);
+        Assert.Equal(2d, left.Sum);
+    }
+
+    [Fact]
     public void SumAndAverage_ShouldOverflowTogether_WhenTheSumIsNotRepresentable()
     {
         // Pinning the documented limit rather than a fix. The sum of two double.MaxValues is

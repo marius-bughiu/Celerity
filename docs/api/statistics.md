@@ -98,7 +98,7 @@ to say about either. Only `NaN` and the infinities are rejected, with an
 |---|---|
 | `GetQuantile(double quantile)` | The bucketed value at that quantile, or `NaN` if the sketch is empty. |
 | `GetQuantiles(ReadOnlySpan<double> quantiles, Span<double> destination)` | Several at once, into a caller-owned span. Allocates nothing. |
-| `Count` / `Sum` / `Average` / `Min` / `Max` | **Exact**, not subject to `α` — tracked directly rather than read off the buckets. `Sum` is exact wherever the sum is itself a `double`; past that it is `±∞`, and `Average`, which is derived from it, inherits that. |
+| `Count` / `Sum` / `Average` / `Min` / `Max` | Tracked directly rather than read off the buckets, so none of them is subject to `α`. `Count`, `Min` and `Max` are exact; `Sum` is accumulated with Neumaier compensation, which makes it correct to the last bit or two rather than exact, and is `±∞` when the true sum is not a `double`. `Average` derives from `Sum`. |
 | `BinCount` | Live buckets across both ladders — the memory footprint, in buckets. |
 | `HasCollapsed` | Whether the bin budget has bound. See below. |
 | `RelativeAccuracy` / `MaxBins` | What the sketch was built with. |

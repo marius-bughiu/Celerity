@@ -49,11 +49,12 @@ namespace Celerity.Statistics;
 /// being accurate.
 /// </para>
 /// <para>
-/// <see cref="Count"/>, <see cref="Sum"/>, <see cref="Min"/> and <see cref="Max"/> are tracked
-/// directly rather than read off the buckets, so they are exact and not subject to <c>α</c>;
-/// only the quantiles are approximate. <see cref="Sum"/> is exact wherever the sum is itself a
-/// <see cref="double"/>, and <see cref="Average"/> is derived from it — see the remarks there
-/// for the one case that costs. Note that
+/// <see cref="Count"/>, <see cref="Min"/> and <see cref="Max"/> are tracked directly rather
+/// than read off the buckets, so they are exact and not subject to <c>α</c>; only the
+/// quantiles are approximate. <see cref="Sum"/> is tracked directly too and compensated, which
+/// makes it correct to the last bit or two rather than exact — floating-point addition cannot
+/// promise more — and <see cref="Average"/> is derived from it. Both carry the detail in their
+/// own remarks. Note that
 /// <c>GetQuantile(0)</c> and <c>GetQuantile(1)</c> return the <em>bucketed</em> extremes, so
 /// use <see cref="Min"/> / <see cref="Max"/> when the exact ones are wanted.
 /// </para>
@@ -125,6 +126,7 @@ public sealed class DDSketch
     private long _zeroCount;
     private long _count;
     private double _sum;
+    private double _sumCompensation;
     private double _min = double.PositiveInfinity;
     private double _max = double.NegativeInfinity;
 
@@ -208,21 +210,32 @@ public sealed class DDSketch
     /// Gets the sum of the values added, or <c>0</c> if none have been.
     /// </summary>
     /// <remarks>
-    /// Accumulated rather than reconstructed from the buckets, so it is exact wherever the sum
-    /// itself is a <see cref="double"/>. Where it is not — two <see cref="double.MaxValue"/>
-    /// entries, say — this is <c>±∞</c>, which is the right answer to a question with no
-    /// representable one.
+    /// <para>
+    /// Accumulated with Neumaier compensation rather than as a plain running total, so it is
+    /// correct to the last bit or two whatever order the values arrive in. A plain total is not
+    /// a matter of exotic inputs: <c>1e16</c>, then <c>1</c>, then <c>-1e16</c> loses the 1
+    /// entirely and reports <c>0</c>, because the 1 falls below the spacing of <c>1e16</c> and
+    /// the cancellation that follows has nothing left to recover it. The correction term keeps
+    /// what each addition dropped and is applied when the sum is read.
+    /// </para>
+    /// <para>
+    /// Where the true sum is not a <see cref="double"/> at all — two
+    /// <see cref="double.MaxValue"/> entries, say — this is <c>±∞</c>, which is the right
+    /// answer to a question with no representable one, and the correction is not applied
+    /// (it would be <see cref="double.NaN"/>).
+    /// </para>
     /// </remarks>
-    public double Sum => _sum;
+    public double Sum => double.IsFinite(_sum) ? _sum + _sumCompensation : _sum;
 
     /// <summary>
     /// Gets the arithmetic mean of the values added, or <see cref="double.NaN"/> if none have
     /// been.
     /// </summary>
     /// <remarks>
-    /// Derived from <see cref="Sum"/>, so it inherits that overflow in the one case where the
-    /// mean itself would have been representable: two <see cref="double.MaxValue"/> entries
-    /// average to <see cref="double.MaxValue"/> but report <c>∞</c>. Carrying an incremental
+    /// Derived from <see cref="Sum"/>, so it inherits both that sum's compensation and its
+    /// overflow in the one case where the mean itself would have been representable: two
+    /// <see cref="double.MaxValue"/> entries average to <see cref="double.MaxValue"/> but
+    /// report <c>∞</c>. Carrying an incremental
     /// mean instead would fix that at the cost of a division on every <see cref="Add(double)"/>
     /// — on the hot path of a type whose documented workloads (latencies, sizes, durations)
     /// cannot reach it — and would not even be a complete fix, because the weighted mean that
@@ -230,7 +243,7 @@ public sealed class DDSketch
     /// of opposite extreme sign. <see cref="Count"/>, <see cref="Min"/> and <see cref="Max"/>
     /// are unaffected either way.
     /// </remarks>
-    public double Average => _count == 0 ? double.NaN : _sum / _count;
+    public double Average => _count == 0 ? double.NaN : Sum / _count;
 
     /// <summary>
     /// Gets the exact smallest value added — not the bucketed one — or
@@ -316,7 +329,7 @@ public sealed class DDSketch
         }
 
         _count += count;
-        _sum += value * count;
+        AddToSum(value * count);
 
         if (value < _min)
         {
@@ -507,7 +520,11 @@ public sealed class DDSketch
         _negative.Merge(other._negative);
         _zeroCount += other._zeroCount;
         _count += other._count;
-        _sum += other._sum;
+
+        // The operand's own correction travels with its total, so a merged sum is no worse
+        // conditioned than one that consumed both streams directly.
+        AddToSum(other._sum);
+        _sumCompensation += other._sumCompensation;
         _min = Math.Min(_min, other._min);
         _max = Math.Max(_max, other._max);
     }
@@ -520,6 +537,7 @@ public sealed class DDSketch
         _zeroCount = 0;
         _count = 0;
         _sum = 0d;
+        _sumCompensation = 0d;
         _min = double.PositiveInfinity;
         _max = double.NegativeInfinity;
     }
@@ -590,6 +608,26 @@ public sealed class DDSketch
 
         UInt128 product = (UInt128)significand * (UInt128)(ulong)span;
         return (long)(product >> shift);
+    }
+
+    /// <summary>
+    /// Folds a term into the running sum, keeping what the addition dropped.
+    /// </summary>
+    /// <remarks>
+    /// Neumaier's variant of Kahan summation: it takes the correction from whichever operand is
+    /// larger, which is what makes it hold up when a small running total absorbs a large term
+    /// as well as the other way round.
+    /// </remarks>
+    /// <param name="term">The value to add.</param>
+    private void AddToSum(double term)
+    {
+        double updated = _sum + term;
+
+        _sumCompensation += Math.Abs(_sum) >= Math.Abs(term)
+            ? (_sum - updated) + term
+            : (term - updated) + _sum;
+
+        _sum = updated;
     }
 
     /// <summary>Maps a strictly positive value onto its bucket index.</summary>
