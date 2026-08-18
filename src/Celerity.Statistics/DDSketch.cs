@@ -342,7 +342,7 @@ public sealed class DDSketch
         }
 
         _count += count;
-        AddToSum(value * count);
+        AddToSum(value, count);
 
         if (value < _min)
         {
@@ -634,6 +634,42 @@ public sealed class DDSketch
 
         UInt128 product = (UInt128)significand * (UInt128)(ulong)span;
         return (long)(product >> shift);
+    }
+
+    /// <summary>
+    /// Folds <paramref name="count"/> occurrences of <paramref name="value"/> into the running
+    /// sum without forming a product that overflows on its own.
+    /// </summary>
+    /// <remarks>
+    /// <c>value * count</c> can be infinite where adding the occurrences one at a time would
+    /// not be: after <c>Add(-double.MaxValue)</c>, <c>Add(double.MaxValue, 2)</c> passes through
+    /// zero and ends at <see cref="double.MaxValue"/> one at a time, while the bulk product is
+    /// infinity before the running total ever sees it. Splitting keeps the two forms agreeing.
+    /// Each chunk is sized to move the total by about the whole <see cref="double"/> range, so
+    /// this ends within a few passes — or as soon as the total does overflow, which no later
+    /// term can undo anyway.
+    /// </remarks>
+    /// <param name="value">The value being added.</param>
+    /// <param name="count">How many occurrences of it. Positive.</param>
+    private void AddToSum(double value, long count)
+    {
+        double term = value * count;
+
+        if (double.IsFinite(term))
+        {
+            AddToSum(term);
+            return;
+        }
+
+        long remaining = count;
+        long chunk = Math.Max(1L, (long)(double.MaxValue / Math.Abs(value)));
+
+        while (remaining > 0 && double.IsFinite(_sum))
+        {
+            long take = Math.Min(chunk, remaining);
+            AddToSum(value * take);
+            remaining -= take;
+        }
     }
 
     /// <summary>

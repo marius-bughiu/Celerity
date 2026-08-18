@@ -472,6 +472,39 @@ public class DDSketchTests
     }
 
     [Fact]
+    public void Sum_ShouldMatchRepeatedSingleAdds_WhenTheBulkProductWouldOverflow()
+    {
+        // value * count can be infinite where adding the occurrences one at a time is not.
+        // These two sketches must agree, and before the split they did not: the bulk form
+        // reported infinity while the sequential one ends at double.MaxValue.
+        var bulk = new DDSketch(0.01d);
+        bulk.Add(-double.MaxValue);
+        bulk.Add(double.MaxValue, 2);
+
+        var sequential = new DDSketch(0.01d);
+        sequential.Add(-double.MaxValue);
+        sequential.Add(double.MaxValue);
+        sequential.Add(double.MaxValue);
+
+        Assert.Equal(double.MaxValue, sequential.Sum);
+        Assert.Equal(sequential.Sum, bulk.Sum);
+        Assert.Equal(sequential.Count, bulk.Count);
+    }
+
+    [Fact]
+    public void Sum_ShouldSaturateWithoutSpinning_WhenAMultiplicityGenuinelyOverflows()
+    {
+        // The same split, on a count where the answer really is infinite. It has to stop as
+        // soon as the total overflows rather than walking the multiplicity a chunk at a time.
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(double.MaxValue, long.MaxValue);
+
+        Assert.Equal(long.MaxValue, sketch.Count);
+        Assert.Equal(double.PositiveInfinity, sketch.Sum);
+        Assert.Equal(double.MaxValue, sketch.Max);
+    }
+
+    [Fact]
     public void Sum_ShouldStayCompensatedAcrossAMerge()
     {
         // Each operand carries its own correction, so the merged total is no worse conditioned
