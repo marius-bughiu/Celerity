@@ -76,6 +76,19 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// </summary>
     private const long FrozenSkip = long.MaxValue / 2;
 
+    /// <summary>
+    /// The largest value the acceptance weight may take: <c>1 − 2^-53</c>, the double below 1.
+    /// </summary>
+    /// <remarks>
+    /// A weight of exactly 1 is a state the recurrence cannot leave — <c>log(1 − w)</c> is
+    /// <c>−∞</c> so every skip is zero, and <c>w *= factor</c> with a factor that also rounds
+    /// to 1 never decays — so the sampler would accept every remaining item for the rest of the
+    /// stream. Reaching it takes only a maximal draw: at a capacity of two or more, the
+    /// exponent of <c>log(1 − 2^-53) / k</c> is close enough to zero that <c>Math.Exp</c> rounds
+    /// back up to 1.
+    /// </remarks>
+    private const double MaxAcceptanceWeight = 1d - (1d / (1UL << 53));
+
     private readonly T[] _items;
     private TRng _rng;
     private long _seen;
@@ -238,7 +251,8 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// Draws the multiplicative factor <c>exp(ln(U) / k)</c> that shrinks the acceptance
     /// window after each replacement.
     /// </summary>
-    private double NextW() => Math.Exp(Math.Log(NextUnitInterval()) / _items.Length);
+    private double NextW()
+        => Math.Min(Math.Exp(Math.Log(NextUnitInterval()) / _items.Length), MaxAcceptanceWeight);
 
     /// <summary>
     /// Draws the number of items to skip before the next replacement,

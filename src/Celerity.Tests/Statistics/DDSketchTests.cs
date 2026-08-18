@@ -353,6 +353,54 @@ public class DDSketchTests
     }
 
     [Fact]
+    public void GetQuantile_ShouldRankExactly_WhenMultiplicitiesPushTheCountPastWhatADoubleHolds()
+    {
+        // Count is 2^63 - 1 here, so `quantile * (Count - 1)` in double rounds 2^63 - 2 up to
+        // 2^63. At the median that moves the rank from 2^62 - 1 — the last element of the first
+        // bucket — to 2^62, the first of the second, and the answer from about 1 to about 100.
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(1d, 1L << 62);
+        sketch.Add(100d, (1L << 62) - 1);
+
+        Assert.Equal(long.MaxValue, sketch.Count);
+
+        double median = sketch.GetQuantile(0.5d);
+        QuantileGuarantee.Holds(1d, median, 0.01d, "the median of a count that exceeds 2^53");
+
+        // The element after it is in the second bucket, which is the boundary being pinned.
+        double justAbove = sketch.GetQuantile(0.5000000000000002d);
+        QuantileGuarantee.Holds(100d, justAbove, 0.01d, "one rank past the boundary");
+    }
+
+    [Theory]
+    [InlineData(0d)]
+    [InlineData(5e-324)]
+    [InlineData(1e-30)]
+    [InlineData(1e-15)]
+    public void GetQuantile_ShouldNameTheFirstBucket_ForVanishinglySmallQuantilesOfAHugeCount(double quantile)
+    {
+        // Zero, a subnormal, one far below the reciprocal of the count, and one merely small:
+        // the four shapes the exact-rank decomposition separates, reachable only past 2^53
+        // where that decomposition is used. All name rank zero, so all resolve to the smallest
+        // bucket rather than throwing or overflowing a shift.
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(1d, 1L << 60);
+        sketch.Add(100d, 1L << 60);
+
+        QuantileGuarantee.Holds(1d, sketch.GetQuantile(quantile), 0.01d, $"q={quantile}");
+    }
+
+    [Fact]
+    public void GetQuantile_ShouldNameTheLastBucket_ForQuantileOneOfAHugeCount()
+    {
+        var sketch = new DDSketch(0.01d);
+        sketch.Add(1d, 1L << 60);
+        sketch.Add(100d, 1L << 60);
+
+        QuantileGuarantee.Holds(100d, sketch.GetQuantile(1d), 0.01d, "q=1 past 2^53");
+    }
+
+    [Fact]
     public void GetQuantile_ShouldStayInsideTheObservedRange()
     {
         // A bucket representative can sit outside the values that landed in it; the true

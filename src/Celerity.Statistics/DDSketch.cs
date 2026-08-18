@@ -350,7 +350,7 @@ public sealed class DDSketch
         // Rank of the requested element in ascending value order: the negative ladder first
         // (filed under the negated magnitude, so the most negative value takes the *smallest*
         // index and this walk ascends like the positive one), then the zeros, then the rest.
-        double rank = quantile * (_count - 1);
+        long rank = FlooredRank(quantile, _count - 1);
 
         if (rank < _negative.Total)
         {
@@ -484,6 +484,74 @@ public sealed class DDSketch
         _sum = 0d;
         _min = double.PositiveInfinity;
         _max = double.NegativeInfinity;
+    }
+
+    /// <summary>
+    /// Computes <c>floor(quantile · span)</c> exactly, for a span too wide to survive a
+    /// <see cref="double"/> multiply.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>quantile * (Count - 1)</c> is exact only while the count stays under 2^53, and
+    /// multiplicities take it past that: after <c>Add(1, 2^62)</c> and <c>Add(100, 2^62 - 1)</c>
+    /// the median's true rank is <c>2^62 - 1</c>, the last element of the first bucket, but
+    /// <c>Count - 1</c> rounds up to 2^63 and the product names <c>2^62</c> — the second bucket,
+    /// and an answer a hundred times too large.
+    /// </para>
+    /// <para>
+    /// The exact path is taken only past 2^53, where the loss is unbounded; below it the plain
+    /// multiply stands, because there the worst case is a rank landing on one side or the other
+    /// of a tie between adjacent elements. The significand is 53 bits and the span is at most
+    /// 63, so their product fits a <see cref="UInt128"/> and the floor is a shift. Flooring is
+    /// what the callers want: the walks below stop at the first bucket whose cumulative count
+    /// exceeds the rank, and for an integer cumulative that test is unchanged by dropping a
+    /// fractional rank's fraction.
+    /// </para>
+    /// </remarks>
+    private static long FlooredRank(double quantile, long span)
+    {
+        if (span <= (1L << 53))
+        {
+            // The span converts exactly and the product is at worst a half-ulp out, which can
+            // move the rank only when the true product sits that close to an integer — a tie
+            // between two adjacent elements, either of which answers the quantile. Keeping the
+            // plain multiply here also keeps this identical to the rank an oracle computes the
+            // obvious way, which is what the differential tests compare against.
+            return (long)(quantile * span);
+        }
+
+        if (quantile <= 0d)
+        {
+            return 0;
+        }
+
+        if (quantile >= 1d)
+        {
+            return span;
+        }
+
+        long bits = BitConverter.DoubleToInt64Bits(quantile);
+        int exponent = (int)((bits >> 52) & 0x7FF);
+
+        if (exponent == 0)
+        {
+            // A subnormal quantile is below 2^-1022; its product with any long floors to zero.
+            return 0;
+        }
+
+        // quantile == significand · 2^-shift, with the implicit leading bit restored. It is
+        // strictly below 1 here, so shift is at least 53.
+        ulong significand = (ulong)(bits & 0x000F_FFFF_FFFF_FFFF) | (1UL << 52);
+        int shift = 1075 - exponent;
+
+        if (shift >= 128)
+        {
+            // Further below 1 than the product can climb back from: the floor is zero.
+            return 0;
+        }
+
+        UInt128 product = (UInt128)significand * (UInt128)(ulong)span;
+        return (long)(product >> shift);
     }
 
     /// <summary>Maps a strictly positive value onto its bucket index.</summary>
