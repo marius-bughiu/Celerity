@@ -15,6 +15,7 @@ This folder contains reference documentation for the Celerity high-performance c
 - [Collections](api/collections.md) — dictionaries (`CelerityDictionary`, `RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`, `IntDictionary`, `LongDictionary`, `SmallDictionary`, `EnumMap`, `FrozenCelerityDictionary`), sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`, `FrozenCeleritySet`), multi-collections (`CelerityMultiMap`, `CelerityMultiSet`), probabilistic / bit collections (`BitSet`, `BloomFilter`, `CuckooFilter`, `XorFilter`, `HyperLogLog`, `CountMinSketch`, `TopKSketch`), caches (`LruCache`), sequences (`Deque`), and union-find (`DisjointSet`).
 - [Hashing](api/hashing.md) — `IHashProvider<T>` interface and built-in hashers (`Int32WangNaiveHasher`, `Int32Murmur3Hasher`, `Int64WangHasher`, `Int64Murmur3Hasher`, `UInt32WangNaiveHasher`, `UInt64Murmur3Hasher`, `GuidHasher`, the `String*` hasher family, `DefaultHasher<T>`), and the `HashQualityEvaluator`.
 - [Sorting](api/sorting.md) — non-comparison sorts and selection over primitive keys (`RadixSort`, `CountingSort`, `PartialSort`).
+- [Statistics](api/statistics.md) — streaming summary statistics in bounded memory (`DDSketch` relative-error quantiles, `ReservoirSampler` uniform sampling, `RunningStatistics` single-pass moments).
 - [Utilities](api/utilities.md) — `FastUtils` helper methods.
 - [Native AOT & trimming](aot.md) — AOT / trim compatibility and how it is enforced.
 

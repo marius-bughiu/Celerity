@@ -16,7 +16,7 @@ Requirements: .NET 8 SDK. Everything else is fetched via NuGet.
 
 ## Project layout
 
-As of 2.0.0 the library is split into layered packages (`Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`, with `Celerity.Sorting` a second consumer of `Celerity.Primitives`); see the [migration guide](docs/migration.md#200--the-package-split). On top of that core sit three standalone **showcase** packages — `Celerity.Ring`, `Celerity.Sentinel` and `Celerity.Cardinality` — which depend on `Celerity.Collections` and carry their own test projects. Seven packages ship in total.
+As of 2.0.0 the library is split into layered packages (`Celerity.Primitives` ← `Celerity.Hashing` ← `Celerity.Collections`, with `Celerity.Sorting` and `Celerity.Statistics` two further consumers of `Celerity.Primitives`); see the [migration guide](docs/migration.md#200--the-package-split). On top of that core sit three standalone **showcase** packages — `Celerity.Ring`, `Celerity.Sentinel` and `Celerity.Cardinality` — which depend on `Celerity.Collections` and carry their own test projects. Eight packages ship in total.
 
 ```
 src/
@@ -26,6 +26,7 @@ src/
 ├── Celerity.Hashing/         The Celerity.Hashing package. IHashProvider<T>, the hashers, the evaluators.
 ├── Celerity.Primitives/      The Celerity.Primitives package. FastUtils, struct PRNGs, VarInt, FastGuid.
 ├── Celerity.Sorting/         The Celerity.Sorting package. RadixSort, CountingSort, PartialSort.
+├── Celerity.Statistics/      The Celerity.Statistics package. DDSketch, ReservoirSampler, RunningStatistics.
 ├── Celerity.Ring/            The Celerity.Ring package. Consistent-hash and rendezvous rings.
 ├── Celerity.Sentinel/        The Celerity.Sentinel package. Streaming abuse / heavy-hitter detection.
 ├── Celerity.Cardinality/     The Celerity.Cardinality package. Approximate COUNT(DISTINCT) and windowed dedup.
@@ -67,7 +68,7 @@ These are enforced by review, not by an analyzer. Reading the existing code is t
 - When fixing a bug, add a test that fails on `main` and passes on your branch. It's fine to reference the issue number in a comment.
 - New collections are expected to carry parity coverage at every layer: behavioural tests, a CsCheck property test against the closest BCL oracle, and a `Celerity.Fuzz` target. See the [Testing & coverage guide](docs/testing.md) for how each layer works and how to run them.
 - A new collection must also be added to the **cross-collection suites** that assert one rule across the whole family, not only to its own `*Tests.cs`. `grep` `src/Celerity.Tests/Collections/` for them before assuming you have found them all; `ClearNoOpVersionTests.cs` (a `Clear()` that removes nothing must not bump the version) is the one that applies to every count-based collection. A type that is absent from these suites is not covered for the invariants the rest of the family guarantees.
-- Coverage is gated in CI (`.github/workflows/coverage.yml`) at **100% line and 100% branch**, across all seven shipping packages. New code arrives with its tests, or the gate goes red. If you hit a branch no test can reach, exclude it at the source with `[ExcludeFromCodeCoverage(Justification = "…")]` explaining why — do not lower the floor. See the [Testing & coverage guide](docs/testing.md) for the current exclusions and the reasoning behind each.
+- Coverage is gated in CI (`.github/workflows/coverage.yml`) at **100% line and 100% branch**, across all eight shipping packages. New code arrives with its tests, or the gate goes red. If you hit a branch no test can reach, exclude it at the source with `[ExcludeFromCodeCoverage(Justification = "…")]` explaining why — do not lower the floor. See the [Testing & coverage guide](docs/testing.md) for the current exclusions and the reasoning behind each.
 - Adding a new shipping package? Add its assembly to `src/coverage.runsettings` and its test project to the coverage workflow. Coverlet's assembly filter is exact-match, so an unlisted package is silently unmeasured.
 
 ## Benchmarks
@@ -236,7 +237,7 @@ Both gates, plus the package-metadata check, also run on every PR as the `releas
 
 ## Scope
 
-Celerity is narrowly scoped: specialized high-performance collections, hashers, and the minimal supporting utilities they need. We are unlikely to accept:
+Celerity is narrowly scoped: specialized high-performance collections, hashers, non-comparison sorts, streaming summary statistics, and the minimal supporting utilities they need. The common thread is a workload where the BCL either has no counterpart or structurally cannot host one — not breadth for its own sake. We are unlikely to accept:
 
 - General-purpose extension methods that aren't used by a collection in the library.
 - Wrappers around BCL types that don't add a performance benefit backed by benchmarks.

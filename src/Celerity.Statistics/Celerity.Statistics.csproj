@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>$(CelerityTargetFrameworks)</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PackageProjectUrl>https://github.com/marius-bughiu/Celerity</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/marius-bughiu/Celerity</RepositoryUrl>
+		<Authors>Marius Bughiu</Authors>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!--
+		  Native AOT / trimming compatibility (#32). See Celerity.Collections for
+		  the full rationale; every package in the family carries the same switch so
+		  the trim / AOT / single-file analyzers verify the whole graph on every build.
+		-->
+		<IsAotCompatible>true</IsAotCompatible>
+		<!--
+		  Promote CS1591 (missing XML comment) and CS1570 (badly formed XML in a doc
+		  comment) to errors. Every public symbol in the package must carry an XML doc
+		  comment and that comment must parse, so the shipped .xml is complete: the doc
+		  writer silently drops the whole member when its comment is not well formed.
+		-->
+		<WarningsAsErrors>$(WarningsAsErrors);CS1591;CS1570</WarningsAsErrors>
+		<PackageId>Celerity.Statistics</PackageId>
+		<Description>Streaming summary statistics in bounded memory: DDSketch for relative-error quantiles over an unbounded stream, ReservoirSampler for a fixed-size uniform sample of a stream of unknown length (Algorithm L), and RunningStatistics for numerically stable single-pass mean / variance / skewness / kurtosis. The BCL ships no quantile, sampling, or higher-moment type at all. DDSketch merges bucket-exactly across shards (unless an operand has already collapsed) and RunningStatistics up to floating-point rounding; ReservoirSampler does not merge at all (a uniform merge needs a hypergeometric draw). The quantile, span and scalar query paths allocate nothing (enumerating the sampler as IEnumerable allocates an iterator, as it must); adding allocates only when a sketch ladder grows. Part of the Celerity family.</Description>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageTags>celerity;statistics;quantile;ddsketch;percentile;reservoir-sampling;welford;streaming;sketch;performance</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<!--
+		  First-release escape hatch: Celerity.Statistics has no published predecessor
+		  to validate against, and asking for one fails the restore. Delete this line
+		  once the package's first release is indexed on NuGet.org — scripts/check_package_baseline.js
+		  fails the build if it is still here after that.
+		-->
+		<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\.nuget\icon.png" Pack="true" PackagePath="" />
+		<None Include="README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- ReservoirSampler draws its skips from the Celerity.Primitives struct PRNGs. -->
+		<ProjectReference Include="..\Celerity.Primitives\Celerity.Primitives.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="MinVer" Version="6.0.0">
+	    <PrivateAssets>all</PrivateAssets>
+	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+	</ItemGroup>
+</Project>

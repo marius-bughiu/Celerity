@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Coverage collection settings for the coverlet "XPlat Code Coverage" collector.
-  Scopes coverage to the seven shipping packages (the test, benchmark, fuzz, and
+  Scopes coverage to the eight shipping packages (the test, benchmark, fuzz, and
   AOT-smoke assemblies are not the subject under measurement) and emits Cobertura
   for scripts/coverage_report.py, which renders the report and enforces the gate.
   See docs/testing.md and .github/workflows/coverage.yml.
@@ -34,7 +34,7 @@
             showcase packages; from the 2.0.0 package split until #314 those were
             outside the gate entirely and could have dropped to 0% with CI green.
           -->
-          <Include>[Celerity]*,[Celerity.Hashing]*,[Celerity.Primitives]*,[Celerity.Sorting]*,[Celerity.Ring]*,[Celerity.Sentinel]*,[Celerity.Cardinality]*</Include>
+          <Include>[Celerity]*,[Celerity.Hashing]*,[Celerity.Primitives]*,[Celerity.Sorting]*,[Celerity.Statistics]*,[Celerity.Ring]*,[Celerity.Sentinel]*,[Celerity.Cardinality]*</Include>
           <!--
             ExcludeFromCodeCoverageAttribute marks the handful of guards that no test
             can reach — array-size ceilings and clamps that the callers' own argument

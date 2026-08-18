@@ -51,6 +51,7 @@ const BENCHMARKED_PROJECTS = new Set([
   'Celerity.Hashing',
   'Celerity.Primitives',
   'Celerity.Sorting',
+  'Celerity.Statistics',
   'Celerity.Ring',
   'Celerity.Sentinel',
   'Celerity.Cardinality',

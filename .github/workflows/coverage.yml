@@ -1,7 +1,7 @@
 name: Coverage
 
 # Code-coverage reporting and gate (issue #29). Collects line/branch coverage for
-# all seven shipping Celerity packages via coverlet, renders an HTML report + badges
+# all eight shipping Celerity packages via coverlet, renders an HTML report + badges
 # with scripts/coverage_report.py (there is no ReportGenerator dependency), fails
 # the build if coverage drops below the floor, comments the summary on PRs, and
 # publishes the HTML report to gh-pages (/coverage) on main.
@@ -18,7 +18,7 @@ on:
       - 'src/**'
       - '.github/workflows/coverage.yml'
 
-# Coverage floor. The suite is at 100% line and 100% branch across all seven
+# Coverage floor. The suite is at 100% line and 100% branch across all eight
 # shipping packages, so the floor is set to match: every reachable line and branch
 # is covered, and the handful of guards no test can reach (array-size ceilings,
 # clamps their caller's own validation already rules out) carry

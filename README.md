@@ -11,7 +11,7 @@ dotnet add package Celerity.Collections
 
 ### Packages
 
-Celerity's core ships as layered NuGet packages. **`Celerity.Collections` pulls in the hashing and primitives packages transitively, so a single `dotnet add package Celerity.Collections` still gives you everything on that line** — add the lower packages directly only if you want the hashers or primitives *without* the collections. `Celerity.Sorting` is a sibling rather than a dependency of the collections: add it when you want the sorts.
+Celerity's core ships as layered NuGet packages. **`Celerity.Collections` pulls in the hashing and primitives packages transitively, so a single `dotnet add package Celerity.Collections` still gives you everything on that line** — add the lower packages directly only if you want the hashers or primitives *without* the collections. `Celerity.Sorting` and `Celerity.Statistics` are siblings rather than dependencies of the collections: add them when you want the sorts or the streaming summaries.
 
 | Package | What it adds | Depends on |
 |---|---|---|
@@ -19,10 +19,11 @@ Celerity's core ships as layered NuGet packages. **`Celerity.Collections` pulls 
 | `Celerity.Hashing` | `IHashProvider<T>` / `IHashProvider64<T>`, the struct hashers, `HashQualityEvaluator` | `Celerity.Primitives` |
 | `Celerity.Primitives` | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve` | — |
 | [`Celerity.Sorting`](https://www.nuget.org/packages/Celerity.Sorting/) | `RadixSort`, `CountingSort`, `PartialSort` — non-comparison sorts and selection over primitive keys | `Celerity.Primitives` |
+| [`Celerity.Statistics`](https://www.nuget.org/packages/Celerity.Statistics/) | `DDSketch`, `ReservoirSampler`, `RunningStatistics` — streaming quantiles, sampling and moments in bounded memory | `Celerity.Primitives` |
 
 > **Upgrading from 1.x?** Namespaces are unchanged except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives`. See the [migration guide](docs/migration.md#200--the-package-split).
 
-All four packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet hands your project the assembly built against its own runtime. `net8.0` (LTS) is the floor — Celerity runs anywhere from .NET 8 upward.
+All five packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet hands your project the assembly built against its own runtime. `net8.0` (LTS) is the floor — Celerity runs anywhere from .NET 8 upward.
 
 ## Built with Celerity
 
@@ -754,6 +755,9 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | Sorting many primitive keys — ids, join keys, timestamps — at a thousand elements and up | `RadixSort` (package `Celerity.Sorting`) | Four or eight branch-free counting passes instead of introsort's `O(n log n)` mispredicting comparisons, in keys-only, key+payload, and argsort forms. **Stable.** Needs `O(n)` scratch, which is why `Array.Sort` cannot do this at all. Below a few hundred elements `Array.Sort` wins — the crossover is measured on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/). |
 | Sorting values drawn from **few distinct keys** — enum ordinals, bucket ids, quantized scores | `CountingSort` (package `Celerity.Sorting`) | One histogram pass and one run-fill, `O(n + range)`; the keys-only forms never move an element twice and allocate nothing for `byte` keys. Loses once `range` approaches `n` — use `RadixSort` there. |
 | Only the **top / bottom *k*** of a large span is wanted | `PartialSort` (package `Celerity.Sorting`) | `O(n)` introselect for the *k* smallest in place, or an `O(n log k)` bounded heap into a destination when the source must not be reordered. Against LINQ the win is allocation and boxing, not asymptotics — `OrderBy().Take(k)` already partial-sorts. |
+| **Percentiles over a stream** — p50 / p90 / p99 latency, payload size, queue depth, over data you cannot keep | `DDSketch` (package `Celerity.Statistics`) | The BCL has no quantile type at all, so the alternative is retaining every sample in a `List<double>` and sorting per query: unbounded memory and `O(n log n)` an answer. The sketch is accurate to a **relative** `α` at *every* quantile — 1% of 10 ms and 1% of 10 s — in memory proportional to the log of the value range, and merges bucket-exactly across shards (unless a shard has already exhausted its bin budget, which `HasCollapsed` reports). ⚠️ If your data is static and fits in memory, **sort it once and index**; that arm is on the dashboard and the sketch loses it. |
+| A **bounded uniform sample** of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` (package `Celerity.Statistics`) | Li's Algorithm L: `O(k)` memory and `O(k · log(n / k))` random draws over the whole stream, never needing to know `n`. `OrderBy(random).Take(k)` sorts the entire sequence to keep `k` of it and cannot run on a stream at all. Seeded, so the sample is reproducible on a given runtime and platform (not byte-identical across them — the skip arithmetic goes through `Math.Log` / `Math.Exp`, whose last bit .NET does not fix). |
+| **Mean / variance / skew** of a stream, or of each of many buckets | `RunningStatistics` (package `Celerity.Statistics`) | `System.Linq` has `Average` and nothing else. One pass, no allocation, and numerically stable where the `sum` / `sumOfSquares` shortcut everyone writes returns a negative variance once the mean is large relative to the spread. A `struct`, so `default` is a valid empty accumulator and per-bucket arrays cost nothing. |
 | Set of `int` values | `IntSet` | Same fast path as `IntDictionary`, membership only. |
 | Set of `long` values | `LongSet` | 64-bit equivalent of `IntSet`; defaults to `Int64WangNaiveHasher`. |
 | Set of any other type | `CeleritySet<T, THasher>` | Same hasher choice as `CelerityDictionary`. |
@@ -1058,6 +1062,39 @@ PartialSort.TopK<int>(latencies, worst);            // without reordering the so
 
 **Where it does not win, stated plainly.** `RadixSort` **loses below a few hundred elements** — the histogram's fixed cost dominates, so use `Array.Sort` for small spans; the [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) sweeps from 100 to 1,000,000 elements precisely so the crossover is a measured number rather than a guess. `CountingSort` loses once `range` approaches `n`. And `PartialSort` is **not** asymptotically better than LINQ: `OrderBy().Take(k)` has applied its own partial-sort optimization since .NET 6, so the win there is allocation and boxing, not complexity. One more thing to know before sorting reals: `RadixSort` orders `NaN` by sign bit and `-0.0` before `+0.0`, where `Array.Sort` moves all NaNs to the front and calls the zeros equal. Full details in the [sorting API reference](docs/api/sorting.md).
 
+## Streaming statistics — `Celerity.Statistics`
+
+The **`Celerity.Statistics`** package covers a gap the BCL never filled at all: summarizing a stream you cannot hold. `System.Linq` gives you `Average`, `Sum`, `Min` and `Max`, and stops. There is no quantile type, no sampler, no variance, no higher moment, and no accumulator that can be fed one value at a time — so the honest alternative to each of these is a `List<T>` holding the whole stream.
+
+```bash
+dotnet add package Celerity.Statistics
+```
+
+```csharp
+using Celerity.Statistics;
+
+// Quantiles with a relative error bound, in bounded memory.
+var latencies = new DDSketch(relativeAccuracy: 0.01);
+foreach (double ms in requestLatencies)
+    latencies.Add(ms);
+
+Console.WriteLine($"p99 {latencies.GetQuantile(0.99):F2} ms");
+
+foreach (DDSketch shard in perShardSketches)   // bucket-exact cross-shard merge
+    latencies.Merge(shard);
+
+// A 1,000-item uniform sample of a stream of unknown length.
+var sample = new ReservoirSampler<string>(capacity: 1_000, seed: 42);
+foreach (string line in logLines)
+    sample.Add(line);
+
+// Single-pass, allocation-free moments — and an array element is already a ref.
+var perEndpoint = new RunningStatistics[endpointCount];
+perEndpoint[endpoint].Add(latencyMs);
+```
+
+**Where it does not win, stated plainly.** `DDSketch.Add` is **slower than a `List<double>` append** — appending is a bounds check and a store, and the sketch pays a `log()` and a `ceil()` on top of its own — and if your data is static and fits in memory, a **pre-sorted array indexed in `O(1)` beats the sketch by a wide margin**. Both arms are on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) rather than left out. What the sketch buys is the query on a stream that keeps moving, and a footprint that does not grow with the sample count; when its bin budget runs out it collapses the *lowest* buckets and says so through `HasCollapsed`, because a guarantee that has quietly stopped holding is worse than none. `ReservoirSampler` deliberately ships **without a `Merge`**: a uniform merge needs a hypergeometric draw over the two stream lengths, and replaying one side into the other over-weights the shorter one. And `RunningStatistics` buys **correctness, not speed**: CI measures it at **1.9× the two-pass LINQ shape**, because it maintains all four moments on every `Add`. What it buys is a single pass over a stream it never retains, and an answer the one-pass `sum` / `sumOfSquares` shortcut — cheaper still — gets catastrophically wrong at `1e10 ± 6`. `ReservoirSampler` has its own crossover: **6.2× slower** than materializing at a thousand items, **1.7× faster** at a hundred thousand. Full details in the [statistics API reference](docs/api/statistics.md).
+
 ## Native AOT & trimming
 
 Celerity is **Native AOT and trimming compatible** — no reflection, runtime code generation, or dynamic type loading. Every collection is a generic over a struct hasher, and the only BCL primitives on the hot paths (`MemoryMarshal`, `Unsafe`, `EqualityComparer<T>.Default`) are AOT-safe. The assembly is marked [`<IsAotCompatible>true</IsAotCompatible>`](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#aot-compatibility-analyzers), so a `PublishAot` app gets **no trim or AOT warnings**. Compatibility is enforced on every build (the trim/AOT analyzers run during compilation) and CI publishes a Native AOT smoke-test binary exercising every collection and hasher. See [`docs/aot.md`](docs/aot.md).
@@ -1071,5 +1108,5 @@ Full constructors, signatures, exceptions, and per-type examples: **[API referen
 ## Project docs
 
 - [`docs/`](docs/README.md) — documentation index & [API reference](docs/README.md#api-reference).
-- [Sorting API](docs/api/sorting.md) · [Performance tuning](docs/performance.md) · [Migration guide](docs/migration.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) · [Testing & coverage](docs/testing.md).
+- [Sorting API](docs/api/sorting.md) · [Statistics API](docs/api/statistics.md) · [Performance tuning](docs/performance.md) · [Migration guide](docs/migration.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) · [Testing & coverage](docs/testing.md).
 - [`ROADMAP.md`](ROADMAP.md) · [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [GitHub Issues](https://github.com/marius-bughiu/Celerity/issues).

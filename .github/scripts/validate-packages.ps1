@@ -5,9 +5,9 @@
 # Asserts that `dotnet pack` produced a correct, publishable set of packages
 # before any of them is pushed to NuGet.org:
 #
-#   * exactly the expected shipped packages are present — the four core family
+#   * exactly the expected shipped packages are present — the five core family
 #     packages (Celerity.Collections / Celerity.Hashing / Celerity.Primitives /
-#     Celerity.Sorting) plus the "built with Celerity" showcase packages
+#     Celerity.Sorting / Celerity.Statistics) plus the "built with Celerity" showcase packages
 #     (Celerity.Ring / Celerity.Sentinel / Celerity.Cardinality) — and no
 #     unexpected extra package
 #     (e.g. a dev project that lost its IsPackable=false);
@@ -37,6 +37,7 @@ $expectedPackages = @(
     'Celerity.Hashing',
     'Celerity.Primitives',
     'Celerity.Sorting',
+    'Celerity.Statistics',
     # "Built with Celerity" showcase tier — standalone libraries built on top of
     # the core family; packable, so solution-wide `dotnet pack` emits them too.
     'Celerity.Ring',

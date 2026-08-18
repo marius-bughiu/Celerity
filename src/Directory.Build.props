@@ -3,8 +3,8 @@
   <!--
     Shared multi-target framework list (#189).
 
-    The four core shipped packages (Celerity.Collections / Celerity.Hashing /
-    Celerity.Primitives / Celerity.Sorting), the test project, and the Native AOT
+    The five core shipped packages (Celerity.Collections / Celerity.Hashing /
+    Celerity.Primitives / Celerity.Sorting / Celerity.Statistics), the test project, and the Native AOT
     smoke test all build for this same set of TFMs so they stay in lockstep — bump the list in
     one place and every shipped assembly and its verification follow.
 
@@ -103,9 +103,10 @@
     below against what NuGet.org has actually published. That is why the bump
     is due the moment the release is indexed, and why bumping it early fails.
 
-    All seven shipped packages (Celerity.Collections / Celerity.Hashing /
-    Celerity.Primitives / Celerity.Sorting / Celerity.Ring / Celerity.Sentinel /
-    Celerity.Cardinality) are published at this baseline and share it. A brand-new package has no
+    The seven packages published at this baseline (Celerity.Collections /
+    Celerity.Hashing / Celerity.Primitives / Celerity.Sorting / Celerity.Ring /
+    Celerity.Sentinel / Celerity.Cardinality) share it. Celerity.Statistics has not
+    shipped yet and is on the escape hatch below. A brand-new package has no
     published predecessor to validate against, and asking for one fails the
     restore, so its .csproj sets CelerityNoPublishedBaseline to true until its
     first release ships, then drops the property.
