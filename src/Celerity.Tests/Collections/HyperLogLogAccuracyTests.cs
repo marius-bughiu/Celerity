@@ -123,7 +123,7 @@ public class HyperLogLogAccuracyTests
     [Trait("Category", "LargeCardinality")]
     public void HugeCardinality_32BitHasher_LargeRangeCorrectionRecoversTheSaturatedCount()
     {
-        var hll = new HyperLogLog<long, Fold32Hasher>(HyperLogLog<long, Fold32Hasher>.MAX_PRECISION);
+        var hll = new HyperLogLog<long, Fold32Hasher>(HyperLogLog<long, Fold32Hasher>.MaxPrecision);
         for (long i = 0; i < LargeN; i++)
             hll.Add(i);
 
@@ -150,7 +150,7 @@ public class HyperLogLogAccuracyTests
     {
         // Int64WangHasher implements IHashProvider64<long>, so the estimator sees a 2^64 hash
         // space, never saturates, and needs no correction at all.
-        var hll = new HyperLogLog<long, Int64WangHasher>(HyperLogLog<long, Int64WangHasher>.MAX_PRECISION);
+        var hll = new HyperLogLog<long, Int64WangHasher>(HyperLogLog<long, Int64WangHasher>.MaxPrecision);
         for (long i = 0; i < LargeN; i++)
             hll.Add(i);
 

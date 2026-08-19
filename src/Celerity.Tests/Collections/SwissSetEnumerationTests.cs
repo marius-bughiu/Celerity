@@ -189,7 +189,7 @@ public class SwissSetEnumerationTests
     public void GetEnumerator_ShouldSkipTombstones()
     {
         // After deletions leave tombstones behind, enumeration must yield only the
-        // live elements (control-tag scan skips EMPTY and DELETED slots alike).
+        // live elements (control-tag scan skips Empty and Deleted slots alike).
         var set = new SwissSet<int, Int32WangNaiveHasher>(64);
         for (int i = 1; i <= 40; i++)
             set.Add(i);

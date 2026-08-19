@@ -75,10 +75,10 @@ public struct StringFnV1AFullHasher : IHashProvider<string>, ISpanHashProvider
     public int Hash(ReadOnlySpan<char> key)
     {
         // The FNV-1a 32-bit parameters.
-        const uint fnvPrime = 16777619u;
-        const uint offsetBasis = 2166136261u;
+        const uint FnvPrime = 16777619u;
+        const uint OffsetBasis = 2166136261u;
 
-        uint hash = offsetBasis;
+        uint hash = OffsetBasis;
         foreach (char c in key)
         {
             // Fold the low byte then the high byte of each 16-bit code unit —
@@ -86,9 +86,9 @@ public struct StringFnV1AFullHasher : IHashProvider<string>, ISpanHashProvider
             // extra high-byte step is what keeps characters that share a low byte
             // but differ in their upper byte distinct, unlike StringFnV1AHasher.
             hash ^= (byte)(c & 0xFF);
-            hash *= fnvPrime;
+            hash *= FnvPrime;
             hash ^= (byte)(c >> 8);
-            hash *= fnvPrime;
+            hash *= FnvPrime;
         }
 
         return unchecked((int)hash);

@@ -262,8 +262,8 @@ public class HyperLogLogTests
     }
 
     [Theory]
-    [InlineData(HyperLogLog<int, Int32Murmur3Hasher>.MIN_PRECISION)]
-    [InlineData(HyperLogLog<int, Int32Murmur3Hasher>.MAX_PRECISION)]
+    [InlineData(HyperLogLog<int, Int32Murmur3Hasher>.MinPrecision)]
+    [InlineData(HyperLogLog<int, Int32Murmur3Hasher>.MaxPrecision)]
     public void Constructor_Accepts_BoundaryPrecisions(int precision)
     {
         var hll = new HyperLogLog<int, Int32Murmur3Hasher>(precision);

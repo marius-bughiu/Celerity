@@ -18,15 +18,15 @@ namespace Celerity.Collections;
 /// <para>
 /// The table keeps a parallel array of one-byte <em>control</em> tags — one per
 /// slot — separate from the element array. Each control byte is either
-/// <c>EMPTY</c>, <c>DELETED</c> (a tombstone), or, for an occupied slot, the low
+/// <c>Empty</c>, <c>Deleted</c> (a tombstone), or, for an occupied slot, the low
 /// 7 bits of the element's hash (its <em>h2</em> fragment). Slots are grouped into
-/// aligned blocks of <see cref="GROUP_WIDTH"/> (16), so a single
+/// aligned blocks of <see cref="GroupWidth"/> (16), so a single
 /// <see cref="Vector128{T}"/> compare tests all 16 control bytes in a group at
 /// once: a membership test loads the 16 tags, compares them against the broadcast
 /// h2, and turns the result into a 16-bit candidate mask via
 /// <see cref="Vector128.ExtractMostSignificantBits{T}(Vector128{T})"/>. Only the
 /// (usually one) candidate slots then pay a full element comparison; an
-/// all-tags-checked group with any <c>EMPTY</c> slot ends the probe. The portable
+/// all-tags-checked group with any <c>Empty</c> slot ends the probe. The portable
 /// <see cref="Vector128"/> API JITs to SSE2 / AVX2 on x86, AdvSimd on Arm, and a
 /// scalar software fallback elsewhere, so the type is correct everywhere and fast
 /// where hardware SIMD is available.
@@ -63,25 +63,25 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
     /// </summary>
-    protected const int DEFAULT_CAPACITY = 16;
+    protected const int DefaultCapacity = 16;
 
     /// <summary>
     /// The default load factor of the set if no load factor is specified.
     /// </summary>
-    protected const float DEFAULT_LOAD_FACTOR = 0.75f;
+    protected const float DefaultLoadFactor = 0.75f;
 
     // The SIMD group width: a Vector128<sbyte> tests 16 control bytes at once.
-    // GROUP_SHIFT is log2(GROUP_WIDTH) so `group << GROUP_SHIFT` is the group's
+    // GroupShift is log2(GroupWidth) so `group << GroupShift` is the group's
     // first slot. The table size is always a power of two and at least one group.
-    private const int GROUP_WIDTH = 16;
-    private const int GROUP_SHIFT = 4;
+    private const int GroupWidth = 16;
+    private const int GroupShift = 4;
 
-    // Control-byte tags. The high (sign) bit distinguishes a free slot (EMPTY /
-    // DELETED, both negative) from an occupied one (an h2 fragment in 0..127, so
-    // non-negative). EMPTY ends a probe; DELETED (a tombstone) does not, so a
+    // Control-byte tags. The high (sign) bit distinguishes a free slot (Empty /
+    // Deleted, both negative) from an occupied one (an h2 fragment in 0..127, so
+    // non-negative). Empty ends a probe; Deleted (a tombstone) does not, so a
     // lookup walks past it but an insert may reuse it.
-    private const sbyte EMPTY = -128;   // 0b1000_0000
-    private const sbyte DELETED = -2;   // 0b1111_1110
+    private const sbyte Empty = -128;   // 0b1000_0000
+    private const sbyte Deleted = -2;   // 0b1111_1110
 
     private int _count = 0;
     private sbyte[] _controls;
@@ -90,9 +90,9 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     private int _numGroupsMask;
     private readonly float _loadFactor;
     private int _threshold;
-    // Remaining EMPTY-slot budget before a resize: threshold minus the number of
-    // occupied-or-tombstoned slots. Filling an EMPTY slot decrements it; reusing a
-    // DELETED slot leaves it unchanged; an erase that frees a slot to EMPTY bumps
+    // Remaining Empty-slot budget before a resize: threshold minus the number of
+    // occupied-or-tombstoned slots. Filling an Empty slot decrements it; reusing a
+    // Deleted slot leaves it unchanged; an erase that frees a slot to Empty bumps
     // it back. The out-of-band default-element entry never touches it (it owns no
     // array slot). A resize is forced when it would go non-positive.
     private int _growthLeft;
@@ -116,7 +116,7 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     /// </summary>
     /// <param name="capacity">
     /// The initial capacity, automatically rounded to the next power of two (and
-    /// to at least one SIMD group of <see cref="GROUP_WIDTH"/> slots).
+    /// to at least one SIMD group of <see cref="GroupWidth"/> slots).
     /// </param>
     /// <param name="loadFactor">
     /// The fraction of the set's size that can be filled before resizing.
@@ -126,21 +126,21 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     /// is not in the open interval (0, 1).
     /// </exception>
     public SwissSet(
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
         if (loadFactor <= 0f || loadFactor >= 1f)
             throw new ArgumentOutOfRangeException(nameof(loadFactor), loadFactor, "Load factor must be between 0 (exclusive) and 1 (exclusive).");
 
-        int size = Math.Max(GROUP_WIDTH, FastUtils.NextPowerOfTwo(capacity));
+        int size = Math.Max(GroupWidth, FastUtils.NextPowerOfTwo(capacity));
 
         _controls = new sbyte[size];
-        _controls.AsSpan().Fill(EMPTY);
+        _controls.AsSpan().Fill(Empty);
         _items = new T?[size];
         _capacity = size;
-        _numGroupsMask = (size >> GROUP_SHIFT) - 1;
+        _numGroupsMask = (size >> GroupShift) - 1;
         _loadFactor = loadFactor;
         _threshold = (int)(size * _loadFactor);
         _growthLeft = _threshold;
@@ -176,8 +176,8 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     /// </exception>
     public SwissSet(
         IEnumerable<T> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (T item in source)
@@ -307,7 +307,7 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         if (_count == 0)
             return;
 
-        _controls.AsSpan().Fill(EMPTY);
+        _controls.AsSpan().Fill(Empty);
         Array.Clear(_items, 0, _items.Length);
         _hasDefaultValue = false;
         _count = 0;
@@ -331,7 +331,7 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
 
         if (_threshold < capacity)
         {
-            int newCapacity = Math.Max(GROUP_WIDTH, FastUtils.MinTableSizeFor(capacity, _loadFactor));
+            int newCapacity = Math.Max(GroupWidth, FastUtils.MinTableSizeFor(capacity, _loadFactor));
             if (newCapacity > _capacity)
             {
                 Resize(newCapacity);
@@ -364,7 +364,7 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         if (capacity < _count)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
 
-        int newCapacity = Math.Max(GROUP_WIDTH, FastUtils.MinTableSizeFor(capacity, _loadFactor));
+        int newCapacity = Math.Max(GroupWidth, FastUtils.MinTableSizeFor(capacity, _loadFactor));
         if (newCapacity != _capacity)
         {
             Resize(newCapacity);
@@ -613,12 +613,12 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     // sequence from the element's home group: a single Vector128 compare turns each
     // group's 16 control tags into a 16-bit candidate mask against the element's h2
     // fragment, and only candidate slots pay an element comparison. The probe ends
-    // at the first group containing an EMPTY tag (the element is absent — insert
+    // at the first group containing an Empty tag (the element is absent — insert
     // would have stopped there too). Returns the slot index, or -1 if not present.
     //
     // The hash splits into h1 (high bits, selecting the home group) and h2 (low 7
     // bits, the stored control tag). Termination is guaranteed: the load factor
-    // keeps at least one EMPTY slot in the table at all times, and linear group
+    // keeps at least one Empty slot in the table at all times, and linear group
     // probing wraps through every group.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int Find(T item, int hash)
@@ -631,12 +631,12 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         int mask = _numGroupsMask;
         uint h1 = (uint)hash >> 7;
         Vector128<sbyte> wanted = Vector128.Create((sbyte)(hash & 0x7F));
-        Vector128<sbyte> empty = Vector128.Create(EMPTY);
+        Vector128<sbyte> empty = Vector128.Create(Empty);
         int group = (int)(h1 & (uint)mask);
 
         while (true)
         {
-            int baseSlot = group << GROUP_SHIFT;
+            int baseSlot = group << GroupShift;
             Vector128<sbyte> ctrl = Vector128.LoadUnsafe(ref Unsafe.Add(ref controlsRef, (nint)(uint)baseSlot));
 
             uint matches = Vector128.Equals(ctrl, wanted).ExtractMostSignificantBits();
@@ -657,9 +657,9 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
 
     // SIMD group probe for an insert of a non-default element. In one walk it both
     // detects an existing element (sets <paramref name="existing"/> and returns its
-    // slot) and, if absent, returns the slot to insert into: the first DELETED
-    // (tombstone) slot seen along the sequence, or the first EMPTY slot if none.
-    // Reusing a tombstone keeps the table compact without growing the EMPTY budget.
+    // slot) and, if absent, returns the slot to insert into: the first Deleted
+    // (tombstone) slot seen along the sequence, or the first Empty slot if none.
+    // Reusing a tombstone keeps the table compact without growing the Empty budget.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ProbeForInsert(T item, int hash, out int slot, out bool existing)
     {
@@ -671,14 +671,14 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         int mask = _numGroupsMask;
         uint h1 = (uint)hash >> 7;
         Vector128<sbyte> wanted = Vector128.Create((sbyte)(hash & 0x7F));
-        Vector128<sbyte> empty = Vector128.Create(EMPTY);
-        Vector128<sbyte> deleted = Vector128.Create(DELETED);
+        Vector128<sbyte> empty = Vector128.Create(Empty);
+        Vector128<sbyte> deleted = Vector128.Create(Deleted);
         int group = (int)(h1 & (uint)mask);
         int firstDeleted = -1;
 
         while (true)
         {
-            int baseSlot = group << GROUP_SHIFT;
+            int baseSlot = group << GroupShift;
             Vector128<sbyte> ctrl = Vector128.LoadUnsafe(ref Unsafe.Add(ref controlsRef, (nint)(uint)baseSlot));
 
             uint matches = Vector128.Equals(ctrl, wanted).ExtractMostSignificantBits();
@@ -714,16 +714,16 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     }
 
     // Places a known-absent non-default element into the slot the probe chose,
-    // resizing first if filling an EMPTY slot would push the table over its growth
-    // budget. Reusing a DELETED (tombstone) slot never needs a resize.
+    // resizing first if filling an Empty slot would push the table over its growth
+    // budget. Reusing a Deleted (tombstone) slot never needs a resize.
     private void InsertAbsent(T item, int hash, int slot)
     {
-        bool targetEmpty = _controls[slot] == EMPTY;
+        bool targetEmpty = _controls[slot] == Empty;
         if (targetEmpty && _growthLeft <= 0)
         {
             Resize();
             // Re-probe in the freshly built (tombstone-free) table; the target is
-            // now guaranteed to be an EMPTY slot.
+            // now guaranteed to be an Empty slot.
             ProbeForInsert(item, hash, out slot, out _);
         }
 
@@ -737,27 +737,27 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         _version++;
     }
 
-    // Tombstone-aware erase. If the slot's group still holds an EMPTY tag, no
-    // element ever probed past this group, so the slot can be freed to EMPTY (and
+    // Tombstone-aware erase. If the slot's group still holds an Empty tag, no
+    // element ever probed past this group, so the slot can be freed to Empty (and
     // the growth budget reclaimed). Otherwise the group was full when residents
-    // probed through it, so the slot must become a DELETED tombstone — a lookup
+    // probed through it, so the slot must become a Deleted tombstone — a lookup
     // walks past it but does not terminate, preserving every resident's
     // reachability. The element is cleared either way to release references.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EraseAt(int slot)
     {
-        int baseSlot = (slot >> GROUP_SHIFT) << GROUP_SHIFT;
+        int baseSlot = (slot >> GroupShift) << GroupShift;
         ref sbyte controlsRef = ref MemoryMarshal.GetArrayDataReference(_controls);
         Vector128<sbyte> ctrl = Vector128.LoadUnsafe(ref Unsafe.Add(ref controlsRef, (nint)(uint)baseSlot));
 
-        if (Vector128.Equals(ctrl, Vector128.Create(EMPTY)).ExtractMostSignificantBits() != 0)
+        if (Vector128.Equals(ctrl, Vector128.Create(Empty)).ExtractMostSignificantBits() != 0)
         {
-            Unsafe.Add(ref controlsRef, (nint)(uint)slot) = EMPTY;
+            Unsafe.Add(ref controlsRef, (nint)(uint)slot) = Empty;
             _growthLeft++;
         }
         else
         {
-            Unsafe.Add(ref controlsRef, (nint)(uint)slot) = DELETED;
+            Unsafe.Add(ref controlsRef, (nint)(uint)slot) = Deleted;
         }
 
         Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_items), (nint)(uint)slot) = default;
@@ -775,7 +775,7 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
     // Rebuilds the table at the given power-of-two capacity, dropping all tombstones and recomputing
     // the group mask, threshold, and growth budget. Shared by the doubling/rehash growth path and
     // the EnsureCapacity / TrimExcess re-sizers, which pass an explicit target. The caller guarantees
-    // newCapacity is a power of two no smaller than GROUP_WIDTH and strictly greater than the live
+    // newCapacity is a power of two no smaller than GroupWidth and strictly greater than the live
     // (non-default) element count, so every PlaceFresh terminates.
     private void Resize(int newCapacity)
     {
@@ -784,13 +784,13 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         int oldCapacity = _capacity;
 
         sbyte[] newControls = new sbyte[newCapacity];
-        newControls.AsSpan().Fill(EMPTY);
+        newControls.AsSpan().Fill(Empty);
         T?[] newItems = new T?[newCapacity];
 
         _controls = newControls;
         _items = newItems;
         _capacity = newCapacity;
-        _numGroupsMask = (newCapacity >> GROUP_SHIFT) - 1;
+        _numGroupsMask = (newCapacity >> GroupShift) - 1;
         _threshold = (int)(newCapacity * _loadFactor);
         // The fresh table has no tombstones, so the whole array budget is the live
         // (non-default) element count below the threshold.
@@ -808,7 +808,7 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         }
     }
 
-    // Places an element into the first EMPTY slot along its probe sequence in a
+    // Places an element into the first Empty slot along its probe sequence in a
     // freshly built (tombstone-free) table. Elements are known unique, so no
     // equality check is needed; growth bookkeeping is owned by Resize, so this only
     // writes.
@@ -818,12 +818,12 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : str
         ref sbyte controlsRef = ref MemoryMarshal.GetArrayDataReference(_controls);
         int mask = _numGroupsMask;
         uint h1 = (uint)hash >> 7;
-        Vector128<sbyte> empty = Vector128.Create(EMPTY);
+        Vector128<sbyte> empty = Vector128.Create(Empty);
         int group = (int)(h1 & (uint)mask);
 
         while (true)
         {
-            int baseSlot = group << GROUP_SHIFT;
+            int baseSlot = group << GroupShift;
             Vector128<sbyte> ctrl = Vector128.LoadUnsafe(ref Unsafe.Add(ref controlsRef, (nint)(uint)baseSlot));
             uint emptyMask = Vector128.Equals(ctrl, empty).ExtractMostSignificantBits();
             if (emptyMask != 0)

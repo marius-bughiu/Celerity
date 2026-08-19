@@ -66,19 +66,19 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// 0.01 (estimates overshoot by at most ~1% of the total count, with the configured
     /// confidence).
     /// </summary>
-    public const double DEFAULT_EPSILON = 0.01;
+    public const double DefaultEpsilon = 0.01;
 
     /// <summary>
     /// The default failure probability used when a constructor does not specify one:
     /// 0.01 (the <c>epsilon</c> error bound holds with at least 99% confidence).
     /// </summary>
-    public const double DEFAULT_DELTA = 0.01;
+    public const double DefaultDelta = 0.01;
 
     // Upper bound on the total counter grid (depth * width). Mirrors the 2^30 element ceiling
     // the open-addressed collections cap their backing arrays at, and keeps the grid index
     // representable as a 32-bit array length so a pathologically small epsilon/delta cannot
     // overflow the allocation.
-    private const int MAX_GRID = 1 << 30;
+    private const int MaxGrid = 1 << 30;
 
     private readonly long[] _counters;     // depth * width, row-major
     private readonly int _width;           // w, a power of two
@@ -111,7 +111,7 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// (<c>depth × width</c>) larger than the maximum of <c>2^30</c> counters — pass a
     /// larger <paramref name="epsilon"/> and/or <paramref name="delta"/>.
     /// </exception>
-    public CountMinSketch(double epsilon = DEFAULT_EPSILON, double delta = DEFAULT_DELTA)
+    public CountMinSketch(double epsilon = DefaultEpsilon, double delta = DefaultDelta)
     {
         if (epsilon <= 0d || epsilon >= 1d || double.IsNaN(epsilon))
             throw new ArgumentOutOfRangeException(nameof(epsilon), epsilon, "Epsilon must be between 0 (exclusive) and 1 (exclusive).");
@@ -143,9 +143,9 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         // front rather than corrupt the sketch — mirroring the open-addressed collections'
         // 2^30 size ceiling.
         long grid = (long)_depth * _width;
-        if (grid > MAX_GRID)
+        if (grid > MaxGrid)
             throw new ArgumentOutOfRangeException(nameof(delta), delta,
-                $"The requested epsilon/delta need a {_depth}×{_width} counter grid ({grid} counters), which exceeds the maximum of {MAX_GRID}. Increase epsilon and/or delta.");
+                $"The requested epsilon/delta need a {_depth}×{_width} counter grid ({grid} counters), which exceeds the maximum of {MaxGrid}. Increase epsilon and/or delta.");
 
         _counters = new long[(int)grid];
         _hasher = default;
@@ -167,7 +167,7 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// <paramref name="epsilon"/> or <paramref name="delta"/> is not strictly between 0
     /// and 1, or the two together demand a counter grid larger than <c>2^30</c> counters.
     /// </exception>
-    public CountMinSketch(IEnumerable<T> source, double epsilon = DEFAULT_EPSILON, double delta = DEFAULT_DELTA)
+    public CountMinSketch(IEnumerable<T> source, double epsilon = DefaultEpsilon, double delta = DefaultDelta)
         : this(NullCheckedEpsilon(source, epsilon), delta)
     {
         foreach (T item in source)

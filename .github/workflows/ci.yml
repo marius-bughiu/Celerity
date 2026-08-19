@@ -140,6 +140,26 @@ jobs:
       - name: Check markdown anchors and relative links
         run: node scripts/check_doc_anchors.js
 
+  # Constant naming was stated one way in CONTRIBUTING.md and written another way in the
+  # code for long enough that both spellings looked correct, and two constants meaning the
+  # same thing in two packages ended up named `DEFAULT_PRECISION` and `DefaultPrecision`
+  # (#298). Review had caught it only sometimes, which is what a convention with no check
+  # behind it decays to.
+  constant-naming:
+    name: constant-naming
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+
+      - name: Pin the name rule and the declaration scan
+        run: node scripts/check_constant_naming.js --self-test
+
+      - name: Check constant naming in the shipping packages
+        run: node scripts/check_constant_naming.js
+
   # The benchmark relevance gate decides whether an expensive sharded A/B run happens at
   # all, so the C# lexer it rests on is pinned here rather than only exercised in the
   # workflow it gates — where a wrong answer costs either runner hours or an unmeasured

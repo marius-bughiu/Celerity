@@ -66,9 +66,9 @@ public class Distinct<TKey, THasher>
     /// </exception>
     public Distinct(int precision = DefaultPrecision, int exactThreshold = DefaultExactThreshold)
     {
-        if (precision < HyperLogLog<TKey, THasher>.MIN_PRECISION || precision > HyperLogLog<TKey, THasher>.MAX_PRECISION)
+        if (precision < HyperLogLog<TKey, THasher>.MinPrecision || precision > HyperLogLog<TKey, THasher>.MaxPrecision)
             throw new ArgumentOutOfRangeException(nameof(precision), precision,
-                $"Precision must be between {HyperLogLog<TKey, THasher>.MIN_PRECISION} and {HyperLogLog<TKey, THasher>.MAX_PRECISION} inclusive.");
+                $"Precision must be between {HyperLogLog<TKey, THasher>.MinPrecision} and {HyperLogLog<TKey, THasher>.MaxPrecision} inclusive.");
         if (exactThreshold < 0)
             throw new ArgumentOutOfRangeException(nameof(exactThreshold), exactThreshold, "Exact threshold must be non-negative.");
 

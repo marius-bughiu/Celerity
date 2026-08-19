@@ -55,12 +55,12 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
     /// <summary>
     /// The default initial capacity of the multiset if no capacity is specified.
     /// </summary>
-    private const int DEFAULT_CAPACITY = 16;
+    private const int DefaultCapacity = 16;
 
     /// <summary>
     /// The default load factor of the multiset if no load factor is specified.
     /// </summary>
-    private const float DEFAULT_LOAD_FACTOR = 0.75f;
+    private const float DefaultLoadFactor = 0.75f;
 
     private int _count = 0;
     private long _totalCount = 0;
@@ -99,8 +99,8 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
     /// is not in the open interval (0, 1).
     /// </exception>
     public CelerityMultiSet(
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -144,8 +144,8 @@ public class CelerityMultiSet<T, THasher> : IEnumerable<KeyValuePair<T, int>>
     /// </exception>
     public CelerityMultiSet(
         IEnumerable<T> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (T element in source)

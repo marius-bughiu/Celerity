@@ -74,7 +74,7 @@ public class HyperLogLogCollisionTests
         // At the minimum precision (16 registers) the remaining bit field is widest, so
         // the rank can reach its maximum; exercise it across a spread of inputs to make
         // sure the sentinel bit keeps every rank in range.
-        var hll = new HyperLogLog<int, Int32Murmur3Hasher>(HyperLogLog<int, Int32Murmur3Hasher>.MIN_PRECISION);
+        var hll = new HyperLogLog<int, Int32Murmur3Hasher>(HyperLogLog<int, Int32Murmur3Hasher>.MinPrecision);
         for (int i = 0; i < 1000; i++)
             hll.Add(i);
 

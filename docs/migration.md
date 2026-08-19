@@ -253,6 +253,37 @@ var d64 = new CelerityDictionary<ulong, string, UInt64Murmur3Hasher>();
 
 Worth a second look while you are in there: the same bare name meant the *cheapest* mixer for `uint` and the *strongest* one for `ulong`, so code that picked both by analogy may not have been asking for what it thought. If your `uint` keys are clustered, `UInt32WangHasher` / `UInt32Murmur3Hasher` are the escalation; if your `ulong` keys are already uniform, `UInt64WangHasher` / `UInt64WangNaiveHasher` are cheaper. `UInt64Hasher` keeps its `IHashProvider64<ulong>` implementation, so a sketch parameterized on it does not lose its 64-bit path mid-migration. Both aliases will be removed in a future major version.
 
+## `UPPER_CASE` constants -> `PascalCase`
+
+Every public and protected constant that was spelled `UPPER_CASE` now has a `PascalCase` name. The values, the types and the meanings are unchanged; only the spelling moved, so this is a compiler-guided find-and-replace. The rule is mechanical — `DEFAULT_LOAD_FACTOR` becomes `DefaultLoadFactor` — and these are the distinct names affected:
+
+| Old name | New name | Where |
+|---|---|---|
+| `DEFAULT_CAPACITY` | `DefaultCapacity` | the seventeen dictionaries, sets and tables that expose it, plus `TopKSketch` |
+| `DEFAULT_LOAD_FACTOR` | `DefaultLoadFactor` | the same seventeen, less the two `Small*` types |
+| `DEFAULT_FALSE_POSITIVE_RATE` | `DefaultFalsePositiveRate` | `BloomFilter`, `CuckooFilter` |
+| `DEFAULT_EPSILON` / `DEFAULT_DELTA` | `DefaultEpsilon` / `DefaultDelta` | `CountMinSketch` |
+| `DEFAULT_PRECISION` / `MIN_PRECISION` / `MAX_PRECISION` | `DefaultPrecision` / `MinPrecision` / `MaxPrecision` | `HyperLogLog` |
+| `FINGERPRINT_BITS` | `FingerprintBits` | `XorFilter` |
+
+Unlike the hasher rename above, there are no `[Obsolete]` aliases: a `const` is inlined into the calling assembly at compile time, so an already-compiled consumer that *reads* one keeps running against the new assembly, and carrying forty-one deprecated spellings forward would have made the surface harder to read than the migration is to perform.
+
+The exception is reflection. The old fields are gone from metadata, not merely deprecated, so a lookup by name — `typeof(HyperLogLog<int, Int32Murmur3Hasher>).GetField("DEFAULT_PRECISION")` — now returns `null` where it used to return a field, and does so at run time rather than at compile time. If you enumerate or fetch these constants by name, that is the one place the rename can reach code you have already shipped.
+
+**One member is gone rather than renamed.** `XorFilter<T, THasher>` had both a constant and an instance property naming the same fixed number, and once the constant is `FingerprintBits` the property cannot share the name. The constant is what remains, because the width is fixed at 8 for every instance:
+
+```csharp
+// Before
+int bits = filter.FingerprintBits;
+
+// After
+int bits = XorFilter<int, Int32WangNaiveHasher>.FingerprintBits;
+```
+
+This one **is** a binary break, unlike the constants above: an assembly compiled against 2.7.0 holds a reference to `get_FingerprintBits`, and calling it against the new `Celerity.dll` throws `MissingMethodException`. Recompiling after changing the call site is required, not optional.
+
+`CuckooFilter.FingerprintBits` is untouched — its width really is chosen per filter, so it stays an instance property.
+
 ## See also
 
 - [Choosing a collection](../README.md#choosing-a-collection)
