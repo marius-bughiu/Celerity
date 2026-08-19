@@ -60,6 +60,7 @@ internal static class Differential
         ("SpatialGrid", SpatialGridCase),
         ("RTree", RTreeCase),
         ("IntervalTree", IntervalTreeCase),
+        ("CompressedGraph", CompressedGraphCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -1568,6 +1569,170 @@ internal static class Differential
         public int Combine(int left, int right) => left != 0 ? left : right;
     }
 
+
+    // ---- compressed graph ----------------------------------------------------
+
+    // The oracle is the adjacency map the type replaces. What is on trial is the compressed layout: every
+    // answer is a slice of one shared array, so a build that misplaces an offset — by a duplicate collapsed,
+    // an isolated vertex skipped, a scatter cursor not shifted back — returns some *other* vertex's
+    // neighbours, which is a plausible-looking answer of the right shape rather than an obvious failure. The
+    // generated shape therefore mixes duplicate edges, self-loops, isolated vertices and graphs declared
+    // wider than their edges reach, and a third of the cases are acyclic so the topological order is checked
+    // where it succeeds and not only where it reports a cycle.
+    private static void CompressedGraphCase(Random rng)
+    {
+        int vertexCount = rng.Next(1, 90);
+        int edgeCount = rng.Next(0, 260);
+
+        // The choice is made once for the whole graph, not per edge: orienting only *some* edges forward
+        // leaves the rest free to close a cycle, so a dense case would almost never reach a completed
+        // topological order and that half of the check would go unexercised. One vertex is excluded because
+        // the only edge it admits is a self-loop, which is a cycle — there is no acyclic graph to generate.
+        bool acyclic = vertexCount >= 2 && rng.Next(0, 3) == 0;
+
+        var edges = new GraphEdge[edgeCount];
+        for (int i = 0; i < edgeCount; i++)
+        {
+            int a = rng.Next(vertexCount);
+            int b = rng.Next(vertexCount);
+            if (!acyclic)
+            {
+                edges[i] = new GraphEdge(a, b);
+                continue;
+            }
+
+            // Equal endpoints would fall through as a self-loop and quietly make the "acyclic" case cyclic,
+            // which is the failure this whole branch exists to avoid. Two or more vertices, so this ends.
+            while (a == b)
+                b = rng.Next(vertexCount);
+
+            edges[i] = new GraphEdge(Math.Min(a, b), Math.Max(a, b));
+        }
+
+        var sut = new CompressedGraph(vertexCount, edges);
+
+        // The oracle is the adjacency map a caller writes instead, with the same edge-set semantics.
+        var oracle = new SortedSet<int>[vertexCount];
+        for (int v = 0; v < vertexCount; v++)
+            oracle[v] = new SortedSet<int>();
+
+        foreach (GraphEdge edge in edges)
+            oracle[edge.Source].Add(edge.Target);
+
+        int distinct = 0;
+        for (int v = 0; v < vertexCount; v++)
+            distinct += oracle[v].Count;
+
+        Check(sut.VertexCount == vertexCount, "CompressedGraph VertexCount disagreed");
+        Check(sut.EdgeCount == distinct, "CompressedGraph EdgeCount disagreed");
+
+        var flattened = new List<GraphEdge>();
+        for (int v = 0; v < vertexCount; v++)
+        {
+            int[] targets = sut.Neighbors(v).ToArray();
+            Check(targets.Length == sut.Degree(v), "CompressedGraph Degree disagreed with Neighbors");
+            Check(targets.Length == oracle[v].Count, "CompressedGraph out-degree disagreed");
+
+            int j = 0;
+            foreach (int expected in oracle[v])
+            {
+                Check(targets[j] == expected, "CompressedGraph neighbours disagreed with the adjacency map");
+                flattened.Add(new GraphEdge(v, expected));
+                j++;
+            }
+
+            for (int t = 0; t < vertexCount; t++)
+                Check(sut.ContainsEdge(v, t) == oracle[v].Contains(t), "CompressedGraph ContainsEdge disagreed");
+        }
+
+        // The indexer recovers the source by binary search, which is a different path over the same data.
+        for (int i = 0; i < flattened.Count; i++)
+            Check(sut[i] == flattened[i], "CompressedGraph indexer disagreed with the adjacency order");
+
+        // The transpose must hold exactly the reversed edge set.
+        CompressedGraph reversed = sut.Reverse();
+        Check(reversed.EdgeCount == sut.EdgeCount, "CompressedGraph transpose lost edges");
+        foreach (GraphEdge edge in flattened)
+            Check(reversed.ContainsEdge(edge.Target, edge.Source), "CompressedGraph transpose dropped an edge");
+
+        for (int v = 0; v < vertexCount; v++)
+        {
+            foreach (int t in reversed.Neighbors(v).ToArray())
+                Check(oracle[t].Contains(v), "CompressedGraph transpose invented an edge");
+        }
+
+        int source = rng.Next(vertexCount);
+        var order = new int[vertexCount];
+        int reached = sut.CopyBreadthFirstOrder(source, order);
+        Check(reached >= 1 && order[0] == source, "CompressedGraph traversal did not start at the source");
+
+        var seen = new bool[vertexCount];
+        for (int i = 0; i < reached; i++)
+        {
+            Check(!seen[order[i]], "CompressedGraph traversal visited a vertex twice");
+            seen[order[i]] = true;
+        }
+
+        // Every visited vertex past the source must be a target of one visited earlier, and no unvisited
+        // vertex may hang off a visited one — together that is exactly "the reachable set".
+        for (int i = 0; i < reached; i++)
+        {
+            foreach (int t in sut.Neighbors(order[i]).ToArray())
+                Check(seen[t], "CompressedGraph traversal missed a reachable vertex");
+        }
+
+        Check(sut.GetBreadthFirstOrder(source).Length == reached, "CompressedGraph traversal tiers disagreed");
+
+        if (sut.TryGetTopologicalOrder(out int[] topological))
+        {
+            Check(topological.Length == vertexCount, "CompressedGraph topological order is the wrong length");
+
+            var position = new int[vertexCount];
+            var present = new bool[vertexCount];
+            for (int i = 0; i < topological.Length; i++)
+            {
+                Check(!present[topological[i]], "CompressedGraph topological order repeated a vertex");
+                present[topological[i]] = true;
+                position[topological[i]] = i;
+            }
+
+            foreach (GraphEdge edge in flattened)
+                Check(position[edge.Source] < position[edge.Target], "CompressedGraph topological order violated an edge");
+        }
+        else
+        {
+            // A rejection has to be justified: peeling zero-in-degree vertices must leave something behind.
+            Check(HasCycle(oracle, vertexCount), "CompressedGraph reported a cycle in an acyclic graph");
+        }
+    }
+
+    private static bool HasCycle(SortedSet<int>[] oracle, int vertexCount)
+    {
+        var state = new byte[vertexCount];
+        for (int v = 0; v < vertexCount; v++)
+        {
+            if (state[v] == 0 && HasCycleFrom(oracle, state, v))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasCycleFrom(SortedSet<int>[] oracle, byte[] state, int vertex)
+    {
+        state[vertex] = 1;
+        foreach (int target in oracle[vertex])
+        {
+            if (state[target] == 1)
+                return true;
+
+            if (state[target] == 0 && HasCycleFrom(oracle, state, target))
+                return true;
+        }
+
+        state[vertex] = 2;
+        return false;
+    }
 
     // ---- interval tree -------------------------------------------------------
 

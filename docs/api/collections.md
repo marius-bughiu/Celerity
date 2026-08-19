@@ -5196,3 +5196,137 @@ foreach (int endpoint in active.EnumerateRange(windowStart, windowEnd))
     Process(endpoint);
 }
 ```
+
+## CompressedGraph
+
+```csharp
+public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
+```
+
+A **compressed sparse row (CSR) graph**: a build-once, immutable directed graph over dense vertex ids `[0, VertexCount)`, stored as two flat `int[]` so a vertex's neighbours are a `ReadOnlySpan<int>` slice of one contiguous array rather than a heap object of their own.
+
+.NET ships nothing for this. There is no graph, no adjacency list, no adjacency matrix and no traversal anywhere in `System.Collections`, on any of `net8.0` / `net9.0` / `net10.0`, so the idiom that fills the vacuum is `Dictionary<int, List<int>>` — or, once a developer notices the ids are dense, `List<int>[]`. Both are benchmarked. What they pay is a hash lookup per vertex visited (the dictionary form only), one `List<int>` object plus its backing array per vertex, and an indirection through both on the one loop a traversal actually runs.
+
+The two shipped types that sit next to graphs do not replace this and are not replaced by it. [`SparseSet`](#sparseset) is the **visited set** a traversal needs — its own documentation says so — which is bookkeeping, not the graph. [`DisjointSet<T>`](#disjointsett) answers *are these two connected* after a sequence of unions, which is a connectivity oracle: it cannot enumerate a vertex's neighbours, and it is undirected by construction.
+
+### The entry type: `GraphEdge`
+
+```csharp
+public readonly struct GraphEdge : IEquatable<GraphEdge>
+{
+    public GraphEdge(int source, int target);
+
+    public int Source { get; }
+    public int Target { get; }
+
+    public void Deconstruct(out int source, out int target);
+}
+```
+
+Both endpoints are dense vertex ids. The edge is **directed**, so `(1, 2)` and `(2, 1)` are different edges and compare unequal. The struct carries no payload deliberately: a graph on dense ids lets you keep per-**vertex** data in a parallel array of your own indexed by the same id, which is why `CompressedGraph` is not generic. Per-**edge** data is a different matter and this does not give it to you — the build sorts each vertex's targets and collapses duplicates, so an array parallel to the *input* edge order no longer lines up with anything the graph exposes.
+
+### How it works
+
+`_offsets` holds `VertexCount + 1` entries, where vertex `v`'s targets occupy `_targets[_offsets[v].._offsets[v + 1]]`; the trailing entry is the edge count, which removes the bounds special case from every slice. Building is a counting scatter — count each vertex's out-degree, prefix-sum it into starting positions, scatter the targets — then one sort per vertex, so `O(V + E log d)` for maximum out-degree `d`. The sort is what makes each target slice ascending, which is what makes `ContainsEdge` a binary search rather than a scan.
+
+Duplicate edges **collapse** during that pass: this is an edge *set*, which is what makes `Degree` a count of distinct neighbours. A self-loop `(v, v)` is a legal edge and is preserved. An **undirected** graph is built by supplying each edge in both directions; there is no factory for it, because silently doubling your input is worse than one documented line.
+
+Both traversals use the caller's destination buffer as the traversal queue, so the only other state is a bitmap or an in-degree array rented from `ArrayPool<T>` and returned. Once the pool is warm a repeated traversal allocates nothing — `ArrayPool<T>.Shared` allocates when it has no suitable buffer, so a first or contended call can still allocate.
+
+### Measured
+
+At 100,000 vertices and 800,000 distinct edges (average degree 8, a random DAG), against the two hand-rolls:
+
+The figures below are **ranges across two CI same-runner A/B runs of identical code**, not single measurements. That is deliberate, and the spread is the point: the allocation-heavy arms move by up to 20% between runs while the pure-compute ones are stable to about 1%. A single ratio quoted to three digits here would imply a precision this benchmark does not have — an earlier draft of this section did exactly that, twice, from local runs that were wrong by up to 35%.
+
+| Arm | vs `Dictionary<int, List<int>>` | vs `List<int>[]` | vs `int[][]` exact-sized, vertex order |
+| --- | --- | --- | --- |
+| Neighbour iteration | — | **1.36x** | — |
+| Breadth-first traversal | 2.5–2.6x | 1.7–1.8x | **1.15–1.28x** — and a **loss** at 1k vertices |
+| Topological order | — | **1.95x** | — (no tight arm; expect the same shrinkage) |
+| Transpose | — | 8.6–13.6x | **2.5–3.0x** |
+| Build | 3.1–3.8x | — | **1.16–1.29x** — and a **loss** at 1k vertices |
+| Retained heap | 3.60x less | 2.98x less | **1.83x less** |
+
+The `int[][]` column is held to the same standard as the type it bounds: it reuses the count array as the scatter cursor rather than allocating a second one (as `CompressedGraph` reuses its own offsets), and it shares `Array.Empty<int>()` for empty rows rather than allocating an object per isolated vertex (`CompressedGraph` has no per-row object at all). Both corrections came out of review and both moved the numbers against this type.
+
+The retained-heap row is a settled-GC measurement rather than a CI benchmark, and is the one row here that is a single figure rather than a range.
+
+**Every ratio above is a statement about one baseline, and the three sets disagree by a lot.** That is the single most important thing to take from them. The same breadth-first walk over the same edge set is about 2.5x, 1.8x or **1.2x** depending only on how the neighbour lists were stored — so a number quoted without its baseline means nothing. The step from `List<int>[]` to `int[][]` is the mechanism: a `List<int>` grows its backing array on demand, in the order the edges happen to arrive, so the neighbour data ends up scattered however tidily the list objects were created. Size the arrays exactly, fill them in vertex order, and a caller has recovered almost everything flattening them into one array would give.
+
+**So the honest case for this type is narrow, and it is not speed.** Against a competent `int[][]` hand-roll the traversal and the build are both within about 1.2x at a hundred thousand vertices — near enough a wash — and both are *losses* at a thousand, with the build allocating about 1.5x more while it runs. What genuinely survives is:
+
+- the **transpose, 2.5–3.0x** — the one operation the flat layout does structurally better, because the jagged form has to allocate a fresh row per vertex where CSR scatters into two arrays it already has;
+- the **footprint, 1.83x smaller** — one `int[]` header instead of 100,000 of them;
+- and the fact that the breadth-first order, Kahn's algorithm, the transpose, the deduplication and the sorted-target invariant are code you do not write, test or maintain, on a structure the BCL does not ship at all.
+
+If those are not what you want, an `int[][]` you fill yourself is a perfectly good answer and this page will not pretend otherwise.
+
+**One pre-registered kill criterion was missed.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar clears at 3.60x; the traversal bar is **missed** on CI's own measurements, which put it at 2.5–2.6x across two runs — short of 3x on both. The first explanation published for that miss was itself wrong — it blamed a consecutive baseline layout the benchmark never built — and the `int[][]` arms were added to test it and refuted it. The type ships on the roadmap's other limb, a genuine BCL gap, which is a judgement call **awaiting maintainer confirmation** rather than something the numbers settle.
+
+**Read the traversal rows as end-to-end comparisons.** The baselines mark visits in a `bool[]`, as a hand-rolled traversal does, while the type packs the same marks into a `ulong` bitmap — 12.5 KB against 100 KB at 100,000 vertices — so a smaller clear and a cache-resident visited set are part of every traversal ratio. The neighbour-iteration row is the only one with no queue and no visited set at all. The topological row has no `int[][]` counterpart measured, so read its 1.95x as being against `List<int>[]` and expect the same shrinkage a tight baseline produced everywhere else.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `CompressedGraph(int vertexCount, IEnumerable<GraphEdge> edges)` | Build. `ArgumentNullException` on a `null` sequence, `ArgumentOutOfRangeException` on a negative vertex count, `ArgumentException` when an edge has an endpoint outside `[0, vertexCount)`. |
+| `int VertexCount { get; }` | Number of vertices. Ids run over `[0, VertexCount)`. |
+| `int EdgeCount { get; }` | Number of distinct directed edges, after duplicates collapsed. |
+| `GraphEdge this[int index] { get; }` | The edge at that position in source-major, then ascending-target, order. `O(log V)` — the `IReadOnlyList<T>` contract, not the member to loop over. |
+| `ReadOnlySpan<int> Neighbors(int vertex)` | The vertex's targets, ascending — a window onto the graph's own storage. No copy, no allocation, no enumerator. |
+| `int Degree(int vertex)` | The out-degree. |
+| `bool ContainsEdge(int source, int target)` | Is that directed edge present? `O(log d)` by binary search. |
+| `CompressedGraph Reverse()` | The transpose, `O(V + E)`. |
+| `int CopyBreadthFirstOrder(int source, Span<int> destination)` | Reachable vertices in breadth-first order, `source` first. Returns how many were written. |
+| `int[] GetBreadthFirstOrder(int source)` | The convenience tier of the same. |
+| `bool TryCopyTopologicalOrder(Span<int> destination)` | Kahn's algorithm: every vertex before its targets. `false` when the graph has a cycle. |
+| `bool TryGetTopologicalOrder(out int[] order)` | The convenience tier of the same; `order` is empty on `false`. |
+| `Enumerator GetEnumerator()` | Struct enumerator over every edge in source-major order. |
+
+`Neighbors`, `Degree` and `ContainsEdge` throw `ArgumentOutOfRangeException` for a vertex outside `[0, VertexCount)` — an absent *edge* is an ordinary answer and returns `false`, but an out-of-range *vertex* is a caller bug. `CopyBreadthFirstOrder` stops when the destination fills, and because the order is generated front to back a truncated result is exactly the first `destination.Length` vertices of the full order rather than an arbitrary subset. `TryCopyTopologicalOrder` is the one member whose buffer may **not** be short: it throws `ArgumentException` below `VertexCount`, because a prefix of a topological order is not a useful answer. Which order it produces among the several a graph may admit is unspecified and may change.
+
+`Count` is implemented **explicitly** and is not on the public surface: a graph has two counts and neither owns the bare name, so `VertexCount` and `EdgeCount` say which one they mean. `((IReadOnlyCollection<GraphEdge>)graph).Count` is the edge count, since the list surface is over the edges.
+
+### Caveats
+
+- **Build-once.** The graph is immutable; adding an edge means building a new one, as with [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue) and [`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer). Nothing mutates, so enumeration is never invalidated and concurrent readers need no synchronization — and unlike the ordered types there is no comparer caveat, because nothing but `int` ids is ever compared.
+- **Dense ids or nothing.** Vertices are `[0, VertexCount)`. If your domain keys are not already dense integers, map them once through a dictionary and keep the graph on the ids; a sparse id space costs an offset entry per unused id.
+- **No weights, no shortest paths.** Those are algorithms over a container rather than the container, and shipping one would commit the type to a weight representation before anything needs it.
+- **The traversal win needs scale, and below it there is none.** See the measured tables above: at a thousand vertices the graph fits in cache and both the traversal and the build measure **below 1.0x against the exact-sized `int[][]`** — losses, not merely a narrower win.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Five packages; an edge means "must be built before". Vertex 2 depends on nothing.
+var builds = new CompressedGraph(5, new[]
+{
+    new GraphEdge(0, 1),
+    new GraphEdge(0, 3),
+    new GraphEdge(1, 4),
+    new GraphEdge(3, 4),
+});
+
+// Neighbour iteration: a slice of the graph's own storage, no allocation and no enumerator.
+foreach (int dependent in builds.Neighbors(0))
+    Console.WriteLine(dependent);                       // 1, then 3
+
+Console.WriteLine(builds.Degree(0));                    // 2
+Console.WriteLine(builds.ContainsEdge(0, 4));           // False - the path is 0 -> 1 -> 4, not a direct edge
+
+// Build order, or false if the dependencies are circular.
+if (builds.TryGetTopologicalOrder(out int[] order))
+    Console.WriteLine(string.Join(" ", order));         // 0 2 1 3 4
+
+// "What does vertex 4 depend on?" - the transpose, O(V + E), not a rebuild. Mind the direction: an edge
+// means "must be built before", so 4's in-neighbours are its dependencies, not its dependents.
+CompressedGraph incoming = builds.Reverse();
+Console.WriteLine(string.Join(" ", incoming.Neighbors(4).ToArray()));     // 1 3
+
+// Everything reachable from 0, in breadth-first order, into a buffer you own.
+var reached = new int[builds.VertexCount];
+int count = builds.CopyBreadthFirstOrder(0, reached);
+Console.WriteLine(string.Join(" ", reached[..count]));  // 0 1 3 4
+```
