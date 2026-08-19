@@ -54,24 +54,24 @@ public class HashCachingSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
     /// </summary>
-    protected const int DEFAULT_CAPACITY = 16;
+    protected const int DefaultCapacity = 16;
 
     /// <summary>
     /// The default load factor of the set if no load factor is specified.
     /// </summary>
-    protected const float DEFAULT_LOAD_FACTOR = 0.75f;
+    protected const float DefaultLoadFactor = 0.75f;
 
     // The bit forced on for every occupied slot's fingerprint so the stored
     // value is always non-zero and a zero entry unambiguously means "empty".
     // It sits above every power-of-two table mask, so `fingerprint & mask`
     // recovers the natural slot index without masking the hash separately.
-    private const int OCCUPIED_BIT = unchecked((int)0x80000000);
+    private const int OccupiedBit = unchecked((int)0x80000000);
 
     private int _count = 0;
     private T?[] _items;
 
     // The struct-of-arrays metadata buffer: one cached hash fingerprint per
-    // slot. Zero marks an empty slot; an occupied slot stores `hash | OCCUPIED_BIT`.
+    // slot. Zero marks an empty slot; an occupied slot stores `hash | OccupiedBit`.
     private int[] _fingerprints;
 
     private readonly float _loadFactor;
@@ -103,8 +103,8 @@ public class HashCachingSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher
     /// is not in the open interval (0, 1).
     /// </exception>
     public HashCachingSet(
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -150,8 +150,8 @@ public class HashCachingSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher
     /// </exception>
     public HashCachingSet(
         IEnumerable<T> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (T item in source)
@@ -595,7 +595,7 @@ public class HashCachingSet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher
     // The cached fingerprint for an element: its hash with the top bit forced set
     // so the stored metadata is always non-zero (zero is reserved for "empty").
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int Fingerprint(T item) => _hasher.Hash(item) | OCCUPIED_BIT;
+    private int Fingerprint(T item) => _hasher.Hash(item) | OccupiedBit;
 
     // Writes a complete entry — fingerprint, item — into the given slot.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

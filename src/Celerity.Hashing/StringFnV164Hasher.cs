@@ -134,10 +134,10 @@ public struct StringFnV164Hasher : IHashProvider<string>, IHashProvider64<string
     private static ulong Hash64Core(ReadOnlySpan<char> key)
     {
         // The FNV-1 64-bit parameters (identical to FNV-1a 64-bit).
-        const ulong fnvPrime = 1099511628211UL;
-        const ulong offsetBasis = 14695981039346656037UL;
+        const ulong FnvPrime = 1099511628211UL;
+        const ulong OffsetBasis = 14695981039346656037UL;
 
-        ulong hash = offsetBasis;
+        ulong hash = OffsetBasis;
         foreach (char c in key)
         {
             // FNV-1 ordering: multiply first, then XOR the byte — the inverse of
@@ -146,9 +146,9 @@ public struct StringFnV164Hasher : IHashProvider<string>, IHashProvider64<string
             // little-endian UTF-16 bytes, but into a 64-bit accumulator. The
             // high-byte step keeps characters that share a low byte but differ in
             // their upper byte distinct.
-            hash *= fnvPrime;
+            hash *= FnvPrime;
             hash ^= (byte)(c & 0xFF);
-            hash *= fnvPrime;
+            hash *= FnvPrime;
             hash ^= (byte)(c >> 8);
         }
 

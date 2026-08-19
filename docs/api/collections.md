@@ -355,7 +355,7 @@ public class SwissDictionary<TKey, TValue, THasher>
 
 ### What SIMD group probing does
 
-The table keeps a parallel array of one-byte **control** tags — one per slot — separate from the key/value arrays. Each control byte is either `EMPTY`, `DELETED` (a tombstone), or, for an occupied slot, the low 7 bits of the key's hash (its *h2* fragment). Slots are grouped into aligned blocks of 16, so a single `Vector128<sbyte>` compare tests all 16 control bytes in a group at once: a lookup loads the 16 tags, compares them against the broadcast h2, and turns the result into a 16-bit candidate mask via `Vector128.ExtractMostSignificantBits`. Only the (usually one) candidate slots then pay a full key comparison; a group with any `EMPTY` slot ends the probe. Two consequences matter to callers:
+The table keeps a parallel array of one-byte **control** tags — one per slot — separate from the key/value arrays. Each control byte is either `Empty`, `Deleted` (a tombstone), or, for an occupied slot, the low 7 bits of the key's hash (its *h2* fragment). Slots are grouped into aligned blocks of 16, so a single `Vector128<sbyte>` compare tests all 16 control bytes in a group at once: a lookup loads the 16 tags, compares them against the broadcast h2, and turns the result into a 16-bit candidate mask via `Vector128.ExtractMostSignificantBits`. Only the (usually one) candidate slots then pay a full key comparison; a group with any `Empty` slot ends the probe. Two consequences matter to callers:
 
 - **One compare per group, not per slot.** The group compare amortizes the per-slot tag test across 16 slots, and the h2 tag filters out non-matching residents before any (potentially expensive) key comparison — so negative lookups and lookups on clustered keys stay cheap. The portable `Vector128` API JITs to SSE2 / AVX2 on x86, AdvSimd on Arm, and a scalar software fallback elsewhere, so the type is correct everywhere and fast where hardware SIMD is available.
 - **A small, predictable overhead.** Each slot carries a one-byte control tag (so the dictionary allocates a little more than `CelerityDictionary`), and deletion uses tombstones that are reclaimed by a rehash once they accumulate, so a churn of insert/delete cycles cannot grow the table without bound.
@@ -544,7 +544,7 @@ The method signatures and semantics match `CelerityDictionary`:
 
 ### Zero-key handling
 
-The key `0` collides with the internal `EMPTY_KEY` sentinel. Like `CelerityDictionary`'s default-key handling, `IntDictionary` stores key `0` out-of-band via a `_hasZeroKey` flag and a dedicated value slot. This is invisible to callers.
+The key `0` collides with the internal `EmptyKey` sentinel. Like `CelerityDictionary`'s default-key handling, `IntDictionary` stores key `0` out-of-band via a `_hasZeroKey` flag and a dedicated value slot. This is invisible to callers.
 
 ### Usage example
 
@@ -624,7 +624,7 @@ The public surface and semantics match `IntDictionary`:
 
 ### Zero-key handling
 
-The key `0L` collides with the `EMPTY_KEY` sentinel and is stored out-of-band the same way `IntDictionary` handles the key `0`. Two keys that share the lower 32 bits but differ in the upper 32 bits are kept distinct (the probe path does not truncate).
+The key `0L` collides with the `EmptyKey` sentinel and is stored out-of-band the same way `IntDictionary` handles the key `0`. Two keys that share the lower 32 bits but differ in the upper 32 bits are kept distinct (the probe path does not truncate).
 
 ### Usage example
 
@@ -745,7 +745,7 @@ public class SwissSet<T, THasher> : ISet<T>, IReadOnlySet<T>
 
 ### What SIMD group probing does
 
-The set keeps a parallel array of one-byte **control** tags — one per slot — separate from the element array. Each control byte is either `EMPTY`, `DELETED` (a tombstone), or, for an occupied slot, the low 7 bits of the element's hash (its *h2* fragment). Slots are grouped into aligned blocks of 16, so a single `Vector128<sbyte>` compare tests all 16 control bytes in a group at once: a membership test loads the 16 tags, compares them against the broadcast h2, and turns the result into a 16-bit candidate mask via `Vector128.ExtractMostSignificantBits`. Only the (usually one) candidate slots then pay a full element comparison; a group with any `EMPTY` slot ends the probe. Two consequences matter to callers:
+The set keeps a parallel array of one-byte **control** tags — one per slot — separate from the element array. Each control byte is either `Empty`, `Deleted` (a tombstone), or, for an occupied slot, the low 7 bits of the element's hash (its *h2* fragment). Slots are grouped into aligned blocks of 16, so a single `Vector128<sbyte>` compare tests all 16 control bytes in a group at once: a membership test loads the 16 tags, compares them against the broadcast h2, and turns the result into a 16-bit candidate mask via `Vector128.ExtractMostSignificantBits`. Only the (usually one) candidate slots then pay a full element comparison; a group with any `Empty` slot ends the probe. Two consequences matter to callers:
 
 - **One compare per group, not per slot.** The group compare amortizes the per-slot tag test across 16 slots, and the h2 tag filters out non-matching residents before any (potentially expensive) element comparison — so negative `Contains` lookups and lookups on clustered elements stay cheap. The portable `Vector128` API JITs to SSE2 / AVX2 on x86, AdvSimd on Arm, and a scalar software fallback elsewhere, so the type is correct everywhere and fast where hardware SIMD is available.
 - **A small, predictable overhead.** Each slot carries a one-byte control tag (so the set allocates a little more than `CeleritySet`), and deletion uses tombstones that are reclaimed by a rehash once they accumulate, so a churn of add/remove cycles cannot grow the table without bound.
@@ -1101,7 +1101,7 @@ The `IEnumerable<int>` overload copies elements from `source`, following the sam
 
 ### Zero-element handling
 
-The element `0` collides with the `EMPTY_SLOT` sentinel and is stored out-of-band, same pattern as `IntDictionary`'s zero-key handling.
+The element `0` collides with the `EmptySlot` sentinel and is stored out-of-band, same pattern as `IntDictionary`'s zero-key handling.
 
 ### Usage example
 
@@ -1187,7 +1187,7 @@ The `IEnumerable<long>` overload copies elements from `source`, following the sa
 
 ### Zero-element handling
 
-The element `0L` collides with the `EMPTY_SLOT` sentinel and is stored out-of-band, same pattern as `LongDictionary`'s zero-key handling.
+The element `0L` collides with the `EmptySlot` sentinel and is stored out-of-band, same pattern as `LongDictionary`'s zero-key handling.
 
 ### Usage example
 
@@ -2836,8 +2836,9 @@ collapse to one entry (harmless — both still test present), so `Count` is the 
   element count).
 - `int SlotCount { get; }` — the number of 8-bit fingerprint slots (`3 · blockLength`), which
   is also the filter's size in bytes.
-- `int FingerprintBits { get; }` — the fingerprint width in bits (fixed at 8). The constant
-  `XorFilter<T, THasher>.FINGERPRINT_BITS` exposes the same value.
+- `const int FingerprintBits` — the fingerprint width in bits, fixed at 8 for every instance,
+  so it is a constant on the type rather than an instance property (unlike `CuckooFilter`,
+  whose width is chosen per filter).
 - `double FalsePositiveRate { get; }` — the fixed theoretical rate, `1 / 2⁸ ≈ 0.0039`.
 - `double BitsPerElement { get; }` — the storage cost per represented element
   (`SlotCount · 8 / Count`), ≈ 9.84 for a well-sized filter; `0` for an empty filter.
@@ -3183,12 +3184,12 @@ public HyperLogLog(
 The first overload creates an empty estimator with `2^precision` registers. The
 `IEnumerable<T>` overload pre-populates it with the source's distinct elements.
 
-`precision` must be between `MIN_PRECISION` (4, `m = 16`) and `MAX_PRECISION` (16,
+`precision` must be between `MinPrecision` (4, `m = 16`) and `MaxPrecision` (16,
 `m = 65536`) inclusive. Larger values cost more memory but lower the standard error.
 
 **Throws:**
 
-- `ArgumentOutOfRangeException` if `precision` is outside `[MIN_PRECISION, MAX_PRECISION]`.
+- `ArgumentOutOfRangeException` if `precision` is outside `[MinPrecision, MaxPrecision]`.
 - `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats
   the precision validation, so a `null` source with a bad precision surfaces as
   `ArgumentNullException`.

@@ -44,7 +44,7 @@ public class ContainsValueTests
         var map = new IntDictionary<int> { [5] = 0, [6] = 1 };
         Assert.True(map.ContainsValue(0));
 
-        // But an empty dictionary must NOT report 0 — the EMPTY_KEY slots
+        // But an empty dictionary must NOT report 0 — the EmptyKey slots
         // are filled with default(TValue) and must be skipped by the scan.
         var empty = new IntDictionary<int>();
         Assert.False(empty.ContainsValue(0));
@@ -220,7 +220,7 @@ public class ContainsValueTests
     [Fact]
     public void CelerityDictionary_DefaultValueLookup_ZeroValue()
     {
-        // EMPTY_KEY slots in the probe array are populated with default(TKey)
+        // EmptyKey slots in the probe array are populated with default(TKey)
         // and default(TValue). ContainsValue must skip those.
         var empty = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
         Assert.False(empty.ContainsValue(0));
@@ -329,7 +329,7 @@ public class ContainsValueTests
     [Fact]
     public void RobinHoodDictionary_DefaultValueLookup_ZeroValue()
     {
-        // EMPTY_KEY slots in the probe array are populated with default(TKey)
+        // EmptyKey slots in the probe array are populated with default(TKey)
         // and default(TValue). ContainsValue must skip those.
         var empty = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
         Assert.False(empty.ContainsValue(0));
@@ -545,7 +545,7 @@ public class ContainsValueTests
     [Fact]
     public void SwissDictionary_DefaultValueLookup_ZeroValue()
     {
-        // EMPTY / DELETED slots in the table hold default(TValue); ContainsValue
+        // Empty / Deleted slots in the table hold default(TValue); ContainsValue
         // must skip them via the control bytes.
         var empty = new SwissDictionary<int, int, Int32WangNaiveHasher>();
         Assert.False(empty.ContainsValue(0));
@@ -665,7 +665,7 @@ public class ContainsValueTests
     [Fact]
     public void HashCachingDictionary_DefaultValueLookup_ZeroValue()
     {
-        // EMPTY / DELETED slots in the table hold default(TValue); ContainsValue
+        // Empty / Deleted slots in the table hold default(TValue); ContainsValue
         // must skip them via the control bytes.
         var empty = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();
         Assert.False(empty.ContainsValue(0));

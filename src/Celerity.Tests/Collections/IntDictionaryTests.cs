@@ -89,7 +89,7 @@ public class IntDictionaryTests
         }
     }
 
-    // Regression: #2 — key 0 collides with the EMPTY_KEY sentinel.
+    // Regression: #2 — key 0 collides with the EmptyKey sentinel.
     [Fact]
     public void Indexer_ShouldHandleZeroKey()
     {
@@ -164,7 +164,7 @@ public class IntDictionaryTests
         Assert.False(map.TryGetValue(42, out var v1));
         Assert.Null(v1);
 
-        // Missing zero key specifically — covers the EMPTY_KEY short-circuit.
+        // Missing zero key specifically — covers the EmptyKey short-circuit.
         Assert.False(map.TryGetValue(0, out var v2));
         Assert.Null(v2);
     }

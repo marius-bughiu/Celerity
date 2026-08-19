@@ -52,12 +52,12 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
     /// </summary>
-    protected const int DEFAULT_CAPACITY = 16;
+    protected const int DefaultCapacity = 16;
 
     /// <summary>
     /// The default load factor of the set if no load factor is specified.
     /// </summary>
-    protected const float DEFAULT_LOAD_FACTOR = 0.75f;
+    protected const float DefaultLoadFactor = 0.75f;
 
     private int _count = 0;
     private T?[] _slots;
@@ -109,8 +109,8 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
     /// is not in the open interval (0, 1).
     /// </exception>
     public PooledCeleritySet(
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -158,8 +158,8 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
     /// </exception>
     public PooledCeleritySet(
         IEnumerable<T> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (T item in source)

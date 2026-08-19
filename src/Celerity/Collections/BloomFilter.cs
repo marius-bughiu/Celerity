@@ -56,7 +56,7 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// The default target false-positive probability used when a constructor does
     /// not specify one: 1%.
     /// </summary>
-    public const double DEFAULT_FALSE_POSITIVE_RATE = 0.01;
+    public const double DefaultFalsePositiveRate = 0.01;
 
     private const double Ln2 = 0.6931471805599453;       // ln(2)
     private const double Ln2Squared = 0.4804530139182014; // (ln 2)²
@@ -90,7 +90,7 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// <paramref name="expectedItems"/> is not positive, or
     /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1.
     /// </exception>
-    public BloomFilter(int expectedItems, double falsePositiveRate = DEFAULT_FALSE_POSITIVE_RATE)
+    public BloomFilter(int expectedItems, double falsePositiveRate = DefaultFalsePositiveRate)
     {
         if (expectedItems <= 0)
             throw new ArgumentOutOfRangeException(nameof(expectedItems), expectedItems, "Expected item count must be positive.");
@@ -137,7 +137,7 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1.
     /// </exception>
-    public BloomFilter(IEnumerable<T> source, double falsePositiveRate = DEFAULT_FALSE_POSITIVE_RATE)
+    public BloomFilter(IEnumerable<T> source, double falsePositiveRate = DefaultFalsePositiveRate)
         : this(ExpectedItemsForSource(source), falsePositiveRate)
     {
         foreach (T item in source)

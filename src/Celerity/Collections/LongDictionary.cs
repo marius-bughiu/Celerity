@@ -29,8 +29,8 @@ public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangNaiveHashe
     /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
     /// is not in the open interval (0, 1).
     /// </exception>
-    public LongDictionary(int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+    public LongDictionary(int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : base(capacity, loadFactor)
     {
     }
@@ -64,8 +64,8 @@ public class LongDictionary<TValue> : LongDictionary<TValue, Int64WangNaiveHashe
     /// </exception>
     public LongDictionary(
         IEnumerable<KeyValuePair<long, TValue>> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : base(source, capacity, loadFactor)
     {
     }
@@ -87,14 +87,14 @@ public class LongDictionary<TValue, THasher>
     /// <summary>
     /// The default initial capacity of the dictionary if no capacity is specified.
     /// </summary>
-    protected const int DEFAULT_CAPACITY = 16;
+    protected const int DefaultCapacity = 16;
 
     /// <summary>
     /// The default load factor of the dictionary if no load factor is specified.
     /// </summary>
-    protected const float DEFAULT_LOAD_FACTOR = 0.75f;
+    protected const float DefaultLoadFactor = 0.75f;
 
-    private const long EMPTY_KEY = 0L;
+    private const long EmptyKey = 0L;
     private static readonly TValue? EMPTY_VALUE = default;
 
     private int _count = 0;
@@ -104,7 +104,7 @@ public class LongDictionary<TValue, THasher>
     private int _threshold;
     private readonly THasher _hasher;
 
-    // The key value 0 collides with EMPTY_KEY, so it's stored out-of-band
+    // The key value 0 collides with EmptyKey, so it's stored out-of-band
     // in a dedicated slot. _count includes this entry when _hasZeroKey is true.
     private bool _hasZeroKey;
     private TValue? _zeroValue;
@@ -129,8 +129,8 @@ public class LongDictionary<TValue, THasher>
     /// is not in the open interval (0, 1).
     /// </exception>
     public LongDictionary(
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -176,8 +176,8 @@ public class LongDictionary<TValue, THasher>
     /// </exception>
     public LongDictionary(
         IEnumerable<KeyValuePair<long, TValue>> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (KeyValuePair<long, TValue> kvp in source)
@@ -232,7 +232,7 @@ public class LongDictionary<TValue, THasher>
     {
         get
         {
-            if (key == EMPTY_KEY)
+            if (key == EmptyKey)
             {
                 if (_hasZeroKey)
                     return _zeroValue!;
@@ -247,7 +247,7 @@ public class LongDictionary<TValue, THasher>
         }
         set
         {
-            if (key == EMPTY_KEY)
+            if (key == EmptyKey)
             {
                 if (!_hasZeroKey)
                 {
@@ -294,7 +294,7 @@ public class LongDictionary<TValue, THasher>
     /// <returns><c>true</c> if the key is found; otherwise, <c>false</c>.</returns>
     public bool ContainsKey(long key)
     {
-        if (key == EMPTY_KEY)
+        if (key == EmptyKey)
             return _hasZeroKey;
 
         return ProbeForKey(key) >= 0;
@@ -328,7 +328,7 @@ public class LongDictionary<TValue, THasher>
         int length = keys.Length;
         for (int i = 0; i < length; i++)
         {
-            if (Unsafe.Add(ref keysRef, (nint)(uint)i) != EMPTY_KEY
+            if (Unsafe.Add(ref keysRef, (nint)(uint)i) != EmptyKey
                 && comparer.Equals(Unsafe.Add(ref valuesRef, (nint)(uint)i), value))
                 return true;
         }
@@ -347,7 +347,7 @@ public class LongDictionary<TValue, THasher>
     /// <returns><c>true</c> if the key was found; otherwise, <c>false</c>.</returns>
     public bool TryGetValue(long key, out TValue? value)
     {
-        if (key == EMPTY_KEY)
+        if (key == EmptyKey)
         {
             if (_hasZeroKey)
             {
@@ -395,7 +395,7 @@ public class LongDictionary<TValue, THasher>
     /// </returns>
     public bool Remove(long key, out TValue? value)
     {
-        if (key == EMPTY_KEY)
+        if (key == EmptyKey)
         {
             if (!_hasZeroKey)
             {
@@ -451,7 +451,7 @@ public class LongDictionary<TValue, THasher>
     /// </returns>
     public bool TryAdd(long key, TValue value)
     {
-        if (key == EMPTY_KEY)
+        if (key == EmptyKey)
         {
             if (_hasZeroKey)
                 return false;
@@ -684,7 +684,7 @@ public class LongDictionary<TValue, THasher>
                 while (++_index < length)
                 {
                     long key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
-                    if (key != EMPTY_KEY)
+                    if (key != EmptyKey)
                     {
                         _current = new KeyValuePair<long, TValue?>(key, Unsafe.Add(ref valuesRef, (nint)(uint)_index));
                         return true;
@@ -996,7 +996,7 @@ public class LongDictionary<TValue, THasher>
         while (true)
         {
             long slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (slot == EMPTY_KEY) { wasEmpty = true; return index; }
+            if (slot == EmptyKey) { wasEmpty = true; return index; }
             if (slot == key) { wasEmpty = false; return index; }
             index = (index + 1) & mask;
         }
@@ -1013,7 +1013,7 @@ public class LongDictionary<TValue, THasher>
         while (true)
         {
             long slot = Unsafe.Add(ref keysRef, (nint)(uint)index);
-            if (slot == EMPTY_KEY) return -1;
+            if (slot == EmptyKey) return -1;
             if (slot == key) return index;
             index = (index + 1) & mask;
         }
@@ -1054,11 +1054,11 @@ public class LongDictionary<TValue, THasher>
         for (int i = 0; i < oldKeys.Length; i++)
         {
             long key = Unsafe.Add(ref oldKeysRef, (nint)(uint)i);
-            if (key == EMPTY_KEY)
+            if (key == EmptyKey)
                 continue;
 
             int index = _hasher.Hash(key) & mask;
-            while (Unsafe.Add(ref newKeysRef, (nint)(uint)index) != EMPTY_KEY)
+            while (Unsafe.Add(ref newKeysRef, (nint)(uint)index) != EmptyKey)
                 index = (index + 1) & mask;
 
             Unsafe.Add(ref newKeysRef, (nint)(uint)index) = key;
@@ -1092,7 +1092,7 @@ public class LongDictionary<TValue, THasher>
         {
             j = (j + 1) & mask;
             long candidateKey = Unsafe.Add(ref keysRef, (nint)(uint)j);
-            if (candidateKey == EMPTY_KEY)
+            if (candidateKey == EmptyKey)
                 break;
 
             int k = _hasher.Hash(candidateKey) & mask;
@@ -1114,7 +1114,7 @@ public class LongDictionary<TValue, THasher>
             i = j;
         }
 
-        Unsafe.Add(ref keysRef, (nint)(uint)i) = EMPTY_KEY;
+        Unsafe.Add(ref keysRef, (nint)(uint)i) = EmptyKey;
         Unsafe.Add(ref valuesRef, (nint)(uint)i) = EMPTY_VALUE;
     }
 }

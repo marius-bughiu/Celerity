@@ -27,13 +27,6 @@
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageTags>celerity;statistics;quantile;ddsketch;percentile;reservoir-sampling;welford;streaming;sketch;performance</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<!--
-		  First-release escape hatch: Celerity.Statistics has no published predecessor
-		  to validate against, and asking for one fails the restore. Delete this line
-		  once the package's first release is indexed on NuGet.org — scripts/check_package_baseline.js
-		  fails the build if it is still here after that.
-		-->
-		<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>
 	</PropertyGroup>
 
 	<PropertyGroup>

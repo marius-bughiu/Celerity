@@ -82,7 +82,7 @@ public class LongDictionaryTests
         }
     }
 
-    // The zero-key collision with EMPTY_KEY = 0L is the same correctness bug as
+    // The zero-key collision with EmptyKey = 0L is the same correctness bug as
     // #2 on IntDictionary; LongDictionary must handle it the same way.
     [Fact]
     public void Indexer_ShouldHandleZeroKey()

@@ -64,7 +64,7 @@ dotnet pack --configuration Release
 ### Naming Conventions
 - Use PascalCase for public members, types, and methods
 - Use camelCase with underscore prefix (`_fieldName`) for private fields
-- Use UPPER_CASE for constants (e.g., `DEFAULT_CAPACITY`, `DEFAULT_LOAD_FACTOR`)
+- Use PascalCase for constants too — fields and method-local alike (e.g., `DefaultCapacity`, `MaxKicks`, `FnvPrime`), never UPPER_CASE. `scripts/check_constant_naming.js` enforces this over the shipping packages in CI
 
 ### Code Style
 - Use file-scoped namespaces (e.g., `namespace Celerity.Hashing;`)

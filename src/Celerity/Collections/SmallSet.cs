@@ -52,7 +52,7 @@ public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
     /// The capacity the set grows to on its first insert when constructed with no
     /// (or a zero) capacity hint.
     /// </summary>
-    protected const int DEFAULT_CAPACITY = 4;
+    protected const int DefaultCapacity = 4;
 
     private T?[] _items;
     private int _count;
@@ -74,7 +74,7 @@ public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="capacity"/> is negative.
     /// </exception>
-    public SmallSet(int capacity = DEFAULT_CAPACITY)
+    public SmallSet(int capacity = DefaultCapacity)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -101,7 +101,7 @@ public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
     /// </exception>
-    public SmallSet(IEnumerable<T> source, int capacity = DEFAULT_CAPACITY)
+    public SmallSet(IEnumerable<T> source, int capacity = DefaultCapacity)
         : this(InitialCapacityForSource(source, capacity))
     {
         foreach (T item in source)
@@ -394,7 +394,7 @@ public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
 
     private void Grow()
     {
-        int newCapacity = _items.Length == 0 ? DEFAULT_CAPACITY : FastUtils.DoubleCapacity(_items.Length);
+        int newCapacity = _items.Length == 0 ? DefaultCapacity : FastUtils.DoubleCapacity(_items.Length);
         Array.Resize(ref _items, newCapacity);
     }
 

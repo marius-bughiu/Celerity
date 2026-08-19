@@ -314,8 +314,8 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
         acc[6] = Prime64_5;
         acc[7] = Prime32_1;
 
-        const long blockBytes = 64L * NbStripesPerBlock; // 1024
-        int nbBlocks = (int)((byteLength - 1) / blockBytes);
+        const long BlockBytes = 64L * NbStripesPerBlock; // 1024
+        int nbBlocks = (int)((byteLength - 1) / BlockBytes);
 
         for (int b = 0; b < nbBlocks; b++)
         {
@@ -324,7 +324,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
         }
 
         // Last partial block: the stripes that remain before the dedicated last stripe.
-        int nbStripes = (int)(((byteLength - 1) - ((long)nbBlocks * blockBytes)) / 64);
+        int nbStripes = (int)(((byteLength - 1) - ((long)nbBlocks * BlockBytes)) / 64);
         Accumulate(acc, s, nbBlocks * BlockChars, nbStripes);
 
         // The final stripe always re-reads the last 64 bytes (last 32 chars), against

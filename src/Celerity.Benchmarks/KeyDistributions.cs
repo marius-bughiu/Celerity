@@ -119,7 +119,7 @@ public static class KeyDistributions
         var keys = new int[count];
         for (int i = 0; i < count; i++)
         {
-            keys[i] = i + 1; // skip 0 — the sentinel EMPTY_KEY in IntDictionary.
+            keys[i] = i + 1; // skip 0 — the sentinel EmptyKey in IntDictionary.
         }
         return keys;
     }

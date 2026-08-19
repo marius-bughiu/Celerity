@@ -45,7 +45,7 @@ public class SetSourceCountBranchTests
 {
     /// <summary>
     /// The number of elements each source produces. Chosen comfortably above every
-    /// set's <c>DEFAULT_CAPACITY</c> so the sizing hint genuinely changes how much
+    /// set's <c>DefaultCapacity</c> so the sizing hint genuinely changes how much
     /// growth happens during the fill, rather than both paths trivially fitting in
     /// the default table.
     /// </summary>

@@ -70,7 +70,7 @@ public class TopKSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// The default number of monitors (<c>k</c>) used when a constructor does not specify a
     /// capacity: 128.
     /// </summary>
-    public const int DEFAULT_CAPACITY = 128;
+    public const int DefaultCapacity = 128;
 
     private readonly int _capacity;
     private readonly T?[] _elements;   // heap-ordered monitor elements
@@ -91,7 +91,7 @@ public class TopKSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// tightens the guarantees, at proportional memory. Must be at least 1.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is less than 1.</exception>
-    public TopKSketch(int capacity = DEFAULT_CAPACITY)
+    public TopKSketch(int capacity = DefaultCapacity)
     {
         if (capacity < 1)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least 1.");
@@ -117,7 +117,7 @@ public class TopKSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// <param name="capacity">The number of monitors to keep; see the primary constructor.</param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is less than 1.</exception>
-    public TopKSketch(IEnumerable<T> source, int capacity = DEFAULT_CAPACITY)
+    public TopKSketch(IEnumerable<T> source, int capacity = DefaultCapacity)
         : this(NullChecked(source, capacity))
     {
         foreach (T item in source)

@@ -28,8 +28,8 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
     /// <paramref name="capacity"/> is negative, or <paramref name="loadFactor"/>
     /// is not in the open interval (0, 1).
     /// </exception>
-    public IntSet(int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+    public IntSet(int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : base(capacity, loadFactor)
     {
     }
@@ -59,8 +59,8 @@ public class IntSet : IntSet<Int32WangNaiveHasher>
     /// </exception>
     public IntSet(
         IEnumerable<int> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : base(source, capacity, loadFactor)
     {
     }
@@ -79,14 +79,14 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     /// <summary>
     /// The default initial capacity of the set if no capacity is specified.
     /// </summary>
-    protected const int DEFAULT_CAPACITY = 16;
+    protected const int DefaultCapacity = 16;
 
     /// <summary>
     /// The default load factor of the set if no load factor is specified.
     /// </summary>
-    protected const float DEFAULT_LOAD_FACTOR = 0.75f;
+    protected const float DefaultLoadFactor = 0.75f;
 
-    private const int EMPTY_SLOT = 0;
+    private const int EmptySlot = 0;
 
     private int _count = 0;
     private int[] _slots;
@@ -94,7 +94,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     private int _threshold;
     private readonly THasher _hasher;
 
-    // The value 0 collides with EMPTY_SLOT, so it's stored out-of-band
+    // The value 0 collides with EmptySlot, so it's stored out-of-band
     // in a dedicated flag. _count includes this entry when _hasZero is true.
     private bool _hasZero;
 
@@ -120,8 +120,8 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     /// is not in the open interval (0, 1).
     /// </exception>
     public IntSet(
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
@@ -164,8 +164,8 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     /// </exception>
     public IntSet(
         IEnumerable<int> source,
-        int capacity = DEFAULT_CAPACITY,
-        float loadFactor = DEFAULT_LOAD_FACTOR)
+        int capacity = DefaultCapacity,
+        float loadFactor = DefaultLoadFactor)
         : this(InitialCapacityForSource(source, capacity, loadFactor), loadFactor)
     {
         foreach (int item in source)
@@ -230,7 +230,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     /// </returns>
     public bool TryAdd(int item)
     {
-        if (item == EMPTY_SLOT)
+        if (item == EmptySlot)
         {
             if (_hasZero)
                 return false;
@@ -254,7 +254,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
         while (true)
         {
             int slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (slot == EMPTY_SLOT) break;
+            if (slot == EmptySlot) break;
             if (slot == item) return false;
             index = (index + 1) & mask;
         }
@@ -266,7 +266,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
             slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
             mask = slots.Length - 1;
             index = _hasher.Hash(item) & mask;
-            while (Unsafe.Add(ref slotsRef, (nint)(uint)index) != EMPTY_SLOT)
+            while (Unsafe.Add(ref slotsRef, (nint)(uint)index) != EmptySlot)
                 index = (index + 1) & mask;
         }
 
@@ -283,7 +283,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     /// <returns><c>true</c> if the element is found; otherwise, <c>false</c>.</returns>
     public bool Contains(int item)
     {
-        if (item == EMPTY_SLOT)
+        if (item == EmptySlot)
             return _hasZero;
 
         return ProbeForItem(item) >= 0;
@@ -299,7 +299,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     /// </returns>
     public bool Remove(int item)
     {
-        if (item == EMPTY_SLOT)
+        if (item == EmptySlot)
         {
             if (!_hasZero)
                 return false;
@@ -587,7 +587,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
                 while (++_index < length)
                 {
                     int slot = Unsafe.Add(ref slotsRef, (nint)(uint)_index);
-                    if (slot != EMPTY_SLOT)
+                    if (slot != EmptySlot)
                     {
                         _current = slot;
                         return true;
@@ -633,7 +633,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
         while (true)
         {
             int slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (slot == EMPTY_SLOT) return -1;
+            if (slot == EmptySlot) return -1;
             if (slot == item) return index;
             index = (index + 1) & mask;
         }
@@ -671,11 +671,11 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
         for (int i = 0; i < oldSlots.Length; i++)
         {
             int item = Unsafe.Add(ref oldSlotsRef, (nint)(uint)i);
-            if (item == EMPTY_SLOT)
+            if (item == EmptySlot)
                 continue;
 
             int index = _hasher.Hash(item) & mask;
-            while (Unsafe.Add(ref newSlotsRef, (nint)(uint)index) != EMPTY_SLOT)
+            while (Unsafe.Add(ref newSlotsRef, (nint)(uint)index) != EmptySlot)
                 index = (index + 1) & mask;
 
             Unsafe.Add(ref newSlotsRef, (nint)(uint)index) = item;
@@ -705,7 +705,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
         {
             j = (j + 1) & mask;
             int candidate = Unsafe.Add(ref slotsRef, (nint)(uint)j);
-            if (candidate == EMPTY_SLOT)
+            if (candidate == EmptySlot)
                 break;
 
             int k = _hasher.Hash(candidate) & mask;
@@ -726,6 +726,6 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
             i = j;
         }
 
-        Unsafe.Add(ref slotsRef, (nint)(uint)i) = EMPTY_SLOT;
+        Unsafe.Add(ref slotsRef, (nint)(uint)i) = EmptySlot;
     }
 }

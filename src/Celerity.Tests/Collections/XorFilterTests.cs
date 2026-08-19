@@ -112,8 +112,7 @@ public class XorFilterTests
     public void FixedProperties_ReportEightBitFingerprint()
     {
         var filter = new XorFilter<int, Int32WangNaiveHasher>(new[] { 1 });
-        Assert.Equal(8, filter.FingerprintBits);
-        Assert.Equal(8, XorFilter<int, Int32WangNaiveHasher>.FINGERPRINT_BITS);
+        Assert.Equal(8, XorFilter<int, Int32WangNaiveHasher>.FingerprintBits);
         Assert.Equal(1.0 / 256, filter.FalsePositiveRate);
     }
 

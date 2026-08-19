@@ -8,6 +8,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **`CompressedGraph`** in `Celerity.Collections` — a build-once, immutable directed **graph** over dense vertex ids, stored compressed sparse row: `Neighbors(v)` is a `ReadOnlySpan<int>` slice rather than a `List<int>` per vertex, alongside `Reverse()`, a breadth-first order and a topological order. The BCL ships no graph or traversal of any kind. Reach for it for the transpose, the smaller footprint and the algorithms you no longer maintain — **not for traversal speed**, which is a wash against a carefully sized `int[][]` and a loss on small graphs. Immutable, dense ids only, no edge weights. Closes [#381](https://github.com/marius-bughiu/Celerity/issues/381).
 
+### Changed
+
+- **Every constant is now named in `PascalCase`**, and CI fails on one that is not. **Source-breaking:** the nine `UPPER_CASE` spellings on the public surface (`DEFAULT_CAPACITY`, `MIN_PRECISION`, `FINGERPRINT_BITS`, …) take their obvious `PascalCase` form, values unchanged, and `XorFilter`'s duplicate instance `FingerprintBits` property is gone — a binary break, unlike the constants, which inline. Reflection by name is the one exception: the old fields are gone from metadata. [Migration guide](docs/migration.md#upper_case-constants---pascalcase). Closes [#298](https://github.com/marius-bughiu/Celerity/issues/298).
+
 ## [2.7.0] - 2026-08-18
 
 ### Added

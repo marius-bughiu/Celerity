@@ -89,19 +89,19 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
     /// one: 14, giving <c>m = 16384</c> registers (16&#160;KB) and a relative standard
     /// error of about 0.81%.
     /// </summary>
-    public const int DEFAULT_PRECISION = 14;
+    public const int DefaultPrecision = 14;
 
     /// <summary>The minimum supported precision (<c>m = 16</c> registers).</summary>
-    public const int MIN_PRECISION = 4;
+    public const int MinPrecision = 4;
 
     /// <summary>The maximum supported precision (<c>m = 65536</c> registers).</summary>
-    public const int MAX_PRECISION = 16;
+    public const int MaxPrecision = 16;
 
     // The size of the hash space reachable through a 32-bit IHashProvider<T>, and the
     // threshold above which the classical large-range correction is worth applying
     // (Flajolet et al. 2007 use 2^32 / 30). Both are used only on the 32-bit path.
-    private const double TWO_POW_32 = 4294967296d;
-    private const double LARGE_RANGE_THRESHOLD = TWO_POW_32 / 30d;
+    private const double TwoPow32 = 4294967296d;
+    private const double LargeRangeThreshold = TwoPow32 / 30d;
 
     private readonly byte[] _registers;
     private readonly int _precision;       // p
@@ -116,18 +116,18 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
     /// The number of bits of each element's hash used to select a register. The
     /// estimator allocates <c>2^precision</c> one-byte registers, so larger values cost
     /// more memory but lower the relative standard error (≈ <c>1.04 / sqrt(2^precision)</c>).
-    /// Must be between <see cref="MIN_PRECISION"/> and <see cref="MAX_PRECISION"/>
+    /// Must be between <see cref="MinPrecision"/> and <see cref="MaxPrecision"/>
     /// inclusive.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="precision"/> is outside the inclusive range
-    /// [<see cref="MIN_PRECISION"/>, <see cref="MAX_PRECISION"/>].
+    /// [<see cref="MinPrecision"/>, <see cref="MaxPrecision"/>].
     /// </exception>
-    public HyperLogLog(int precision = DEFAULT_PRECISION)
+    public HyperLogLog(int precision = DefaultPrecision)
     {
-        if (precision < MIN_PRECISION || precision > MAX_PRECISION)
+        if (precision < MinPrecision || precision > MaxPrecision)
             throw new ArgumentOutOfRangeException(nameof(precision), precision,
-                $"Precision must be between {MIN_PRECISION} and {MAX_PRECISION} inclusive.");
+                $"Precision must be between {MinPrecision} and {MaxPrecision} inclusive.");
 
         _precision = precision;
         _registerCount = 1 << precision;
@@ -146,9 +146,9 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="precision"/> is outside the inclusive range
-    /// [<see cref="MIN_PRECISION"/>, <see cref="MAX_PRECISION"/>].
+    /// [<see cref="MinPrecision"/>, <see cref="MaxPrecision"/>].
     /// </exception>
-    public HyperLogLog(IEnumerable<T> source, int precision = DEFAULT_PRECISION)
+    public HyperLogLog(IEnumerable<T> source, int precision = DefaultPrecision)
         : this(NullCheckedPrecision(source, precision))
     {
         foreach (T item in source)
@@ -247,7 +247,7 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
         {
             estimate = m * Math.Log((double)m / zeroRegisters);
         }
-        else if (!Hash64Source<T, THasher>.IsNative64 && estimate > LARGE_RANGE_THRESHOLD)
+        else if (!Hash64Source<T, THasher>.IsNative64 && estimate > LargeRangeThreshold)
         {
             // Large-range correction. A 32-bit hasher reaches only 2^32 distinct hashes,
             // so what the registers actually measure is the number of distinct *hashes*,
@@ -255,7 +255,7 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
             // produce only 2^32 · (1 − e^(−n/2^32)) distinct hashes. Inverting that
             // recovers n. The condition is a JIT-time constant, so an estimator built on
             // an IHashProvider64<T> hasher compiles this branch away entirely.
-            double saturatedFraction = estimate / TWO_POW_32;
+            double saturatedFraction = estimate / TwoPow32;
 
             // At or past full saturation the inverse has no finite value — every hash has
             // been seen, and the true cardinality is unbounded from the registers alone.
@@ -266,7 +266,7 @@ public class HyperLogLog<T, THasher> where THasher : struct, IHashProvider<T>
             // near-saturation regime where this correction diverges fastest and is most
             // sensitive to them. LogP1 takes -x directly and keeps them.
             if (saturatedFraction < 1d)
-                estimate = -TWO_POW_32 * double.LogP1(-saturatedFraction);
+                estimate = -TwoPow32 * double.LogP1(-saturatedFraction);
         }
 
         return (long)Math.Round(estimate);

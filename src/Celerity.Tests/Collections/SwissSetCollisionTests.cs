@@ -236,7 +236,7 @@ public class SwissSetCollisionTests
         var set = new SwissSet<int, IdentityIntHasher>(capacity: 32, loadFactor: 0.75f);
 
         // Fill group 1 completely, then delete it all: because the group is full,
-        // every erase leaves a DELETED tombstone (16 of them), not an empty slot.
+        // every erase leaves a Deleted tombstone (16 of them), not an empty slot.
         for (int k = 128; k <= 143; k++)
             set.Add(k);
         for (int k = 128; k <= 143; k++)
