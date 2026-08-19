@@ -22,12 +22,14 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Do not reach for this to make a traversal faster.</b> A third baseline is measured for exactly that
 /// reason — an <c>int[][]</c> sized exactly and filled in vertex order — and against it the breadth-first
-/// traversal wins about 6% at 100,000 vertices and <i>loses</i> at 1,000. A caller who lays the neighbour data
-/// out that well has already taken almost everything the flat array gives. What remains is the transpose
-/// (which the jagged form must allocate a list per vertex to build), the build, a footprint several times
-/// smaller, and not having to write, test and maintain the traversal, Kahn's algorithm, the transpose and the
-/// sorted-target invariant — none of which the BCL ships. All three baselines are measured; the numbers are in
-/// the benchmark dashboard and in <c>docs/api/collections.md</c>.
+/// traversal wins about 11% at 100,000 vertices and <i>loses</i> at 1,000, as does the build. A caller who
+/// lays the neighbour data out that well has already taken almost everything the flat array gives. What
+/// survives is the <b>transpose</b> (4.4x, structurally: the jagged form must allocate a row per vertex where
+/// this scatters into arrays it already holds), a footprint about 1.8x smaller, and not having to write, test
+/// and maintain the traversal, Kahn's algorithm, the transpose, the deduplication and the sorted-target
+/// invariant — none of which the BCL ships. Every ratio names the baseline it was measured against, because
+/// the three baselines disagree by a lot; the numbers are in the benchmark dashboard and in
+/// <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
 /// The two shipped types that sit next to graphs do not replace this and are not replaced by it.
@@ -278,6 +280,14 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
         if (destination.IsEmpty)
             return 0;
 
+        // A one-slot buffer is full as soon as the source is written, so answering it must not cost a bitmap
+        // sized for every vertex — the rent and the clear would both be O(VertexCount) to return one element.
+        if (destination.Length == 1)
+        {
+            destination[0] = source;
+            return 1;
+        }
+
         int wordCount = (VertexCount + 63) >> 6;
         ulong[] rented = ArrayPool<ulong>.Shared.Rent(wordCount);
         Span<ulong> visited = rented.AsSpan(0, wordCount);
@@ -289,12 +299,9 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
             destination[0] = source;
             Mark(visited, source);
 
-            // A one-slot buffer is full already. Past this point the inner loop is the only place that can
-            // fill it, and it returns the moment it does, so no iteration ever starts with no room left.
+            // The one-slot case returned above, and the inner loop returns the moment the buffer fills, so no
+            // iteration here ever starts with no room left.
             int count = 1;
-            if (count == destination.Length)
-                return count;
-
             for (int head = 0; head < count; head++)
             {
                 // The offsets are read directly rather than through Neighbors, whose range check is dead

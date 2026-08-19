@@ -291,6 +291,79 @@ public class CompressedGraphBenchmark
     [BenchmarkCategory("Reverse")]
     public CompressedGraph CompressedGraph_Reverse() => graph.Reverse();
 
+    // ---- ReverseTight: the transpose against a jagged form that does NOT pay a list per vertex ----
+    //
+    // List_Reverse allocates a List<int> for every vertex and grows it, which is most of what it costs. That
+    // is the honest cost of transposing *that* structure, but it is not a bound on what a jagged hand-roll can
+    // do: counting the in-degrees first lets each target array be allocated at its exact size and filled by a
+    // scatter, which is the same algorithm CSR uses, one indirection out. This arm is what the published
+    // transpose ratio has to be read against — quoting the List_Reverse number as the win over a well-laid-out
+    // int[][] would repeat exactly the mistake the TraverseTight arm exists to correct.
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("ReverseTight")]
+    public int[][] Array_ReverseTight()
+    {
+        var indegree = new int[tight.Length];
+        for (int vertex = 0; vertex < tight.Length; vertex++)
+        {
+            int[] targets = tight[vertex];
+            for (int i = 0; i < targets.Length; i++)
+                indegree[targets[i]]++;
+        }
+
+        var reversed = new int[tight.Length][];
+        for (int vertex = 0; vertex < reversed.Length; vertex++)
+            reversed[vertex] = new int[indegree[vertex]];
+
+        var cursor = new int[tight.Length];
+        for (int vertex = 0; vertex < tight.Length; vertex++)
+        {
+            int[] targets = tight[vertex];
+            for (int i = 0; i < targets.Length; i++)
+            {
+                int target = targets[i];
+                reversed[target][cursor[target]++] = vertex;
+            }
+        }
+
+        return reversed;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("ReverseTight")]
+    public CompressedGraph CompressedGraph_ReverseTight() => graph.Reverse();
+
+    // ---- BuildTight: construction against the same exact-sized jagged form ----
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("BuildTight")]
+    public int[][] Array_BuildTight()
+    {
+        // Count the out-degrees, allocate each row exactly, scatter. No List<T> growth anywhere, which is the
+        // fairest thing the jagged representation can do from the same edge array.
+        var degree = new int[ItemCount];
+        foreach (GraphEdge edge in edges)
+            degree[edge.Source]++;
+
+        var built = new int[ItemCount][];
+        for (int vertex = 0; vertex < ItemCount; vertex++)
+            built[vertex] = new int[degree[vertex]];
+
+        var cursor = new int[ItemCount];
+        foreach (GraphEdge edge in edges)
+            built[edge.Source][cursor[edge.Source]++] = edge.Target;
+
+        for (int vertex = 0; vertex < ItemCount; vertex++)
+            Array.Sort(built[vertex]);
+
+        return built;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("BuildTight")]
+    public CompressedGraph CompressedGraph_BuildTight() => new(ItemCount, edges);
+
     // ---- Build: the structure the queries above amortize ----
 
     [Benchmark(Baseline = true)]

@@ -5236,26 +5236,46 @@ Both traversals use the caller's destination buffer as the traversal queue, so t
 
 At 100,000 vertices and 800,000 distinct edges (average degree 8, a random DAG), against the two hand-rolls:
 
+**Against `Dictionary<int, List<int>>`, the idiomatic answer:**
+
 | Arm | Baseline | `CompressedGraph` | Ratio |
 | --- | --- | --- | --- |
-| Neighbour iteration | `List<int>[]` 1,008 µs | 779 µs | 1.29x |
-| Breadth-first traversal | `Dictionary<int, List<int>>` 1,423 µs | 614 µs | 2.32x |
-| Breadth-first traversal | `List<int>[]` 930 µs | 602 µs | 1.55x |
-| Breadth-first traversal | **`int[][]`, exact-sized, vertex order** 641 µs | 602 µs | **1.06x** |
-| Topological order | `List<int>[]` 4,865 µs | 2,651 µs | 1.83x |
-| Transpose | `List<int>[]` 53,393 µs | 4,864 µs | **11.0x** |
-| Build | `Dictionary<int, List<int>>` 54,365 µs | 15,695 µs | **3.46x** |
-| Retained heap | `Dictionary<int, List<int>>` 12.97 MB | 3.60 MB | **3.60x less** |
+| Breadth-first traversal | 1,440 µs | 594 µs | 2.42x |
+| Build | 47,634 µs | 12,175 µs | 3.91x |
+| Retained heap | 12.97 MB | 3.60 MB | 3.60x less |
 
-Three things in that table are worth reading rather than skimming.
+**Against `List<int>[]`, the same thing once you notice the ids are dense:**
 
-**The traversal ratio is a statement about the hand-roll you compare against, and against the best one it nearly vanishes.** Three baselines run the identical breadth-first algorithm over the identical edge set and differ only in how the neighbour lists are stored: 2.32x against `Dictionary<int, List<int>>`, 1.55x against `List<int>[]`, and **1.06x against an `int[][]` sized exactly and filled in vertex order** — where at 1,000 vertices the `int[][]` is in fact *faster* than this type by about 7%. The step from 1.55x to 1.06x is the whole mechanism: a `List<int>` grows its backing array on demand, in the order the edges happen to arrive, so the neighbour data ends up scattered no matter how tidily the list objects themselves were created. Size the arrays exactly and fill them in vertex order and a caller has recovered almost everything flattening them into one array would give.
+| Arm | Baseline | `CompressedGraph` | Ratio |
+| --- | --- | --- | --- |
+| Neighbour iteration | 973 µs | 761 µs | 1.28x |
+| Breadth-first traversal | 1,011 µs | 600 µs | 1.69x |
+| Topological order | 4,783 µs | 2,665 µs | 1.79x |
+| Transpose | 43,813 µs | 3,179 µs | 13.8x |
+| Retained heap | 10.72 MB | 3.60 MB | 2.98x less |
 
-So **do not reach for this type to make a traversal faster.** What it actually offers over a well-laid-out `int[][]` is the transpose (11.0x, because the jagged form has to allocate a fresh list per vertex to build one), the build (3.46x), the retained footprint (3.60x less), and the fact that the breadth-first order, Kahn's algorithm, the transpose and the sorted-target invariant are code you do not write, test or maintain — which, given the BCL ships none of it, is the substance of the case.
+**Against `int[][]` sized exactly and filled in vertex order — the best hand-roll, and the one to judge this type by:**
 
-**One pre-registered kill criterion was missed.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar clears at 3.60x; the traversal bar is **missed at 2.32x**. The first published explanation for the miss was wrong and is corrected above — it blamed a consecutive baseline layout that the benchmark never actually built, and the `int[][]` arm was added specifically to test that claim, which it refuted. The honest reading is simply that traversal speed is not this type's win. It ships on the roadmap's other limb — a genuine BCL gap — and that is a judgement call **awaiting maintainer confirmation**, recorded here rather than settled by the numbers.
+| Arm | Baseline | `CompressedGraph` | Ratio |
+| --- | --- | --- | --- |
+| Breadth-first traversal | 660 µs | 596 µs | **1.11x** (at 1k vertices: **0.92x — this type loses**) |
+| Transpose | 13,693 µs | 3,101 µs | **4.42x** |
+| Build | 18,832 µs | 12,228 µs | **1.54x** (at 1k vertices: **0.83x — this type loses**) |
+| Retained heap | 6.59 MB | 3.60 MB | **1.83x less** |
 
-**Read the traversal rows as end-to-end comparisons.** The baselines mark visits in a `bool[]`, as a hand-rolled traversal does, while the type packs the same marks into a `ulong` bitmap — 12.5 KB against 100 KB at 100,000 vertices — so a smaller clear and a cache-resident visited set are part of every traversal ratio above. The neighbour-iteration row is the only one with no queue and no visited set at all. The topological and transpose rows use the `List<int>[]` baseline and therefore carry the same lazily-grown-array effect the `int[][]` arm isolates; the transpose margin is dominated by allocating one list object per vertex, which is unavoidable for that structure rather than an artefact.
+**Every ratio above is a statement about one baseline, and the three sets disagree by a lot.** That is the single most important thing to take from them. The same breadth-first walk over the same edge set is 2.42x, 1.69x or 1.11x depending only on how the neighbour lists were stored — so a number quoted without its baseline means nothing. The step from `List<int>[]` to `int[][]` is the mechanism: a `List<int>` grows its backing array on demand, in the order the edges happen to arrive, so the neighbour data ends up scattered however tidily the list objects were created. Size the arrays exactly, fill them in vertex order, and a caller has recovered almost everything flattening them into one array would give.
+
+**So the honest case for this type is narrow, and it is not speed.** Against a competent `int[][]` hand-roll the traversal is a wash (and *loses* at a thousand vertices), the build is a wash (and loses at a thousand vertices, while allocating about 1.35x more while it runs). What genuinely survives is:
+
+- the **transpose, 4.42x** — the one operation the flat layout does structurally better, because the jagged form has to allocate a fresh row per vertex where CSR scatters into two arrays it already has;
+- the **footprint, 1.83x smaller** — one `int[]` header instead of 100,000 of them;
+- and the fact that the breadth-first order, Kahn's algorithm, the transpose, the deduplication and the sorted-target invariant are code you do not write, test or maintain, on a structure the BCL does not ship at all.
+
+If those are not what you want, an `int[][]` you fill yourself is a perfectly good answer and this page will not pretend otherwise.
+
+**One pre-registered kill criterion was missed.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar clears at 3.60x; the traversal bar is **missed at 2.42x**. The first explanation published for that miss was itself wrong — it blamed a consecutive baseline layout the benchmark never built — and the `int[][]` arms were added to test it and refuted it. The type ships on the roadmap's other limb, a genuine BCL gap, which is a judgement call **awaiting maintainer confirmation** rather than something the numbers settle.
+
+**Read the traversal rows as end-to-end comparisons.** The baselines mark visits in a `bool[]`, as a hand-rolled traversal does, while the type packs the same marks into a `ulong` bitmap — 12.5 KB against 100 KB at 100,000 vertices — so a smaller clear and a cache-resident visited set are part of every traversal ratio. The neighbour-iteration row is the only one with no queue and no visited set at all. The topological row has no `int[][]` counterpart measured, so read its 1.79x as being against `List<int>[]` and expect the same shrinkage a tight baseline produced everywhere else.
 
 ### API
 

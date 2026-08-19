@@ -1583,14 +1583,17 @@ internal static class Differential
         int vertexCount = rng.Next(1, 90);
         int edgeCount = rng.Next(0, 260);
 
+        // The choice is made once for the whole graph, not per edge: orienting only *some* edges forward
+        // leaves the rest free to close a cycle, so a dense case would almost never reach a completed
+        // topological order and that half of the check would go unexercised.
+        bool acyclic = rng.Next(0, 3) == 0;
+
         var edges = new GraphEdge[edgeCount];
         for (int i = 0; i < edgeCount; i++)
         {
-            // A third of the cases are acyclic by construction, so the topological path reaches a completed
-            // order rather than only ever reporting a cycle on a dense random graph.
             int a = rng.Next(vertexCount);
             int b = rng.Next(vertexCount);
-            edges[i] = rng.Next(0, 3) == 0 && a != b
+            edges[i] = acyclic && a != b
                 ? new GraphEdge(Math.Min(a, b), Math.Max(a, b))
                 : new GraphEdge(a, b);
         }
