@@ -17,8 +17,17 @@ namespace Celerity.Collections;
 /// per visit on the dictionary form, a <see cref="List{T}"/> object plus its backing array per vertex so
 /// neighbouring vertices' neighbour sets land wherever the allocator put them, and an enumerator to walk each
 /// one. CSR replaces all of it with an index and a slice: two allocations for the whole graph regardless of
-/// how many vertices it has, and a traversal that walks memory close to in order. Both baselines are measured; the numbers are
-/// in the benchmark dashboard and in <c>docs/api/collections.md</c>.
+/// how many vertices it has.
+/// </para>
+/// <para>
+/// <b>Do not reach for this to make a traversal faster.</b> A third baseline is measured for exactly that
+/// reason — an <c>int[][]</c> sized exactly and filled in vertex order — and against it the breadth-first
+/// traversal wins about 6% at 100,000 vertices and <i>loses</i> at 1,000. A caller who lays the neighbour data
+/// out that well has already taken almost everything the flat array gives. What remains is the transpose
+/// (which the jagged form must allocate a list per vertex to build), the build, a footprint several times
+/// smaller, and not having to write, test and maintain the traversal, Kahn's algorithm, the transpose and the
+/// sorted-target invariant — none of which the BCL ships. All three baselines are measured; the numbers are in
+/// the benchmark dashboard and in <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
 /// The two shipped types that sit next to graphs do not replace this and are not replaced by it.

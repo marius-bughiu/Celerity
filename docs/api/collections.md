@@ -5238,23 +5238,24 @@ At 100,000 vertices and 800,000 distinct edges (average degree 8, a random DAG),
 
 | Arm | Baseline | `CompressedGraph` | Ratio |
 | --- | --- | --- | --- |
-| Neighbour iteration | `List<int>[]` 1,008 µs | 779 µs | **1.29x** |
-| Breadth-first traversal | `Dictionary<int, List<int>>` 1,409 µs | 598 µs | **2.36x** |
-| Breadth-first traversal | `List<int>[]` 912 µs | 598 µs | **1.53x** |
-| Topological order | `List<int>[]` 4,865 µs | 2,651 µs | **1.83x** |
+| Neighbour iteration | `List<int>[]` 1,008 µs | 779 µs | 1.29x |
+| Breadth-first traversal | `Dictionary<int, List<int>>` 1,423 µs | 614 µs | 2.32x |
+| Breadth-first traversal | `List<int>[]` 930 µs | 602 µs | 1.55x |
+| Breadth-first traversal | **`int[][]`, exact-sized, vertex order** 641 µs | 602 µs | **1.06x** |
+| Topological order | `List<int>[]` 4,865 µs | 2,651 µs | 1.83x |
 | Transpose | `List<int>[]` 53,393 µs | 4,864 µs | **11.0x** |
 | Build | `Dictionary<int, List<int>>` 54,365 µs | 15,695 µs | **3.46x** |
 | Retained heap | `Dictionary<int, List<int>>` 12.97 MB | 3.60 MB | **3.60x less** |
 
-Two things in that table are worth reading rather than skimming.
+Three things in that table are worth reading rather than skimming.
 
-**One pre-registered kill criterion was missed, and the type shipped anyway.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar is cleared with room to spare (3.60x). The traversal bar is **missed at 2.36x**, and the reason is worth recording: the criterion assumed the baseline's neighbour arrays would be scattered, but a `List<int>` per vertex built in vertex order lands its backing arrays consecutively, so the idiomatic form already gets much of CSR's locality for free. What is actually removed is the hash lookup and one indirection per vertex — worth 2.36x, not 3x.
+**The traversal ratio is a statement about the hand-roll you compare against, and against the best one it nearly vanishes.** Three baselines run the identical breadth-first algorithm over the identical edge set and differ only in how the neighbour lists are stored: 2.32x against `Dictionary<int, List<int>>`, 1.55x against `List<int>[]`, and **1.06x against an `int[][]` sized exactly and filled in vertex order** — where at 1,000 vertices the `int[][]` is in fact *faster* than this type by about 7%. The step from 1.55x to 1.06x is the whole mechanism: a `List<int>` grows its backing array on demand, in the order the edges happen to arrive, so the neighbour data ends up scattered no matter how tidily the list objects themselves were created. Size the arrays exactly and fill them in vertex order and a caller has recovered almost everything flattening them into one array would give.
 
-Read the traversal rows as **end-to-end** comparisons rather than as measurements of the adjacency layout alone. The baselines mark visits in a `bool[]`, which is what a hand-rolled traversal uses, while the type packs the same marks into a `ulong` bitmap — 12.5 KB against 100 KB at 100,000 vertices — so a smaller clear and a visited set that stays in cache are part of the difference too. The neighbour-iteration row is the one that isolates the layout, with no queue and no visited set at all, and **1.29x** is the adjacency-only number.
+So **do not reach for this type to make a traversal faster.** What it actually offers over a well-laid-out `int[][]` is the transpose (11.0x, because the jagged form has to allocate a fresh list per vertex to build one), the build (3.46x), the retained footprint (3.60x less), and the fact that the breadth-first order, Kahn's algorithm, the transpose and the sorted-target invariant are code you do not write, test or maintain — which, given the BCL ships none of it, is the substance of the case.
 
-The type ships on the roadmap's other limb (a genuine BCL gap, with a win on every measured arm) rather than on the bar it was given. That is a judgement call, it is **awaiting maintainer confirmation**, and it is recorded here rather than settled by the numbers.
+**One pre-registered kill criterion was missed.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar clears at 3.60x; the traversal bar is **missed at 2.32x**. The first published explanation for the miss was wrong and is corrected above — it blamed a consecutive baseline layout that the benchmark never actually built, and the `int[][]` arm was added specifically to test that claim, which it refuted. The honest reading is simply that traversal speed is not this type's win. It ships on the roadmap's other limb — a genuine BCL gap — and that is a judgement call **awaiting maintainer confirmation**, recorded here rather than settled by the numbers.
 
-**The win is a memory-hierarchy win, so it needs a graph large enough to have one.** At 1,000 vertices the whole structure fits in cache and the traversal against `List<int>[]` measures at **parity** (0.95x to 0.98x). The ratios above are the 100,000-vertex numbers; below roughly ten thousand vertices, reach for this type for the API and the transpose, not for the traversal speed.
+**Read the traversal rows as end-to-end comparisons.** The baselines mark visits in a `bool[]`, as a hand-rolled traversal does, while the type packs the same marks into a `ulong` bitmap — 12.5 KB against 100 KB at 100,000 vertices — so a smaller clear and a cache-resident visited set are part of every traversal ratio above. The neighbour-iteration row is the only one with no queue and no visited set at all. The topological and transpose rows use the `List<int>[]` baseline and therefore carry the same lazily-grown-array effect the `int[][]` arm isolates; the transpose margin is dominated by allocating one list object per vertex, which is unavoidable for that structure rather than an artefact.
 
 ### API
 

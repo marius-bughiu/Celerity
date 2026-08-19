@@ -51,6 +51,7 @@ public class CompressedGraphBenchmark
     private CompressedGraph graph = null!;
     private Dictionary<int, List<int>> map = null!;
     private List<int>[] lists = null!;
+    private int[][] tight = null!;
     private int[] queue = null!;
     private bool[] visited = null!;
     private int[] indegrees = null!;
@@ -86,6 +87,7 @@ public class CompressedGraphBenchmark
         graph = new CompressedGraph(ItemCount, edges);
         map = BuildMap();
         lists = BuildLists();
+        tight = BuildTight();
 
         queue = new int[ItemCount];
         visited = new bool[ItemCount];
@@ -187,6 +189,46 @@ public class CompressedGraphBenchmark
     [BenchmarkCategory("TraverseArray")]
     public int CompressedGraph_TraverseArray() => graph.CopyBreadthFirstOrder(0, queue);
 
+    // ---- TraverseTight: the same pass against the best hand-roll short of CSR ----
+    //
+    // This arm exists because a claim about the other two needed evidence. List<int>[] allocates each list's
+    // backing array lazily, as the random edge order grows it, so its neighbour arrays are *not* laid out in
+    // vertex order however tidily the empty List objects were created. int[][] sized exactly and filled in
+    // vertex order is: same jagged indirection, but the neighbour data is contiguous and in traversal-relevant
+    // order, which is the one property CSR is supposed to be buying. The gap between this arm and
+    // TraverseArray is therefore the layout effect on its own, and the gap that remains here is what CSR wins
+    // *after* a caller has already done everything short of flattening the arrays.
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("TraverseTight")]
+    public int Array_TraverseTight()
+    {
+        Array.Clear(visited);
+
+        int count = 1;
+        queue[0] = 0;
+        visited[0] = true;
+        for (int head = 0; head < count; head++)
+        {
+            int[] targets = tight[queue[head]];
+            for (int i = 0; i < targets.Length; i++)
+            {
+                int target = targets[i];
+                if (visited[target])
+                    continue;
+
+                visited[target] = true;
+                queue[count++] = target;
+            }
+        }
+
+        return count;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("TraverseTight")]
+    public int CompressedGraph_TraverseTight() => graph.CopyBreadthFirstOrder(0, queue);
+
     // ---- Topological: Kahn's algorithm, the dependency-resolution question with no BCL answer ----
 
     [Benchmark(Baseline = true)]
@@ -269,6 +311,23 @@ public class CompressedGraphBenchmark
 
         foreach (GraphEdge edge in edges)
             built[edge.Source].Add(edge.Target);
+
+        return built;
+    }
+
+    // Exactly sized, filled in vertex order, targets ascending: the same edge set the graph holds, laid out as
+    // well as a jagged structure can lay it out.
+    private int[][] BuildTight()
+    {
+        var built = new int[ItemCount][];
+        for (int vertex = 0; vertex < ItemCount; vertex++)
+        {
+            List<int> targets = lists[vertex];
+            int[] copy = new int[targets.Count];
+            targets.CopyTo(copy);
+            Array.Sort(copy);
+            built[vertex] = copy;
+        }
 
         return built;
     }

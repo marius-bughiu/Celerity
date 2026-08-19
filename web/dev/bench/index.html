@@ -514,8 +514,9 @@ function escapeHtml(s) {
     { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                   vs: 'List<T> (linear scan)', ops: ['PointQuery', 'SortedScan', 'WindowQuery', 'AnyOverlap', 'Build'] },
     // CompressedGraph is the graph axis, which the BCL has nothing for at all. Two baselines: the idiomatic
     // Dictionary<int, List<int>> on the Traverse and Build cards, and the better List<int>[] hand-roll on the
-    // rest — the arm to judge it by, since the dictionary's extra cost is hashing rather than layout.
-    { key: 'CompressedGraph',     title: 'CompressedGraph (CSR)',                    vs: 'Dictionary<int, List<int>>, or List<int>[] on the Array/Neighbors/Topological/Reverse cards', ops: ['Neighbors', 'Traverse', 'TraverseArray', 'Topological', 'Reverse', 'Build'] },
+    // rest. TraverseTight is the arm to judge the traversal by: an int[][] sized exactly and filled in vertex
+    // order, against which CSR wins only ~6% at 100k and loses at 1k.
+    { key: 'CompressedGraph',     title: 'CompressedGraph (CSR)',                    vs: 'Dictionary<int, List<int>>, or List<int>[] on the Array/Neighbors/Topological/Reverse cards', ops: ['Neighbors', 'Traverse', 'TraverseArray', 'TraverseTight', 'Topological', 'Reverse', 'Build'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
