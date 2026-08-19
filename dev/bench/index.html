@@ -512,6 +512,12 @@ function escapeHtml(s) {
     // List<T> scan a caller writes, since the BCL has no interval structure at all. AnyOverlap is the honest
     // arm: both sides stop at the first match there, so it is where the gap is narrowest.
     { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                   vs: 'List<T> (linear scan)', ops: ['PointQuery', 'SortedScan', 'WindowQuery', 'AnyOverlap', 'Build'] },
+    // CompressedGraph is the graph axis, which the BCL has nothing for at all. Two baselines: the idiomatic
+    // Dictionary<int, List<int>> on the Traverse and Build cards, and the better List<int>[] hand-roll on the
+    // rest. The *Tight cards are the arms to judge this type by: an int[][] sized exactly and filled in vertex
+    // order, against which the traversal and the build both lose at 1k and win only narrowly at 100k, and only
+    // the transpose stays decisive.
+    { key: 'CompressedGraph',     title: 'CompressedGraph (CSR)',                    vs: 'Dictionary<int, List<int>>, or List<int>[] on the Array/Neighbors/Topological/Reverse cards', ops: ['Neighbors', 'Traverse', 'TraverseArray', 'TraverseTight', 'Topological', 'Reverse', 'ReverseTight', 'Build', 'BuildTight'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
