@@ -6,9 +6,11 @@ namespace Celerity.Collections;
 /// <remarks>
 /// <para>
 /// Both endpoints are dense vertex ids in <c>[0, VertexCount)</c>. The type carries no payload: a graph built
-/// on dense ids lets a caller keep per-edge data in a parallel array of their own, indexed the same way, which
-/// is cheaper than threading a type parameter through the adjacency structure and is the reason
-/// <see cref="CompressedGraph"/> is not generic.
+/// on dense ids lets a caller keep per-<i>vertex</i> data in a parallel array of their own, indexed by the same
+/// id, which is cheaper than threading a type parameter through the adjacency structure and is the reason
+/// <see cref="CompressedGraph"/> is not generic. Per-<i>edge</i> data is a different matter and this does not
+/// give it to you: the build sorts each vertex's targets and collapses duplicates, so an array parallel to the
+/// <i>input</i> edge order no longer lines up with anything the graph exposes.
 /// </para>
 /// <para>
 /// The endpoints are not validated here — legality depends on the vertex count, which this type does not know.

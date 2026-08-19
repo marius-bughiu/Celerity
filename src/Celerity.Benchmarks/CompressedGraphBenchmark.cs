@@ -15,9 +15,17 @@ using Celerity.Collections;
 // object plus its backing array per vertex, landing wherever the allocator put them, against one contiguous
 // target array the whole traversal walks close to in order.
 //
-// The traversal arms deliberately give both baselines the *same* traversal machinery the type uses internally
-// — a flat int[] as the queue and an O(1) visited test — rather than a Queue<int>. Without that the arms would
-// be measuring the queue as much as the adjacency, and the claim here is about the adjacency alone.
+// The traversal arms give both baselines a flat int[] as the queue rather than a Queue<int>, which is the same
+// queue the type uses internally — without that the arms would be measuring the queue as much as the graph.
+//
+// They are still an *end-to-end* traversal comparison rather than an isolation of the adjacency layout, and it
+// is worth being exact about why: the baselines mark visits in a bool[], which is what a hand-rolled BFS
+// actually uses, while CompressedGraph packs the same marks into a ulong bitmap — 12.5 KB against 100 KB at
+// 100,000 vertices. That is a real part of the measured difference (a smaller clear, and a visited set that
+// stays in cache) and it is not the adjacency. Swapping a bitmap into the baselines would isolate the layout
+// but would stop measuring what a caller actually writes, so the arms keep the realistic hand-roll and the
+// claim is scoped to the whole traversal instead. Neighbors below is the arm that isolates the layout on its
+// own — no queue, no visited set — and its ratio is the one to read as the adjacency-only number.
 //
 // Neighbors is the innermost loop on its own: walk every vertex's targets and sum them, with no traversal
 // bookkeeping at all. It is the narrowest statement of what the layout buys and the one whose ratio should be

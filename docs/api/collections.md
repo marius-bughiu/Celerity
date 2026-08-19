@@ -5222,7 +5222,7 @@ public readonly struct GraphEdge : IEquatable<GraphEdge>
 }
 ```
 
-Both endpoints are dense vertex ids. The edge is **directed**, so `(1, 2)` and `(2, 1)` are different edges and compare unequal. The struct carries no payload deliberately: a graph on dense ids lets you keep per-edge or per-vertex data in a parallel array of your own indexed the same way, which is why `CompressedGraph` is not generic.
+Both endpoints are dense vertex ids. The edge is **directed**, so `(1, 2)` and `(2, 1)` are different edges and compare unequal. The struct carries no payload deliberately: a graph on dense ids lets you keep per-**vertex** data in a parallel array of your own indexed by the same id, which is why `CompressedGraph` is not generic. Per-**edge** data is a different matter and this does not give it to you — the build sorts each vertex's targets and collapses duplicates, so an array parallel to the *input* edge order no longer lines up with anything the graph exposes.
 
 ### How it works
 
@@ -5248,7 +5248,11 @@ At 100,000 vertices and 800,000 distinct edges (average degree 8, a random DAG),
 
 Two things in that table are worth reading rather than skimming.
 
-**One pre-registered kill criterion was missed, and the type shipped anyway.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar is cleared with room to spare (3.60x). The traversal bar is **missed at 2.36x**, and the reason is worth recording: the criterion assumed the baseline's neighbour arrays would be scattered, but a `List<int>` per vertex built in vertex order lands its backing arrays consecutively, so the idiomatic form already gets much of CSR's locality for free. What is actually removed is the hash lookup and one indirection per vertex — worth 2.36x, not 3x. The type ships on the roadmap's other limb (a genuine BCL gap, with a win on every measured arm) rather than on the bar it was given, which is a judgement call a maintainer can reverse.
+**One pre-registered kill criterion was missed, and the type shipped anyway.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar is cleared with room to spare (3.60x). The traversal bar is **missed at 2.36x**, and the reason is worth recording: the criterion assumed the baseline's neighbour arrays would be scattered, but a `List<int>` per vertex built in vertex order lands its backing arrays consecutively, so the idiomatic form already gets much of CSR's locality for free. What is actually removed is the hash lookup and one indirection per vertex — worth 2.36x, not 3x.
+
+Read the traversal rows as **end-to-end** comparisons rather than as measurements of the adjacency layout alone. The baselines mark visits in a `bool[]`, which is what a hand-rolled traversal uses, while the type packs the same marks into a `ulong` bitmap — 12.5 KB against 100 KB at 100,000 vertices — so a smaller clear and a visited set that stays in cache are part of the difference too. The neighbour-iteration row is the one that isolates the layout, with no queue and no visited set at all, and **1.29x** is the adjacency-only number.
+
+The type ships on the roadmap's other limb (a genuine BCL gap, with a win on every measured arm) rather than on the bar it was given. That is a judgement call, it is **awaiting maintainer confirmation**, and it is recorded here rather than settled by the numbers.
 
 **The win is a memory-hierarchy win, so it needs a graph large enough to have one.** At 1,000 vertices the whole structure fits in cache and the traversal against `List<int>[]` measures at **parity** (0.95x to 0.98x). The ratios above are the 100,000-vertex numbers; below roughly ten thousand vertices, reach for this type for the API and the transpose, not for the traversal speed.
 
@@ -5306,9 +5310,10 @@ Console.WriteLine(builds.ContainsEdge(0, 4));           // False - the path is 0
 if (builds.TryGetTopologicalOrder(out int[] order))
     Console.WriteLine(string.Join(" ", order));         // 0 2 1 3 4
 
-// "What depends on vertex 4?" - the transpose, O(V + E), not a rebuild.
-CompressedGraph dependents = builds.Reverse();
-Console.WriteLine(string.Join(" ", dependents.Neighbors(4).ToArray()));   // 1 3
+// "What does vertex 4 depend on?" - the transpose, O(V + E), not a rebuild. Mind the direction: an edge
+// means "must be built before", so 4's in-neighbours are its dependencies, not its dependents.
+CompressedGraph incoming = builds.Reverse();
+Console.WriteLine(string.Join(" ", incoming.Neighbors(4).ToArray()));     // 1 3
 
 // Everything reachable from 0, in breadth-first order, into a buffer you own.
 var reached = new int[builds.VertexCount];

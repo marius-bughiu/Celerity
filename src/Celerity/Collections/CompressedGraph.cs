@@ -219,8 +219,11 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
     /// <remarks>
     /// <c>O(V + E)</c> — a counting scatter, with no sort needed, because visiting the sources in ascending
     /// order already emits each reversed slice in ascending order. This is the operation the CSR layout makes
-    /// nearly free and the <c>Dictionary&lt;int, List&lt;int&gt;&gt;</c> form makes a rebuild: "who depends on
-    /// me", "which pages link here", the reverse pass of a two-way reachability check.
+    /// nearly free and the <c>Dictionary&lt;int, List&lt;int&gt;&gt;</c> form makes a rebuild: which vertices
+    /// point <i>at</i> this one — "which pages link here", "which packages was this built from" — and the
+    /// reverse pass of a two-way reachability check. Mind the direction when the edges encode a dependency:
+    /// under the usual <c>source must come before target</c> reading, a vertex's in-neighbours are what it
+    /// depends <i>on</i>, not what depends on it.
     /// </remarks>
     public CompressedGraph Reverse()
     {

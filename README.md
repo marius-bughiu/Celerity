@@ -738,8 +738,9 @@ builds.ContainsEdge(0, 4);                              // false — the path is
 if (builds.TryGetTopologicalOrder(out int[] order))
     Console.WriteLine(string.Join(" ", order));         // 0 2 1 3 4
 
-// "What depends on 4?" — the transpose, O(V + E) rather than a rebuild.
-CompressedGraph dependents = builds.Reverse();          // dependents.Neighbors(4) is 1, 3
+// "What does 4 depend on?" — the transpose, O(V + E) rather than a rebuild. Mind the direction: an edge
+// means "must be built before", so 4's in-neighbours are its dependencies, not its dependents.
+CompressedGraph incoming = builds.Reverse();            // incoming.Neighbors(4) is 1, 3
 
 // Everything reachable from 0, into a buffer you own.
 var reached = new int[builds.VertexCount];
