@@ -103,20 +103,20 @@
     below against what NuGet.org has actually published. That is why the bump
     is due the moment the release is indexed, and why bumping it early fails.
 
-    The seven packages published at this baseline (Celerity.Collections /
-    Celerity.Hashing / Celerity.Primitives / Celerity.Sorting / Celerity.Ring /
-    Celerity.Sentinel / Celerity.Cardinality) share it. Celerity.Statistics has not
-    shipped yet and is on the escape hatch below. A brand-new package has no
-    published predecessor to validate against, and asking for one fails the
-    restore, so its .csproj sets CelerityNoPublishedBaseline to true until its
-    first release ships, then drops the property.
+    All eight shipped packages (Celerity.Collections / Celerity.Hashing /
+    Celerity.Primitives / Celerity.Sorting / Celerity.Statistics / Celerity.Ring /
+    Celerity.Sentinel / Celerity.Cardinality) are published at this baseline and
+    share it. A brand-new package has no published predecessor to validate
+    against, and asking for one fails the restore, so its .csproj sets
+    CelerityNoPublishedBaseline to true until its first release ships, then
+    drops the property.
 
     Only the baseline version lives here, so there is exactly one line to bump.
     Turning validation on has to happen later, in Directory.Build.targets, where
     IsPackable is known; see the comment there.
   -->
   <PropertyGroup>
-    <CelerityPackageValidationBaseline>2.6.0</CelerityPackageValidationBaseline>
+    <CelerityPackageValidationBaseline>2.7.0</CelerityPackageValidationBaseline>
   </PropertyGroup>
 
 </Project>
