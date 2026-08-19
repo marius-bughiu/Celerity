@@ -875,6 +875,58 @@ void Check(bool condition, string message)
     Check(owners.CountContaining("f") == 1 && owners.Count == 2, "IntervalTree custom comparer instantiation");
 }
 
+// CompressedGraph — the build-once CSR graph. What is ILC-specific here is less the generics (there are none)
+// than the memory shapes: Neighbors hands back a ReadOnlySpan<int> over the type's own field, both traversals
+// rent from ArrayPool<T>.Shared and return, and the build path runs MemoryExtensions.Sort and BinarySearch over
+// int spans — all four are intrinsic-heavy and none has a JIT to fall back on. Exercise the adjacency surface,
+// the transpose, both traversal tiers, the cyclic rejection and the enumerator.
+{
+    // 0 -> 1 -> 4, 0 -> 3 -> 4, with vertex 2 isolated and one duplicate edge to collapse.
+    var builds = new CompressedGraph(5, new[]
+    {
+        new GraphEdge(0, 3),
+        new GraphEdge(0, 1),
+        new GraphEdge(0, 1),
+        new GraphEdge(1, 4),
+        new GraphEdge(3, 4),
+    });
+
+    Check(builds.VertexCount == 5 && builds.EdgeCount == 4, "CompressedGraph build collapses duplicates");
+
+    ReadOnlySpan<int> roots = builds.Neighbors(0);
+    Check(roots.Length == 2 && roots[0] == 1 && roots[1] == 3, "CompressedGraph neighbours are a sorted span");
+    Check(builds.Degree(2) == 0 && builds.Neighbors(2).IsEmpty, "CompressedGraph isolated vertex");
+    Check(builds.ContainsEdge(0, 1) && !builds.ContainsEdge(1, 0) && !builds.ContainsEdge(0, 4),
+        "CompressedGraph edge lookup is directed");
+
+    var reversed = builds.Reverse();
+    Check(reversed.Degree(4) == 2 && reversed.Neighbors(4)[0] == 1, "CompressedGraph transpose");
+
+    var order = new int[5];
+    Check(builds.CopyBreadthFirstOrder(0, order) == 4 && order[0] == 0 && order[3] == 4,
+        "CompressedGraph breadth-first copy tier");
+    Check(builds.GetBreadthFirstOrder(2).Length == 1, "CompressedGraph breadth-first convenience tier");
+
+    Check(builds.TryCopyTopologicalOrder(order) && order[0] == 0 && order[4] == 4,
+        "CompressedGraph topological copy tier");
+    Check(builds.TryGetTopologicalOrder(out var topological) && topological.Length == 5,
+        "CompressedGraph topological convenience tier");
+
+    var cyclic = new CompressedGraph(2, new[] { new GraphEdge(0, 1), new GraphEdge(1, 0) });
+    Check(!cyclic.TryGetTopologicalOrder(out var none) && none.Length == 0, "CompressedGraph rejects a cycle");
+
+    int edges = 0;
+    foreach (var edge in builds) edges += edge.Source + edge.Target;
+    Check(edges == 16, "CompressedGraph enumerates every edge");
+
+    // A graph past one word of the traversal's visited bitmap, so the word indexing is exercised rather than
+    // masked away by a small vertex count.
+    var chain = new GraphEdge[199];
+    for (int i = 0; i < chain.Length; i++) chain[i] = new GraphEdge(i, i + 1);
+    var path = new CompressedGraph(200, chain);
+    Check(path.GetBreadthFirstOrder(0).Length == 200, "CompressedGraph traversal crosses bitmap words");
+}
+
 // BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
 // the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
 // IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the

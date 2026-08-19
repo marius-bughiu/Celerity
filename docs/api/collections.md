@@ -5195,3 +5195,123 @@ foreach (int endpoint in active.EnumerateRange(windowStart, windowEnd))
     Process(endpoint);
 }
 ```
+
+## CompressedGraph
+
+```csharp
+public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
+```
+
+A **compressed sparse row (CSR) graph**: a build-once, immutable directed graph over dense vertex ids `[0, VertexCount)`, stored as two flat `int[]` so a vertex's neighbours are a `ReadOnlySpan<int>` slice of one contiguous array rather than a heap object of their own.
+
+.NET ships nothing for this. There is no graph, no adjacency list, no adjacency matrix and no traversal anywhere in `System.Collections`, on any of `net8.0` / `net9.0` / `net10.0`, so the idiom that fills the vacuum is `Dictionary<int, List<int>>` — or, once a developer notices the ids are dense, `List<int>[]`. Both are benchmarked. What they pay is a hash lookup per vertex visited (the dictionary form only), one `List<int>` object plus its backing array per vertex, and an indirection through both on the one loop a traversal actually runs.
+
+The two shipped types that sit next to graphs do not replace this and are not replaced by it. [`SparseSet`](#sparseset) is the **visited set** a traversal needs — its own documentation says so — which is bookkeeping, not the graph. [`DisjointSet<T>`](#disjointsett) answers *are these two connected* after a sequence of unions, which is a connectivity oracle: it cannot enumerate a vertex's neighbours, and it is undirected by construction.
+
+### The entry type: `GraphEdge`
+
+```csharp
+public readonly struct GraphEdge : IEquatable<GraphEdge>
+{
+    public GraphEdge(int source, int target);
+
+    public int Source { get; }
+    public int Target { get; }
+
+    public void Deconstruct(out int source, out int target);
+}
+```
+
+Both endpoints are dense vertex ids. The edge is **directed**, so `(1, 2)` and `(2, 1)` are different edges and compare unequal. The struct carries no payload deliberately: a graph on dense ids lets you keep per-edge or per-vertex data in a parallel array of your own indexed the same way, which is why `CompressedGraph` is not generic.
+
+### How it works
+
+`_offsets` holds `VertexCount + 1` entries, where vertex `v`'s targets occupy `_targets[_offsets[v].._offsets[v + 1]]`; the trailing entry is the edge count, which removes the bounds special case from every slice. Building is a counting scatter — count each vertex's out-degree, prefix-sum it into starting positions, scatter the targets — then one sort per vertex, so `O(V + E log d)` for maximum out-degree `d`. The sort is what makes each target slice ascending, which is what makes `ContainsEdge` a binary search rather than a scan.
+
+Duplicate edges **collapse** during that pass: this is an edge *set*, which is what makes `Degree` a count of distinct neighbours. A self-loop `(v, v)` is a legal edge and is preserved. An **undirected** graph is built by supplying each edge in both directions; there is no factory for it, because silently doubling your input is worse than one documented line.
+
+Both traversals use the caller's destination buffer as the traversal queue, so the only other state is a bitmap or an in-degree array rented from `ArrayPool<T>` and returned — a repeated traversal allocates nothing.
+
+### Measured
+
+At 100,000 vertices and 800,000 distinct edges (average degree 8, a random DAG), against the two hand-rolls:
+
+| Arm | Baseline | `CompressedGraph` | Ratio |
+| --- | --- | --- | --- |
+| Neighbour iteration | `List<int>[]` 1,008 µs | 779 µs | **1.29x** |
+| Breadth-first traversal | `Dictionary<int, List<int>>` 1,409 µs | 598 µs | **2.36x** |
+| Breadth-first traversal | `List<int>[]` 912 µs | 598 µs | **1.53x** |
+| Topological order | `List<int>[]` 4,865 µs | 2,651 µs | **1.83x** |
+| Transpose | `List<int>[]` 53,393 µs | 4,864 µs | **11.0x** |
+| Build | `Dictionary<int, List<int>>` 54,365 µs | 15,695 µs | **3.46x** |
+| Retained heap | `Dictionary<int, List<int>>` 12.97 MB | 3.60 MB | **3.60x less** |
+
+Two things in that table are worth reading rather than skimming.
+
+**One pre-registered kill criterion was missed, and the type shipped anyway.** [Issue #381](https://github.com/marius-bughiu/Celerity/issues/381) set two bars before implementation: at least 3x on a full breadth-first traversal against `Dictionary<int, List<int>>`, and at least 2x less managed heap. The heap bar is cleared with room to spare (3.60x). The traversal bar is **missed at 2.36x**, and the reason is worth recording: the criterion assumed the baseline's neighbour arrays would be scattered, but a `List<int>` per vertex built in vertex order lands its backing arrays consecutively, so the idiomatic form already gets much of CSR's locality for free. What is actually removed is the hash lookup and one indirection per vertex — worth 2.36x, not 3x. The type ships on the roadmap's other limb (a genuine BCL gap, with a win on every measured arm) rather than on the bar it was given, which is a judgement call a maintainer can reverse.
+
+**The win is a memory-hierarchy win, so it needs a graph large enough to have one.** At 1,000 vertices the whole structure fits in cache and the traversal against `List<int>[]` measures at **parity** (0.95x to 0.98x). The ratios above are the 100,000-vertex numbers; below roughly ten thousand vertices, reach for this type for the API and the transpose, not for the traversal speed.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `CompressedGraph(int vertexCount, IEnumerable<GraphEdge> edges)` | Build. `ArgumentNullException` on a `null` sequence, `ArgumentOutOfRangeException` on a negative vertex count, `ArgumentException` when an edge has an endpoint outside `[0, vertexCount)`. |
+| `int VertexCount { get; }` | Number of vertices. Ids run over `[0, VertexCount)`. |
+| `int EdgeCount { get; }` | Number of distinct directed edges, after duplicates collapsed. |
+| `GraphEdge this[int index] { get; }` | The edge at that position in source-major, then ascending-target, order. `O(log V)` — the `IReadOnlyList<T>` contract, not the member to loop over. |
+| `ReadOnlySpan<int> Neighbors(int vertex)` | The vertex's targets, ascending — a window onto the graph's own storage. No copy, no allocation, no enumerator. |
+| `int Degree(int vertex)` | The out-degree. |
+| `bool ContainsEdge(int source, int target)` | Is that directed edge present? `O(log d)` by binary search. |
+| `CompressedGraph Reverse()` | The transpose, `O(V + E)`. |
+| `int CopyBreadthFirstOrder(int source, Span<int> destination)` | Reachable vertices in breadth-first order, `source` first. Returns how many were written. |
+| `int[] GetBreadthFirstOrder(int source)` | The convenience tier of the same. |
+| `bool TryCopyTopologicalOrder(Span<int> destination)` | Kahn's algorithm: every vertex before its targets. `false` when the graph has a cycle. |
+| `bool TryGetTopologicalOrder(out int[] order)` | The convenience tier of the same; `order` is empty on `false`. |
+| `Enumerator GetEnumerator()` | Struct enumerator over every edge in source-major order. |
+
+`Neighbors`, `Degree` and `ContainsEdge` throw `ArgumentOutOfRangeException` for a vertex outside `[0, VertexCount)` — an absent *edge* is an ordinary answer and returns `false`, but an out-of-range *vertex* is a caller bug. `CopyBreadthFirstOrder` stops when the destination fills, and because the order is generated front to back a truncated result is exactly the first `destination.Length` vertices of the full order rather than an arbitrary subset. `TryCopyTopologicalOrder` is the one member whose buffer may **not** be short: it throws `ArgumentException` below `VertexCount`, because a prefix of a topological order is not a useful answer. Which order it produces among the several a graph may admit is unspecified and may change.
+
+`Count` is implemented **explicitly** and is not on the public surface: a graph has two counts and neither owns the bare name, so `VertexCount` and `EdgeCount` say which one they mean. `((IReadOnlyCollection<GraphEdge>)graph).Count` is the edge count, since the list surface is over the edges.
+
+### Caveats
+
+- **Build-once.** The graph is immutable; adding an edge means building a new one, as with [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue) and [`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer). Nothing mutates, so enumeration is never invalidated and concurrent readers need no synchronization — and unlike the ordered types there is no comparer caveat, because nothing but `int` ids is ever compared.
+- **Dense ids or nothing.** Vertices are `[0, VertexCount)`. If your domain keys are not already dense integers, map them once through a dictionary and keep the graph on the ids; a sparse id space costs an offset entry per unused id.
+- **No weights, no shortest paths.** Those are algorithms over a container rather than the container, and shipping one would commit the type to a weight representation before anything needs it.
+- **The traversal win needs scale.** See the measured table above: at a thousand vertices the graph fits in cache and the traversal is at parity with a `List<int>[]`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Five packages; an edge means "must be built before". Vertex 2 depends on nothing.
+var builds = new CompressedGraph(5, new[]
+{
+    new GraphEdge(0, 1),
+    new GraphEdge(0, 3),
+    new GraphEdge(1, 4),
+    new GraphEdge(3, 4),
+});
+
+// Neighbour iteration: a slice of the graph's own storage, no allocation and no enumerator.
+foreach (int dependent in builds.Neighbors(0))
+    Console.WriteLine(dependent);                       // 1, then 3
+
+Console.WriteLine(builds.Degree(0));                    // 2
+Console.WriteLine(builds.ContainsEdge(0, 4));           // False - the path is 0 -> 1 -> 4, not a direct edge
+
+// Build order, or false if the dependencies are circular.
+if (builds.TryGetTopologicalOrder(out int[] order))
+    Console.WriteLine(string.Join(" ", order));         // 0 2 1 3 4
+
+// "What depends on vertex 4?" - the transpose, O(V + E), not a rebuild.
+CompressedGraph dependents = builds.Reverse();
+Console.WriteLine(string.Join(" ", dependents.Neighbors(4).ToArray()));   // 1 3
+
+// Everything reachable from 0, in breadth-first order, into a buffer you own.
+var reached = new int[builds.VertexCount];
+int count = builds.CopyBreadthFirstOrder(0, reached);
+Console.WriteLine(string.Join(" ", reached[..count]));  // 0 1 3 4
+```

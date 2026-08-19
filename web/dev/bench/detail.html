@@ -399,6 +399,7 @@
     { key: 'SpatialGrid',         title: 'SpatialGrid<int> (moving points)',      vs: 'Dictionary<(int, int), List<int>> (bucketed grid)' },
     { key: 'RTree',               title: 'RTree<int> (2-D extent index)',         vs: 'SpatialBox[] scan — naive, or minX-sorted on the Sorted cards' },
     { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                vs: 'List<T> (linear scan)' },
+    { key: 'CompressedGraph',     title: 'CompressedGraph (CSR)',                 vs: 'Dictionary<int, List<int>>, or List<int>[] on the Neighbors/TraverseArray/Topological/Reverse cards' },
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                  vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },

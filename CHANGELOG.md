@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`CompressedGraph`** in `Celerity.Collections` — a build-once, immutable **graph** over dense vertex ids, stored compressed sparse row: `Neighbors(v)` hands back a `ReadOnlySpan<int>` slice of one contiguous array instead of a `List<int>` object per vertex, alongside `Reverse()` (the transpose), a breadth-first order and a topological order, both of which use the caller's buffer as the queue and allocate nothing. The BCL ships no graph, adjacency structure or traversal of any kind, so the alternatives are `Dictionary<int, List<int>>` and `List<int>[]`; both are benchmarked. At 100k vertices and average degree 8: **2.4x** the dictionary form on a full traversal (1.5x the `List<int>[]` hand-roll), 1.8x on a topological order, **11x** on the transpose and **3.6x** less retained memory. The win is a memory-hierarchy win, so a graph small enough to fit in cache measures at *parity* — and the pre-registered ≥3x traversal criterion was **missed at 2.4x**, with the type shipping on the BCL-gap limb of the rule rather than that bar. Immutable, dense ids only, duplicate edges collapse, no edge weights and no shortest paths. Closes [#381](https://github.com/marius-bughiu/Celerity/issues/381).
+
 ## [2.7.0] - 2026-08-18
 
 ### Added
