@@ -319,7 +319,9 @@ public class CompressedGraphBenchmark
         var reversed = new int[tight.Length][];
         for (int vertex = 0; vertex < reversed.Length; vertex++)
         {
-            reversed[vertex] = new int[indegree[vertex]];
+            // Array.Empty for an empty row: CompressedGraph has no per-row object at all, so a baseline that
+            // allocates one per isolated vertex would be paying for something the type never pays for.
+            reversed[vertex] = indegree[vertex] == 0 ? Array.Empty<int>() : new int[indegree[vertex]];
             indegree[vertex] = 0;
         }
 
@@ -357,7 +359,7 @@ public class CompressedGraphBenchmark
         var built = new int[ItemCount][];
         for (int vertex = 0; vertex < ItemCount; vertex++)
         {
-            built[vertex] = new int[degree[vertex]];
+            built[vertex] = degree[vertex] == 0 ? Array.Empty<int>() : new int[degree[vertex]];
             degree[vertex] = 0;
         }
 
@@ -406,6 +408,12 @@ public class CompressedGraphBenchmark
         for (int vertex = 0; vertex < ItemCount; vertex++)
         {
             List<int> targets = lists[vertex];
+            if (targets.Count == 0)
+            {
+                built[vertex] = Array.Empty<int>();
+                continue;
+            }
+
             int[] copy = new int[targets.Count];
             targets.CopyTo(copy);
             Array.Sort(copy);

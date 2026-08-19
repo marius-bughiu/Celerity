@@ -22,9 +22,9 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Do not reach for this to make a traversal faster.</b> A third baseline is measured for exactly that
 /// reason — an <c>int[][]</c> sized exactly and filled in vertex order — and against it the breadth-first
-/// traversal wins about 13% at 100,000 vertices and <i>loses</i> at 1,000, as does the build. A caller who
-/// lays the neighbour data out that well has already taken almost everything the flat array gives. What
-/// survives is the <b>transpose</b> (roughly 3.4x, structurally: the jagged form must allocate a row per
+/// traversal is at <i>parity</i> at 100,000 vertices and <i>loses</i> at 1,000, as does the build. A caller
+/// who lays the neighbour data out that well has already taken everything the flat array gives on that axis.
+/// What survives is the <b>transpose</b> (roughly 3.3x, structurally: the jagged form must allocate a row per
 /// vertex where this scatters into arrays it already holds), a footprint about 1.8x smaller, and not having to write, test
 /// and maintain the traversal, Kahn's algorithm, the transpose, the deduplication and the sorted-target
 /// invariant — none of which the BCL ships. Every ratio names the baseline it was measured against, because
@@ -268,7 +268,8 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="source"/> is outside <c>[0, VertexCount)</c>.</exception>
     /// <remarks>
     /// The destination doubles as the traversal queue, so the only other state is a visited bitmap rented from
-    /// <see cref="ArrayPool{T}"/> and returned — a repeated traversal allocates nothing. Writing stops when
+    /// <see cref="ArrayPool{T}"/> and returned, so a repeated traversal allocates nothing once the pool is
+    /// warm — a rent still allocates when the pool has no suitable buffer to hand out. Writing stops when
     /// the buffer is full, and because the order is generated front to back, a truncated result is exactly the
     /// first <c>destination.Length</c> vertices of the full breadth-first order rather than an arbitrary
     /// subset. Size the buffer at <see cref="VertexCount"/> when every reachable vertex is needed.
