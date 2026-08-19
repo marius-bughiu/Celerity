@@ -1570,14 +1570,15 @@ internal static class Differential
     }
 
 
-    // ---- interval tree -------------------------------------------------------
+    // ---- compressed graph ----------------------------------------------------
 
-    // The oracle is the linear scan the type replaces: filter every interval by the overlap predicate. What
-    // is on trial is the pruning, which is invisible to a fixture — a bound that skips too much drops matches
-    // a small example is unlikely to hold, and one that skips too little only costs time. The generated shape
-    // therefore mixes long spans (which no bound over the sorted starts can constrain), tight clusters (which
-    // pile many matches on one point), empty intervals (which must never match) and duplicates, and the query
-    // domain runs past both ends of the interval domain so the fully-pruned cases are reached too.
+    // The oracle is the adjacency map the type replaces. What is on trial is the compressed layout: every
+    // answer is a slice of one shared array, so a build that misplaces an offset — by a duplicate collapsed,
+    // an isolated vertex skipped, a scatter cursor not shifted back — returns some *other* vertex's
+    // neighbours, which is a plausible-looking answer of the right shape rather than an obvious failure. The
+    // generated shape therefore mixes duplicate edges, self-loops, isolated vertices and graphs declared
+    // wider than their edges reach, and a third of the cases are acyclic so the topological order is checked
+    // where it succeeds and not only where it reports a cycle.
     private static void CompressedGraphCase(Random rng)
     {
         int vertexCount = rng.Next(1, 90);
@@ -1585,17 +1586,27 @@ internal static class Differential
 
         // The choice is made once for the whole graph, not per edge: orienting only *some* edges forward
         // leaves the rest free to close a cycle, so a dense case would almost never reach a completed
-        // topological order and that half of the check would go unexercised.
-        bool acyclic = rng.Next(0, 3) == 0;
+        // topological order and that half of the check would go unexercised. One vertex is excluded because
+        // the only edge it admits is a self-loop, which is a cycle — there is no acyclic graph to generate.
+        bool acyclic = vertexCount >= 2 && rng.Next(0, 3) == 0;
 
         var edges = new GraphEdge[edgeCount];
         for (int i = 0; i < edgeCount; i++)
         {
             int a = rng.Next(vertexCount);
             int b = rng.Next(vertexCount);
-            edges[i] = acyclic && a != b
-                ? new GraphEdge(Math.Min(a, b), Math.Max(a, b))
-                : new GraphEdge(a, b);
+            if (!acyclic)
+            {
+                edges[i] = new GraphEdge(a, b);
+                continue;
+            }
+
+            // Equal endpoints would fall through as a self-loop and quietly make the "acyclic" case cyclic,
+            // which is the failure this whole branch exists to avoid. Two or more vertices, so this ends.
+            while (a == b)
+                b = rng.Next(vertexCount);
+
+            edges[i] = new GraphEdge(Math.Min(a, b), Math.Max(a, b));
         }
 
         var sut = new CompressedGraph(vertexCount, edges);
@@ -1723,6 +1734,14 @@ internal static class Differential
         return false;
     }
 
+    // ---- interval tree -------------------------------------------------------
+
+    // The oracle is the linear scan the type replaces: filter every interval by the overlap predicate. What
+    // is on trial is the pruning, which is invisible to a fixture — a bound that skips too much drops matches
+    // a small example is unlikely to hold, and one that skips too little only costs time. The generated shape
+    // therefore mixes long spans (which no bound over the sorted starts can constrain), tight clusters (which
+    // pile many matches on one point), empty intervals (which must never match) and duplicates, and the query
+    // domain runs past both ends of the interval domain so the fully-pruned cases are reached too.
     private static void IntervalTreeCase(Random rng)
     {
         int domain = rng.Next(2, 120);
