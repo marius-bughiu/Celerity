@@ -7,13 +7,14 @@ using Celerity.Collections;
 // honest baseline is what a caller writes instead. The baseline arms are named Dictionary_* and List_* so the
 // dashboard classifies them as the reference series.
 //
-// Two baselines, because there are two things a caller might write, and only measuring the weaker one would
-// flatter the type. The idiomatic one is Dictionary<int, List<int>>, which pays a hash lookup per vertex
-// visited on top of the indirection. The better one — a List<int>[] indexed by vertex id — throws the hashing
-// away and is what a developer who has noticed the ids are dense writes instead; it is the arm to judge this
-// type by, because what is left between it and CSR is purely the cost of the adjacency layout: one List<int>
-// object plus its backing array per vertex, landing wherever the allocator put them, against one contiguous
-// target array the whole traversal walks close to in order.
+// Three baselines, because measuring only the weakest would flatter the type, and the three disagree by more
+// than any effect being measured. Dictionary_* is the idiomatic answer, paying a hash lookup per vertex
+// visited on top of the indirection. List_* is what a developer who has noticed the ids are dense writes
+// instead — a List<int>[] — which throws the hashing away but still grows each backing array on demand, in
+// the order the edges arrive, so the neighbour data scatters however tidily the list objects were created.
+// Array_* is the exact-sized int[][] filled in vertex order, and it is the arm to judge this type by: it is
+// the best hand-roll short of flattening the rows into one array, so what is left between it and CSR is the
+// flat layout alone. Every published ratio names which of the three it was measured against.
 //
 // The traversal arms give both baselines a flat int[] as the queue rather than a Queue<int>, which is the same
 // queue the type uses internally — without that the arms would be measuring the queue as much as the graph.
@@ -312,18 +313,23 @@ public class CompressedGraphBenchmark
                 indegree[targets[i]]++;
         }
 
+        // The count array becomes the scatter cursor: each slot has served its purpose the moment its row is
+        // allocated, so zeroing it there costs nothing and saves a second int[VertexCount]. CompressedGraph
+        // reuses its own offsets the same way, and a baseline that did not would be beaten by its own overhead.
         var reversed = new int[tight.Length][];
         for (int vertex = 0; vertex < reversed.Length; vertex++)
+        {
             reversed[vertex] = new int[indegree[vertex]];
+            indegree[vertex] = 0;
+        }
 
-        var cursor = new int[tight.Length];
         for (int vertex = 0; vertex < tight.Length; vertex++)
         {
             int[] targets = tight[vertex];
             for (int i = 0; i < targets.Length; i++)
             {
                 int target = targets[i];
-                reversed[target][cursor[target]++] = vertex;
+                reversed[target][indegree[target]++] = vertex;
             }
         }
 
@@ -346,13 +352,17 @@ public class CompressedGraphBenchmark
         foreach (GraphEdge edge in edges)
             degree[edge.Source]++;
 
+        // Same reuse as the transpose arm: the count is spent once the row exists, so the array carries on as
+        // the scatter cursor rather than a second int[ItemCount] being allocated and zeroed alongside it.
         var built = new int[ItemCount][];
         for (int vertex = 0; vertex < ItemCount; vertex++)
+        {
             built[vertex] = new int[degree[vertex]];
+            degree[vertex] = 0;
+        }
 
-        var cursor = new int[ItemCount];
         foreach (GraphEdge edge in edges)
-            built[edge.Source][cursor[edge.Source]++] = edge.Target;
+            built[edge.Source][degree[edge.Source]++] = edge.Target;
 
         for (int vertex = 0; vertex < ItemCount; vertex++)
             Array.Sort(built[vertex]);

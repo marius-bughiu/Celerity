@@ -22,10 +22,10 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Do not reach for this to make a traversal faster.</b> A third baseline is measured for exactly that
 /// reason — an <c>int[][]</c> sized exactly and filled in vertex order — and against it the breadth-first
-/// traversal wins about 11% at 100,000 vertices and <i>loses</i> at 1,000, as does the build. A caller who
+/// traversal wins about 13% at 100,000 vertices and <i>loses</i> at 1,000, as does the build. A caller who
 /// lays the neighbour data out that well has already taken almost everything the flat array gives. What
-/// survives is the <b>transpose</b> (4.4x, structurally: the jagged form must allocate a row per vertex where
-/// this scatters into arrays it already holds), a footprint about 1.8x smaller, and not having to write, test
+/// survives is the <b>transpose</b> (roughly 3.4x, structurally: the jagged form must allocate a row per
+/// vertex where this scatters into arrays it already holds), a footprint about 1.8x smaller, and not having to write, test
 /// and maintain the traversal, Kahn's algorithm, the transpose, the deduplication and the sorted-target
 /// invariant — none of which the BCL ships. Every ratio names the baseline it was measured against, because
 /// the three baselines disagree by a lot; the numbers are in the benchmark dashboard and in
