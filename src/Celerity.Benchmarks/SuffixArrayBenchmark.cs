@@ -12,8 +12,13 @@ using Celerity.Collections;
 // however many queries follow, which is the whole asymmetry this type exists to exploit. Dictionary_* is the
 // smarter hand-roll: an inverted index of every k-gram of the text into a Dictionary<string, int[]>, which
 // answers a k-length pattern with one hash lookup and is expected to WIN the query arms. What it cannot do is
-// answer for any other pattern length, and it is measured on build cost and (through the allocation column) on
-// footprint alongside, which is where it pays for that.
+// answer for any other pattern length, and it is measured on build cost alongside, which is where it pays for
+// that.
+//
+// Read the allocation column as build *allocations* and not as footprint. MemoryDiagnoser measures allocation
+// volume over the run, so Dictionary_Build is charged for the transient List<int> per gram that the finished
+// index does not hold, while SuffixArray_Build's scratch is rented from a pool that a warmed-up run hands back
+// for free. The retained comparison is arithmetic and lives in docs/api/collections.md, not in this column.
 //
 // Contains is the arm the type is strongest on and the one to read first: the patterns are ABSENT, so the scan
 // has to read the entire text to say so while the index pays log n. Count is the same shape with patterns that

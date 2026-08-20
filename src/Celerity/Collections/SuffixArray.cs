@@ -55,8 +55,9 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Footprint.</b> The text is copied (a span source may be transient), and the suffix and
 /// longest-common-prefix arrays are one <see cref="int"/> per position each: about <b>10 bytes per
-/// character</b> in total, against the 2 the text alone costs. That is the price of the index, and it is the
-/// other half of the reason to check the crossover before reaching for it.
+/// character</b> in total, against the 2 the text alone costs. That is what the index <i>retains</i>; the
+/// build's scratch is rented from <see cref="ArrayPool{T}"/> and returned, so it is transient rather than
+/// free. The footprint is the other half of the reason to check the crossover before reaching for it.
 /// </para>
 /// <para>
 /// <b>Build-once.</b> The index is immutable; changing the text means building a new one, as with
@@ -105,8 +106,11 @@ public sealed class SuffixArray : IReadOnlyList<int>
     /// Building is <c>O(n log n)</c>: the suffixes are ordered by prefix doubling — rank every position by its
     /// first character, then repeatedly sort by a pair of ranks that already covers twice the length, which is
     /// a counting sort per round because the ranks are dense. The longest-common-prefix array follows in
-    /// <c>O(n)</c> by Kasai's algorithm. Every scratch buffer is rented from <see cref="ArrayPool{T}"/>, so the
-    /// build allocates the two result arrays and the text copy and nothing else.
+    /// <c>O(n)</c> by Kasai's algorithm. What the index <i>retains</i> is the text copy and the two result
+    /// arrays and nothing else: every scratch buffer the build needs is rented from
+    /// <see cref="ArrayPool{T}"/> and returned. That is not the same as allocating nothing —
+    /// <see cref="ArrayPool{T}.Shared"/> allocates when it has no suitable buffer, so a first or contended
+    /// build still allocates its scratch.
     /// </para>
     /// <para>
     /// A <c>null</c> <see cref="string"/> converts to an empty span rather than throwing, so it builds an empty
