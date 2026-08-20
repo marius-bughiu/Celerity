@@ -405,6 +405,20 @@ public class SuffixArrayTests
     }
 
     [Fact]
+    public void TryGetLongestRepeatedSubstring_ShouldReportTheLexicographicallySmallest_WhenTwoRepeatsTieOnLength()
+    {
+        // "ab" (at 0 and 2) and "cd" (at 5 and 7) both repeat at length two and nothing longer does, so this
+        // is the only shape that can tell the documented tie-break from its opposite: relaxing the scan's
+        // strict comparison to >= would report "cd" and every other test here would still pass.
+        var index = new SuffixArray("abab_cdcd");
+
+        Assert.True(index.TryGetLongestRepeatedSubstring(out int start, out int length));
+        Assert.Equal(2, length);
+        Assert.Equal("ab", index.Text.Slice(start, length).ToString());
+        Assert.Equal(0, start);
+    }
+
+    [Fact]
     public void TryGetLongestRepeatedSubstring_ShouldReturnFalse_WhenNoCharacterRepeats()
     {
         var index = new SuffixArray("abcd");

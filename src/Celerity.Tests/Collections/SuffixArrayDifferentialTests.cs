@@ -107,7 +107,7 @@ public class SuffixArrayDifferentialTests
         Assert.Equal(expectedLcp, index.LongestCommonPrefixes.ToArray());
 
         AssertQueriesAgree(index, text);
-        AssertLongestRepeatAgrees(index, text, expectedLcp);
+        AssertLongestRepeatAgrees(index, text, expectedOrder, expectedLcp);
     }
 
     private static void AssertQueriesAgree(SuffixArray index, string text)
@@ -130,7 +130,7 @@ public class SuffixArrayDifferentialTests
         }
     }
 
-    private static void AssertLongestRepeatAgrees(SuffixArray index, string text, int[] expectedLcp)
+    private static void AssertLongestRepeatAgrees(SuffixArray index, string text, int[] expectedOrder, int[] expectedLcp)
     {
         // On a short text the oracle is the pairwise one — the longest prefix shared by any two distinct
         // suffixes — which owes nothing to the structure under test. On a long one that is quadratic, so the
@@ -152,8 +152,16 @@ public class SuffixArrayDifferentialTests
 
         Assert.Equal(expected > 0, index.TryGetLongestRepeatedSubstring(out int start, out int length));
         Assert.Equal(expected, length);
-        if (expected > 0)
-            Assert.True(index.CountOccurrences(text.AsSpan(start, length)) >= 2);
+        if (expected == 0)
+            return;
+
+        Assert.True(index.CountOccurrences(text.AsSpan(start, length)) >= 2);
+
+        // Which of several tied repeats is reported is documented, so it is pinned rather than left to the
+        // length alone: the earliest rank reaching the maximum is the lexicographically smallest of them, and
+        // this reads that off the independently sorted order and the independently measured prefix lengths.
+        int smallest = Array.IndexOf(expectedLcp, expected);
+        Assert.Equal(text.Substring(expectedOrder[smallest], expected), text.Substring(start, length));
     }
 
     // Every pattern worth asking about: the empty one, substrings of the text up to a bounded length, and near

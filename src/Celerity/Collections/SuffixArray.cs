@@ -21,8 +21,11 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// <b>The trade is build cost against query cost, so the crossover is the whole story.</b> Building is
-/// <c>O(n log n)</c> and costs what many scans of the same text would; a single query is <c>O(m log n)</c> for
-/// a pattern of length <c>m</c> — two binary searches over the suffix order — against the scan's <c>O(n)</c>.
+/// <c>O(n log n)</c> and costs what many scans of the same text would; <i>locating</i> a pattern of length
+/// <c>m</c> is <c>O(m log n)</c> — a binary search over the suffix order, or two of them for a count — against
+/// the scan's <c>O(n)</c>. That is the cost the members build on rather than the cost of every one of them:
+/// each documents what it adds on top, and <see cref="IndexOf"/>, <see cref="CopyOccurrences"/> and
+/// <see cref="TryGetLongestRepeatedSubstring"/> all add something.
 /// One query against a text read once is <i>strictly worse</i> here than <c>IndexOf</c>, and it stays worse
 /// until the query count amortizes the build. The benchmark publishes the build arm next to the query arms for
 /// exactly that reason, and the ratios are in <c>docs/api/collections.md</c>.
