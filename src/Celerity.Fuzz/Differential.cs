@@ -61,6 +61,7 @@ internal static class Differential
         ("RTree", RTreeCase),
         ("IntervalTree", IntervalTreeCase),
         ("CompressedGraph", CompressedGraphCase),
+        ("SuffixArray", SuffixArrayCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -1579,6 +1580,122 @@ internal static class Differential
     // generated shape therefore mixes duplicate edges, self-loops, isolated vertices and graphs declared
     // wider than their edges reach, and a third of the cases are acyclic so the topological order is checked
     // where it succeeds and not only where it reports a cycle.
+    // SuffixArray against the naive answers: the suffixes sorted as strings, the longest common prefixes
+    // measured character by character, and every query resolved by comparing the pattern at every position.
+    //
+    // The alphabet is deliberately tiny. Prefix doubling reaches its answer through log n rounds of counting
+    // sort over the previous round's ranks, and the way that goes wrong is not a crash but a plausible order
+    // with a handful of suffixes one position out — which only shows up when suffixes agree for long stretches
+    // and part late. A two- or three-letter alphabet makes that the common case rather than a rarity.
+    private static void SuffixArrayCase(Random rng)
+    {
+        int length = rng.Next(0, 200);
+        int alphabet = rng.Next(1, 5);
+
+        var text = new StringBuilder(length);
+        for (int i = 0; i < length; i++)
+            text.Append((char)('a' + rng.Next(alphabet)));
+
+        string source = text.ToString();
+        var sut = new SuffixArray(source);
+
+        Check(sut.Length == length, "SuffixArray Length disagreed with the text");
+        Check(sut.Text.ToString() == source, "SuffixArray did not hold the text it was given");
+
+        int[] expectedOrder = [.. Enumerable.Range(0, length).OrderBy(start => source[start..], StringComparer.Ordinal)];
+        for (int rank = 0; rank < length; rank++)
+            Check(sut[rank] == expectedOrder[rank], "SuffixArray order disagreed with the sorted suffixes");
+
+        for (int rank = 1; rank < length; rank++)
+        {
+            int shared = CommonPrefixLength(source, expectedOrder[rank - 1], expectedOrder[rank]);
+            Check(sut.LongestCommonPrefixes[rank] == shared, "SuffixArray LCP disagreed with a direct comparison");
+        }
+
+        Check(length == 0 || sut.LongestCommonPrefixes[0] == 0, "SuffixArray LCP did not start at zero");
+
+        // Substrings of the text (present at whatever frequency they occur), plus one that cannot be there.
+        for (int probe = 0; probe < 12; probe++)
+        {
+            string pattern;
+            if (length == 0 || rng.Next(0, 4) == 0)
+            {
+                pattern = probe % 2 == 0 ? string.Empty : "#";
+            }
+            else
+            {
+                int start = rng.Next(length);
+                pattern = source.Substring(start, Math.Min(rng.Next(1, 7), length - start));
+            }
+
+            int[] expected = NaiveOccurrences(source, pattern);
+
+            Check(sut.CountOccurrences(pattern) == expected.Length, "SuffixArray CountOccurrences disagreed");
+            Check(sut.Contains(pattern) == expected.Length > 0, "SuffixArray Contains disagreed");
+            Check(sut.IndexOf(pattern) == (expected.Length > 0 ? expected[0] : -1), "SuffixArray IndexOf disagreed");
+
+            int[] positions = sut.GetOccurrences(pattern);
+            Check(positions.Length == expected.Length, "SuffixArray GetOccurrences returned the wrong count");
+            for (int i = 0; i < expected.Length; i++)
+                Check(positions[i] == expected[i], "SuffixArray GetOccurrences disagreed on a position");
+
+            bool any = sut.TryGetOccurrences(pattern, out ReadOnlySpan<int> slice);
+            Check(any == expected.Length > 0, "SuffixArray TryGetOccurrences disagreed on presence");
+            Check(slice.Length == expected.Length, "SuffixArray TryGetOccurrences returned the wrong width");
+
+            var copied = new int[expected.Length];
+            Check(sut.CopyOccurrences(pattern, copied) == expected.Length, "SuffixArray CopyOccurrences disagreed");
+            for (int i = 0; i < expected.Length; i++)
+                Check(copied[i] == expected[i], "SuffixArray CopyOccurrences disagreed on a position");
+        }
+
+        // The longest repeat, against the quadratic answer it exists to avoid.
+        int longest = 0;
+        for (int a = 0; a < length; a++)
+        {
+            for (int b = a + 1; b < length; b++)
+                longest = Math.Max(longest, CommonPrefixLength(source, a, b));
+        }
+
+        bool repeated = sut.TryGetLongestRepeatedSubstring(out int repeatStart, out int repeatLength);
+        Check(repeated == longest > 0, "SuffixArray TryGetLongestRepeatedSubstring disagreed on presence");
+        Check(repeatLength == longest, "SuffixArray longest repeat disagreed on length");
+        Check(!repeated || sut.CountOccurrences(source.AsSpan(repeatStart, repeatLength)) >= 2,
+            "SuffixArray longest repeat does not actually repeat");
+    }
+
+    private static int[] NaiveOccurrences(string text, string pattern)
+    {
+        var found = new List<int>();
+        if (pattern.Length == 0)
+        {
+            for (int position = 0; position < text.Length; position++)
+                found.Add(position);
+
+            return [.. found];
+        }
+
+        for (int position = 0; position + pattern.Length <= text.Length; position++)
+        {
+            if (string.CompareOrdinal(text, position, pattern, 0, pattern.Length) == 0)
+                found.Add(position);
+        }
+
+        return [.. found];
+    }
+
+    private static int CommonPrefixLength(string text, int first, int second)
+    {
+        int matched = 0;
+        while (first + matched < text.Length && second + matched < text.Length &&
+               text[first + matched] == text[second + matched])
+        {
+            matched++;
+        }
+
+        return matched;
+    }
+
     private static void CompressedGraphCase(Random rng)
     {
         int vertexCount = rng.Next(1, 90);

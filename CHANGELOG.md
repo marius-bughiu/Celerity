@@ -6,6 +6,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`SuffixArray`** in `Celerity.Collections` — a build-once, immutable **text index**: every suffix of a block of text in sorted order plus the longest-common-prefix array, so *where does this substring occur* is a pair of binary searches at `O(m log n)` in the **pattern** length rather than a scan at `O(n)` in the text. The BCL has no text index — `IndexOf` and `Regex` re-read the text on every query, and .NET 9's `SearchValues<string>` indexes the *needles*, not the haystack — and `TryGetLongestRepeatedSubstring` answers a question no scan-shaped API can express. **This is build-once and one query does not pay for it**: the build arm is published next to the query arms, and the second baseline is the `Dictionary<string, int[]>` k-gram index a caller writes instead, which **beats** it per query at the one pattern length it can answer. Ordinal over UTF-16 code units, about 10 bytes per character, immutable. Closes [#386](https://github.com/marius-bughiu/Celerity/issues/386).
+
 - **`CompressedGraph`** in `Celerity.Collections` — a build-once, immutable directed **graph** over dense vertex ids, stored compressed sparse row: `Neighbors(v)` is a `ReadOnlySpan<int>` slice rather than a `List<int>` per vertex, alongside `Reverse()`, a breadth-first order and a topological order. The BCL ships no graph or traversal of any kind. Reach for it for the transpose, the smaller footprint and the algorithms you no longer maintain — **not for traversal speed**, which is a wash against a carefully sized `int[][]` and a loss on small graphs. Immutable, dense ids only, no edge weights. Closes [#381](https://github.com/marius-bughiu/Celerity/issues/381).
 
 ### Changed

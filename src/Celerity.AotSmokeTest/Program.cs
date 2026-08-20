@@ -927,6 +927,43 @@ void Check(bool condition, string message)
     Check(path.GetBreadthFirstOrder(0).Length == 200, "CompressedGraph traversal crosses bitmap words");
 }
 
+// SuffixArray — the build-once text index. What is ILC-specific here is the memory shape rather than any
+// generic: the build rents five int[] scratch buffers from ArrayPool<T>.Shared and returns them, ranks the
+// opening symbols through MemoryExtensions.Sort(Span<int>, Span<int>), and every query is a binary search
+// whose comparison is MemoryExtensions.SequenceCompareTo over char spans — all intrinsic-heavy paths with no
+// JIT to fall back on. Exercise the build, every query tier, the zero-copy slice and the LCP-derived repeat.
+{
+    var index = new SuffixArray("the cat sat on the mat");
+
+    Check(index.Length == 22, "SuffixArray holds the text length");
+    Check(index.CountOccurrences("at") == 3, "SuffixArray counts every occurrence");
+    Check(index.IndexOf("the") == 0 && index.IndexOf("mat") == 19, "SuffixArray finds the first occurrence");
+    Check(index.Contains("cat") && !index.Contains("dog"), "SuffixArray membership");
+    Check(index.IndexOf("dog") == -1, "SuffixArray reports an absent pattern");
+
+    var positions = index.GetOccurrences("at");
+    Check(positions.Length == 3 && positions[0] == 5 && positions[2] == 20, "SuffixArray ascending occurrences");
+
+    Check(index.TryGetOccurrences("the", out var slice) && slice.Length == 2, "SuffixArray zero-copy slice");
+
+    var buffer = new int[3];
+    Check(index.CopyOccurrences("at", buffer) == 3 && buffer[1] == 9, "SuffixArray copy tier");
+
+    Check(index.TryGetLongestRepeatedSubstring(out var start, out var length) && length == 4 &&
+        index.Text.Slice(start, length).ToString() == "the ", "SuffixArray longest repeat");
+
+    var ranks = 0;
+    foreach (var position in index) ranks += position;
+    Check(ranks == 231, "SuffixArray enumerates every rank");
+
+    // A text of one repeated character drives the maximum number of prefix-doubling rounds, and one long
+    // enough that the counting sort works over a rank range a short case never reaches.
+    var repeated = new SuffixArray(new string('a', 5000));
+    Check(repeated.Suffixes[0] == 4999 && repeated.LongestCommonPrefixes[4999] == 4999,
+        "SuffixArray build over a degenerate text");
+    Check(repeated.CountOccurrences("aaaa") == 4997, "SuffixArray counts over a degenerate text");
+}
+
 // BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
 // the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
 // IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the

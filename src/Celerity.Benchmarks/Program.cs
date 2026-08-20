@@ -50,6 +50,7 @@ internal class Program
         typeof(IndexedPriorityQueueBenchmark),
         typeof(TrieBenchmark),
         typeof(StringInternTableBenchmark),
+        typeof(SuffixArrayBenchmark),
         typeof(FenwickTreeBenchmark),
         typeof(SegmentTreeBenchmark),
         typeof(KdTreeBenchmark),
