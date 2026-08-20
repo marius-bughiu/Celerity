@@ -27,17 +27,20 @@ namespace Celerity.Collections;
 /// each documents what it adds on top, and <see cref="IndexOf"/>, <see cref="CopyOccurrences"/> and
 /// <see cref="TryGetLongestRepeatedSubstring"/> all add something.
 /// One query against a text read once is <i>strictly worse</i> here than <c>IndexOf</c>, and it stays worse
-/// until the query count amortizes the build. The benchmark publishes the build arm next to the query arms for
-/// exactly that reason, and the ratios are in <c>docs/api/collections.md</c>.
+/// until the query count amortizes the build. At 100,000 characters counting a pattern measures <b>68x</b> the
+/// scan and ruling an absent one out <b>64x</b>, so the build is repaid at roughly <b>1,000</b> counting
+/// queries against the same text; at 1,000 characters the margins fall to about 1.3x and the crossover moves
+/// out to roughly 3,900. The crossover <i>improves</i> as the text grows, which is the whole shape of the
+/// trade. Every ratio and the arithmetic behind them are in <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
 /// <b>The realistic hand-roll is measured too.</b> A developer who has noticed the text is fixed does not
 /// re-scan it — they build an inverted index of every <c>k</c>-gram into a
 /// <see cref="Dictionary{TKey, TValue}"/> and look the pattern up in <c>O(1)</c>. On a pattern of exactly that
-/// length, that hand-roll <b>wins</b>, and the benchmark says so. What it cannot do is answer for a pattern
-/// shorter or longer than <c>k</c> without either a verification scan or a second index, and it holds a
+/// length, that hand-roll <b>wins by 10.3x</b>, and the benchmark says so. What it cannot do is answer for a
+/// pattern shorter or longer than <c>k</c> without either a verification scan or a second index, and it holds a
 /// dictionary entry and a substring key per position where this holds two <see cref="int"/>s. A suffix array
-/// answers for <i>every</i> pattern length out of one structure.
+/// answers for <i>every</i> pattern length out of one structure, and builds 1.39x faster.
 /// </para>
 /// <para>
 /// <b>What only the index can do.</b> <see cref="TryGetLongestRepeatedSubstring"/> reads the longest repeat

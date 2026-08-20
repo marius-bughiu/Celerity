@@ -5343,7 +5343,7 @@ A **suffix array**: a build-once, immutable index over a block of text that answ
 
 ### When to reach for it
 
-Any workload where one block of text is queried many times: log and document search, source-code search, near-duplicate and plagiarism detection, bioinformatics, and any "how many times does X appear" counter over a corpus that does not change. The crossover is the whole story, because **a single query against a text read once is a loss here**, and stays one until the query count amortizes the build.
+Any workload where one block of text is queried many times: log and document search, source-code search, near-duplicate and plagiarism detection, bioinformatics, and any "how many times does X appear" counter over a corpus that does not change. The crossover is the whole story, because **a single query against a text read once is a loss here**, and stays one until the query count amortizes the build — roughly 1,000 counting queries at 100,000 characters, and it *improves* as the text grows. See [Measured](#measured-1).
 
 It is also the only structure here that can answer *what is the longest substring that occurs twice*. `TryGetLongestRepeatedSubstring` reads that off the LCP array in one linear pass; the naive answer is quadratic and no scan-shaped API can express the question at all.
 
@@ -5356,6 +5356,33 @@ The text is treated as its **cyclic shifts with a sentinel appended** — a symb
 **Locating** a pattern is a binary search over that order — two of them when both ends of the range are needed. The suffixes starting with a pattern are **contiguous** in it, so `CountOccurrences` is the width of that range at `O(m log n)` and nothing is enumerated, and `TryGetOccurrences` hands back a slice of the index's own array with no copy at all. That `O(m log n)` is the floor the members build on and not the cost of every one of them: `Contains` needs only one of the two searches, `IndexOf` adds an `O(k)` pass because the order groups the matches without sorting them by position, `CopyOccurrences` and `GetOccurrences` add an `O(k log k)` sort, and `TryGetLongestRepeatedSubstring` is `O(n)` over the LCP array and does no search at all. The API table below states each.
 
 What the index **retains** is the text copy and the two result arrays and nothing else — every scratch buffer the build needs is rented from `ArrayPool<T>` and returned. That is not the same as allocating nothing: `ArrayPool<T>.Shared` allocates when it has no suitable buffer, so a first or contended build still allocates its scratch, exactly as [`CompressedGraph`](#compressedgraph)'s traversals do.
+
+### Measured
+
+Every arm runs a batch of **16 queries** against one index, so a per-query figure is the row divided by 16. The numbers are from this PR's **CI benchmark run**, on the same runner in the same job, rather than from a local machine.
+
+At **100,000 characters** of vocabulary-generated text, against the `string` scan the BCL ships:
+
+| Workload | `string` scan | `SuffixArray` | Ratio |
+| --- | ---: | ---: | ---: |
+| `Contains`, pattern **absent** | 72.20 µs | 1.12 µs | **64x** |
+| `CountOccurrences`, pattern present | 146.55 µs | 2.15 µs | **68x** |
+| Every position retrieved into a caller's buffer | 144.96 µs | 12.18 µs | **11.9x** |
+
+And against the `Dictionary<string, int[]>` k-gram index, which is the baseline that matters:
+
+| Workload | k-gram index | `SuffixArray` | Ratio |
+| --- | ---: | ---: | ---: |
+| `CountOccurrences`, 8-character pattern | 209.5 ns | 2.15 µs | **0.10x — the hand-roll wins by 10.3x** |
+| Build | 12.24 ms | 8.78 ms | 1.39x |
+
+At **1,000 characters** the scan margins all but vanish — **1.26x**, **1.34x** and **1.29x** on those same three rows — and the k-gram index still wins the query it can answer, by 6.5x. A small text fits in cache and a vectorized scan over it is already fast; this type is for the case where it is not.
+
+**The crossover, stated rather than left to the reader.** The build is 8.78 ms at 100,000 characters, and a query saves 9.02 µs on counting or 4.44 µs on ruling an absent pattern out. So the index pays for itself at roughly **1,000 counting queries, or 2,000 absent-membership queries**, against the same text. At 1,000 characters the same arithmetic needs about **3,900** queries, because the scan it is replacing costs so little — the crossover improves as the text grows, which is the whole shape of the trade. Below it, `IndexOf` is the right answer and this type is a loss.
+
+**Both pre-registered bars from [#386](https://github.com/marius-bughiu/Celerity/issues/386) clear**, at 100,000 characters: ≥20x the scan on counting a present pattern (**68x**) and ≥20x on ruling out an absent one (**64x**). The k-gram arm is published where it wins, as the issue required, and the build arm sits next to the query arms with the crossover above.
+
+**What the numbers do not say.** The `CountIndexed` row is the honest ceiling on the query claim: if your patterns are all one known length and the text is fixed, an inverted index of that length is an order of magnitude faster per query and you should write one. `SuffixArray` earns its place by answering *every* pattern length out of one structure that costs 10 bytes per character, and by answering the longest-repeated-substring question that neither the scan nor the k-gram index can express at all.
 
 ### API
 
@@ -5383,7 +5410,7 @@ What the index **retains** is the text copy and the two result arrays and nothin
 ### Caveats
 
 - **Build-once.** The index is immutable; changing the text means building a new one, as with [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue), [`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) and [`CompressedGraph`](#compressedgraph). Nothing mutates, so enumeration is never invalidated and concurrent readers need no synchronization.
-- **The build has to be amortized, and one query does not do it.** The build costs what many scans of the same text would. Read the `Build` row of the measured table against the query rows before reaching for this over `IndexOf`.
+- **The build has to be amortized, and one query does not do it.** The build costs what many scans of the same text would. At 100,000 characters it pays for itself at roughly 1,000 counting queries against the same text, and at 1,000 characters at roughly 3,900 — see [Measured](#measured-1). Below the crossover `IndexOf` is the right answer.
 - **Ordinal, over UTF-16 code units.** Suffixes are ordered by `char` value — what `StringComparison.Ordinal` compares. There is no culture-aware, case-insensitive or normalizing mode and there will not be: a linguistic comparison is not a total order over fixed-length units, so the suffixes could not be sorted once and binary-searched. Fold the text and the pattern the same way before indexing when case-insensitive matching is wanted. A surrogate pair sorts as its two code units, so a match can begin at a low surrogate — check the boundary in your own text when that matters.
 - **About 10 bytes per character, retained.** The text copy is 2, and the suffix and LCP arrays are 4 each. That is five times what the text alone costs, and it is the other half of the reason to check the crossover. The build's scratch is five more `int` buffers, rented from `ArrayPool<T>` and returned rather than held.
 
