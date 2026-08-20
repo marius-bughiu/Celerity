@@ -5330,3 +5330,111 @@ var reached = new int[builds.VertexCount];
 int count = builds.CopyBreadthFirstOrder(0, reached);
 Console.WriteLine(string.Join(" ", reached[..count]));  // 0 1 3 4
 ```
+
+## SuffixArray
+
+```csharp
+public sealed class SuffixArray : IReadOnlyList<int>
+```
+
+A **suffix array**: a build-once, immutable index over a block of text that answers *where does this substring occur* in time proportional to the **pattern** rather than to the text, plus the longest-common-prefix (LCP) array beside it.
+
+.NET has no text index. `string.IndexOf`, `MemoryExtensions.IndexOf` and `Regex` are vectorized **scans**: every query re-reads the text, so a query costs `O(n)` however many queries follow, and counting every occurrence re-scans from each hit. .NET 9's `SearchValues<string>` is not a counter-example — it indexes the **patterns**, answering "where is the first of these needles" over a haystack it has never seen. Indexing the *text* is the direction none of them go, and it is the one that pays off when the text is fixed and the queries keep coming.
+
+### When to reach for it
+
+Any workload where one block of text is queried many times: log and document search, source-code search, near-duplicate and plagiarism detection, bioinformatics, and any "how many times does X appear" counter over a corpus that does not change. The crossover is the whole story, because **a single query against a text read once is a loss here**, and stays one until the query count amortizes the build — roughly 1,000 counting queries at 100,000 characters, and it *improves* as the text grows. See [Measured](#measured-1).
+
+It is also the only structure here that can answer *what is the longest substring that occurs twice*. `TryGetLongestRepeatedSubstring` reads that off the LCP array in one linear pass; the naive answer is quadratic and no scan-shaped API can express the question at all.
+
+### How it works
+
+The suffixes are ordered by **prefix doubling**. Every position is first ranked by its opening character; each round then sorts the positions by a *pair* of ranks that already covers a prefix of length `w`, which yields ranks covering `2w`, so `log n` rounds settle the order. Each round is a counting sort rather than a comparison sort, because the ranks are dense — and it only has to sort by the *first* half of each pair, since subtracting `w` from the previous round's order produces the ordering by the second half for free. That makes the build `O(n log n)`.
+
+The text is treated as its **cyclic shifts with a sentinel appended** — a symbol smaller than every character, occurring once — so no shift wraps into a tie and the cyclic order restricted to the real positions is exactly the suffix order. The LCP array follows in `O(n)` by **Kasai's algorithm**: walking the text in position order rather than rank order bounds the total comparison work, because dropping a suffix's first character costs its predecessor's match at most one.
+
+**Locating** a pattern is a binary search over that order — two of them when both ends of the range are needed. The suffixes starting with a pattern are **contiguous** in it, so `CountOccurrences` is the width of that range at `O(m log n)` and nothing is enumerated, and `TryGetOccurrences` hands back a slice of the index's own array with no copy at all. That `O(m log n)` is the floor the members build on and not the cost of every one of them: `Contains` needs only one of the two searches, `IndexOf` adds an `O(k)` pass because the order groups the matches without sorting them by position, `CopyOccurrences` and `GetOccurrences` add an `O(k log k)` sort, and `TryGetLongestRepeatedSubstring` is `O(n)` over the LCP array and does no search at all. The API table below states each.
+
+What the index **retains** is the text copy and the two result arrays and nothing else — every scratch buffer the build needs is rented from `ArrayPool<T>` and returned. That is not the same as allocating nothing: `ArrayPool<T>.Shared` allocates when it has no suitable buffer, so a first or contended build still allocates its scratch, exactly as [`CompressedGraph`](#compressedgraph)'s traversals do.
+
+### Measured
+
+Every arm runs a batch of **16 queries** against one index, so a per-query figure is the row divided by 16. The numbers are from this PR's **CI benchmark run**, on the same runner in the same job, rather than from a local machine.
+
+At **100,000 characters** of vocabulary-generated text, against the `string` scan the BCL ships:
+
+| Workload | `string` scan | `SuffixArray` | Ratio |
+| --- | ---: | ---: | ---: |
+| `Contains`, pattern **absent** | 72.20 µs | 1.12 µs | **64x** |
+| `CountOccurrences`, pattern present | 146.55 µs | 2.15 µs | **68x** |
+| Every position retrieved into a caller's buffer | 144.96 µs | 12.18 µs | **11.9x** |
+
+And against the `Dictionary<string, int[]>` k-gram index, which is the baseline that matters:
+
+| Workload | k-gram index | `SuffixArray` | Ratio |
+| --- | ---: | ---: | ---: |
+| `CountOccurrences`, 8-character pattern | 209.5 ns | 2.15 µs | **0.10x — the hand-roll wins by 10.3x** |
+| Build | 12.24 ms | 8.78 ms | 1.39x |
+
+At **1,000 characters** the scan margins all but vanish — **1.26x**, **1.34x** and **1.29x** on those same three rows — and the k-gram index still wins the query it can answer, by 6.5x. A small text fits in cache and a vectorized scan over it is already fast; this type is for the case where it is not.
+
+**The crossover, stated rather than left to the reader.** The build is 8.78 ms at 100,000 characters, and a query saves 9.02 µs on counting or 4.44 µs on ruling an absent pattern out. So the index pays for itself at roughly **1,000 counting queries, or 2,000 absent-membership queries**, against the same text. At 1,000 characters the same arithmetic needs about **3,900** queries, because the scan it is replacing costs so little — the crossover improves as the text grows, which is the whole shape of the trade. Below it, `IndexOf` is the right answer and this type is a loss.
+
+**Both pre-registered bars from [#386](https://github.com/marius-bughiu/Celerity/issues/386) clear**, at 100,000 characters: ≥20x the scan on counting a present pattern (**68x**) and ≥20x on ruling out an absent one (**64x**). The k-gram arm is published where it wins, as the issue required, and the build arm sits next to the query arms with the crossover above.
+
+**What the numbers do not say.** The `CountIndexed` row is the honest ceiling on the query claim: if your patterns are all one known length and the text is fixed, an inverted index of that length is an order of magnitude faster per query and you should write one. `SuffixArray` earns its place by answering *every* pattern length out of one structure that costs 10 bytes per character, and by answering the longest-repeated-substring question that neither the scan nor the k-gram index can express at all.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `SuffixArray(ReadOnlySpan<char> text)` | Build, `O(n log n)`. The text is copied, so the caller's buffer may be reused. A `null` `string` converts to an empty span and builds an empty index rather than throwing. |
+| `int Length { get; }` | Characters in the text, which is also the number of suffixes. |
+| `ReadOnlySpan<char> Text { get; }` | The indexed text — slice it to turn a match back into characters. |
+| `ReadOnlySpan<int> Suffixes { get; }` | Every start position, ordered by the suffix beginning there. This is the index itself. |
+| `ReadOnlySpan<int> LongestCommonPrefixes { get; }` | Entry `i` is the characters shared by the suffixes at ranks `i - 1` and `i`; entry `0` is `0`. |
+| `int this[int rank] { get; }` | The start position at that lexicographic rank. `ArgumentOutOfRangeException` outside `[0, Length)`. |
+| `bool Contains(ReadOnlySpan<char> pattern)` | Does it occur? `O(m log n)` — **one** binary search, so cheaper than `CountOccurrences`. |
+| `int CountOccurrences(ReadOnlySpan<char> pattern)` | How many times, `O(m log n)`. Overlapping occurrences all count. |
+| `int IndexOf(ReadOnlySpan<char> pattern)` | The **lowest** matching position, or `-1`. `O(m log n + k)` for `k` matches — the order groups them but does not sort them by position. |
+| `bool TryGetOccurrences(ReadOnlySpan<char> pattern, out ReadOnlySpan<int> occurrences)` | The matches as a slice of the index, copying nothing. **Lexicographic** order, not positional. |
+| `int CopyOccurrences(ReadOnlySpan<char> pattern, int[] destination, int destinationIndex = 0)` | The matches in **ascending position** order into a caller-owned buffer; returns how many were written. |
+| `int[] GetOccurrences(ReadOnlySpan<char> pattern)` | The convenience tier of the same. |
+| `bool TryGetLongestRepeatedSubstring(out int start, out int length)` | The longest substring occurring at least twice, `O(n)`. `false` when no character repeats. |
+| `Enumerator GetEnumerator()` | Struct enumerator over the start positions in lexicographic order. |
+
+`CopyOccurrences` throws `ArgumentNullException` on a `null` buffer and `ArgumentOutOfRangeException` for a `destinationIndex` outside `[0, destination.Length]`. Writing stops when the buffer fills, so a return value equal to the remaining room may mean the matches were truncated — size the buffer with `CountOccurrences` when every match is needed.
+
+`Count` is implemented **explicitly** and is not on the public surface: the suffix count and the text length are the same number, and `Length` is the name that says which. `((IReadOnlyCollection<int>)index).Count` is that number.
+
+### Caveats
+
+- **Build-once.** The index is immutable; changing the text means building a new one, as with [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue), [`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) and [`CompressedGraph`](#compressedgraph). Nothing mutates, so enumeration is never invalidated and concurrent readers need no synchronization.
+- **The build has to be amortized, and one query does not do it.** The build costs what many scans of the same text would. At 100,000 characters it pays for itself at roughly 1,000 counting queries against the same text, and at 1,000 characters at roughly 3,900 — see [Measured](#measured-1). Below the crossover `IndexOf` is the right answer.
+- **Ordinal, over UTF-16 code units.** Suffixes are ordered by `char` value — what `StringComparison.Ordinal` compares. There is no culture-aware, case-insensitive or normalizing mode and there will not be: a linguistic comparison is not a total order over fixed-length units, so the suffixes could not be sorted once and binary-searched. Fold the text and the pattern the same way before indexing when case-insensitive matching is wanted. A surrogate pair sorts as its two code units, so a match can begin at a low surrogate — check the boundary in your own text when that matters.
+- **About 10 bytes per character, retained.** The text copy is 2, and the suffix and LCP arrays are 4 each. That is five times what the text alone costs, and it is the other half of the reason to check the crossover. The build's scratch is five more `int` buffers, rented from `ArrayPool<T>` and returned rather than held.
+
+  That arithmetic is also the honest way to compare footprints with the `Dictionary<string, int[]>` k-gram index, and the benchmark's allocation column is **not**: `MemoryDiagnoser` measures allocation *volume* over the run, so it charges the k-gram build for the transient `List<int>` per gram that the finished index does not hold, and it does not charge this type for pooled scratch a warm pool hands back for free. Read that column as build allocations. The retained comparison is arithmetic: 10 bytes per character here, against — for the 8-gram index over `n` positions — a `string` key of about 40 bytes, an `int[]` of at least 32, and the dictionary's own entry and bucket per *distinct* gram, which on text with few exact repeats is an order of magnitude more.
+- **The empty pattern matches at every start position.** It occurs `Length` times, so `IndexOf` returns `0` and `Contains` returns `true` on a non-empty text — and over an *empty* text it occurs nowhere, so `CountOccurrences` is `0`, `Contains` is `false` and `IndexOf` is `-1`. That is one rule with no special case, rather than `string`'s, which reports the empty needle as found at `0` even in the empty string.
+- **`TryGetOccurrences` is not sorted.** Its span is in suffix order. Use `CopyOccurrences` or `GetOccurrences` when ascending positions are wanted; both pay an `O(k log k)` sort for it.
+
+### Usage example
+
+```csharp
+var index = new SuffixArray("the cat sat on the mat");
+
+Console.WriteLine(index.CountOccurrences("at"));        // 3 - one pair of binary searches, no scan
+Console.WriteLine(index.IndexOf("the"));                // 0
+Console.WriteLine(index.Contains("dog"));               // False
+
+// Every position, ascending.
+Console.WriteLine(string.Join(" ", index.GetOccurrences("at")));   // 5 9 20
+
+// The zero-copy tier: a slice of the index itself, in suffix order rather than positional.
+if (index.TryGetOccurrences("the", out ReadOnlySpan<int> found))
+    Console.WriteLine(found.Length);                    // 2
+
+// The question no scan can express: the longest substring that occurs at least twice.
+if (index.TryGetLongestRepeatedSubstring(out int start, out int length))
+    Console.WriteLine(index.Text.Slice(start, length).ToString());  // "the "
+```
