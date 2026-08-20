@@ -45,6 +45,27 @@ Generic over any key type:
 var byId = new AbuseTracker<long, Int64WangNaiveHasher>();
 ```
 
+## Tuning
+
+Every knob lives on `AbuseTrackerOptions`, accepted by each tracker constructor. Each one sizes a fixed
+structure, so the whole footprint is chosen here and then never grows with key cardinality:
+
+```csharp
+var sentinel = new StringAbuseTracker(new AbuseTrackerOptions
+{
+    RateEpsilon = 0.001,              // Count-Min relative error; smaller widens the sketch
+    RateConfidence = 0.99,            // chance a rate estimate stays inside that bound
+    OffenderCapacity = 128,           // Space-Saving k — the divisor in the table above
+    DistinctPrecision = 14,           // HyperLogLog registers: 2^14 bytes ≈ 16 KB, ≈0.8% error
+    TrackFirstSeen = true,            // maintain the Bloom first-seen filter
+    ExpectedDistinctKeys = 1_000_000, // what that filter is sized for
+    FirstSeenFalsePositiveRate = 0.01,
+});
+```
+
+Those are the defaults, so `new StringAbuseTracker()` is the block above. Two trackers must be built with
+equal options to `Merge`, since a merge combines the underlying sketches and needs identical geometry.
+
 ## Concurrency: per-core striping + merge
 
 A single tracker is single-threaded (like every Celerity collection). For real edge QPS, use `StripedAbuseTracker` — independent lanes with no lock on the observe path, rolled up on demand:
