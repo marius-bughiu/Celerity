@@ -89,22 +89,44 @@ public class AhoCorasickTests
     [Fact]
     public void Constructor_ShouldStayLinear_WhenThousandsOfPatternsShareOneState()
     {
-        // 4,000 single-character patterns put 4,000 edges on the root. Both halves of the build have to stay
+        // 6,000 single-character patterns put 6,000 edges on the root. Both halves of the build have to stay
         // sub-quadratic in a state's branching factor for this to finish at all: finding an edge while the
-        // trie is being threaded, and ordering the row while it is being flattened.
-        var patterns = new string[4000];
+        // trie is being threaded, and ordering the row while it is being flattened. The count is also past the
+        // scratch trie's starting capacity, so the growth path runs rather than only the initial rent.
+        var patterns = new string[6000];
         for (int i = 0; i < patterns.Length; i++)
             patterns[i] = ((char)(0x4E00 + i)).ToString();
 
         var automaton = new AhoCorasick(patterns);
 
-        Assert.Equal(4000, automaton.Count);
-        Assert.Equal(4001, automaton.StateCount);
+        Assert.Equal(6000, automaton.Count);
+        Assert.Equal(6001, automaton.StateCount);
 
-        // Every edge has to be findable after the row sort, including the ones a binary search reaches last.
-        Assert.Equal(4000L, automaton.CountMatches(string.Concat(patterns)));
-        Assert.True(automaton.TryFindFirst(patterns[3999], out PatternMatch match));
-        Assert.Equal(3999, match.PatternId);
+        // Every edge has to be findable after the row sort, including the ones a binary search reaches last —
+        // and every state has to have survived the buffer growth with its edge and its output intact.
+        Assert.Equal(6000L, automaton.CountMatches(string.Concat(patterns)));
+        Assert.True(automaton.TryFindFirst(patterns[5999], out PatternMatch match));
+        Assert.Equal(5999, match.PatternId);
+    }
+
+    [Fact]
+    public void Constructor_ShouldGrowTheScratchRatherThanSizeItForTheWorstCase_WhenPatternsShareALongPrefix()
+    {
+        // Every pattern shares a 400-character prefix, so 200 of them are 80,600 characters but only 622
+        // distinct prefixes. A build that rented for the sum would ask the pool for 129 times the states it
+        // goes on to create.
+        string shared = new('x', 400);
+        var patterns = new string[200];
+        for (int i = 0; i < patterns.Length; i++)
+            patterns[i] = shared + i.ToString("D3");
+
+        var automaton = new AhoCorasick(patterns);
+
+        Assert.Equal(200, automaton.Count);
+        Assert.Equal(623, automaton.StateCount);
+        Assert.Equal(1L, automaton.CountMatches(patterns[137]));
+        Assert.True(automaton.TryFindFirst(patterns[137], out PatternMatch match));
+        Assert.Equal(137, match.PatternId);
     }
 
     [Fact]

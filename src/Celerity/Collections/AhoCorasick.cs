@@ -130,6 +130,11 @@ public sealed class AhoCorasick : IReadOnlyList<string>
 
     private readonly int[] _rootTransitions;
 
+    // What the build's scratch trie starts at, in states, before it doubles. Small enough that a handful of
+    // short patterns does not rent a page it will not use, large enough that a realistic pattern set never
+    // grows at all.
+    private const int InitialScratchStates = 4096;
+
     /// <summary>Builds an automaton over <paramref name="patterns"/>.</summary>
     /// <param name="patterns">
     /// The patterns to match. Duplicates collapse to one entry, keeping the id of the first appearance; the
@@ -150,7 +155,10 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     /// <para>
     /// The trie the flattening reads is scratch: its arrays are rented from <see cref="ArrayPool{T}"/> and
     /// returned, and the edge map and the duplicate set are dropped with it, so what the automaton retains is
-    /// the flat arrays and the patterns and nothing else.
+    /// the flat arrays and the patterns and nothing else. That scratch is grown as states are created rather
+    /// than sized for the worst case, so shared prefixes make the build cheaper in memory as well as in
+    /// states — 10,000 patterns sharing a 1,000-character prefix build a trie of some 11,000 states, and only
+    /// that is rented, not the ten million characters they add up to.
     /// </para>
     /// </remarks>
     public AhoCorasick(IEnumerable<string> patterns)
@@ -194,12 +202,21 @@ public sealed class AhoCorasick : IReadOnlyList<string>
         // `transitions` is how an edge is *found* while they are being built: a state's children are a linked
         // list, so scanning it would be quadratic in the branching factor, which a set of many one-character
         // patterns reaches. One hash probe per pattern character keeps the build linear in their total length.
-        int capacity = totalChars + 1;
+        // Grown as states are created rather than sized for the worst case, because the two can be orders of
+        // magnitude apart: the state count is the number of *distinct prefixes*, so 10,000 patterns sharing a
+        // 1,000-character prefix build a trie of some 11,000 states out of ten million characters, and renting
+        // for the sum would ask the pool for well over a hundred megabytes to hold it.
+        int capacity = Math.Min(totalChars + 1, InitialScratchStates);
         char[] edgeChars = ArrayPool<char>.Shared.Rent(capacity);
         int[] firstChild = ArrayPool<int>.Shared.Rent(capacity);
         int[] nextSibling = ArrayPool<int>.Shared.Rent(capacity);
         int[] terminal = ArrayPool<int>.Shared.Rent(capacity);
-        var transitions = new Dictionary<long, int>(totalChars);
+
+        // The pool hands back an array at least as long as asked for and often longer; the usable capacity is
+        // whatever the shortest of the four allows.
+        capacity = Math.Min(Math.Min(edgeChars.Length, firstChild.Length), Math.Min(nextSibling.Length, terminal.Length));
+
+        var transitions = new Dictionary<long, int>(capacity);
         try
         {
             firstChild[0] = -1;
@@ -216,6 +233,20 @@ public sealed class AhoCorasick : IReadOnlyList<string>
                     long edge = ((long)node << 16) | value;
                     if (!transitions.TryGetValue(edge, out int child))
                     {
+                        if (stateCount == capacity)
+                        {
+                            // stateCount can never pass totalChars, so the clamp below is always a real
+                            // increase and the doubling terminates.
+                            int wanted = Math.Min(capacity * 2, totalChars + 1);
+                            edgeChars = Grow(edgeChars, stateCount, wanted);
+                            firstChild = Grow(firstChild, stateCount, wanted);
+                            nextSibling = Grow(nextSibling, stateCount, wanted);
+                            terminal = Grow(terminal, stateCount, wanted);
+                            capacity = Math.Min(
+                                Math.Min(edgeChars.Length, firstChild.Length),
+                                Math.Min(nextSibling.Length, terminal.Length));
+                        }
+
                         child = stateCount++;
                         edgeChars[child] = value;
                         firstChild[child] = -1;
@@ -466,6 +497,16 @@ public sealed class AhoCorasick : IReadOnlyList<string>
 
             state = _fail[state];
         }
+    }
+
+    // Replaces a scratch buffer with a longer one from the pool, carrying the live prefix across and handing
+    // the old one back.
+    private static T[] Grow<T>(T[] buffer, int used, int minimum)
+    {
+        T[] bigger = ArrayPool<T>.Shared.Rent(minimum);
+        buffer.AsSpan(0, used).CopyTo(bigger);
+        ArrayPool<T>.Shared.Return(buffer);
+        return bigger;
     }
 
     // The index of `state`'s edge on `value` within the edge arrays, or -1. The edges of one state are sorted
