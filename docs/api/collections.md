@@ -5438,3 +5438,123 @@ if (index.TryGetOccurrences("the", out ReadOnlySpan<int> found))
 if (index.TryGetLongestRepeatedSubstring(out int start, out int length))
     Console.WriteLine(index.Text.Slice(start, length).ToString());  // "the "
 ```
+
+## AhoCorasick
+
+```csharp
+public sealed class AhoCorasick : IReadOnlyList<string>
+```
+
+An **Aho–Corasick automaton**: a build-once, immutable index over a fixed set of patterns that finds *every* occurrence of *every* pattern in one left-to-right pass over a text, at a cost that does not grow with how many patterns there are.
+
+This is the other half of the text axis, and neither neighbour reaches it. [`Trie<TValue>`](#trietvalue) matches a *prefix of the query* — it walks from the root and stops, so finding its keys *inside* a text means re-walking from every position, at `O(n · m)`. [`SuffixArray`](#suffixarray) indexes *one fixed text* and answers one pattern at a time, which is the wrong way round when the text is what streams past and the pattern set is what is fixed. Here the **patterns** are indexed and the text is read once.
+
+The BCL has nothing that answers the same question. `string.IndexOf` and `MemoryExtensions.IndexOf` are single-needle scans, so `k` patterns cost `k` passes over the text. `Regex` with an alternation is the real workaround and a strong one — it is measured below rather than dismissed. .NET 9's `SearchValues<string>` does index the needles, but it answers `IndexOfAny`: *where is the first of these*, not *every occurrence of every pattern, and which one*, and it does not exist on this library's `net8.0` floor.
+
+### When to reach for it
+
+Any workload with many needles and a haystack that keeps arriving: log and alert scanning, keyword / profanity / brand filters, WAF and IOC rule sets, dictionary tokenizers and CJK word segmentation, DLP scanning, ad-block and URL rule matching. The deciding question is **how many patterns**, not how long the text is — see [Measured](#measured-2). Below roughly a few dozen patterns the k-`IndexOf` loop wins outright and you should write it.
+
+### How it works
+
+The patterns are threaded onto a trie, so a state is a distinct prefix of the pattern set and shared prefixes share their states. That alone finds patterns that start where the scan happens to be. What makes it a single pass is the **failure link**: `fail(s)` is the state for the longest proper suffix of `s`'s path that is also a path from the root, so when a character does not continue the current partial match, the automaton drops to the longest partial match still alive rather than starting over. Each character therefore descends at most one level, and the failure walk can only climb what descending already paid for — the scan is `O(n)` amortized, not `O(n · depth)`.
+
+The second link is the **output link**: several patterns can end at the same position (`"abc"` ends where its suffixes `"bc"` and `"c"` do), and they lie along the failure chain rather than at one state. `outputLink(s)` skips straight to the nearest state up that chain that ends a pattern, so reporting costs the number of matches rather than the depth.
+
+Both are computed in one breadth-first pass, which is also the order the states are **laid out** in. The trie is flattened into a compressed-row child table — an offset per state into one contiguous edge array, sorted by character — so a transition is a binary search over one state's edges and there are no per-node objects. Breadth-first order is what makes the single pass possible: a state's failure target has strictly smaller depth and therefore a smaller id, so it is already written by the time the pass needs it. The scratch trie the flattening reads is rented from `ArrayPool<T>` and returned.
+
+One layer sits on top. The root is where a scan spends most of its steps — every character that continues no partial match resolves there — so the root's ASCII transitions are held in a **direct-mapped 128-entry table** and cost one load instead of a binary search. Non-ASCII falls back to the search. That table is a fixed 512 bytes whatever the pattern set looks like, and it is worth about 2x on the small-pattern-set arms.
+
+### Measured
+
+Every arm scans **one text** with **256 patterns**, except `CountFew`, which is the same workload with **eight**. The numbers are from a local run and will be replaced by this PR's CI benchmark run.
+
+At **100,000 characters** of vocabulary-generated text, against one compiled `Regex` alternation of the same patterns:
+
+| Workload | `Regex` alternation | `AhoCorasick` | Ratio |
+| --- | ---: | ---: | ---: |
+| `ContainsAny`, patterns **absent** | 7.45 ms | 654 µs | **11.4x** |
+| Every match enumerated | 7.23 ms | 635 µs | **11.4x**, and 0 B against 2.4 MB |
+| Build | 128.0 µs | 15.0 µs | **8.5x** |
+
+And against the k-`IndexOf` loop, which is the baseline that decides:
+
+| Workload | k-`IndexOf` loop | `AhoCorasick` | Ratio |
+| --- | ---: | ---: | ---: |
+| `ContainsAny`, 256 patterns, **absent** | 778 µs | 655 µs | 1.19x |
+| `CountMatches`, 256 patterns, present | 2.08 ms | 640 µs | **3.2x** |
+| `CountMatches`, **eight** patterns, present | 34.6 µs | 310 µs | **0.11x — the loop wins by 9.0x** |
+
+At **1,000 characters** the `Regex` margins *widen* to 25.1x on `ContainsAny` and hold at 9.1x on enumeration, because a compiled alternation pays a fixed cost per call that a short text cannot amortize; the loop margins are 2.7x and 3.4x, and it still wins the eight-pattern arm, by 4.1x.
+
+**The crossover is the pattern count, and it is what to check first.** The loop is `O(k · n)` and this is `O(n)`, so the two data points above bracket it: going from 8 patterns to 256 costs the loop 22x (34.6 µs → 778 µs) and costs this automaton about 2x (310 µs → 655 µs). That residual 2x is not work per character — it is cache footprint, since a bigger automaton spills out of L1. Extrapolating the two lines puts the break-even at roughly **50 patterns**; below it, write the loop.
+
+**What the numbers do not say.** The enumeration row is not like-for-like, and reading it in this type's *favour* would be the wrong way round: a `Regex` alternation consumes the text as it matches, so it reports leftmost **non-overlapping** matches, while this reports every occurrence including the ones that start inside another. The Celerity arm is doing strictly more work for that 11.4x. And the `Build` row deliberately compares against an **uncompiled** `Regex` — `RegexOptions.Compiled` emits IL and would lose by a margin that says nothing about either structure — while the query arms use the compiled form, which is what a caller keeps around.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `AhoCorasick(IEnumerable<string> patterns)` | Build, `O(total pattern length)`. Duplicates collapse to one entry, keeping the id of the first appearance. `ArgumentNullException` on a `null` sequence; `ArgumentException` on a `null` or empty pattern. An empty set is legal and matches nothing. |
+| `int Count { get; }` | The number of **distinct** patterns — can be smaller than what was supplied. |
+| `int StateCount { get; }` | Automaton states including the root: the number of distinct prefixes across the patterns, plus one. The measure of how much the patterns share. |
+| `ReadOnlySpan<string> Patterns { get; }` | The patterns in id order, copying nothing. |
+| `string this[int patternId] { get; }` | The pattern with that id — how a `PatternMatch` is turned back into a pattern. `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `bool ContainsAny(ReadOnlySpan<char> text)` | Does any pattern occur? The cheapest tier: stops at the first match and forms no `PatternMatch`. |
+| `int CountMatches(ReadOnlySpan<char> text)` | How many matches, counting overlaps, `O(n + matches)`. Nothing is materialized. |
+| `bool TryFindFirst(ReadOnlySpan<char> text, out PatternMatch match)` | The first match **in reporting order** — the one that *ends* earliest, not the one that starts earliest. |
+| `int CopyMatches(ReadOnlySpan<char> text, PatternMatch[] destination, int destinationIndex = 0)` | Every match into a caller-owned buffer; returns how many were written. The scan stops when the buffer fills. |
+| `PatternMatch[] FindAll(ReadOnlySpan<char> text)` | The convenience tier of the same, allocating the result. |
+| `MatchEnumerator EnumerateMatches(ReadOnlySpan<char> text)` | An allocation-free `ref struct` enumerator that drives the scan as it is pulled — the tier for a hot path. |
+| `Enumerator GetEnumerator()` | Struct enumerator over the **patterns**, in id order. Enumerating the automaton yields patterns, not matches. |
+
+`CopyMatches` throws `ArgumentNullException` on a `null` buffer and `ArgumentOutOfRangeException` for a `destinationIndex` outside `[0, destination.Length]`. Writing stops when the buffer fills, so a return value equal to the remaining room may mean the matches were truncated — size the buffer with `CountMatches`, or use `EnumerateMatches`, which needs no buffer at all.
+
+### The result type: `PatternMatch`
+
+```csharp
+public readonly struct PatternMatch : IEquatable<PatternMatch>
+```
+
+| Member | Behaviour |
+| --- | --- |
+| `int PatternId { get; }` | The id of the pattern that matched — an index into the automaton, over `[0, Count)`. |
+| `int Start { get; }` | Where the match begins in the text. |
+| `int Length { get; }` | How many characters matched, always the pattern's length. |
+| `int End { get; }` | `Start + Length`. Matches are reported in ascending order of this. |
+| `void Deconstruct(out int patternId, out int start, out int length)` | Destructuring, plus `==` / `!=` / `Equals` / `GetHashCode` / `ToString`. |
+
+The match carries a position and a length rather than the matched text, so producing it costs nothing and `EnumerateMatches` allocates nothing; the substring is `text.Slice(match.Start, match.Length)` when it is actually wanted. Two matches from *different* automatons can compare equal — the id is not qualified by the automaton it came from.
+
+### Caveats
+
+- **Overlapping matches are reported, not resolved.** Over `"ushers"` with `"he"`, `"she"` and `"hers"` there are three matches — `"she"` at 1, `"he"` at 2 and `"hers"` at 2 — and all three are produced. A `Regex` alternation consumes the text as it matches and so reports one of them. Picking a winner is left to the caller, because the caller is the only one who knows whether the right policy is longest, first-listed, or all of them.
+- **The reporting order is by end position, not by start.** Ascending `End`, and **longest first** among matches ending together, which is the order the automaton discovers them in. With `"bc"` and `"abcd"` over `"abcd"`, `"bc"` is reported first because it ends first, even though `"abcd"` starts earlier — and `TryFindFirst` returns `"bc"` for the same reason. A single left-to-right pass cannot do better: when `"bc"` completes, the automaton has no way to know whether the longer pattern starting earlier will complete at all. Sort by `Start` when leftmost order is wanted.
+- **The pattern count decides, and below the crossover this loses.** At eight patterns the k-`IndexOf` loop is 4–9x faster, because `MemoryExtensions.IndexOf` is vectorized and this pass reads a character at a time. See [Measured](#measured-2).
+- **Build-once.** The automaton is immutable; changing the pattern set means building a new one, as with [`SuffixArray`](#suffixarray), [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue) and [`CompressedGraph`](#compressedgraph). Nothing mutates, so concurrent readers need no synchronization and an enumerator can never be invalidated.
+- **Ordinal, over UTF-16 code units.** Characters are compared by value — what `StringComparison.Ordinal` compares. There is no culture-aware or case-insensitive mode: fold the patterns and the text the same way before building when case-insensitive matching is wanted. A surrogate pair is two code units, so a pattern may match starting at a low surrogate — check the boundary in your own text when that matters.
+- **Duplicates collapse; the empty pattern is rejected.** The same pattern supplied twice yields one entry, keeping the id of its first appearance, so `Count` is the number of *distinct* patterns. The empty string would match at every position and make `ContainsAny` vacuously `true`, so it throws rather than being silently absorbed.
+- **About 22 bytes per pattern character**, before shared prefixes are counted — a child edge (a `char` and an `int`), a failure link, an output and an output link per state — plus the fixed 512-byte root table. Shared prefixes share their states, so `StateCount` is what the footprint actually tracks. The patterns themselves are retained, because a `PatternMatch` carries an id and the caller needs to resolve it.
+
+### Usage example
+
+```csharp
+var automaton = new AhoCorasick(["he", "she", "his", "hers"]);
+
+Console.WriteLine(automaton.ContainsAny("ushers"));    // True
+Console.WriteLine(automaton.CountMatches("ushers"));   // 3 - overlaps included
+
+// The allocation-free tier: the enumerator drives the scan as it is pulled.
+foreach (PatternMatch match in automaton.EnumerateMatches("ushers"))
+    Console.WriteLine($"{automaton[match.PatternId]} at {match.Start}");
+// she at 1
+// he at 2
+// hers at 2
+
+// One pass over a log line, whatever the rule set grows to.
+var alerts = new AhoCorasick(["OutOfMemory", "StackOverflow", "Timeout", "Deadlock"]);
+string line = "worker-3: Timeout waiting for the lock - possible Deadlock";
+
+if (alerts.TryFindFirst(line, out PatternMatch first))
+    Console.WriteLine(alerts[first.PatternId]);        // Timeout
+```
