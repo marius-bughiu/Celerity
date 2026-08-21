@@ -5475,7 +5475,7 @@ At **100,000 characters** of vocabulary-generated text, against one compiled `Re
 | --- | ---: | ---: | ---: |
 | `ContainsAny`, patterns **absent** | 7.13 ms | 641 µs | **11.1x** |
 | Every match enumerated | 3.97 ms | 626 µs | **6.3x** — both allocation-free |
-| Build | 115.2 µs | 24.3 µs | **4.7x** |
+| Build (against an **uncompiled** alternation — see below) | 115.2 µs | 24.3 µs | **4.7x** |
 
 And against the k-`IndexOf` loop, which is the baseline that decides:
 
@@ -5501,7 +5501,7 @@ At **1,000 characters** the `Regex` margin on `ContainsAny` *widens* to 25.0x, b
 | `ReadOnlySpan<string> Patterns { get; }` | The patterns in id order, copying nothing. |
 | `string this[int patternId] { get; }` | The pattern with that id — how a `PatternMatch` is turned back into a pattern. `ArgumentOutOfRangeException` outside `[0, Count)`. |
 | `bool ContainsAny(ReadOnlySpan<char> text)` | Does any pattern occur? The cheapest tier: stops at the first match and forms no `PatternMatch`. |
-| `int CountMatches(ReadOnlySpan<char> text)` | How many matches, counting overlaps, `O(n + matches)`. Nothing is materialized. |
+| `long CountMatches(ReadOnlySpan<char> text)` | How many matches, counting overlaps, `O(n + matches)`. Nothing is materialized. A `long`, because overlapping matches are not bounded by the text length. |
 | `bool TryFindFirst(ReadOnlySpan<char> text, out PatternMatch match)` | The first match **in reporting order** — the one that *ends* earliest, not the one that starts earliest. |
 | `int CopyMatches(ReadOnlySpan<char> text, PatternMatch[] destination, int destinationIndex = 0)` | Every match into a caller-owned buffer; returns how many were written. The scan stops when the buffer fills. |
 | `PatternMatch[] FindAll(ReadOnlySpan<char> text)` | The convenience tier of the same, allocating the result. |

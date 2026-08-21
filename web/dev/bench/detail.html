@@ -401,7 +401,7 @@
     { key: 'IntervalTree',        title: 'IntervalTree<int, int>',                vs: 'List<T> (linear scan)' },
     { key: 'CompressedGraph',     title: 'CompressedGraph (CSR)',                 vs: 'Dictionary<int, List<int>>; List<int>[] on the Neighbors/TraverseArray/Topological/Reverse cards; exact-sized int[][] on the *Tight cards' },
     { key: 'SuffixArray',         title: 'SuffixArray (text index)',              vs: 'string.IndexOf scan; a Dictionary<string, int[]> k-gram index on the CountIndexed/Build cards' },
-    { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',      vs: 'a k-IndexOf loop over 256 patterns on the Contains/Count cards and eight on CountFew; one compiled Regex alternation on the ContainsRegex/FindAll/Build cards' },
+    { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',      vs: 'a k-IndexOf loop over 256 patterns on the Contains/Count cards and eight on CountFew; one Regex alternation on the ContainsRegex/FindAll/Build cards — compiled on the query cards, uncompiled on Build, since compiling emits IL' },
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                  vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },
