@@ -206,7 +206,7 @@ public sealed class AhoCorasick : IReadOnlyList<string>
         // magnitude apart: the state count is the number of *distinct prefixes*, so 10,000 patterns sharing a
         // 1,000-character prefix build a trie of some 11,000 states out of ten million characters, and renting
         // for the sum would ask the pool for well over a hundred megabytes to hold it.
-        int capacity = Math.Min(totalChars + 1, InitialScratchStates);
+        int capacity = (int)Math.Min((long)totalChars + 1, InitialScratchStates);
         char[] edgeChars = ArrayPool<char>.Shared.Rent(capacity);
         int[] firstChild = ArrayPool<int>.Shared.Rent(capacity);
         int[] nextSibling = ArrayPool<int>.Shared.Rent(capacity);
@@ -235,9 +235,12 @@ public sealed class AhoCorasick : IReadOnlyList<string>
                     {
                         if (stateCount == capacity)
                         {
-                            // stateCount can never pass totalChars, so the clamp below is always a real
-                            // increase and the doubling terminates.
-                            int wanted = Math.Min(capacity * 2, totalChars + 1);
+                            // Widened, because both sides of the clamp overflow an int at the extreme: the
+                            // doubling once capacity passes 2^30, and the state ceiling when the patterns
+                            // total int.MaxValue characters. stateCount can never pass totalChars, so the
+                            // ceiling is always above the current capacity and the doubling terminates.
+                            long ceiling = Math.Min((long)totalChars + 1, Array.MaxLength);
+                            int wanted = (int)Math.Min((long)capacity * 2, ceiling);
                             edgeChars = Grow(edgeChars, stateCount, wanted);
                             firstChild = Grow(firstChild, stateCount, wanted);
                             nextSibling = Grow(nextSibling, stateCount, wanted);
