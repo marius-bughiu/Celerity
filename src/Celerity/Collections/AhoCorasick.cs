@@ -138,7 +138,8 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     /// <summary>Builds an automaton over <paramref name="patterns"/>.</summary>
     /// <param name="patterns">
     /// The patterns to match. Duplicates collapse to one entry, keeping the id of the first appearance; the
-    /// sequence is read once and not retained, though the pattern strings themselves are.
+    /// sequence is enumerated exactly once, never copied, and not retained — a duplicate-heavy source is not
+    /// charged for the entries it collapses — though the distinct pattern strings themselves are kept.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="patterns"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">
@@ -165,16 +166,16 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     {
         ArgumentNullException.ThrowIfNull(patterns);
 
-        string[] input = patterns as string[] ?? [.. patterns];
-
         // Duplicates are collapsed here rather than discovered in the trie, so everything below is sized from
-        // what the automaton will actually hold: an array of a thousand references to one large string costs
-        // one copy of it, not a thousand. The running total is checked because it is a caller-supplied sum and
-        // a silent wrap would size the scratch negatively.
-        var accepted = new List<string>(input.Length);
-        var seen = new HashSet<string>(input.Length, StringComparer.Ordinal);
+        // what the automaton will actually hold: a thousand references to one large string cost one copy of
+        // it, not a thousand. The source is read exactly once and never materialized, and neither collection
+        // is pre-sized from it, so a duplicate-heavy sequence is not charged for the entries it collapses. The
+        // running total is checked because it is a caller-supplied sum and a silent wrap would size the
+        // scratch negatively.
+        var accepted = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         int totalChars = 0;
-        foreach (string pattern in input)
+        foreach (string pattern in patterns)
         {
             if (pattern is null)
                 throw new ArgumentException("Patterns must not contain a null.", nameof(patterns));
