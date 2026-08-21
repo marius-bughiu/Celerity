@@ -21,11 +21,15 @@ using Celerity.Collections;
 // ItemCount axis and the text length is the one that belongs on it. ItemCount is the text length, matching
 // SuffixArrayBenchmark, and *Few is the eight-pattern variant of the same workload.
 //
-// Contains is the arm to read first, and it is the one that goes AGAINST this type: its patterns are absent,
-// and a vectorized scan rules an absent pattern out on its first character without reading the text, so 256
-// quick refusals beat one full character-at-a-time pass and the loop wins at 100,000 characters. Count is the
-// opposite shape — patterns that are present and repeated, where every hit forces the loop to restart — and it
-// is where the automaton pulls ahead. CountFew is the crossover arm at eight patterns and is expected to lose.
+// Contains is the arm to read first, and it is the one that goes AGAINST this type. Its patterns are absent —
+// but note how they are built below: a real substring of the text with one '#' appended, so the needle's first
+// character is present and only its LAST one is not. The loop therefore does read the whole text; it just never
+// finds a candidate worth verifying, so it stays inside its vectorized sweep and covers many characters per
+// step where this pass covers one. That is why 256 scans beat one pass at 100,000 characters. It also makes
+// this arm generous to the loop by construction, which is the honest way to read the loss. Count is the
+// opposite shape — patterns that are present and repeated, where every hit drops the loop out of the sweep and
+// makes it restart — and it is where the automaton pulls ahead. CountFew is the crossover arm at eight
+// patterns and is expected to lose.
 //
 // FindAll compares against the alternation on a workload the loop cannot express at all — every occurrence of
 // every pattern, with which pattern it was. Both sides use their allocation-free enumerator — Regex.
@@ -79,8 +83,10 @@ public class AhoCorasickBenchmark
         // would not.
         present = Distinct(rand, ManyPatterns, length => text.Substring(rand.Next(text.Length - length), length));
 
-        // Absent patterns are the same shape but end in a character the vocabulary never produces, so the loop
-        // has to read the whole text to rule each one out rather than bailing early.
+        // Absent patterns are the same shape but end in a character the vocabulary never produces. The prefix
+        // is real text, so the loop cannot reject on the first character — it reads the whole text — but it
+        // also never has a candidate to verify, which keeps it in its vectorized sweep. That is the shape it is
+        // fastest on, and the Contains arm is a loss here because of it.
         absent = Distinct(rand, ManyPatterns, length =>
             string.Concat(text.AsSpan(rand.Next(text.Length - length), length - 1), "#"));
 

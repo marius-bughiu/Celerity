@@ -54,8 +54,8 @@ namespace Celerity.Collections;
 /// <see cref="MemoryExtensions.IndexOf{T}(ReadOnlySpan{T}, ReadOnlySpan{T})"/> is vectorized and this pass is
 /// a character at a time. Where the crossover sits depends on the <i>shape</i> as well as the count: counting
 /// present patterns turns over near 35–50 of them, while merely ruling <i>absent</i> ones out does not turn
-/// over until several hundred, because a vectorized scan bails on the first character and never reads the
-/// text. Every measured ratio is in <c>docs/api/collections.md</c>.
+/// over until several hundred, because a scan that finds no candidate to verify is a pure vectorized sweep and
+/// this pass is not. Every measured ratio is in <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
 /// <b>Footprint.</b> The automaton holds one state per distinct character position across the patterns, plus
@@ -331,11 +331,11 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     /// <remarks>
     /// The cheapest tier: the pass stops at the first match and no <see cref="PatternMatch"/> is ever formed.
     /// Absent patterns are the case with no shortcut <i>here</i> — the text has to be read to the end to rule
-    /// them out — but they are the case the <c>k</c>-<c>IndexOf</c> loop is <b>fastest</b> on, not slowest:
-    /// a vectorized scan bails on the first character and never reads the text either, so 256 quick refusals
-    /// beat one full pass. This is the arm the loop still wins at 256 patterns; <see cref="CountMatches"/>
-    /// over patterns that are <i>present</i> is the shape that turns over, because every hit forces the loop
-    /// to restart.
+    /// them out — but they are <b>not</b> the case the <c>k</c>-<c>IndexOf</c> loop is slowest on, and this is
+    /// the arm the loop still wins at 256 patterns. It reads the whole text too, but a scan that never finds a
+    /// candidate worth verifying stays inside its vectorized sweep, so it covers many characters per step where
+    /// this covers one. <see cref="CountMatches"/> over patterns that are <i>present</i> is the shape that
+    /// turns over, because every hit drops the loop out of that sweep and makes it restart.
     /// </remarks>
     public bool ContainsAny(ReadOnlySpan<char> text)
     {
