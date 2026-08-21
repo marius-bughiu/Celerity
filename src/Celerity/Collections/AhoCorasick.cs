@@ -23,8 +23,8 @@ namespace Celerity.Collections;
 /// <c>k</c> patterns cost <c>k</c> passes over the text — that factor of <c>k</c> is the whole point of this
 /// type, and it is what the measured margins are made of.
 /// <see cref="System.Text.RegularExpressions.Regex"/> with an alternation is the real workaround and a
-/// genuinely strong one; it is measured here as a baseline rather than dismissed, and it wins the arm where
-/// there is nothing to find. .NET 9's <c>SearchValues&lt;string&gt;</c> does index the needles, but it answers
+/// genuinely strong one; it is measured here as a baseline rather than dismissed, in its compiled and
+/// allocation-free forms. .NET 9's <c>SearchValues&lt;string&gt;</c> does index the needles, but it answers
 /// <c>IndexOfAny</c> — <i>where is the first of these</i> — not <i>every occurrence of every pattern, and
 /// which one</i>, and it does not exist on this library's <c>net8.0</c> floor.
 /// </para>
@@ -141,14 +141,16 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     /// </exception>
     /// <remarks>
     /// <para>
-    /// <c>O(total pattern length)</c>: the patterns are threaded onto a trie, the trie is flattened into the
-    /// compressed row layout in breadth-first order — so a scan walks states roughly in the order it reaches
-    /// them — and the failure and output links are computed in that same pass, each from a state of strictly
-    /// smaller depth that the order guarantees is already written.
+    /// <c>O(total pattern length)</c> expected: the patterns are threaded onto a trie — one hash probe per
+    /// character to find or create the edge, which is what keeps a state's branching factor out of the cost —
+    /// the trie is flattened into the compressed row layout in breadth-first order, so a scan walks states
+    /// roughly in the order it reaches them, and the failure and output links are computed in that same pass,
+    /// each from a state of strictly smaller depth that the order guarantees is already written.
     /// </para>
     /// <para>
-    /// The trie the flattening reads is scratch: it is rented from <see cref="ArrayPool{T}"/> and returned, so
-    /// what the automaton retains is the flat arrays and the patterns and nothing else.
+    /// The trie the flattening reads is scratch: its arrays are rented from <see cref="ArrayPool{T}"/> and
+    /// returned, and the edge map and the duplicate set are dropped with it, so what the automaton retains is
+    /// the flat arrays and the patterns and nothing else.
     /// </para>
     /// </remarks>
     public AhoCorasick(IEnumerable<string> patterns)
@@ -157,6 +159,12 @@ public sealed class AhoCorasick : IReadOnlyList<string>
 
         string[] input = patterns as string[] ?? [.. patterns];
 
+        // Duplicates are collapsed here rather than discovered in the trie, so everything below is sized from
+        // what the automaton will actually hold: an array of a thousand references to one large string costs
+        // one copy of it, not a thousand. The running total is checked because it is a caller-supplied sum and
+        // a silent wrap would size the scratch negatively.
+        var accepted = new List<string>(input.Length);
+        var seen = new HashSet<string>(input.Length, StringComparer.Ordinal);
         int totalChars = 0;
         foreach (string pattern in input)
         {
@@ -169,16 +177,29 @@ public sealed class AhoCorasick : IReadOnlyList<string>
                     nameof(patterns));
             }
 
-            totalChars += pattern.Length;
+            if (!seen.Add(pattern))
+                continue;
+
+            accepted.Add(pattern);
+            checked
+            {
+                totalChars += pattern.Length;
+            }
         }
 
+        _patterns = [.. accepted];
+
         // One trie state per pattern character is the worst case (no two patterns share a prefix), plus the
-        // root. The sibling lists are what a state's children live on until the flattening sorts them.
+        // root. The sibling lists are what a state's children live on until the flattening sorts them, and
+        // `transitions` is how an edge is *found* while they are being built: a state's children are a linked
+        // list, so scanning it would be quadratic in the branching factor, which a set of many one-character
+        // patterns reaches. One hash probe per pattern character keeps the build linear in their total length.
         int capacity = totalChars + 1;
         char[] edgeChars = ArrayPool<char>.Shared.Rent(capacity);
         int[] firstChild = ArrayPool<int>.Shared.Rent(capacity);
         int[] nextSibling = ArrayPool<int>.Shared.Rent(capacity);
         int[] terminal = ArrayPool<int>.Shared.Rent(capacity);
+        var transitions = new Dictionary<long, int>(totalChars);
         try
         {
             firstChild[0] = -1;
@@ -186,18 +207,14 @@ public sealed class AhoCorasick : IReadOnlyList<string>
             terminal[0] = -1;
 
             int stateCount = 1;
-            var accepted = new List<string>(input.Length);
 
-            foreach (string pattern in input)
+            for (int id = 0; id < _patterns.Length; id++)
             {
                 int node = 0;
-                foreach (char value in pattern)
+                foreach (char value in _patterns[id])
                 {
-                    int child = firstChild[node];
-                    while (child >= 0 && edgeChars[child] != value)
-                        child = nextSibling[child];
-
-                    if (child < 0)
+                    long edge = ((long)node << 16) | value;
+                    if (!transitions.TryGetValue(edge, out int child))
                     {
                         child = stateCount++;
                         edgeChars[child] = value;
@@ -205,21 +222,17 @@ public sealed class AhoCorasick : IReadOnlyList<string>
                         terminal[child] = -1;
                         nextSibling[child] = firstChild[node];
                         firstChild[node] = child;
+                        transitions[edge] = child;
                     }
 
                     node = child;
                 }
 
-                // A state that already carries an output is a pattern we have seen before; the second copy
-                // keeps the first one's id rather than taking a new one.
-                if (terminal[node] < 0)
-                {
-                    terminal[node] = accepted.Count;
-                    accepted.Add(pattern);
-                }
+                // The patterns are distinct by construction, so no two of them end at the same state and this
+                // never overwrites an id.
+                terminal[node] = id;
             }
 
-            _patterns = [.. accepted];
             _childStart = new int[stateCount + 1];
             _childChars = new char[stateCount - 1];
             _childNodes = new int[stateCount - 1];
@@ -302,11 +315,15 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     /// <returns>The number of matches, counting overlaps.</returns>
     /// <remarks>
     /// <c>O(n + matches)</c>, and nothing is materialized: the output chain is walked for its length rather
-    /// than for its contents. Overlapping occurrences each count, so this can exceed the text length.
+    /// than for its contents. The result is a <see cref="long"/> because overlapping occurrences each count
+    /// and the total is <b>not</b> bounded by the text length — a thousand nested patterns over a few million
+    /// characters is a practical input that exceeds <see cref="int.MaxValue"/> matches, and the count is the
+    /// one number here that has to survive it. <see cref="FindAll"/> and <see cref="CopyMatches"/> cannot:
+    /// one is bounded by the largest array and the other by the caller's buffer.
     /// </remarks>
-    public int CountMatches(ReadOnlySpan<char> text)
+    public long CountMatches(ReadOnlySpan<char> text)
     {
-        int total = 0;
+        long total = 0;
         int state = 0;
         for (int position = 0; position < text.Length; position++)
         {
@@ -520,25 +537,11 @@ public sealed class AhoCorasick : IReadOnlyList<string>
                     edges++;
                 }
 
-                // Sorted by edge character so the transition can binary-search. Insertion sort: a state's
-                // branching factor is bounded by the alphabet actually used at that position and is small in
-                // every realistic pattern set.
-                for (int i = first + 1; i < edges; i++)
-                {
-                    char edge = _childChars[i];
-                    int target = _childNodes[i];
-
-                    int j = i - 1;
-                    while (j >= first && _childChars[j] > edge)
-                    {
-                        _childChars[j + 1] = _childChars[j];
-                        _childNodes[j + 1] = _childNodes[j];
-                        j--;
-                    }
-
-                    _childChars[j + 1] = edge;
-                    _childNodes[j + 1] = target;
-                }
+                // Sorted by edge character so the transition can binary-search. A paired span sort rather than
+                // an insertion sort: a state's branching factor is small in every realistic pattern set, but
+                // it is bounded only by the UTF-16 alphabet, and a root row tens of thousands of edges wide
+                // would make an insertion sort the most expensive thing in the build.
+                _childChars.AsSpan(first, edges - first).Sort(_childNodes.AsSpan(first, edges - first));
 
                 // Ids are handed out in sorted order, so a state's children are contiguous and ascending.
                 for (int i = first; i < edges; i++)

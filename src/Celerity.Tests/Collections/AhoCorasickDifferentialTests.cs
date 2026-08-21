@@ -90,7 +90,7 @@ public class AhoCorasickDifferentialTests
         PatternMatch[] actual = automaton.FindAll(text);
 
         Assert.Equal(expected, actual);
-        Assert.Equal(expected.Length, automaton.CountMatches(text));
+        Assert.Equal((long)expected.Length, automaton.CountMatches(text));
         Assert.Equal(expected.Length > 0, automaton.ContainsAny(text));
 
         Assert.Equal(expected.Length > 0, automaton.TryFindFirst(text, out PatternMatch first));

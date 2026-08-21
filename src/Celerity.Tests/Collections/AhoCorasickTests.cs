@@ -73,6 +73,41 @@ public class AhoCorasickTests
     }
 
     [Fact]
+    public void Constructor_ShouldSizeItselfFromTheDistinctPatterns_WhenOneIsRepeatedManyTimes()
+    {
+        // The scratch is sized from what the automaton will hold rather than from what was handed in, so a
+        // thousand references to one long pattern cost one copy of it. A build that sized itself from every
+        // occurrence would rent a thousand times the buffers — and overflow the sum on a large enough string.
+        string pattern = new('a', 2000);
+        var automaton = new AhoCorasick(Enumerable.Repeat(pattern, 1000));
+
+        Assert.Equal(1, automaton.Count);
+        Assert.Equal(2001, automaton.StateCount);
+        Assert.True(automaton.ContainsAny(pattern));
+    }
+
+    [Fact]
+    public void Constructor_ShouldStayLinear_WhenThousandsOfPatternsShareOneState()
+    {
+        // 4,000 single-character patterns put 4,000 edges on the root. Both halves of the build have to stay
+        // sub-quadratic in a state's branching factor for this to finish at all: finding an edge while the
+        // trie is being threaded, and ordering the row while it is being flattened.
+        var patterns = new string[4000];
+        for (int i = 0; i < patterns.Length; i++)
+            patterns[i] = ((char)(0x4E00 + i)).ToString();
+
+        var automaton = new AhoCorasick(patterns);
+
+        Assert.Equal(4000, automaton.Count);
+        Assert.Equal(4001, automaton.StateCount);
+
+        // Every edge has to be findable after the row sort, including the ones a binary search reaches last.
+        Assert.Equal(4000L, automaton.CountMatches(string.Concat(patterns)));
+        Assert.True(automaton.TryFindFirst(patterns[3999], out PatternMatch match));
+        Assert.Equal(3999, match.PatternId);
+    }
+
+    [Fact]
     public void Constructor_ShouldMatchNothing_WhenThePatternSetIsEmpty()
     {
         var automaton = new AhoCorasick([]);
@@ -80,7 +115,7 @@ public class AhoCorasickTests
         Assert.Equal(0, automaton.Count);
         Assert.Equal(1, automaton.StateCount);
         Assert.False(automaton.ContainsAny("anything at all"));
-        Assert.Equal(0, automaton.CountMatches("anything at all"));
+        Assert.Equal(0L, automaton.CountMatches("anything at all"));
     }
 
     [Fact]
@@ -90,7 +125,7 @@ public class AhoCorasickTests
         var automaton = new AhoCorasick(new List<string> { "ab", "b" });
 
         Assert.Equal(2, automaton.Count);
-        Assert.Equal(2, automaton.CountMatches("ab"));
+        Assert.Equal(2L, automaton.CountMatches("ab"));
     }
 
     [Fact]
@@ -278,7 +313,7 @@ public class AhoCorasickTests
     {
         var automaton = new AhoCorasick(Textbook);
 
-        Assert.Equal(3, automaton.CountMatches("ushers"));
+        Assert.Equal(3L, automaton.CountMatches("ushers"));
     }
 
     [Fact]
@@ -287,7 +322,7 @@ public class AhoCorasickTests
         var automaton = new AhoCorasick(["a", "aa", "aaa"]);
 
         // Ending at 1: "a". At 2: "aa", "a". At 3: "aaa", "aa", "a".
-        Assert.Equal(6, automaton.CountMatches("aaa"));
+        Assert.Equal(6L, automaton.CountMatches("aaa"));
     }
 
     [Fact]
@@ -295,7 +330,7 @@ public class AhoCorasickTests
     {
         var automaton = new AhoCorasick(Textbook);
 
-        Assert.Equal(0, automaton.CountMatches("nothing to see"));
+        Assert.Equal(0L, automaton.CountMatches("nothing to see"));
     }
 
     // ---- TryFindFirst ------------------------------------------------------------------------------

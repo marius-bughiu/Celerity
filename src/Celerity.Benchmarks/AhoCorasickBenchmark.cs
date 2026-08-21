@@ -27,11 +27,13 @@ using Celerity.Collections;
 // is the crossover arm and is expected to be a loss.
 //
 // FindAll compares against the alternation on a workload the loop cannot express at all — every occurrence of
-// every pattern, with which pattern it was. Read it knowing the two sides do NOT report the same set: a Regex
-// alternation consumes the text as it matches, so it reports leftmost non-overlapping matches, while this
-// reports every occurrence including the ones that start inside another. That is a capability difference and
-// not a measurement trick, and it means the Celerity arm is doing strictly more work — which is worth knowing
-// when reading the ratio.
+// every pattern, with which pattern it was. Both sides use their allocation-free enumerator — Regex.
+// EnumerateMatches over a span, not Regex.Matches, whose MatchCollection would charge the baseline for a Match
+// object per hit and make the allocation column an artifact of the API chosen rather than of the structure.
+// Read it knowing the two sides do NOT report the same set: a Regex alternation consumes the text as it
+// matches, so it reports leftmost non-overlapping matches, while this reports every occurrence including the
+// ones that start inside another. That is a capability difference and not a measurement trick, and it means
+// the Celerity arm is doing strictly more work — which is worth knowing when reading the ratio.
 //
 // Build is the price both sides charge before answering anything, and the Regex arm deliberately does NOT pass
 // RegexOptions.Compiled there: compiling emits IL and would lose by a margin that says nothing about either
@@ -129,7 +131,7 @@ public class AhoCorasickBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Count")]
-    public int AhoCorasick_Count() => presentAutomaton.CountMatches(text);
+    public long AhoCorasick_Count() => presentAutomaton.CountMatches(text);
 
     // ---- CountFew: the same workload at eight patterns, where the vectorized loop is expected to win ----
 
@@ -139,7 +141,7 @@ public class AhoCorasickBenchmark
 
     [Benchmark]
     [BenchmarkCategory("CountFew")]
-    public int AhoCorasick_CountFew() => fewAutomaton.CountMatches(text);
+    public long AhoCorasick_CountFew() => fewAutomaton.CountMatches(text);
 
     // ---- FindAll: every match with which pattern it was, which the k-IndexOf loop cannot express ----
 
@@ -148,7 +150,7 @@ public class AhoCorasickBenchmark
     public int Regex_FindAll()
     {
         int total = 0;
-        foreach (Match match in presentRegex.Matches(text))
+        foreach (ValueMatch match in presentRegex.EnumerateMatches(text))
             total += match.Length;
 
         return total;

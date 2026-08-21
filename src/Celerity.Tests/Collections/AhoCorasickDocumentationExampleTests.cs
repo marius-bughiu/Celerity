@@ -32,7 +32,7 @@ public class AhoCorasickDocumentationExampleTests
         var automaton = new AhoCorasick(Textbook);
 
         Assert.True(automaton.ContainsAny(Ushers));
-        Assert.Equal(3, automaton.CountMatches(Ushers));
+        Assert.Equal(3L, automaton.CountMatches(Ushers));
     }
 
     [Fact]
