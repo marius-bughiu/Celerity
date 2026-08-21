@@ -5473,33 +5473,35 @@ At **100,000 characters** of vocabulary-generated text, against one `Regex` alte
 
 | Workload | `Regex` alternation | `AhoCorasick` | Ratio |
 | --- | ---: | ---: | ---: |
-| `ContainsAny`, patterns **absent** (compiled) | 10.72 ms | 1.08 ms | **9.9x** |
-| Every match enumerated (compiled) | 5.29 ms | 1.08 ms | **4.9x** — both allocation-free |
-| Build (**uncompiled** — see below) | 291.7 µs | 67.1 µs | **4.3x** |
+| `ContainsAny`, patterns **absent** (compiled) | 10.63 ms | 1.06 ms | **10.0x** |
+| Every match enumerated (compiled) | 5.23 ms | 1.08 ms | **4.8x** — both allocation-free |
+| Build (**uncompiled** — see below) | 288.5 µs | 61.7 µs | **4.7x** |
 
 And against the k-`IndexOf` loop, which is the baseline that decides:
 
 | Workload | k-`IndexOf` loop | `AhoCorasick` | Ratio |
 | --- | ---: | ---: | ---: |
-| `CountMatches`, 256 patterns, present | 4.12 ms | 1.04 ms | **4.0x** |
-| `ContainsAny`, 256 patterns, **absent** | 1.02 ms | 1.07 ms | **0.95x — the loop wins** |
-| `CountMatches`, **eight** patterns, present | 92.8 µs | 500.8 µs | **0.19x — the loop wins by 5.4x** |
+| `CountMatches`, 256 patterns, present | 4.29 ms | 1.05 ms | **4.1x** |
+| `ContainsAny`, 256 patterns, **absent** | 1.04 ms | 1.06 ms | **0.98x — the loop wins** |
+| `CountMatches`, **eight** patterns, present | 99.2 µs | 501.1 µs | **0.20x — the loop wins by 5.0x** |
 
-At **1,000 characters** the `Regex` margin on `ContainsAny` *widens* to 16.3x, because an alternation pays a fixed cost per call that a short text cannot amortize, while enumeration settles at 4.4x. The loop margins go the other way: 2.2x on absent membership and 6.0x on counting, so the arm the loop wins at 100,000 characters it *loses* at 1,000 — a vectorized scan needs a long text to pull ahead. It still wins the eight-pattern arm at both sizes, by 4.1x here.
+At **1,000 characters** the `Regex` margin on `ContainsAny` *widens* to 16.4x, because an alternation pays a fixed cost per call that a short text cannot amortize, while enumeration settles at 4.3x. The loop margins go the other way: 2.2x on absent membership and 6.7x on counting, so the arm the loop wins at 100,000 characters it *loses* at 1,000 — a vectorized scan needs a long text to pull ahead. It still wins the eight-pattern arm at both sizes, by 4.0x here.
+
+**Every figure above carries about a tenth of slop, and that is measured rather than assumed.** Two CI runs of this same code — same workflow, same runner class, only a benchmark-arm rename between them — put build at 4.3x and 4.7x, the eight-pattern loop margin at 5.4x and 5.0x, and the 1,000-character counting margin at 6.0x and 6.7x. The tables publish the run on the final commit, which is the one the benchmark comment on this PR shows. **No verdict moved between the two**: every win stayed a win, and the absent-membership loss stayed a loss. But read the ratios as ±10%, and the break-evens below as coarser still — a crossover fitted from two noisy points inherits the noise of both.
 
 ### The loop wins an arm
 
-**Ruling out 256 absent patterns is a loss, at 0.95x**, and it is the number to read first because it is the one that decides whether to reach for this at all. `string.Contains` *does* read the whole text here — the benchmark builds each absent needle from a real substring and appends a `#`, so its first character is present and only its last is not — but a scan that never finds a candidate worth verifying stays inside its vectorized sweep, covering many characters per step where this pass covers one. 256 such sweeps beat one scalar pass. Counting *present* patterns is the opposite shape: every hit drops the loop out of that sweep and makes it restart, and there this is 4.0x ahead.
+**Ruling out 256 absent patterns is a loss, at 0.98x**, and it is the number to read first because it is the one that decides whether to reach for this at all. `string.Contains` *does* read the whole text here — the benchmark builds each absent needle from a real substring and appends a `#`, so its first character is present and only its last is not — but a scan that never finds a candidate worth verifying stays inside its vectorized sweep, covering many characters per step where this pass covers one. 256 such sweeps beat one scalar pass. Counting *present* patterns is the opposite shape: every hit drops the loop out of that sweep and makes it restart, and there this is 4.1x ahead.
 
 Read that loss knowing the arm is **generous to the loop by construction**: one absent character, at the end, occurring nowhere in the text, is the cheapest possible thing for a vectorized scan to rule out. A pattern set whose absent needles collide more with the text would move the number toward this type. The arm is published as it is measured rather than reshaped until it flatters.
 
-A local run said 1.19x *in this type's favour* on the same arm. CI's same-runner A/B says 0.95x against. The published figure is CI's; the local one was measured on a machine with a different cache hierarchy and is not what this repo publishes.
+A local run said 1.19x *in this type's favour* on the same arm. CI's same-runner A/B says 0.98x against — and said 0.95x on the previous run, both losses. The published figure is CI's; the local one was measured on a machine with a different cache hierarchy and is not what this repo publishes.
 
-**So the crossover moves with all three.** The loop is `O(k · n)` and this is `O(n + matches)`, so the counting arms bracket it: 8 → 256 patterns costs the loop **44x** (92.8 µs → 4.12 ms) and costs this automaton **2.1x** (500.8 µs → 1.04 ms).
+**So the crossover moves with all three.** The loop is `O(k · n)` and this is `O(n + matches)`, so the counting arms bracket it: 8 → 256 patterns costs the loop **43x** (99.2 µs → 4.29 ms) and costs this automaton **2.1x** (501.1 µs → 1.05 ms).
 
 Two cautions on that 2.1x, because it is the number the extrapolation below rests on. It is **not** purely cache footprint: `few` is the first eight of the same `present` set, every one of which occurs at least once, so the 256-pattern arm also reports far more matches — and `CountMatches` is `O(n + matches)`, doing work per match reported. The benchmark does not separate the two, so read 2.1x as *what this generated workload cost*, not as a measured cache effect. And extrapolating two points is an estimate, not a measurement: it puts the counting break-even somewhere around **35–50 patterns**, and — since the loop is still ahead on absent membership at 256 — puts *that* one out past **250**. Both are order-of-magnitude guidance for this text shape at 100,000 characters. At 1,000 characters the absent-membership verdict reverses outright. Below those counts, write the loop.
 
-**What the numbers do not say.** The enumeration row is not like-for-like, and reading it in this type's *favour* would be the wrong way round: a `Regex` alternation consumes the text as it matches, so it reports leftmost **non-overlapping** matches, while this reports every occurrence including the ones that start inside another. The Celerity arm is doing strictly more work for that 4.9x. And the `Build` row deliberately compares against an **uncompiled** `Regex` — `RegexOptions.Compiled` emits IL and would lose by a margin that says nothing about either structure — while the query arms use the compiled form, which is what a caller keeps around.
+**What the numbers do not say.** The enumeration row is not like-for-like, and reading it in this type's *favour* would be the wrong way round: a `Regex` alternation consumes the text as it matches, so it reports leftmost **non-overlapping** matches, while this reports every occurrence including the ones that start inside another. The Celerity arm is doing strictly more work for that 4.8x. And the `Build` row deliberately compares against an **uncompiled** `Regex` — `RegexOptions.Compiled` emits IL and would lose by a margin that says nothing about either structure — while the query arms use the compiled form, which is what a caller keeps around.
 
 ### API
 
@@ -5540,7 +5542,7 @@ The match carries a position and a length rather than the matched text, so produ
 
 - **Overlapping matches are reported, not resolved.** Over `"ushers"` with `"he"`, `"she"` and `"hers"` there are three matches — `"she"` at 1, `"he"` at 2 and `"hers"` at 2 — and all three are produced. A `Regex` alternation consumes the text as it matches and so reports one of them. Picking a winner is left to the caller, because the caller is the only one who knows whether the right policy is longest, first-listed, or all of them.
 - **The reporting order is by end position, not by start.** Ascending `End`, and **longest first** among matches ending together, which is the order the automaton discovers them in. With `"bc"` and `"abcd"` over `"abcd"`, `"bc"` is reported first because it ends first, even though `"abcd"` starts earlier — and `TryFindFirst` returns `"bc"` for the same reason. A single left-to-right pass cannot do better: when `"bc"` completes, the automaton has no way to know whether the longer pattern starting earlier will complete at all. Sort by `Start` when leftmost order is wanted.
-- **The pattern count decides, and below the crossover this loses.** At eight patterns the k-`IndexOf` loop is 4–5x faster, and on CI it still wins the 256-pattern *absent-membership* arm outright, because a scan with no candidate to verify stays inside its vectorized sweep and covers many characters per step where this pass covers one. Counting present patterns is the shape that turns over, at 4.0x. See [Measured](#measured-2).
+- **The pattern count decides, and below the crossover this loses.** At eight patterns the k-`IndexOf` loop is 4–5x faster, and on CI it still wins the 256-pattern *absent-membership* arm outright, because a scan with no candidate to verify stays inside its vectorized sweep and covers many characters per step where this pass covers one. Counting present patterns is the shape that turns over, at 4.1x. See [Measured](#measured-2).
 - **Build-once.** The automaton is immutable; changing the pattern set means building a new one, as with [`SuffixArray`](#suffixarray), [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue) and [`CompressedGraph`](#compressedgraph). Nothing mutates, so concurrent readers need no synchronization and an enumerator can never be invalidated.
 - **Ordinal, over UTF-16 code units.** Characters are compared by value — what `StringComparison.Ordinal` compares. There is no culture-aware or case-insensitive mode: fold the patterns and the text the same way before building when case-insensitive matching is wanted. A surrogate pair is two code units, so a pattern may match starting at a low surrogate — check the boundary in your own text when that matters.
 - **Duplicates collapse; the empty pattern is rejected.** The same pattern supplied twice yields one entry, keeping the id of its first appearance, so `Count` is the number of *distinct* patterns. The empty string would match at every position and make `ContainsAny` vacuously `true`, so it throws rather than being silently absorbed.
