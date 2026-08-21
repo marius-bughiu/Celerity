@@ -21,10 +21,11 @@ using Celerity.Collections;
 // ItemCount axis and the text length is the one that belongs on it. ItemCount is the text length, matching
 // SuffixArrayBenchmark, and *Few is the eight-pattern variant of the same workload.
 //
-// Contains is the arm to read first, and its patterns are ABSENT: the loop then has to read the whole text
-// once per pattern, which is the shape this type exists to collapse into one pass. Count is the same asymmetry
-// with patterns that are present and repeated, where the loop additionally restarts from every hit. CountFew
-// is the crossover arm and is expected to be a loss.
+// Contains is the arm to read first, and it is the one that goes AGAINST this type: its patterns are absent,
+// and a vectorized scan rules an absent pattern out on its first character without reading the text, so 256
+// quick refusals beat one full character-at-a-time pass and the loop wins at 100,000 characters. Count is the
+// opposite shape — patterns that are present and repeated, where every hit forces the loop to restart — and it
+// is where the automaton pulls ahead. CountFew is the crossover arm at eight patterns and is expected to lose.
 //
 // FindAll compares against the alternation on a workload the loop cannot express at all — every occurrence of
 // every pattern, with which pattern it was. Both sides use their allocation-free enumerator — Regex.

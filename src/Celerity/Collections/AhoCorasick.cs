@@ -52,8 +52,10 @@ namespace Celerity.Collections;
 /// one state's <c>b</c> outgoing edges. The <c>k</c>-<c>IndexOf</c> loop is <c>O(k · n)</c>, so the margin
 /// grows with the pattern count — and it starts <i>negative</i>, because
 /// <see cref="MemoryExtensions.IndexOf{T}(ReadOnlySpan{T}, ReadOnlySpan{T})"/> is vectorized and this pass is
-/// a character at a time, so a handful of patterns is a case the loop wins. The measured crossover and every
-/// ratio behind it are in <c>docs/api/collections.md</c>.
+/// a character at a time. Where the crossover sits depends on the <i>shape</i> as well as the count: counting
+/// present patterns turns over near 35–50 of them, while merely ruling <i>absent</i> ones out does not turn
+/// over until several hundred, because a vectorized scan bails on the first character and never reads the
+/// text. Every measured ratio is in <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
 /// <b>Footprint.</b> The automaton holds one state per distinct character position across the patterns, plus
@@ -328,9 +330,12 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     /// <returns><c>true</c> when at least one pattern occurs.</returns>
     /// <remarks>
     /// The cheapest tier: the pass stops at the first match and no <see cref="PatternMatch"/> is ever formed.
-    /// Absent patterns are the case with no shortcut — the text has to be read to the end to rule them out —
-    /// and they are also the case the <c>k</c>-<c>IndexOf</c> loop is slowest on, since it reads the whole
-    /// text once per pattern.
+    /// Absent patterns are the case with no shortcut <i>here</i> — the text has to be read to the end to rule
+    /// them out — but they are the case the <c>k</c>-<c>IndexOf</c> loop is <b>fastest</b> on, not slowest:
+    /// a vectorized scan bails on the first character and never reads the text either, so 256 quick refusals
+    /// beat one full pass. This is the arm the loop still wins at 256 patterns; <see cref="CountMatches"/>
+    /// over patterns that are <i>present</i> is the shape that turns over, because every hit forces the loop
+    /// to restart.
     /// </remarks>
     public bool ContainsAny(ReadOnlySpan<char> text)
     {
