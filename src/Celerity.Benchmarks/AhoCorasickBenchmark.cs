@@ -31,10 +31,12 @@ using Celerity.Collections;
 // makes it restart — and it is where the automaton pulls ahead. CountFew is the crossover arm at eight
 // patterns and is expected to lose.
 //
-// FindAll compares against the alternation on a workload the loop cannot express at all — every occurrence of
-// every pattern, with which pattern it was. Both sides use their allocation-free enumerator — Regex.
-// EnumerateMatches over a span, not Regex.Matches, whose MatchCollection would charge the baseline for a Match
-// object per hit and make the allocation column an artifact of the API chosen rather than of the structure.
+// EnumerateMatches compares against the alternation on a workload the loop cannot express at all — every
+// occurrence of every pattern, with which pattern it was. The arm is named for the method it calls: both sides
+// use their allocation-free enumerator — Regex.EnumerateMatches over a span, not Regex.Matches, whose
+// MatchCollection would charge the baseline for a Match object per hit and make the allocation column an
+// artifact of the API chosen rather than of the structure. The convenience tier, AhoCorasick.FindAll, does
+// allocate a List and an array, and is deliberately NOT what this arm measures.
 // Read it knowing the two sides do NOT report the same set: a Regex alternation consumes the text as it
 // matches, so it reports leftmost non-overlapping matches, while this reports every occurrence including the
 // ones that start inside another. That is a capability difference and not a measurement trick, and it means
@@ -150,11 +152,11 @@ public class AhoCorasickBenchmark
     [BenchmarkCategory("CountFew")]
     public long AhoCorasick_CountFew() => fewAutomaton.CountMatches(text);
 
-    // ---- FindAll: every match with which pattern it was, which the k-IndexOf loop cannot express ----
+    // ---- EnumerateMatches: every match with which pattern it was, which the k-IndexOf loop cannot express ----
 
     [Benchmark(Baseline = true)]
-    [BenchmarkCategory("FindAll")]
-    public int Regex_FindAll()
+    [BenchmarkCategory("EnumerateMatches")]
+    public int Regex_EnumerateMatches()
     {
         int total = 0;
         foreach (ValueMatch match in presentRegex.EnumerateMatches(text))
@@ -164,8 +166,8 @@ public class AhoCorasickBenchmark
     }
 
     [Benchmark]
-    [BenchmarkCategory("FindAll")]
-    public int AhoCorasick_FindAll()
+    [BenchmarkCategory("EnumerateMatches")]
+    public int AhoCorasick_EnumerateMatches()
     {
         int total = 0;
         foreach (PatternMatch match in presentAutomaton.EnumerateMatches(text))

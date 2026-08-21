@@ -788,14 +788,20 @@ Ordinal, over UTF-16 code units — fold the text and the pattern the same way f
 ```csharp
 var alerts = new AhoCorasick(["OutOfMemory", "StackOverflow", "Timeout", "Deadlock"]);
 
+// The allocation-free tier: the enumerator drives the scan as it is pulled, and a line with no
+// match simply yields nothing — do NOT guard it with ContainsAny, which would scan the line twice.
 foreach (string line in File.ReadLines(path))
 {
-    if (!alerts.ContainsAny(line))                     // one pass, whatever the rule set grows to
-        continue;
-
-    // The allocation-free tier: the enumerator drives the scan as it is pulled.
     foreach (PatternMatch match in alerts.EnumerateMatches(line))
         Console.WriteLine($"{alerts[match.PatternId]} at {match.Start}");
+}
+
+// ContainsAny is the tier for when a boolean is all you need: it stops at the first match rather
+// than running the line out. It takes a ReadOnlySpan<char>, so it is not a Func<string, bool>.
+foreach (string line in File.ReadLines(path))
+{
+    if (alerts.ContainsAny(line))
+        Quarantine(line);
 }
 
 // Overlapping matches are reported, not resolved — picking a winner is your policy, not the matcher's.

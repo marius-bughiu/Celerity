@@ -530,9 +530,9 @@ function escapeHtml(s) {
     // card so each has one reference series. String_* is the k-IndexOf loop, which is O(k · n) but vectorized,
     // and Regex_* is one compiled alternation, which is the strongest thing the BCL has. The card to read
     // FIRST is CountFew: it is the same workload at eight patterns instead of 256 and it is expected to LOSE,
-    // because that is where the crossover is. FindAll compares against the alternation on a workload where
+    // because that is where the crossover is. EnumerateMatches compares against the alternation on a workload where
     // this side does strictly more work — it reports overlapping matches and the Regex does not.
-    { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',         vs: 'a k-IndexOf loop on the Contains/Count/CountFew cards, or one Regex alternation on the ContainsRegex/FindAll/Build cards — compiled on the query cards, uncompiled on Build', ops: ['Contains', 'ContainsRegex', 'Count', 'CountFew', 'FindAll', 'Build'] },
+    { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',         vs: 'a k-IndexOf loop on the Contains/Count/CountFew cards, or one Regex alternation on the ContainsRegex/EnumerateMatches/Build cards — compiled on the query cards, uncompiled on Build', ops: ['Contains', 'ContainsRegex', 'Count', 'CountFew', 'EnumerateMatches', 'Build'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than

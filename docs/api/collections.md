@@ -5453,7 +5453,7 @@ The BCL has nothing that answers the same question. `string.IndexOf` and `Memory
 
 ### When to reach for it
 
-Any workload with many needles and a haystack that keeps arriving: log and alert scanning, keyword / profanity / brand filters, WAF and IOC rule sets, dictionary tokenizers and CJK word segmentation, DLP scanning, ad-block and URL rule matching. The deciding question is **how many patterns**, not how long the text is — see [Measured](#measured-2). Below roughly a few dozen patterns the k-`IndexOf` loop wins outright and you should write it.
+Any workload with many needles and a haystack that keeps arriving: log and alert scanning, keyword / profanity / brand filters, WAF and IOC rule sets, dictionary tokenizers and CJK word segmentation, DLP scanning, ad-block and URL rule matching. **Three things decide, not one**: how many patterns, whether they actually hit, and how long the text is — the last of those is not a tie-breaker but a verdict-flipper, since the 256-pattern absent-membership arm *loses* at 100,000 characters and *wins* at 1,000. See [Measured](#measured-2). At a few dozen patterns the k-`IndexOf` loop wins outright and you should write it.
 
 ### How it works
 
@@ -5495,7 +5495,9 @@ Read that loss knowing the arm is **generous to the loop by construction**: one 
 
 A local run said 1.19x *in this type's favour* on the same arm. CI's same-runner A/B says 0.95x against. The published figure is CI's; the local one was measured on a machine with a different cache hierarchy and is not what this repo publishes.
 
-**So the crossover is the pattern count, and it depends on the shape.** The loop is `O(k · n)` and this is `O(n)`, so the counting arms bracket it: 8 → 256 patterns costs the loop **44x** (92.8 µs → 4.12 ms) and costs this automaton **2.1x** (500.8 µs → 1.04 ms), that residual being cache footprint rather than work per character. Fitting the two lines puts the counting break-even near **35–50 patterns**. On absent membership the loop is still ahead at 256, and the same arithmetic puts *that* break-even out near **270**. Below those, write the loop.
+**So the crossover moves with all three.** The loop is `O(k · n)` and this is `O(n + matches)`, so the counting arms bracket it: 8 → 256 patterns costs the loop **44x** (92.8 µs → 4.12 ms) and costs this automaton **2.1x** (500.8 µs → 1.04 ms).
+
+Two cautions on that 2.1x, because it is the number the extrapolation below rests on. It is **not** purely cache footprint: `few` is the first eight of the same `present` set, every one of which occurs at least once, so the 256-pattern arm also reports far more matches — and `CountMatches` is `O(n + matches)`, doing work per match reported. The benchmark does not separate the two, so read 2.1x as *what this generated workload cost*, not as a measured cache effect. And extrapolating two points is an estimate, not a measurement: it puts the counting break-even somewhere around **35–50 patterns**, and — since the loop is still ahead on absent membership at 256 — puts *that* one out past **250**. Both are order-of-magnitude guidance for this text shape at 100,000 characters. At 1,000 characters the absent-membership verdict reverses outright. Below those counts, write the loop.
 
 **What the numbers do not say.** The enumeration row is not like-for-like, and reading it in this type's *favour* would be the wrong way round: a `Regex` alternation consumes the text as it matches, so it reports leftmost **non-overlapping** matches, while this reports every occurrence including the ones that start inside another. The Celerity arm is doing strictly more work for that 4.9x. And the `Build` row deliberately compares against an **uncompiled** `Regex` — `RegexOptions.Compiled` emits IL and would lose by a margin that says nothing about either structure — while the query arms use the compiled form, which is what a caller keeps around.
 
