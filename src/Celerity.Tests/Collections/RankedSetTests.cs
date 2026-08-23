@@ -625,10 +625,12 @@ public class RankedSetTests
         Assert.Equal(0, neverUsed.Count);
         Assert.Empty(neverUsed);
 
-        // Emptied rather than never used: the slot arrays are still there, and trimming releases them
-        // without disturbing anything observable.
+        // Emptied by removal rather than never used — `Clear()` releases the slot arrays itself, so it is
+        // `Remove` that leaves them behind, and trimming releases them without disturbing anything observable.
         var emptied = new RankedSet<int>([1, 2, 3]);
-        emptied.Clear();
+        Assert.True(emptied.Remove(1));
+        Assert.True(emptied.Remove(2));
+        Assert.True(emptied.Remove(3));
 
         emptied.TrimExcess();
 
@@ -656,6 +658,28 @@ public class RankedSetTests
         var overEmpty = empty.GetEnumerator();
         empty.TrimExcess();
         Assert.False(overEmpty.MoveNext());
+    }
+
+    [Fact]
+    public void Clear_ShouldReleaseTheSlotArrays_NotJustTheBuckets()
+    {
+        // The high-water bucket capacity and slot count are what make a contracted set pay more than its size
+        // suggests, and Clear is documented as resetting both — so it has to drop the metadata arrays too,
+        // not only null out the buckets they point at. Observable through the rebuilt set behaving like a new
+        // one at every rank.
+        var set = new RankedSet<int>(Enumerable.Range(0, 300_000));
+
+        set.Clear();
+
+        Assert.Equal(0, set.Count);
+        Assert.Empty(set);
+
+        for (int i = 0; i < 2000; i++)
+            set.Add(i);
+
+        AssertRanksAgreeWithOrder(set);
+        Assert.Equal(0, set.Min);
+        Assert.Equal(1999, set.Max);
     }
 
     // ---- ranges ------------------------------------------------------------------------------------

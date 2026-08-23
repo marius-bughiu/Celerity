@@ -393,16 +393,20 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         Delete(bucket, offset);
     }
 
-    /// <summary>Removes every element. The set releases all of its bucket arrays.</summary>
+    /// <summary>
+    /// Removes every element. The set releases its buckets <i>and</i> the slot and index arrays behind them,
+    /// so it is left exactly as a new one — which is what makes this reset the high-water terms in the
+    /// remarks, and not merely empty the set.
+    /// </summary>
     public void Clear()
     {
         if (_count == 0)
             return;
 
-        Array.Clear(_buckets, 0, _bucketCount);
-        Array.Clear(_lengths, 0, _bucketCount);
-        Array.Clear(_maxes, 0, _bucketCount);
-        Array.Clear(_tree, 0, _tree.Length);
+        _buckets = [];
+        _lengths = [];
+        _maxes = [];
+        _tree = new int[1];
         _bucketCount = 0;
         _count = 0;
         _version++;
