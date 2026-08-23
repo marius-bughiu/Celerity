@@ -5286,7 +5286,13 @@ There is no capacity and no load factor. The `IEnumerable` overloads throw `Argu
 | `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
 
-Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). That only matters for a comparer that orders two elements equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — and then it matters for exactly the four members that ask whether an element of *this* set is in `other`:
+
+| Follow `TComparer` throughout | Compare `other` with `EqualityComparer<T>.Default` |
+| --- | --- |
+| `UnionWith`, `ExceptWith`, `SymmetricExceptWith`, `Overlaps`, `IsSupersetOf`, `IsProperSupersetOf` | `IntersectWith`, `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf` |
+
+So under a case-insensitive order a set holding `"a"` answers `true` to `Contains("A")` and still empties under `IntersectWith(["A"])` — which is where the right-hand column differs from `SortedSet<T>`. A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
 
 ### Usage example
 

@@ -102,7 +102,16 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// Membership is defined by <typeparamref name="TComparer"/> — two elements are the same element when the
 /// comparer orders them equal. The <see cref="ISet{T}"/> algebra members materialize the right-hand side into
 /// a <see cref="HashSet{T}"/>, so they compare <i>that</i> side with
-/// <see cref="EqualityComparer{T}.Default"/>, matching the rest of the family. Like the rest of the family,
+/// <see cref="EqualityComparer{T}.Default"/>, matching the rest of the family. That matters only for a
+/// comparer that orders two elements equal when <see cref="EqualityComparer{T}.Default"/> does not — a
+/// case-insensitive order, say — and then it matters for exactly the four members that ask whether an
+/// element of <i>this</i> set is in the right-hand side: <see cref="IntersectWith"/>,
+/// <see cref="SetEquals"/>, <see cref="IsSubsetOf"/> and <see cref="IsProperSubsetOf"/>. Under such an order
+/// a set holding <c>"a"</c> answers <c>true</c> to <c>Contains("A")</c> and still empties under
+/// <c>IntersectWith(["A"])</c>, which is where this differs from <see cref="SortedSet{T}"/>. The members that
+/// only ever probe this set — <see cref="UnionWith"/>, <see cref="ExceptWith"/>,
+/// <see cref="SymmetricExceptWith"/>, <see cref="Overlaps"/>, <see cref="IsSupersetOf"/> and
+/// <see cref="IsProperSupersetOf"/> — follow the comparer throughout. Like the rest of the family,
 /// <see cref="Add"/> throws on a duplicate — use <see cref="TryAdd"/> when the element may already be
 /// present. A <c>null</c> element is legal and <see cref="Comparer{T}.Default"/> orders it before every
 /// non-<c>null</c> one. This type is not thread-safe; concurrent callers must synchronize externally.
@@ -659,7 +668,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
             // so it is preferred while the bucket is still smaller than what this many elements calls for.
             // Only a bucket already at the target capacity splits, and that is what bounds the bucket count
             // to O(sqrt n) and amortizes the split's cost away. See TargetCapacity.
-            int targetCapacity = TargetCapacity(_count);
+            int targetCapacity = TargetCapacity(_count + 1);
             if (_buckets[bucket].Length < targetCapacity)
             {
                 GrowBucket(bucket, targetCapacity);
@@ -710,7 +719,9 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     }
 
     // The capacity a bucket is grown or split at, for a set of `count` elements: the smallest power of two
-    // whose square is at least `count`, never below MinBucketCapacity.
+    // whose square is at least `count`, never below MinBucketCapacity. Callers pass the count the set will
+    // have once the mutation in flight has landed — at a square boundary the pre-insert count still asks for
+    // the narrower capacity, which would split the bucket the rule says to grow.
     //
     // This is what keeps the structure's cost honest, and it is not a tuning knob. A split inserts a bucket
     // between two others, so it shifts every later slot and rebuilds the Fenwick tree over them — Theta(b) in

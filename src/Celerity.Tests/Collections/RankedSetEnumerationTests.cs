@@ -262,4 +262,36 @@ public class RankedSetEnumerationTests
         set.SymmetricExceptWith([4, 7]);
         Assert.Equal<int[]>([3, 7], [.. set]);
     }
+
+    [Fact]
+    public void SetAlgebra_ShouldCompareTheOtherSideWithDefaultEquality_EvenWhenTheOrderDisagrees()
+    {
+        // Family behaviour, pinned here rather than left to be discovered. Membership is the comparer's, but
+        // the ISet<T> algebra materializes the right-hand side into a HashSet<T>, so the four members that ask
+        // whether an element of *this* set is in `other` go through default equality — and the six that only
+        // ever probe this set do not. A comparer that orders two values equal when the default equality
+        // comparer does not is the only way to tell, and this is where the split becomes observable.
+        var set = new RankedSet<string, CaseInsensitiveOrdinal>(["a"], default);
+
+        Assert.True(set.Contains("A"));
+        Assert.Equal(0, set.IndexOf("A"));
+
+        // Probe this set, so they follow the comparer.
+        Assert.True(set.Overlaps(["A"]));
+        Assert.True(set.IsSupersetOf(["A"]));
+        Assert.False(set.IsProperSupersetOf(["A"]));
+
+        // Probe `other` through the HashSet, so they follow default equality.
+        Assert.False(set.SetEquals(["A"]));
+        Assert.False(set.IsSubsetOf(["A"]));
+
+        set.IntersectWith(["A"]);
+        Assert.Equal(0, set.Count);
+    }
+
+    /// <summary>Orders strings case-insensitively, so the order disagrees with default equality.</summary>
+    private readonly struct CaseInsensitiveOrdinal : IComparer<string>
+    {
+        public int Compare(string? x, string? y) => string.Compare(x, y, StringComparison.OrdinalIgnoreCase);
+    }
 }
