@@ -5295,34 +5295,37 @@ Membership is defined by `TComparer` — two elements are the same element when 
 | --- | --- |
 | `UnionWith`, `ExceptWith`, `SymmetricExceptWith`, `Overlaps`, `IsSupersetOf`, `IsProperSupersetOf` | `IntersectWith`, `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf` |
 
-So under a case-insensitive order a set holding `"a"` answers `true` to `Contains("A")` and still empties under `IntersectWith(["A"])` — which is where the right-hand column differs from `SortedSet<T>`. A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
+So under a case-insensitive order a set holding `"a"` answers `true` to `Contains("A")` and still empties under `IntersectWith(["A"])` — which is where the right-hand column differs from `SortedSet<T>`. Whether a `null` element is legal is `TComparer`'s decision, not this type's: under `DefaultComparer<T>` — and so under the `RankedSet<T>` alias — `Comparer<T>.Default` orders `null` before every non-`null` element and it is an ordinary member, while a hand-written comparer that dereferences its arguments will throw on one. A value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
 
 ### Usage example
 
 ```csharp
 using Celerity.Collections;
 
-// A live leaderboard: scores arrive and expire, and both questions are asked of the current set.
-var scores = new RankedSet<int>();
+// The top N *distinct* scores, kept live as they arrive. This is a set, so an equal score is not a second
+// entry — which is what makes evicting by rank 0 exactly right here: the lowest distinct score is the one
+// that falls out of the top N. To keep every sample instead, make the element a composite the comparer
+// orders by score, e.g. (score, sampleId), so equal scores stay distinct and can be evicted individually.
+var top = new RankedSet<int>();
 
 foreach (int score in arriving)
 {
-    scores.TryAdd(score);
+    top.TryAdd(score);
 
-    if (scores.Count > windowSize)
+    if (top.Count > keep)
     {
-        scores.RemoveAt(0);      // drop the lowest, by rank — O(√n)
+        top.RemoveAt(0);      // drop the lowest distinct score, by rank — O(√n)
     }
 }
 
 // Where does this score stand, and who is at a given position?
-Console.WriteLine(scores.IndexOf(myScore));          // rank, or -1 if it is not in the set
-Console.WriteLine(scores.CountLessThan(myScore));    // the rank it would take, present or not
-Console.WriteLine(scores[scores.Count / 2]);         // the exact median
-Console.WriteLine(scores[scores.Count - 10]);        // the tenth from the top
+Console.WriteLine(top.IndexOf(myScore));          // rank, or -1 if it is not in the set
+Console.WriteLine(top.CountLessThan(myScore));    // the rank it would take, present or not
+Console.WriteLine(top[top.Count / 2]);            // the median of the scores retained
+Console.WriteLine(top[top.Count - 10]);           // the tenth from the top
 
 // The ordered surface is all there too.
-foreach (int score in scores.EnumerateRange(1000, 2000))
+foreach (int score in top.EnumerateRange(1000, 2000))
 {
     Process(score);
 }

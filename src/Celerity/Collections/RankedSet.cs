@@ -123,8 +123,11 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// <see cref="SymmetricExceptWith"/>, <see cref="Overlaps"/>, <see cref="IsSupersetOf"/> and
 /// <see cref="IsProperSupersetOf"/> — follow the comparer throughout. Like the rest of the family,
 /// <see cref="Add"/> throws on a duplicate — use <see cref="TryAdd"/> when the element may already be
-/// present. A <c>null</c> element is legal and <see cref="Comparer{T}.Default"/> orders it before every
-/// non-<c>null</c> one. This type is not thread-safe; concurrent callers must synchronize externally.
+/// present. Whether a <c>null</c> element is legal is <typeparamref name="TComparer"/>'s decision, not this
+/// type's: under <see cref="DefaultComparer{T}"/> — and so under the <see cref="RankedSet{T}"/> alias —
+/// <see cref="Comparer{T}.Default"/> orders <c>null</c> before every non-<c>null</c> element and it is an
+/// ordinary member, while a hand-written comparer that dereferences its arguments will throw on one. This
+/// type is not thread-safe; concurrent callers must synchronize externally.
 /// </para>
 /// <example>
 /// <code>
