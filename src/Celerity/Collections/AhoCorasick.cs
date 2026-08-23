@@ -147,6 +147,9 @@ public sealed class AhoCorasick : IReadOnlyList<string>
     /// <exception cref="ArgumentException">
     /// A pattern is <c>null</c>, or a pattern is the empty string — which would match at every position.
     /// </exception>
+    /// <exception cref="OverflowException">
+    /// The distinct patterns total more than <see cref="int.MaxValue"/> characters.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// <c>O(total pattern length)</c> expected: the patterns are threaded onto a trie — one hash probe per

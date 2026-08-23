@@ -1,3 +1,4 @@
+using System.Collections;
 using Celerity.Collections;
 
 namespace Celerity.Tests.Collections;
@@ -141,11 +142,13 @@ public class AhoCorasickTests
     }
 
     [Fact]
-    public void Constructor_ShouldReadTheSequenceOnce_WhenItIsNotAnArray()
+    public void Constructor_ShouldReadTheSequenceOnce_WhenItIsLazy()
     {
-        // A List<string> takes the copying path that an array argument skips.
-        var automaton = new AhoCorasick(new List<string> { "ab", "b" });
+        var source = new CountingEnumerable(["ab", "b"]);
 
+        var automaton = new AhoCorasick(source);
+
+        Assert.Equal(1, source.EnumerationCount);
         Assert.Equal(2, automaton.Count);
         Assert.Equal(2L, automaton.CountMatches("ab"));
     }
@@ -477,5 +480,20 @@ public class AhoCorasickTests
         var destination = new PatternMatch[4];
 
         Assert.Throws<ArgumentOutOfRangeException>(() => automaton.CopyMatches("ushers", destination, destinationIndex));
+    }
+
+    // Enumerable exactly once: it counts the calls to GetEnumerator so a constructor that read the sequence
+    // twice would be caught rather than merely producing the same automaton more slowly.
+    private sealed class CountingEnumerable(string[] items) : IEnumerable<string>
+    {
+        public int EnumerationCount { get; private set; }
+
+        public IEnumerator<string> GetEnumerator()
+        {
+            EnumerationCount++;
+            return ((IEnumerable<string>)items).GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
