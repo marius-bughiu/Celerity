@@ -741,4 +741,38 @@ public class TryAddDuplicateResizeTests
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
+
+    // RankedSet is the same shape with a different unit: its bucket holds 512 elements and splits in half
+    // when a 513th arrives, so the boundary sits there rather than at 31.
+
+    [Fact]
+    public void RankedSet_TryAdd_DuplicateAtBucketCapacity_KeepsEnumeratorValid()
+    {
+        var set = new RankedSet<int>(Enumerable.Range(0, 512)); // the single bucket is now exactly full
+
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current);
+
+        Assert.False(set.TryAdd(2));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(Enumerable.Range(0, 512), seen);
+    }
+
+    [Fact]
+    public void RankedSet_TryAdd_NewElementAtBucketCapacity_InvalidatesEnumerator()
+    {
+        var set = new RankedSet<int>(Enumerable.Range(0, 512)); // the next new element splits the bucket
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(set.TryAdd(1000));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
 }

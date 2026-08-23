@@ -5197,6 +5197,111 @@ foreach (int endpoint in active.EnumerateRange(windowStart, windowEnd))
 }
 ```
 
+## RankedSet&lt;T, TComparer&gt;
+
+```csharp
+public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T>
+    where TComparer : struct, IComparer<T>
+
+// Ordered by Comparer<T>.Default:
+public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
+```
+
+An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *what rank would this element occupy?* (`IndexOf`) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
+
+### The gap it fills
+
+This library could already rank and select three ways, and never over a set that changes: [`RankSelectBitVector`](#rankselectbitvector) over an *immutable* bit vector, [`FenwickTree<T>`](#fenwicktreet) and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) over a *fixed-length* sequence of positions. The ordered containers — [`BTreeSet<T, TComparer>`](#btreesett-tcomparer), [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictionarytkey-tvalue-tcomparer), [`Trie<TValue>`](#trietvalue) — have no rank at all.
+
+The BCL has no answer either, and this is a genuine gap rather than a "we are faster" claim:
+
+| The BCL answer | Mutation | Rank | Select |
+| --- | --- | --- | --- |
+| `SortedSet<T>` | `O(log n)` | none — `set.Count(x => x < v)` is `O(n)` | none — `set.ElementAt(k)` is `O(k)` |
+| `SortedList<TKey, TValue>` | `O(n)` memmove | `O(log n)` (`IndexOfKey`) | `O(1)` |
+| A hand-rolled sorted `List<T>` | `O(n)` memmove | `O(log n)` (`BinarySearch`) | `O(1)` |
+| `RankedSet<T, TComparer>` | `O(log n)` | `O(log n)` | `O(log n)` |
+
+Nothing in .NET is `O(log n)` on both halves. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
+
+### How it is laid out
+
+Elements live in a jagged array of sorted buckets of up to **512** each. A bucket splits in half when it fills and merges with a neighbour when it falls below a quarter and the union fits in half, so at least 128 operations separate one structural change from the next. Finding an element is a binary search over the per-bucket maxima followed by a binary search inside one contiguous array. The positional half is carried by a **Fenwick tree over the bucket lengths** — a few thousand `int`s at a million elements, which stay in cache: `IndexOf` is one prefix sum plus an in-bucket offset, and the indexer is one binary-lifting descent plus a direct array index. A mutation is one `O(log b)` point update on that tree plus a memmove bounded by the bucket capacity rather than by `n`; only a split or a merge rebuilds it, which amortizes to a few operations per mutation.
+
+That layout, rather than subtree counts hung off `BTreeSet`'s nodes, is why this ships as its own type: a B-tree select lands at a leaf after `log₃₂(n)` dependent pointer chases, and augmenting the existing type would charge every `BTreeSet` user memory and per-level update work for a query class they did not ask for.
+
+Footprint is one array object per bucket — roughly one per 384 elements in steady state — and no per-element node, against `SortedSet<T>` and its one heap object per element. Bucket arrays are allocated at full capacity, so element storage runs about `1.3x` the elements themselves in steady state and up to `2x` immediately after a round of splits.
+
+### When to choose it over `SortedSet` — and when not to
+
+Reach for it when the positional questions are asked of a set that changes. Reach for [`BTreeSet<T, TComparer>`](#btreesett-tcomparer) when they are never asked, for [`CeleritySet`](#celeritysett-thasher) or [`IntSet`](#intsetthasher) when order itself is not part of the question, and for a sorted `List<T>` when the set is built once and only queried — indexing one array is `O(1)` and unbeatable, and this type does not pretend otherwise. Small sets fit in cache and every option is competitive there. See the [RankedSet benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet) on the dashboard.
+
+### Constructors
+
+```csharp
+public RankedSet()
+public RankedSet(TComparer comparer)
+public RankedSet(IEnumerable<T> source)
+public RankedSet(IEnumerable<T> source, TComparer comparer)
+```
+
+There is no capacity and no load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and silently ignore duplicates.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `TComparer Comparer { get; }` | Element count; the comparer defining the order. |
+| `T this[int index] { get; }` | The `index`-th smallest, `O(log n)`. Throws `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `int IndexOf(T item)` | The rank of `item`, `O(log n)`, or `-1` when it is absent. |
+| `int CountLessThan(T item)` / `int CountLessThanOrEqual(T item)` | The rank `item` *would* occupy, whether or not it is present — what a percentile query needs. |
+| `void RemoveAt(int index)` | Remove by rank, `O(log n)`. No BCL ordered container offers this at all. |
+| `void Add(T item)` | Insert; throws `ArgumentException` when the element is already present (the family-wide set convention). |
+| `bool TryAdd(T item)` | Non-throwing insert. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
+| `bool Contains(T item)` / `bool Remove(T item)` | `O(log n)`. |
+| `void Clear()` | Drop every element; the set releases all of its bucket arrays. |
+| `T Min { get; }` / `T Max { get; }` | Smallest / largest element, `O(1)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
+| `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | Smallest element **≥** / **>** `item`, `O(log n)`. |
+| `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | The elements of the half-open range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. |
+| `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` / `SetEquals` | The `ISet<T>` / `IReadOnlySet<T>` queries. |
+| `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
+
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A live leaderboard: scores arrive and expire, and both questions are asked of the current set.
+var scores = new RankedSet<int>();
+
+foreach (int score in arriving)
+{
+    scores.TryAdd(score);
+
+    if (scores.Count > windowSize)
+    {
+        scores.RemoveAt(0);      // drop the lowest, by rank — O(log n)
+    }
+}
+
+// Where does this score stand, and who is at a given position?
+Console.WriteLine(scores.IndexOf(myScore));          // rank, or -1 if it is not in the set
+Console.WriteLine(scores.CountLessThan(myScore));    // the rank it would take, present or not
+Console.WriteLine(scores[scores.Count / 2]);         // the exact median
+Console.WriteLine(scores[scores.Count - 10]);        // the tenth from the top
+
+// The ordered surface is all there too.
+foreach (int score in scores.EnumerateRange(1000, 2000))
+{
+    Process(score);
+}
+```
+
 ## CompressedGraph
 
 ```csharp
