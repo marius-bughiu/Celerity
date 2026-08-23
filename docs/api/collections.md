@@ -5207,7 +5207,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
 public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 ```
 
-An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *what rank would this element occupy?* (`IndexOf`) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
+An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *where does this element rank?* (`IndexOf` for one that is present, `CountLessThan` for the rank one *would* take whether or not it is) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
 
 The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#how-it-is-laid-out) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
 
@@ -5248,7 +5248,7 @@ The `√n` term is the in-bucket memmove, and it is the cheapest linear-time ope
 
 That layout, rather than subtree counts hung off `BTreeSet`'s nodes, is why this ships as its own type: a B-tree select lands at a leaf after `log₃₂(n)` dependent pointer chases, and augmenting the existing type would charge every `BTreeSet` user memory and per-level update work for a query class they did not ask for.
 
-Footprint is one array object per bucket — roughly one per three quarters of a bucket capacity in steady state — and no per-element node, against `SortedSet<T>` and its one heap object per element. Bucket arrays are allocated at their full capacity, so element storage runs about `1.3x` the elements themselves in steady state and up to `2x` immediately after a round of splits. The capacity only ever rises with the element count: a set that has been large and is now small keeps the wider arrays until it is `Clear()`ed.
+Footprint is one array object per bucket — roughly one per three quarters of a bucket capacity in steady state — and no per-element node, against `SortedSet<T>` and its one heap object per element. Bucket arrays are allocated at their full capacity, so element storage runs about `1.3x` the elements themselves in steady state and up to `2x` immediately after a round of splits. The capacity only ever rises with the element count, so a set that has been large and is now small keeps the wider arrays — and the memory that goes with them — until `TrimExcess()` rebuilds it at the current size, or `Clear()` releases everything.
 
 ### When to choose it over `SortedSet` — and when not to
 

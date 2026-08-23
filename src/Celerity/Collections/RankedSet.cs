@@ -30,7 +30,8 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 
 /// <summary>
 /// An <b>order-statistics set</b>: a sorted set that also answers the two positional questions no BCL ordered
-/// container can — <i>what rank would this element occupy?</i> (<see cref="IndexOf"/>) and <i>what is the
+/// container can — <i>where does this element rank?</i> (<see cref="IndexOf"/> for one that is present,
+/// <see cref="CountLessThan"/> for the rank one <i>would</i> take whether or not it is) and <i>what is the
 /// k-th smallest?</i> (<see cref="this[int]"/>) — both in <c>O(log n)</c>, on a set that is still being
 /// inserted into and removed from.
 /// </summary>
