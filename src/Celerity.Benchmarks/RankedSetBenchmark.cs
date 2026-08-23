@@ -74,9 +74,11 @@ public class RankedSetBenchmark
         sortedList = [.. Enumerable.Range(0, ItemCount)];
         ranked = new RankedSet<int>(keys);
 
-        // The sliding window the Mixed group maintains. A quarter of the sweep keeps the hand-rolled list's
-        // per-mutation memmove honest without letting that one arm dominate the whole run's wall clock.
-        window = Math.Max(1, ItemCount / 4);
+        // The sliding window the Mixed group maintains. The group asks a rank and a select on *every* step,
+        // and the SortedSet answers to both are linear in the window, so the window is a twentieth of the
+        // sweep: large enough that the live set is a real one (5,000 elements at the 100k sweep) and small
+        // enough that the baseline arm does not run for minutes.
+        window = Math.Max(1, ItemCount / 20);
 
         rangeFrom = ItemCount / 2;
         rangeTo = rangeFrom + Math.Max(1, ItemCount / 100);
@@ -351,10 +353,11 @@ public class RankedSetBenchmark
     }
 
     // ---- Mixed: the documented win workload ----------------------------------------------------------
-    // A sliding window over a stream — insert the arriving value, evict the one that left the window, and
-    // every 512th step ask for the rank of the newest value and for the median of what is currently in.
-    // That is the leaderboard / live-percentile shape, and it is the only one where both baselines are
-    // paying their weakness at once: the tree for the two linear queries, the list for the memmoves.
+    // A sliding window over a stream: insert the arriving value, evict the one that left the window, and then
+    // — on every step, which is what the pre-registered criterion says — ask for the rank of the newest value
+    // and for the median of what is currently in. That is the leaderboard / live-percentile shape, and it is
+    // the only group where both baselines pay their weakness at once: the tree for the two linear queries,
+    // the list for the memmove per mutation.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Mixed")]
@@ -371,21 +374,18 @@ public class RankedSetBenchmark
                 set.Remove(keys[i - window]);
             }
 
-            if ((i & 511) == 0)
+            int rank = 0;
+            foreach (int item in set)
             {
-                int rank = 0;
-                foreach (int item in set)
+                if (item >= keys[i])
                 {
-                    if (item >= keys[i])
-                    {
-                        break;
-                    }
-
-                    rank++;
+                    break;
                 }
 
-                result += rank + set.ElementAt(set.Count / 2);
+                rank++;
             }
+
+            result += rank + set.ElementAt(set.Count / 2);
         }
 
         return result;
@@ -415,11 +415,8 @@ public class RankedSetBenchmark
                 }
             }
 
-            if ((i & 511) == 0)
-            {
-                int found = list.BinarySearch(keys[i]);
-                result += (found >= 0 ? found : ~found) + list[list.Count / 2];
-            }
+            int found = list.BinarySearch(keys[i]);
+            result += (found >= 0 ? found : ~found) + list[list.Count / 2];
         }
 
         return result;
@@ -440,10 +437,7 @@ public class RankedSetBenchmark
                 set.Remove(keys[i - window]);
             }
 
-            if ((i & 511) == 0)
-            {
-                result += set.CountLessThan(keys[i]) + set[set.Count / 2];
-            }
+            result += set.CountLessThan(keys[i]) + set[set.Count / 2];
         }
 
         return result;

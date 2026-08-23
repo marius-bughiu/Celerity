@@ -60,16 +60,25 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// exact percentiles over a moving window, a sweep line that needs the median of its active set.
 /// </para>
 /// <para>
-/// <b>The layout.</b> Elements live in a jagged array of sorted buckets of up to <c>512</c> each. A bucket
-/// splits in half when it fills and merges with a neighbour when it falls below a quarter and the union fits
-/// in half, so there are at least <c>128</c> operations between one structural change and the next. Finding
-/// an element is a binary search over the per-bucket maxima followed by a binary search inside one
-/// contiguous, prefetch-friendly array. The positional half is carried by a Fenwick tree over the
-/// <i>bucket lengths</i> — a few thousand <see cref="int"/>s at a million elements, which stay in cache:
-/// <see cref="IndexOf"/> is one prefix sum plus an in-bucket offset, and the indexer is one binary-lifting
-/// descent plus a direct array index. An insert or a remove is one <c>O(log b)</c> point update on that tree
-/// plus a memmove bounded by the bucket capacity rather than by <c>n</c>; only a split or a merge rebuilds
-/// it, which amortizes to a few operations per mutation.
+/// <b>The layout.</b> Elements live in a jagged array of sorted buckets — <b>sqrt decomposition</b>, with a
+/// Fenwick tree over the bucket lengths carrying the positional half. Finding an element is a binary search
+/// over the per-bucket maxima followed by a binary search inside one contiguous, prefetch-friendly array;
+/// <see cref="IndexOf"/> adds one prefix sum over that tree, and the indexer is one binary-lifting descent
+/// down it plus a direct array index. A bucket grows in place while it is smaller than the capacity the
+/// current element count calls for, and splits in half only once it is at that capacity; it merges with a
+/// neighbour when it falls below a quarter of it and the union fits in half.
+/// </para>
+/// <para>
+/// <b>The cost, stated exactly.</b> <see cref="Contains"/>, <see cref="IndexOf"/>,
+/// <see cref="CountLessThan"/>, the bounds and <see cref="this[int]"/> are <c>O(log n)</c>.
+/// <b><see cref="Add"/> and <see cref="Remove"/> are <c>O(√n)</c></b>, not <c>O(log n)</c>: two binary
+/// searches and an <c>O(log b)</c> Fenwick update, plus a memmove of at most one bucket. That memmove is the
+/// term that grows, and it is the cheapest linear-time operation the machine has — at a million elements it
+/// is half a kilobyte of contiguous copy, against a tree's chain of dependent pointer loads. The structural
+/// work — a split shifts every later bucket slot and rebuilds the tree, <c>Θ(b)</c> — is what the capacity
+/// rule is for: holding the bucket capacity at <c>Θ(√n)</c> pins <c>b</c> at <c>Θ(√n)</c> and the number of
+/// splits at <c>Θ(√n)</c>, so their total is <c>Θ(n)</c> and the amortized structural cost per mutation is a
+/// constant. A fixed capacity would instead leave it growing with <c>n</c>.
 /// </para>
 /// <para>
 /// <b>Where it wins and where it does not.</b> The documented win is the mixed workload the type exists for —
@@ -82,10 +91,12 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
-/// <b>Footprint.</b> One array object per bucket — roughly one per <c>384</c> elements in steady state — and
-/// no per-element node, against <see cref="SortedSet{T}"/>'s one heap node per element. Bucket arrays are
-/// allocated at full capacity, so the element storage runs about <c>1.3x</c> the elements themselves in
-/// steady state, and up to <c>2x</c> immediately after a round of splits.
+/// <b>Footprint.</b> One array object per bucket — roughly one per three quarters of a bucket capacity in
+/// steady state — and no per-element node, against <see cref="SortedSet{T}"/>'s one heap node per element.
+/// Bucket arrays are allocated at their full capacity, so element storage runs about <c>1.3x</c> the elements
+/// themselves in steady state and up to <c>2x</c> immediately after a round of splits. The capacity only ever
+/// rises with the element count; a set that has been large and is now small keeps the wider arrays until it
+/// is <see cref="Clear"/>ed.
 /// </para>
 /// <para>
 /// Membership is defined by <typeparamref name="TComparer"/> — two elements are the same element when the
@@ -114,25 +125,19 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     where TComparer : struct, IComparer<T>
 {
     /// <summary>
-    /// The most elements one bucket may hold. Sized so the memmove an insert costs — half a bucket on
-    /// average, one to two kilobytes for the element widths that dominate ordered-set use — stays inside a
-    /// handful of cache lines, while the bucket count stays small enough that the Fenwick tree over it fits
-    /// in cache at any realistic <c>n</c>.
+    /// The smallest a bucket is ever made. The memmove an insert costs is half a bucket on average, so at
+    /// this size it is one to two kilobytes for the element widths that dominate ordered-set use — a handful
+    /// of cache lines, and cheaper than the tree descent it replaces.
     /// </summary>
-    private const int BucketCapacity = 512;
-
-    /// <summary>The size of each half a full bucket splits into, and the ceiling on a merge's result.</summary>
-    private const int HalfCapacity = BucketCapacity / 2;
-
-    /// <summary>The length below which a bucket looks for a neighbour to merge with.</summary>
-    private const int MergeThreshold = BucketCapacity / 4;
+    private const int MinBucketCapacity = 512;
 
     /// <summary>The initial number of bucket slots. A power of two, as the Fenwick descent requires.</summary>
     private const int InitialSlots = 4;
 
-    // The elements, in ascending order across buckets and inside each one. Only [0, _bucketCount) is live;
-    // every live bucket array has length BucketCapacity, and only _lengths[i] of it is meaningful. No live
-    // bucket is ever empty, which is what lets a rank descent and the enumerators skip that case.
+    // The elements, in ascending order across buckets and inside each one. Only [0, _bucketCount) is live,
+    // and only _lengths[i] of bucket i is meaningful; a bucket's capacity is its array's own length, which
+    // differs between buckets as the target capacity grows. No live bucket is ever empty, which is what lets
+    // a rank descent and the enumerators skip that case.
     private T[][] _buckets = [];
     private int[] _lengths = [];
 
@@ -236,7 +241,10 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     public T Max =>
         TryGetMax(out T item) ? item : throw new InvalidOperationException("The set is empty.");
 
-    /// <summary>Adds an element, throwing when it is already present.</summary>
+    /// <summary>
+    /// Adds an element, throwing when it is already present. <c>O(√n)</c> — see the type's remarks; the
+    /// growing term is a memmove of at most one bucket, not a comparison count.
+    /// </summary>
     /// <param name="item">The element to add.</param>
     /// <exception cref="ArgumentException"><paramref name="item"/> is already present.</exception>
     public void Add(T item)
@@ -245,7 +253,10 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
             throw new ArgumentException($"The element '{item}' already exists in the set.", nameof(item));
     }
 
-    /// <summary>Adds an element only when it is absent. The non-throwing counterpart of <see cref="Add"/>.</summary>
+    /// <summary>
+    /// Adds an element only when it is absent, in <c>O(√n)</c>. The non-throwing counterpart of
+    /// <see cref="Add"/>.
+    /// </summary>
     /// <param name="item">The element to add.</param>
     /// <returns><c>true</c> if the element was added; <c>false</c> if it was already present.</returns>
     public bool TryAdd(T item) => Insert(item);
@@ -311,7 +322,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         return PrefixSum(bucket) + offset + (found ? 1 : 0);
     }
 
-    /// <summary>Removes <paramref name="item"/>, in <c>O(log n)</c>.</summary>
+    /// <summary>Removes <paramref name="item"/>, in <c>O(√n)</c> — see the type's remarks.</summary>
     /// <param name="item">The element to remove.</param>
     /// <returns><c>true</c> if an element was removed; <c>false</c> if it was absent.</returns>
     public bool Remove(T item)
@@ -329,8 +340,9 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     }
 
     /// <summary>
-    /// Removes the element at <paramref name="index"/> in ascending order, in <c>O(log n)</c>. No BCL ordered
-    /// container offers removal by rank at all.
+    /// Removes the element at <paramref name="index"/> in ascending order, in <c>O(√n)</c> — finding it is
+    /// <c>O(log n)</c> and the removal shifts at most one bucket. No BCL ordered container offers removal by
+    /// rank at all.
     /// </summary>
     /// <param name="index">The zero-based rank of the element to remove.</param>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -641,16 +653,28 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         if (found)
             return false;
 
-        if (_lengths[bucket] == BucketCapacity)
+        if (_lengths[bucket] == _buckets[bucket].Length)
         {
-            SplitBucket(bucket);
-
-            // The insertion point moves with the elements. An offset of exactly HalfCapacity stays on the
-            // left half, appended at its end, which the split left room for.
-            if (offset > HalfCapacity)
+            // Growing a full bucket in place is free of structural work — no slot shifts, no index rebuild —
+            // so it is preferred while the bucket is still smaller than what this many elements calls for.
+            // Only a bucket already at the target capacity splits, and that is what bounds the bucket count
+            // to O(sqrt n) and amortizes the split's cost away. See TargetCapacity.
+            int targetCapacity = TargetCapacity(_count);
+            if (_buckets[bucket].Length < targetCapacity)
             {
-                bucket++;
-                offset -= HalfCapacity;
+                GrowBucket(bucket, targetCapacity);
+            }
+            else
+            {
+                int half = SplitBucket(bucket);
+
+                // The insertion point moves with the elements. An offset of exactly `half` stays on the left
+                // half, appended at its end, which the split left room for.
+                if (offset > half)
+                {
+                    bucket++;
+                    offset -= half;
+                }
             }
         }
 
@@ -674,7 +698,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         if (_buckets.Length == 0)
             AllocateSlots(InitialSlots);
 
-        _buckets[0] = new T[BucketCapacity];
+        _buckets[0] = new T[MinBucketCapacity];
         _buckets[0][0] = item;
         _lengths[0] = 1;
         _maxes[0] = item;
@@ -685,10 +709,42 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         _version++;
     }
 
-    // Splits a full bucket into two half-full ones, so the insert that triggered it has room. The halves are
-    // adjacent, so every later bucket shifts up one slot and the Fenwick tree is rebuilt — O(b), paid once
-    // per HalfCapacity inserts into this bucket.
-    private void SplitBucket(int bucket)
+    // The capacity a bucket is grown or split at, for a set of `count` elements: the smallest power of two
+    // whose square is at least `count`, never below MinBucketCapacity.
+    //
+    // This is what keeps the structure's cost honest, and it is not a tuning knob. A split inserts a bucket
+    // between two others, so it shifts every later slot and rebuilds the Fenwick tree over them — Theta(b) in
+    // the bucket count. With a *fixed* capacity C, b grows as n / C and a split happens every C / 2 inserts,
+    // so that Theta(b) work amortizes to Theta(n / C²) *per insert* — it grows with n, and past a few tens of
+    // millions of elements it dominates everything else. Holding the capacity at Theta(sqrt n) instead pins
+    // b at Theta(sqrt n) and the splits at Theta(sqrt n) of them, so their total is Theta(n) and the
+    // amortized structural cost per mutation is a constant. What is left growing is the in-bucket memmove,
+    // at Theta(sqrt n) — which is why Add and Remove are documented as O(sqrt n) rather than O(log n), and
+    // why the constant matters: a memmove is the cheapest linear-time operation the machine has.
+    //
+    // The loop terminates without a clamp: `int` counts stop below 65536², so the capacity stops at 65536.
+    private static int TargetCapacity(int count)
+    {
+        int capacity = MinBucketCapacity;
+        while ((long)capacity * capacity < count)
+            capacity <<= 1;
+
+        return capacity;
+    }
+
+    // Widens one bucket's array in place. Nothing structural moves — the bucket count, the slot order and the
+    // Fenwick tree are all untouched — so this is the cheap half of what a full bucket can do.
+    private void GrowBucket(int bucket, int capacity)
+    {
+        var grown = new T[capacity];
+        Array.Copy(_buckets[bucket], grown, _lengths[bucket]);
+        _buckets[bucket] = grown;
+    }
+
+    // Splits a full bucket into two half-full ones, so the insert that triggered it has room, and returns the
+    // length of the left half. The halves are adjacent, so every later bucket shifts up one slot and the
+    // Fenwick tree is rebuilt — Theta(b), which TargetCapacity is what amortizes away.
+    private int SplitBucket(int bucket)
     {
         if (_bucketCount == _buckets.Length)
             AllocateSlots(_buckets.Length * 2);
@@ -699,18 +755,21 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         Array.Copy(_maxes, bucket + 1, _maxes, bucket + 2, tail);
 
         T[] left = _buckets[bucket];
-        var right = new T[BucketCapacity];
-        Array.Copy(left, HalfCapacity, right, 0, BucketCapacity - HalfCapacity);
-        Array.Clear(left, HalfCapacity, BucketCapacity - HalfCapacity);
+        int capacity = left.Length;
+        int half = capacity / 2;
+        var right = new T[capacity];
+        Array.Copy(left, half, right, 0, capacity - half);
+        Array.Clear(left, half, capacity - half);
 
         _buckets[bucket + 1] = right;
-        _lengths[bucket + 1] = BucketCapacity - HalfCapacity;
+        _lengths[bucket + 1] = capacity - half;
         _maxes[bucket + 1] = _maxes[bucket];
-        _lengths[bucket] = HalfCapacity;
-        _maxes[bucket] = left[HalfCapacity - 1];
+        _lengths[bucket] = half;
+        _maxes[bucket] = left[half - 1];
         _bucketCount++;
 
         RebuildTree();
+        return half;
     }
 
     private void Delete(int bucket, int offset)
@@ -733,15 +792,16 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         if (offset == length)
             _maxes[bucket] = target[length - 1];
 
-        // Merge a thinned-out bucket into a neighbour, but only when the union stays at or below half
-        // capacity — so a merge cannot be undone by the next insert, and there are at least HalfCapacity
-        // operations before the merged bucket splits again.
-        if (length >= MergeThreshold)
+        // Merge a thinned-out bucket into a neighbour, but only when the union stays at or below half the
+        // destination's capacity — so a merge cannot be undone by the next insert, and a quarter of a bucket's
+        // worth of operations has to pass before either boundary is crossed again. Both thresholds are read
+        // off the destination bucket's own array, since capacities differ once the target has grown.
+        if (length >= target.Length / 4)
             return;
 
-        if (bucket + 1 < _bucketCount && length + _lengths[bucket + 1] <= HalfCapacity)
+        if (bucket + 1 < _bucketCount && length + _lengths[bucket + 1] <= target.Length / 2)
             MergeBuckets(bucket, bucket + 1);
-        else if (bucket > 0 && length + _lengths[bucket - 1] <= HalfCapacity)
+        else if (bucket > 0 && _lengths[bucket - 1] + length <= _buckets[bucket - 1].Length / 2)
             MergeBuckets(bucket - 1, bucket);
     }
 

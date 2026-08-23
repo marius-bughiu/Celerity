@@ -188,6 +188,50 @@ public class RankedSetTests
         AssertRanksAgreeWithOrder(set);
     }
 
+    [Fact]
+    public void Add_ShouldGrowTheBucketsRatherThanSplitThem_WhenTheSetOutgrowsTheStartingCapacity()
+    {
+        // The bucket capacity is the smallest power of two whose square is at least the element count, and it
+        // starts at 512 — so past 512 x 512 = 262,144 elements a full bucket is *widened* instead of split,
+        // which is what stops the bucket count, and with it the cost of a split, from growing with n. Nothing
+        // below that size reaches this path at all. The elements arrive shuffled so the widening happens
+        // across many buckets rather than only the last.
+        const int Count = 300_000;
+        var keys = new int[Count];
+        for (int i = 0; i < Count; i++)
+            keys[i] = i;
+
+        var rand = new Random(20260823);
+        for (int i = Count - 1; i > 0; i--)
+        {
+            int j = rand.Next(i + 1);
+            (keys[i], keys[j]) = (keys[j], keys[i]);
+        }
+
+        var set = new RankedSet<int>(keys);
+
+        Assert.Equal(Count, set.Count);
+        Assert.Equal(0, set.Min);
+        Assert.Equal(Count - 1, set.Max);
+
+        // Every rank, sampled — the whole point is that widening a bucket leaves the positional index intact.
+        for (int i = 0; i < Count; i += 997)
+        {
+            Assert.Equal(i, set[i]);
+            Assert.Equal(i, set.IndexOf(i));
+            Assert.Equal(i, set.CountLessThan(i));
+        }
+
+        // And removal still walks the same index back down through the widened buckets.
+        for (int i = 0; i < Count; i += 3)
+            Assert.True(set.Remove(i));
+
+        Assert.Equal(Count - ((Count + 2) / 3), set.Count);
+        Assert.Equal(1, set[0]);
+        Assert.Equal(2, set[1]);
+        Assert.Equal(4, set[2]);
+    }
+
     // ---- membership and the positional surface -----------------------------------------------------
 
     [Fact]

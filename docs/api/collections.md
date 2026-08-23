@@ -5209,6 +5209,8 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 
 An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *what rank would this element occupy?* (`IndexOf`) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
 
+The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#how-it-is-laid-out) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
+
 ### The gap it fills
 
 This library could already rank and select three ways, and never over a set that changes: [`RankSelectBitVector`](#rankselectbitvector) over an *immutable* bit vector, [`FenwickTree<T>`](#fenwicktreet) and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) over a *fixed-length* sequence of positions. The ordered containers — [`BTreeSet<T, TComparer>`](#btreesett-tcomparer), [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictionarytkey-tvalue-tcomparer), [`Trie<TValue>`](#trietvalue) — have no rank at all.
@@ -5220,17 +5222,31 @@ The BCL has no answer either, and this is a genuine gap rather than a "we are fa
 | `SortedSet<T>` | `O(log n)` | none — `set.Count(x => x < v)` is `O(n)` | none — `set.ElementAt(k)` is `O(k)` |
 | `SortedList<TKey, TValue>` | `O(n)` memmove | `O(log n)` (`IndexOfKey`) | `O(1)` |
 | A hand-rolled sorted `List<T>` | `O(n)` memmove | `O(log n)` (`BinarySearch`) | `O(1)` |
-| `RankedSet<T, TComparer>` | `O(log n)` | `O(log n)` | `O(log n)` |
+| `RankedSet<T, TComparer>` | `O(√n)` memmove | `O(log n)` | `O(log n)` |
 
-Nothing in .NET is `O(log n)` on both halves. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
+Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is a bounded memmove rather than a whole-array one — half a kilobyte at a million elements — and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
 
 ### How it is laid out
 
-Elements live in a jagged array of sorted buckets of up to **512** each. A bucket splits in half when it fills and merges with a neighbour when it falls below a quarter and the union fits in half, so at least 128 operations separate one structural change from the next. Finding an element is a binary search over the per-bucket maxima followed by a binary search inside one contiguous array. The positional half is carried by a **Fenwick tree over the bucket lengths** — a few thousand `int`s at a million elements, which stay in cache: `IndexOf` is one prefix sum plus an in-bucket offset, and the indexer is one binary-lifting descent plus a direct array index. A mutation is one `O(log b)` point update on that tree plus a memmove bounded by the bucket capacity rather than by `n`; only a split or a merge rebuilds it, which amortizes to a few operations per mutation.
+**Sqrt decomposition.** Elements live in a jagged array of sorted buckets. Finding an element is a binary search over the per-bucket maxima followed by a binary search inside one contiguous array. The positional half is carried by a **Fenwick tree over the bucket lengths** — a few thousand `int`s at a million elements, which stay in cache: `IndexOf` is one prefix sum plus an in-bucket offset, and the indexer is one binary-lifting descent plus a direct array index.
+
+The bucket capacity is the smallest power of two whose square is at least the element count, never below 512 — so `Θ(√n)`. A full bucket **grows in place** while it is under that capacity, and only **splits** once it has reached it; it merges with a neighbour when it falls below a quarter of its capacity and the union fits in half, so a quarter of a bucket's worth of operations has to pass before either boundary is crossed again.
+
+That capacity rule is not a tuning knob — it is what makes the cost stated below true. A split inserts a bucket between two others, shifting every later slot and rebuilding the Fenwick tree over them, which is `Θ(b)`. With a *fixed* capacity `C` the bucket count `b` grows as `n / C` and a split happens every `C / 2` inserts, so that `Θ(b)` work amortizes to `Θ(n / C²)` **per insert** — it grows with `n`, and past a few tens of millions of elements it dominates everything else. Holding `C` at `Θ(√n)` pins `b` at `Θ(√n)` and the number of splits at `Θ(√n)`, so their total is `Θ(n)` and the amortized structural cost per mutation is a constant.
+
+**The cost, stated exactly:**
+
+| | |
+| --- | --- |
+| `Contains`, `IndexOf`, `CountLessThan`, `CountLessThanOrEqual`, the bounds, `this[int]` | `O(log n)` |
+| `Add`, `TryAdd`, `Remove`, `RemoveAt` | **`O(√n)`** — two binary searches and an `O(log b)` Fenwick update, plus a memmove of at most one bucket |
+| `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)`, over contiguous arrays |
+
+The `√n` term is the in-bucket memmove, and it is the cheapest linear-time operation the machine has — at a million elements it is half a kilobyte of contiguous copy, against a tree's chain of dependent pointer loads. It is also why the measured `Add` and `Remove` **beat** `SortedSet<T>`'s `O(log n)` at 100,000 elements rather than losing to it — see [the benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet).
 
 That layout, rather than subtree counts hung off `BTreeSet`'s nodes, is why this ships as its own type: a B-tree select lands at a leaf after `log₃₂(n)` dependent pointer chases, and augmenting the existing type would charge every `BTreeSet` user memory and per-level update work for a query class they did not ask for.
 
-Footprint is one array object per bucket — roughly one per 384 elements in steady state — and no per-element node, against `SortedSet<T>` and its one heap object per element. Bucket arrays are allocated at full capacity, so element storage runs about `1.3x` the elements themselves in steady state and up to `2x` immediately after a round of splits.
+Footprint is one array object per bucket — roughly one per three quarters of a bucket capacity in steady state — and no per-element node, against `SortedSet<T>` and its one heap object per element. Bucket arrays are allocated at their full capacity, so element storage runs about `1.3x` the elements themselves in steady state and up to `2x` immediately after a round of splits. The capacity only ever rises with the element count: a set that has been large and is now small keeps the wider arrays until it is `Clear()`ed.
 
 ### When to choose it over `SortedSet` — and when not to
 
@@ -5255,11 +5271,12 @@ There is no capacity and no load factor. The `IEnumerable` overloads throw `Argu
 | `T this[int index] { get; }` | The `index`-th smallest, `O(log n)`. Throws `ArgumentOutOfRangeException` outside `[0, Count)`. |
 | `int IndexOf(T item)` | The rank of `item`, `O(log n)`, or `-1` when it is absent. |
 | `int CountLessThan(T item)` / `int CountLessThanOrEqual(T item)` | The rank `item` *would* occupy, whether or not it is present — what a percentile query needs. |
-| `void RemoveAt(int index)` | Remove by rank, `O(log n)`. No BCL ordered container offers this at all. |
-| `void Add(T item)` | Insert; throws `ArgumentException` when the element is already present (the family-wide set convention). |
-| `bool TryAdd(T item)` | Non-throwing insert. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
-| `bool Contains(T item)` / `bool Remove(T item)` | `O(log n)`. |
-| `void Clear()` | Drop every element; the set releases all of its bucket arrays. |
+| `void RemoveAt(int index)` | Remove by rank, `O(√n)` — `O(log n)` to find it, then at most one bucket shifts. No BCL ordered container offers this at all. |
+| `void Add(T item)` | Insert, `O(√n)`; throws `ArgumentException` when the element is already present (the family-wide set convention). |
+| `bool TryAdd(T item)` | Non-throwing insert, `O(√n)`. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
+| `bool Contains(T item)` | `O(log n)`. |
+| `bool Remove(T item)` | `O(√n)` — `O(log n)` to find it, then at most one bucket shifts. |
+| `void Clear()` | Drop every element; the set releases all of its bucket arrays and resets the bucket capacity. |
 | `T Min { get; }` / `T Max { get; }` | Smallest / largest element, `O(1)`. Throws `InvalidOperationException` when empty. |
 | `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
 | `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | Smallest element **≥** / **>** `item`, `O(log n)`. |
