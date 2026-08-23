@@ -10,9 +10,10 @@ using Celerity.Collections;
 /// <remarks>
 /// <para>
 /// The hand-rolled list is here because it is the <i>strong</i> baseline and the one that can beat this type:
-/// selection is a single array index and a rank is a binary search over contiguous memory, so it wins both
-/// query groups outright. What it cannot do is mutate — every insert and remove memmoves half the array — and
-/// the <c>Mixed</c> group is where that is charged. <see cref="SortedSet{T}"/> is the mirror image: it
+/// selection is a single array index, so it <b>wins that group outright</b>, and a rank is a binary search
+/// over contiguous memory, which measures level with this type rather than ahead of it (CI has this type at
+/// 1.04x on rank at 100k and 1.25x at 1k — near enough a tie either way). What the list cannot do is mutate:
+/// every insert and remove memmoves half the array, and the <c>Mixed</c> group is where that is charged. <see cref="SortedSet{T}"/> is the mirror image: it
 /// mutates in <c>O(log n)</c> and has no rank or positional accessor at all, so its answers are
 /// <c>ElementAt(k)</c> and a walk to the probe, both linear.
 /// </para>
