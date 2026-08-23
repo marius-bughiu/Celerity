@@ -5232,7 +5232,14 @@ Nothing in .NET answers the positional questions on a set that changes without p
 
 The bucket capacity is the smallest power of two whose square is at least the element count, never below 512 — so `Θ(√n)`. A full bucket **grows in place** while it is under that capacity, and only **splits** once it has reached it; it merges with a neighbour when it falls below a quarter of its capacity and the union fits in half, so a quarter of a bucket's worth of operations has to pass before either boundary is crossed again.
 
-**The one place that bound is off.** A bucket's array is never narrowed as elements leave, so the `√n` above is really `√(high-water n)`: a set that grew to a hundred million and then shrank to ten thousand goes on shifting a bucket sized for the hundred million, which is `O(min(n, √Nmax))`. Growth exercises the capacity rule and contraction does not, so this costs nothing to a set whose size is roughly stable — a sliding window, a leaderboard — and `TrimExcess()` is the way back: one `O(n)` rebuild at the current size. `Clear()` resets it too, by releasing everything.
+**The one place that bound is off.** Neither a bucket's array nor the slot array behind the Fenwick tree is ever narrowed as elements leave, so after a contraction both terms are in the *high-water* count `Nmax` rather than the current `n`:
+
+| After a contraction | Cost |
+| --- | --- |
+| An ordinary insert or remove — it shifts a bucket sized for what the set used to hold | `O(min(n, √Nmax))` |
+| A **structural** one — the merge or bucket drop a removal can trigger — it rebuilds the tree across every historical slot | `Θ(√Nmax)`, with no `min` to save it |
+
+So a set that grew to a hundred million and shrank to ten thousand pays those rather than `O(√n)`. Growth exercises the capacity rule and contraction does not, so this costs nothing to a set whose size is roughly stable — a sliding window, a leaderboard — and `TrimExcess()` is the way back: one `O(n)` rebuild at the current size puts both bounds back. `Clear()` resets them too, by releasing everything.
 
 That capacity rule is not a tuning knob — it is what makes the cost stated below true. A split inserts a bucket between two others, shifting every later slot and rebuilding the Fenwick tree over them, which is `Θ(b)`. With a *fixed* capacity `C` the bucket count `b` grows as `n / C` and a split happens every `C / 2` inserts, so that `Θ(b)` work amortizes to `Θ(n / C²)` **per insert** — it grows with `n`, and past a few tens of millions of elements it dominates everything else. Holding `C` at `Θ(√n)` pins `b` at `Θ(√n)` and the number of splits at `Θ(√n)`, so their total is `Θ(n)` and the amortized structural cost per mutation is a constant.
 

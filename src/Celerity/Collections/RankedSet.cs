@@ -83,13 +83,26 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// instead leave it growing with <c>n</c>.
 /// </para>
 /// <para>
-/// <b>The one place that bound is off, and what to do about it.</b> A bucket's array is never narrowed as
-/// elements leave, so the <c>√n</c> above is really <c>√(high-water n)</c>: a set that grew to a hundred
-/// million and then shrank to ten thousand goes on shifting a bucket sized for the hundred million, which is
-/// <c>O(min(n, √Nmax))</c> and not <c>O(√n)</c>. Growth is where the rule is exercised and contraction is
-/// where it is not, so this costs nothing to a set whose size is roughly stable — a sliding window, a
-/// leaderboard — and it is the reason <see cref="TrimExcess"/> exists: one <c>O(n)</c> rebuild at the current
-/// size puts the bound back. <see cref="Clear"/> resets it too, by releasing everything.
+/// <b>The one place that bound is off, and what to do about it.</b> Neither a bucket's array nor the slot
+/// array behind the Fenwick tree is ever narrowed as elements leave, so after a contraction both terms are in
+/// the <i>high-water</i> count rather than the current one:
+/// </para>
+/// <list type="bullet">
+/// <item><description>
+/// an ordinary insert or remove shifts a bucket sized for what the set used to hold —
+/// <c>O(min(n, √Nmax))</c>;
+/// </description></item>
+/// <item><description>
+/// a <b>structural</b> one — the merge or the bucket drop a removal can trigger — rebuilds the tree across
+/// every historical slot, so it is <c>Θ(√Nmax)</c> outright, with no <c>min</c> to save it.
+/// </description></item>
+/// </list>
+/// <para>
+/// A set that grew to a hundred million and shrank to ten thousand pays those rather than <c>O(√n)</c>.
+/// Growth is where the capacity rule is exercised and contraction is where it is not, so this costs nothing
+/// to a set whose size is roughly stable — a sliding window, a leaderboard — and it is the reason
+/// <see cref="TrimExcess"/> exists: one <c>O(n)</c> rebuild at the current size puts both bounds back.
+/// <see cref="Clear"/> resets them too, by releasing everything.
 /// </para>
 /// <para>
 /// <b>Where it wins and where it does not.</b> The documented win is the mixed workload the type exists for —
