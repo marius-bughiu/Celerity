@@ -5244,7 +5244,7 @@ That capacity rule is not a tuning knob — it is what makes the cost stated bel
 | `Add`, `TryAdd`, `Remove`, `RemoveAt` | **`O(√n)`** — two binary searches and an `O(log b)` Fenwick update, plus a memmove of at most one bucket |
 | `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)`, over contiguous arrays |
 
-The `√n` term is the in-bucket memmove, and it is the cheapest linear-time operation the machine has: one bounded, contiguous copy of at most a bucket, against a tree's chain of dependent pointer loads. It is also why the measured `Add` and `Remove` **beat** `SortedSet<T>`'s `O(log n)` at 100,000 elements rather than losing to it — see [the benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet).
+The `√n` term is the in-bucket memmove, and it is the cheapest linear-time operation the machine has: one bounded, contiguous copy of at most a bucket, against a tree's chain of dependent pointer loads. It is also why the measured `Add` and `Remove` **beat** `SortedSet<T>`'s `O(log n)` at 100,000 elements (1.52x and 1.83x) rather than losing to it.
 
 That layout, rather than subtree counts hung off `BTreeSet`'s nodes, is why this ships as its own type: a B-tree select lands at a leaf after `log₃₂(n)` dependent pointer chases, and augmenting the existing type would charge every `BTreeSet` user memory and per-level update work for a query class they did not ask for.
 
@@ -5252,7 +5252,43 @@ Footprint is one array object per bucket — roughly one per three quarters of a
 
 ### When to choose it over `SortedSet` — and when not to
 
-Reach for it when the positional questions are asked of a set that changes. Reach for [`BTreeSet<T, TComparer>`](#btreesett-tcomparer) when they are never asked, for [`CeleritySet`](#celeritysett-thasher) or [`IntSet`](#intsetthasher) when order itself is not part of the question, and for a sorted `List<T>` when the set is built once and only queried — indexing one array is `O(1)` and unbeatable, and this type does not pretend otherwise. Small sets fit in cache and every option is competitive there. See the [RankedSet benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet) on the dashboard.
+Reach for it when the positional questions are asked of a set that changes. Reach for [`BTreeSet<T, TComparer>`](#btreesett-tcomparer) when they are never asked, for [`CeleritySet`](#celeritysett-thasher) or [`IntSet`](#intsetthasher) when order itself is not part of the question, and for a sorted `List<T>` when the set is built once and only queried — indexing one array is `O(1)` and unbeatable, and this type does not pretend otherwise. At a thousand elements the hand-rolled list wins the mixed workload outright — the numbers are below, and tracked on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet).
+
+### Measured
+
+CI's sharded A/B run, `int` elements, shuffled inserts. Every group carries three arms: `SortedSet<T>` (the
+baseline), a sorted `List<T>` kept by hand with `BinarySearch` + `Insert`, and this type. The ratios are
+*this type against that arm* — above 1 means it is faster.
+
+| Group | vs `SortedSet<T>` @100k | vs sorted `List<T>` @100k | vs `SortedSet<T>` @1k | vs sorted `List<T>` @1k |
+| --- | ---: | ---: | ---: | ---: |
+| **Select** (k-th smallest) | **33,900x** | 0.07x | **1,440x** | 0.28x |
+| **Rank** (`CountLessThan`) | **9,240x** | 1.04x | **190x** | 1.25x |
+| **Mixed** (churn + a rank and a select per step) | **137x** | **1.62x** | **11.7x** | 0.93x |
+| RangeScan | 6.18x | 0.57x | 5.97x | 1.09x |
+| Remove | 1.83x | **11.9x** | 2.21x | 0.41x |
+| Add | 1.52x | **10.8x** | 1.14x | 1.08x |
+| Contains | 1.41x | 1.15x | 1.07x | 1.21x |
+
+**The two left columns are the gap**, and they are not close: `SortedSet<T>` has no rank and no indexer, so
+its answers are `set.Count(x => x < v)` and `set.ElementAt(k)`, and at 100,000 elements those are 22.7 ms and
+31.9 ms against 2.5 µs and 944 ns here. Nothing about that is a tuning result — it is `O(n)` against
+`O(log n)`.
+
+**The right-hand columns are the honest ones.** A sorted `List<T>` indexes in `O(1)` and binary-searches in
+`O(log n)` over one contiguous array, so it **wins selection outright** (14x at 100k, 3.5x at 1k) and wins the
+range walk. It loses where it has to *move*: an insert or a remove memmoves half the array, which is 11x this
+type at 100,000 elements. The `Mixed` group is where both weaknesses are charged at once, and it is the only
+row that decides anything — **1.62x** the hand-roll and **137x** `SortedSet<T>` at 100k.
+
+Two things worth saying plainly rather than rounding away:
+
+- **At a thousand elements this type is not the answer.** The hand-rolled list beats it on `Mixed` (0.93x),
+  on `Remove` (0.41x) and on `Select`; everything fits in cache and an `O(n)` memmove over 1,000 `int`s is
+  nothing. The crossover is between the two sizes measured, closer to the small end.
+- **The `Mixed` margin over the hand-roll is 1.62x, not an order of magnitude.** A short local sweep put it at
+  8.9x; CI's A/B is the number published here, and the difference is why. Against `SortedSet<T>` the margin is
+  two orders of magnitude, but that arm is winning on the *queries*, which the first two rows already isolate.
 
 ### Constructors
 
