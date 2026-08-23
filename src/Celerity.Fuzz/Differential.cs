@@ -938,6 +938,11 @@ internal static class Differential
                     Check(oracle.Remove(removed), $"RemoveAt({rank}) removed {removed}, which the oracle lacked");
                     break;
                 case < 19: break;
+                case < 20 when rng.Next(0, 4) == 0:
+                    // TrimExcess rebuilds every bucket and the index over them, so it has to leave the set
+                    // observably identical — which is exactly what the oracle can check.
+                    sut.TrimExcess();
+                    break;
                 default: sut.Clear(); oracle.Clear(); break;
             }
         }

@@ -1033,6 +1033,10 @@ void Check(bool condition, string message)
     ((ISet<int>)ranked).IntersectWith(new[] { 1, 2, 3, 5000 });
     Check(ranked.Count == 3 && ranked.Max == 3 && ranked.IndexOf(3) == 2, "RankedSet ISet<int> intersect");
 
+    // The set is now three elements in buckets sized for 1,500, which is what TrimExcess is for.
+    ranked.TrimExcess();
+    Check(ranked.Count == 3 && ranked[0] == 1 && ranked[2] == 3 && ranked.IndexOf(2) == 1, "RankedSet TrimExcess");
+
     // The same second instantiation for ILC to compile, through a hand-written struct comparer.
     var descendingRanked = new RankedSet<int, DescendingIntComparer>();
     for (int i = 0; i < 100; i++) descendingRanked.Add(i);
