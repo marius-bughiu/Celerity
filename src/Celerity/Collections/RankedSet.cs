@@ -73,8 +73,8 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// <see cref="CountLessThan"/>, the bounds and <see cref="this[int]"/> are <c>O(log n)</c>.
 /// <b><see cref="Add"/> and <see cref="Remove"/> are <c>O(√n)</c></b>, not <c>O(log n)</c>: two binary
 /// searches and an <c>O(log b)</c> Fenwick update, plus a memmove of at most one bucket. That memmove is the
-/// term that grows, and it is the cheapest linear-time operation the machine has — at a million elements it
-/// is half a kilobyte of contiguous copy, against a tree's chain of dependent pointer loads. The structural
+/// term that grows, and it is the cheapest linear-time operation the machine has: one bounded, contiguous
+/// copy, against a tree's chain of dependent pointer loads. The structural
 /// work — a split shifts every later bucket slot and rebuilds the tree, <c>Θ(b)</c> — is what the capacity
 /// rule is for: holding the bucket capacity at <c>Θ(√n)</c> pins <c>b</c> at <c>Θ(√n)</c> and the number of
 /// splits at <c>Θ(√n)</c>, so their total is <c>Θ(n)</c> and the amortized structural cost per mutation is a

@@ -5224,7 +5224,7 @@ The BCL has no answer either, and this is a genuine gap rather than a "we are fa
 | A hand-rolled sorted `List<T>` | `O(n)` memmove | `O(log n)` (`BinarySearch`) | `O(1)` |
 | `RankedSet<T, TComparer>` | `O(√n)` memmove | `O(log n)` | `O(log n)` |
 
-Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is a bounded memmove rather than a whole-array one — half a kilobyte at a million elements — and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
+Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one, and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
 
 ### How it is laid out
 
@@ -5242,7 +5242,7 @@ That capacity rule is not a tuning knob — it is what makes the cost stated bel
 | `Add`, `TryAdd`, `Remove`, `RemoveAt` | **`O(√n)`** — two binary searches and an `O(log b)` Fenwick update, plus a memmove of at most one bucket |
 | `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)`, over contiguous arrays |
 
-The `√n` term is the in-bucket memmove, and it is the cheapest linear-time operation the machine has — at a million elements it is half a kilobyte of contiguous copy, against a tree's chain of dependent pointer loads. It is also why the measured `Add` and `Remove` **beat** `SortedSet<T>`'s `O(log n)` at 100,000 elements rather than losing to it — see [the benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet).
+The `√n` term is the in-bucket memmove, and it is the cheapest linear-time operation the machine has: one bounded, contiguous copy of at most a bucket, against a tree's chain of dependent pointer loads. It is also why the measured `Add` and `Remove` **beat** `SortedSet<T>`'s `O(log n)` at 100,000 elements rather than losing to it — see [the benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet).
 
 That layout, rather than subtree counts hung off `BTreeSet`'s nodes, is why this ships as its own type: a B-tree select lands at a leaf after `log₃₂(n)` dependent pointer chases, and augmenting the existing type would charge every `BTreeSet` user memory and per-level update work for a query class they did not ask for.
 
@@ -5302,7 +5302,7 @@ foreach (int score in arriving)
 
     if (scores.Count > windowSize)
     {
-        scores.RemoveAt(0);      // drop the lowest, by rank — O(log n)
+        scores.RemoveAt(0);      // drop the lowest, by rank — O(√n)
     }
 }
 
