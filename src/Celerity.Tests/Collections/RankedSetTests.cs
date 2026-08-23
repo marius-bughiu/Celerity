@@ -596,6 +596,11 @@ public class RankedSetTests
         int[] before = [.. set];
         Assert.Equal(3000, before.Length);
 
+        // Before the trim: the slot array and the Fenwick tree over it are still sized for the 300,000-element
+        // set, and only a handful of buckets are live. Every rank has to resolve against that, and the descent
+        // has to cost log(live buckets) rather than log(the most this set has ever held).
+        AssertRanksAgreeWithOrder(set);
+
         set.TrimExcess();
 
         Assert.Equal(before, Items(set));

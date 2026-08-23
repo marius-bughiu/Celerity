@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace Celerity.Collections;
@@ -966,15 +967,23 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     }
 
     // Binary lifting down the Fenwick tree: finds the bucket holding the element of rank `index` and the
-    // offset inside it, in O(log b) and without touching a single element. The caller has already checked
-    // 0 <= index < Count, and that is what lets the descent skip a bounds test at every step — the root holds
-    // every element, so the widest stride can never be taken, and the strides below it cannot overrun.
+    // offset inside it, in O(log b) and without touching a single element.
+    //
+    // The descent starts from the largest power of two that does not exceed the *live* bucket count, not from
+    // the tree's capacity. The slot array is never narrowed as buckets go away, so a set that has contracted
+    // would otherwise pay log2 of the most buckets it has ever held on every positional query — the mutation
+    // path carries a high-water cost by design, and the query path must not.
+    //
+    // The caller has already checked 0 <= index < Count, and that is what lets the descent skip a bounds test
+    // at every step. Either the starting stride equals the live bucket count, in which case it covers the
+    // whole prefix and so can never be taken for an index below the total; or it is strictly below the bucket
+    // count, in which case the tree's capacity is at least twice it and the strides sum to less than that.
     private void Locate(int index, out int bucket, out int offset)
     {
         int position = 0;
         int remaining = index;
 
-        for (int step = (_tree.Length - 1) >> 1; step > 0; step >>= 1)
+        for (int step = 1 << BitOperations.Log2((uint)_bucketCount); step > 0; step >>= 1)
         {
             int candidate = position + step;
             if (_tree[candidate] <= remaining)
