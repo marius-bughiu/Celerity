@@ -579,6 +579,80 @@ public class RankedSetTests
         AssertRanksAgreeWithOrder(set);
     }
 
+    [Fact]
+    public void TrimExcess_ShouldRebuildAtTheCurrentSize_AndPreserveEveryRank()
+    {
+        // The bucket capacity rises with the element count and is never lowered as elements leave, so a set
+        // that has contracted keeps buckets sized for what it used to hold — the one case where the
+        // documented O(sqrt n) mutation is really O(sqrt(high-water n)). This is the way back.
+        var set = new RankedSet<int>(Enumerable.Range(0, 300_000));
+
+        for (int i = 0; i < 300_000; i++)
+        {
+            if (i % 100 != 0)
+                Assert.True(set.Remove(i));
+        }
+
+        int[] before = [.. set];
+        Assert.Equal(3000, before.Length);
+
+        set.TrimExcess();
+
+        Assert.Equal(before, Items(set));
+        AssertRanksAgreeWithOrder(set);
+
+        // And it is still an ordinary set afterwards: the rebuilt buckets take inserts and removals, and the
+        // positional index follows them.
+        Assert.True(set.TryAdd(50));
+        Assert.Equal(1, set.IndexOf(50));
+        Assert.True(set.Remove(0));
+        Assert.Equal(0, set.IndexOf(50));
+        AssertRanksAgreeWithOrder(set);
+    }
+
+    [Fact]
+    public void TrimExcess_ShouldBeANoOp_WhenTheSetIsEmptyOrUntouched()
+    {
+        var neverUsed = new RankedSet<int>();
+
+        neverUsed.TrimExcess();
+
+        Assert.Equal(0, neverUsed.Count);
+        Assert.Empty(neverUsed);
+
+        // Emptied rather than never used: the slot arrays are still there, and trimming releases them
+        // without disturbing anything observable.
+        var emptied = new RankedSet<int>([1, 2, 3]);
+        emptied.Clear();
+
+        emptied.TrimExcess();
+
+        Assert.Equal(0, emptied.Count);
+        Assert.Empty(emptied);
+
+        emptied.Add(7);
+        Assert.Equal([7], Items(emptied));
+    }
+
+    [Fact]
+    public void TrimExcess_ShouldInvalidateActiveEnumerators_WhenItRebuilds()
+    {
+        // The elements do not change, but they move, so an enumerator holding a bucket and an offset cannot
+        // be allowed to keep walking. An empty set has nothing to move and so does not invalidate.
+        var set = new RankedSet<int>([1, 2, 3]);
+        var live = set.GetEnumerator();
+        Assert.True(live.MoveNext());
+
+        set.TrimExcess();
+
+        Assert.Throws<InvalidOperationException>(() => live.MoveNext());
+
+        var empty = new RankedSet<int>();
+        var overEmpty = empty.GetEnumerator();
+        empty.TrimExcess();
+        Assert.False(overEmpty.MoveNext());
+    }
+
     // ---- ranges ------------------------------------------------------------------------------------
 
     [Fact]

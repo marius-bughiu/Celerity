@@ -74,11 +74,20 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// <b><see cref="Add"/> and <see cref="Remove"/> are <c>O(√n)</c></b>, not <c>O(log n)</c>: two binary
 /// searches and an <c>O(log b)</c> Fenwick update, plus a memmove of at most one bucket. That memmove is the
 /// term that grows, and it is the cheapest linear-time operation the machine has: one bounded, contiguous
-/// copy, against a tree's chain of dependent pointer loads. The structural
-/// work — a split shifts every later bucket slot and rebuilds the tree, <c>Θ(b)</c> — is what the capacity
-/// rule is for: holding the bucket capacity at <c>Θ(√n)</c> pins <c>b</c> at <c>Θ(√n)</c> and the number of
-/// splits at <c>Θ(√n)</c>, so their total is <c>Θ(n)</c> and the amortized structural cost per mutation is a
-/// constant. A fixed capacity would instead leave it growing with <c>n</c>.
+/// copy, against a tree's chain of dependent pointer loads. The structural work — a split shifts every later
+/// bucket slot and rebuilds the tree, <c>Θ(b)</c> — is what the capacity rule is for: holding the bucket
+/// capacity at <c>Θ(√n)</c> pins <c>b</c> at <c>Θ(√n)</c> and the number of splits at <c>Θ(√n)</c>, so their
+/// total is <c>Θ(n)</c> and the amortized structural cost per mutation is a constant. A fixed capacity would
+/// instead leave it growing with <c>n</c>.
+/// </para>
+/// <para>
+/// <b>The one place that bound is off, and what to do about it.</b> A bucket's array is never narrowed as
+/// elements leave, so the <c>√n</c> above is really <c>√(high-water n)</c>: a set that grew to a hundred
+/// million and then shrank to ten thousand goes on shifting a bucket sized for the hundred million, which is
+/// <c>O(min(n, √Nmax))</c> and not <c>O(√n)</c>. Growth is where the rule is exercised and contraction is
+/// where it is not, so this costs nothing to a set whose size is roughly stable — a sliding window, a
+/// leaderboard — and it is the reason <see cref="TrimExcess"/> exists: one <c>O(n)</c> rebuild at the current
+/// size puts the bound back. <see cref="Clear"/> resets it too, by releasing everything.
 /// </para>
 /// <para>
 /// <b>Where it wins and where it does not.</b> The documented win is the mixed workload the type exists for —
@@ -96,7 +105,7 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// Bucket arrays are allocated at their full capacity, so element storage runs about <c>1.3x</c> the elements
 /// themselves in steady state and up to <c>2x</c> immediately after a round of splits. The capacity only ever
 /// rises with the element count; a set that has been large and is now small keeps the wider arrays until it
-/// is <see cref="Clear"/>ed.
+/// is <see cref="TrimExcess"/>ed or <see cref="Clear"/>ed.
 /// </para>
 /// <para>
 /// Membership is defined by <typeparamref name="TComparer"/> — two elements are the same element when the
@@ -378,6 +387,72 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
         Array.Clear(_tree, 0, _tree.Length);
         _bucketCount = 0;
         _count = 0;
+        _version++;
+    }
+
+    /// <summary>
+    /// Rebuilds the set at the bucket capacity its <i>current</i> element count calls for, in <c>O(n)</c>.
+    /// </summary>
+    /// <remarks>
+    /// A bucket's array is never narrowed as elements leave, so a set that has contracted sharply keeps
+    /// buckets sized for what it used to hold — and a mutation shifts one of those, which is the one case
+    /// where the documented <c>O(√n)</c> is really <c>O(√(high-water n))</c>. This puts it back, and packs
+    /// the buckets three-quarters full so there is room to insert without splitting immediately. Call it
+    /// after a bulk removal; there is no reason to call it on a set that has only ever grown. It invalidates
+    /// active enumerators — the elements do not change, but they move — and is a no-op on an empty set that
+    /// holds no buckets.
+    /// </remarks>
+    public void TrimExcess()
+    {
+        if (_count == 0)
+        {
+            if (_buckets.Length == 0)
+                return;
+
+            _buckets = [];
+            _lengths = [];
+            _maxes = [];
+            _tree = new int[1];
+            return;
+        }
+
+        int capacity = TargetCapacity(_count);
+        int fill = capacity - (capacity / 4);
+        int needed = ((_count - 1) / fill) + 1;
+
+        int slots = InitialSlots;
+        while (slots < needed)
+            slots <<= 1;
+
+        var ordered = new T[_count];
+        CopyTo(ordered, 0);
+
+        var buckets = new T[slots][];
+        var lengths = new int[slots];
+        var maxes = new T[slots];
+
+        int written = 0;
+        int bucket = 0;
+        while (written < _count)
+        {
+            int take = Math.Min(fill, _count - written);
+            var packed = new T[capacity];
+            Array.Copy(ordered, written, packed, 0, take);
+
+            buckets[bucket] = packed;
+            lengths[bucket] = take;
+            maxes[bucket] = packed[take - 1];
+
+            written += take;
+            bucket++;
+        }
+
+        _buckets = buckets;
+        _lengths = lengths;
+        _maxes = maxes;
+        _bucketCount = bucket;
+        _tree = new int[slots + 1];
+        RebuildTree();
         _version++;
     }
 
@@ -754,7 +829,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
 
     // Splits a full bucket into two half-full ones, so the insert that triggered it has room, and returns the
     // length of the left half. The halves are adjacent, so every later bucket shifts up one slot and the
-    // Fenwick tree is rebuilt — Theta(b), which TargetCapacity is what amortizes away.
+    // Fenwick tree is rebuilt — Theta(b), which is what TargetCapacity amortizes away.
     private int SplitBucket(int bucket)
     {
         if (_bucketCount == _buckets.Length)
