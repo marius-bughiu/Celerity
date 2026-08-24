@@ -789,6 +789,49 @@ void Check(bool condition, string message)
     Check(particles.CountWithin(4.5, 4.5, 1) == 2, "SpatialGrid value-typed radius query");
 }
 
+// TimerWheel — the deadline container. What is ILC-specific here is the private generic Entry struct whose
+// layout the compiler lays out ahead of time per instantiation, the RuntimeHelpers.IsReferenceOrContainsReferences
+// guard whose two arms ILC resolves at compile time rather than at run time, and the struct enumerator over
+// ScheduledTimer<T>. Exercise both scheduling shapes, handle-addressed cancellation across every level of the
+// wheel, a jump that cascades and a jump that fires, both advance tiers, a reference-typed payload and a
+// value-typed one.
+{
+    var timeouts = new TimerWheel<string>(slotsPerWheel: 4, levels: 2);
+
+    Check(timeouts.Horizon == 16, "TimerWheel horizon");
+    Check(timeouts.SlotsPerWheel == 4 && timeouts.Levels == 2, "TimerWheel geometry");
+
+    var soon = timeouts.Schedule(2, "soon");
+    var later = timeouts.Schedule(9, "later");
+    timeouts.ScheduleAt(15, "last");
+    timeouts.Schedule(0, "due");
+
+    Check(timeouts.Count == 4, "TimerWheel schedule");
+    Check(timeouts.TryGetDeadline(later, out long deadline) && deadline == 9, "TimerWheel handle read-back");
+    Check(timeouts.Cancel(soon) && !timeouts.Cancel(soon), "TimerWheel cancel retires its handle");
+
+    var fired = new List<string?>();
+    Check(timeouts.Advance(0, fired) == 1 && fired[0] == "due", "TimerWheel fires an already-due timer");
+    Check(timeouts.Advance(8, fired) == 0, "TimerWheel cascades without firing");
+    Check(timeouts.Advance(9, fired) == 1 && fired[1] == "later", "TimerWheel fires after a cascade");
+    Check(timeouts.CurrentTick == 9, "TimerWheel clock");
+
+    int pending = 0;
+    foreach (var timer in timeouts) pending += (int)timer.Deadline;
+    Check(pending == 15, "TimerWheel enumerates every pending timer");
+
+    Check(timeouts.Advance(15).Count == 1, "TimerWheel allocating advance tier");
+    timeouts.Clear();
+    Check(timeouts.Count == 0 && !timeouts.TryGetDeadline(later, out _), "TimerWheel clear retires every handle");
+
+    // A value-typed payload, so the entry layout really is specialized per instantiation.
+    var retries = new TimerWheel<int>();
+    var attempt = retries.Schedule(1000, 7);
+    retries.Schedule(2, 8);
+    Check(retries.Advance(2).Count == 1, "TimerWheel value-typed payload");
+    Check(retries.Cancel(attempt) && retries.Count == 0, "TimerWheel value-typed cancel");
+}
+
 // RTree — the build-once extent index. What is ILC-specific here is the query core: one traversal generic over
 // a struct visitor, so each of the three visitors is a separate specialization the compiler has to produce
 // ahead of time with no JIT to fall back on, and the build's Array.Sort over a (double[], SpatialBox<T>[]) key

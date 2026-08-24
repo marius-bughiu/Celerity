@@ -5438,3 +5438,121 @@ if (index.TryGetOccurrences("the", out ReadOnlySpan<int> found))
 if (index.TryGetLongestRepeatedSubstring(out int start, out int length))
     Console.WriteLine(index.Text.Slice(start, length).ToString());  // "the "
 ```
+
+## TimerWheel&lt;TValue&gt;
+
+```csharp
+public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TValue>>
+```
+
+A **hierarchical timing wheel**: a container of pending **deadlines**, with constant-time `Schedule` and `Cancel` and an `Advance` whose cost is the timers it fires rather than the ticks it crosses. It is the structure behind the Linux kernel's timers, Netty's `HashedWheelTimer` and Kafka's request purgatory, and it is what answers *which of these hundred thousand pending things have timed out*.
+
+**It is a data structure, not a scheduler.** There is no thread, no clock and no callback: the caller owns time and drives the wheel with `Advance`. That is what keeps it deterministic, testable, and inside this library's [non-goals](https://github.com/marius-bughiu/Celerity/blob/main/ROADMAP.md#non-goals). A tick is whatever unit you schedule and advance in — milliseconds, frames, sequence numbers.
+
+.NET has nothing for this. `PriorityQueue<TElement, TPriority>` is what a developer reaches for and **it cannot cancel**: there is no `Remove` on the `net8.0` floor at all, and the one .NET 9 added is documented `O(n)`. `System.Threading.Timer` is a scheduler rather than a container — one object and one registration per timeout, which nobody allocates a hundred thousand of. [`IndexedPriorityQueue<TElement, TPriority, THasher>`](#indexedpriorityqueuetelement-tpriority-thasher) — this library's own addressable heap — *can* cancel, in `O(log n)`, and is the strong baseline this type is measured against rather than a reason to skip it.
+
+### The workload is defined by cancellation
+
+Almost every timeout is cancelled rather than fired: the reply arrived, the lease was renewed, the connection closed cleanly. That is the axis the obvious structures fail on. The standard `PriorityQueue` workaround is **lazy deletion** — push everything, keep a `HashSet` of cancelled ids, discard tombstones on pop — which makes the cancel itself cheap and then charges for it at drain time, on a heap that has grown with the timers that will never fire and still holds their payloads.
+
+Reach for this type when you have a **population** of pending deadlines: request and RPC timeouts, connection idle-reaping, lease and session expiry, retry backoff, rate-limiter windows, delayed-message queues. Do not reach for it for a handful of timers — see [Measured](#measured-2), where a thousand timers puts it level with the BCL heap on the piecewise operations.
+
+### How it works
+
+`levels` wheels of `slotsPerWheel` slots each, both powers of two, so every index is a shift and a mask. Level `L` spans `slots^(L+1)` ticks, and a timer lands in the **lowest level that can express its delay**, in the slot its deadline's level-`L` digit names. The slots are heads of intrusive doubly-linked lists threaded through one flat entry array — the same layout [`SpatialGrid<TValue>`](#spatialgridtvalue) uses for its cells — so there is no object per timer and no allocation per schedule once the array has grown. A cancel is two pointer writes.
+
+**`Advance` is not the textbook tick-at-a-time loop.** The classical wheel steps one tick, then one more, cascading whenever the low wheel wraps, which makes a jump cost `O(ticks)` — a caller that misses a second of wall clock at millisecond granularity would pay a thousand iterations over empty slots for it. This one computes, per level, exactly the slots the move crosses and walks them from the top level down, firing what is due and staging what is not for re-insertion against the new time. The work is `O(levels × slots + fired + cascaded)` **however far the clock jumped**, and `O(ticks + fired)` for the ordinary small step. A cascade only ever moves a timer *down* a level, so each timer is touched at most once per level over its whole life.
+
+A timer scheduled with a **zero** delay is due at the current tick, which no wheel slot can hold — every slot is strictly in the future — so it goes on a separate already-due list that the next `Advance` drains whatever tick it names.
+
+### Measured
+
+Every ratio names its baseline, and there are two: the BCL `PriorityQueue<int, long>` with the lazy-deletion workaround, and `IndexedPriorityQueue`, which cancels for real. The unit that matters is **Round** — schedule *n* timeouts at random delays across a 10,000-tick span, cancel nine in ten of them, then run the clock out and drain what survived — and the other four groups take that round apart.
+
+At **100,000 timers**:
+
+| Workload | `PriorityQueue` | `IndexedPriorityQueue` | `TimerWheel` | vs BCL | vs addressable |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **Round** — schedule, cancel 90%, drain | 10,751 µs | 8,253 µs | 1,057 µs | **10.2x** | **7.8x** |
+| Schedule | 634 µs | 2,480 µs | 370 µs | 1.71x | 6.7x |
+| Cancel | 453 µs | 4,151 µs | 228 µs | 1.99x | 18.2x |
+| Drain, nothing cancelled | 7,959 µs | 18,660 µs | 680 µs | 11.7x | 27.4x |
+| Tick — the clock driven one tick at a time | 8,213 µs | 18,532 µs | 1,723 µs | 4.8x | 10.8x |
+
+The round also retains less: 4.01 MB against the heap's 6.43 MB, because the heap's array carries the nine in ten timers that were cancelled and their payloads until they are popped.
+
+At **1,000 timers** the picture changes, and this is the honest half of it. The round is still **3.8x** the BCL heap and **4.6x** the addressable one, but three of the piecewise groups come out level or behind:
+
+| Workload | `PriorityQueue` | `TimerWheel` | vs BCL |
+| --- | ---: | ---: | ---: |
+| Round | 24.90 µs | 6.57 µs | **3.8x** |
+| Schedule | 11.13 µs | 11.83 µs | 0.94x |
+| Cancel | 7.86 µs | 14.45 µs | **0.54x — the heap wins by 1.8x** |
+| Tick | 64.8 µs | 66.8 µs | 0.97x |
+
+A thousand-element heap fits in cache and its sift is a handful of predictable compares, while this type pays a scattered write into a 1,025-slot bucket array whatever the population. **This is a large-population type**, and the round is 3.8x at a thousand only because the drain is where the heap pays for its cheap cancels.
+
+Two of those rows deserve their qualification rather than a footnote:
+
+- **The `Cancel` loss is a comparison against something that does not cancel.** The BCL arm adds an id to a `HashSet` and removes nothing from the heap, because it cannot; the work reappears in `Drain`, where every cancelled timer still has to be popped, sifted and discarded. `Round` is the row where both halves are charged to the same arm, which is why it is the ship gate.
+- **`Drain` was expected to be this type's worst case and is its best.** With nothing cancelled the wheel gets no benefit from its constant-time removal and still pays the slot sweep — but draining a 100,000-element heap is 100,000 sift-downs of a cache-missing array, against one walk of 1,025 buckets and a linked-list step per timer.
+
+**Both pre-registered bars from [#393](https://github.com/marius-bughiu/Celerity/issues/393) clear**: at least 3x both baselines on the round at 100,000 (10.2x and 7.8x), and at least 2x `IndexedPriorityQueue` on `Schedule` and `Cancel` in isolation (6.7x and 18.2x). The third — the uncancelled drain — was pre-registered as a loss to be documented rather than a gate, and is instead the largest margin in the table.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `TimerWheel(int slotsPerWheel = 256, int levels = 4, int capacity = 0)` | The defaults give a 2^32-tick horizon in four 1 KiB slot arrays — about 49 days at a millisecond tick. `slotsPerWheel` must be a power of two of at least two, `levels` at least one, and the two together must not put `Horizon` past `2^62`. |
+| `TimerHandle Schedule(long delayTicks, TValue? value)` | Schedule `delayTicks` from now, `O(1)` amortized. Zero means due now. `ArgumentOutOfRangeException` for a negative delay or one at or beyond `Horizon`. |
+| `TimerHandle ScheduleAt(long deadline, TValue? value)` | The same, by absolute tick on the same clock as `CurrentTick`. A deadline in the past is rejected rather than silently fired. |
+| `bool Cancel(TimerHandle handle)` | Cancel in `O(1)`, releasing the payload. `false` — not an exception — when the handle does not address a pending timer, because losing the race against your own clock is the normal outcome rather than a programming error. |
+| `bool TryGetDeadline(TimerHandle handle, out long deadline)` | The absolute deadline, `O(1)`. Also the way to ask whether a timer is still pending. |
+| `int Advance(long tick, ICollection<TValue?> expired)` | Move the clock and append the payload of everything due at or before `tick`; returns how many fired. The destination is **not** cleared first, so one reused `List<T>` can collect several advances — reusing one is what makes a steady-state advance allocation-free. |
+| `List<TValue?> Advance(long tick)` | The convenience tier of the same; allocates a list per call. |
+| `void Clear()` | Cancel everything, retiring every handle. Keeps the storage and **leaves `CurrentTick` where it stands** — this empties the container, it does not rewind the clock. |
+| `long CurrentTick { get; }` | Where the clock stands. Starts at zero and never moves backwards. |
+| `int Count { get; }` | Timers scheduled and neither fired nor cancelled. |
+| `long Horizon { get; }` | `slotsPerWheel^levels` — the exclusive upper bound on a schedulable delay. |
+| `long MaxTick { get; }` | `long.MaxValue - Horizon`, the highest tick the clock may be advanced to, which is what keeps a deadline scheduled at the last legal tick from overflowing. |
+| `int SlotsPerWheel { get; }` / `int Levels { get; }` | The geometry, as constructed. |
+| `Enumerator GetEnumerator()` | Struct enumerator over the pending timers as `ScheduledTimer<TValue>`, in an unspecified order. |
+
+`TimerHandle` is an opaque generational token — a slot index and a version — mirroring `SpatialGridHandle` exactly: the `default` handle resolves to nothing, a handle is retired the moment its timer fires or is cancelled, and a handle belongs to the wheel that issued it. `ScheduledTimer<TValue>` is a `Deadline` and a `Value`, with a `Deconstruct`.
+
+### Caveats
+
+- **The horizon is the trade.** A wheel buys its constant time by bucketing rather than ordering, and the bucketing is finite: a delay of `Horizon` ticks or more is rejected rather than silently misplaced. Widen it by adding a level — each multiplies the horizon by `slotsPerWheel` and costs one array of slots — or by choosing a coarser tick.
+- **A batch of fired timers comes back in no particular order.** Only *due-ness* is promised: every payload `Advance` appends has a deadline at or before the tick advanced to. Stepping tick by tick makes the question moot, since every timer in a batch then shares one deadline; it becomes visible only on a jump. A caller who needs the earliest deadline first wants a priority queue and pays `O(log n)` for it.
+- **Capacity only grows.** There is no `TrimExcess`: a handle *is* a position in the entry array, so compacting it would invalidate every handle a caller is holding, which is the one thing this type promises not to do. `Clear` returns the storage to the free list but keeps it. This is the same trade [`SpatialGrid<TValue>`](#spatialgridtvalue) makes and for the same reason.
+- **Not thread-safe**, like every collection here. One clock, one driver.
+- **Enumeration is invalidated** by `Schedule`, a successful `Cancel`, an `Advance` that fired something, and a `Clear` that removed something. An `Advance` that fires nothing deliberately does *not* invalidate it, even when it cascaded timers between levels: cascading changes neither the set of pending timers nor the slot each occupies, so the sequence an enumerator is walking is unaffected. That is the family's own rule, the one `SpatialGrid<TValue>.Move` is held to.
+- **Handle versions cycle** through `[1, uint.MaxValue]`, so they repeat after 4,294,967,295 vacations of the *same* slot. Every generational slot map has this ceiling.
+
+### Usage example
+
+```csharp
+// A tick is a millisecond here; the default geometry reaches about 49 days.
+var timeouts = new TimerWheel<PendingRequest>();
+var fired = new List<PendingRequest?>();          // reused, so a steady-state tick allocates nothing
+
+// Send a request and arm its timeout. Keep the handle with the request.
+PendingRequest request = Send(query);
+request.Timeout = timeouts.Schedule(delayTicks: 30_000, request);
+
+// The reply beat the clock: cancel in O(1), and the wheel stops holding the payload.
+timeouts.Cancel(request.Timeout);
+
+// Drive the clock from wherever your time comes from. Everything due comes back at once.
+fired.Clear();
+timeouts.Advance(Environment.TickCount64 - started, fired);
+foreach (PendingRequest? timedOut in fired)
+    timedOut!.Fail(new TimeoutException());
+
+// A jump costs the wheel, not the jump: this is the same work as advancing by one tick.
+timeouts.Advance(timeouts.CurrentTick + 5_000_000, fired);
+
+// What is still pending, and how long each has left.
+foreach ((long deadline, PendingRequest? pending) in timeouts)
+    Console.WriteLine($"{pending} has {deadline - timeouts.CurrentTick} ticks left");
+```

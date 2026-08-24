@@ -216,6 +216,53 @@ public class EnumeratorInvalidationAndClearCoverageTests
     /// than incidental.
     /// </summary>
     [Fact]
+    public void TimerWheelEnumeratorReset_ShouldThrowInvalidOperationException_WhenWheelModified()
+    {
+        var wheel = new TimerWheel<int>(4, 2);
+        wheel.Schedule(1, 1);
+        wheel.Schedule(2, 2);
+
+        var enumerator = wheel.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        wheel.Schedule(3, 3);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        var second = wheel.GetEnumerator();
+        wheel.Schedule(3, 4);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    /// <summary>
+    /// The wheel's own deliberate exception to the rule, alongside <see cref="SpatialGrid{TValue}"/>'s
+    /// <c>Move</c>: an advance that fires nothing can still <i>relocate</i> timers, cascading a level-1 slot's
+    /// contents down into level 0 as the clock reaches it, but it changes neither the set of pending timers
+    /// nor the slot each one occupies. The sequence an enumerator is walking is therefore untouched, and this
+    /// is the mutation the type exists for, so the guarantee is load-bearing rather than incidental.
+    /// </summary>
+    [Fact]
+    public void TimerWheelAdvance_ShouldNotBumpTheVersion_WhenItFiresNothing()
+    {
+        var wheel = new TimerWheel<int>(4, 2);
+        wheel.Schedule(9, 1);
+        wheel.Schedule(11, 2);
+
+        var enumerator = wheel.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.Equal(0, wheel.Advance(8, new List<int>()));
+
+        enumerator.Reset();
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(2, seen);
+    }
+
+    [Fact]
     public void SpatialGridMove_ShouldNotBumpTheVersion_BecauseTheSequenceIsUnchanged()
     {
         var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);

@@ -58,6 +58,7 @@ internal static class Differential
         ("SegmentTree", SegmentTreeCase),
         ("KdTree", KdTreeCase),
         ("SpatialGrid", SpatialGridCase),
+        ("TimerWheel", TimerWheelCase),
         ("RTree", RTreeCase),
         ("IntervalTree", IntervalTreeCase),
         ("CompressedGraph", CompressedGraphCase),
@@ -1382,6 +1383,91 @@ internal static class Differential
         double dx = point.X - x;
         double dy = point.Y - y;
         return (dx * dx) + (dy * dy);
+    }
+
+    // TimerWheel against the definition of a deadline list: an advance fires exactly the timers whose deadline
+    // has arrived and which nobody cancelled. The geometry is drawn tiny so a run of a couple of hundred
+    // operations crosses whole revolutions of every level — that is where the cascade can misplace a timer,
+    // and a misplaced timer does not throw, it simply never fires. Handles are held onto deliberately, so a
+    // stale one is offered back to the wheel after its slot has been reused.
+    private static void TimerWheelCase(Random rng)
+    {
+        int slots = 1 << rng.Next(1, 4);
+        int levels = rng.Next(1, 4);
+
+        var sut = new TimerWheel<int>(slots, levels);
+        long horizon = sut.Horizon;
+
+        var live = new Dictionary<int, (TimerHandle Handle, long Deadline)>();
+        var retired = new List<TimerHandle>();
+        var expired = new List<int>();
+        int next = 0;
+
+        int operations = OpCount(rng);
+        for (int op = 0; op < operations; op++)
+        {
+            int roll = rng.Next(100);
+
+            if (roll < 45)
+            {
+                long delay = rng.NextInt64(horizon);
+                live[next] = (sut.Schedule(delay, next), sut.CurrentTick + delay);
+                next++;
+            }
+            else if (roll < 65 && live.Count > 0)
+            {
+                int victim = live.Keys.ElementAt(rng.Next(live.Count));
+                Check(sut.Cancel(live[victim].Handle), "TimerWheel refused to cancel a pending timer");
+                retired.Add(live[victim].Handle);
+                live.Remove(victim);
+            }
+            else if (roll < 97)
+            {
+                // A tick as often as a jump: the two take different paths through the advance, since a jump
+                // past a full revolution visits every slot on a level rather than the ones it crossed.
+                long jump = rng.Next(3) == 0 ? rng.Next(0, 2) : rng.NextInt64(horizon + 1);
+                long target = sut.CurrentTick + jump;
+
+                expired.Clear();
+                int fired = sut.Advance(target, expired!);
+
+                int[] due = [.. live.Where(t => t.Value.Deadline <= target).Select(t => t.Key).Order()];
+                Check(fired == due.Length, "TimerWheel fired a different number of timers than were due");
+                Check(expired.Order().SequenceEqual(due), "TimerWheel fired the wrong set of timers");
+
+                foreach (int id in due)
+                {
+                    retired.Add(live[id].Handle);
+                    live.Remove(id);
+                }
+            }
+            else
+            {
+                sut.Clear();
+                foreach (var entry in live)
+                    retired.Add(entry.Value.Handle);
+
+                live.Clear();
+            }
+
+            Check(sut.Count == live.Count, "TimerWheel Count disagreed");
+
+            foreach (TimerHandle stale in retired)
+            {
+                Check(!sut.TryGetDeadline(stale, out _), "TimerWheel resolved a retired handle");
+                Check(!sut.Cancel(stale), "TimerWheel cancelled through a retired handle");
+            }
+
+            foreach (var entry in live)
+            {
+                Check(sut.TryGetDeadline(entry.Value.Handle, out long deadline), "TimerWheel lost a live handle");
+                Check(deadline == entry.Value.Deadline, "TimerWheel disagreed on a pending timer's deadline");
+            }
+
+            Check(sut.Select(timer => timer.Deadline).Order().SequenceEqual(
+                    live.Values.Select(t => t.Deadline).Order()),
+                "TimerWheel enumerated a different set of deadlines than are pending");
+        }
     }
 
     // SpatialGrid against the same brute-force scan, but driven by a randomized *operation sequence* rather
