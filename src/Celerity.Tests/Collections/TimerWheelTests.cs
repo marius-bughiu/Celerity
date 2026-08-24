@@ -498,7 +498,9 @@ public class TimerWheelTests
         Assert.Equal(1, wheel.CurrentTick);
         Assert.Contains(wheel, timer => timer.Deadline == 1);
 
-        // And it is the first thing the next advance delivers, even though its tick has passed.
+        // And the next advance delivers it, even though its tick has passed. Where in that batch it lands is
+        // not promised and this does not check it: nothing else becomes due here, and a timer that did would
+        // be prepended ahead of it.
         List<string?> recovered = Drain(wheel, 5);
         Assert.Single(recovered);
         List<string?> together = [.. destination.Accepted.Concat(recovered).Order()];
