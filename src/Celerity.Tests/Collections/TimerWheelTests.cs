@@ -447,6 +447,92 @@ public class TimerWheelTests
         }
     }
 
+    [Fact]
+    public void Advance_ShouldThrowArgumentException_WhenTheDestinationIsReadOnly()
+    {
+        TimerWheel<string> wheel = SmallWheel();
+        wheel.Schedule(1, "a");
+
+        // Rejected before the clock moves, rather than part-way through the walk when Add first refuses.
+        var ex = Assert.Throws<ArgumentException>(() => wheel.Advance(1, new string?[4]));
+        Assert.Equal("expired", ex.ParamName);
+        Assert.Equal(0, wheel.CurrentTick);
+        Assert.Equal(1, wheel.Count);
+    }
+
+    [Fact]
+    public void Advance_ShouldLeaveAnUndeliveredTimerPending_WhenTheDestinationThrows()
+    {
+        // The corruption this guards against: delivery is the last step, so a destination that gives up
+        // part-way must not leave the timers it refused stranded in a slot the wheel has already walked past.
+        TimerWheel<string> wheel = SmallWheel();
+        wheel.Schedule(1, "first");
+        wheel.Schedule(1, "second");
+        wheel.Schedule(9, "kept");
+
+        var destination = new ThrowingCollection(acceptBeforeThrowing: 1);
+        Assert.Throws<InvalidOperationException>(() => wheel.Advance(1, destination));
+
+        // One was accepted and is gone; the other is still pending, still counted, still enumerable.
+        Assert.Single(destination.Accepted);
+        Assert.Equal(2, wheel.Count);
+        Assert.Equal(1, wheel.CurrentTick);
+        Assert.Contains(wheel, timer => timer.Deadline == 1);
+
+        // And it is the first thing the next advance delivers, even though its tick has passed.
+        List<string?> recovered = Drain(wheel, 5);
+        Assert.Single(recovered);
+        List<string?> together = [.. destination.Accepted.Concat(recovered).Order()];
+        Assert.Equal(["first", "second"], together);
+        Assert.Equal(1, wheel.Count);
+    }
+
+    [Fact]
+    public void Advance_ShouldStillCascadeCorrectly_WhenAnEarlierAdvanceWasRefused()
+    {
+        // The refused advance still moved the clock and still re-placed everything it cascaded, so the timers
+        // it did not fire must remain on their own schedule rather than inheriting the failure.
+        TimerWheel<string> wheel = SmallWheel();
+        wheel.Schedule(2, "due");
+        wheel.Schedule(11, "later");
+
+        Assert.Throws<InvalidOperationException>(
+            () => wheel.Advance(2, new ThrowingCollection(acceptBeforeThrowing: 0)));
+
+        Assert.Equal(["due"], Drain(wheel, 2));
+        Assert.Empty(Drain(wheel, 10));
+        Assert.Equal(["later"], Drain(wheel, 11));
+    }
+
+    private sealed class ThrowingCollection(int acceptBeforeThrowing) : ICollection<string?>
+    {
+        public List<string?> Accepted { get; } = [];
+
+        public int Count => Accepted.Count;
+
+        public bool IsReadOnly => false;
+
+        public void Add(string? item)
+        {
+            if (Accepted.Count >= acceptBeforeThrowing)
+                throw new InvalidOperationException("This destination has had enough.");
+
+            Accepted.Add(item);
+        }
+
+        public void Clear() => Accepted.Clear();
+
+        public bool Contains(string? item) => Accepted.Contains(item);
+
+        public void CopyTo(string?[] array, int arrayIndex) => Accepted.CopyTo(array, arrayIndex);
+
+        public bool Remove(string? item) => Accepted.Remove(item);
+
+        public IEnumerator<string?> GetEnumerator() => Accepted.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     // ---- clearing ------------------------------------------------------------------------------------
 
     [Fact]

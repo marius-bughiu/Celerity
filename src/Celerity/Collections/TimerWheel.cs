@@ -7,9 +7,10 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A <b>hierarchical timing wheel</b>: constant-time <see cref="Schedule"/> and <see cref="Cancel"/> over a
-/// population of pending deadlines, and an <see cref="Advance(long, ICollection{TValue})"/> whose cost is the
-/// timers it fires rather than the ticks it crosses — the container for <i>which of these hundred thousand
-/// pending things have timed out</i>, which no heap answers cheaply because a heap cannot cancel.
+/// population of pending deadlines, and an <see cref="Advance(long, ICollection{TValue})"/> bounded by the
+/// wheel's own geometry and the timers it moves rather than by the ticks it crosses — the container for
+/// <i>which of these hundred thousand pending things have timed out</i>, which no heap answers cheaply
+/// because a heap cannot cancel.
 /// </summary>
 /// <typeparam name="TValue">The payload carried by each timer.</typeparam>
 /// <remarks>
@@ -55,8 +56,8 @@ namespace Celerity.Collections;
 /// bucketing is finite: <see cref="Horizon"/> is <c>slots^levels</c> ticks — 2^32 at the defaults, so a
 /// millisecond tick reaches about 49 days — and a longer delay is rejected rather than silently misplaced.
 /// Widen it by adding a level (each multiplies the horizon by <see cref="SlotsPerWheel"/> and costs another
-/// <see cref="SlotsPerWheel"/> slot heads, 1 KiB at the default width) or by choosing a coarser tick. The other half of the trade is that the wheel does <b>not</b>
-/// order: timers fired by one <see cref="Advance(long, ICollection{TValue})"/> are delivered in an
+/// <see cref="SlotsPerWheel"/> slot heads, 1 KiB at the default width) or by choosing a coarser tick. The
+/// other half of the trade is that the wheel does <b>not</b> order: timers fired by one <see cref="Advance(long, ICollection{TValue})"/> are delivered in an
 /// unspecified order, and only the guarantee that every one of them is due — deadline at or before the tick
 /// advanced to — is promised. Stepping tick by tick makes the question moot, since every timer in a batch then
 /// shares one deadline; it becomes visible only on a jump. A caller who needs the earliest deadline first
@@ -72,8 +73,9 @@ namespace Celerity.Collections;
 /// <b>What the bound really is.</b> <see cref="Cancel"/> and <see cref="TryGetDeadline"/> are <c>O(1)</c>
 /// outright. <see cref="Schedule"/> is <c>O(1)</c> amortized: the one call in a growth cycle that finds the
 /// free list empty and the entry array full resizes and copies the backing arrays, which is <c>O(n)</c> for
-/// that call. The level search inside <see cref="Schedule"/> is a loop bounded by <see cref="Levels"/> — at
-/// most seven comparisons, and in a workload with one characteristic timeout, the same one every time.
+/// that call. The level search inside <see cref="Schedule"/> is a loop of at most <see cref="Levels"/>
+/// comparisons — four at the default geometry, and 62 at the narrowest legal wheel, which is the ceiling the
+/// constructor allows — and in a workload with one characteristic timeout it is the same count every time.
 /// </para>
 /// <para>
 /// <b>Capacity only grows.</b> There is no <c>TrimExcess</c>: a handle <i>is</i> a position in the entry
@@ -333,17 +335,41 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// </param>
     /// <returns>How many timers fired.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="expired"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="expired"/> is read-only.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="tick"/> precedes <see cref="CurrentTick"/>, or exceeds <see cref="MaxTick"/>.
     /// </exception>
     /// <remarks>
+    /// <para>
     /// Advancing to the tick the clock already stands at is legal and is not a no-op: it fires the timers
     /// scheduled with a zero delay since the last advance. Every fired timer's handle is retired and its
     /// payload released by the wheel.
+    /// </para>
+    /// <para>
+    /// The cost is <c>O(levels &#215; slots + fired + cascaded)</c> — bounded by the wheel's geometry and the
+    /// timers it moves, <i>not</i> by how far the clock jumped, and not by the timers it fires alone: the walk
+    /// inspects the slots the move crossed whether or not anything is on them, which for the ordinary
+    /// one-tick step is a single slot and for a jump past every level is <see cref="Levels"/> &#215;
+    /// <see cref="SlotsPerWheel"/> of them.
+    /// </para>
+    /// <para>
+    /// <b>A destination whose <c>Add</c> throws does not damage the wheel</b>, which is why handing the
+    /// payloads over is the <i>last</i> thing this does rather than something interleaved with the slot walk.
+    /// A timer that could not be delivered is still pending, still counted, and still addressable by its
+    /// handle, and it is the first thing the next advance delivers. The clock has still moved, because that
+    /// part succeeded. A read-only destination is rejected outright, before the clock moves at all.
+    /// </para>
     /// </remarks>
     public int Advance(long tick, ICollection<TValue?> expired)
     {
         ArgumentNullException.ThrowIfNull(expired);
+
+        if (expired.IsReadOnly)
+        {
+            throw new ArgumentException(
+                "The destination is read-only and cannot receive the fired timers.", nameof(expired));
+        }
+
         return AdvanceCore(tick, expired);
     }
 
@@ -450,20 +476,6 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
         // clock it will actually be measured by.
         _now = tick;
 
-        // The already-due list first, unconditionally: every timer on it was scheduled at or before the clock's
-        // previous position, so no advance can leave one of them pending.
-        int fired = 0;
-        int due = _buckets[_dueBucket];
-        _buckets[_dueBucket] = -1;
-        while (due >= 0)
-        {
-            int next = _entries[due].Next;
-            expired.Add(_values[due]);
-            Vacate(due);
-            fired++;
-            due = next;
-        }
-
         int pending = -1;
 
         // Top level down: a cascade only ever moves a timer to a lower level, so walking downwards means a
@@ -492,9 +504,11 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
                     int next = _entries[node].Next;
                     if (_entries[node].Deadline <= tick)
                     {
-                        expired.Add(_values[node]);
-                        Vacate(node);
-                        fired++;
+                        // Moved to the already-due list rather than handed over here. Delivery is the last
+                        // step of the advance and touches one timer at a time, so a destination whose Add
+                        // throws leaves every undelivered timer exactly where this put it — pending, counted,
+                        // and first in line on the next advance — instead of stranded in a detached slot.
+                        Link(node, _dueBucket);
                     }
                     else
                     {
@@ -517,10 +531,26 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
             pending = next;
         }
 
-        if (fired > 0)
-        {
-            _count -= fired;
+        // The only caller code this method runs. Everything the wheel had to change is already consistent, and
+        // each timer leaves the due list only once its payload has been accepted.
+        int fired = 0;
+        int due = _buckets[_dueBucket];
+        if (due >= 0)
             _version++;
+
+        while (due >= 0)
+        {
+            expired.Add(_values[due]);
+
+            int next = _entries[due].Next;
+            _buckets[_dueBucket] = next;
+            if (next >= 0)
+                _entries[next].Prev = -1;
+
+            Vacate(due);
+            _count--;
+            fired++;
+            due = next;
         }
 
         return fired;

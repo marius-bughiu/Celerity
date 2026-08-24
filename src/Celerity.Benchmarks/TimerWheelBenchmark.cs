@@ -14,8 +14,9 @@ using Celerity.Hashing;
 /// <para>
 /// The unit that matters is <c>Round</c>, and it is shaped by cancellation because the workload is: schedule
 /// <c>ItemCount</c> timeouts at random delays, cancel nine in ten of them — the reply arrived, the lease was
-/// renewed — then run the clock out and drain what survived. The other three groups take that round apart, so
-/// a change can be attributed rather than guessed at.
+/// renewed — then run the clock out and drain what survived. The other four groups — <c>Schedule</c>,
+/// <c>Cancel</c>, <c>Drain</c> and <c>Tick</c> — take that round apart, so a change can be attributed rather
+/// than guessed at.
 /// </para>
 /// <para>
 /// The BCL arm is a lazy-deletion heap, which is not a strawman but the standard workaround: there is no
@@ -95,7 +96,10 @@ public class TimerWheelBenchmark
     public int PriorityQueue_Round()
     {
         var queue = new PriorityQueue<int, long>(ItemCount);
-        var dead = new HashSet<int>();
+
+        // Pre-sized like every other structure in this class. Leaving it to grow would charge the headline
+        // baseline for rehashing that none of the other arms pay, which flatters this type for free.
+        var dead = new HashSet<int>(ItemCount);
 
         for (int i = 0; i < ItemCount; i++)
             queue.Enqueue(i, delays[i]);
