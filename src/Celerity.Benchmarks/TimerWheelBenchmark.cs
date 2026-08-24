@@ -28,6 +28,11 @@ using Celerity.Hashing;
 /// value.
 /// </para>
 /// <para>
+/// One asymmetry is left in deliberately, and it runs <i>against</i> this type rather than for it: the wheel's
+/// arms hand every fired payload to a <see cref="List{T}"/> because that is the only shape its API has, while
+/// the two heap arms pop and count without materializing anything. The margins below are therefore a floor.
+/// </para>
+/// <para>
 /// Only the <see cref="PriorityQueue{TElement, TPriority}"/> arms carry the dashboard's op names; the
 /// addressable-heap arms are suffixed (<c>RoundAddressable</c>, …) so each dashboard card still resolves to
 /// one BCL measurement and one Celerity one, while the report keeps all three in the same category with ratios

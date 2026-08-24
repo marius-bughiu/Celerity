@@ -283,15 +283,16 @@ public class TimerWheelTests
     }
 
     [Fact]
-    public void Cancel_ShouldReleaseThePayload_SoTheWheelStopsHoldingIt()
+    public void Cancel_ShouldReturnTheSlotToTheFreeList_WhenTheValueTypeIsAReferenceType()
     {
         TimerWheel<string> wheel = SmallWheel();
         TimerHandle handle = wheel.Schedule(3, "released");
 
         Assert.True(wheel.Cancel(handle));
 
-        // The slot is back on the free list with its payload nulled out, so the next timer to reuse it sees
-        // its own value and nothing of the cancelled one.
+        // What is observable is that the slot comes back and the next timer to take it reports its own value.
+        // That the vacated slot's payload reference is also cleared is not observable from the public surface
+        // at all — it is the reference-typed arm of Vacate, and this is the test that runs it.
         Assert.Equal(0, wheel.Count);
         wheel.Schedule(3, "reused");
         Assert.Equal(["reused"], Drain(wheel, 3));
