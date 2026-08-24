@@ -78,6 +78,14 @@ namespace Celerity.Collections;
 /// constructor allows — and in a workload with one characteristic timeout it is the same count every time.
 /// </para>
 /// <para>
+/// <b>The wheel may not be modified from the destination it is delivering into.</b>
+/// <see cref="Advance(long, ICollection{TValue})"/> is the one place this type runs code it does not own, and
+/// a destination whose <c>Add</c> calls back into the wheel would mutate the buckets and the free list under
+/// the loop that is walking both. Such a call throws <see cref="InvalidOperationException"/> rather than
+/// corrupting the structure quietly. Schedule and cancel after the advance returns — which is what a
+/// <c>foreach</c> over the destination does anyway.
+/// </para>
+/// <para>
 /// <b>Capacity only grows.</b> There is no <c>TrimExcess</c>: a handle <i>is</i> a position in the entry
 /// array, so compacting it would invalidate every handle a caller is holding, which is the one thing this type
 /// promises not to do. <see cref="Clear"/> retires all outstanding handles and returns the storage to the free
@@ -142,6 +150,11 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     private int _version;
     private long _now;
 
+    // Set only while Advance is handing payloads to the caller's collection, which is the one place this type
+    // runs code it does not own. A destination that calls back into the wheel from its Add would mutate the
+    // buckets and the free list under a loop that is walking both.
+    private bool _delivering;
+
     /// <summary>Creates an empty wheel whose clock starts at tick zero.</summary>
     /// <param name="slotsPerWheel">
     /// Slots in each level's wheel. Must be a power of two, at least two. Wider wheels cross fewer levels for
@@ -159,9 +172,7 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// </exception>
     /// <remarks>
     /// The defaults — 256 slots across 4 levels — give a 2^32-tick horizon, about 49 days at a millisecond
-    /// tick, in one flat array of 1,025 slot heads: 4 KiB, whatever the wheel goes on to hold. The horizon ceiling is <c>2^62</c> rather than <c>2^63</c> so that
-    /// a deadline scheduled at the clock's own ceiling still fits a <see cref="long"/>; see
-    /// <see cref="MaxTick"/>.
+    /// tick, in one flat array of 1,025 slot heads: 4 KiB, whatever the wheel goes on to hold.
     /// </remarks>
     public TimerWheel(int slotsPerWheel = DefaultSlotsPerWheel, int levels = DefaultLevels, int capacity = 0)
     {
@@ -193,7 +204,16 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
 
         _horizon = 1L << (int)totalShift;
 
-        _dueBucket = levels * slotsPerWheel;
+        // Counted in long: the two checks above admit 2^30 slots across two levels, whose product overflows
+        // an int and would reach the allocator as a negative length with an unrelated message.
+        long buckets = (long)levels * slotsPerWheel;
+        if (buckets >= Array.MaxLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(slotsPerWheel), slotsPerWheel,
+                "The slot count and level count together call for more slots than an array can hold. Use fewer levels or a narrower wheel.");
+        }
+
+        _dueBucket = (int)buckets;
         _buckets = new int[_dueBucket + 1];
         _buckets.AsSpan().Fill(-1);
 
@@ -220,12 +240,6 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// </summary>
     public long Horizon => _horizon;
 
-    /// <summary>
-    /// Gets the highest tick the clock may be advanced to: <c>long.MaxValue - Horizon</c>, which is what keeps
-    /// a deadline scheduled at the last legal tick from overflowing.
-    /// </summary>
-    public long MaxTick => long.MaxValue - _horizon;
-
     // ---- scheduling ---------------------------------------------------------------------------------
 
     /// <summary>Schedules a timer to fire <paramref name="delayTicks"/> ticks from now.</summary>
@@ -236,7 +250,11 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <param name="value">The payload to carry. May be <c>null</c> for a reference type.</param>
     /// <returns>A handle that stays valid until the timer fires, is cancelled, or the wheel is cleared.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="delayTicks"/> is negative or at least <see cref="Horizon"/>.
+    /// <paramref name="delayTicks"/> is negative, at least <see cref="Horizon"/>, or would put the deadline
+    /// past <see cref="long.MaxValue"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Called from the destination an <see cref="Advance(long, ICollection{TValue})"/> is delivering into.
     /// </exception>
     /// <remarks>
     /// Duplicate deadlines and duplicate payloads are kept distinct: two timers due at the same tick are two
@@ -245,10 +263,21 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// </remarks>
     public TimerHandle Schedule(long delayTicks, TValue? value)
     {
+        ThrowIfDelivering();
+
         if ((ulong)delayTicks >= (ulong)_horizon)
         {
             throw new ArgumentOutOfRangeException(nameof(delayTicks), delayTicks,
                 $"The delay must be at least zero and below the wheel's horizon of {_horizon} ticks.");
+        }
+
+        // The clock runs to long.MaxValue and no further, so the only delay this has to refuse is the one that
+        // would land past it. Refusing it here rather than capping the clock is what keeps the promise that
+        // every timer this accepts can be reached by some advance.
+        if (delayTicks > long.MaxValue - _now)
+        {
+            throw new ArgumentOutOfRangeException(nameof(delayTicks), delayTicks,
+                $"The deadline would pass long.MaxValue: the clock stands at {_now}.");
         }
 
         return ScheduleCore(_now + delayTicks, value);
@@ -265,8 +294,13 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <paramref name="deadline"/> precedes <see cref="CurrentTick"/>, or is <see cref="Horizon"/> ticks or
     /// more beyond it.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Called from the destination an <see cref="Advance(long, ICollection{TValue})"/> is delivering into.
+    /// </exception>
     public TimerHandle ScheduleAt(long deadline, TValue? value)
     {
+        ThrowIfDelivering();
+
         if (deadline < _now || deadline - _now >= _horizon)
         {
             throw new ArgumentOutOfRangeException(nameof(deadline), deadline,
@@ -288,8 +322,13 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// error, which is why this does not throw the way <see cref="SpatialGrid{TValue}.Remove"/> does. The
     /// payload is released immediately, so cancelling stops the wheel holding a reference to it.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Called from the destination an <see cref="Advance(long, ICollection{TValue})"/> is delivering into.
+    /// </exception>
     public bool Cancel(TimerHandle handle)
     {
+        ThrowIfDelivering();
+
         if (!TryResolve(handle, out int slot))
             return false;
 
@@ -325,8 +364,9 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// to <paramref name="expired"/>.
     /// </summary>
     /// <param name="tick">
-    /// The tick to advance to. Must be at or after <see cref="CurrentTick"/> — time does not run backwards —
-    /// and at most <see cref="MaxTick"/>.
+    /// The tick to advance to. Must be at or after <see cref="CurrentTick"/> — time does not run backwards.
+    /// There is no upper limit short of <see cref="long.MaxValue"/>: it is <see cref="Schedule"/> that refuses
+    /// a delay which would land past it, so that every timer the wheel accepts can be reached.
     /// </param>
     /// <param name="expired">
     /// Receives the payloads of the fired timers, appended in an unspecified order. Not cleared first, so one
@@ -336,8 +376,12 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <returns>How many timers fired.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="expired"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="expired"/> is read-only.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Called from the destination an <see cref="Advance(long, ICollection{TValue})"/> is already delivering
+    /// into.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="tick"/> precedes <see cref="CurrentTick"/>, or exceeds <see cref="MaxTick"/>.
+    /// <paramref name="tick"/> precedes <see cref="CurrentTick"/>.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -377,12 +421,11 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// Moves the clock to <paramref name="tick"/> and returns the payload of every timer due at or before it.
     /// </summary>
     /// <param name="tick">
-    /// The tick to advance to. Must be at or after <see cref="CurrentTick"/>, and at most
-    /// <see cref="MaxTick"/>.
+    /// The tick to advance to. Must be at or after <see cref="CurrentTick"/>.
     /// </param>
     /// <returns>The payloads of the fired timers, in an unspecified order. Empty when nothing was due.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="tick"/> precedes <see cref="CurrentTick"/>, or exceeds <see cref="MaxTick"/>.
+    /// <paramref name="tick"/> precedes <see cref="CurrentTick"/>.
     /// </exception>
     /// <remarks>
     /// The convenience tier: it allocates a list per call. Pass a reused one to
@@ -401,8 +444,13 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <see cref="CurrentTick"/> is left where it stands: this empties the container, it does not rewind the
     /// clock. Clearing an already-empty wheel changes nothing and does not invalidate enumerators.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Called from the destination an <see cref="Advance(long, ICollection{TValue})"/> is delivering into.
+    /// </exception>
     public void Clear()
     {
+        ThrowIfDelivering();
+
         if (_count == 0)
             return;
 
@@ -444,6 +492,19 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
 
     // ---- internals ----------------------------------------------------------------------------------
 
+    private void ThrowIfDelivering()
+    {
+        if (_delivering)
+            ThrowReentrant();
+    }
+
+    // Split out and never inlined so the guard at each call site is one predictable test rather than a
+    // throw's worth of code in the caller's hot path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowReentrant() =>
+        throw new InvalidOperationException(
+            "The wheel cannot be modified while it is delivering expired timers. Schedule and cancel after the advance returns.");
+
     private TimerHandle ScheduleCore(long deadline, TValue? value)
     {
         int slot = AllocateSlot();
@@ -464,11 +525,7 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
                 $"The wheel's clock does not run backwards; it already stands at {_now}.");
         }
 
-        if (tick > MaxTick)
-        {
-            throw new ArgumentOutOfRangeException(nameof(tick), tick,
-                $"The clock may not pass {MaxTick}, beyond which a deadline within the horizon would overflow.");
-        }
+        ThrowIfDelivering();
 
         long previous = _now;
 
@@ -538,19 +595,27 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
         if (due >= 0)
             _version++;
 
-        while (due >= 0)
+        _delivering = true;
+        try
         {
-            expired.Add(_values[due]);
+            while (due >= 0)
+            {
+                expired.Add(_values[due]);
 
-            int next = _entries[due].Next;
-            _buckets[_dueBucket] = next;
-            if (next >= 0)
-                _entries[next].Prev = -1;
+                int next = _entries[due].Next;
+                _buckets[_dueBucket] = next;
+                if (next >= 0)
+                    _entries[next].Prev = -1;
 
-            Vacate(due);
-            _count--;
-            fired++;
-            due = next;
+                Vacate(due);
+                _count--;
+                fired++;
+                due = next;
+            }
+        }
+        finally
+        {
+            _delivering = false;
         }
 
         return fired;

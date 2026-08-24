@@ -32,7 +32,6 @@ public class TimerWheelTests
         Assert.Equal(256, wheel.SlotsPerWheel);
         Assert.Equal(4, wheel.Levels);
         Assert.Equal(1L << 32, wheel.Horizon);
-        Assert.Equal(long.MaxValue - (1L << 32), wheel.MaxTick);
         Assert.Equal(0, wheel.Count);
         Assert.Equal(0, wheel.CurrentTick);
     }
@@ -341,17 +340,37 @@ public class TimerWheelTests
     }
 
     [Fact]
-    public void Advance_ShouldThrowArgumentOutOfRange_WhenTheTickWouldPassMaxTick()
+    public void Schedule_ShouldThrowArgumentOutOfRange_WhenTheDeadlineWouldPassLongMaxValue()
     {
+        // The clock runs to long.MaxValue and the horizon is refused against it, rather than the clock being
+        // capped below long.MaxValue — which would have accepted timers no advance could ever reach.
         TimerWheel<string> wheel = SmallWheel();
+        Drain(wheel, long.MaxValue - 4);
 
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => wheel.Advance(long.MaxValue, new List<string?>()));
-        Assert.Equal("tick", ex.ParamName);
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => wheel.Schedule(5, "past the end of time"));
+        Assert.Equal("delayTicks", ex.ParamName);
 
-        // The ceiling itself is legal, and a timer scheduled from it still lands inside a long.
-        Drain(wheel, wheel.MaxTick);
-        wheel.Schedule(wheel.Horizon - 1, "the last schedulable tick");
-        Assert.Equal(long.MaxValue - 1, wheel.CurrentTick + wheel.Horizon - 1);
+        // And the last delay that does fit is both accepted and reachable.
+        wheel.Schedule(4, "the last instant");
+        Assert.Equal(["the last instant"], Drain(wheel, long.MaxValue));
+        Assert.Equal(long.MaxValue, wheel.CurrentTick);
+    }
+
+    [Fact]
+    public void Schedule_ShouldStayReachable_ForEveryDelayTheWheelAccepts()
+    {
+        // The property the ceiling exists for, checked at the point it used to fail: at the end of the clock,
+        // whatever Schedule takes, some Advance must be able to fire.
+        var wheel = new TimerWheel<long>(4, 2);
+        var expired = new List<long>();
+        wheel.Advance(long.MaxValue - wheel.Horizon, expired);
+
+        for (long delay = 0; delay < wheel.Horizon; delay++)
+            wheel.Schedule(delay, delay);
+
+        Assert.Equal(wheel.Horizon, wheel.Count);
+        Assert.Equal((int)wheel.Horizon, wheel.Advance(long.MaxValue, expired));
+        Assert.Equal(0, wheel.Count);
     }
 
     [Fact]
@@ -529,6 +548,97 @@ public class TimerWheelTests
         public bool Remove(string? item) => Accepted.Remove(item);
 
         public IEnumerator<string?> GetEnumerator() => Accepted.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [Fact]
+    public void Advance_ShouldThrowInvalidOperation_WhenTheDestinationMutatesTheWheel()
+    {
+        // The destination is the one place this type runs code it does not own, so a callback that reaches
+        // back into the wheel would be mutating the buckets and the free list under the loop walking both.
+        TimerWheel<string> wheel = SmallWheel();
+        TimerHandle handle = wheel.Schedule(1, "a");
+        wheel.Schedule(1, "b");
+
+        var destination = new ReentrantCollection(wheel, handle);
+        Assert.Throws<InvalidOperationException>(() => wheel.Advance(1, destination));
+
+        // Nothing was delivered, because the refusal came before the first payload was accepted — so both
+        // timers are still pending, and the guard is cleared on the way out rather than bricking the wheel.
+        Assert.Equal(2, wheel.Count);
+        List<string?> both = [.. Drain(wheel, 2).Order()];
+        Assert.Equal(["a", "b"], both);
+    }
+
+    [Theory]
+    [InlineData("Schedule")]
+    [InlineData("ScheduleAt")]
+    [InlineData("Cancel")]
+    [InlineData("Clear")]
+    [InlineData("Advance")]
+    public void EveryMutatingMember_ShouldThrowInvalidOperation_WhenCalledFromTheDestination(string member)
+    {
+        TimerWheel<string> wheel = SmallWheel();
+        TimerHandle handle = wheel.Schedule(1, "a");
+
+        var destination = new ReentrantCollection(wheel, handle) { Member = member };
+        var ex = Assert.Throws<InvalidOperationException>(() => wheel.Advance(1, destination));
+        Assert.Contains("delivering expired timers", ex.Message);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenTheSlotArrayWouldOverflowAnInt()
+    {
+        // 2^30 slots across two levels passes the power-of-two and 2^62-horizon checks, and their product
+        // overflows an int — which would reach the allocator as a negative length with an unrelated message.
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new TimerWheel<string>(1 << 30, 2));
+        Assert.Equal("slotsPerWheel", ex.ParamName);
+    }
+
+    private sealed class ReentrantCollection(TimerWheel<string> wheel, TimerHandle handle) : ICollection<string?>
+    {
+        public string Member { get; init; } = "Cancel";
+
+        public int Count => 0;
+
+        public bool IsReadOnly => false;
+
+        public void Add(string? item)
+        {
+            switch (Member)
+            {
+                case "Schedule":
+                    wheel.Schedule(1, "reentrant");
+                    break;
+                case "ScheduleAt":
+                    wheel.ScheduleAt(wheel.CurrentTick, "reentrant");
+                    break;
+                case "Clear":
+                    wheel.Clear();
+                    break;
+                case "Advance":
+                    wheel.Advance(wheel.CurrentTick, new List<string?>());
+                    break;
+                default:
+                    wheel.Cancel(handle);
+                    break;
+            }
+        }
+
+        public void Clear()
+        {
+        }
+
+        public bool Contains(string? item) => false;
+
+        public void CopyTo(string?[] array, int arrayIndex)
+        {
+        }
+
+        public bool Remove(string? item) => false;
+
+        public IEnumerator<string?> GetEnumerator() => Enumerable.Empty<string?>().GetEnumerator();
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
