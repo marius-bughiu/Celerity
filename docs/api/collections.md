@@ -5484,7 +5484,7 @@ The four decomposition groups each run **one invocation per iteration**, because
 
 | At 100,000 | `PriorityQueue` | `IndexedPriorityQueue` | `TimerWheel` | vs BCL | vs addressable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Cancel | 1.01 ms | 8.75 ms | 0.51 ms | 1.99x | 17.2x |
+| Cancel | 1,010 µs | 8,750 µs | 508 µs | 1.99x | 17.2x |
 | Drain, nothing cancelled | 11.83 ms | 44.33 ms | 3.33 ms | 3.55x | 13.3x |
 | Tick, one tick at a time | 11.07 ms | 44.83 ms | 4.16 ms | 2.66x | 10.8x |
 | **Schedule** | 1.20 ms | 6.98 ms | 2.58 ms | **0.47x — the heap wins by 2.2x** | 2.71x |
