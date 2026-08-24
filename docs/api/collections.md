@@ -5503,7 +5503,7 @@ Two of those rows deserve their qualification rather than a footnote:
 
 | Member | Behaviour |
 | --- | --- |
-| `TimerWheel(int slotsPerWheel = 256, int levels = 4, int capacity = 0)` | The defaults give a 2^32-tick horizon in four 1 KiB slot arrays — about 49 days at a millisecond tick. `slotsPerWheel` must be a power of two of at least two, `levels` at least one, and the two together must not put `Horizon` past `2^62`. |
+| `TimerWheel(int slotsPerWheel = 256, int levels = 4, int capacity = 0)` | The defaults give a 2^32-tick horizon — about 49 days at a millisecond tick — in one flat array of 1,025 slot heads, 4 KiB whatever the wheel goes on to hold. `slotsPerWheel` must be a power of two of at least two, `levels` at least one, and the two together must not put `Horizon` past `2^62`. |
 | `TimerHandle Schedule(long delayTicks, TValue? value)` | Schedule `delayTicks` from now, `O(1)` amortized. Zero means due now. `ArgumentOutOfRangeException` for a negative delay or one at or beyond `Horizon`. |
 | `TimerHandle ScheduleAt(long deadline, TValue? value)` | The same, by absolute tick on the same clock as `CurrentTick`. A deadline in the past is rejected rather than silently fired. |
 | `bool Cancel(TimerHandle handle)` | Cancel in `O(1)`, releasing the payload. `false` — not an exception — when the handle does not address a pending timer, because losing the race against your own clock is the normal outcome rather than a programming error. |
@@ -5522,7 +5522,7 @@ Two of those rows deserve their qualification rather than a footnote:
 
 ### Caveats
 
-- **The horizon is the trade.** A wheel buys its constant time by bucketing rather than ordering, and the bucketing is finite: a delay of `Horizon` ticks or more is rejected rather than silently misplaced. Widen it by adding a level — each multiplies the horizon by `slotsPerWheel` and costs one array of slots — or by choosing a coarser tick.
+- **The horizon is the trade.** A wheel buys its constant time by bucketing rather than ordering, and the bucketing is finite: a delay of `Horizon` ticks or more is rejected rather than silently misplaced. Widen it by adding a level — each multiplies the horizon by `slotsPerWheel` and costs another `slotsPerWheel` slot heads, 1 KiB at the default width — or by choosing a coarser tick.
 - **A batch of fired timers comes back in no particular order.** Only *due-ness* is promised: every payload `Advance` appends has a deadline at or before the tick advanced to. Stepping tick by tick makes the question moot, since every timer in a batch then shares one deadline; it becomes visible only on a jump. A caller who needs the earliest deadline first wants a priority queue and pays `O(log n)` for it.
 - **Capacity only grows.** There is no `TrimExcess`: a handle *is* a position in the entry array, so compacting it would invalidate every handle a caller is holding, which is the one thing this type promises not to do. `Clear` returns the storage to the free list but keeps it. This is the same trade [`SpatialGrid<TValue>`](#spatialgridtvalue) makes and for the same reason.
 - **Not thread-safe**, like every collection here. One clock, one driver.

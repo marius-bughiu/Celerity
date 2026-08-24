@@ -54,8 +54,8 @@ namespace Celerity.Collections;
 /// <b>The horizon is the trade.</b> A wheel buys its constant time by bucketing rather than ordering, and the
 /// bucketing is finite: <see cref="Horizon"/> is <c>slots^levels</c> ticks — 2^32 at the defaults, so a
 /// millisecond tick reaches about 49 days — and a longer delay is rejected rather than silently misplaced.
-/// Widen it by adding a level (each multiplies the horizon by <see cref="SlotsPerWheel"/> and costs one array
-/// of slots) or by choosing a coarser tick. The other half of the trade is that the wheel does <b>not</b>
+/// Widen it by adding a level (each multiplies the horizon by <see cref="SlotsPerWheel"/> and costs another
+/// <see cref="SlotsPerWheel"/> slot heads, 1 KiB at the default width) or by choosing a coarser tick. The other half of the trade is that the wheel does <b>not</b>
 /// order: timers fired by one <see cref="Advance(long, ICollection{TValue})"/> are delivered in an
 /// unspecified order, and only the guarantee that every one of them is due — deadline at or before the tick
 /// advanced to — is promised. Stepping tick by tick makes the question moot, since every timer in a batch then
@@ -156,8 +156,8 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <paramref name="capacity"/> is negative.
     /// </exception>
     /// <remarks>
-    /// The defaults — 256 slots across 4 levels — give a 2^32-tick horizon in four 1 KiB slot arrays, which is
-    /// about 49 days at a millisecond tick. The horizon ceiling is <c>2^62</c> rather than <c>2^63</c> so that
+    /// The defaults — 256 slots across 4 levels — give a 2^32-tick horizon, about 49 days at a millisecond
+    /// tick, in one flat array of 1,025 slot heads: 4 KiB, whatever the wheel goes on to hold. The horizon ceiling is <c>2^62</c> rather than <c>2^63</c> so that
     /// a deadline scheduled at the clock's own ceiling still fits a <see cref="long"/>; see
     /// <see cref="MaxTick"/>.
     /// </remarks>
