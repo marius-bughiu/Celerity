@@ -6,8 +6,8 @@ using System.Runtime.CompilerServices;
 namespace Celerity.Collections;
 
 /// <summary>
-/// A <b>hierarchical timing wheel</b>: constant-time <see cref="Schedule"/> and <see cref="Cancel"/> over a
-/// population of pending deadlines, and an <see cref="Advance(long, ICollection{TValue})"/> bounded by the
+/// A <b>hierarchical timing wheel</b>: constant-time <see cref="Cancel"/> and amortized constant-time
+/// <see cref="Schedule"/> over a population of pending deadlines, and an <see cref="Advance(long, ICollection{TValue})"/> bounded by the
 /// wheel's own geometry and the timers it moves rather than by the ticks it crosses — the container for
 /// <i>which of these hundred thousand pending things have timed out</i>, which no heap answers cheaply
 /// because a heap cannot cancel.

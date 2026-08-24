@@ -5445,7 +5445,7 @@ if (index.TryGetLongestRepeatedSubstring(out int start, out int length))
 public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TValue>>
 ```
 
-A **hierarchical timing wheel**: a container of pending **deadlines**, with constant-time `Schedule` and `Cancel` and an `Advance` bounded by the wheel's own geometry and the timers it moves — `O(levels x slots + fired + cascaded)` — rather than by the ticks it crosses. It is the structure behind the Linux kernel's timers, Netty's `HashedWheelTimer` and Kafka's request purgatory, and it is what answers *which of these hundred thousand pending things have timed out*.
+A **hierarchical timing wheel**: a container of pending **deadlines**, with constant-time `Cancel`, amortized constant-time `Schedule` — the one call in a growth cycle resizes both backing arrays — and an `Advance` bounded by the wheel's own geometry and the timers it moves — `O(levels x slots + fired + cascaded)` — rather than by the ticks it crosses. It is the structure behind the Linux kernel's timers, Netty's `HashedWheelTimer` and Kafka's request purgatory, and it is what answers *which of these hundred thousand pending things have timed out*.
 
 **It is a data structure, not a scheduler.** There is no thread, no clock and no callback: the caller owns time and drives the wheel with `Advance`. That is what keeps it deterministic, testable, and inside this library's [non-goals](https://github.com/marius-bughiu/Celerity/blob/main/ROADMAP.md#non-goals). A tick is whatever unit you schedule and advance in — milliseconds, frames, sequence numbers.
 
