@@ -47,9 +47,11 @@ namespace Celerity.Collections;
 /// thousand iterations over empty slots for it. This one computes, per level, exactly the slots the move
 /// crosses and walks them from the top level down, firing what is due and staging what is not for
 /// re-insertion against the new time. The work is therefore <c>O(levels &#215; slots + fired + cascaded)</c>
-/// <i>however far the clock jumped</i>, and <c>O(ticks + fired)</c> for the ordinary small step. A cascade
-/// only ever moves a timer <i>down</i> a level, so each timer is touched at most once per level over its whole
-/// life.
+/// <i>however far the clock jumped</i>, and <c>O(ticks + fired + cascaded)</c> for the ordinary small step —
+/// the cascade term belongs in both, because the single tick that carries the clock across a level boundary
+/// reaches that level's whole slot and moves everything on it down, which can be any number of timers and
+/// fire none of them. A cascade only ever moves a timer <i>down</i> a level, so each timer is touched at most
+/// once per level over its whole life, which is what keeps that term amortized rather than repeated.
 /// </para>
 /// <para>
 /// <b>The horizon is the trade.</b> A wheel buys its constant time by bucketing rather than ordering, and the
@@ -399,9 +401,10 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <para>
     /// <b>A destination whose <c>Add</c> throws does not damage the wheel</b>, which is why handing the
     /// payloads over is the <i>last</i> thing this does rather than something interleaved with the slot walk.
-    /// A timer that could not be delivered is still pending, still counted, and still addressable by its
-    /// handle, and it is the first thing the next advance delivers. The clock has still moved, because that
-    /// part succeeded. A read-only destination is rejected outright, before the clock moves at all.
+    /// A timer that could not be delivered is still pending, still counted, still addressable by its handle,
+    /// and delivered by the next advance — though not necessarily before the timers that advance makes due,
+    /// since a batch has no promised order. The clock has still moved, because that part succeeded. A
+    /// read-only destination is rejected outright, before the clock moves at all.
     /// </para>
     /// </remarks>
     public int Advance(long tick, ICollection<TValue?> expired)
@@ -564,7 +567,9 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
                         // Moved to the already-due list rather than handed over here. Delivery is the last
                         // step of the advance and touches one timer at a time, so a destination whose Add
                         // throws leaves every undelivered timer exactly where this put it — pending, counted,
-                        // and first in line on the next advance — instead of stranded in a detached slot.
+                        // and delivered by the next advance — instead of stranded in a detached slot. Where in
+                        // that next batch it lands is not promised: this prepends, so a newly due timer can go
+                        // ahead of one an earlier advance could not deliver. A batch has no order to preserve.
                         Link(node, _dueBucket);
                     }
                     else
