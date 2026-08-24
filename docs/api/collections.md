@@ -5455,7 +5455,7 @@ A **hierarchical timing wheel**: a container of pending **deadlines**, with cons
 
 Almost every timeout is cancelled rather than fired: the reply arrived, the lease was renewed, the connection closed cleanly. That is the axis the obvious structures fail on. The standard `PriorityQueue` workaround is **lazy deletion** — push everything, keep a `HashSet` of cancelled ids, discard tombstones on pop — which makes the cancel itself cheap and then charges for it at drain time, on a heap that has grown with the timers that will never fire and still holds their payloads.
 
-Reach for this type when you have a **population** of pending deadlines: request and RPC timeouts, connection idle-reaping, lease and session expiry, retry backoff, rate-limiter windows, delayed-message queues. Do not reach for it for a handful of timers — see [Measured](#measured-2), where a thousand timers puts it level with the BCL heap on the piecewise operations.
+Reach for this type when you have a **population** of pending deadlines: request and RPC timeouts, connection idle-reaping, lease and session expiry, retry backoff, rate-limiter windows, delayed-message queues. Do not reach for it for a handful of timers — see [Measured](#measured-2), where the round falls from 6.81x at a hundred thousand to 2.56x at a thousand, and two of the four groups it decomposes into turn into losses.
 
 ### How it works
 
@@ -5467,38 +5467,46 @@ A timer scheduled with a **zero** delay is due at the current tick, which no whe
 
 ### Measured
 
-Every ratio names its baseline, and there are two: the BCL `PriorityQueue<int, long>` with the lazy-deletion workaround, and `IndexedPriorityQueue`, which cancels for real. The unit that matters is **Round** — schedule *n* timeouts at random delays across a 10,000-tick span, cancel nine in ten of them, then run the clock out and drain what survived — and the other four groups take that round apart.
+Every ratio names its baseline, and there are two: the BCL `PriorityQueue<int, long>` with the lazy-deletion workaround, and `IndexedPriorityQueue`, which cancels for real. **The numbers are from this PR's CI benchmark run**, on the same runner in the same job, rather than from a development machine — which matters more here than usual, because on three arms the local measurement said the opposite of what CI says.
 
-At **100,000 timers**:
+The unit that matters is **Round** — schedule *n* timeouts at random delays across a 10,000-tick span, cancel nine in ten of them, then run the clock out and drain what survived. It is also the only group measured on BenchmarkDotNet's default job rather than one invocation per iteration, so it is the tight measurement as well as the meaningful one:
 
-| Workload | `PriorityQueue` | `IndexedPriorityQueue` | `TimerWheel` | vs BCL | vs addressable |
+| Round | `PriorityQueue` | `IndexedPriorityQueue` | `TimerWheel` | vs BCL | vs addressable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **Round** — schedule, cancel 90%, drain | 11,117 µs | 8,246 µs | 1,116 µs | **9.96x** | **7.4x** |
-| Schedule | 614 µs | 2,471 µs | 365 µs | 1.68x | 6.8x |
-| Cancel | 440 µs | 4,114 µs | 232 µs | 1.90x | 17.7x |
-| Drain, nothing cancelled | 9,620 µs | 18,879 µs | 1,223 µs | 7.9x | 15.4x |
-| Tick — the clock driven one tick at a time | 9,806 µs | 18,916 µs | 1,835 µs | 5.3x | 10.3x |
+| 100,000 timers | 16.89 ms | 17.58 ms | 2.48 ms | **6.81x** | **7.09x** |
+| 1,000 timers | 43.29 µs | 72.23 µs | 16.91 µs | **2.56x** | 4.27x |
 
-**It is not the lightest of the three, and the first draft of this section claimed it was.** A round at 100,000 allocates 4.01 MB here against the heap's 3.34 MB and the addressable heap's 3.30 MB — this type is the *heaviest*, by about a fifth, because a 24-byte entry record plus a payload slot plus the handle the caller keeps costs more per timer than the heap's `(int, long)` pair. What the heap holds that this does not is *cancelled* timers, which stay in its array with their payloads reachable until something pops them — a statement about when memory is released, not about how much is asked for, and it was wrong to publish it as the latter.
+**Both pre-registered bars from [#393](https://github.com/marius-bughiu/Celerity/issues/393) clear on those numbers**: at least 3x both baselines on the round at 100,000 — 6.81x and 7.09x — and at least 2x `IndexedPriorityQueue` on `Schedule` and `Cancel` in isolation, which come in at 2.71x and 17.2x below.
 
-At **1,000 timers** the picture changes, and this is the honest half of it. `Round` still wins by **3.4x** over the BCL heap and 4.5x over the addressable one, and `Drain` by 18.4x — but **`Cancel` is 1.9x slower**, `Schedule` a little slower, and `Tick` level:
+#### Taking the round apart
 
-| Workload | `PriorityQueue` | `TimerWheel` | vs BCL |
-| --- | ---: | ---: | ---: |
-| Round | 22.20 µs | 6.51 µs | **3.4x** |
-| Drain, nothing cancelled | 213.7 µs | 11.28 µs | 18.4x |
-| Tick | 67.2 µs | 63.3 µs | 1.06x — level |
-| Schedule | 10.92 µs | 11.98 µs | **0.91x — the heap wins by 1.10x** |
-| Cancel | 7.46 µs | 13.92 µs | **0.54x — the heap wins by 1.9x** |
+The four decomposition groups each run **one invocation per iteration**, because each needs its state rebuilt, and they carry 2–53% error as a result. Read them as directions rather than as ratios to two figures — the `Schedule` row in particular, which is the noisiest in the table at ±53% on this type and ±24% on the baseline:
 
-A thousand-element heap fits in cache and its sift is a handful of predictable compares, while this type pays a scattered write into a 1,025-slot bucket array whatever the population. **This is a large-population type**, and the round is 3.4x at a thousand only because the drain is where the heap pays for its cheap cancels — which is also why the two losses are on the piecewise groups and not on the workload that contains both halves.
+| At 100,000 | `PriorityQueue` | `IndexedPriorityQueue` | `TimerWheel` | vs BCL | vs addressable |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cancel | 1.01 ms | 8.75 ms | 0.51 ms | 1.99x | 17.2x |
+| Drain, nothing cancelled | 11.83 ms | 44.33 ms | 3.33 ms | 3.55x | 13.3x |
+| Tick, one tick at a time | 11.07 ms | 44.83 ms | 4.16 ms | 2.66x | 10.8x |
+| **Schedule** | 1.20 ms | 6.98 ms | 2.58 ms | **0.47x — the heap wins by 2.2x** | 2.71x |
 
-Two of those rows deserve their qualification rather than a footnote:
+| At 1,000 | `PriorityQueue` | `IndexedPriorityQueue` | `TimerWheel` | vs BCL | vs addressable |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Drain, nothing cancelled | 487.8 µs | 1.64 ms | 34.75 µs | 14.0x | 47.2x |
+| Schedule | 74.76 µs | 444.8 µs | 73.81 µs | 1.01x — level | 6.03x |
+| **Tick** | 513.7 µs | 1.37 ms | 927.5 µs | **0.55x — the heap wins by 1.8x** | 1.48x |
+| **Cancel** | 22.47 µs | 570.1 µs | 49.42 µs | **0.45x — the heap wins by 2.2x** | 11.5x |
 
-- **The `Cancel` loss is a comparison against something that does not cancel.** The BCL arm adds an id to a `HashSet` and removes nothing from the heap, because it cannot; the work reappears in `Drain`, where every cancelled timer still has to be popped, sifted and discarded. `Round` is the row where both halves are charged to the same arm, which is why it is the ship gate.
-- **`Drain` was expected to be this type's worst case and is not.** With nothing cancelled the wheel gets no benefit from its constant-time removal and still pays the slot sweep — but draining a 100,000-element heap is 100,000 sift-downs of a cache-missing array, against one walk of 1,025 buckets and a linked-list step per timer. It is also the arm that pays for the delivery guarantee described under [Caveats](#caveats-3): handing payloads over is a *second* pass over the fired timers rather than something interleaved with the walk, and on the all-fire arm at 100,000 that pass costs about 80% — 1,223 µs against the 680 µs an interleaved drain measured. On the `Round` workload, where one timer in ten fires, it is worth about 5%, which is what makes it a cheap guarantee to buy.
+**`Schedule` is this type's real loss, and it is worth understanding rather than excusing.** A heap insert appends to a contiguous array and sifts up, which for random priorities is a comparison or two against lines it has just touched. A schedule here computes a level, writes into one of 1,025 scattered slot heads, and writes a back-link into the *previous* occupant of that slot — a near-random access into a 2.4 MB entry array. At 100,000 timers that is roughly twice the BCL heap's cost. Against `IndexedPriorityQueue` it still wins by 2.71x, because that type pays a hash-table write per insert on top of the sift.
 
-**Both pre-registered bars from [#393](https://github.com/marius-bughiu/Celerity/issues/393) clear**: at least 3x both baselines on the round at 100,000 (9.96x and 7.4x), and at least 2x `IndexedPriorityQueue` on `Schedule` and `Cancel` in isolation (6.8x and 17.7x). The third — the uncancelled drain — was pre-registered as a loss to be documented rather than a gate, and is a 7.9x win instead.
+**The drain pays for the delivery guarantee.** Handing payloads over is a *second* pass over the fired timers rather than something interleaved with the slot walk, which is what stops a refusing destination stranding them. That cost falls per *fired* timer, so it lands almost entirely on this arm: a development-machine A/B put it at about 80% on the all-fire drain and about 5% on `Round`, where one timer in ten fires. It is a cheap guarantee at the workload the type exists for and an expensive one at the workload it does not.
+
+**`Cancel` loses to something that does not cancel.** The BCL arm adds an id to a `HashSet` and removes nothing from the heap, because it cannot — the work reappears in `Drain`, where every cancelled timer still has to be popped, sifted and discarded. That is why `Round`, which charges both halves to the same arm, is the ship gate and the row this type is sold on. Against the heap that *does* cancel, this one is 17.2x faster at 100,000.
+
+**The clock-driven arm splits by population.** At 100,000 the tick-by-tick drive is 2.66x the BCL heap; at 1,000 it is 1.8x *slower*, because the wheel pays a slot read per tick whatever the population while a thousand-element heap answers a peek from cache. Ten thousand ticks over a thousand timers is the shape this type is worst at.
+
+**On memory, it is the heaviest of the three.** CI publishes times rather than allocations, so this figure is a development-machine measurement, and it is deterministic rather than runner-sensitive: a round at 100,000 allocates 4.01 MB here against the heap's 3.34 MB and the addressable heap's 3.30 MB — about a fifth more, because a 24-byte entry record plus a payload slot plus the handle the caller keeps costs more per timer than the heap's `(int, long)` pair. What the heap holds that this does not is *cancelled* timers, which stay in its array with their payloads reachable until something pops them; that is a statement about when memory is released, not about how much is asked for.
+
+**Where the local measurement disagreed.** A development machine put `Schedule` at 1.68x *ahead* of the BCL heap rather than 2.2x behind it, the thousand-timer `Tick` at a slight win rather than a 1.8x loss, and the round at 9.96x rather than 6.81x. Local runs of the `Schedule` arm also disagreed with each other by a factor of four. CI's same-runner A/B is what is published, and this is the case that shows why.
 
 ### API
 
@@ -5523,7 +5531,7 @@ Two of those rows deserve their qualification rather than a footnote:
 ### Caveats
 
 - **The horizon is the trade.** A wheel buys its constant time by bucketing rather than ordering, and the bucketing is finite: a delay of `Horizon` ticks or more is rejected rather than silently misplaced. Widen it by adding a level — each multiplies the horizon by `slotsPerWheel` and costs another `slotsPerWheel` slot heads, 1 KiB at the default width — or by choosing a coarser tick.
-- **A batch of fired timers comes back in no particular order.** Only *due-ness* is promised: every payload `Advance` appends has a deadline at or before the tick advanced to. Stepping tick by tick makes the question moot, since every timer in a batch then shares one deadline; it becomes visible only on a jump. A caller who needs the earliest deadline first wants a priority queue and pays `O(log n)` for it.
+- **A batch of fired timers comes back in no particular order.** Only *due-ness* is promised: every payload `Advance` appends has a deadline at or before the tick advanced to. That holds even when the clock is stepped one tick at a time — a zero-delay schedule, or a timer an earlier advance could not deliver, waits on the already-due list and comes back alongside the next tick's own — so a batch can span deadlines however finely the clock is driven. A caller who needs the earliest deadline first wants a priority queue and pays `O(log n)` for it.
 - **Capacity only grows.** There is no `TrimExcess`: a handle *is* a position in the entry array, so compacting it would invalidate every handle a caller is holding, which is the one thing this type promises not to do. `Clear` returns the storage to the free list but keeps it. This is the same trade [`SpatialGrid<TValue>`](#spatialgridtvalue) makes and for the same reason.
 - **A destination whose `Add` throws cannot damage the wheel**, which is why `Advance` hands the payloads over as its last step rather than interleaving delivery with the slot walk. A timer that could not be delivered is still pending, still counted, still addressable by its handle, and delivered by the next advance — though not necessarily *before* the timers that advance makes due, since a batch has no promised order. The clock has still moved, because that part succeeded. A read-only destination is rejected before the clock moves at all. The guarantee is not free — see the `Drain` row above — but it is paid per *fired* timer, so the workload the type exists for barely feels it.
 - **The wheel may not be modified from the destination it is delivering into.** `Advance` is the one place this type runs code it does not own, and a destination whose `Add` calls back into `Schedule`, `Cancel` or `Clear` would mutate the buckets and the free list under the loop walking both. Such a call throws `InvalidOperationException`. Reschedule after the advance returns, which is what a `foreach` over the destination does anyway.
