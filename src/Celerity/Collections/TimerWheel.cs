@@ -61,9 +61,10 @@ namespace Celerity.Collections;
 /// <see cref="SlotsPerWheel"/> slot heads, 1 KiB at the default width) or by choosing a coarser tick. The
 /// other half of the trade is that the wheel does <b>not</b> order: timers fired by one <see cref="Advance(long, ICollection{TValue})"/> are delivered in an
 /// unspecified order, and only the guarantee that every one of them is due — deadline at or before the tick
-/// advanced to — is promised. Stepping tick by tick makes the question moot, since every timer in a batch then
-/// shares one deadline; it becomes visible only on a jump. A caller who needs the earliest deadline first
-/// wants a priority queue, and pays <c>O(log n)</c> for it.
+/// advanced to — is promised. That holds even when the clock is stepped one tick at a time: a zero-delay
+/// schedule, or a timer an earlier advance could not deliver, waits on the already-due list and comes back
+/// alongside the next tick's own, so a batch can span deadlines however finely the clock is driven. A caller
+/// who needs the earliest deadline first wants a priority queue, and pays <c>O(log n)</c> for it.
 /// </para>
 /// <para>
 /// <b><see cref="Cancel"/> returns a <see cref="bool"/> rather than throwing</b> on a handle that no longer
@@ -169,7 +170,8 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <param name="capacity">How many timers to make room for up front. Storage grows as needed.</param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="slotsPerWheel"/> is below two or not a power of two, <paramref name="levels"/> is below
-    /// one, the two together would put <see cref="Horizon"/> beyond <c>2^62</c>, or
+    /// one, the two together would put <see cref="Horizon"/> beyond <c>2^62</c> or call for more slots than
+    /// one array can hold — two independent limits, since a wide wheel reaches the second first — or
     /// <paramref name="capacity"/> is negative.
     /// </exception>
     /// <remarks>
@@ -430,6 +432,10 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="tick"/> precedes <see cref="CurrentTick"/>.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Called from the destination an <see cref="Advance(long, ICollection{TValue})"/> is already delivering
+    /// into.
+    /// </exception>
     /// <remarks>
     /// The convenience tier: it allocates a list per call. Pass a reused one to
     /// <see cref="Advance(long, ICollection{TValue})"/> on a hot loop.
@@ -612,6 +618,13 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
 
                 Vacate(due);
                 _count--;
+
+                // Stepped on the first timer actually removed, and before the loop can call back into the
+                // caller again: a destination is allowed to *read* the wheel from its Add, and one holding an
+                // enumerator taken before the advance must not walk a wheel this has already vacated from.
+                if (fired == 0)
+                    _version++;
+
                 fired++;
                 due = next;
             }
@@ -619,12 +632,6 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
         finally
         {
             _delivering = false;
-
-            // Stepped here rather than before the loop, and on what was actually removed rather than on what
-            // was going to be: a destination that refuses its very first payload leaves the pending set
-            // untouched, and an enumerator has no reason to notice it happened.
-            if (fired > 0)
-                _version++;
         }
 
         return fired;

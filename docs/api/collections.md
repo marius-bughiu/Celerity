@@ -5481,7 +5481,7 @@ At **100,000 timers**:
 
 **It is not the lightest of the three, and the first draft of this section claimed it was.** A round at 100,000 allocates 4.01 MB here against the heap's 3.34 MB and the addressable heap's 3.30 MB — this type is the *heaviest*, by about a fifth, because a 24-byte entry record plus a payload slot plus the handle the caller keeps costs more per timer than the heap's `(int, long)` pair. What the heap holds that this does not is *cancelled* timers, which stay in its array with their payloads reachable until something pops them — a statement about when memory is released, not about how much is asked for, and it was wrong to publish it as the latter.
 
-At **1,000 timers** the picture changes, and this is the honest half of it. The two whole-workload groups still win — the round by **3.4x** over the BCL heap and 4.5x over the addressable one, the drain by 18.4x — but **`Cancel` is 1.9x slower** and `Schedule` a little slower, and only the tick-by-tick drive comes out level:
+At **1,000 timers** the picture changes, and this is the honest half of it. `Round` still wins by **3.4x** over the BCL heap and 4.5x over the addressable one, and `Drain` by 18.4x — but **`Cancel` is 1.9x slower**, `Schedule` a little slower, and `Tick` level:
 
 | Workload | `PriorityQueue` | `TimerWheel` | vs BCL |
 | --- | ---: | ---: | ---: |

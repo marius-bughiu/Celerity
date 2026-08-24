@@ -534,6 +534,39 @@ public class TimerWheelTests
     }
 
     [Fact]
+    public void Advance_ShouldInvalidateEnumerators_BeforeCallingTheDestinationASecondTime()
+    {
+        // A destination may *read* the wheel from its Add — only mutation is refused — so an enumerator taken
+        // before the advance must already be invalid by the time the second payload is offered, rather than
+        // walking a wheel the first delivery has vacated a slot from.
+        TimerWheel<string> wheel = SmallWheel();
+        wheel.Schedule(1, "a");
+        wheel.Schedule(1, "b");
+
+        var enumerator = wheel.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        var seen = new List<bool>();
+        var destination = new EnumeratingCollection(() =>
+        {
+            try
+            {
+                enumerator.MoveNext();
+                seen.Add(false);
+            }
+            catch (InvalidOperationException)
+            {
+                seen.Add(true);
+            }
+        });
+
+        Assert.Equal(2, wheel.Advance(1, destination));
+
+        // The first Add ran before anything was removed; the second saw the invalidation.
+        Assert.Equal([false, true], seen);
+    }
+
+    [Fact]
     public void Advance_ShouldStillCascadeCorrectly_WhenAnEarlierAdvanceWasRefused()
     {
         // The refused advance still moved the clock and still re-placed everything it cascaded, so the timers
@@ -548,6 +581,31 @@ public class TimerWheelTests
         Assert.Equal(["due"], Drain(wheel, 2));
         Assert.Empty(Drain(wheel, 10));
         Assert.Equal(["later"], Drain(wheel, 11));
+    }
+
+    private sealed class EnumeratingCollection(Action onAdd) : ICollection<string?>
+    {
+        public int Count => 0;
+
+        public bool IsReadOnly => false;
+
+        public void Add(string? item) => onAdd();
+
+        public void Clear()
+        {
+        }
+
+        public bool Contains(string? item) => false;
+
+        public void CopyTo(string?[] array, int arrayIndex)
+        {
+        }
+
+        public bool Remove(string? item) => false;
+
+        public IEnumerator<string?> GetEnumerator() => Enumerable.Empty<string?>().GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed class ThrowingCollection(int acceptBeforeThrowing) : ICollection<string?>
