@@ -592,8 +592,6 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
         // each timer leaves the due list only once its payload has been accepted.
         int fired = 0;
         int due = _buckets[_dueBucket];
-        if (due >= 0)
-            _version++;
 
         _delivering = true;
         try
@@ -616,6 +614,12 @@ public sealed class TimerWheel<TValue> : IReadOnlyCollection<ScheduledTimer<TVal
         finally
         {
             _delivering = false;
+
+            // Stepped here rather than before the loop, and on what was actually removed rather than on what
+            // was going to be: a destination that refuses its very first payload leaves the pending set
+            // untouched, and an enumerator has no reason to notice it happened.
+            if (fired > 0)
+                _version++;
         }
 
         return fired;

@@ -5481,16 +5481,17 @@ At **100,000 timers**:
 
 **It is not the lightest of the three, and the first draft of this section claimed it was.** A round at 100,000 allocates 4.01 MB here against the heap's 3.34 MB and the addressable heap's 3.30 MB — this type is the *heaviest*, by about a fifth, because a 24-byte entry record plus a payload slot plus the handle the caller keeps costs more per timer than the heap's `(int, long)` pair. What the heap holds that this does not is *cancelled* timers, which stay in its array with their payloads reachable until something pops them — a statement about when memory is released, not about how much is asked for, and it was wrong to publish it as the latter.
 
-At **1,000 timers** the picture changes, and this is the honest half of it. The round is still **3.4x** the BCL heap and **4.5x** the addressable one, but two of the piecewise groups come out behind:
+At **1,000 timers** the picture changes, and this is the honest half of it. The two whole-workload groups still win — the round by **3.4x** over the BCL heap and 4.5x over the addressable one, the drain by 18.4x — but **`Cancel` is 1.9x slower** and `Schedule` a little slower, and only the tick-by-tick drive comes out level:
 
 | Workload | `PriorityQueue` | `TimerWheel` | vs BCL |
 | --- | ---: | ---: | ---: |
 | Round | 22.20 µs | 6.51 µs | **3.4x** |
-| Schedule | 10.92 µs | 11.98 µs | 0.91x |
+| Drain, nothing cancelled | 213.7 µs | 11.28 µs | 18.4x |
+| Tick | 67.2 µs | 63.3 µs | 1.06x — level |
+| Schedule | 10.92 µs | 11.98 µs | **0.91x — the heap wins by 1.10x** |
 | Cancel | 7.46 µs | 13.92 µs | **0.54x — the heap wins by 1.9x** |
-| Tick | 67.2 µs | 63.3 µs | 1.06x |
 
-A thousand-element heap fits in cache and its sift is a handful of predictable compares, while this type pays a scattered write into a 1,025-slot bucket array whatever the population. **This is a large-population type**, and the round is 3.8x at a thousand only because the drain is where the heap pays for its cheap cancels.
+A thousand-element heap fits in cache and its sift is a handful of predictable compares, while this type pays a scattered write into a 1,025-slot bucket array whatever the population. **This is a large-population type**, and the round is 3.4x at a thousand only because the drain is where the heap pays for its cheap cancels — which is also why the two losses are on the piecewise groups and not on the workload that contains both halves.
 
 Two of those rows deserve their qualification rather than a footnote:
 

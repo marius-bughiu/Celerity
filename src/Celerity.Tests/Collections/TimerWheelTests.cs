@@ -507,6 +507,31 @@ public class TimerWheelTests
     }
 
     [Fact]
+    public void Advance_ShouldNotInvalidateEnumerators_WhenTheDestinationRefusesItsFirstPayload()
+    {
+        // Nothing left the pending set, so nothing an enumerator is walking changed. The version steps on what
+        // was actually delivered rather than on what the advance was about to deliver.
+        TimerWheel<string> wheel = SmallWheel();
+        wheel.Schedule(1, "a");
+        wheel.Schedule(1, "b");
+
+        var enumerator = wheel.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.Throws<InvalidOperationException>(
+            () => wheel.Advance(1, new ThrowingCollection(acceptBeforeThrowing: 0)));
+
+        Assert.True(enumerator.MoveNext());
+        Assert.False(enumerator.MoveNext());
+
+        // One accepted payload is a real change, and does invalidate.
+        var second = wheel.GetEnumerator();
+        Assert.Throws<InvalidOperationException>(
+            () => wheel.Advance(1, new ThrowingCollection(acceptBeforeThrowing: 1)));
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
     public void Advance_ShouldStillCascadeCorrectly_WhenAnEarlierAdvanceWasRefused()
     {
         // The refused advance still moved the clock and still re-placed everything it cascaded, so the timers
