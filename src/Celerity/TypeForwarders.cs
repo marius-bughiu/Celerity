@@ -34,10 +34,6 @@ using Celerity.Primitives;
 [assembly: TypeForwardedTo(typeof(Int64Murmur3Hasher))]
 [assembly: TypeForwardedTo(typeof(Int64WangHasher))]
 [assembly: TypeForwardedTo(typeof(Int64WangNaiveHasher))]
-#pragma warning disable CS0618 // Obsolete aliases still ship, so they still need a forwarder.
-[assembly: TypeForwardedTo(typeof(UInt32Hasher))]
-[assembly: TypeForwardedTo(typeof(UInt64Hasher))]
-#pragma warning restore CS0618
 [assembly: TypeForwardedTo(typeof(UInt32IdentityHasher))]
 [assembly: TypeForwardedTo(typeof(UInt32Murmur3Hasher))]
 [assembly: TypeForwardedTo(typeof(UInt32WangHasher))]

@@ -24,8 +24,8 @@ namespace Celerity.Hashing;
 /// This type replaces <c>UInt32Hasher</c>, whose bare name said nothing about which
 /// tier of the ladder it occupied — and named the cheapest tier for <see cref="uint"/>
 /// while the identically-shaped <c>UInt64Hasher</c> named the strongest one for
-/// <see cref="ulong"/>. The old name remains as an obsolete alias and will be removed
-/// in a future major version.
+/// <see cref="ulong"/>. The old name shipped as an obsolete alias through v3.0.0 and
+/// no longer exists.
 /// </para>
 /// </remarks>
 public struct UInt32WangNaiveHasher : IHashProvider<uint>

@@ -1,13 +1,10 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Celerity.Hashing;
-
-#pragma warning disable CS0618 // The obsolete aliases are part of what is under test here.
 
 namespace Celerity.Tests.Hashing;
 
 /// <summary>
-/// Family-wide naming and cross-width contract for the integer hashers: every live integer
+/// Family-wide naming and cross-width contract for the integer hashers: every integer
 /// hasher names its algorithm in its type name, the four key widths ship the same four
 /// tiers, and each unsigned hasher agrees bit-for-bit with its signed peer — with one
 /// documented exception, the 32-bit naive fold, whose shift is arithmetic on one side and
@@ -59,13 +56,13 @@ public class IntegerHasherFamilyNamingTests
     }
 
     [Fact]
-    public void NoLiveIntegerHasher_ShouldCarryABareWidthOnlyName()
+    public void NoIntegerHasher_ShouldCarryABareWidthOnlyName()
     {
-        // `UInt32Hasher` / `UInt64Hasher` still ship as obsolete aliases, so the rule is
-        // "not without a deprecation notice" rather than "not at all".
+        // `UInt32Hasher` / `UInt64Hasher` were the two offenders. They shipped as obsolete
+        // aliases through v3.0.0 and are gone, so the rule is "not at all" rather than the
+        // "not without a deprecation notice" it had to be while they were still on the roster.
         string[] offenders = IntegerHasherTypes()
             .Where(t => Regex.IsMatch(t.Name, "^U?Int(32|64)Hasher$"))
-            .Where(t => t.GetCustomAttribute<ObsoleteAttribute>() is null)
             .Select(t => t.Name)
             .ToArray();
 

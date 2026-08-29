@@ -234,7 +234,7 @@ Everything else — the hashers, `VarInt`, `FastGuid`, the PRNGs — keeps its n
 
 ## `UInt32Hasher` / `UInt64Hasher` → the algorithm-named types
 
-The two bare-named unsigned hashers were renamed so every integer hasher says which tier of the escalation ladder it is, the way the signed families always have. The old names still ship as `[Obsolete]` aliases that forward to the new types, so this is a compiler-guided find-and-replace with **no change to any hash value**:
+The two bare-named unsigned hashers were renamed so every integer hasher says which tier of the escalation ladder it is, the way the signed families always have. The old names shipped as `[Obsolete]` aliases from v2.6.0 through v3.0.0 and **no longer exist**, so a call site that still names one is now a compile error rather than a warning. The replacement is a find-and-replace with **no change to any hash value**:
 
 | Old name | New name | What it always was |
 |---|---|---|
@@ -251,7 +251,9 @@ var d32 = new CelerityDictionary<uint, string, UInt32WangNaiveHasher>();
 var d64 = new CelerityDictionary<ulong, string, UInt64Murmur3Hasher>();
 ```
 
-Worth a second look while you are in there: the same bare name meant the *cheapest* mixer for `uint` and the *strongest* one for `ulong`, so code that picked both by analogy may not have been asking for what it thought. If your `uint` keys are clustered, `UInt32WangHasher` / `UInt32Murmur3Hasher` are the escalation; if your `ulong` keys are already uniform, `UInt64WangHasher` / `UInt64WangNaiveHasher` are cheaper. `UInt64Hasher` keeps its `IHashProvider64<ulong>` implementation, so a sketch parameterized on it does not lose its 64-bit path mid-migration. Both aliases will be removed in a future major version.
+Worth a second look while you are in there: the same bare name meant the *cheapest* mixer for `uint` and the *strongest* one for `ulong`, so code that picked both by analogy may not have been asking for what it thought. If your `uint` keys are clustered, `UInt32WangHasher` / `UInt32Murmur3Hasher` are the escalation; if your `ulong` keys are already uniform, `UInt64WangHasher` / `UInt64WangNaiveHasher` are cheaper. `UInt64Murmur3Hasher` implements `IHashProvider64<ulong>` exactly as the alias did, so a sketch parameterized on it does not lose its 64-bit path.
+
+This is also a **binary** break, not only a source one: `Celerity.dll` no longer forwards the two type names either, so an assembly compiled against v2.6.0 through v3.0.0 that binds `UInt32Hasher` or `UInt64Hasher` fails to resolve them and must be recompiled.
 
 ## `UPPER_CASE` constants -> `PascalCase`
 

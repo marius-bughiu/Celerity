@@ -78,7 +78,7 @@ The interface does **not** derive from `IHashProvider<T>`: the two contracts are
 | Key type | Hashers with `Hash64` | Relationship to `Hash` |
 |---|---|---|
 | `long` | `Int64WangHasher`, `Int64Murmur3Hasher` | `Hash` is the low 32 bits of `Hash64` |
-| `ulong` | `UInt64WangHasher`, `UInt64Murmur3Hasher`, `UInt64Hasher` (obsolete alias for `UInt64Murmur3Hasher`) | `Hash` is the low 32 bits of `Hash64` |
+| `ulong` | `UInt64WangHasher`, `UInt64Murmur3Hasher` | `Hash` is the low 32 bits of `Hash64` |
 | `Guid` | `GuidHasher` | `Hash` is the low 32 bits of `Hash64` |
 | `string` | `StringXxHash64Hasher`, `StringXxHash3Hasher`, `StringCityHash64Hasher`, `StringMetroHash64Hasher`, `StringHighwayHash64Hasher`, `StringSipHash13Hasher`, `StringSipHash24Hasher`, `StringFnV1A64Hasher`, `StringFnV164Hasher` | `Hash` is `h ^ (h >> 32)` of `Hash64` |
 
@@ -666,7 +666,7 @@ Wang/Jenkins-style bit-mixer for `uint` keys — the cheap-default tier of the `
 
 **Note:** the XOR-fold maps `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
 
-> **Renamed.** This type shipped as `UInt32Hasher` through v2.5.0. See [deprecated hasher aliases](#deprecated-hasher-aliases).
+> **Renamed.** This type shipped as `UInt32Hasher` through v2.5.0. See [removed hasher aliases](#removed-hasher-aliases).
 
 ### UInt32WangHasher
 
@@ -720,7 +720,7 @@ MurmurHash3 64-bit finalizer (`fmix64`) for `ulong` keys — the strongest tier 
 
 > Also implements [`IHashProvider64<ulong>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
-> **Renamed.** This type shipped as `UInt64Hasher` through v2.5.0. See [deprecated hasher aliases](#deprecated-hasher-aliases).
+> **Renamed.** This type shipped as `UInt64Hasher` through v2.5.0. See [removed hasher aliases](#removed-hasher-aliases).
 
 ### UInt64WangHasher
 
@@ -770,9 +770,9 @@ A general-purpose `IHashProvider<T>` that delegates to `EqualityComparer<T>.Defa
 
 It is a struct, so the JIT devirtualizes the outer call on the probe path. The inner `EqualityComparer<T>` dispatch is unavoidable but acceptable for non-hot-path types — if `Hash` is on the hot path for a known key type, write a struct-specific hasher instead.
 
-### Deprecated hasher aliases
+### Removed hasher aliases
 
-Two unsigned hashers were renamed so that every integer hasher names its algorithm, the way the signed families always have (`Int32WangNaiveHasher` / `Int32WangHasher` / `Int32Murmur3Hasher`). The old names still ship, marked `[Obsolete]`, and forward to the new types — the hash values are unchanged.
+Two unsigned hashers were renamed so that every integer hasher names its algorithm, the way the signed families always have (`Int32WangNaiveHasher` / `Int32WangHasher` / `Int32Murmur3Hasher`). The old names shipped as `[Obsolete]` aliases from v2.6.0 through v3.0.0 and **no longer exist** — the hash values never changed, so the replacement is a rename at the call site and nothing more.
 
 | Old name | New name | What it actually is |
 |---|---|---|
@@ -793,7 +793,7 @@ var d32 = new CelerityDictionary<uint, string, UInt32WangNaiveHasher>();
 var d64 = new CelerityDictionary<ulong, string, UInt64Murmur3Hasher>();
 ```
 
-`UInt64Hasher` still implements [`IHashProvider64<ulong>`](#ihashprovider64t), so a sketch parameterized on it keeps its 64-bit path while you migrate. Both aliases will be removed in a future major version.
+`UInt64Murmur3Hasher` implements [`IHashProvider64<ulong>`](#ihashprovider64t), exactly as the alias did, so a sketch parameterized on it keeps its 64-bit path across the rename.
 
 
 ### Choosing a hasher

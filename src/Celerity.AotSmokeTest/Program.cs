@@ -2431,12 +2431,6 @@ void Check(bool condition, string message)
         "Int64Murmur3Hasher.Hash64 low half == Hash");
     Check((int)new UInt64Murmur3Hasher().Hash64(42UL) == new UInt64Murmur3Hasher().Hash(42UL),
         "UInt64Murmur3Hasher.Hash64 low half == Hash");
-#pragma warning disable CS0618 // The obsolete alias still ships, so ILC must still compile it.
-    Check(new UInt64Hasher().Hash64(42UL) == new UInt64Murmur3Hasher().Hash64(42UL),
-        "UInt64Hasher alias agrees with UInt64Murmur3Hasher");
-    Check(new UInt32Hasher().Hash(3000000000u) == new UInt32WangNaiveHasher().Hash(3000000000u),
-        "UInt32Hasher alias agrees with UInt32WangNaiveHasher");
-#pragma warning restore CS0618
     Check((int)new UInt64WangHasher().Hash64(42UL) == new UInt64WangHasher().Hash(42UL),
         "UInt64WangHasher.Hash64 low half == Hash");
     Guid probeGuid = new Guid("12345678-1234-1234-1234-1234567890AB");

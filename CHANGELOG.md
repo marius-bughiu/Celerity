@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Removed
+
+- **`UInt32Hasher` and `UInt64Hasher` no longer ship.** The two bare-named unsigned hashers were `[Obsolete]` aliases from v2.6.0 through v3.0.0; use `UInt32WangNaiveHasher` and `UInt64Murmur3Hasher`, which hash identically. Source- **and** binary-breaking: `Celerity.dll` no longer forwards the two names either, so an assembly compiled against them must be recompiled rather than merely rebuilt. [Migration guide](docs/migration.md#uint32hasher--uint64hasher--the-algorithm-named-types). Completes the deprecation opened by [#297](https://github.com/marius-bughiu/Celerity/issues/297).
+
 ## [3.0.0] - 2026-08-29
 
 ### Added

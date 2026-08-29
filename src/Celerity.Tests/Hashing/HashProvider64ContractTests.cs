@@ -1,7 +1,6 @@
 using System.Reflection;
 using Celerity.Hashing;
 
-#pragma warning disable CS0618 // UInt64Hasher is an obsolete alias but still on the roster.
 
 namespace Celerity.Tests.Hashing;
 
@@ -42,7 +41,6 @@ public class HashProvider64ContractTests
         nameof(StringSipHash24Hasher),
         nameof(StringXxHash3Hasher),
         nameof(StringXxHash64Hasher),
-        nameof(UInt64Hasher), // obsolete alias for UInt64Murmur3Hasher; still ships, so still here
         nameof(UInt64Murmur3Hasher),
         nameof(UInt64WangHasher),
     ];
@@ -121,7 +119,6 @@ public class HashProvider64ContractTests
         ulong bits = (ulong)key;
         Assert.Equal(new UInt64WangHasher().Hash(bits), (int)new UInt64WangHasher().Hash64(bits));
         Assert.Equal(new UInt64Murmur3Hasher().Hash(bits), (int)new UInt64Murmur3Hasher().Hash64(bits));
-        Assert.Equal(new UInt64Hasher().Hash(bits), (int)new UInt64Hasher().Hash64(bits));
     }
 
     [Theory]
@@ -131,7 +128,6 @@ public class HashProvider64ContractTests
         ulong bits = (ulong)key;
         Assert.Equal(new Int64WangHasher().Hash64(key), new UInt64WangHasher().Hash64(bits));
         Assert.Equal(new Int64Murmur3Hasher().Hash64(key), new UInt64Murmur3Hasher().Hash64(bits));
-        Assert.Equal(new Int64Murmur3Hasher().Hash64(key), new UInt64Hasher().Hash64(bits));
     }
 
     [Fact]
