@@ -22,6 +22,15 @@
     <ProjectReference Include="..\Celerity\Celerity.csproj" />
     <ProjectReference Include="..\Celerity.Sorting\Celerity.Sorting.csproj" />
     <ProjectReference Include="..\Celerity.Statistics\Celerity.Statistics.csproj" />
+    <!--
+      The showcase-tier packages. They set IsAotCompatible like the rest of the
+      family, so the analyzers already cover them, but without a reference here no
+      native binary ever exercised their instantiations. Referencing them puts the
+      types they close over Celerity.Collections into the publish.
+    -->
+    <ProjectReference Include="..\Celerity.Ring\Celerity.Ring.csproj" />
+    <ProjectReference Include="..\Celerity.Sentinel\Celerity.Sentinel.csproj" />
+    <ProjectReference Include="..\Celerity.Cardinality\Celerity.Cardinality.csproj" />
   </ItemGroup>
 
 </Project>
