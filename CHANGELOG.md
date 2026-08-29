@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-08-29
+
 ### Removed
 
 - **`UInt32Hasher` and `UInt64Hasher` no longer ship.** The two bare-named unsigned hashers were `[Obsolete]` aliases from v2.6.0 through v3.0.0; use `UInt32WangNaiveHasher` and `UInt64Murmur3Hasher`, which hash identically. Source- **and** binary-breaking: `Celerity.dll` no longer forwards the two names either, so an assembly compiled against them must be recompiled rather than merely rebuilt. [Migration guide](docs/migration.md#uint32hasher--uint64hasher--the-algorithm-named-types). Completes the deprecation opened by [#297](https://github.com/marius-bughiu/Celerity/issues/297).
@@ -665,7 +667,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.0.1
 [3.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.0.0
 [2.7.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.7.0
 [2.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.6.0
