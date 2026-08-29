@@ -86,21 +86,16 @@ dotnet run -c Release -- --filter '*' # run everything with the default (slow, h
 
 ### CI
 
-[`.github/workflows/benchmarks.yml`](.github/workflows/benchmarks.yml) runs the CI-tracked core suite (the `CoreBenchmarks` array in `Program.cs`) at full BenchmarkDotNet accuracy, sharded across a parallel matrix. On a PR each shard measures its slice of both the PR head and the `main` tip back-to-back on the same runner, so hardware variance cancels; an aggregate job stitches the shard reports back together.
+[`.github/workflows/benchmarks.yml`](.github/workflows/benchmarks.yml) runs the CI-tracked core suite (the `CoreBenchmarks` array in `Program.cs`) at full BenchmarkDotNet accuracy, sharded across a parallel matrix; an aggregate job stitches the shard reports back together and [`benchmark-action/github-action-benchmark`](https://github.com/benchmark-action/github-action-benchmark) appends the result to the `gh-pages`-stored history powering the dashboard at <https://marius-bughiu.github.io/Celerity/dev/bench/>.
 
-Results are parsed by [`benchmark-action/github-action-benchmark`](https://github.com/benchmark-action/github-action-benchmark) and:
+**It runs on merges to `main`, not on pull requests.** The suite is by a wide margin the most expensive thing in this repository's CI, and per-PR it was paid for again on every review commit — the head *and* a same-runner `main` base, twice over eight runners. What it protects is the published time series, which is a property of `main`. The trade is that a regression is seen on the merge commit that introduced it rather than on the PR that proposed it, so **a perf-motivated change is expected to carry local before/after numbers in its PR description**. Numbers without `-c Release` are not useful — BenchmarkDotNet refuses to run in Debug.
 
-- **On a PR**: a comment is posted with the same-runner A/B comparison vs `main`. A row is flagged when it moves past ±10% *and* the gap exceeds **3σ** of the two measurements' combined standard deviation (added in quadrature); the flags are advisory, so a noisy row does not fail the job. The comment also publishes that run's **observed spread** — the p50, p90 and p95 of |Δ| across every paired row — so a flag can be read against the run it arrived in rather than against an assumed floor. On a typical PR that spread is almost all runner drift, but a change to a shared primitive moves many rows at once and raises those figures itself, so it is not a floor the PR cannot have caused. If any shard failed to report, the comment says so above the fold — a partial comparison is otherwise indistinguishable from a clean one.
-- **On a push to `main`**: the new measurement is appended to the `gh-pages`-stored history powering the dashboard at <https://marius-bughiu.github.io/Celerity/dev/bench/>.
+To measure a branch before it merges, run the workflow by hand: *Actions → Benchmarks → Run workflow*, against any ref. A dispatch on `main` publishes to the dashboard like a push does; on any other ref it measures and uploads its report as an artifact without touching the series.
 
-Three things about the run are worth knowing before you wonder why it did or did not happen:
+Two more things about the run are worth knowing before you wonder why it did or did not happen:
 
-- **It supersedes itself.** Pushing to a PR cancels that PR's in-flight benchmark run rather than stacking another eight-runner matrix behind it; only the newest numbers are ever read. Pushes to `main` are keyed per commit instead, so none is ever cancelled and the published history has no gaps.
-- **It is skipped when the diff cannot move a number.** [`scripts/benchmark_relevant_changes.js`](scripts/benchmark_relevant_changes.js) gates the PR path: a diff that touches only documentation, only the test / fuzz / AOT-smoke projects, or only comments inside `.cs` files does not buy a three-hour A/B run. The gate is one-directional — anything it cannot prove inert (an added or deleted file, a `.csproj`, a git command that fails) runs the suite — and it never applies to `main`, so a wrongly-skipped PR is still measured on merge. Run it yourself with `node scripts/benchmark_relevant_changes.js <base> <head>`.
-- **Shard *i* means the same slice on both sides.** The base run replays the class list the head resolved instead of packing its own. Shard membership comes from bin-packing over the benchmark class list, so a PR that *adds* a benchmark class would otherwise pack the two sides differently and could pair a light head slice with a heavy base one.
-- **A flag is evidence, not a verdict.** Even at 3σ, two rows in a ~750-row run still flagged on a diff whose IL was byte-identical to `main`: a case whose two builds land in different code or data layouts shifts by tens of percent with a tight spread on both sides, and nothing inside a single A/B pass separates that from a real change. Re-run before acting on a flag near the run's published p95. The rule lives in [`scripts/benchmark_comment.js`](scripts/benchmark_comment.js), which documents how the 3σ bar was calibrated; `node scripts/benchmark_comment.js --self-test` pins it against the measurements it was chosen against.
-
-If a change is motivated by performance, include before/after numbers from a local Release run in the PR description — the CI job is a guardrail, not a precision instrument. Numbers without `-c Release` are not useful — BenchmarkDotNet refuses to run in Debug.
+- **It is skipped when the commit cannot move a number.** [`scripts/benchmark_relevant_changes.js`](scripts/benchmark_relevant_changes.js) gates the workflow: a diff that touches only documentation, only the test / fuzz / AOT-smoke projects, or only comments inside `.cs` files does not buy a three-hour eight-runner run, and simply contributes no point of its own to the series. The gate is one-directional — anything it cannot prove inert (an added or deleted file, a `.csproj`, a git command that fails) runs the suite — and a manual dispatch is never gated. Run it yourself with `node scripts/benchmark_relevant_changes.js <base> <head>`.
+- **A move is evidence, not a verdict.** Hosted runners vary 20–50% run to run, and a case whose build lands in a different code or data layout shifts by tens of percent with a tight spread on both sides. Confirm a dashboard step change with a local Release run before acting on it.
 
 ### The dashboard
 
@@ -220,10 +215,6 @@ Releases are automated. Pushing a `v`-prefixed tag fires `.github/workflows/rele
 # 2. Commit, merge to main, then tag the merge commit and push the tag.
 git tag -a v1.2.0 -m "Release 1.2.0"
 git push origin v1.2.0
-
-# 3. Once the packages are published and indexed on NuGet.org, bump
-#    <CelerityPackageValidationBaseline> in src/Directory.Build.props to X.Y.Z
-#    in a follow-up commit. See "Package validation" below.
 ```
 
 The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as the GitHub Release body. Two things can go wrong with that — no section exists for the tag's version, or the section exceeds GitHub's ~125k release-body cap — and both are checked in the `build` job, **before** anything is pushed to NuGet.org. A failure there means nothing shipped: fix `CHANGELOG.md` and re-tag. You can check a section before tagging:
@@ -234,26 +225,13 @@ The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as 
 
 `workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push.
 
-### Package validation
+### API compatibility
 
-Every `dotnet pack` validates each package against its last published version and **fails the build on any breaking API change**, across all three TFMs. Since the NuGet push is irreversible, this guard has to run before it — so it runs on every release build, and locally whenever you pack.
+Nothing in the build compares the public surface against the last published release. There was a `PackageValidation` gate here that did, resolving a pinned baseline version from NuGet.org on every `pack`; it cost more than it caught. The baseline was a hand-bumped property that had to move in a follow-up commit after each release — never in the release commit, since an unpublished version fails restore — which needed its own CI job to check that the ritual had happened, which in turn reached the network on every PR. Three moving parts guarding a surface this small, on a project where a break is nearly always deliberate.
 
-The baseline is one property, `<CelerityPackageValidationBaseline>` in `src/Directory.Build.props`, shared by every package that has shipped at least once — all eight today, now that `Celerity.Statistics` has had its first release and come off the escape hatch below. **Bump it to X.Y.Z in a follow-up commit, once vX.Y.Z is published and indexed on NuGet.org** — not in the release commit itself, because the value becomes a `PackageDownload` and a version that is not published yet fails the release build's restore.
+The replacement is judgement, recorded where it is already recorded: **a break goes in `CHANGELOG.md` and, if a caller has to do something about it, in [docs/migration.md](docs/migration.md)** — both source-breaking (a rename, a narrowed parameter) and binary-breaking (a removed member or type forward, which needs a recompile rather than a rebuild). Say which kind it is; that distinction is what a consumer reads the entry for. Semantic versioning still applies: a break belongs in a major release.
 
-This is the part that rots: a stale baseline keeps validating against an older surface, so a break introduced after it slips through — and it did, for the whole v2.6.0 cycle. Since [#364](https://github.com/marius-bughiu/Celerity/issues/364) the `package-baseline` CI job checks it on every PR, comparing the property against what NuGet.org has actually published rather than against the newest tag, so the bump comes due exactly when the release is indexed. You can run it yourself:
-
-```bash
-node scripts/check_package_baseline.js
-```
-
-If it fails, the message names the value to set. See [docs/testing.md](docs/testing.md#the-baseline-guard).
-
-Two situations need a deliberate decision rather than a workaround:
-
-- **An intentional break.** Run `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` on the offending project, which writes a `CompatibilitySuppressions.xml` next to its `.csproj`. Commit it with a comment explaining each entry, so the break is reviewed in the PR instead of discovered by a consumer.
-- **A package's first release.** There is no published predecessor to validate against, and asking for one fails the restore. Set `<CelerityNoPublishedBaseline>true</CelerityNoPublishedBaseline>` in that package's `.csproj`, ship it once, then delete the property.
-
-Both gates, plus the package-metadata check, also run on every PR as the `release-gates` job — see [docs/testing.md](docs/testing.md#release-gates).
+If you want the machine answer for a specific change, it is one command away without any of it being wired into CI — point [`Microsoft.DotNet.ApiCompat.Tool`](https://www.nuget.org/packages/Microsoft.DotNet.ApiCompat.Tool) at the two assemblies, or diff the generated `.xml` doc files, which list every public member.
 
 ## Scope
 

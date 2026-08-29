@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 //
-// Decides whether a pull request's diff can move a benchmark number.
+// Decides whether a push to `main` can move a benchmark number.
 //
 // `benchmarks.yml` fires on `src/**`, which is a path filter, not a semantic one: an XML
-// doc-comment edit to a `.cs` file is a `src/**` change and buys the PR a full sharded
-// A/B run — the PR head and the `main` base, twice over eight runners, for a diff with
-// zero IL in it. Two such pull requests overlapped and every shard ran 1.75-2.0x its
-// baseline, one of them straight into the 120-minute cap. The suite is the
-// expensive thing in this repository's CI, so the cheapest correct win is not to run it
-// when the diff provably cannot change what it measures.
+// doc-comment edit to a `.cs` file is a `src/**` change and buys a full sharded run over
+// eight runners for a diff with zero IL in it. The suite is by a wide margin the expensive
+// thing in this repository's CI, so the cheapest correct win is not to run it when the
+// diff provably cannot change what it measures.
 //
 // The rule is deliberately one-directional. Skipping is only ever claimed when *every*
 // changed path is one of:
@@ -26,10 +24,11 @@
 // "run" is wasted runner minutes and the cost of a wrong "skip" is an unmeasured
 // regression.
 //
-// The gate is applied to the pull-request path only. The `main` push path always runs,
-// so the gh-pages time series never gains a hole and a wrongly-skipped PR is still
-// measured on merge — which caps the worst case at "the PR comment was missing", never
-// "the regression was never seen".
+// The gate used to apply to the pull-request path only, on the reasoning that `main` must
+// always measure so the published series never gains a hole. Since the suite became
+// post-merge-only, a documentation commit is the sole thing this gate ever sees, and the
+// series gains nothing from a point that re-measures identical IL — a skipped commit
+// simply has no point of its own, and the next code commit publishes the next one.
 //
 // Usage:
 //   node scripts/benchmark_relevant_changes.js <base-ref> <head-ref>
@@ -73,7 +72,6 @@ function isUnbenchmarkedProject(project) {
 const ALWAYS_SIGNIFICANT = new Set([
   '.github/workflows/benchmarks.yml',
   'scripts/benchmark_relevant_changes.js',
-  'scripts/benchmark_comment.js',
   'scripts/check_dashboard_coverage.js',
 ]);
 

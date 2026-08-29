@@ -78,11 +78,6 @@ jobs:
     # SymbolPackageFormat=snupkg (also from the shared props) emit a .snupkg
     # next to every .nupkg.
     #
-    # This is also where package validation runs (#315): the shared props/targets
-    # set EnablePackageValidation + a baseline version, so `pack` downloads each
-    # package's published predecessor and fails on any breaking API change,
-    # across every TFM. See src/Directory.Build.props for the baseline-bump
-    # ritual and the suppression escape hatch.
     - name: Create nuget package
       run: dotnet pack --configuration Release --output ${{ env.NuGetDirectory }} -p:ContinuousIntegrationBuild=true
 

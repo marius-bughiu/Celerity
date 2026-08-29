@@ -59,9 +59,9 @@ jobs:
 
   # A dry run of the guards that stand between a tag and NuGet.org (#315). They
   # all live on the release path, which no PR exercises — so without this job a
-  # breaking API change or a mis-packed package is only discovered by the nightly
-  # preview or by the release itself, long after review. Publishing is
-  # irreversible; the feedback belongs in the PR that causes it.
+  # mis-packed package is only discovered by the nightly preview or by the release
+  # itself, long after review. Publishing is irreversible; the feedback belongs in
+  # the PR that causes it.
   release-gates:
     name: release-gates
     runs-on: ubuntu-latest
@@ -95,11 +95,9 @@ jobs:
       - name: Restore workloads
         run: dotnet workload restore
 
-      # Packing is what runs package validation: each package is compared
-      # against its published baseline across every TFM, and any breaking API
-      # change fails here. See src/Directory.Build.props for the baseline-bump
-      # ritual and the suppression escape hatch.
-      - name: Pack (runs package validation against the published baseline)
+      # Packing is what the metadata check below inspects: it needs the actual
+      # .nupkg / .snupkg pair for every shipped package, across every TFM.
+      - name: Pack
         run: dotnet pack --configuration Release --output ${{ github.workspace }}/nuget -p:ContinuousIntegrationBuild=true
 
       - name: Validate packages
@@ -160,12 +158,10 @@ jobs:
       - name: Check constant naming in the shipping packages
         run: node scripts/check_constant_naming.js
 
-  # The benchmark relevance gate decides whether an expensive sharded A/B run happens at
-  # all, so the C# lexer it rests on is pinned here rather than only exercised in the
-  # workflow it gates — where a wrong answer costs either runner hours or an unmeasured
-  # regression, and neither failure announces itself. The comment builder is pinned
-  # alongside it for the same reason: it decides which rows are called a regression, and
-  # a guard that is too permissive is indistinguishable from a clean report (#351).
+  # The benchmark relevance gate decides whether an expensive sharded run happens at all,
+  # so the C# lexer it rests on is pinned here rather than only exercised in the workflow
+  # it gates — where a wrong answer costs either runner hours or an unmeasured commit, and
+  # neither failure announces itself.
   benchmark-gate:
     name: benchmark-gate
     runs-on: ubuntu-latest
@@ -177,33 +173,6 @@ jobs:
 
       - name: Pin the comment-stripping lexer
         run: node scripts/benchmark_relevant_changes.js --self-test
-
-      - name: Pin the regression-flag rule
-        run: node scripts/benchmark_comment.js --self-test
-
-  # The binary-compatibility baseline is bumped by a manual follow-up commit after each
-  # release, and until now nothing checked that it happened. When it was skipped for v2.6.0
-  # every package went on validating against its 2.5.0 predecessor and packed green anyway
-  # (#364) — the same silent-config-drift shape as the coverage filter, the doc anchors and
-  # the dashboard tables, and the only one still unguarded.
-  #
-  # This job is separate from release-gates, which packs, rather than a step inside it: the
-  # answer costs seconds and should not queue behind a three-TFM restore. It reaches
-  # NuGet.org, so it is written to skip its network half rather than fail on an outage.
-  package-baseline:
-    name: package-baseline
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          filter: tree:0
-
-      - name: Pin the version-comparison rules
-        run: node scripts/check_package_baseline.js --self-test
-
-      - name: Check the baseline against the published packages
-        run: node scripts/check_package_baseline.js
 
   aot-publish:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})

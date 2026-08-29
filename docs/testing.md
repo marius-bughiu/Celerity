@@ -11,8 +11,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Property-based tests | `Celerity.Tests/Properties/` | Across thousands of randomized operation sequences, every collection stays observably equal to its BCL oracle. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
-| Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: a breaking API change fails `pack`, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
-| Package-baseline guard | `scripts/check_package_baseline.js`, the `package-baseline` CI job | The version that package validation compares against is still the last published release — so the gate cannot quietly narrow after a release, or drop a package entirely. | `node scripts/check_package_baseline.js` |
+| Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: every package packs with its symbols and metadata intact, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
 
 All of these run in CI. Coverage is measured on all eight shipping assemblies and gated at 100% line and branch; the rendered report is published to [the coverage dashboard](https://marius-bughiu.github.io/Celerity/coverage/).
 
@@ -110,15 +109,16 @@ Add an entry to `Differential.All` in `src/Celerity.Fuzz/Differential.cs` and wr
 
 ## Release gates
 
-Publishing to NuGet.org is irreversible, so the checks that decide whether a release is well-formed all run *before* the push, in the `build` job of `.github/workflows/release.yml` ([#315](https://github.com/marius-bughiu/Celerity/issues/315)). Three of them:
+Publishing to NuGet.org is irreversible, so the checks that decide whether a release is well-formed all run *before* the push, in the `build` job of `.github/workflows/release.yml` ([#315](https://github.com/marius-bughiu/Celerity/issues/315)). Two of them:
 
 | Gate | Fails on | Where |
 |---|---|---|
-| Package validation | Any breaking public-API change against the last published version of that package, on any TFM. | `dotnet pack`. The switch is `EnablePackageValidation` in [`src/Directory.Build.targets`](../src/Directory.Build.targets); the baseline version it compares against is `CelerityPackageValidationBaseline` in [`src/Directory.Build.props`](../src/Directory.Build.props). |
 | Package metadata | A missing symbol package, license, README, icon, or SourceLink stamp; a missing or unexpected package id. | [`validate-packages.ps1`](../.github/scripts/validate-packages.ps1) |
 | Release notes | No `## [X.Y.Z]` section for the tag, or one at/over the 120,000-byte guard for GitHub's ~125k release-body cap. | [`extract-release-notes.sh`](../.github/scripts/extract-release-notes.sh) |
 
-All three also run on **every PR**, as the `release-gates` job in `ci.yml`. Nothing else in CI packs, so without that job a breaking API change or a mis-packed package would only surface in the nightly preview or in the release itself — long after review, and for the release, too late.
+Both also run on **every PR**, as the `release-gates` job in `ci.yml`. Nothing else in CI packs, so without that job a mis-packed package would only surface in the nightly preview or in the release itself — long after review, and for the release, too late.
+
+There is deliberately **no API-compatibility gate**. A `PackageValidation` baseline used to fail `pack` on any breaking public-API change; it was removed because its hand-bumped baseline needed a CI job of its own to keep it honest, and the whole apparatus cost more than it caught on a surface this size. Breaks are now tracked by hand in `CHANGELOG.md` and [migration.md](migration.md) — see [CONTRIBUTING.md](../CONTRIBUTING.md#api-compatibility) for what that asks of a change.
 
 The release-notes gate is the one piece that is pure shell and therefore outside `dotnet test`. [`test-extract-release-notes.sh`](../.github/scripts/test-extract-release-notes.sh) covers it — happy path, section boundaries, missing section, oversized section, and that a failed run leaves no partial file for a later step to publish.
 
@@ -128,30 +128,6 @@ The release-notes gate is the one piece that is pure shell and therefore outside
 # preview the notes for a version before tagging
 ./.github/scripts/extract-release-notes.sh 2.4.0
 ```
-
-The baseline-bump ritual that keeps package validation meaningful is in [CONTRIBUTING.md](../CONTRIBUTING.md#package-validation).
-
-### The baseline guard
-
-Package validation is only as good as the version it compares against, and that version is bumped by a manual follow-up commit after each release. It was skipped for v2.6.0 and nothing noticed for the whole cycle ([#364](https://github.com/marius-bughiu/Celerity/issues/364)): every package went on validating against its 2.5.0 predecessor, and `Celerity.Sorting` — the most recently shipped package, and so the likeliest to have moved — still carried the first-release escape hatch and was validated against nothing at all. Both failures pack green, which is what makes them worth a check of their own.
-
-The `package-baseline` job asserts one invariant:
-
-> the baseline equals the highest stable version published by every *gated* package.
-
-Stating it against what NuGet.org has actually indexed, rather than against the newest git tag, is what removes the need for a grace period. Between tagging `vX.Y.Z` and the packages being indexed the baseline is legitimately one release behind — and a tag-based rule could only tolerate that by permitting a one-release lag in general, which is exactly the drift that went unnoticed. Asking NuGet instead makes the bump due the moment the release is indexed and not before, and catches a bump that lands too *early* as well, which fails the next restore.
-
-Two consequences fall out of the same rule. Packages still on `CelerityNoPublishedBaseline` are excluded from the intersection rather than counted as unpublished, so an eighth package can be added without invalidating everyone else's baseline — but leaving that property set once the package *has* shipped is flagged, because it removes the package from the gate. And the package set is discovered from the `.csproj` files rather than listed in the script — by the same `IsPackable != false` test the gate itself applies, deriving the SDK's default `PackageId` where a project declares none — so a new package cannot join the repository without joining the check.
-
-Everything that decides pass or fail is a pure function of the baseline and the resolved package list, which is what lets `--self-test` drive all of it from fixtures: the version rules, the discovery rules, and each failure direction — stale baseline, bump landed before indexing, prerelease or malformed baseline, escape hatch left on after shipping, gated-but-never-published — alongside the shapes that must *not* fail, including the release window and the eighth-package-on-the-hatch case. Without that, the only case CI would ever execute is today's all-equal happy path, and a regression in any failure branch would leave both steps green — the same "a guard that is too permissive is indistinguishable from a clean report" problem the `benchmark-gate` job exists for.
-
-```bash
-node scripts/check_package_baseline.js --self-test  # pin the rules against fixtures
-node scripts/check_package_baseline.js --offline    # skip the NuGet lookup
-node scripts/check_package_baseline.js
-```
-
-The check reaches the network, where the other three script guards ([`check_doc_anchors.js`](../scripts/check_doc_anchors.js), [`check_dashboard_coverage.js`](../scripts/check_dashboard_coverage.js), [`benchmark_relevant_changes.js`](../scripts/benchmark_relevant_changes.js)) are hermetic. It deliberately reports and skips an unreachable NuGet.org rather than failing: a guard that reds a pull request over a transient outage gets ignored, and it runs on every PR, so a genuine miss is caught by the next one.
 
 ## Code coverage
 
@@ -227,7 +203,7 @@ The `coverage` workflow (`.github/workflows/coverage.yml`) runs on every PR and 
 | [`ci.yml`](../.github/workflows/ci.yml) | push / PR | `dotnet build` + `dotnet test` on Linux, Windows, macOS; Native AOT publish + smoke run. |
 | [`coverage.yml`](../.github/workflows/coverage.yml) | push / PR | Collect + gate coverage, comment on PRs, publish report on `main`. |
 | [`fuzz.yml`](../.github/workflows/fuzz.yml) | nightly / manual | Differential fuzz soak with a time budget. |
-| [`benchmarks.yml`](../.github/workflows/benchmarks.yml) | push / PR | Same-runner A/B benchmark comparison vs `main`. On a PR it supersedes its own previous run, and is skipped entirely when the diff cannot move a measured number (see [CONTRIBUTING.md](../CONTRIBUTING.md#ci)); `main` always measures. |
+| [`benchmarks.yml`](../.github/workflows/benchmarks.yml) | merge to `main` / manual | Sharded core benchmark run, published to the dashboard. Not a per-PR job, and skipped entirely when the commit cannot move a measured number (see [CONTRIBUTING.md](../CONTRIBUTING.md#ci)). |
 
 ## Contributing tests
 

@@ -157,9 +157,10 @@ internal class Program
             var slice = SelectShard(CoreBenchmarks, args);
 
             // `--shard-classes-out <path>` records the slice this process resolved, and
-            // `--shard-classes <path>` replays one. The workflow writes the head slice and
-            // replays it for the base, which is what makes shard *i* the same slice on both
-            // sides of the A/B even when the PR adds a benchmark class.
+            // `--shard-classes <path>` replays one. CI no longer uses either — it stopped
+            // measuring a base when the suite moved to post-merge-only — but they are what
+            // makes a hand-run A/B honest, so they stay. See SelectShard for why replaying
+            // rather than re-packing is the thing that matters.
             WriteShardClasses(slice, args);
 
             // Resolve the slice and stop, without measuring anything. The shard packing is
@@ -197,13 +198,13 @@ internal class Program
     private static Type[] SelectShard(Type[] benchmarks, string[] args)
     {
         // `--shard-classes <path>` replays a slice resolved by an earlier process instead
-        // of packing one. Greedy bin-packing is a function of the whole class list, so the
-        // PR head and the `main` base — which differ by exactly the classes the PR adds —
-        // pack *differently*, and shard `i` was not the same slice on the two sides. That
-        // let a job draw a light head slice and a heavy base slice and overrun its budget
-        // even when every individual slice was well inside it. Replaying the head's
-        // slice makes the base a subset of the head by construction, so the pair is bounded
-        // by twice the head slice and shard `i` compares like with like.
+        // of packing one. Greedy bin-packing is a function of the whole class list, so two
+        // revisions that differ by a benchmark class pack *differently*, and shard `i` is
+        // then not the same slice on the two sides. That let a job draw a light slice on one
+        // side and a heavy one on the other and overrun its budget even when every
+        // individual slice was well inside it. Replaying the first side's slice makes the
+        // second a subset of it by construction, so the pair is bounded by twice that slice
+        // and shard `i` compares like with like. Only a hand-run A/B does this now.
         string? replayPath = ArgumentValue(args, "--shard-classes");
         if (replayPath is not null)
         {
@@ -284,7 +285,7 @@ internal class Program
         return buckets[index].ToArray();
     }
 
-    // Record the resolved slice so the other side of the A/B can replay it verbatim.
+    // Record the resolved slice so the other side of a hand-run A/B can replay it verbatim.
     private static void WriteShardClasses(Type[] slice, string[] args)
     {
         string? path = ArgumentValue(args, "--shard-classes-out");

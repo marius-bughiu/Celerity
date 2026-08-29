@@ -212,7 +212,7 @@ These hasher sweeps are a **raw-mixing-cost diagnostic**, not the headline metri
 
 ## Extended benchmark suite
 
-The CI dashboard runs a deliberately **lean core suite** on every PR whose diff can actually move a number — a documentation or comment-only change is skipped, and `main` always measures — so the same-runner A/B regression comparison stays fast and low-variance. A second, heavier set of benchmarks lives in the same project but is **excluded from the CI run** — it exists to answer the questions a single random-key measurement can't, and you run it on demand. Each is a `*Benchmark` class you can target with `--filter`:
+The CI dashboard runs a deliberately **lean core suite** on each merge to `main` whose diff can actually move a number — a documentation or comment-only commit is skipped — so the tracked series stays fast and low-variance. A second, heavier set of benchmarks lives in the same project but is **excluded from the CI run** — it exists to answer the questions a single random-key measurement can't, and you run it on demand. Each is a `*Benchmark` class you can target with `--filter`:
 
 | Benchmark | Filter | What it measures |
 |---|---|---|
@@ -234,7 +234,7 @@ dotnet run -c Release -- --filter "*Adversarial*" "*CacheLocality*"   # several
 
 The adversarial and large-dataset benchmarks are intentionally slow (they demonstrate degradation and out-of-cache behaviour respectively); expect them to take minutes.
 
-In CI, the extended suite runs **weekly** (and on demand via *Run workflow*) through [`benchmarks-extended.yml`](../.github/workflows/benchmarks-extended.yml), which invokes `dotnet run -c Release -- --ci-extended` and publishes the results to a **separate dashboard** at [`dev/bench-extended`](https://marius-bughiu.github.io/Celerity/dev/bench-extended/) (linked as **Extended** in the site nav). It is kept apart from the per-commit core dashboard on purpose: the extended numbers are a noisier, exploratory trend, not the regression gate, so they never feed the per-PR threshold.
+In CI, the extended suite runs **weekly** (and on demand via *Run workflow*) through [`benchmarks-extended.yml`](../.github/workflows/benchmarks-extended.yml), which invokes `dotnet run -c Release -- --ci-extended` and publishes the results to a **separate dashboard** at [`dev/bench-extended`](https://marius-bughiu.github.io/Celerity/dev/bench-extended/) (linked as **Extended** in the site nav). It is kept apart from the per-commit core dashboard on purpose: the extended numbers are a noisier, exploratory trend and never mix with the tracked core series.
 
 ## Checklist
 

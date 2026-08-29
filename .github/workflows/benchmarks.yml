@@ -1,63 +1,54 @@
 name: Benchmarks
 
+# Post-merge only. The suite is by a wide margin the most expensive thing in this
+# repository's CI, and running it per pull request meant paying for it again on every
+# review commit — the head *and* a same-runner `main` base, twice over eight runners, for
+# numbers nobody read until the PR settled. What it actually protects is the published
+# time series, and that is a property of `main`, so `main` is where it is measured.
+#
+# What is given up is the per-PR A/B comment: a regression is now seen on the merge commit
+# that introduced it rather than on the PR that proposed it. That is a deliberate trade —
+# the dashboard still names the commit, and a perf-motivated change is expected to carry
+# local before/after numbers in its PR description (see CONTRIBUTING.md).
+#
+# `workflow_dispatch` is the escape hatch: run the suite on demand against any ref when a
+# change wants measuring before it merges.
 on:
   push:
     branches: [ main ]
     paths:
       - 'src/**'
       - '.github/workflows/benchmarks.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'src/**'
-      - '.github/workflows/benchmarks.yml'
+  workflow_dispatch: {}
 
-# Only the newest run for a given pull request is meaningful — the dashboard and the
-# comparison comment both read the latest — so a push supersedes its predecessor rather
-# than stacking another eight-runner matrix behind it. Five pushes over one review loop
-# created five uncancelled runs and left `CI` and `Coverage`, the checks that actually
-# gate correctness, queued for ~50 minutes behind perf numbers nobody would read.
-#
-# The key is the PR number on the pull-request path and the commit SHA on the main path.
-# That makes every main push its own group, so `cancel-in-progress` can never discard one:
-# each commit's numbers are independently meaningful there, and a cancelled run would
+# Each commit is its own group, so a run is never cancelled by the next push: every
+# commit's numbers are independently meaningful on this path, and a cancelled run would
 # leave a hole in the gh-pages time series.
 concurrency:
-  group: benchmarks-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: benchmarks-${{ github.sha }}
+  cancel-in-progress: false
 
 # The core suite is ~300 cases and, at full BenchmarkDotNet accuracy (Job.Default x2
-# launches, see CiConfig.cs), one pass takes ~3h. The PR path runs it TWICE on one
-# runner (PR head + main base, same-runner A/B, so hardware variance cancels), which
-# blew past GitHub's 6h job ceiling and was cancelled on every PR (#217). Rather than
-# trade away measurement accuracy, we shard the suite across a parallel matrix: each
-# shard measures only its slice (head + base) on its own runner, so wall time is
-# ~3h / SHARD_TOTAL at full accuracy, and an aggregate job stitches the per-shard JSON
-# back together for the regression comment / gh-pages publish.
-#
-# The same-runner A/B invariant is preserved because sharding is by benchmark *class*
-# (Program.cs `--shard`): a class's PR-head and main-base measurements always run
-# together on the one shard runner, so the per-benchmark delta still cancels hardware.
+# launches, see CiConfig.cs), one pass takes ~3h — past GitHub's 6h job ceiling once, when
+# this workflow also measured a base (#217). Rather than trade away measurement accuracy,
+# we shard the suite across a parallel matrix: each shard measures only its slice on its
+# own runner, so wall time is ~3h / SHARD_TOTAL at full accuracy, and an aggregate job
+# stitches the per-shard JSON back together for the gh-pages publish.
 env:
   # Keep in sync with the matrix.shard list below.
-  #
-  # Raised 6 -> 8: at 6 the heaviest shard measured ~65 min per slice, so head + base
-  # came to ~130 min and overran the 120 min timeout, while the lightest finished in
-  # ~86 min. CiConfig.cs is explicit that the job schedule stays as-is and the matrix
-  # is what scales when the suite grows, so this widens the matrix rather than trading
-  # away measurement accuracy.
   SHARD_TOTAL: '8'
 
 jobs:
   # The `paths: src/**` trigger above is a path filter, not a semantic one: an XML
-  # doc-comment edit is a `src/**` change and buys a full sharded A/B run for a diff with
-  # zero IL in it. Two such PRs overlapping is what pushed every shard to 1.75-2.0x its
-  # baseline and one of them into the timeout, so the cheapest correct fix is not
-  # to run the suite when the diff provably cannot change what it measures.
+  # doc-comment edit is a `src/**` change and buys a full sharded run for a diff with zero
+  # IL in it. This job is the semantic half — it refuses to spend eight runners on a diff
+  # that provably cannot move a measured number.
   #
-  # Pull requests only. A push to main always measures, so the gh-pages series never gains
-  # a hole and a wrongly-skipped PR is still measured on merge — which caps the worst case
-  # of a gate mistake at "the PR comment was missing", never "the regression was unseen".
+  # The gate used to run on pull requests only, on the reasoning that `main` must always
+  # measure so the published series never gains a hole. That reasoning does not survive the
+  # move to post-merge: a docs commit is now the *only* thing the gate ever sees, and the
+  # series it protects gains nothing from a point that re-measures identical IL. A skipped
+  # commit simply has no point of its own; the next code commit publishes the next one.
   changes:
     name: relevance gate
     runs-on: ubuntu-latest
@@ -70,48 +61,48 @@ jobs:
       run_benchmarks: ${{ steps.gate.outputs.run }}
 
     steps:
-      # fetch-depth: 0 so the script can resolve the merge base of the two event SHAs.
-      # Skipped on the push path, which answers without consulting the repository at all:
-      # this job gates the whole matrix, so a full-history clone there would be latency
-      # on the critical path buying nothing.
+      # fetch-depth: 0 so the script can resolve the merge base of the two push SHAs.
       - uses: actions/checkout@v4
-        if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
 
       - name: Decide whether this diff can move a measured number
         id: gate
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "Push to ${{ github.ref }} — always measured, so the published series has no gaps."
+          # A manual run is an explicit request to measure, so it is never gated. Same for
+          # a push whose predecessor is unresolvable — a branch's first push reports the
+          # all-zero SHA, and a force-push can leave `before` unreachable. Every unknown
+          # resolves toward measuring: a wrong "run" costs runner minutes, a wrong "skip"
+          # costs a point in the series.
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "${{ github.event_name }} — an explicit request to measure, never gated."
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          node scripts/benchmark_relevant_changes.js \
-            "${{ github.event.pull_request.base.sha }}" \
-            "${{ github.event.pull_request.head.sha }}"
+          if [ -z "${BEFORE_SHA}" ] || [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            echo "No resolvable predecessor for this push (${BEFORE_SHA:-unset}) — measuring."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node scripts/benchmark_relevant_changes.js "${BEFORE_SHA}" "${AFTER_SHA}"
 
   benchmark-shard:
     name: benchmark (shard ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.run_benchmarks == 'true'
     runs-on: ubuntu-latest
-    # Sized from the measured head slices at SHARD_TOTAL=8, which ran 45.8-67.3 min. The
-    # base replays the head's slice, so a job costs about twice its head slice: 91-135 min,
-    # and the two heaviest shards exceeded the old 120 min cap on their own. That cap was
-    # set when the suite was smaller and has since been outgrown — Sorting, SortedSpan and
-    # SegmentTree all added classes — so this is sizing the budget to the measured bound
-    # rather than buying room for an imbalance (the imbalance is what the roster handoff
-    # below fixes).
-    #
-    # Widening the matrix instead was considered and rejected: the 81-case
-    # StringHasherBenchmark is a single class and sharding is by class, so it floors the
-    # heaviest slice no matter how many shards there are — and more shards means more
-    # concurrent runners, which is the contention this workflow is being changed to reduce.
-    # Re-measure if slices approach 90 min; at that point the fix is to split that class,
-    # not to raise this again.
-    timeout-minutes: 180
+    # Sized from the measured slices at SHARD_TOTAL=8, which ran 45.8-67.3 min. The cap was
+    # 180 min when a job also replayed its slice against a `main` base and so cost about
+    # twice its slice; measuring one side halves that, and 120 min leaves room for the
+    # suite to grow into. Re-measure if slices approach 90 min; at that point the fix is to
+    # split the 81-case StringHasherBenchmark, which is a single class and therefore floors
+    # the heaviest slice no matter how many shards there are.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -127,11 +118,9 @@ jobs:
 
     steps:
       # NOTE: do NOT add `filter: tree:0` here. A blobless partial clone makes the repo
-      # advertise every commit as "have" while missing the underlying objects, which
-      # breaks the base `git worktree add <base-sha>` below (and, in the aggregate job,
-      # github-action-benchmark's own gh-pages fetch) with "missing blob object … did
-      # not send all necessary objects" (#217). fetch-depth: 0 is required for the
-      # base worktree.
+      # advertise every commit as "have" while missing the underlying objects, which breaks
+      # github-action-benchmark's own gh-pages fetch in the aggregate job with "missing blob
+      # object … did not send all necessary objects" (#217).
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -141,73 +130,21 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Run head benchmarks (shard ${{ matrix.shard }})
+      - name: Run benchmarks (shard ${{ matrix.shard }})
         # working-directory must be the project folder, not src/. BenchmarkDotNet writes
         # its artifacts to ./BenchmarkDotNet.Artifacts relative to the process CWD.
-        #
-        # --shard-classes-out records the slice the packer resolved here, so the base run
-        # below can replay it instead of packing its own. See that step for why.
         working-directory: src/Celerity.Benchmarks
         run: >-
           dotnet run --configuration Release --
           --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}"
-          --shard-classes-out /tmp/head-shard-classes.txt
 
-      - name: Stage head report
+      - name: Stage report
         run: |
           set -euo pipefail
           mkdir -p /tmp/reports
           report=$(ls Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/*-report-full.json | head -n 1)
-          cp "$report" "/tmp/reports/head-shard-${{ matrix.shard }}.json"
-          echo "Staged head shard ${{ matrix.shard }}: $report"
-
-      - name: Run base (main) benchmarks for this shard on the same runner
-        # Same-runner A/B: build and benchmark the main tip back-to-back with the PR head
-        # on THIS runner so hardware variance cancels (hosted runners vary 20-50%
-        # run-to-run, so a stored cross-runner baseline would be noise-dominated).
-        #
-        # The base REPLAYS the head's slice (--shard-classes) rather than packing its own.
-        # Shard membership comes from greedy bin-packing over the benchmark class list, and
-        # a PR that adds a benchmark class gives the two sides *different* lists — so shard
-        # `i` was not the same slice on head and base, a job could draw a light head slice
-        # and a heavy base slice, and the pair overran the timeout even though every
-        # individual slice was well inside it. Replaying makes the base a subset of
-        # the head by construction: the pair is bounded by twice the head slice, which is
-        # the quantity the packer balances, and shard `i` compares like with like.
-        #
-        # A class the PR adds is simply absent from the base's own suite; the process says
-        # so and skips it, and the comparison reports it as new rather than as a delta.
-        # A cancellation here is a real signal (the slice genuinely exceeded the job
-        # timeout) and should be investigated rather than dismissed.
-        #
-        # BOTH selectors are passed, and that is not redundant: this step runs the code in
-        # the `main` worktree, not the PR's, so it only understands flags that are already
-        # on `main`. `--shard-classes` is therefore inert until this change merges, and the
-        # base falls back to `--shard` and packs its own slice — the behaviour we have
-        # today. Drop `--shard` and a base that predates the flag silently matches nothing
-        # and runs the WHOLE suite instead of one slice, which is a multi-hour step that
-        # ends at the job timeout. Any future selector must be added the same way: ship it
-        # to `main` first, and keep the previous one alongside for one release.
-        if: github.event_name == 'pull_request'
-        working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          BASE_SHA=$(git rev-parse origin/main)
-          echo "Benchmarking base (main) at $BASE_SHA, shard ${{ matrix.shard }}"
-          git worktree add /tmp/base-tree "$BASE_SHA"
-          cd /tmp/base-tree/src/Celerity.Benchmarks
-          dotnet run --configuration Release -- \
-            --ci --shard "${SHARD_TOTAL}" "${{ matrix.shard }}" \
-            --shard-classes /tmp/head-shard-classes.txt
-          report=$(ls BenchmarkDotNet.Artifacts/results/*-report-full.json 2>/dev/null | head -n 1 || true)
-          if [ -z "$report" ]; then
-            echo "Base produced no report for shard ${{ matrix.shard }}: it shares no benchmark"
-            echo "class with the head slice, so every case in it is new on this PR."
-            exit 0
-          fi
-          cp "$report" "/tmp/reports/base-shard-${{ matrix.shard }}.json"
-          echo "Staged base shard ${{ matrix.shard }}: $report"
+          cp "$report" "/tmp/reports/shard-${{ matrix.shard }}.json"
+          echo "Staged shard ${{ matrix.shard }}: $report"
 
       - name: Upload shard reports
         uses: actions/upload-artifact@v4
@@ -221,7 +158,7 @@ jobs:
     name: aggregate & report
     needs: [changes, benchmark-shard]
     # Run even if some shards were cancelled or failed so partial results are still
-    # reported where possible — but say loudly which shards are missing (see the merge
+    # published where possible — but say loudly which shards are missing (see the merge
     # step), because a partial report otherwise reads exactly like a complete one.
     if: always() && needs.changes.outputs.run_benchmarks == 'true'
     runs-on: ubuntu-latest
@@ -229,7 +166,6 @@ jobs:
 
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -251,52 +187,34 @@ jobs:
 
           # Name the shards that did not report before anything else. `if: always()` means
           # this job runs on a partial matrix, and the merged report is then legitimately
-          # missing whole benchmark classes — including, on the PR that motivated this,
-          # part of the new collection's own numbers. Nothing downstream could tell.
+          # missing whole benchmark classes. Nothing downstream could tell.
           missing=""
           for s in $(seq 0 $((SHARD_TOTAL - 1))); do
-            if [ ! -f "/tmp/reports/head-shard-${s}.json" ]; then
+            if [ ! -f "/tmp/reports/shard-${s}.json" ]; then
               missing="${missing}${missing:+, }${s}"
             fi
           done
           if [ -n "$missing" ]; then
-            echo "::warning title=Incomplete benchmark report::Shard(s) ${missing} produced no report; the comparison below is missing every benchmark class packed onto them."
+            echo "::warning title=Incomplete benchmark report::Shard(s) ${missing} produced no report; the published point is missing every benchmark class packed onto them."
           fi
           echo "missing_shards=${missing}" >> "$GITHUB_OUTPUT"
 
-          head_files=(/tmp/reports/head-shard-*.json)
-          if [ ${#head_files[@]} -eq 0 ]; then
-            echo "No head shard reports found (all shards cancelled/failed) — nothing to report."
-            echo "have_head=false" >> "$GITHUB_OUTPUT"
+          report_files=(/tmp/reports/shard-*.json)
+          if [ ${#report_files[@]} -eq 0 ]; then
+            echo "No shard reports found (all shards cancelled/failed) — nothing to publish."
+            echo "have_report=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "have_head=true" >> "$GITHUB_OUTPUT"
-          echo "head_shards=${#head_files[@]}" >> "$GITHUB_OUTPUT"
+          echo "have_report=true" >> "$GITHUB_OUTPUT"
+          echo "shard_count=${#report_files[@]}" >> "$GITHUB_OUTPUT"
 
           # Stitch every shard's joined report back into one: keep shard 0's metadata,
           # concatenate all shards' Benchmarks arrays.
-          jq -s '.[0] * {Benchmarks: ([.[].Benchmarks] | add)}' "${head_files[@]}" > /tmp/pr-report-full.json
-          echo "Merged $(jq '.Benchmarks | length' /tmp/pr-report-full.json) head benchmarks from ${#head_files[@]} shard(s)."
+          jq -s '.[0] * {Benchmarks: ([.[].Benchmarks] | add)}' "${report_files[@]}" > /tmp/merged-report-full.json
+          echo "Merged $(jq '.Benchmarks | length' /tmp/merged-report-full.json) benchmarks from ${#report_files[@]} shard(s)."
 
-          base_files=(/tmp/reports/base-shard-*.json)
-          if [ ${#base_files[@]} -gt 0 ]; then
-            jq -s '.[0] * {Benchmarks: ([.[].Benchmarks] | add)}' "${base_files[@]}" > /tmp/base-report-full.json
-            echo "have_base=true" >> "$GITHUB_OUTPUT"
-            echo "Merged $(jq '.Benchmarks | length' /tmp/base-report-full.json) base benchmarks from ${#base_files[@]} shard(s)."
-          else
-            echo "have_base=false" >> "$GITHUB_OUTPUT"
-            echo "No base shard reports (main push, or base run cancelled)."
-          fi
-
-      - name: Resolve base SHA (for the comment footer)
-        if: github.event_name == 'pull_request' && steps.merge.outputs.have_head == 'true'
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          echo "BASE_SHA=$(git rev-parse origin/main)" >> "$GITHUB_ENV"
-
-      - name: Upload merged reports
-        if: steps.merge.outputs.have_head == 'true'
+      - name: Upload merged report
+        if: steps.merge.outputs.have_report == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
@@ -304,93 +222,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      # ----- PR path: post the same-runner A/B comment -----
+      # ----- Publish the merged report to gh-pages -----
       #
-      # The body is built by a script rather than inline here, because what it decides —
-      # which rows are flagged as a regression — is a statistical judgement that has to be
-      # testable. Inline in this file it was neither runnable nor pinned, and it shipped a
-      # guard that flagged 13 of 757 rows on a diff with zero IL in it (#351).
-      # `scripts/benchmark_comment.js --self-test` runs on every PR from `ci.yml` and pins
-      # the rule against the real measurements from that run.
-      - name: Build benchmark comment
-        if: github.event_name == 'pull_request' && steps.merge.outputs.have_head == 'true' && steps.merge.outputs.have_base == 'true'
-        env:
-          # A row is flagged when it moves past this ratio AND the gap exceeds
-          # ALERT_NOISE_SIGMAS times the two measurements' combined standard deviation,
-          # added in quadrature. Both defaults live in the script; they are repeated here
-          # because this is where someone tuning them will look first.
-          ALERT_THRESHOLD_RATIO: '1.10'
-          ALERT_NOISE_SIGMAS: '3'
-          MISSING_SHARDS: ${{ steps.merge.outputs.missing_shards }}
-        run: >-
-          node scripts/benchmark_comment.js
-          --pr /tmp/pr-report-full.json
-          --base /tmp/base-report-full.json
-          --out /tmp/benchmark-comment.md
-
-      - name: Post benchmark comment
-        if: github.event_name == 'pull_request' && steps.merge.outputs.have_head == 'true' && steps.merge.outputs.have_base == 'true'
-        uses: actions/github-script@v7
-        env:
-          MISSING_SHARDS: ${{ steps.merge.outputs.missing_shards }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            // The one definition of the marker, imported rather than copied: the string
-            // must match what the generated body carries and what the search below looks
-            // for, and a second copy here is a silent way for those to drift apart.
-            // github-script resolves a relative require against the workspace root.
-            const { COMMENT_MARKER: marker } = require('./scripts/benchmark_comment.js');
-
-            const body = fs.readFileSync('/tmp/benchmark-comment.md', 'utf8');
-            // Catches a truncated or empty build step, which would otherwise post a blank
-            // comment and orphan the previous one.
-            if (!body.includes(marker)) {
-              core.setFailed('The generated comment is missing its marker; posting it would orphan the previous one.');
-              return;
-            }
-
-            const missingShards = (process.env.MISSING_SHARDS || '').trim();
-            if (missingShards.length > 0) {
-              core.warning(`Benchmark comparison is missing shard(s) ${missingShards}.`);
-            }
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            const existing = comments.find(c => c.body && c.body.includes(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-              core.info(`Updated comment ${existing.id}`);
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-              core.info('Created new benchmarks comment');
-            }
-
-      # ----- Main path: publish merged report to gh-pages -----
+      # Gated on the ref rather than the event so a `workflow_dispatch` run against `main`
+      # publishes like a push does, while one against any other ref measures and uploads
+      # its artifact without touching the series.
       - name: Stage merged report for publish
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.merge.outputs.have_head == 'true'
+        if: github.ref == 'refs/heads/main' && steps.merge.outputs.have_report == 'true'
         run: |
           set -euo pipefail
           mkdir -p src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results
-          cp /tmp/pr-report-full.json src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json
+          cp /tmp/merged-report-full.json src/Celerity.Benchmarks/BenchmarkDotNet.Artifacts/results/ci-report-full.json
 
       - name: Publish to gh-pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.merge.outputs.have_head == 'true'
+        if: github.ref == 'refs/heads/main' && steps.merge.outputs.have_report == 'true'
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: Celerity Benchmarks
@@ -406,10 +251,9 @@ jobs:
           benchmark-data-dir-path: dev/bench
 
       - name: Sync custom dashboard to gh-pages
-        # Runs only on main push (same gate as the action's auto-push).
-        # Copies web/index.html + web/dev/bench/*.html into gh-pages,
-        # leaving the action-managed data.js untouched. Idempotent.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.merge.outputs.have_head == 'true'
+        # Copies web/index.html + web/dev/bench/*.html into gh-pages, leaving the
+        # action-managed data.js untouched. Idempotent.
+        if: github.ref == 'refs/heads/main' && steps.merge.outputs.have_report == 'true'
         run: |
           set -euo pipefail
           git fetch origin gh-pages
@@ -430,9 +274,9 @@ jobs:
           git push origin gh-pages
 
       # Deliberately the LAST step: a dashboard-wiring mistake must not cost us the
-      # measurement, so the comment and the gh-pages publish above happen first and this
-      # only reddens the job. Skipped unless every shard reported, since a partial merge
-      # is legitimately missing whole benchmark classes (the job runs with if: always()).
+      # measurement, so the gh-pages publish above happens first and this only reddens the
+      # job. Skipped unless every shard reported, since a partial merge is legitimately
+      # missing whole benchmark classes (the job runs with if: always()).
       - name: Check dashboard coverage of the merged report
-        if: steps.merge.outputs.have_head == 'true' && steps.merge.outputs.head_shards == env.SHARD_TOTAL
-        run: node scripts/check_dashboard_coverage.js /tmp/pr-report-full.json
+        if: steps.merge.outputs.have_report == 'true' && steps.merge.outputs.shard_count == env.SHARD_TOTAL
+        run: node scripts/check_dashboard_coverage.js /tmp/merged-report-full.json

@@ -4,6 +4,14 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **The benchmark suite runs on merges to `main` instead of on every pull request.** It was by a wide margin the largest consumer of this repository's CI minutes — a same-runner A/B against `main` over eight runners, re-paid on every review commit. A regression is now read off [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at the merge commit that introduced it, and *Actions → Benchmarks → Run workflow* measures any ref on demand. The per-PR comparison comment is gone with it. The relevance gate that skips a run whose diff cannot move a measured number now applies to `main` as well, so a documentation or comment-only commit costs nothing. No change to the shipped packages.
+
+### Removed
+
+- **The package-validation gate no longer fails `pack` on a breaking API change.** Its baseline was a hand-bumped version that needed a follow-up commit after every release plus a CI job of its own to check that the bump had happened — three moving parts guarding a surface where a break is nearly always deliberate. Breaking changes continue to be called out in this changelog and in [docs/migration.md](docs/migration.md), source- and binary-breaking distinguished, and judged in review. The package-metadata and release-notes gates are untouched. No change to the shipped packages.
+
 ## [3.0.1] - 2026-08-29
 
 ### Removed
