@@ -398,18 +398,42 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     /// so it is left exactly as a new one — which is what makes this reset the high-water terms in the
     /// remarks, and not merely empty the set.
     /// </summary>
+    /// <remarks>
+    /// The release happens on a set that is <i>already</i> empty too. Removal drops buckets but never narrows
+    /// the arrays behind them, so a set emptied by <see cref="Remove"/> still holds slots for what it used to
+    /// hold, and calling this on one is the way to give them back. Doing so changes nothing observable, so it
+    /// does not invalidate an enumerator; only a clear that really removed elements does.
+    /// </remarks>
     public void Clear()
     {
+        // A set emptied by `Remove` is still holding its high-water slot arrays: removal drops buckets but
+        // never narrows the three arrays behind them, so there is storage to release here even when there is
+        // nothing left to remove — and that case, after a bulk removal, is the one a caller reaches for this
+        // method to answer. Releasing it changes nothing observable about a set that is already empty, so the
+        // version stays where it is and an enumerator over one is not invalidated; only a clear that really
+        // removed elements moves it.
         if (_count == 0)
-            return;
+        {
+            if (_buckets.Length != 0)
+                ReleaseSlots();
 
+            return;
+        }
+
+        ReleaseSlots();
+        _count = 0;
+        _version++;
+    }
+
+    // Drops the buckets and the three parallel slot arrays behind them, putting the set back in the state a
+    // new one is in. Shared by `Clear` and by the empty path of `TrimExcess`, which owe the same release.
+    private void ReleaseSlots()
+    {
         _buckets = [];
         _lengths = [];
         _maxes = [];
         _tree = new int[1];
         _bucketCount = 0;
-        _count = 0;
-        _version++;
     }
 
     /// <summary>
@@ -428,13 +452,9 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     {
         if (_count == 0)
         {
-            if (_buckets.Length == 0)
-                return;
+            if (_buckets.Length != 0)
+                ReleaseSlots();
 
-            _buckets = [];
-            _lengths = [];
-            _maxes = [];
-            _tree = new int[1];
             return;
         }
 

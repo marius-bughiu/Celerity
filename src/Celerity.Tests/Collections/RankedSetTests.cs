@@ -1,3 +1,4 @@
+using System.Reflection;
 using Celerity.Collections;
 
 namespace Celerity.Tests.Collections;
@@ -627,8 +628,8 @@ public class RankedSetTests
         Assert.Equal(0, neverUsed.Count);
         Assert.Empty(neverUsed);
 
-        // Emptied by removal rather than never used — `Clear()` releases the slot arrays itself, so it is
-        // `Remove` that leaves them behind, and trimming releases them without disturbing anything observable.
+        // Emptied by removal rather than never used. `Remove` is what leaves the slot arrays behind; both
+        // `Clear` and this release them, and doing so disturbs nothing observable.
         var emptied = new RankedSet<int>([1, 2, 3]);
         Assert.True(emptied.Remove(1));
         Assert.True(emptied.Remove(2));
@@ -660,6 +661,72 @@ public class RankedSetTests
         var overEmpty = empty.GetEnumerator();
         empty.TrimExcess();
         Assert.False(overEmpty.MoveNext());
+    }
+
+    [Fact]
+    public void Clear_ShouldReleaseTheSlotArrays_WhenRemovalHadAlreadyEmptiedTheSet()
+    {
+        // The case `Clear` exists for: a bulk removal, then a clear to give the storage back. `Remove` drops
+        // buckets but never narrows the three arrays behind them, so the set is empty and still holding slots
+        // for 300,000 elements — and `Clear` used to return at its `_count == 0` guard without releasing any
+        // of it, which is the opposite of what it documents. Nothing observable through the public surface
+        // distinguishes the two states (the retention is a cost, not a behaviour), which is exactly how it
+        // survived: Clear_ShouldReleaseTheSlotArrays_NotJustTheBuckets above passes either way. So this one
+        // reads the fields, and is the only test that can fail on the bug.
+        var set = new RankedSet<int>(Enumerable.Range(0, 300_000));
+        for (int i = 0; i < 300_000; i++)
+            Assert.True(set.Remove(i));
+
+        Assert.Equal(0, set.Count);
+        Assert.NotEqual(0, SlotCount(set));
+
+        set.Clear();
+
+        Assert.Equal(0, SlotCount(set));
+        Assert.Equal(1, TreeLength(set));
+
+        // And it is still a working set afterwards.
+        set.Add(7);
+        Assert.Equal([7], Items(set));
+        Assert.Equal(0, set.IndexOf(7));
+    }
+
+    [Fact]
+    public void Clear_ShouldNotInvalidateAnEnumerator_WhenItOnlyReleasedTheArraysOfAnEmptySet()
+    {
+        // The release above must stay unobservable: a set already empty has nothing to remove, so the version
+        // must not move and a live enumerator over it must keep returning false rather than throwing.
+        var set = new RankedSet<int>([1, 2, 3]);
+        Assert.True(set.Remove(1));
+        Assert.True(set.Remove(2));
+        Assert.True(set.Remove(3));
+
+        var live = set.GetEnumerator();
+        set.Clear();
+
+        Assert.Equal(0, SlotCount(set));
+        Assert.False(live.MoveNext());
+    }
+
+    private static int SlotCount<T>(RankedSet<T> set) => Field<T, T[][]>(set, "_buckets").Length;
+
+    private static int TreeLength<T>(RankedSet<T> set) => Field<T, int[]>(set, "_tree").Length;
+
+    // `RankedSet<T>` derives from `RankedSet<T, DefaultComparer<T>>`, which is where the storage lives, so the
+    // lookup has to walk up to the declaring type rather than ask the runtime type for it.
+    private static TField Field<T, TField>(RankedSet<T> set, string name)
+    {
+        for (Type? type = set.GetType(); type is not null; type = type.BaseType)
+        {
+            FieldInfo? field = type.GetField(
+                name,
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+
+            if (field is not null)
+                return (TField)field.GetValue(set)!;
+        }
+
+        throw new InvalidOperationException($"RankedSet has no field named '{name}'.");
     }
 
     [Fact]
