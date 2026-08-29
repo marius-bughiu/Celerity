@@ -462,7 +462,9 @@ public class RankedSetTests
         Assert.Empty(set);
         Assert.False(set.Contains(0));
 
-        // Re-filling has to work against the bucket arrays the clear left behind rather than fresh ones.
+        // Re-filling goes through the grow-from-empty path: `Clear` releases the bucket and slot arrays
+        // (pinned by Clear_ShouldReleaseTheSlotArrays_NotJustTheBuckets), so this is the first-insert
+        // path on a set that has already been used — the case where a stale _bucketCount would show.
         set.Add(42);
         Assert.Equal([42], Items(set));
         Assert.Equal(0, set.IndexOf(42));
