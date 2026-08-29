@@ -1690,6 +1690,81 @@ public class SetIEnumerableConstructorTests
             Assert.True(set.Contains(item));
     }
 
+    // --------------------------------------------------------------
+    //  RankedSet - the order-statistics set, like BTreeSet has neither a
+    //  capacity nor a loadFactor parameter, so those rows do not apply. The
+    //  IEnumerable-source contract does, and it carries one guarantee the other
+    //  ordered sets do not: the seeded content has to come back with the right
+    //  *rank*, not merely in the right order.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void RankedSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new RankedSet<string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void RankedSet_ShouldSupportEmptySource()
+    {
+        var set = new RankedSet<string>(Array.Empty<string>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void RankedSet_ShouldCopyAllElements_FromArraySource_InOrder()
+    {
+        var set = new RankedSet<string>(new[] { "c", "a", "b" });
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(new[] { "a", "b", "c" }, set);
+        Assert.Equal(1, set.IndexOf("b"));
+    }
+
+    [Fact]
+    public void RankedSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Range is not an ICollection<int>, and 1,500 elements split buckets several times while
+        // the constructor fills the set.
+        var set = new RankedSet<int>(Enumerable.Range(0, 1500).Reverse());
+
+        Assert.Equal(1500, set.Count);
+        Assert.Equal(Enumerable.Range(0, 1500), set);
+        Assert.Equal(1234, set[1234]);
+    }
+
+    [Fact]
+    public void RankedSet_ShouldDedupeSource_IncludingDefaultAndNullElements()
+    {
+        var ints = new RankedSet<int>(new[] { 0, 1, 0, 1, 2 });
+
+        Assert.Equal(new[] { 0, 1, 2 }, ints);
+
+        var strings = new RankedSet<string>(new[] { "a", null!, "a", null! });
+
+        Assert.Equal(2, strings.Count);
+        Assert.Equal(new string?[] { null, "a" }, strings);
+    }
+
+    [Fact]
+    public void RankedSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 3 };
+
+        var set = new RankedSet<int>(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        foreach (int item in new[] { 1, 2, 3 })
+            Assert.True(set.Contains(item));
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  CompressedIntSet — the chunk-compressed integer set
     // ──────────────────────────────────────────────────────────────
