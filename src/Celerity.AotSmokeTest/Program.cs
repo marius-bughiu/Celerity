@@ -1007,6 +1007,51 @@ void Check(bool condition, string message)
     Check(repeated.CountOccurrences("aaaa") == 4997, "SuffixArray counts over a degenerate text");
 }
 
+// AhoCorasick — the build-once multi-pattern automaton. What is ILC-specific here is again the memory shape:
+// the build rents four scratch arrays from ArrayPool<T>.Shared for the trie it flattens away and returns them,
+// and the scan is a binary search over a compressed row per character with no JIT to fall back on. The
+// ref-struct match enumerator is worth pinning too, since it is the tier a caller on a hot path uses and it is
+// the one place the automaton's state is carried across a call boundary. Exercise the build, every query tier,
+// the overlapping-match case the failure links exist for, and a depth the short case never reaches.
+{
+    var automaton = new AhoCorasick(["he", "she", "his", "hers"]);
+
+    Check(automaton.Count == 4 && automaton.StateCount == 10, "AhoCorasick shares the states of a common prefix");
+    Check(automaton[1] == "she", "AhoCorasick resolves a pattern id");
+    Check(automaton.ContainsAny("ushers") && !automaton.ContainsAny("nothing to see"), "AhoCorasick membership");
+    Check(automaton.CountMatches("ushers") == 3, "AhoCorasick counts overlapping matches");
+
+    Check(automaton.TryFindFirst("ushers", out var first) && first.Start == 1 && first.Length == 3,
+        "AhoCorasick finds the first match");
+    Check(!automaton.TryFindFirst("nothing to see", out _), "AhoCorasick reports an absent pattern set");
+
+    var all = automaton.FindAll("ushers");
+    Check(all.Length == 3 && all[0].Start == 1 && all[1].Start == 2 && all[2].Start == 2,
+        "AhoCorasick reports every overlapping match");
+
+    var matches = new PatternMatch[3];
+    Check(automaton.CopyMatches("ushers", matches) == 3 && matches[2].Length == 4, "AhoCorasick copy tier");
+
+    var enumerated = 0;
+    foreach (var match in automaton.EnumerateMatches("ushers and his and hers"))
+        enumerated += match.Length;
+    Check(enumerated == 18, "AhoCorasick enumerates every match");
+
+    var patterns = 0;
+    foreach (var pattern in automaton) patterns += pattern.Length;
+    Check(patterns == 12, "AhoCorasick enumerates every pattern");
+
+    // A thousand patterns over a two-letter alphabet: the trie is deep, the failure links climb many levels,
+    // and the flattening's scratch is well past what a small case rents.
+    var deep = new string[1000];
+    for (int i = 0; i < deep.Length; i++)
+        deep[i] = new string('a', 1 + (i % 40)) + new string('b', 1 + (i % 7));
+
+    var wide = new AhoCorasick(deep);
+    Check(wide.Count == 280, "AhoCorasick collapses the repeated patterns of a generated set");
+    Check(wide.ContainsAny(new string('a', 100) + "b"), "AhoCorasick matches deep into a degenerate text");
+}
+
 // BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
 // the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
 // IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the

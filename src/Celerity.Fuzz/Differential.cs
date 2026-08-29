@@ -63,6 +63,7 @@ internal static class Differential
         ("IntervalTree", IntervalTreeCase),
         ("CompressedGraph", CompressedGraphCase),
         ("SuffixArray", SuffixArrayCase),
+        ("AhoCorasick", AhoCorasickCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -1905,6 +1906,82 @@ internal static class Differential
         Check(repeatLength == longest, "SuffixArray longest repeat disagreed on length");
         Check(!repeated || sut.CountOccurrences(source.AsSpan(repeatStart, repeatLength)) >= 2,
             "SuffixArray longest repeat does not actually repeat");
+    }
+
+    // ---- aho-corasick --------------------------------------------------------
+
+    // AhoCorasick against the loop it replaces: every pattern tested at every position, then ordered the way
+    // the automaton documents — ascending end position, longest first among matches ending together.
+    //
+    // The alphabet is deliberately tiny and the patterns deliberately short, for the reason the failure links
+    // exist. An automaton whose links are wrong still finds every pattern that begins where the scan happens to
+    // be at the root; what it loses is the patterns that begin *inside* a partial match of another one. Over a
+    // wide alphabet that case barely arises, and a run of a million iterations would agree with the oracle
+    // while the automaton was broken. Over {a, b, c} nearly every pattern is a suffix of some prefix of
+    // another, so the case is the norm rather than the exception.
+    private static void AhoCorasickCase(Random rng)
+    {
+        int alphabet = rng.Next(1, 4);
+        int patternCount = rng.Next(0, 12);
+
+        var patterns = new string[patternCount];
+        for (int i = 0; i < patternCount; i++)
+        {
+            int length = rng.Next(1, 7);
+            var pattern = new StringBuilder(length);
+            for (int c = 0; c < length; c++)
+                pattern.Append((char)('a' + rng.Next(alphabet)));
+
+            patterns[i] = pattern.ToString();
+        }
+
+        int textLength = rng.Next(0, 200);
+        var text = new StringBuilder(textLength);
+        for (int i = 0; i < textLength; i++)
+            text.Append((char)('a' + rng.Next(alphabet)));
+
+        string source = text.ToString();
+        var sut = new AhoCorasick(patterns);
+
+        string[] distinct = [.. patterns.Distinct(StringComparer.Ordinal)];
+        Check(sut.Count == distinct.Length, "AhoCorasick did not collapse the duplicate patterns");
+        for (int id = 0; id < distinct.Length; id++)
+            Check(sut[id] == distinct[id], "AhoCorasick did not keep the pattern ids in first-appearance order");
+
+        var expected = new List<PatternMatch>();
+        for (int id = 0; id < distinct.Length; id++)
+        {
+            foreach (int position in NaiveOccurrences(source, distinct[id]))
+                expected.Add(new PatternMatch(id, position, distinct[id].Length));
+        }
+
+        PatternMatch[] oracle = [.. expected.OrderBy(match => match.End).ThenByDescending(match => match.Length)];
+        PatternMatch[] found = sut.FindAll(source);
+
+        Check(found.Length == oracle.Length, "AhoCorasick FindAll returned the wrong number of matches");
+        for (int i = 0; i < oracle.Length; i++)
+            Check(found[i] == oracle[i], "AhoCorasick FindAll disagreed on a match");
+
+        Check(sut.CountMatches(source) == oracle.Length, "AhoCorasick CountMatches disagreed");
+        Check(sut.ContainsAny(source) == oracle.Length > 0, "AhoCorasick ContainsAny disagreed");
+
+        bool any = sut.TryFindFirst(source, out PatternMatch first);
+        Check(any == oracle.Length > 0, "AhoCorasick TryFindFirst disagreed on presence");
+        Check(!any || first == oracle[0], "AhoCorasick TryFindFirst did not return the first match in order");
+
+        var copied = new PatternMatch[oracle.Length];
+        Check(sut.CopyMatches(source, copied) == oracle.Length, "AhoCorasick CopyMatches disagreed on the count");
+        for (int i = 0; i < oracle.Length; i++)
+            Check(copied[i] == oracle[i], "AhoCorasick CopyMatches disagreed on a match");
+
+        // Every reported range has to actually hold its pattern, which the comparison above would miss if the
+        // oracle and the automaton agreed on a wrong length.
+        foreach (PatternMatch match in found)
+        {
+            Check(match.Length == sut[match.PatternId].Length, "AhoCorasick reported a match of the wrong length");
+            Check(string.CompareOrdinal(source, match.Start, sut[match.PatternId], 0, match.Length) == 0,
+                "AhoCorasick reported a match over text that does not hold the pattern");
+        }
     }
 
     private static int[] NaiveOccurrences(string text, string pattern)
