@@ -827,11 +827,13 @@ var fired = new List<PendingRequest?>();      // reused, so a steady-state tick 
 TimerHandle armed = timeouts.Schedule(delayTicks: 30_000, request);
 timeouts.Cancel(armed);                       // the reply beat the clock — O(1), payload released
 
+fired.Clear();                                // Advance *appends* — reuse is only safe if you empty it first
 timeouts.Advance(now, fired);                 // fires everything with deadline <= now
 foreach (PendingRequest? timedOut in fired)
     timedOut!.Fail(new TimeoutException());
 
 // A jump costs the wheel, not the distance: at worst every slot at every level, never the tick count.
+fired.Clear();
 timeouts.Advance(timeouts.CurrentTick + 5_000_000, fired);
 ```
 

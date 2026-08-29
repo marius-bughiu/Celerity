@@ -5677,6 +5677,7 @@ The four decomposition groups each run **one invocation per iteration**, because
 // A tick is a millisecond here; the default geometry reaches about 49 days.
 var timeouts = new TimerWheel<PendingRequest>();
 var fired = new List<PendingRequest?>();          // reused, so a steady-state tick allocates nothing
+                                                 // — but Advance appends, so clear it between advances
 
 // Send a request and arm its timeout. Keep the handle with the request.
 PendingRequest request = Send(query);
@@ -5692,6 +5693,7 @@ foreach (PendingRequest? timedOut in fired)
     timedOut!.Fail(new TimeoutException());
 
 // A jump costs the wheel, not the distance: at worst every slot at every level, never the tick count.
+fired.Clear();
 timeouts.Advance(timeouts.CurrentTick + 5_000_000, fired);
 
 // What is still pending, and how long each has left.
