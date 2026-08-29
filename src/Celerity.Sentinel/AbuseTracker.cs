@@ -59,10 +59,15 @@ public class AbuseTracker<TKey, THasher>
     /// The accuracy / memory configuration, or <c>null</c> for the defaults (see <see cref="AbuseTrackerOptions"/>).
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// An option is out of range (for example <see cref="AbuseTrackerOptions.RateEpsilon"/> or
-    /// <see cref="AbuseTrackerOptions.RateConfidence"/> outside <c>(0, 1)</c>, a non-positive
-    /// <see cref="AbuseTrackerOptions.OffenderCapacity"/>, or a
-    /// <see cref="AbuseTrackerOptions.DistinctPrecision"/> outside the supported range).
+    /// An option is out of range: <see cref="AbuseTrackerOptions.RateEpsilon"/> or
+    /// <see cref="AbuseTrackerOptions.RateConfidence"/> outside <c>(0, 1)</c>; a non-positive
+    /// <see cref="AbuseTrackerOptions.OffenderCapacity"/>; a
+    /// <see cref="AbuseTrackerOptions.DistinctPrecision"/> outside the supported range; a non-positive
+    /// <see cref="AbuseTrackerOptions.ExpectedDistinctKeys"/> or a
+    /// <see cref="AbuseTrackerOptions.FirstSeenFalsePositiveRate"/> outside <c>(0, 1)</c> while
+    /// <see cref="AbuseTrackerOptions.TrackFirstSeen"/> is set (both are ignored when it is not); or a
+    /// <see cref="AbuseTrackerOptions.RateEpsilon"/> so small that the rate sketch would need more counters
+    /// than it will allocate.
     /// </exception>
     public AbuseTracker(AbuseTrackerOptions? options = null)
     {
