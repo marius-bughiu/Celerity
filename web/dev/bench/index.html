@@ -550,6 +550,11 @@ function escapeHtml(s) {
     // the operation SortedDictionary cannot express at all.
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',                vs: 'SortedDictionary<int, int>', ops: ['Add', 'Lookup', 'Remove', 'RangeScan', 'Mixed'] },
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                            vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Mixed'] },
+    // RankedSet is the ordered set that also ranks and selects. The cards pair it against SortedSet<int>,
+    // which has no rank and no positional accessor at all; the hand-rolled sorted List<int> arms in the
+    // same benchmark carry their own op names (SelectByIndex, RankBinarySearch, ...) so they stay out of
+    // these buckets and each card still resolves to exactly one BCL and one Celerity measurement.
+    { key: 'RankedSet',           title: 'RankedSet<int>',                           vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Select', 'Rank', 'Mixed'] },
     // StringKeyProbe tracks the reference-type-key probe path — every other card here keys on int/long,
     // where the JIT devirtualizes the per-probe comparison and the codegen question does not arise.
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.

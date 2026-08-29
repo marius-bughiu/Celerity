@@ -62,6 +62,7 @@ internal class Program
         typeof(CompressedGraphBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
+        typeof(RankedSetBenchmark),
         typeof(RadixSortBenchmark),
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),

@@ -1101,6 +1101,36 @@ void Check(bool condition, string message)
     Check(descending.Min == 99 && descending.Max == 0, "BTreeSet custom struct comparer order");
 }
 
+// RankedSet — the order-statistics set. The rank surface is what ILC has to get right here: the Fenwick
+// descent and the bucket splits and merges behind it, over a set large enough to have several buckets.
+{
+    var ranked = new RankedSet<int>(Enumerable.Range(0, 1500).Reverse());
+    Check(ranked.Count == 1500 && ranked.Min == 0 && ranked.Max == 1499, "RankedSet source ctor across splits");
+    Check(ranked[0] == 0 && ranked[749] == 749 && ranked[1499] == 1499, "RankedSet select by rank");
+    Check(ranked.IndexOf(1234) == 1234 && ranked.IndexOf(5000) == -1, "RankedSet rank of an element");
+    Check(ranked.CountLessThan(700) == 700 && ranked.CountLessThanOrEqual(700) == 701, "RankedSet counts");
+
+    ranked.RemoveAt(0);
+    Check(ranked.Count == 1499 && ranked.Min == 1 && ranked[0] == 1, "RankedSet remove by rank");
+    Check(!ranked.TryAdd(10) && ranked.Remove(10) && !ranked.Contains(10), "RankedSet duplicate + remove");
+
+    var inRange = 0;
+    foreach (int item in ranked.EnumerateRange(200, 260)) inRange++;
+    Check(inRange == 60, "RankedSet range scan");
+
+    ((ISet<int>)ranked).IntersectWith(new[] { 1, 2, 3, 5000 });
+    Check(ranked.Count == 3 && ranked.Max == 3 && ranked.IndexOf(3) == 2, "RankedSet ISet<int> intersect");
+
+    // The set is now three elements in buckets sized for 1,500, which is what TrimExcess is for.
+    ranked.TrimExcess();
+    Check(ranked.Count == 3 && ranked[0] == 1 && ranked[2] == 3 && ranked.IndexOf(2) == 1, "RankedSet TrimExcess");
+
+    // The same second instantiation for ILC to compile, through a hand-written struct comparer.
+    var descendingRanked = new RankedSet<int, DescendingIntComparer>();
+    for (int i = 0; i < 100; i++) descendingRanked.Add(i);
+    Check(descendingRanked[0] == 99 && descendingRanked.IndexOf(0) == 99, "RankedSet custom struct comparer order");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.

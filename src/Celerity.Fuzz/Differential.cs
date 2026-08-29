@@ -46,6 +46,7 @@ internal static class Differential
         ("CompressedIntSet", CompressedIntSetCase),
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
+        ("RankedSet", RankedSetCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -910,6 +911,63 @@ internal static class Differential
             Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
 
         CheckSameSequence(sut, oracle, "enumeration");
+
+        int from = OrderedKey(rng);
+        int to = from + rng.Next(0, 120);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to),
+            oracle.Where(v => v >= from && v < to),
+            $"range[{from},{to})");
+    }
+
+    private static void RankedSetCase(Random rng)
+    {
+        var sut = new RankedSet<int>();
+        var oracle = new SortedSet<int>();
+        int ops = OrderedOpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = OrderedKey(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 11: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 18: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                case < 19 when oracle.Count > 0:
+                    int rank = rng.Next(0, oracle.Count);
+                    int removed = sut[rank];
+                    sut.RemoveAt(rank);
+                    Check(oracle.Remove(removed), $"RemoveAt({rank}) removed {removed}, which the oracle lacked");
+                    break;
+                case < 19: break;
+                case < 20 when rng.Next(0, 4) == 0:
+                    // TrimExcess rebuilds every bucket and the index over them, so it has to leave the set
+                    // observably identical — which is exactly what the oracle can check.
+                    sut.TrimExcess();
+                    break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+
+        for (int k = MinOrderedKey - 2; k <= MaxOrderedKey + 2; k++)
+        {
+            Check(sut.Contains(k) == oracle.Contains(k), $"Contains({k})");
+            Check(sut.CountLessThan(k) == oracle.Count(v => v < k), $"CountLessThan({k})");
+        }
+
+        CheckSameSequence(sut, oracle, "enumeration");
+
+        // The rank surface is the part no oracle method answers, so it is reconciled against the oracle's
+        // own order: element i of the sorted sequence must be at rank i, both ways round.
+        int index = 0;
+        foreach (int expected in oracle)
+        {
+            Check(sut[index] == expected, $"[{index}] {sut[index]} != {expected}");
+            Check(sut.IndexOf(expected) == index, $"IndexOf({expected}) != {index}");
+            index++;
+        }
 
         int from = OrderedKey(rng);
         int to = from + rng.Next(0, 120);

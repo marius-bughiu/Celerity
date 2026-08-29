@@ -5197,6 +5197,183 @@ foreach (int endpoint in active.EnumerateRange(windowStart, windowEnd))
 }
 ```
 
+## RankedSet&lt;T, TComparer&gt;
+
+```csharp
+public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T>
+    where TComparer : struct, IComparer<T>
+
+// Ordered by Comparer<T>.Default:
+public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
+```
+
+An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *where does this element rank?* (`IndexOf` for one that is present, `CountLessThan` for the rank one *would* take whether or not it is) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
+
+The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#how-it-is-laid-out) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
+
+### The gap it fills
+
+This library could already rank and select three ways, and never over a set that changes: [`RankSelectBitVector`](#rankselectbitvector) over an *immutable* bit vector, [`FenwickTree<T>`](#fenwicktreet) and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) over a *fixed-length* sequence of positions. The ordered containers — [`BTreeSet<T, TComparer>`](#btreesett-tcomparer), [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictionarytkey-tvalue-tcomparer), [`Trie<TValue>`](#trietvalue) — have no rank at all.
+
+The BCL has no answer either, and this is a genuine gap rather than a "we are faster" claim:
+
+| The BCL answer | Mutation | Rank | Select |
+| --- | --- | --- | --- |
+| `SortedSet<T>` | `O(log n)` | none — `set.Count(x => x < v)` is `O(n)` | none — `set.ElementAt(k)` is `O(k)` |
+| `SortedList<TKey, TValue>` | `O(n)` memmove | `O(log n)` (`IndexOfKey`) | `O(1)` |
+| A hand-rolled sorted `List<T>` | `O(n)` memmove | `O(log n)` (`BinarySearch`) | `O(1)` |
+| `RankedSet<T, TComparer>` | `O(√n)` memmove | `O(log n)` | `O(log n)` |
+
+Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one, and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
+
+### How it is laid out
+
+**Sqrt decomposition.** Elements live in a jagged array of sorted buckets. Finding an element is a binary search over the per-bucket maxima followed by a binary search inside one contiguous array. The positional half is carried by a **Fenwick tree over the bucket lengths** — a few thousand `int`s at a million elements, which stay in cache: `IndexOf` is one prefix sum plus an in-bucket offset, and the indexer is one binary-lifting descent plus a direct array index.
+
+The bucket capacity is the smallest power of two whose square is at least the element count, never below 512 — so `Θ(√n)`. A full bucket **grows in place** while it is under that capacity, and only **splits** once it has reached it; it merges with a neighbour when it falls below a quarter of its capacity and the union fits in half, so a quarter of a bucket's worth of operations has to pass before either boundary is crossed again.
+
+**The one place that bound is off.** Neither a bucket's array nor the slot array behind the Fenwick tree is ever narrowed as elements leave, so after a contraction both terms are in the *high-water* count `Nmax` rather than the current `n`:
+
+| After a contraction | Cost |
+| --- | --- |
+| An ordinary insert or remove — it shifts a bucket sized for what the set used to hold | `O(min(n, √Nmax))` |
+| A **structural** one — the merge or bucket drop a removal can trigger — it rebuilds the tree across every historical slot | `Θ(√Nmax)`, with no `min` to save it |
+
+So a set that grew to a hundred million and shrank to ten thousand pays those rather than `O(√n)`. Growth exercises the capacity rule and contraction does not, so this costs nothing to a set whose size is roughly stable — a sliding window, a leaderboard — and `TrimExcess()` is the way back: one `O(n)` rebuild at the current size puts both bounds back. `Clear()` resets them too, by releasing everything.
+
+That capacity rule is not a tuning knob — it is what makes the cost stated below true. A split inserts a bucket between two others, shifting every later slot and rebuilding the Fenwick tree over them, which is `Θ(b)`. With a *fixed* capacity `C` the bucket count `b` grows as `n / C` and a split happens every `C / 2` inserts, so that `Θ(b)` work amortizes to `Θ(n / C²)` **per insert** — it grows with `n`, and past a few tens of millions of elements it dominates everything else. Holding `C` at `Θ(√n)` pins `b` at `Θ(√n)` and the number of splits at `Θ(√n)`, so their total is `Θ(n)` and the amortized structural cost per mutation is a constant.
+
+**The cost, stated exactly:**
+
+| | |
+| --- | --- |
+| `Contains`, `IndexOf`, `CountLessThan`, `CountLessThanOrEqual`, the bounds, `this[int]` | `O(log n)` |
+| `Add`, `TryAdd`, `Remove`, `RemoveAt` | **`O(√n)`** — two binary searches and an `O(log b)` Fenwick update, plus a memmove of at most one bucket |
+| `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)`, over contiguous arrays |
+
+The `√n` term is the in-bucket memmove, and it is the cheapest linear-time operation the machine has: one bounded, contiguous copy of at most a bucket, against a tree's chain of dependent pointer loads. It is also why the measured `Add` and `Remove` **beat** `SortedSet<T>`'s `O(log n)` at 100,000 elements (1.52x and 1.83x) rather than losing to it.
+
+That layout, rather than subtree counts hung off `BTreeSet`'s nodes, is why this ships as its own type: a B-tree select lands at a leaf after `log₃₂(n)` dependent pointer chases, and augmenting the existing type would charge every `BTreeSet` user memory and per-level update work for a query class they did not ask for.
+
+Footprint is one array object per bucket — roughly one per three quarters of a bucket capacity in steady state — and no per-element node, against `SortedSet<T>` and its one heap object per element. Bucket arrays are allocated at their full capacity, so element storage runs about `1.3x` the elements themselves in steady state and up to `2x` immediately after a round of splits. The capacity only ever rises with the element count, so a set that has been large and is now small keeps the wider arrays — and the memory that goes with them — until `TrimExcess()` rebuilds it at the current size, or `Clear()` releases everything.
+
+### When to choose it over `SortedSet` — and when not to
+
+Reach for it when the positional questions are asked of a set that changes. Reach for [`BTreeSet<T, TComparer>`](#btreesett-tcomparer) when they are never asked, for [`CeleritySet`](#celeritysett-thasher) or [`IntSet`](#intsetthasher) when order itself is not part of the question, and for a sorted `List<T>` when the set is built once and only queried — indexing one array is `O(1)` and unbeatable, and this type does not pretend otherwise. At a thousand elements the hand-rolled list wins the mixed workload outright — the numbers are below, and tracked on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet).
+
+### Measured
+
+CI's sharded A/B run, `int` elements, shuffled inserts. Every group carries three arms: `SortedSet<T>` (the
+baseline), a sorted `List<T>` kept by hand with `BinarySearch` + `Insert`, and this type. The ratios are
+*this type against that arm* — above 1 means it is faster.
+
+| Group | vs `SortedSet<T>` @100k | vs sorted `List<T>` @100k | vs `SortedSet<T>` @1k | vs sorted `List<T>` @1k |
+| --- | ---: | ---: | ---: | ---: |
+| **Select** (k-th smallest) | **33,900x** | 0.07x | **1,440x** | 0.28x |
+| **Rank** (`CountLessThan`) | **9,240x** | 1.04x | **190x** | 1.25x |
+| **Mixed** (churn + a rank and a select per step) | **137x** | **1.62x** | **11.7x** | 0.93x |
+| RangeScan | 6.18x | 0.57x | 5.97x | 1.09x |
+| Remove | 1.83x | **11.9x** | 2.21x | 0.41x |
+| Add | 1.52x | **10.8x** | 1.14x | 1.08x |
+| Contains | 1.41x | 1.15x | 1.07x | 1.21x |
+
+**The two left columns are the gap**, and they are not close: `SortedSet<T>` has no rank and no indexer, so
+its answers are `set.Count(x => x < v)` and `set.ElementAt(k)`, and at 100,000 elements those are 22.7 ms and
+31.9 ms against 2.5 µs and 944 ns here. Nothing about that is a tuning result — it is `O(n)` against
+`O(log n)`.
+
+**The right-hand columns are the honest ones.** A sorted `List<T>` indexes in `O(1)` and binary-searches in
+`O(log n)` over one contiguous array, so it **wins selection outright** (14x at 100k, 3.5x at 1k) and wins the
+range walk. It loses where it has to *move*: an insert or a remove memmoves half the array, which is 11x this
+type at 100,000 elements. The `Mixed` group is where both weaknesses are charged at once, and it is the only
+row that decides anything — **1.62x** the hand-roll and **137x** `SortedSet<T>` at 100k.
+
+Two things worth saying plainly rather than rounding away:
+
+- **At a thousand elements this type is not the answer.** The hand-rolled list beats it on `Mixed` (0.93x),
+  on `Remove` (0.41x) and on `Select`; everything fits in cache and an `O(n)` memmove over 1,000 `int`s is
+  nothing. The crossover is between the two sizes measured, closer to the small end.
+- **The `Mixed` margin over the hand-roll is 1.62x, not an order of magnitude.** A short local sweep put it at
+  8.9x; CI's A/B is the number published here, and the difference is why. Against `SortedSet<T>` the margin is
+  two orders of magnitude, but that arm is winning on the *queries*, which the first two rows already isolate.
+
+### Constructors
+
+```csharp
+public RankedSet()
+public RankedSet(TComparer comparer)
+public RankedSet(IEnumerable<T> source)
+public RankedSet(IEnumerable<T> source, TComparer comparer)
+```
+
+There is no capacity and no load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and silently ignore duplicates.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `TComparer Comparer { get; }` | Element count; the comparer defining the order. |
+| `T this[int index] { get; }` | The `index`-th smallest, `O(log n)`. Throws `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `int IndexOf(T item)` | The rank of `item`, `O(log n)`, or `-1` when it is absent. |
+| `int CountLessThan(T item)` / `int CountLessThanOrEqual(T item)` | The rank `item` *would* occupy, whether or not it is present — what a percentile query needs. |
+| `void RemoveAt(int index)` | Remove by rank, `O(√n)` — `O(log n)` to find it, then at most one bucket shifts. No BCL ordered container offers this at all. |
+| `void Add(T item)` | Insert, `O(√n)`; throws `ArgumentException` when the element is already present (the family-wide set convention). |
+| `bool TryAdd(T item)` | Non-throwing insert, `O(√n)`. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
+| `bool Contains(T item)` | `O(log n)`. |
+| `bool Remove(T item)` | `O(√n)` — `O(log n)` to find it, then at most one bucket shifts. |
+| `void Clear()` | Drop every element; the set releases all of its bucket arrays and resets the bucket capacity. |
+| `void TrimExcess()` | Rebuild at the capacity the *current* count calls for, `O(n)`, packing buckets three-quarters full. The remedy for the high-water bound above; invalidates active enumerators. |
+| `T Min { get; }` / `T Max { get; }` | Smallest / largest element, `O(1)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
+| `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | Smallest element **≥** / **>** `item`, `O(log n)`. |
+| `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | The elements of the half-open range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. |
+| `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` / `SetEquals` | The `ISet<T>` / `IReadOnlySet<T>` queries. |
+| `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
+
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). That only matters for a comparer that orders two elements equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — and then it matters for exactly the four members that ask whether an element of *this* set is in `other`:
+
+| Follow `TComparer` throughout | Compare `other` with `EqualityComparer<T>.Default` |
+| --- | --- |
+| `UnionWith`, `ExceptWith`, `SymmetricExceptWith`, `Overlaps`, `IsSupersetOf`, `IsProperSupersetOf` | `IntersectWith`, `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf` |
+
+So under a case-insensitive order a set holding `"a"` answers `true` to `Contains("A")` and still empties under `IntersectWith(["A"])` — which is where the right-hand column differs from `SortedSet<T>`. Whether a `null` element is legal is `TComparer`'s decision, not this type's: under `DefaultComparer<T>` — and so under the `RankedSet<T>` alias — `Comparer<T>.Default` orders `null` before every non-`null` element and it is an ordinary member, while a hand-written comparer that dereferences its arguments will throw on one. A value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// The top N *distinct* scores, kept live as they arrive. This is a set, so an equal score is not a second
+// entry — which is what makes evicting by rank 0 exactly right here: the lowest distinct score is the one
+// that falls out of the top N. To keep every sample instead, make the element a composite the comparer
+// orders by score, e.g. (score, sampleId), so equal scores stay distinct and can be evicted individually.
+var top = new RankedSet<int>();
+
+foreach (int score in arriving)
+{
+    top.TryAdd(score);
+
+    if (top.Count > keep)
+    {
+        top.RemoveAt(0);      // drop the lowest distinct score, by rank — O(√n)
+    }
+}
+
+// Where does this score stand, and who is at a given position?
+Console.WriteLine(top.IndexOf(myScore));          // rank, or -1 if it is not in the set
+Console.WriteLine(top.CountLessThan(myScore));    // the rank it would take, present or not
+Console.WriteLine(top[top.Count / 2]);            // the median of the scores retained
+Console.WriteLine(top[top.Count - 10]);           // the tenth from the top
+
+// The ordered surface is all there too.
+foreach (int score in top.EnumerateRange(1000, 2000))
+{
+    Process(score);
+}
+```
+
 ## CompressedGraph
 
 ```csharp
