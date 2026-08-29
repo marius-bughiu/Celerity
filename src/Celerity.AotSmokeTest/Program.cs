@@ -2690,8 +2690,8 @@ void Check(bool condition, string message)
     Check(owner is 1 or 2 or 3, "ConsistentHashRing routes to a registered node");
     Check(ring.GetNode("user-42") == owner, "ConsistentHashRing routing is stable");
     Check(ring.TryGetNode("user-42", out int sameOwner) && sameOwner == owner, "ConsistentHashRing.TryGetNode");
-    Check(ring.GetReplicas("user-42", 3).Count == 3 && ring.GetReplicas("user-42", 3)[0] == owner,
-        "ConsistentHashRing replica walk starts at the owner");
+    IReadOnlyList<int> replicas = ring.GetReplicas("user-42", 3);
+    Check(replicas.Count == 3 && replicas[0] == owner, "ConsistentHashRing replica walk starts at the owner");
     Check(ring.GetReplicas("user-42", 9).Count == 3, "ConsistentHashRing replicas cap at the node count");
 
     // The property the type exists for: removing a node moves only the keys it owned.
@@ -2722,7 +2722,8 @@ void Check(bool condition, string message)
     Check(hrwOwner is "alpha-node" or "beta-node", "RendezvousHash routes to a registered node");
     Check(hrw.GetNode(99L) == hrwOwner && hrw.TryGetNode(99L, out string hrwSame) && hrwSame == hrwOwner,
         "RendezvousHash routing is stable");
-    Check(hrw.GetReplicas(99L, 2).Count == 2 && hrw.GetReplicas(99L, 2)[0] == hrwOwner,
+    IReadOnlyList<string> hrwReplicas = hrw.GetReplicas(99L, 2);
+    Check(hrwReplicas.Count == 2 && hrwReplicas[0] == hrwOwner,
         "RendezvousHash replica order starts at the owner");
     Check(hrw.Remove("beta") && hrw.NodeCount == 1, "RendezvousHash.Remove");
 
@@ -2924,9 +2925,11 @@ internal enum AotWideEnum : ushort
     High = 1_000,
 }
 
-// A sparse [Flags] enum for the EnumSet rejection above: its maximum underlying value is past the
-// supported range, so EnumSetInfo<TEnum> records the reason and the constructor throws rather than
-// sizing a bit vector nobody wants.
+// A sparse [Flags] enum for the EnumSet rejection above. The guard keys off the *value range*, not the
+// attribute: Far exceeds EnumSetInfo.MaxSupportedValue, so the type initializer records a reason and the
+// constructor throws rather than sizing a bit vector nobody wants. [Flags] is here because a power-of-two
+// enum is the case the guard exists for, not because it is what trips it.
+[Flags]
 internal enum AotSparseFlags
 {
     None = 0,
