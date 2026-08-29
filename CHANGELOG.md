@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-29
+
 ### Added
 
 - **The Native AOT smoke test now constructs every collection type**, and references the three showcase-tier packages. `EnumSet`, `HashCachingSet`, `PooledCeleritySet`, `RobinHoodSet`, `SmallSet`, `SwissSet` and `TopKSketch`, along with `Celerity.Ring` / `Celerity.Sentinel` / `Celerity.Cardinality`, were covered by the trim/AOT analyzers but never rooted by the publish, so no native binary had ever run them. Verification only — no shipped code changed. See [docs/aot.md](docs/aot.md). Closes [#400](https://github.com/marius-bughiu/Celerity/issues/400).
@@ -659,7 +661,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.0.0
 [2.7.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.7.0
 [2.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.6.0
 [2.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v2.5.0
