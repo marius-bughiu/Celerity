@@ -116,7 +116,7 @@
     IsPackable is known; see the comment there.
   -->
   <PropertyGroup>
-    <CelerityPackageValidationBaseline>3.0.0</CelerityPackageValidationBaseline>
+    <CelerityPackageValidationBaseline>3.0.1</CelerityPackageValidationBaseline>
   </PropertyGroup>
 
 </Project>
