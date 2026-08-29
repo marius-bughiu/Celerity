@@ -201,10 +201,17 @@ public class AbuseTrackerOptionsTests
         // stream), so the assertion compares the two ends of the supported range, where the gap is three
         // orders of magnitude and not a coin flip.
         //
-        // Both bands come from that curve — the one AbuseTrackerOptions.DistinctPrecision documents — rather
-        // than from what this stream happens to measure, so they track the contract instead of a snapshot of
-        // the implementation. Generous in both directions: the coarse end need only be half as bad as theory
-        // predicts, the fine end may be three times worse.
+        // The band on the fine end comes from that curve — the one AbuseTrackerOptions.DistinctPrecision
+        // documents — rather than from what this stream happens to measure, so it tracks the contract instead
+        // of a snapshot of the implementation, and it is generous: three times the standard error.
+        //
+        // There is deliberately no floor on the coarse end. 1.04 / sqrt(16) is a *standard error*, not a
+        // bound, so a single 16-register estimate is free to land anywhere around the truth — including on
+        // top of it, by luck. Asserting that the coarse arm is genuinely coarse would be asserting that luck,
+        // and a change to the hasher could flip it with nothing actually wrong. What the wiring needs is that
+        // the two arms differ at all: were the option ignored, both trackers would be built at the same
+        // precision and return the identical estimate, so `fine < coarse` is false — which is what the
+        // mutation check confirms.
         const int distinct = 20_000;
         const int coarsePrecision = HyperLogLog<string, StringXxHash3Hasher>.MinPrecision;
         const int finePrecision = HyperLogLog<string, StringXxHash3Hasher>.MaxPrecision;
@@ -212,11 +219,11 @@ public class AbuseTrackerOptionsTests
         double coarse = DistinctError(coarsePrecision, distinct);
         double fine = DistinctError(finePrecision, distinct);
 
-        Assert.True(fine < coarse, $"precision did not tighten the estimate: coarse {coarse:P2}, fine {fine:P2}");
-        Assert.True(coarse > 0.5 * StandardError(coarsePrecision),
-            $"{1 << coarsePrecision} registers estimated {distinct} distinct keys to within {coarse:P2}");
+        Assert.True(fine < coarse,
+            $"precision did not tighten the estimate: {Registers(coarsePrecision)} registers {coarse:P2} off, "
+            + $"{Registers(finePrecision)} registers {fine:P2} off");
         Assert.True(fine < 3 * StandardError(finePrecision),
-            $"{1 << finePrecision} registers were {fine:P2} off, against a {StandardError(finePrecision):P2} standard error");
+            $"{Registers(finePrecision)} registers were {fine:P2} off, against a {StandardError(finePrecision):P2} standard error");
     }
 
     [Fact]
@@ -322,8 +329,11 @@ public class AbuseTrackerOptionsTests
         return tracker;
     }
 
+    /// <summary>The register count at a precision. 64-bit, so the shift cannot overflow at any precision.</summary>
+    private static long Registers(int precision) => 1L << precision;
+
     /// <summary>HyperLogLog's documented standard error at a precision: <c>1.04 / sqrt(2^precision)</c>.</summary>
-    private static double StandardError(int precision) => 1.04 / Math.Sqrt(1 << precision);
+    private static double StandardError(int precision) => 1.04 / Math.Sqrt(Registers(precision));
 
     private static double DistinctError(int precision, int distinct)
     {
