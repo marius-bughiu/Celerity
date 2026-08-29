@@ -42,7 +42,7 @@ public class AbuseTrackerOptionsTests
     [InlineData(-0.5)]
     [InlineData(1.5)]
     [InlineData(double.NaN)]
-    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateEpsilonIsOutsideTheUnitInterval(double epsilon)
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateEpsilonIsNotStrictlyBetweenZeroAndOne(double epsilon)
     {
         Rejected(new AbuseTrackerOptions { RateEpsilon = epsilon });
     }
@@ -52,7 +52,7 @@ public class AbuseTrackerOptionsTests
     [InlineData(1d)]
     [InlineData(-0.5)]
     [InlineData(1.5)]
-    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateConfidenceIsOutsideTheUnitInterval(double confidence)
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateConfidenceIsNotStrictlyBetweenZeroAndOne(double confidence)
     {
         ArgumentOutOfRangeException ex = Rejected(new AbuseTrackerOptions { RateConfidence = confidence });
 
@@ -92,7 +92,8 @@ public class AbuseTrackerOptionsTests
         // "The supported range" is HyperLogLog's own; assert the boundaries this data encodes still hold, so a
         // widened range surfaces here rather than as a silently vacuous test.
         Assert.True(precision < HyperLogLog<string, StringXxHash3Hasher>.MinPrecision
-                 || precision > HyperLogLog<string, StringXxHash3Hasher>.MaxPrecision);
+                 || precision > HyperLogLog<string, StringXxHash3Hasher>.MaxPrecision,
+            $"precision {precision} is inside the supported range, so this case no longer tests a rejection");
 
         Rejected(new AbuseTrackerOptions { DistinctPrecision = precision });
     }
@@ -126,7 +127,7 @@ public class AbuseTrackerOptionsTests
     [InlineData(1d)]
     [InlineData(-0.5)]
     [InlineData(1.5)]
-    public void Constructor_ShouldThrowArgumentOutOfRange_WhenFirstSeenFalsePositiveRateIsOutsideTheUnitInterval(double rate)
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenFirstSeenFalsePositiveRateIsNotStrictlyBetweenZeroAndOne(double rate)
     {
         Rejected(new AbuseTrackerOptions { TrackFirstSeen = true, FirstSeenFalsePositiveRate = rate });
     }
@@ -213,7 +214,8 @@ public class AbuseTrackerOptionsTests
 
         // "heavy-hitter" clears both thresholds, so neither capacity may miss it, and the rate estimate it is
         // reported with never underestimates the truth.
-        Assert.True(HeavyHitterFrequency > total / (double)smallCapacity);
+        Assert.True(HeavyHitterFrequency > total / (double)smallCapacity,
+            $"heavy-hitter {HeavyHitterFrequency} is not above {total / (double)smallCapacity}");
         Assert.Equal("heavy-hitter", small.Snapshot(1).Offenders[0].Key);
         Assert.Equal("heavy-hitter", large.Snapshot(1).Offenders[0].Key);
         Assert.True(small.Snapshot(1).Offenders[0].EstimatedCount >= HeavyHitterFrequency);
@@ -354,8 +356,8 @@ public class AbuseTrackerOptionsTests
 
         // Undersized: a filter sized for 64 keys and fed 20,000 fills up, and the doc's caveat takes hold —
         // everything reads as "seen", so the first-seen signal is worthless past its sizing.
-        var undersized = new StringAbuseTracker(new AbuseTrackerOptions { ExpectedDistinctKeys = 64 });
-        var sized = new StringAbuseTracker(new AbuseTrackerOptions { ExpectedDistinctKeys = 1_000_000 });
+        var undersized = new StringAbuseTracker(new AbuseTrackerOptions { TrackFirstSeen = true, ExpectedDistinctKeys = 64 });
+        var sized = new StringAbuseTracker(new AbuseTrackerOptions { TrackFirstSeen = true, ExpectedDistinctKeys = 1_000_000 });
 
         int undersizedFirstSeen = 0;
         int sizedFirstSeen = 0;
@@ -389,8 +391,8 @@ public class AbuseTrackerOptionsTests
         const int expectedDistinctKeys = 5_000;
         const int probes = 2_000;
 
-        var loose = new StringAbuseTracker(new AbuseTrackerOptions { ExpectedDistinctKeys = expectedDistinctKeys, FirstSeenFalsePositiveRate = 0.5 });
-        var strict = new StringAbuseTracker(new AbuseTrackerOptions { ExpectedDistinctKeys = expectedDistinctKeys, FirstSeenFalsePositiveRate = 0.0001 });
+        var loose = new StringAbuseTracker(new AbuseTrackerOptions { TrackFirstSeen = true, ExpectedDistinctKeys = expectedDistinctKeys, FirstSeenFalsePositiveRate = 0.5 });
+        var strict = new StringAbuseTracker(new AbuseTrackerOptions { TrackFirstSeen = true, ExpectedDistinctKeys = expectedDistinctKeys, FirstSeenFalsePositiveRate = 0.0001 });
 
         // Fill both to exactly the load they were sized for, where the target rate is meant to hold.
         for (int i = 0; i < expectedDistinctKeys; i++)
