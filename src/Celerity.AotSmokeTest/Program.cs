@@ -1,16 +1,24 @@
 ﻿// Native AOT smoke test for Celerity (#32).
 //
-// This console app exercises every collection shape and a representative spread
-// of hashers so that `dotnet publish /p:PublishAot=true` is forced to compile
-// each generic instantiation down to native code. It is run by the AOT CI job:
-// a non-zero exit code (any failed assertion) fails the build, proving the
+// This console app constructs every public collection type in Celerity.Collections
+// and a representative spread of hashers, primitives, sorts, statistics and the
+// showcase-tier packages, so that `dotnet publish /p:PublishAot=true` is forced to
+// compile each generic instantiation down to native code. It is run by the AOT CI
+// job: a non-zero exit code (any failed assertion) fails the build, proving the
 // library works end-to-end under Native AOT, not just that the static analyzers
 // are happy.
+//
+// A type that is not constructed here is not rooted by the publish, so adding a
+// collection means adding a section below. See docs/aot.md for what the smoke test
+// covers and what it still does not.
 
 using Celerity;
+using Celerity.Cardinality;
 using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
+using Celerity.Ring;
+using Celerity.Sentinel;
 using Celerity.Sorting;
 using Celerity.Statistics;
 
@@ -310,6 +318,39 @@ void Check(bool condition, string message)
         "PooledCelerityDictionary<string, string> null-key + round-trip");
 }
 
+// PooledCeleritySet — the set-shaped sibling of the dictionary above. It shares the rent/return
+// lifecycle but is a separate closed generic, so nothing the dictionary rooted covers it: ILC has to
+// emit its probe, its Dispose and — for a reference-typed element — the clear-on-return arm of the
+// RuntimeHelpers.IsReferenceOrContainsReferences guard, which is a compile-time constant per
+// instantiation rather than a runtime branch. Exercise the full surface plus the lifecycle.
+{
+    using (var pooled = new PooledCeleritySet<int, Int32WangNaiveHasher>())
+    {
+        pooled.Add(1);
+        Check(pooled.TryAdd(2), "PooledCeleritySet.TryAdd new");
+        Check(!pooled.TryAdd(1), "PooledCeleritySet.TryAdd duplicate");
+        pooled.Add(0); // zero element stored out-of-band, never hashed
+        Check(pooled.Contains(0) && pooled.Contains(1), "PooledCeleritySet.Contains");
+        Check(pooled.Remove(2) && !pooled.Contains(2), "PooledCeleritySet.Remove");
+        var count = 0;
+        foreach (var _ in pooled) count++;
+        Check(count == pooled.Count && pooled.Count == 2, "PooledCeleritySet enumeration/count");
+
+        // EnsureCapacity rents a larger buffer and returns the old one mid-life.
+        Check(pooled.EnsureCapacity(512) >= 512 && pooled.Contains(1), "PooledCeleritySet.EnsureCapacity");
+        pooled.TrimExcess();
+        Check(pooled.Count == 2 && pooled.Contains(0), "PooledCeleritySet.TrimExcess");
+    }
+
+    // Reference-typed element instantiation: this is the one whose rented arrays are cleared on return.
+    using var words = new PooledCeleritySet<string, StringFnV1AHasher>(new[] { "alice", "bob", "alice" });
+    words.Add(null!); // null element stored out-of-band, so the hasher is never called with null
+    Check(words.Count == 3 && words.Contains(null!) && words.Contains("alice"),
+        "PooledCeleritySet<string> IEnumerable ctor + null element");
+    Check(((IReadOnlySet<string>)words).SetEquals(new[] { "alice", "bob", null! }),
+        "PooledCeleritySet IReadOnlySet<T>");
+}
+
 // Sets — IntSet, LongSet, CeleritySet.
 {
     var s = new IntSet();
@@ -341,6 +382,44 @@ void Check(bool condition, string message)
     Check(ro.Count == 2 && ro.Contains(0) && ro.IsSubsetOf(new[] { 0, 1, 9 }) && !ro.Overlaps(new[] { 7 }),
         "IntSet IReadOnlySet<int>");
     Check(((IReadOnlySet<Guid>)gs).SetEquals(new[] { g, Guid.Empty }), "CeleritySet IReadOnlySet<T>");
+}
+
+// RobinHoodSet — probe-distance-ordered open addressing with backward-shift deletion. The only one of
+// the specialized sets whose dictionary sibling has no section of its own (RobinHoodDictionary is
+// reached through the IDictionary<,> drive near the end of this file), so nothing else here roots the
+// displacement swap or the shift-back. Exercise the surface plus a fill long enough to make both run.
+{
+    var s = new RobinHoodSet<int, Int32WangNaiveHasher>();
+    s.Add(1);
+    Check(s.TryAdd(2), "RobinHoodSet.TryAdd new");
+    Check(!s.TryAdd(1), "RobinHoodSet.TryAdd duplicate");
+    s.Add(0); // zero element stored out-of-band, never hashed
+    Check(s.Contains(0) && s.Contains(1), "RobinHoodSet.Contains");
+    Check(s.Remove(2) && !s.Contains(2), "RobinHoodSet.Remove (backward-shift)");
+    var count = 0;
+    foreach (var _ in s) count++;
+    Check(count == s.Count && s.Count == 2, "RobinHoodSet enumeration/count");
+
+    // Force resizes and long probe runs, then delete half so the shift-back compacts real clusters.
+    var grow = new RobinHoodSet<int, Int32WangNaiveHasher>(capacity: 16);
+    for (int i = 1; i <= 500; i++) grow.Add(i);
+    bool ok = true;
+    for (int i = 1; i <= 500; i++) ok &= grow.Contains(i);
+    for (int i = 1; i <= 500; i += 2) ok &= grow.Remove(i);
+    for (int i = 2; i <= 500; i += 2) ok &= grow.Contains(i);
+    Check(ok && grow.Count == 250, "RobinHoodSet resize + backward-shift round-trip");
+
+    var words = new RobinHoodSet<string, StringMurmur3Hasher>(new[] { "alice", "bob", "alice" });
+    words.Add(null!); // null element stored out-of-band
+    Check(words.Count == 3 && words.Contains(null!) && words.Contains("alice"),
+        "RobinHoodSet<string> IEnumerable ctor + null element");
+    Check(((IReadOnlySet<string>)words).IsSupersetOf(new[] { "alice", "bob" }), "RobinHoodSet IReadOnlySet<T>");
+
+    var byGuid = new RobinHoodSet<Guid, GuidHasher>();
+    var gid = Guid.NewGuid();
+    byGuid.Add(gid);
+    byGuid.Add(Guid.Empty); // out-of-band default-element slot
+    Check(byGuid.Contains(gid) && byGuid.Contains(Guid.Empty), "RobinHoodSet<Guid> round-trip + empty-guid slot");
 }
 
 // IEnumerable constructors (collection-count sizing path).
@@ -1160,6 +1239,37 @@ void Check(bool condition, string message)
         "SmallDictionary<string, int> IEnumerable ctor + null key");
 }
 
+// SmallSet — flat-array, linear-scan set, the set-shaped sibling of the dictionary above. It takes no
+// hasher type parameter, so its instantiation is closed over T alone and every membership test is an
+// EqualityComparer<T>.Default walk with no hash narrowing the candidates first — the devirtualization
+// ILC has to do for itself rather than read off a struct type argument. Exercise Add/TryAdd/Contains/
+// Remove, the swap-remove that reorders the tail, the inline default/zero element, the single-copy
+// growth, and the struct enumerator.
+{
+    var s = new SmallSet<int>();
+    s.Add(1);
+    Check(s.TryAdd(2), "SmallSet.TryAdd new");
+    Check(!s.TryAdd(1), "SmallSet.TryAdd duplicate");
+    s.Add(0); // zero is an ordinary inline entry, not a sentinel
+    Check(s.Contains(0) && s.Contains(1), "SmallSet.Contains");
+    Check(s.Remove(1) && !s.Contains(1), "SmallSet.Remove (swap-remove)");
+    var sum = 0;
+    foreach (var e in s) sum += e;
+    Check(sum == 2 && s.Count == 2, "SmallSet enumeration after swap-remove");
+
+    // Past the default capacity, so the Array.Resize growth path is compiled too.
+    var grow = new SmallSet<int>(capacity: 4);
+    for (int i = 1; i <= 64; i++) grow.Add(i);
+    Check(grow.Count == 64 && grow.EnsureCapacity(128) >= 128, "SmallSet growth + EnsureCapacity");
+    grow.TrimExcess();
+    Check(grow.Count == 64 && grow.Contains(64), "SmallSet.TrimExcess");
+
+    var words = new SmallSet<string>(new[] { "alice", "bob", "alice" });
+    words.Add(null!); // null is an ordinary inline entry
+    Check(words.Count == 3 && words.Contains(null!), "SmallSet<string> IEnumerable ctor + null element");
+    Check(((IReadOnlySet<string>)words).Overlaps(new[] { "bob" }), "SmallSet IReadOnlySet<T>");
+}
+
 // Trie — ordered prefix tree over string keys. The only collection that walks a key character by
 // character instead of hashing it, and the only one whose surface mixes an allocation-free struct
 // enumerator with compiler-generated iterators (GetByPrefix / GetKeysWithPrefix / Keys / Values), so
@@ -1334,6 +1444,59 @@ void Check(bool condition, string message)
     Check(enumMapRejectsOutOfRange, "EnumMap rejects out-of-range key");
 }
 
+// EnumSet — dense bit-vector set over an enum's underlying values (the .NET EnumSet), the set-shaped
+// sibling of the map above. Both are sized by the internal EnumSetInfo<TEnum>, whose type initializer
+// reads the enum's declared constants through Enum.GetValuesAsUnderlyingType / Enum.GetUnderlyingType —
+// the one place in the library where behaviour depends on enum metadata surviving into the native image,
+// and a per-instantiation static constructor ILC has to run at run time. EnumMap above reaches only the
+// range half of that (TotalBits / WordCount); All() is the sole reader of DefinedMask, which needs to
+// know *which* constants are declared, not just the largest. Exercise the bit ops, All(), the word-wise
+// set algebra, the ascending-order enumerator, a second underlying width, and both rejection shapes:
+// an unsupported enum at construction and an out-of-range cast at Add.
+{
+    var s = new EnumSet<DayOfWeek>();
+    s.Add(DayOfWeek.Monday);
+    Check(s.TryAdd(DayOfWeek.Wednesday), "EnumSet.TryAdd new");
+    Check(!s.TryAdd(DayOfWeek.Monday), "EnumSet.TryAdd duplicate");
+    s.Add(DayOfWeek.Sunday); // Sunday == 0 is an ordinary element, not a sentinel
+    Check(s.Contains(DayOfWeek.Sunday) && s.Contains(DayOfWeek.Monday), "EnumSet.Contains");
+    Check(s.Remove(DayOfWeek.Wednesday) && !s.Contains(DayOfWeek.Wednesday), "EnumSet.Remove");
+    Check(s.Count == 2, "EnumSet count");
+
+    var order = new List<DayOfWeek>();
+    foreach (var day in s) order.Add(day);
+    Check(order.Count == 2 && order[0] == DayOfWeek.Sunday && order[1] == DayOfWeek.Monday,
+        "EnumSet ascending-order enumeration");
+
+    // All() copies the DefinedMask the type initializer built from the enum's declared constants.
+    var all = EnumSet<DayOfWeek>.All();
+    Check(all.Count == 7 && all.IsSupersetOf(s), "EnumSet.All from the declared constants");
+
+    // Set algebra between two sets of the same TEnum takes the word-wise path, not the element loop.
+    all.ExceptWith(s);
+    Check(all.Count == 5 && !all.Contains(DayOfWeek.Monday), "EnumSet.ExceptWith");
+    all.UnionWith(s);
+    Check(all.Count == 7 && all.SetEquals(EnumSet<DayOfWeek>.All()),
+        "EnumSet.UnionWith back to the full universe");
+    Check(((IReadOnlySet<DayOfWeek>)s).IsProperSubsetOf(all), "EnumSet IReadOnlySet<T>");
+
+    // A ushort-backed enum: a second instantiation, so the Unsafe.SizeOf<TEnum> switch folds to a
+    // different constant and EnumSetInfo runs again over a different underlying type.
+    var wide = new EnumSet<AotWideEnum>(new[] { AotWideEnum.Low, AotWideEnum.High });
+    Check(wide.Count == 2 && wide.Contains(AotWideEnum.High) && !wide.Contains(AotWideEnum.Mid),
+        "EnumSet over a ushort-backed enum");
+
+    bool enumSetRejectsSparse = false;
+    try { _ = new EnumSet<AotSparseFlags>(); }
+    catch (NotSupportedException) { enumSetRejectsSparse = true; }
+    Check(enumSetRejectsSparse, "EnumSet rejects a sparse [Flags] enum");
+
+    bool enumSetRejectsOutOfRange = false;
+    try { s.Add((DayOfWeek)999); }
+    catch (ArgumentOutOfRangeException) { enumSetRejectsOutOfRange = true; }
+    Check(enumSetRejectsOutOfRange, "EnumSet rejects an out-of-range value");
+}
+
 // SwissDictionary — SIMD group-probing dictionary (default key out-of-band, like
 // the other hash-table dictionaries). Exercise the indexer, TryAdd/Add,
 // TryGetValue, Remove (tombstone path), the out-of-band zero / null key, resize
@@ -1377,6 +1540,45 @@ void Check(bool condition, string message)
     byGuid[gid] = "alice";
     Check(byGuid[gid] == "alice" && byGuid[Guid.Empty] == "empty",
         "SwissDictionary<Guid> round-trip + empty-key slot");
+}
+
+// SwissSet — the set-shaped sibling of the dictionary above: the same Vector128 group compare over a
+// control-byte array and the same tombstone deletion, but a separate closed generic, so the SIMD probe
+// has to be emitted again for the set's element layout. Exercise the surface, a fill that forces
+// rehashes and group overflow, the tombstone reuse a delete-then-reinsert takes, and the hasher spread.
+{
+    var s = new SwissSet<int, Int32WangNaiveHasher>();
+    s.Add(1);
+    Check(s.TryAdd(2), "SwissSet.TryAdd new");
+    Check(!s.TryAdd(1), "SwissSet.TryAdd duplicate");
+    s.Add(0); // zero element stored out-of-band, never hashed
+    Check(s.Contains(0) && s.Contains(1), "SwissSet.Contains");
+    Check(s.Remove(2) && !s.Contains(2), "SwissSet.Remove (tombstone)");
+    Check(s.TryAdd(2) && s.Contains(2), "SwissSet reuses a tombstoned slot");
+    var count = 0;
+    foreach (var _ in s) count++;
+    Check(count == s.Count && s.Count == 3, "SwissSet enumeration/count");
+
+    // Force several resizes / group overflows to compile the rehash + SIMD probe.
+    var grow = new SwissSet<int, Int32WangNaiveHasher>(capacity: 16);
+    for (int i = 1; i <= 500; i++) grow.Add(i);
+    bool ok = true;
+    for (int i = 1; i <= 500; i++) ok &= grow.Contains(i);
+    Check(ok && grow.Count == 500, "SwissSet resize round-trip");
+    grow.TrimExcess();
+    Check(grow.Count == 500 && grow.Contains(500), "SwissSet.TrimExcess");
+
+    var byStr = new SwissSet<string, StringMurmur3Hasher>(new[] { "alice", "bob", "alice" });
+    byStr.Add(null!); // null element stored out-of-band
+    Check(byStr.Count == 3 && byStr.Contains(null!) && byStr.Contains("alice"),
+        "SwissSet<string> IEnumerable ctor + null element");
+
+    var byGuid = new SwissSet<Guid, GuidHasher>();
+    var gid = Guid.NewGuid();
+    byGuid.Add(gid);
+    byGuid.Add(Guid.Empty); // out-of-band default-element slot
+    Check(((IReadOnlySet<Guid>)byGuid).SetEquals(new[] { gid, Guid.Empty }),
+        "SwissSet<Guid> round-trip + empty-guid slot");
 }
 
 // HashCachingDictionary — struct-of-arrays dictionary with a cached-fingerprint
@@ -1423,6 +1625,44 @@ void Check(bool condition, string message)
     byGuid[gid] = "alice";
     Check(byGuid[gid] == "alice" && byGuid[Guid.Empty] == "empty",
         "HashCachingDictionary<Guid> round-trip + empty-key slot");
+}
+
+// HashCachingSet — the set-shaped sibling of the dictionary above: the same cached-fingerprint side
+// array and backward-shift deletion over a separate closed generic. The fingerprint probe short-circuits
+// before it touches an element, so the arm that never calls EqualityComparer<T>.Default is only compiled
+// for this instantiation if the set itself is constructed. Exercise the surface, a fill that makes the
+// rehash recompute every fingerprint, and the hasher spread.
+{
+    var s = new HashCachingSet<int, Int32WangNaiveHasher>();
+    s.Add(1);
+    Check(s.TryAdd(2), "HashCachingSet.TryAdd new");
+    Check(!s.TryAdd(1), "HashCachingSet.TryAdd duplicate");
+    s.Add(0); // zero element stored out-of-band, never hashed
+    Check(s.Contains(0) && s.Contains(1), "HashCachingSet.Contains");
+    Check(s.Remove(2) && !s.Contains(2), "HashCachingSet.Remove (backward-shift)");
+    var count = 0;
+    foreach (var _ in s) count++;
+    Check(count == s.Count && s.Count == 2, "HashCachingSet enumeration/count");
+
+    // Force several resizes / collision clusters to compile the rehash + fingerprint probe.
+    var grow = new HashCachingSet<int, Int32WangNaiveHasher>(capacity: 16);
+    for (int i = 1; i <= 500; i++) grow.Add(i);
+    bool ok = true;
+    for (int i = 1; i <= 500; i++) ok &= grow.Contains(i);
+    Check(ok && grow.Count == 500 && grow.EnsureCapacity(1_024) >= 1_024,
+        "HashCachingSet resize round-trip + EnsureCapacity");
+
+    var byStr = new HashCachingSet<string, StringMurmur3Hasher>(new[] { "alice", "bob", "alice" });
+    byStr.Add(null!); // null element stored out-of-band
+    Check(byStr.Count == 3 && byStr.Contains(null!) && byStr.Contains("alice"),
+        "HashCachingSet<string> IEnumerable ctor + null element");
+
+    var byGuid = new HashCachingSet<Guid, GuidHasher>();
+    var gid = Guid.NewGuid();
+    byGuid.Add(gid);
+    byGuid.Add(Guid.Empty); // out-of-band default-element slot
+    Check(((IReadOnlySet<Guid>)byGuid).SetEquals(new[] { gid, Guid.Empty }),
+        "HashCachingSet<Guid> round-trip + empty-guid slot");
 }
 
 // BloomFilter — probabilistic membership filter (no out-of-band slot; default(T) is
@@ -1735,6 +1975,51 @@ void Check(bool condition, string message)
     var guidCms = new CountMinSketch<Guid, GuidHasher>();
     guidCms.Add(Guid.Empty, 2); // ordinary element, no out-of-band slot
     Check(guidCms.EstimateCount(Guid.Empty) >= 2, "CountMinSketch<Guid> empty-guid element");
+}
+
+// TopKSketch — Space-Saving heavy-hitter sketch, and the one uncovered type with no sibling to stand in
+// for it. Two things are ILC-specific. It closes CelerityDictionary<T, int, THasher> internally, so the
+// element index is an instantiation the sketch drags in rather than one the caller names. And GetTopK
+// sorts a TopKEntry<T>[] through a Comparison<T> delegate, which the AOT compiler has to generate a
+// sort helper for per element type instead of sharing one. Exercise the monitor fill, the eviction that
+// hands the newcomer the evicted count as its error floor, both sifts, the ranking, Clear and the ctor.
+{
+    var top = new TopKSketch<int, Int32WangNaiveHasher>(capacity: 8);
+    for (int i = 0; i < 1_000; i++)
+    {
+        top.Add(1);                        // the runaway heavy hitter — never the heap minimum
+        if (i % 2 == 0) top.Add(2);        // a distant second
+        top.Add(100 + i);                  // a long tail that evicts a monitor on every iteration
+    }
+
+    Check(top.Capacity == 8 && top.Count == 8, "TopKSketch fills its monitors");
+    Check(top.TotalCount == 1_000 + 500 + 1_000, "TopKSketch total count");
+    Check(top.TryGetCount(1, out long heavy, out long heavyError) && heavy >= 1_000 && heavyError == 0,
+        "TopKSketch never underestimates a monitor it never evicted");
+    Check(!top.TryGetCount(-1, out long absent, out _) && absent == 0, "TopKSketch reports an unmonitored element");
+
+    var ranked = top.GetTopK();
+    Check(ranked.Length == 8 && ranked[0].Element == 1, "TopKSketch.GetTopK ranks the heaviest first");
+    Check(ranked[0].Count >= ranked[^1].Count, "TopKSketch.GetTopK is count-descending");
+    Check(ranked[^1].Error > 0, "TopKSketch evicted monitors carry an error floor");
+    Check(top.GetTopK(2).Length == 2 && top.GetTopK(0).Length == 0, "TopKSketch.GetTopK(count) truncates");
+
+    top.Clear();
+    Check(top.Count == 0 && top.TotalCount == 0 && !top.TryGetCount(1, out _, out _), "TopKSketch clear");
+
+    // Reference-typed elements through the IEnumerable ctor. The element index is a CelerityDictionary,
+    // which keeps a null key out-of-band, so the hasher is never called with null.
+    var words = new TopKSketch<string, StringMurmur3Hasher>(new[] { "alice", "alice", "bob" }, capacity: 4);
+    words.Add(null!);
+    Check(words.TryGetCount("alice", out long aliceCount, out _) && aliceCount >= 2,
+        "TopKSketch<string> IEnumerable ctor");
+    Check(words.GetTopK(1)[0].Element == "alice", "TopKSketch<string> top entry");
+    Check(words.TryGetCount(null!, out long nullCount, out _) && nullCount >= 1, "TopKSketch<string> null element");
+
+    var guids = new TopKSketch<Guid, GuidHasher>(capacity: 2);
+    guids.Add(Guid.Empty, 5);
+    Check(guids.TryGetCount(Guid.Empty, out long emptyCount, out _) && emptyCount == 5,
+        "TopKSketch<Guid> empty-guid element");
 }
 
 // FastUtils.FastMod / FastDiv (#191) — Lemire reciprocal modulo / division, 32- and 64-bit.
@@ -2383,6 +2668,221 @@ void Check(bool condition, string message)
     Check(combined.Count == 10 && combined.Min == 1d && combined.Max == 9d, "RunningStatistics merge");
 }
 
+// Celerity.Ring — ConsistentHashRing / RendezvousHash.
+//
+// The first of the three showcase-tier packages. They set IsAotCompatible like the rest of the family,
+// so the analyzers already covered them, but until they were referenced here no native binary closed
+// their generics. What is ILC-specific is the arity: a ring is closed over a node payload, a key type
+// *and* a struct key hasher, and it holds a second hasher (StringXxHash3Hasher) for the node identities,
+// so each ring a caller declares is a specialization carrying two devirtualized Hash calls plus the
+// layout of a private generic nested snapshot class. Exercise both ring shapes, the weighted placement,
+// the replica walk, the removal that only remaps the departing node's keys, and the String* subclasses.
+{
+    var ring = new ConsistentHashRing<int, string, StringXxHash3Hasher>(virtualNodesPerNode: 64);
+    ring.Add("a", 1);
+    ring.Add("b", 2);
+    ring.Add("c", 3, weight: 2); // twice the virtual nodes, so roughly twice the share
+    Check(ring.NodeCount == 3 && ring.Contains("c") && !ring.Contains("z"), "ConsistentHashRing registry");
+    Check(ring.VirtualNodesPerNode == 64 && ring.VirtualNodeCount == 64 * (1 + 1 + 2),
+        "ConsistentHashRing weighted virtual-node count");
+
+    int owner = ring.GetNode("user-42");
+    Check(owner is 1 or 2 or 3, "ConsistentHashRing routes to a registered node");
+    Check(ring.GetNode("user-42") == owner, "ConsistentHashRing routing is stable");
+    Check(ring.TryGetNode("user-42", out int sameOwner) && sameOwner == owner, "ConsistentHashRing.TryGetNode");
+    IReadOnlyList<int> replicas = ring.GetReplicas("user-42", 3);
+    Check(replicas.Count == 3 && replicas[0] == owner, "ConsistentHashRing replica walk starts at the owner");
+    Check(ring.GetReplicas("user-42", 9).Count == 3, "ConsistentHashRing replicas cap at the node count");
+
+    // The property the type exists for: removing a node moves only the keys it owned.
+    var keys = new string[256];
+    var before = new int[256];
+    for (int i = 0; i < keys.Length; i++)
+    {
+        keys[i] = $"key-{i}";
+        before[i] = ring.GetNode(keys[i]);
+    }
+
+    Check(ring.Remove("b") && !ring.Contains("b") && !ring.Remove("b"), "ConsistentHashRing.Remove");
+    bool onlyRemovedMoved = true;
+    for (int i = 0; i < keys.Length; i++)
+        onlyRemovedMoved &= before[i] == 2 || ring.GetNode(keys[i]) == before[i];
+    Check(onlyRemovedMoved, "ConsistentHashRing only remaps the removed node's keys");
+
+    var empty = new ConsistentHashRing<int, string, StringXxHash3Hasher>();
+    Check(!empty.TryGetNode("x", out _) && empty.GetReplicas("x", 2).Count == 0, "ConsistentHashRing empty ring");
+
+    // Rendezvous (HRW): no ring array, a per-(node, key) score instead — the same shape closed over a
+    // value-typed key, so the key hasher specializes to a different width.
+    var hrw = new RendezvousHash<string, long, Int64WangHasher>();
+    hrw.Add("alpha", "alpha-node");
+    hrw.Add("beta", "beta-node", weight: 3);
+    Check(hrw.NodeCount == 2 && hrw.Contains("beta"), "RendezvousHash registry");
+    string hrwOwner = hrw.GetNode(99L);
+    Check(hrwOwner is "alpha-node" or "beta-node", "RendezvousHash routes to a registered node");
+    Check(hrw.GetNode(99L) == hrwOwner && hrw.TryGetNode(99L, out string hrwSame) && hrwSame == hrwOwner,
+        "RendezvousHash routing is stable");
+    IReadOnlyList<string> hrwReplicas = hrw.GetReplicas(99L, 2);
+    Check(hrwReplicas.Count == 2 && hrwReplicas[0] == hrwOwner,
+        "RendezvousHash replica order starts at the owner");
+    Check(hrw.Remove("beta") && hrw.NodeCount == 1, "RendezvousHash.Remove");
+
+    // The String* subclasses close the generic for the caller: two more instantiations, fixed by the package.
+    var stringRing = new StringConsistentHashRing<int>(virtualNodesPerNode: 16);
+    stringRing.Add("only", 7);
+    Check(stringRing.GetNode("anything") == 7, "StringConsistentHashRing single node owns every key");
+
+    var stringHrw = new StringRendezvousHash<int>();
+    stringHrw.Add("only", 7);
+    Check(stringHrw.GetNode("anything") == 7, "StringRendezvousHash single node owns every key");
+}
+
+// Celerity.Sentinel — AbuseTracker / StripedAbuseTracker.
+//
+// The package that fans one key into four sketches at once, so a single closed AbuseTracker roots
+// CountMinSketch, TopKSketch, HyperLogLog and BloomFilter over the same key type and hasher — four
+// instantiations behind one type the caller names, and the nullable first-seen filter means both arms of
+// that field have to be compiled. Snapshot sorts an Offender<TKey>[] through a Comparison<T> delegate,
+// the same shape TopKSketch.GetTopK uses. Exercise the observe path, the report, the disabled first-seen
+// arm, the merge, and the lane fan-out over a value-typed key.
+{
+    var tracker = new AbuseTracker<string, StringXxHash3Hasher>(new AbuseTrackerOptions
+    {
+        OffenderCapacity = 16,
+        DistinctPrecision = 12,
+        ExpectedDistinctKeys = 10_000,
+    });
+
+    ObservationResult first = tracker.Observe("10.0.0.1");
+    Check(tracker.TracksFirstSeen && first.IsFirstSeen && first.EstimatedCount >= 1,
+        "AbuseTracker first observation");
+    Check(!tracker.Observe("10.0.0.1").IsFirstSeen, "AbuseTracker second observation is not first-seen");
+
+    for (int i = 0; i < 1_000; i++)
+    {
+        tracker.Observe("10.0.0.1");   // the abuser
+        tracker.Observe($"visitor-{i}"); // the rotating long tail a bounded tracker has to survive
+    }
+
+    Check(tracker.EstimateCount("10.0.0.1") >= 1_002, "AbuseTracker never underestimates the abuser");
+    Check(tracker.HasProbablySeen("10.0.0.1") && !tracker.HasProbablySeen("never-observed-key"),
+        "AbuseTracker first-seen filter");
+    Check(tracker.EstimateDistinctKeys() > 500, "AbuseTracker distinct-key estimate");
+    Check(tracker.TotalObservations == 2 + 2_000, "AbuseTracker total observations");
+
+    AbuseReport<string> report = tracker.Snapshot(5);
+    Check(report.Offenders.Count == 5, "AbuseTracker report size");
+    Check(report.Offenders[0].Key == "10.0.0.1" && report.Offenders[0].EstimatedCount >= 1_002,
+        "AbuseTracker report ranks the abuser first");
+    Check(report.TotalObservations == 2 + 2_000 && report.DistinctKeys > 500, "AbuseTracker report counts");
+
+    // TrackFirstSeen: false is the arm that leaves the Bloom filter null.
+    var noFirstSeen = new AbuseTracker<int, Int32WangNaiveHasher>(new AbuseTrackerOptions { TrackFirstSeen = false });
+    ObservationResult plain = noFirstSeen.Observe(7);
+    Check(!noFirstSeen.TracksFirstSeen && !plain.IsFirstSeen, "AbuseTracker without first-seen tracking");
+    bool firstSeenDisabledThrows = false;
+    try { _ = noFirstSeen.HasProbablySeen(7); }
+    catch (InvalidOperationException) { firstSeenDisabledThrows = true; }
+    Check(firstSeenDisabledThrows, "AbuseTracker rejects HasProbablySeen when it is disabled");
+
+    // Merge: the rate, distinct and first-seen structures combine exactly; the offenders re-observe.
+    var shard = new AbuseTracker<int, Int32WangNaiveHasher>(new AbuseTrackerOptions { TrackFirstSeen = false });
+    shard.Observe(7);
+    noFirstSeen.Merge(shard);
+    Check(noFirstSeen.EstimateCount(7) >= 2 && noFirstSeen.TotalObservations == 2,
+        "AbuseTracker merge sums the rate sketch");
+    noFirstSeen.Clear();
+    Check(noFirstSeen.TotalObservations == 0 && noFirstSeen.EstimateCount(7) == 0, "AbuseTracker clear");
+
+    // Striped: an array of lane trackers plus a merge-and-report over a value-typed key.
+    var striped = new StripedAbuseTracker<int, Int32WangNaiveHasher>(laneCount: 4);
+    for (int i = 0; i < 400; i++)
+        striped.Observe(i % 4, 42);
+    Check(striped.LaneCount == 4 && striped.Lane(0).TotalObservations == 100,
+        "StripedAbuseTracker lane fan-out");
+
+    AbuseReport<int> stripedReport = striped.Snapshot(3);
+    Check(stripedReport.TotalObservations == 400 && stripedReport.Offenders[0].Key == 42,
+        "StripedAbuseTracker merged report");
+    Check(stripedReport.Offenders[0].EstimatedCount >= 400, "StripedAbuseTracker merged rate estimate");
+    striped.Clear();
+    Check(striped.Lane(0).TotalObservations == 0, "StripedAbuseTracker clear");
+
+    // The String* subclasses, a further pair of closed generics fixed by the package.
+    var stringTracker = new StringAbuseTracker();
+    Check(stringTracker.Observe("token-1").IsFirstSeen, "StringAbuseTracker observe");
+
+    var stringStriped = new StringStripedAbuseTracker(laneCount: 2);
+    stringStriped.Observe(1, "token-1");
+    Check(stringStriped.Snapshot(1).TotalObservations == 1, "StringStripedAbuseTracker merged report");
+}
+
+// Celerity.Cardinality — Distinct / DedupFilter.
+//
+// The package whose point is a mode switch the compiler cannot make for you: Distinct holds an exact
+// CeleritySet until the distinct count crosses the threshold, then rebuilds it into a HyperLogLog and
+// drops the set. Both arms are live at run time, so ILC has to have compiled both instantiations, and
+// Merge closes over a second Distinct of the same shape on either side of the promotion. DedupFilter
+// wraps CuckooFilter, whose removability is what makes a sliding window expressible at all. Exercise the
+// exact tier, the promotion, the merge in both directions, the mark/age-out window and the subclasses.
+{
+    var counter = new Distinct<int, Int32WangNaiveHasher>(exactThreshold: 64);
+    for (int i = 0; i < 50; i++)
+    {
+        counter.Add(i);
+        counter.Add(i); // a repeat must not move the count
+    }
+
+    Check(counter.IsExact && counter.Count() == 50 && counter.StandardError == 0d, "Distinct exact tier");
+    Check(counter.Precision == Distinct<int, Int32WangNaiveHasher>.DefaultPrecision && counter.ExactThreshold == 64,
+        "Distinct geometry");
+
+    // Cross the threshold: the exact set is folded into a HyperLogLog and released.
+    for (int i = 0; i < 5_000; i++) counter.Add(i);
+    Check(!counter.IsExact && counter.StandardError > 0d, "Distinct promotes past the exact threshold");
+    Check(Math.Abs(counter.Count() - 5_000d) / 5_000d < 0.1d, "Distinct estimate after promotion");
+
+    // Merge an exact shard into an estimating one, then an estimating one into a fresh exact target.
+    var exactShard = new Distinct<int, Int32WangNaiveHasher>(exactThreshold: 64);
+    exactShard.Add(99_999);
+    counter.Merge(exactShard);
+    Check(!counter.IsExact && counter.Count() > 4_000, "Distinct merge from an exact shard");
+
+    var target = new Distinct<int, Int32WangNaiveHasher>(exactThreshold: 64);
+    target.Merge(counter);
+    Check(!target.IsExact && target.Count() > 4_000, "Distinct merge promotes the target");
+
+    counter.Clear();
+    Check(counter.IsExact && counter.Count() == 0, "Distinct clear returns to the exact tier");
+
+    var strings = new StringDistinct(exactThreshold: 8);
+    strings.Add("alice");
+    strings.Add("bob");
+    strings.Add("alice");
+    Check(strings.IsExact && strings.Count() == 2, "StringDistinct exact tier");
+
+    // DedupFilter: mark-once, plus the Remove that ages a key out of the window.
+    var dedup = new DedupFilter<long, Int64WangNaiveHasher>(expectedItems: 1_000);
+    Check(dedup.TryMarkSeen(7L), "DedupFilter marks a new key");
+    Check(!dedup.TryMarkSeen(7L), "DedupFilter rejects a duplicate");
+    Check(dedup.Contains(7L) && dedup.Count == 1 && !dedup.IsFull && dedup.Capacity >= 1_000,
+        "DedupFilter state");
+    Check(dedup.Remove(7L) && dedup.TryMarkSeen(7L), "DedupFilter ages a key out of the window");
+
+    var otherShard = new DedupFilter<long, Int64WangNaiveHasher>(expectedItems: 1_000);
+    otherShard.TryMarkSeen(8L);
+    dedup.UnionWith(otherShard);
+    Check(dedup.Contains(8L) && dedup.Count == 2, "DedupFilter union");
+
+    dedup.Clear();
+    Check(dedup.Count == 0 && !dedup.Contains(7L), "DedupFilter clear");
+
+    var stringDedup = new StringDedupFilter(expectedItems: 64, falsePositiveRate: 0.001d);
+    Check(stringDedup.TryMarkSeen("request-1") && !stringDedup.TryMarkSeen("request-1"),
+        "StringDedupFilter mark-once");
+    Check(stringDedup.FalsePositiveRate > 0d && stringDedup.Capacity >= 64, "StringDedupFilter geometry");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("Celerity AOT smoke test: all checks passed.");
@@ -2413,4 +2913,26 @@ internal readonly struct AotConcatMonoid : IMonoid<string>
     public string Identity => string.Empty;
 
     public string Combine(string left, string right) => left + right;
+}
+
+// A ushort-backed enum for the EnumSet instantiation above: a second closed generic whose
+// Unsafe.SizeOf<TEnum> switch folds to a different constant, so ILC compiles the 2-byte arm as well as
+// the 4-byte one DayOfWeek gives it.
+internal enum AotWideEnum : ushort
+{
+    Low = 0,
+    Mid = 300,
+    High = 1_000,
+}
+
+// A sparse [Flags] enum for the EnumSet rejection above. The guard keys off the *value range*, not the
+// attribute: Far exceeds EnumSetInfo.MaxSupportedValue, so the type initializer records a reason and the
+// constructor throws rather than sizing a bit vector nobody wants. [Flags] is here because a power-of-two
+// enum is the case the guard exists for, not because it is what trips it.
+[Flags]
+internal enum AotSparseFlags
+{
+    None = 0,
+    First = 1 << 0,
+    Far = 1 << 17,
 }
