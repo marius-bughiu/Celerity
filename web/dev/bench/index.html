@@ -526,6 +526,13 @@ function escapeHtml(s) {
     // shape the scan is weakest on. Read the Build card against the query cards: this is a build-once index
     // and a single query is a loss.
     { key: 'SuffixArray',         title: 'SuffixArray (text index)',                 vs: 'string.IndexOf scan, or a Dictionary<string, int[]> k-gram index on the CountIndexed/Build cards', ops: ['Contains', 'Count', 'CountIndexed', 'Occurrences', 'Build'] },
+    // AhoCorasick is the other half of the text axis: many patterns, one pass. Two baselines again, split by
+    // card so each has one reference series. String_* is the k-IndexOf loop, which is O(k · n) but vectorized,
+    // and Regex_* is one compiled alternation, which is the strongest thing the BCL has. The card to read
+    // FIRST is CountFew: it is the same workload at eight patterns instead of 256 and it is expected to LOSE,
+    // because that is where the crossover is. EnumerateMatches compares against the alternation on a workload where
+    // this side does strictly more work — it reports overlapping matches and the Regex does not.
+    { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',         vs: 'a k-IndexOf loop on the Contains/Count/CountFew cards, or one Regex alternation on the ContainsRegex/EnumerateMatches/Build cards — compiled on the query cards, uncompiled on Build', ops: ['Contains', 'ContainsRegex', 'Count', 'CountFew', 'EnumerateMatches', 'Build'] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
@@ -573,7 +580,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'Regex']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
