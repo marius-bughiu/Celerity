@@ -111,21 +111,39 @@ By design — the indexer returns an empty `ValueGroup` for any absent key, so `
 
 ### Does Celerity support Native AOT and trimming?
 
-Yes — the assembly is marked `<IsAotCompatible>true</IsAotCompatible>`, carries no reflection / runtime codegen / dynamic loading, and produces **no** trim or AOT warnings. CI runs the trim/AOT analyzers on every build and publishes a Native AOT smoke-test binary that exercises every collection and hasher. See [`docs/aot.md`](aot.md).
+Yes — every package in the family sets `<IsAotCompatible>true</IsAotCompatible>`, carries no reflection / runtime codegen / dynamic loading, and produces **no** trim or AOT warnings. CI runs the trim/AOT analyzers on every build and publishes a Native AOT smoke-test binary — once per shipped target framework — that exercises the collections, hashers, primitives, sorts and streaming statistics. See [`docs/aot.md`](aot.md).
 
 ### What target frameworks are supported?
 
-All three packages multi-target **`net8.0`, `net9.0`, and `net10.0`**, so NuGet restores the assembly compiled against your project's own runtime. Install with `dotnet add package Celerity.Collections` (it transitively pulls in `Celerity.Hashing` and `Celerity.Primitives`). `net8.0` (LTS) remains the floor, so the library runs anywhere from .NET 8 upward; net9/net10 consumers additionally get an assembly built against their reference pack, ready for future runtime-gated optimizations.
+All eight packages multi-target **`net8.0`, `net9.0`, and `net10.0`**, so NuGet restores the assembly compiled against your project's own runtime. Install with `dotnet add package Celerity.Collections` (it transitively pulls in `Celerity.Hashing` and `Celerity.Primitives`); `Celerity.Sorting`, `Celerity.Statistics` and the showcase-tier packages are separate installs. `net8.0` (LTS) remains the floor, so the library runs anywhere from .NET 8 upward; net9/net10 consumers additionally get an assembly built against their reference pack, ready for future runtime-gated optimizations.
 
 ### Is it one package or several?
 
-Today everything ships in `Celerity.Collections`. The [roadmap](../ROADMAP.md) plans a 2.0 split into `Celerity.Collections`, `Celerity.Hashing`, and `Celerity.Primitives`, mirroring the .NET package layout.
+Eight, in two tiers. The split into `Celerity.Collections` / `Celerity.Hashing` / `Celerity.Primitives` shipped in **v2.0.0** (2026-06-21), and five more packages have shipped since.
+
+The **core** five are layered, so `dotnet add package Celerity.Collections` transitively brings the lower two:
+
+- **`Celerity.Collections`** — dictionaries, sets, frozen/perfect-hash collections, streaming sketches.
+- **`Celerity.Hashing`** — `IHashProvider<T>` / `IHashProvider64<T>`, the struct hashers, `HashQualityEvaluator`.
+- **`Celerity.Primitives`** — `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve`.
+- **`Celerity.Sorting`** (v2.6.0) — `RadixSort`, `CountingSort`, `PartialSort`: non-comparison sorts and selection over primitive keys.
+- **`Celerity.Statistics`** (v2.7.0) — `DDSketch`, `ReservoirSampler`, `RunningStatistics`: streaming quantiles, sampling and moments in bounded memory.
+
+`Celerity.Sorting` and `Celerity.Statistics` sit *alongside* the collections rather than under them — both depend only on `Celerity.Primitives` — so add either one explicitly.
+
+The **showcase tier** is three standalone libraries built *on top of* `Celerity.Collections`, all shipped in v2.3.0. They depend on the core, but you don't get them by installing it — reach for one only when its problem is yours:
+
+- **`Celerity.Ring`** — consistent-hash and rendezvous (HRW) rings for sharding and request routing, with byte-identical node assignment across OS / architecture / runtime.
+- **`Celerity.Sentinel`** — streaming abuse / heavy-hitter detection in a footprint that stays fixed however many distinct keys arrive.
+- **`Celerity.Cardinality`** — mergeable approximate `COUNT(DISTINCT)` and windowed dedup over unbounded streams.
+
+Namespaces are unchanged from 1.x except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives`; the [migration guide](migration.md#200--the-package-split) covers the split.
 
 ## Contributing & roadmap
 
 ### Something's missing / I found a bug. Where do I go?
 
-Open an issue or PR on the [GitHub tracker](https://github.com/marius-bughiu/Celerity/issues). See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for build/test/PR conventions, and the [`ROADMAP.md`](../ROADMAP.md) for planned work (e.g. `SmallDictionary`, Robin Hood probing, SIMD-accelerated lookups).
+Open an issue or PR on the [GitHub tracker](https://github.com/marius-bughiu/Celerity/issues). See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for build/test/PR conventions, and the [`ROADMAP.md`](../ROADMAP.md) for what has shipped and what the project will take. The planned milestones are complete, so new work is filed against the [rolling post-roadmap lane](../ROADMAP.md#rolling-post-roadmap-work--the-standing-lane) rather than a version.
 
 ### Will you add `<feature>`?
 
