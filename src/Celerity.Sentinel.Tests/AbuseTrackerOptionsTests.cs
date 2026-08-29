@@ -152,8 +152,11 @@ public class AbuseTrackerOptionsTests
         AbuseReport<string> small = FrequencyGradient(4).Snapshot(GradientKeys * 2);
         AbuseReport<string> large = FrequencyGradient(64).Snapshot(GradientKeys * 2);
 
-        Assert.Equal(GradientKey(0), small.Offenders[0].Key);
-        Assert.Equal(GradientKey(0), large.Offenders[0].Key);
+        // Presence, not position: descending order is Snapshot's own contract and is pinned by
+        // AbuseTrackerTests.Snapshot_OffendersAreRankedDescending. What OffenderCapacity decides is which
+        // keys are still monitored at all.
+        Assert.Contains(small.Offenders, o => o.Key == GradientKey(0));
+        Assert.Contains(large.Offenders, o => o.Key == GradientKey(0));
 
         string midTier = GradientKey(GradientKeys / 2);
         Assert.DoesNotContain(small.Offenders, o => o.Key == midTier);
@@ -182,9 +185,12 @@ public class AbuseTrackerOptionsTests
         Assert.True(attackerHits > tracker.TotalObservations / (double)capacity,
             "the test stream must put the attacker above the Space-Saving threshold");
 
+        // The guarantee is that the key cannot be *missed*, so that is what is asserted — not the rank it
+        // lands at, which Snapshot decides from the (never-underestimated) Count-Min lift.
         AbuseReport<string> report = tracker.Snapshot(capacity);
-        Assert.Equal("attacker", report.Offenders[0].Key);
-        Assert.True(report.Offenders[0].EstimatedCount >= attackerHits);
+        Offender<string> attacker = Assert.Single(report.Offenders, o => o.Key == "attacker");
+        Assert.True(attacker.EstimatedCount >= attackerHits,
+            $"offender estimate {attacker.EstimatedCount} underestimated the true {attackerHits}");
     }
 
     [Fact]
@@ -192,15 +198,25 @@ public class AbuseTrackerOptionsTests
     {
         // HyperLogLog's error falls as 1.04 / sqrt(2^precision) — in expectation. A single run is not monotone
         // across neighbouring precisions (8, 10 and 14 all land within a percent of each other on this
-        // stream), so the assertion compares the two ends of the supported range, where the gap is an order
-        // of magnitude and not a coin flip.
+        // stream), so the assertion compares the two ends of the supported range, where the gap is three
+        // orders of magnitude and not a coin flip.
+        //
+        // Both bands come from that curve — the one AbuseTrackerOptions.DistinctPrecision documents — rather
+        // than from what this stream happens to measure, so they track the contract instead of a snapshot of
+        // the implementation. Generous in both directions: the coarse end need only be half as bad as theory
+        // predicts, the fine end may be three times worse.
         const int distinct = 20_000;
-        double coarse = DistinctError(HyperLogLog<string, StringXxHash3Hasher>.MinPrecision, distinct);
-        double fine = DistinctError(HyperLogLog<string, StringXxHash3Hasher>.MaxPrecision, distinct);
+        const int coarsePrecision = HyperLogLog<string, StringXxHash3Hasher>.MinPrecision;
+        const int finePrecision = HyperLogLog<string, StringXxHash3Hasher>.MaxPrecision;
+
+        double coarse = DistinctError(coarsePrecision, distinct);
+        double fine = DistinctError(finePrecision, distinct);
 
         Assert.True(fine < coarse, $"precision did not tighten the estimate: coarse {coarse:P2}, fine {fine:P2}");
-        Assert.True(coarse > 0.05, $"16 registers estimated {distinct} distinct keys to within {coarse:P2}");
-        Assert.True(fine < 0.02, $"65,536 registers were {fine:P2} off");
+        Assert.True(coarse > 0.5 * StandardError(coarsePrecision),
+            $"{1 << coarsePrecision} registers estimated {distinct} distinct keys to within {coarse:P2}");
+        Assert.True(fine < 3 * StandardError(finePrecision),
+            $"{1 << finePrecision} registers were {fine:P2} off, against a {StandardError(finePrecision):P2} standard error");
     }
 
     [Fact]
@@ -208,6 +224,12 @@ public class AbuseTrackerOptionsTests
     {
         // One key observed once, buried under a flood of distinct keys. Count-Min never underestimates, so the
         // whole difference between the two trackers is collision noise from the row width RateEpsilon buys.
+        //
+        // The epsilon bound below holds with probability 1 - delta, not always — delta here is the default
+        // RateConfidence's 0.01. It is asserted anyway, because it is the only assertion that catches a
+        // *narrow* tracker built wide (the wide/narrow comparison alone passes if both are wide), and the
+        // stream leaves it far from the edge: the narrow arm measures 1 against a bound of 3, the wide arm
+        // 6,209 against 10,001.
         const int noise = 20_000;
         const double wideEpsilon = 0.5;
         const double narrowEpsilon = 0.0001;
@@ -299,6 +321,9 @@ public class AbuseTrackerOptionsTests
 
         return tracker;
     }
+
+    /// <summary>HyperLogLog's documented standard error at a precision: <c>1.04 / sqrt(2^precision)</c>.</summary>
+    private static double StandardError(int precision) => 1.04 / Math.Sqrt(1 << precision);
 
     private static double DistinctError(int precision, int distinct)
     {
