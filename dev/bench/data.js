@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787996532973,
+  "lastUpdate": 1788001445106,
   "repoUrl": "https://github.com/marius-bughiu/Celerity",
   "entries": {
     "Celerity Benchmarks": [
@@ -303276,6 +303276,6168 @@ window.BENCHMARK_DATA = {
             "value": 2622367.4242424243,
             "unit": "ns",
             "range": "± 1818424.5414278137"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "marius.bughiu@gmail.com",
+            "name": "Marius Bughiu",
+            "username": "marius-bughiu"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f2c98d041217bf44388c141494671c77db2d53c4",
+          "message": "Merge pull request #394 from marius-bughiu/feat/issue-393-timer-wheel\n\nfeat(collections): add TimerWheel — which of these pending things have timed out",
+          "timestamp": "2026-08-29T10:56:11+03:00",
+          "tree_id": "59522e14838a829e5ddbb60374003d7043627181",
+          "url": "https://github.com/marius-bughiu/Celerity/commit/f2c98d041217bf44388c141494671c77db2d53c4"
+        },
+        "date": 1788001444430,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "CountMinSketchBenchmark.Dictionary_Add(ItemCount: 1000)",
+            "value": 10833.81646830241,
+            "unit": "ns",
+            "range": "± 192.47534182989642"
+          },
+          {
+            "name": "CountMinSketchBenchmark.CountMinSketch_Add(ItemCount: 1000)",
+            "value": 10716.586803981236,
+            "unit": "ns",
+            "range": "± 103.6022105711671"
+          },
+          {
+            "name": "CountMinSketchBenchmark.Dictionary_Add(ItemCount: 100000)",
+            "value": 1445358.5736038773,
+            "unit": "ns",
+            "range": "± 19196.81587734237"
+          },
+          {
+            "name": "CountMinSketchBenchmark.CountMinSketch_Add(ItemCount: 100000)",
+            "value": 963181.4866768973,
+            "unit": "ns",
+            "range": "± 2646.2013486894075"
+          },
+          {
+            "name": "CountMinSketchBenchmark.Dictionary_Estimate(ItemCount: 1000)",
+            "value": 4374.010816427378,
+            "unit": "ns",
+            "range": "± 2.7894122250068882"
+          },
+          {
+            "name": "CountMinSketchBenchmark.CountMinSketch_Estimate(ItemCount: 1000)",
+            "value": 10079.539454596383,
+            "unit": "ns",
+            "range": "± 24.532896579436358"
+          },
+          {
+            "name": "CountMinSketchBenchmark.Dictionary_Estimate(ItemCount: 100000)",
+            "value": 488776.0799654447,
+            "unit": "ns",
+            "range": "± 1764.5692135659692"
+          },
+          {
+            "name": "CountMinSketchBenchmark.CountMinSketch_Estimate(ItemCount: 100000)",
+            "value": 1968533.2621372768,
+            "unit": "ns",
+            "range": "± 2795.316247768584"
+          },
+          {
+            "name": "LruCacheBenchmark.Dictionary_Get(ItemCount: 1000)",
+            "value": 24802.343857985277,
+            "unit": "ns",
+            "range": "± 78.98400112609805"
+          },
+          {
+            "name": "LruCacheBenchmark.LruCache_Get(ItemCount: 1000)",
+            "value": 6929.72119084111,
+            "unit": "ns",
+            "range": "± 160.15962324771465"
+          },
+          {
+            "name": "LruCacheBenchmark.Dictionary_Get(ItemCount: 100000)",
+            "value": 25413.561222782842,
+            "unit": "ns",
+            "range": "± 38.42165418418083"
+          },
+          {
+            "name": "LruCacheBenchmark.LruCache_Get(ItemCount: 100000)",
+            "value": 6892.988525537344,
+            "unit": "ns",
+            "range": "± 31.606159179008646"
+          },
+          {
+            "name": "LruCacheBenchmark.Dictionary_GetMissing(ItemCount: 1000)",
+            "value": 5084.153713989258,
+            "unit": "ns",
+            "range": "± 206.3722671901946"
+          },
+          {
+            "name": "LruCacheBenchmark.LruCache_GetMissing(ItemCount: 1000)",
+            "value": 3594.623687320285,
+            "unit": "ns",
+            "range": "± 3.2045578197030875"
+          },
+          {
+            "name": "LruCacheBenchmark.Dictionary_GetMissing(ItemCount: 100000)",
+            "value": 529738.1462239583,
+            "unit": "ns",
+            "range": "± 10388.18539253438"
+          },
+          {
+            "name": "LruCacheBenchmark.LruCache_GetMissing(ItemCount: 100000)",
+            "value": 1347398.6211688702,
+            "unit": "ns",
+            "range": "± 1265.9120774669375"
+          },
+          {
+            "name": "StringHasherBenchmark.Bcl_GetHashCode(Shape: ShortAscii)",
+            "value": 15394.610909921152,
+            "unit": "ns",
+            "range": "± 11.274975322912672"
+          },
+          {
+            "name": "StringHasherBenchmark.EqualityComparer_Default(Shape: ShortAscii)",
+            "value": 15365.686178701895,
+            "unit": "ns",
+            "range": "± 24.036091668877553"
+          },
+          {
+            "name": "StringHasherBenchmark.Djb2(Shape: ShortAscii)",
+            "value": 22732.477838369516,
+            "unit": "ns",
+            "range": "± 21.82192347226996"
+          },
+          {
+            "name": "StringHasherBenchmark.Djb2A(Shape: ShortAscii)",
+            "value": 22743.933033130786,
+            "unit": "ns",
+            "range": "± 16.479429096690527"
+          },
+          {
+            "name": "StringHasherBenchmark.Sdbm(Shape: ShortAscii)",
+            "value": 33113.94644601004,
+            "unit": "ns",
+            "range": "± 25.01274900028432"
+          },
+          {
+            "name": "StringHasherBenchmark.Elf(Shape: ShortAscii)",
+            "value": 44879.023716517855,
+            "unit": "ns",
+            "range": "± 274.09613184557736"
+          },
+          {
+            "name": "StringHasherBenchmark.Crc32(Shape: ShortAscii)",
+            "value": 50895.06327241043,
+            "unit": "ns",
+            "range": "± 444.07873680323104"
+          },
+          {
+            "name": "StringHasherBenchmark.Adler32(Shape: ShortAscii)",
+            "value": 96496.73709671585,
+            "unit": "ns",
+            "range": "± 33.55010971974618"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1(Shape: ShortAscii)",
+            "value": 27144.09880122432,
+            "unit": "ns",
+            "range": "± 13.635445426388634"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1_64(Shape: ShortAscii)",
+            "value": 25807.408899767644,
+            "unit": "ns",
+            "range": "± 50.47063815951546"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A(Shape: ShortAscii)",
+            "value": 11065.58902505728,
+            "unit": "ns",
+            "range": "± 19.791199770799356"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A_Full(Shape: ShortAscii)",
+            "value": 25856.879983084542,
+            "unit": "ns",
+            "range": "± 12.535562702726635"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A_64(Shape: ShortAscii)",
+            "value": 27880.6198022025,
+            "unit": "ns",
+            "range": "± 17.83261652830683"
+          },
+          {
+            "name": "StringHasherBenchmark.JenkinsOaat(Shape: ShortAscii)",
+            "value": 39508.00089970342,
+            "unit": "ns",
+            "range": "± 32.16537143566968"
+          },
+          {
+            "name": "StringHasherBenchmark.Murmur2(Shape: ShortAscii)",
+            "value": 15388.401035054525,
+            "unit": "ns",
+            "range": "± 40.54003788722478"
+          },
+          {
+            "name": "StringHasherBenchmark.Murmur3(Shape: ShortAscii)",
+            "value": 17148.373783991887,
+            "unit": "ns",
+            "range": "± 31.779226895929494"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash32(Shape: ShortAscii)",
+            "value": 16904.84708206742,
+            "unit": "ns",
+            "range": "± 14.364742567002205"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash64(Shape: ShortAscii)",
+            "value": 18376.989992494935,
+            "unit": "ns",
+            "range": "± 24.826996400657723"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash3(Shape: ShortAscii)",
+            "value": 15451.41766639992,
+            "unit": "ns",
+            "range": "± 33.678174614509764"
+          },
+          {
+            "name": "StringHasherBenchmark.CityHash64(Shape: ShortAscii)",
+            "value": 15537.445552978515,
+            "unit": "ns",
+            "range": "± 38.47368819934903"
+          },
+          {
+            "name": "StringHasherBenchmark.MetroHash64(Shape: ShortAscii)",
+            "value": 15448.819318498883,
+            "unit": "ns",
+            "range": "± 19.460623334432807"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash13(Shape: ShortAscii)",
+            "value": 27630.488354274206,
+            "unit": "ns",
+            "range": "± 16.137255236114946"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash24(Shape: ShortAscii)",
+            "value": 37917.459920948946,
+            "unit": "ns",
+            "range": "± 15.908463454063234"
+          },
+          {
+            "name": "StringHasherBenchmark.HalfSipHash24(Shape: ShortAscii)",
+            "value": 49794.318378316944,
+            "unit": "ns",
+            "range": "± 86.1553790913805"
+          },
+          {
+            "name": "StringHasherBenchmark.HighwayHash64(Shape: ShortAscii)",
+            "value": 428851.65785435267,
+            "unit": "ns",
+            "range": "± 16019.736890963964"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash64_Hash64(Shape: ShortAscii)",
+            "value": 17359.1633845738,
+            "unit": "ns",
+            "range": "± 11.371837637890119"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash24_Hash64(Shape: ShortAscii)",
+            "value": 37873.70708138602,
+            "unit": "ns",
+            "range": "± 16.857531997221297"
+          },
+          {
+            "name": "StringHasherBenchmark.Bcl_GetHashCode(Shape: LongAscii)",
+            "value": 96958.46384193157,
+            "unit": "ns",
+            "range": "± 40.57711948759674"
+          },
+          {
+            "name": "StringHasherBenchmark.EqualityComparer_Default(Shape: LongAscii)",
+            "value": 96548.73641313825,
+            "unit": "ns",
+            "range": "± 35.62290332688237"
+          },
+          {
+            "name": "StringHasherBenchmark.Djb2(Shape: LongAscii)",
+            "value": 223757.87843540736,
+            "unit": "ns",
+            "range": "± 51.2117036467854"
+          },
+          {
+            "name": "StringHasherBenchmark.Djb2A(Shape: LongAscii)",
+            "value": 223791.45488449623,
+            "unit": "ns",
+            "range": "± 110.27068676041272"
+          },
+          {
+            "name": "StringHasherBenchmark.Sdbm(Shape: LongAscii)",
+            "value": 308174.2066514757,
+            "unit": "ns",
+            "range": "± 76.34751441322285"
+          },
+          {
+            "name": "StringHasherBenchmark.Elf(Shape: LongAscii)",
+            "value": 578856.1545319734,
+            "unit": "ns",
+            "range": "± 214.38112175097143"
+          },
+          {
+            "name": "StringHasherBenchmark.Crc32(Shape: LongAscii)",
+            "value": 591133.8185402199,
+            "unit": "ns",
+            "range": "± 176.72490387633516"
+          },
+          {
+            "name": "StringHasherBenchmark.Adler32(Shape: LongAscii)",
+            "value": 786773.1800255409,
+            "unit": "ns",
+            "range": "± 286.07163161614426"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1(Shape: LongAscii)",
+            "value": 289135.63737540407,
+            "unit": "ns",
+            "range": "± 103.18133055205621"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1_64(Shape: LongAscii)",
+            "value": 282977.6875523158,
+            "unit": "ns",
+            "range": "± 86.9681528983843"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A(Shape: LongAscii)",
+            "value": 123034.99938092913,
+            "unit": "ns",
+            "range": "± 107.00451067997234"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A_Full(Shape: LongAscii)",
+            "value": 282464.6949986049,
+            "unit": "ns",
+            "range": "± 132.70239696997027"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A_64(Shape: LongAscii)",
+            "value": 286898.89156539354,
+            "unit": "ns",
+            "range": "± 75.30531303504704"
+          },
+          {
+            "name": "StringHasherBenchmark.JenkinsOaat(Shape: LongAscii)",
+            "value": 378554.5655168806,
+            "unit": "ns",
+            "range": "± 97.22819873250944"
+          },
+          {
+            "name": "StringHasherBenchmark.Murmur2(Shape: LongAscii)",
+            "value": 101720.4460797991,
+            "unit": "ns",
+            "range": "± 69.88201248219971"
+          },
+          {
+            "name": "StringHasherBenchmark.Murmur3(Shape: LongAscii)",
+            "value": 115718.31557436343,
+            "unit": "ns",
+            "range": "± 88.27344911378759"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash32(Shape: LongAscii)",
+            "value": 73531.16572922927,
+            "unit": "ns",
+            "range": "± 37.181912380049454"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash64(Shape: LongAscii)",
+            "value": 94869.38727620443,
+            "unit": "ns",
+            "range": "± 724.0913687502418"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash3(Shape: LongAscii)",
+            "value": 84984.8685161884,
+            "unit": "ns",
+            "range": "± 346.4897961131916"
+          },
+          {
+            "name": "StringHasherBenchmark.CityHash64(Shape: LongAscii)",
+            "value": 124871.29599202474,
+            "unit": "ns",
+            "range": "± 1055.3030231499258"
+          },
+          {
+            "name": "StringHasherBenchmark.MetroHash64(Shape: LongAscii)",
+            "value": 74743.86565031829,
+            "unit": "ns",
+            "range": "± 268.91508296642996"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash13(Shape: LongAscii)",
+            "value": 117197.87855687634,
+            "unit": "ns",
+            "range": "± 89.31713629570024"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash24(Shape: LongAscii)",
+            "value": 162525.1241373698,
+            "unit": "ns",
+            "range": "± 493.51801280034533"
+          },
+          {
+            "name": "StringHasherBenchmark.HalfSipHash24(Shape: LongAscii)",
+            "value": 251043.02380792025,
+            "unit": "ns",
+            "range": "± 198.46924175377066"
+          },
+          {
+            "name": "StringHasherBenchmark.HighwayHash64(Shape: LongAscii)",
+            "value": 884374.0049804688,
+            "unit": "ns",
+            "range": "± 31855.56224062898"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash64_Hash64(Shape: LongAscii)",
+            "value": 87263.74472992995,
+            "unit": "ns",
+            "range": "± 930.8460088648292"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash24_Hash64(Shape: LongAscii)",
+            "value": 162184.4823376886,
+            "unit": "ns",
+            "range": "± 246.90114800793626"
+          },
+          {
+            "name": "StringHasherBenchmark.Bcl_GetHashCode(Shape: NonAscii)",
+            "value": 22884.406335194904,
+            "unit": "ns",
+            "range": "± 12.477400904325037"
+          },
+          {
+            "name": "StringHasherBenchmark.EqualityComparer_Default(Shape: NonAscii)",
+            "value": 22832.524029071516,
+            "unit": "ns",
+            "range": "± 7.725842973061929"
+          },
+          {
+            "name": "StringHasherBenchmark.Djb2(Shape: NonAscii)",
+            "value": 43059.5339457194,
+            "unit": "ns",
+            "range": "± 22.332227706543897"
+          },
+          {
+            "name": "StringHasherBenchmark.Djb2A(Shape: NonAscii)",
+            "value": 43066.13390774197,
+            "unit": "ns",
+            "range": "± 25.970582392794547"
+          },
+          {
+            "name": "StringHasherBenchmark.Sdbm(Shape: NonAscii)",
+            "value": 61655.42715688852,
+            "unit": "ns",
+            "range": "± 42.63349189161821"
+          },
+          {
+            "name": "StringHasherBenchmark.Elf(Shape: NonAscii)",
+            "value": 100230.43446507947,
+            "unit": "ns",
+            "range": "± 136.31487277693859"
+          },
+          {
+            "name": "StringHasherBenchmark.Crc32(Shape: NonAscii)",
+            "value": 103624.96312052409,
+            "unit": "ns",
+            "range": "± 77.74293415853685"
+          },
+          {
+            "name": "StringHasherBenchmark.Adler32(Shape: NonAscii)",
+            "value": 174505.5686907087,
+            "unit": "ns",
+            "range": "± 84.52580884286293"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1(Shape: NonAscii)",
+            "value": 48450.41843387998,
+            "unit": "ns",
+            "range": "± 60.73125768001899"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1_64(Shape: NonAscii)",
+            "value": 50242.83672464305,
+            "unit": "ns",
+            "range": "± 39.34213506828224"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A(Shape: NonAscii)",
+            "value": 21991.37072644915,
+            "unit": "ns",
+            "range": "± 23.069162938135193"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A_Full(Shape: NonAscii)",
+            "value": 46105.960688838255,
+            "unit": "ns",
+            "range": "± 35.32429578905723"
+          },
+          {
+            "name": "StringHasherBenchmark.FnV1A_64(Shape: NonAscii)",
+            "value": 50077.14611816406,
+            "unit": "ns",
+            "range": "± 42.65920470931535"
+          },
+          {
+            "name": "StringHasherBenchmark.JenkinsOaat(Shape: NonAscii)",
+            "value": 73396.97070764612,
+            "unit": "ns",
+            "range": "± 88.63757071313182"
+          },
+          {
+            "name": "StringHasherBenchmark.Murmur2(Shape: NonAscii)",
+            "value": 27056.43002601906,
+            "unit": "ns",
+            "range": "± 121.76645595481429"
+          },
+          {
+            "name": "StringHasherBenchmark.Murmur3(Shape: NonAscii)",
+            "value": 31735.15966691642,
+            "unit": "ns",
+            "range": "± 110.74947863058229"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash32(Shape: NonAscii)",
+            "value": 23897.229498969184,
+            "unit": "ns",
+            "range": "± 28.10399985583539"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash64(Shape: NonAscii)",
+            "value": 30082.898189150055,
+            "unit": "ns",
+            "range": "± 24.699268604173575"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash3(Shape: NonAscii)",
+            "value": 23704.626339382594,
+            "unit": "ns",
+            "range": "± 363.4728304797814"
+          },
+          {
+            "name": "StringHasherBenchmark.CityHash64(Shape: NonAscii)",
+            "value": 22252.571616036552,
+            "unit": "ns",
+            "range": "± 11.642571958620115"
+          },
+          {
+            "name": "StringHasherBenchmark.MetroHash64(Shape: NonAscii)",
+            "value": 25890.73174947103,
+            "unit": "ns",
+            "range": "± 23.88195573810445"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash13(Shape: NonAscii)",
+            "value": 37905.068976040544,
+            "unit": "ns",
+            "range": "± 92.49139121245899"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash24(Shape: NonAscii)",
+            "value": 50093.47175428602,
+            "unit": "ns",
+            "range": "± 47.61134024618811"
+          },
+          {
+            "name": "StringHasherBenchmark.HalfSipHash24(Shape: NonAscii)",
+            "value": 73890.50659561157,
+            "unit": "ns",
+            "range": "± 1368.0625172962418"
+          },
+          {
+            "name": "StringHasherBenchmark.HighwayHash64(Shape: NonAscii)",
+            "value": 476998.5306678185,
+            "unit": "ns",
+            "range": "± 17599.377556889154"
+          },
+          {
+            "name": "StringHasherBenchmark.XxHash64_Hash64(Shape: NonAscii)",
+            "value": 28965.790318241827,
+            "unit": "ns",
+            "range": "± 34.28850437748497"
+          },
+          {
+            "name": "StringHasherBenchmark.SipHash24_Hash64(Shape: NonAscii)",
+            "value": 51722.11444512729,
+            "unit": "ns",
+            "range": "± 577.0102456008516"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.Dictionary_Insert(ItemCount: 8)",
+            "value": 160.85397149721783,
+            "unit": "ns",
+            "range": "± 2.4637944720563802"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.SmallDictionary_Insert(ItemCount: 8)",
+            "value": 85.48884748617807,
+            "unit": "ns",
+            "range": "± 0.7585829366349222"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.Dictionary_Insert(ItemCount: 64)",
+            "value": 786.0034045186536,
+            "unit": "ns",
+            "range": "± 15.47715468475109"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.SmallDictionary_Insert(ItemCount: 64)",
+            "value": 1091.0682120487609,
+            "unit": "ns",
+            "range": "± 4.833493003945339"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 13716.357792194072,
+            "unit": "ns",
+            "range": "± 707.6214238838934"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.SwissDictionary_Insert(ItemCount: 1000)",
+            "value": 29447.40662536621,
+            "unit": "ns",
+            "range": "± 390.7310481933875"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 4793954.0125159435,
+            "unit": "ns",
+            "range": "± 128848.78572511625"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.SwissDictionary_Insert(ItemCount: 100000)",
+            "value": 3946059.763739224,
+            "unit": "ns",
+            "range": "± 33454.65466475787"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.Dictionary_Lookup(ItemCount: 8)",
+            "value": 37.00838427130993,
+            "unit": "ns",
+            "range": "± 0.07355379183525401"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.SmallDictionary_Lookup(ItemCount: 8)",
+            "value": 28.272962410897016,
+            "unit": "ns",
+            "range": "± 2.972481983509901"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.Dictionary_Lookup(ItemCount: 64)",
+            "value": 296.9296559737279,
+            "unit": "ns",
+            "range": "± 0.25403808939218264"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.SmallDictionary_Lookup(ItemCount: 64)",
+            "value": 1129.510829925537,
+            "unit": "ns",
+            "range": "± 13.672058661644526"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 4722.3251479576375,
+            "unit": "ns",
+            "range": "± 22.26162270441207"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.SwissDictionary_Lookup(ItemCount: 1000)",
+            "value": 3005.4475863421403,
+            "unit": "ns",
+            "range": "± 5.510017029334165"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1608245.7613146552,
+            "unit": "ns",
+            "range": "± 8027.39086324741"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.SwissDictionary_Lookup(ItemCount: 100000)",
+            "value": 816442.0367606027,
+            "unit": "ns",
+            "range": "± 4865.969913897238"
+          },
+          {
+            "name": "LruCacheBenchmark.Dictionary_Put(ItemCount: 1000)",
+            "value": 116495.8,
+            "unit": "ns",
+            "range": "± 7885.313107954804"
+          },
+          {
+            "name": "LruCacheBenchmark.LruCache_Put(ItemCount: 1000)",
+            "value": 483411.3178571428,
+            "unit": "ns",
+            "range": "± 39654.91037863343"
+          },
+          {
+            "name": "LruCacheBenchmark.Dictionary_Put(ItemCount: 100000)",
+            "value": 8355904.1034482755,
+            "unit": "ns",
+            "range": "± 107031.42399859721"
+          },
+          {
+            "name": "LruCacheBenchmark.LruCache_Put(ItemCount: 100000)",
+            "value": 5880852.9655172415,
+            "unit": "ns",
+            "range": "± 103601.0200372022"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.Dictionary_Remove(ItemCount: 8)",
+            "value": 1566.1946308724832,
+            "unit": "ns",
+            "range": "± 228.41311192816272"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.SmallDictionary_Remove(ItemCount: 8)",
+            "value": 1528.5069444444443,
+            "unit": "ns",
+            "range": "± 320.21581438711814"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.Dictionary_Remove(ItemCount: 64)",
+            "value": 6066.4537037037035,
+            "unit": "ns",
+            "range": "± 673.7900146321035"
+          },
+          {
+            "name": "SmallDictionaryBenchmark.SmallDictionary_Remove(ItemCount: 64)",
+            "value": 26159.910344827586,
+            "unit": "ns",
+            "range": "± 4684.6115484596685"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 86335.72881355933,
+            "unit": "ns",
+            "range": "± 5081.134548326698"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.SwissDictionary_Remove(ItemCount: 1000)",
+            "value": 78360.07835820895,
+            "unit": "ns",
+            "range": "± 8186.425488202346"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 2067239.1363636365,
+            "unit": "ns",
+            "range": "± 93849.47635934746"
+          },
+          {
+            "name": "SwissDictionaryBenchmark.SwissDictionary_Remove(ItemCount: 100000)",
+            "value": 1718686.8641975308,
+            "unit": "ns",
+            "range": "± 55832.45858727768"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.List_Accumulate(ItemCount: 1000)",
+            "value": 1720.3028433779452,
+            "unit": "ns",
+            "range": "± 43.6977102914117"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.ReservoirSampler_Accumulate(ItemCount: 1000)",
+            "value": 11706.222928277377,
+            "unit": "ns",
+            "range": "± 173.2890079555364"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.List_Accumulate(ItemCount: 100000)",
+            "value": 279821.7072332974,
+            "unit": "ns",
+            "range": "± 2635.2192317207596"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.ReservoirSampler_Accumulate(ItemCount: 100000)",
+            "value": 103238.13739420573,
+            "unit": "ns",
+            "range": "± 1192.873591206711"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 11407.410922146582,
+            "unit": "ns",
+            "range": "± 634.5071108317663"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 11207.091764193055,
+            "unit": "ns",
+            "range": "± 883.5237961720851"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Add(ItemCount: 1000)",
+            "value": 76028.53522780846,
+            "unit": "ns",
+            "range": "± 2449.629087917244"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_Add(ItemCount: 1000)",
+            "value": 4596.03189797237,
+            "unit": "ns",
+            "range": "± 78.32281800306525"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HyperLogLog_Add(ItemCount: 1000)",
+            "value": 81445.69937133789,
+            "unit": "ns",
+            "range": "± 655.413726397104"
+          },
+          {
+            "name": "RankedSetBenchmark.List_AddSorted(ItemCount: 1000)",
+            "value": 53488.91816448343,
+            "unit": "ns",
+            "range": "± 449.2350270134487"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Add(ItemCount: 1000)",
+            "value": 53836.23199666341,
+            "unit": "ns",
+            "range": "± 2480.0661904052113"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 3394510.905883789,
+            "unit": "ns",
+            "range": "± 65884.57544437198"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 3795261.1061328123,
+            "unit": "ns",
+            "range": "± 254044.58366502068"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Add(ItemCount: 100000)",
+            "value": 19260373.50411184,
+            "unit": "ns",
+            "range": "± 573379.6185814906"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_Add(ItemCount: 100000)",
+            "value": 1817601.3442957262,
+            "unit": "ns",
+            "range": "± 45564.89011325135"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HyperLogLog_Add(ItemCount: 100000)",
+            "value": 539791.5586588542,
+            "unit": "ns",
+            "range": "± 7743.600572456517"
+          },
+          {
+            "name": "RankedSetBenchmark.List_AddSorted(ItemCount: 100000)",
+            "value": 174197727.15555558,
+            "unit": "ns",
+            "range": "± 374327.564992848"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Add(ItemCount: 100000)",
+            "value": 12399852.712239584,
+            "unit": "ns",
+            "range": "± 132320.11512096768"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_AnyOverlap(ItemCount: 1000)",
+            "value": 1410318.6766601563,
+            "unit": "ns",
+            "range": "± 6924.415712436575"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_AnyOverlap(ItemCount: 1000)",
+            "value": 50287.86256713867,
+            "unit": "ns",
+            "range": "± 438.81567457424933"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_AnyOverlap(ItemCount: 100000)",
+            "value": 3190205.9958984377,
+            "unit": "ns",
+            "range": "± 26384.690815771584"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_AnyOverlap(ItemCount: 100000)",
+            "value": 115149.4739095052,
+            "unit": "ns",
+            "range": "± 1825.5595539852845"
+          },
+          {
+            "name": "XorFilterBenchmark.HashSet_Build(ItemCount: 1000)",
+            "value": 5807.587766810826,
+            "unit": "ns",
+            "range": "± 120.9012206724322"
+          },
+          {
+            "name": "XorFilterBenchmark.XorFilter_Build(ItemCount: 1000)",
+            "value": 33149.56072652565,
+            "unit": "ns",
+            "range": "± 1135.6555791630838"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_Build(ItemCount: 1000)",
+            "value": 604.4630134655879,
+            "unit": "ns",
+            "range": "± 16.90425884624328"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_Build(ItemCount: 1000)",
+            "value": 26902.218665568034,
+            "unit": "ns",
+            "range": "± 289.58899068288787"
+          },
+          {
+            "name": "XorFilterBenchmark.HashSet_Build(ItemCount: 100000)",
+            "value": 1534693.209765625,
+            "unit": "ns",
+            "range": "± 17465.044552871754"
+          },
+          {
+            "name": "XorFilterBenchmark.XorFilter_Build(ItemCount: 100000)",
+            "value": 9127665.456770834,
+            "unit": "ns",
+            "range": "± 150643.3758796405"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_Build(ItemCount: 100000)",
+            "value": 352655.0113745117,
+            "unit": "ns",
+            "range": "± 130672.40550068302"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_Build(ItemCount: 100000)",
+            "value": 11516877.209051725,
+            "unit": "ns",
+            "range": "± 38063.66050394182"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 2853.703003738866,
+            "unit": "ns",
+            "range": "± 54.288510162134266"
+          },
+          {
+            "name": "XorFilterBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 2881.498420715332,
+            "unit": "ns",
+            "range": "± 37.76499518802546"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_Contains(ItemCount: 1000)",
+            "value": 3421.010737991333,
+            "unit": "ns",
+            "range": "± 45.68586720580264"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Contains(ItemCount: 1000)",
+            "value": 32835.78276430327,
+            "unit": "ns",
+            "range": "± 3483.024357252499"
+          },
+          {
+            "name": "XorFilterBenchmark.XorFilter_Contains(ItemCount: 1000)",
+            "value": 5079.828730089911,
+            "unit": "ns",
+            "range": "± 75.71006348860139"
+          },
+          {
+            "name": "RankedSetBenchmark.List_ContainsBinarySearch(ItemCount: 1000)",
+            "value": 31083.11378885905,
+            "unit": "ns",
+            "range": "± 574.4728723415072"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Contains(ItemCount: 1000)",
+            "value": 35290.53388264974,
+            "unit": "ns",
+            "range": "± 571.0215656201854"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1161330.3626627603,
+            "unit": "ns",
+            "range": "± 14351.595364414772"
+          },
+          {
+            "name": "XorFilterBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1191814.1028758083,
+            "unit": "ns",
+            "range": "± 16134.773521289293"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_Contains(ItemCount: 100000)",
+            "value": 1627290.8892903647,
+            "unit": "ns",
+            "range": "± 13910.930166717644"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Contains(ItemCount: 100000)",
+            "value": 13621620.921316965,
+            "unit": "ns",
+            "range": "± 273273.97397616383"
+          },
+          {
+            "name": "XorFilterBenchmark.XorFilter_Contains(ItemCount: 100000)",
+            "value": 538060.9181477864,
+            "unit": "ns",
+            "range": "± 5008.674576328513"
+          },
+          {
+            "name": "RankedSetBenchmark.List_ContainsBinarySearch(ItemCount: 100000)",
+            "value": 10781547.796875,
+            "unit": "ns",
+            "range": "± 62809.742117869544"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Contains(ItemCount: 100000)",
+            "value": 10217830.68671875,
+            "unit": "ns",
+            "range": "± 189022.00459229652"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_ContainsMissing(ItemCount: 1000)",
+            "value": 2901.7818806966147,
+            "unit": "ns",
+            "range": "± 39.551867707117346"
+          },
+          {
+            "name": "XorFilterBenchmark.HashSet_ContainsMissing(ItemCount: 1000)",
+            "value": 2926.6082581837973,
+            "unit": "ns",
+            "range": "± 48.38278526955365"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_ContainsMissing(ItemCount: 1000)",
+            "value": 5859.6743772294785,
+            "unit": "ns",
+            "range": "± 115.88885291039897"
+          },
+          {
+            "name": "XorFilterBenchmark.XorFilter_ContainsMissing(ItemCount: 1000)",
+            "value": 5082.076087697347,
+            "unit": "ns",
+            "range": "± 50.32608355042254"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1547673.3898228237,
+            "unit": "ns",
+            "range": "± 17739.496106833598"
+          },
+          {
+            "name": "XorFilterBenchmark.HashSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1448313.0919270834,
+            "unit": "ns",
+            "range": "± 59294.98367343172"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_ContainsMissing(ItemCount: 100000)",
+            "value": 651456.9423130581,
+            "unit": "ns",
+            "range": "± 7357.864801627471"
+          },
+          {
+            "name": "XorFilterBenchmark.XorFilter_ContainsMissing(ItemCount: 100000)",
+            "value": 544133.833610026,
+            "unit": "ns",
+            "range": "± 1959.8494900827995"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.Dictionary_Count(ItemCount: 1000)",
+            "value": 6684.609924316406,
+            "unit": "ns",
+            "range": "± 100.58183534029139"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.CelerityMultiSet_Count(ItemCount: 1000)",
+            "value": 4073.1982872009276,
+            "unit": "ns",
+            "range": "± 62.2914180815927"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.Dictionary_Count(ItemCount: 100000)",
+            "value": 961162.3596354167,
+            "unit": "ns",
+            "range": "± 12386.614348523248"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.CelerityMultiSet_Count(ItemCount: 100000)",
+            "value": 603098.2341056034,
+            "unit": "ns",
+            "range": "± 9616.888982972021"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HashSet_Estimate(ItemCount: 1000)",
+            "value": 0.00218868685950493,
+            "unit": "ns",
+            "range": "± 0.00246083274088872"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HyperLogLog_Estimate(ItemCount: 1000)",
+            "value": 77717.68272705078,
+            "unit": "ns",
+            "range": "± 532.0200277824453"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HashSet_Estimate(ItemCount: 100000)",
+            "value": 0.0011236360641541305,
+            "unit": "ns",
+            "range": "± 0.002035861186586011"
+          },
+          {
+            "name": "HyperLogLogBenchmark.HyperLogLog_Estimate(ItemCount: 100000)",
+            "value": 78297.92547607422,
+            "unit": "ns",
+            "range": "± 613.6379537909538"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 12611.366646777624,
+            "unit": "ns",
+            "range": "± 765.7822338471084"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.RobinHoodDictionary_Insert(ItemCount: 1000)",
+            "value": 14790.503470005133,
+            "unit": "ns",
+            "range": "± 333.32080361981303"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 4022911.9338378906,
+            "unit": "ns",
+            "range": "± 79830.1132174099"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.RobinHoodDictionary_Insert(ItemCount: 100000)",
+            "value": 7406642.948006465,
+            "unit": "ns",
+            "range": "± 151798.68351365064"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 2764.5972140082,
+            "unit": "ns",
+            "range": "± 41.047785736271294"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 2849.411245727539,
+            "unit": "ns",
+            "range": "± 28.678252795570547"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.CelerityMultiSet_Lookup(ItemCount: 1000)",
+            "value": 1257.9415015538534,
+            "unit": "ns",
+            "range": "± 14.751181674924883"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.RobinHoodDictionary_Lookup(ItemCount: 1000)",
+            "value": 2191.0642993065617,
+            "unit": "ns",
+            "range": "± 115.74825662204506"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 313024.21248372394,
+            "unit": "ns",
+            "range": "± 6242.246289686242"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1202235.229622396,
+            "unit": "ns",
+            "range": "± 13975.905326503515"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.CelerityMultiSet_Lookup(ItemCount: 100000)",
+            "value": 144148.54638045872,
+            "unit": "ns",
+            "range": "± 4272.347627117362"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.RobinHoodDictionary_Lookup(ItemCount: 100000)",
+            "value": 802332.9899088541,
+            "unit": "ns",
+            "range": "± 9360.253579754013"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Mixed(ItemCount: 1000)",
+            "value": 627666.5092936198,
+            "unit": "ns",
+            "range": "± 12445.198284559177"
+          },
+          {
+            "name": "RankedSetBenchmark.List_MixedSorted(ItemCount: 1000)",
+            "value": 88110.1210164388,
+            "unit": "ns",
+            "range": "± 2497.735458547669"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Mixed(ItemCount: 1000)",
+            "value": 87716.27300604459,
+            "unit": "ns",
+            "range": "± 4413.196516720333"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Mixed(ItemCount: 100000)",
+            "value": 4837834530.028571,
+            "unit": "ns",
+            "range": "± 311682905.72618294"
+          },
+          {
+            "name": "RankedSetBenchmark.List_MixedSorted(ItemCount: 100000)",
+            "value": 34426254.94888889,
+            "unit": "ns",
+            "range": "± 228165.58795551458"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Mixed(ItemCount: 100000)",
+            "value": 28744063.657291666,
+            "unit": "ns",
+            "range": "± 142141.592111064"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_PointQuery(ItemCount: 1000)",
+            "value": 2427561.6861979165,
+            "unit": "ns",
+            "range": "± 10798.723980338953"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_PointQuery(ItemCount: 1000)",
+            "value": 74004.29799257476,
+            "unit": "ns",
+            "range": "± 721.1777607347437"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_PointQuery(ItemCount: 100000)",
+            "value": 343370870.3333333,
+            "unit": "ns",
+            "range": "± 4375667.702948206"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_PointQuery(ItemCount: 100000)",
+            "value": 2460764.0035695042,
+            "unit": "ns",
+            "range": "± 24661.722278093304"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_RangeScan(ItemCount: 1000)",
+            "value": 151.71359204451244,
+            "unit": "ns",
+            "range": "± 3.2815406639552323"
+          },
+          {
+            "name": "RankedSetBenchmark.List_RangeScanSorted(ItemCount: 1000)",
+            "value": 24.169602266379766,
+            "unit": "ns",
+            "range": "± 0.2574137476522355"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_RangeScan(ItemCount: 1000)",
+            "value": 19.054580510656038,
+            "unit": "ns",
+            "range": "± 0.7185243486791133"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_RangeScan(ItemCount: 100000)",
+            "value": 7079.784362284342,
+            "unit": "ns",
+            "range": "± 611.9047206774575"
+          },
+          {
+            "name": "RankedSetBenchmark.List_RangeScanSorted(ItemCount: 100000)",
+            "value": 598.2487365086873,
+            "unit": "ns",
+            "range": "± 7.428546671371888"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_RangeScan(ItemCount: 100000)",
+            "value": 1085.116435018079,
+            "unit": "ns",
+            "range": "± 11.840107364534678"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Rank(ItemCount: 1000)",
+            "value": 221783.48079164568,
+            "unit": "ns",
+            "range": "± 5365.59461462458"
+          },
+          {
+            "name": "RankedSetBenchmark.List_RankBinarySearch(ItemCount: 1000)",
+            "value": 1767.0344999949136,
+            "unit": "ns",
+            "range": "± 17.34481875204"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Rank(ItemCount: 1000)",
+            "value": 1582.6641359658076,
+            "unit": "ns",
+            "range": "± 30.715382469320822"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Rank(ItemCount: 100000)",
+            "value": 25942630.161458332,
+            "unit": "ns",
+            "range": "± 1335970.2612316818"
+          },
+          {
+            "name": "RankedSetBenchmark.List_RankBinarySearch(ItemCount: 100000)",
+            "value": 2544.4594572703045,
+            "unit": "ns",
+            "range": "± 14.776965137147357"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Rank(ItemCount: 100000)",
+            "value": 2890.9740820566813,
+            "unit": "ns",
+            "range": "± 25.594825538028665"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 35548.18947368421,
+            "unit": "ns",
+            "range": "± 4203.361665928547"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 57752.566844919784,
+            "unit": "ns",
+            "range": "± 5100.821584632192"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.CelerityMultiSet_Remove(ItemCount: 1000)",
+            "value": 59914.2,
+            "unit": "ns",
+            "range": "± 3854.86113625795"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.RobinHoodDictionary_Remove(ItemCount: 1000)",
+            "value": 79180.76595744681,
+            "unit": "ns",
+            "range": "± 5677.434283535271"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Remove(ItemCount: 1000)",
+            "value": 473072.2105263158,
+            "unit": "ns",
+            "range": "± 10016.912508913989"
+          },
+          {
+            "name": "RankedSetBenchmark.List_RemoveSorted(ItemCount: 1000)",
+            "value": 99760.65315315315,
+            "unit": "ns",
+            "range": "± 4203.397117912645"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Remove(ItemCount: 1000)",
+            "value": 192189.66666666666,
+            "unit": "ns",
+            "range": "± 10376.790098377269"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 10285.041264851889,
+            "unit": "ns",
+            "range": "± 246.0917148573461"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_Remove(ItemCount: 1000)",
+            "value": 8677.542465718587,
+            "unit": "ns",
+            "range": "± 77.3369848796256"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 506200.52173913043,
+            "unit": "ns",
+            "range": "± 12688.411882482254"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 1582114.75,
+            "unit": "ns",
+            "range": "± 24829.99433449114"
+          },
+          {
+            "name": "CelerityMultiSetBenchmark.CelerityMultiSet_Remove(ItemCount: 100000)",
+            "value": 1038156.0833333334,
+            "unit": "ns",
+            "range": "± 18976.123078941677"
+          },
+          {
+            "name": "RobinHoodDictionaryBenchmark.RobinHoodDictionary_Remove(ItemCount: 100000)",
+            "value": 2777451.216666667,
+            "unit": "ns",
+            "range": "± 2184069.0637679007"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Remove(ItemCount: 100000)",
+            "value": 23738671.431034483,
+            "unit": "ns",
+            "range": "± 411346.81181209756"
+          },
+          {
+            "name": "RankedSetBenchmark.List_RemoveSorted(ItemCount: 100000)",
+            "value": 173733169.2142857,
+            "unit": "ns",
+            "range": "± 256142.2330102377"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Remove(ItemCount: 100000)",
+            "value": 12854777.448275862,
+            "unit": "ns",
+            "range": "± 101872.59728273915"
+          },
+          {
+            "name": "CuckooFilterBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 2830034.029658565,
+            "unit": "ns",
+            "range": "± 28595.1779738066"
+          },
+          {
+            "name": "CuckooFilterBenchmark.CuckooFilter_Remove(ItemCount: 100000)",
+            "value": 3510079.562109375,
+            "unit": "ns",
+            "range": "± 64515.9841168128"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.List_Sample(ItemCount: 1000)",
+            "value": 1880.9066345214844,
+            "unit": "ns",
+            "range": "± 19.429410411231093"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.ReservoirSampler_Sample(ItemCount: 1000)",
+            "value": 11454.853030734592,
+            "unit": "ns",
+            "range": "± 103.46397818232093"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.List_Sample(ItemCount: 100000)",
+            "value": 177299.2151096889,
+            "unit": "ns",
+            "range": "± 1088.564769415112"
+          },
+          {
+            "name": "ReservoirSamplerBenchmark.ReservoirSampler_Sample(ItemCount: 100000)",
+            "value": 105811.4574105399,
+            "unit": "ns",
+            "range": "± 1683.6142797607351"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Select(ItemCount: 1000)",
+            "value": 329115.3204996745,
+            "unit": "ns",
+            "range": "± 17828.760699448125"
+          },
+          {
+            "name": "RankedSetBenchmark.List_SelectByIndex(ItemCount: 1000)",
+            "value": 60.66181658903758,
+            "unit": "ns",
+            "range": "± 0.7985092649814729"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Select(ItemCount: 1000)",
+            "value": 207.51653648217518,
+            "unit": "ns",
+            "range": "± 0.9818466889731807"
+          },
+          {
+            "name": "RankedSetBenchmark.SortedSet_Select(ItemCount: 100000)",
+            "value": 32755860.076388888,
+            "unit": "ns",
+            "range": "± 361705.9330872205"
+          },
+          {
+            "name": "RankedSetBenchmark.List_SelectByIndex(ItemCount: 100000)",
+            "value": 61.078845824797945,
+            "unit": "ns",
+            "range": "± 0.6448804913154687"
+          },
+          {
+            "name": "RankedSetBenchmark.RankedSet_Select(ItemCount: 100000)",
+            "value": 1065.7864413579305,
+            "unit": "ns",
+            "range": "± 5.794433359240581"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_SortedScan(ItemCount: 1000)",
+            "value": 359167.48213704425,
+            "unit": "ns",
+            "range": "± 3463.0718832892885"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_SortedScan(ItemCount: 1000)",
+            "value": 74457.43774210612,
+            "unit": "ns",
+            "range": "± 676.771025684985"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_SortedScan(ItemCount: 100000)",
+            "value": 35592663.08059964,
+            "unit": "ns",
+            "range": "± 83859.50077701906"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_SortedScan(ItemCount: 100000)",
+            "value": 2467356.506417411,
+            "unit": "ns",
+            "range": "± 15430.673931155814"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_WindowQuery(ItemCount: 1000)",
+            "value": 2319585.567903646,
+            "unit": "ns",
+            "range": "± 13727.75441374681"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_WindowQuery(ItemCount: 1000)",
+            "value": 100038.52001953125,
+            "unit": "ns",
+            "range": "± 818.0193572133827"
+          },
+          {
+            "name": "IntervalTreeBenchmark.List_WindowQuery(ItemCount: 100000)",
+            "value": 381443846.4,
+            "unit": "ns",
+            "range": "± 5843363.095174935"
+          },
+          {
+            "name": "IntervalTreeBenchmark.IntervalTree_WindowQuery(ItemCount: 100000)",
+            "value": 4528101.38200431,
+            "unit": "ns",
+            "range": "± 44530.92504013293"
+          },
+          {
+            "name": "SmallSetBenchmark.HashSet_Add(ItemCount: 8)",
+            "value": 171.0194504601615,
+            "unit": "ns",
+            "range": "± 15.675735422085443"
+          },
+          {
+            "name": "SmallSetBenchmark.SmallSet_Add(ItemCount: 8)",
+            "value": 58.36976026872109,
+            "unit": "ns",
+            "range": "± 0.7261246306056686"
+          },
+          {
+            "name": "SmallSetBenchmark.HashSet_Add(ItemCount: 64)",
+            "value": 784.4942712050217,
+            "unit": "ns",
+            "range": "± 8.10938711513708"
+          },
+          {
+            "name": "SmallSetBenchmark.SmallSet_Add(ItemCount: 64)",
+            "value": 1927.6790080751691,
+            "unit": "ns",
+            "range": "± 345.881539748447"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 6815.966453026081,
+            "unit": "ns",
+            "range": "± 78.82814919861235"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_Add(ItemCount: 1000)",
+            "value": 6470.191855367025,
+            "unit": "ns",
+            "range": "± 64.40473777600958"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 1693024.7905745967,
+            "unit": "ns",
+            "range": "± 30858.882740252353"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_Add(ItemCount: 100000)",
+            "value": 1483757.7523475061,
+            "unit": "ns",
+            "range": "± 46556.47359981605"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenDictionary_Build(ItemCount: 1000)",
+            "value": 167636.4167198768,
+            "unit": "ns",
+            "range": "± 580.4830802868761"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenSet_Build(ItemCount: 1000)",
+            "value": 173106.96766399516,
+            "unit": "ns",
+            "range": "± 1151.457255957337"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenCelerityDictionary_Build(ItemCount: 1000)",
+            "value": 3652633.4384264825,
+            "unit": "ns",
+            "range": "± 134736.49508674187"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenCeleritySet_Build(ItemCount: 1000)",
+            "value": 2326475.5459321123,
+            "unit": "ns",
+            "range": "± 20323.32970616306"
+          },
+          {
+            "name": "RTreeBenchmark.Array_Build(ItemCount: 1000)",
+            "value": 1832.692755606515,
+            "unit": "ns",
+            "range": "± 240.80662404189854"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_Build(ItemCount: 1000)",
+            "value": 71149.50745985244,
+            "unit": "ns",
+            "range": "± 2858.1237390480032"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Dictionary_Build(ItemCount: 1000)",
+            "value": 122128.01338907877,
+            "unit": "ns",
+            "range": "± 2102.4808080701673"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Build(ItemCount: 1000)",
+            "value": 60962.44567192925,
+            "unit": "ns",
+            "range": "± 829.8595690211723"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenDictionary_Build(ItemCount: 100000)",
+            "value": 29680527.00367647,
+            "unit": "ns",
+            "range": "± 578603.7345675483"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenSet_Build(ItemCount: 100000)",
+            "value": 29592373.16629464,
+            "unit": "ns",
+            "range": "± 374393.53115471033"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenCelerityDictionary_Build(ItemCount: 100000)",
+            "value": 1489698193.1625,
+            "unit": "ns",
+            "range": "± 251120052.81891137"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenCeleritySet_Build(ItemCount: 100000)",
+            "value": 1577173458.6551723,
+            "unit": "ns",
+            "range": "± 88897889.65289153"
+          },
+          {
+            "name": "RTreeBenchmark.Array_Build(ItemCount: 100000)",
+            "value": 418746.1290039063,
+            "unit": "ns",
+            "range": "± 12990.262178292462"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_Build(ItemCount: 100000)",
+            "value": 70562175.82327586,
+            "unit": "ns",
+            "range": "± 104999.68469089305"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Dictionary_Build(ItemCount: 100000)",
+            "value": 59461012.51622421,
+            "unit": "ns",
+            "range": "± 2883916.222945766"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Build(ItemCount: 100000)",
+            "value": 14810671.651939655,
+            "unit": "ns",
+            "range": "± 157980.2486535782"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Array_BuildTight(ItemCount: 1000)",
+            "value": 61556.71826825823,
+            "unit": "ns",
+            "range": "± 334.7603832981487"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_BuildTight(ItemCount: 1000)",
+            "value": 61766.423278808594,
+            "unit": "ns",
+            "range": "± 499.03198720001694"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Array_BuildTight(ItemCount: 100000)",
+            "value": 19886650.291087963,
+            "unit": "ns",
+            "range": "± 168259.42769076506"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_BuildTight(ItemCount: 100000)",
+            "value": 14769191.06640625,
+            "unit": "ns",
+            "range": "± 78927.8217207013"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_ClearRefill(ItemCount: 1000)",
+            "value": 8088.436327333803,
+            "unit": "ns",
+            "range": "± 1934.227612418974"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_ClearRefill(ItemCount: 1000)",
+            "value": 5032.708069130226,
+            "unit": "ns",
+            "range": "± 34.606022505123455"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_ClearRefill(ItemCount: 100000)",
+            "value": 1294599.0724339979,
+            "unit": "ns",
+            "range": "± 27653.874537116517"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_ClearRefill(ItemCount: 100000)",
+            "value": 676905.8179434317,
+            "unit": "ns",
+            "range": "± 2916.0707806904115"
+          },
+          {
+            "name": "SmallSetBenchmark.HashSet_Contains(ItemCount: 8)",
+            "value": 37.409175382210655,
+            "unit": "ns",
+            "range": "± 0.060610863767034166"
+          },
+          {
+            "name": "SmallSetBenchmark.SmallSet_Contains(ItemCount: 8)",
+            "value": 20.0434249727165,
+            "unit": "ns",
+            "range": "± 0.40885642931110655"
+          },
+          {
+            "name": "SmallSetBenchmark.HashSet_Contains(ItemCount: 64)",
+            "value": 303.438972898892,
+            "unit": "ns",
+            "range": "± 0.6773069895081518"
+          },
+          {
+            "name": "SmallSetBenchmark.SmallSet_Contains(ItemCount: 64)",
+            "value": 926.8581644058228,
+            "unit": "ns",
+            "range": "± 11.674349853808383"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenSet_Contains(ItemCount: 1000)",
+            "value": 7192.183136834039,
+            "unit": "ns",
+            "range": "± 88.73408216696802"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4619.486763916016,
+            "unit": "ns",
+            "range": "± 4.885953547825834"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenCeleritySet_Contains(ItemCount: 1000)",
+            "value": 79680.49162510464,
+            "unit": "ns",
+            "range": "± 494.68333154303036"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_Contains(ItemCount: 1000)",
+            "value": 1429.7281107019496,
+            "unit": "ns",
+            "range": "± 1.77652395987679"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenSet_Contains(ItemCount: 100000)",
+            "value": 1878463.5891203703,
+            "unit": "ns",
+            "range": "± 13638.624105768116"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1272139.3997145433,
+            "unit": "ns",
+            "range": "± 9240.866898753173"
+          },
+          {
+            "name": "FrozenCeleritySetBenchmark.FrozenCeleritySet_Contains(ItemCount: 100000)",
+            "value": 8430879.98113567,
+            "unit": "ns",
+            "range": "± 193612.08533422614"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_Contains(ItemCount: 100000)",
+            "value": 250767.3259529903,
+            "unit": "ns",
+            "range": "± 12073.356030325314"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.PriorityQueue_DecreaseKey(ItemCount: 1000)",
+            "value": 80558.69962956355,
+            "unit": "ns",
+            "range": "± 2529.4478699287633"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.IndexedPriorityQueue_DecreaseKey(ItemCount: 1000)",
+            "value": 188767.3167236328,
+            "unit": "ns",
+            "range": "± 837.7632317001699"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.PriorityQueue_DecreaseKey(ItemCount: 100000)",
+            "value": 35055429.7908046,
+            "unit": "ns",
+            "range": "± 413484.9439232333"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.IndexedPriorityQueue_DecreaseKey(ItemCount: 100000)",
+            "value": 56542375.18571429,
+            "unit": "ns",
+            "range": "± 241833.80290722722"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.PriorityQueue_Enqueue(ItemCount: 1000)",
+            "value": 4696.601706441244,
+            "unit": "ns",
+            "range": "± 47.868729294377275"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.IndexedPriorityQueue_Enqueue(ItemCount: 1000)",
+            "value": 29926.487206420898,
+            "unit": "ns",
+            "range": "± 79.23612622157432"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.PriorityQueue_Enqueue(ItemCount: 100000)",
+            "value": 1177004.5024256553,
+            "unit": "ns",
+            "range": "± 20639.01764926595"
+          },
+          {
+            "name": "IndexedPriorityQueueBenchmark.IndexedPriorityQueue_Enqueue(ItemCount: 100000)",
+            "value": 6484697.009982639,
+            "unit": "ns",
+            "range": "± 126132.0671949811"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Keys(ItemCount: 100)",
+            "value": 491.5260003761009,
+            "unit": "ns",
+            "range": "± 0.9147437744244747"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Keys(ItemCount: 100)",
+            "value": 521.7291557658803,
+            "unit": "ns",
+            "range": "± 15.024338598985405"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Keys(ItemCount: 1000)",
+            "value": 8931.46489687319,
+            "unit": "ns",
+            "range": "± 52.65912283544602"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Keys(ItemCount: 1000)",
+            "value": 1716.5396965645455,
+            "unit": "ns",
+            "range": "± 42.70403520237487"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Keys(ItemCount: 100000)",
+            "value": 3813510.23046875,
+            "unit": "ns",
+            "range": "± 35765.979423462275"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Keys(ItemCount: 100000)",
+            "value": 65139.99096191406,
+            "unit": "ns",
+            "range": "± 965.8896522353585"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Keys(ItemCount: 1000000)",
+            "value": 39785240.84911243,
+            "unit": "ns",
+            "range": "± 39493.470021080546"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Keys(ItemCount: 1000000)",
+            "value": 649026.222421875,
+            "unit": "ns",
+            "range": "± 1119.1346955562105"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenDictionary_Lookup(ItemCount: 1000)",
+            "value": 7619.540564023531,
+            "unit": "ns",
+            "range": "± 12.986892751369716"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenCelerityDictionary_Lookup(ItemCount: 1000)",
+            "value": 80158.54947916667,
+            "unit": "ns",
+            "range": "± 155.7314408844858"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenDictionary_Lookup(ItemCount: 100000)",
+            "value": 1963540.2101353237,
+            "unit": "ns",
+            "range": "± 34165.48775454031"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenCelerityDictionary_Lookup(ItemCount: 100000)",
+            "value": 8317413.881696428,
+            "unit": "ns",
+            "range": "± 79754.21728190663"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_Neighbors(ItemCount: 1000)",
+            "value": 6656.349947894061,
+            "unit": "ns",
+            "range": "± 25.00399514659977"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Neighbors(ItemCount: 1000)",
+            "value": 5010.145350703487,
+            "unit": "ns",
+            "range": "± 2.562084099646312"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_Neighbors(ItemCount: 100000)",
+            "value": 1933940.5739320528,
+            "unit": "ns",
+            "range": "± 147467.27044782546"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Neighbors(ItemCount: 100000)",
+            "value": 1182131.9898726852,
+            "unit": "ns",
+            "range": "± 29089.32573526773"
+          },
+          {
+            "name": "RTreeBenchmark.Array_OverlapQuery(ItemCount: 1000)",
+            "value": 1966518.0419560184,
+            "unit": "ns",
+            "range": "± 23073.514464435342"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_OverlapQuery(ItemCount: 1000)",
+            "value": 149632.56551419772,
+            "unit": "ns",
+            "range": "± 344.14977396917106"
+          },
+          {
+            "name": "RTreeBenchmark.Array_OverlapQuery(ItemCount: 100000)",
+            "value": 492097736.28,
+            "unit": "ns",
+            "range": "± 3005669.1391723063"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_OverlapQuery(ItemCount: 100000)",
+            "value": 3455651.211388221,
+            "unit": "ns",
+            "range": "± 7288.401475172809"
+          },
+          {
+            "name": "RTreeBenchmark.Array_OverlapSorted(ItemCount: 1000)",
+            "value": 201209.77078792028,
+            "unit": "ns",
+            "range": "± 21766.55223786506"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_OverlapSorted(ItemCount: 1000)",
+            "value": 149479.41287344473,
+            "unit": "ns",
+            "range": "± 562.4412908288372"
+          },
+          {
+            "name": "RTreeBenchmark.Array_OverlapSorted(ItemCount: 100000)",
+            "value": 33457301.622988507,
+            "unit": "ns",
+            "range": "± 257945.74628412505"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_OverlapSorted(ItemCount: 100000)",
+            "value": 3453941.20703125,
+            "unit": "ns",
+            "range": "± 9848.664848863304"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Pairs(ItemCount: 100)",
+            "value": 714.4190607424135,
+            "unit": "ns",
+            "range": "± 6.6628028309760445"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Pairs(ItemCount: 100)",
+            "value": 838.2121533460395,
+            "unit": "ns",
+            "range": "± 26.14441487606493"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Pairs(ItemCount: 1000)",
+            "value": 14701.021200109411,
+            "unit": "ns",
+            "range": "± 140.42097847584668"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Pairs(ItemCount: 1000)",
+            "value": 3208.284291812352,
+            "unit": "ns",
+            "range": "± 94.04662696787426"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Pairs(ItemCount: 100000)",
+            "value": 5534577.919084822,
+            "unit": "ns",
+            "range": "± 23226.284654914223"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Pairs(ItemCount: 100000)",
+            "value": 234785.61971028647,
+            "unit": "ns",
+            "range": "± 893.7507397253061"
+          },
+          {
+            "name": "CountingSortBenchmark.Array_Pairs(ItemCount: 1000000)",
+            "value": 60550335.64285714,
+            "unit": "ns",
+            "range": "± 94742.73127078918"
+          },
+          {
+            "name": "CountingSortBenchmark.CountingSort_Pairs(ItemCount: 1000000)",
+            "value": 2362593.740705819,
+            "unit": "ns",
+            "range": "± 6881.54093910161"
+          },
+          {
+            "name": "RTreeBenchmark.Array_PointQuery(ItemCount: 1000)",
+            "value": 1534023.1332165948,
+            "unit": "ns",
+            "range": "± 4852.6149318003545"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_PointQuery(ItemCount: 1000)",
+            "value": 135224.05027488427,
+            "unit": "ns",
+            "range": "± 2744.111702981722"
+          },
+          {
+            "name": "RTreeBenchmark.Array_PointQuery(ItemCount: 100000)",
+            "value": 473214308.44827586,
+            "unit": "ns",
+            "range": "± 2368618.5098034856"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_PointQuery(ItemCount: 100000)",
+            "value": 1832833.1856863839,
+            "unit": "ns",
+            "range": "± 3723.4001110364757"
+          },
+          {
+            "name": "RTreeBenchmark.Array_PointSorted(ItemCount: 1000)",
+            "value": 69291.43543743265,
+            "unit": "ns",
+            "range": "± 113.6032588540848"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_PointSorted(ItemCount: 1000)",
+            "value": 133258.15548001803,
+            "unit": "ns",
+            "range": "± 151.27186871576455"
+          },
+          {
+            "name": "RTreeBenchmark.Array_PointSorted(ItemCount: 100000)",
+            "value": 19652122.462962963,
+            "unit": "ns",
+            "range": "± 8189.0307357695865"
+          },
+          {
+            "name": "RTreeBenchmark.RTree_PointSorted(ItemCount: 100000)",
+            "value": 1856553.0104528356,
+            "unit": "ns",
+            "range": "± 19169.808615696616"
+          },
+          {
+            "name": "SmallSetBenchmark.HashSet_Remove(ItemCount: 8)",
+            "value": 463.82460732984293,
+            "unit": "ns",
+            "range": "± 70.44175923359627"
+          },
+          {
+            "name": "SmallSetBenchmark.SmallSet_Remove(ItemCount: 8)",
+            "value": 1019.235632183908,
+            "unit": "ns",
+            "range": "± 83.2799908339179"
+          },
+          {
+            "name": "SmallSetBenchmark.HashSet_Remove(ItemCount: 64)",
+            "value": 1601.0251256281408,
+            "unit": "ns",
+            "range": "± 314.1878248190154"
+          },
+          {
+            "name": "SmallSetBenchmark.SmallSet_Remove(ItemCount: 64)",
+            "value": 20225.992753623188,
+            "unit": "ns",
+            "range": "± 665.0202699959913"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 32531.91772151899,
+            "unit": "ns",
+            "range": "± 1331.1076538327686"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_Remove(ItemCount: 1000)",
+            "value": 21313.82162162162,
+            "unit": "ns",
+            "range": "± 1385.722424039709"
+          },
+          {
+            "name": "SparseSetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1496861.8833333333,
+            "unit": "ns",
+            "range": "± 15919.437009562767"
+          },
+          {
+            "name": "SparseSetBenchmark.SparseSet_Remove(ItemCount: 100000)",
+            "value": 658071,
+            "unit": "ns",
+            "range": "± 12000.100810687662"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_Reverse(ItemCount: 1000)",
+            "value": 84257.17931256976,
+            "unit": "ns",
+            "range": "± 577.6270271781447"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Reverse(ItemCount: 1000)",
+            "value": 17609.322362439387,
+            "unit": "ns",
+            "range": "± 48.443225039357316"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_Reverse(ItemCount: 100000)",
+            "value": 54602537.239057235,
+            "unit": "ns",
+            "range": "± 1067369.9995644214"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Reverse(ItemCount: 100000)",
+            "value": 3042349.3774414062,
+            "unit": "ns",
+            "range": "± 25347.850366329178"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Array_ReverseTight(ItemCount: 1000)",
+            "value": 31214.207467538337,
+            "unit": "ns",
+            "range": "± 398.8428502807241"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_ReverseTight(ItemCount: 1000)",
+            "value": 17498.521693303035,
+            "unit": "ns",
+            "range": "± 111.99295588167838"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Array_ReverseTight(ItemCount: 100000)",
+            "value": 12536013.85145548,
+            "unit": "ns",
+            "range": "± 534530.2351853276"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_ReverseTight(ItemCount: 100000)",
+            "value": 3024789.7951311385,
+            "unit": "ns",
+            "range": "± 18470.096426526306"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenDictionary_SpanLookup(ItemCount: 1000)",
+            "value": 29078.03618254485,
+            "unit": "ns",
+            "range": "± 313.67786752617576"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenCelerityDictionary_SpanLookup(ItemCount: 1000)",
+            "value": 84338.1398751395,
+            "unit": "ns",
+            "range": "± 121.82555862518495"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenDictionary_SpanLookup(ItemCount: 100000)",
+            "value": 5622323.958378233,
+            "unit": "ns",
+            "range": "± 124307.43703028825"
+          },
+          {
+            "name": "FrozenCelerityDictionaryBenchmark.FrozenCelerityDictionary_SpanLookup(ItemCount: 100000)",
+            "value": 9639619.861778846,
+            "unit": "ns",
+            "range": "± 66661.34519379784"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_Topological(ItemCount: 1000)",
+            "value": 24612.144933064777,
+            "unit": "ns",
+            "range": "± 215.70890727211977"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Topological(ItemCount: 1000)",
+            "value": 17526.027883257186,
+            "unit": "ns",
+            "range": "± 1270.4578803608713"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_Topological(ItemCount: 100000)",
+            "value": 10584106.185381357,
+            "unit": "ns",
+            "range": "± 855514.6458151732"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Topological(ItemCount: 100000)",
+            "value": 4736375.614955357,
+            "unit": "ns",
+            "range": "± 13506.62983763578"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Dictionary_Traverse(ItemCount: 1000)",
+            "value": 15750.359404952438,
+            "unit": "ns",
+            "range": "± 7.561157818002834"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Traverse(ItemCount: 1000)",
+            "value": 6813.543510437012,
+            "unit": "ns",
+            "range": "± 12.620948667755144"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Dictionary_Traverse(ItemCount: 100000)",
+            "value": 2771966.5614583334,
+            "unit": "ns",
+            "range": "± 54451.61111147849"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_Traverse(ItemCount: 100000)",
+            "value": 1102035.361291956,
+            "unit": "ns",
+            "range": "± 22133.138137262504"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_TraverseArray(ItemCount: 1000)",
+            "value": 7987.515463608962,
+            "unit": "ns",
+            "range": "± 15.62742896782489"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_TraverseArray(ItemCount: 1000)",
+            "value": 7245.721789042155,
+            "unit": "ns",
+            "range": "± 375.5330999439895"
+          },
+          {
+            "name": "CompressedGraphBenchmark.List_TraverseArray(ItemCount: 100000)",
+            "value": 2223286.0984933036,
+            "unit": "ns",
+            "range": "± 20559.287192886753"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_TraverseArray(ItemCount: 100000)",
+            "value": 1089512.5290274785,
+            "unit": "ns",
+            "range": "± 20296.488422021437"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Array_TraverseTight(ItemCount: 1000)",
+            "value": 5863.275741994381,
+            "unit": "ns",
+            "range": "± 272.4841562532847"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_TraverseTight(ItemCount: 1000)",
+            "value": 6808.871923093443,
+            "unit": "ns",
+            "range": "± 18.08455885689308"
+          },
+          {
+            "name": "CompressedGraphBenchmark.Array_TraverseTight(ItemCount: 100000)",
+            "value": 1258476.928744612,
+            "unit": "ns",
+            "range": "± 5360.371279646463"
+          },
+          {
+            "name": "CompressedGraphBenchmark.CompressedGraph_TraverseTight(ItemCount: 100000)",
+            "value": 1078163.1470424107,
+            "unit": "ns",
+            "range": "± 2772.438472498253"
+          },
+          {
+            "name": "EnumSetBenchmark.HashSet_Add",
+            "value": 584.0833798408509,
+            "unit": "ns",
+            "range": "± 11.891164635470872"
+          },
+          {
+            "name": "EnumSetBenchmark.EnumSet_Add",
+            "value": 88.49868847773625,
+            "unit": "ns",
+            "range": "± 0.20468985477827897"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Add(ItemCount: 1000)",
+            "value": 66981.19381103516,
+            "unit": "ns",
+            "range": "± 677.7371185071146"
+          },
+          {
+            "name": "BloomFilterBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 12225.968887329102,
+            "unit": "ns",
+            "range": "± 121.27314648021394"
+          },
+          {
+            "name": "DDSketchBenchmark.List_Add(ItemCount: 1000)",
+            "value": 2021.273929001449,
+            "unit": "ns",
+            "range": "± 73.41458451914816"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Add(ItemCount: 1000)",
+            "value": 53801.82599312918,
+            "unit": "ns",
+            "range": "± 452.11010064907884"
+          },
+          {
+            "name": "BloomFilterBenchmark.BloomFilter_Add(ItemCount: 1000)",
+            "value": 14475.415419006347,
+            "unit": "ns",
+            "range": "± 15.212222615841592"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_Add(ItemCount: 1000)",
+            "value": 17504.337170192175,
+            "unit": "ns",
+            "range": "± 91.18948265240564"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Add(ItemCount: 100000)",
+            "value": 24003008.519791666,
+            "unit": "ns",
+            "range": "± 276877.2667939157"
+          },
+          {
+            "name": "BloomFilterBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 4608776.045061384,
+            "unit": "ns",
+            "range": "± 131643.71953288294"
+          },
+          {
+            "name": "DDSketchBenchmark.List_Add(ItemCount: 100000)",
+            "value": 376342.93885498046,
+            "unit": "ns",
+            "range": "± 28171.688595591073"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Add(ItemCount: 100000)",
+            "value": 16230753.800925925,
+            "unit": "ns",
+            "range": "± 20660.950529202262"
+          },
+          {
+            "name": "BloomFilterBenchmark.BloomFilter_Add(ItemCount: 100000)",
+            "value": 1096230.0336914062,
+            "unit": "ns",
+            "range": "± 6768.900515516696"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_Add(ItemCount: 100000)",
+            "value": 1716259.168344351,
+            "unit": "ns",
+            "range": "± 4332.6629998465805"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_Build(ItemCount: 1024)",
+            "value": 86.41506607191903,
+            "unit": "ns",
+            "range": "± 0.3526162062896695"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_Build(ItemCount: 1024)",
+            "value": 60.40260192188057,
+            "unit": "ns",
+            "range": "± 1.7412510827924268"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_Build(ItemCount: 1000000)",
+            "value": 68191.38826497395,
+            "unit": "ns",
+            "range": "± 501.6151131428237"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_Build(ItemCount: 1000000)",
+            "value": 87327.97033284506,
+            "unit": "ns",
+            "range": "± 695.0690843072434"
+          },
+          {
+            "name": "EnumSetBenchmark.HashSet_Contains",
+            "value": 175.35163776962847,
+            "unit": "ns",
+            "range": "± 0.08832054750559269"
+          },
+          {
+            "name": "EnumSetBenchmark.EnumSet_Contains",
+            "value": 46.02500072916349,
+            "unit": "ns",
+            "range": "± 0.08119305653725607"
+          },
+          {
+            "name": "BloomFilterBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4740.2143729881,
+            "unit": "ns",
+            "range": "± 32.69676145816879"
+          },
+          {
+            "name": "BloomFilterBenchmark.BloomFilter_Contains(ItemCount: 1000)",
+            "value": 12518.609617004395,
+            "unit": "ns",
+            "range": "± 7.934141410295538"
+          },
+          {
+            "name": "BloomFilterBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1557107.7825055805,
+            "unit": "ns",
+            "range": "± 2935.8529058787217"
+          },
+          {
+            "name": "BloomFilterBenchmark.BloomFilter_Contains(ItemCount: 100000)",
+            "value": 869648.969125601,
+            "unit": "ns",
+            "range": "± 419.58861976570495"
+          },
+          {
+            "name": "BloomFilterBenchmark.HashSet_ContainsMissing(ItemCount: 1000)",
+            "value": 4541.272395794208,
+            "unit": "ns",
+            "range": "± 5.601120341223563"
+          },
+          {
+            "name": "BloomFilterBenchmark.BloomFilter_ContainsMissing(ItemCount: 1000)",
+            "value": 3528.9733486833243,
+            "unit": "ns",
+            "range": "± 12.894979996600163"
+          },
+          {
+            "name": "BloomFilterBenchmark.HashSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1937204.542689732,
+            "unit": "ns",
+            "range": "± 3699.3647670096952"
+          },
+          {
+            "name": "BloomFilterBenchmark.BloomFilter_ContainsMissing(ItemCount: 100000)",
+            "value": 1491030.979341947,
+            "unit": "ns",
+            "range": "± 582.1655923570984"
+          },
+          {
+            "name": "StringInternTableBenchmark.Dictionary_Dedupe(ItemCount: 1000)",
+            "value": 33806.692131305565,
+            "unit": "ns",
+            "range": "± 340.66948747555125"
+          },
+          {
+            "name": "StringInternTableBenchmark.StringInternTable_Dedupe(ItemCount: 1000)",
+            "value": 35644.3670275458,
+            "unit": "ns",
+            "range": "± 83.62452719905873"
+          },
+          {
+            "name": "StringInternTableBenchmark.Dictionary_Dedupe(ItemCount: 100000)",
+            "value": 3316365.9152994794,
+            "unit": "ns",
+            "range": "± 38845.45358735689"
+          },
+          {
+            "name": "StringInternTableBenchmark.StringInternTable_Dedupe(ItemCount: 100000)",
+            "value": 3198940.7307581017,
+            "unit": "ns",
+            "range": "± 4575.146116494752"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 29336.4777810233,
+            "unit": "ns",
+            "range": "± 311.1197126513194"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.CelerityMultiMap_Insert(ItemCount: 1000)",
+            "value": 37895.274977463945,
+            "unit": "ns",
+            "range": "± 326.606698872447"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 12497416.067773437,
+            "unit": "ns",
+            "range": "± 528278.2371231735"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.CelerityMultiMap_Insert(ItemCount: 100000)",
+            "value": 16915938.11551339,
+            "unit": "ns",
+            "range": "± 127933.65816855174"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Lookup(ItemCount: 1000)",
+            "value": 37539.43822860718,
+            "unit": "ns",
+            "range": "± 2122.902413260676"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 5018.909719848632,
+            "unit": "ns",
+            "range": "± 39.544431695310685"
+          },
+          {
+            "name": "StringInternTableBenchmark.HashSet_Lookup(ItemCount: 1000)",
+            "value": 33425.21441977365,
+            "unit": "ns",
+            "range": "± 953.7171277554377"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Lookup(ItemCount: 1000)",
+            "value": 25499.986762491862,
+            "unit": "ns",
+            "range": "± 138.373003182218"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.CelerityMultiMap_Lookup(ItemCount: 1000)",
+            "value": 2360.509267807007,
+            "unit": "ns",
+            "range": "± 7.359202869075664"
+          },
+          {
+            "name": "StringInternTableBenchmark.StringInternTable_Lookup(ItemCount: 1000)",
+            "value": 31397.02587890625,
+            "unit": "ns",
+            "range": "± 18.090752887756604"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Lookup(ItemCount: 100000)",
+            "value": 18460896.50558036,
+            "unit": "ns",
+            "range": "± 170332.6201270832"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1749954.9347446987,
+            "unit": "ns",
+            "range": "± 4612.993956128616"
+          },
+          {
+            "name": "StringInternTableBenchmark.HashSet_Lookup(ItemCount: 100000)",
+            "value": 3311635.332165948,
+            "unit": "ns",
+            "range": "± 53122.62644210559"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Lookup(ItemCount: 100000)",
+            "value": 13327913.587239584,
+            "unit": "ns",
+            "range": "± 31032.978977611867"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.CelerityMultiMap_Lookup(ItemCount: 100000)",
+            "value": 740929.429720052,
+            "unit": "ns",
+            "range": "± 6812.889988415973"
+          },
+          {
+            "name": "StringInternTableBenchmark.StringInternTable_Lookup(ItemCount: 100000)",
+            "value": 3182585.905552455,
+            "unit": "ns",
+            "range": "± 14700.25637695886"
+          },
+          {
+            "name": "DDSketchBenchmark.List_Mixed(ItemCount: 1000)",
+            "value": 12350.49796295166,
+            "unit": "ns",
+            "range": "± 544.4428635573778"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_Mixed(ItemCount: 1000)",
+            "value": 17942.271610654632,
+            "unit": "ns",
+            "range": "± 84.55316657980539"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Mixed(ItemCount: 1000)",
+            "value": 192560.48002115884,
+            "unit": "ns",
+            "range": "± 4451.253428074958"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Mixed(ItemCount: 1000)",
+            "value": 83036.50579616001,
+            "unit": "ns",
+            "range": "± 1069.8229877068038"
+          },
+          {
+            "name": "DDSketchBenchmark.List_Mixed(ItemCount: 100000)",
+            "value": 8459443.97935268,
+            "unit": "ns",
+            "range": "± 101480.25341042611"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_Mixed(ItemCount: 100000)",
+            "value": 1713736.3367745536,
+            "unit": "ns",
+            "range": "± 5793.470139965192"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Mixed(ItemCount: 100000)",
+            "value": 47892349.921630085,
+            "unit": "ns",
+            "range": "± 1044200.1796956729"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Mixed(ItemCount: 100000)",
+            "value": 26541802.711206898,
+            "unit": "ns",
+            "range": "± 110145.02950169714"
+          },
+          {
+            "name": "DDSketchBenchmark.List_Query(ItemCount: 1000)",
+            "value": 9425.045190077562,
+            "unit": "ns",
+            "range": "± 24.935576766684516"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_Query(ItemCount: 1000)",
+            "value": 187.05559714635214,
+            "unit": "ns",
+            "range": "± 0.2660022278899709"
+          },
+          {
+            "name": "DDSketchBenchmark.List_Query(ItemCount: 100000)",
+            "value": 7519011.760881697,
+            "unit": "ns",
+            "range": "± 7716.945008807182"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_Query(ItemCount: 100000)",
+            "value": 234.2651254689252,
+            "unit": "ns",
+            "range": "± 0.2233653588434618"
+          },
+          {
+            "name": "DDSketchBenchmark.Array_QueryPresorted(ItemCount: 1000)",
+            "value": 0.322483253163787,
+            "unit": "ns",
+            "range": "± 0.0026087758494211387"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_QueryPresorted(ItemCount: 1000)",
+            "value": 186.9756952400865,
+            "unit": "ns",
+            "range": "± 0.18118349105677747"
+          },
+          {
+            "name": "DDSketchBenchmark.Array_QueryPresorted(ItemCount: 100000)",
+            "value": 0.5087687044537493,
+            "unit": "ns",
+            "range": "± 0.0012161727924467553"
+          },
+          {
+            "name": "DDSketchBenchmark.DDSketch_QueryPresorted(ItemCount: 100000)",
+            "value": 234.35081697305043,
+            "unit": "ns",
+            "range": "± 0.2763245144717423"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_RangeScan(ItemCount: 1000)",
+            "value": 4502.188911437988,
+            "unit": "ns",
+            "range": "± 11.468309872979075"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_RangeScan(ItemCount: 1000)",
+            "value": 81.92165977401393,
+            "unit": "ns",
+            "range": "± 3.7907725712346885"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_RangeScan(ItemCount: 100000)",
+            "value": 1244848.8257677802,
+            "unit": "ns",
+            "range": "± 6082.013928307649"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_RangeScan(ItemCount: 100000)",
+            "value": 5807.843644460042,
+            "unit": "ns",
+            "range": "± 11.693158948707762"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_RankEarly(ItemCount: 1024)",
+            "value": 1231.320653632835,
+            "unit": "ns",
+            "range": "± 1.3195079286129525"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_RankEarly(ItemCount: 1024)",
+            "value": 1877.0043668746948,
+            "unit": "ns",
+            "range": "± 0.8418838477097844"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_RankEarly(ItemCount: 1000000)",
+            "value": 32731.300792552807,
+            "unit": "ns",
+            "range": "± 62.6344960145391"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_RankEarly(ItemCount: 1000000)",
+            "value": 1875.9086476785164,
+            "unit": "ns",
+            "range": "± 0.5293195289672126"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_RankLate(ItemCount: 1024)",
+            "value": 6434.882726796468,
+            "unit": "ns",
+            "range": "± 13.653560456905861"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_RankLate(ItemCount: 1024)",
+            "value": 1875.813589590567,
+            "unit": "ns",
+            "range": "± 0.583797793773577"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_RankLate(ItemCount: 1000000)",
+            "value": 4866392.576388889,
+            "unit": "ns",
+            "range": "± 6810.749842931341"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_RankLate(ItemCount: 1000000)",
+            "value": 1964.3342111375596,
+            "unit": "ns",
+            "range": "± 2.5403798617622426"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_RankMid(ItemCount: 1024)",
+            "value": 4864.553691864014,
+            "unit": "ns",
+            "range": "± 8.435821316050236"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_RankMid(ItemCount: 1024)",
+            "value": 1875.7461586761474,
+            "unit": "ns",
+            "range": "± 0.961609456723146"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_RankMid(ItemCount: 1000000)",
+            "value": 2474368.833767361,
+            "unit": "ns",
+            "range": "± 2642.4364912551337"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_RankMid(ItemCount: 1000000)",
+            "value": 1876.5366319509653,
+            "unit": "ns",
+            "range": "± 1.1865675175258046"
+          },
+          {
+            "name": "EnumSetBenchmark.HashSet_Remove",
+            "value": 3567.1417322834645,
+            "unit": "ns",
+            "range": "± 514.5628553767591"
+          },
+          {
+            "name": "EnumSetBenchmark.EnumSet_Remove",
+            "value": 1074.3148148148148,
+            "unit": "ns",
+            "range": "± 40.281005437074974"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Remove(ItemCount: 1000)",
+            "value": 787697.2258064516,
+            "unit": "ns",
+            "range": "± 14983.582579409322"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 34028.14705882353,
+            "unit": "ns",
+            "range": "± 4537.1046843898475"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Remove(ItemCount: 1000)",
+            "value": 305735.7,
+            "unit": "ns",
+            "range": "± 14050.78870045517"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.CelerityMultiMap_Remove(ItemCount: 1000)",
+            "value": 124663.46794871795,
+            "unit": "ns",
+            "range": "± 8715.346647128346"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.SortedDictionary_Remove(ItemCount: 100000)",
+            "value": 26773420.7,
+            "unit": "ns",
+            "range": "± 722138.4123607525"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 2194805.7407407407,
+            "unit": "ns",
+            "range": "± 349971.9553667783"
+          },
+          {
+            "name": "BTreeDictionaryBenchmark.BTreeDictionary_Remove(ItemCount: 100000)",
+            "value": 18208570.291666668,
+            "unit": "ns",
+            "range": "± 82959.64192984816"
+          },
+          {
+            "name": "CelerityMultiMapBenchmark.CelerityMultiMap_Remove(ItemCount: 100000)",
+            "value": 1921450.6769230769,
+            "unit": "ns",
+            "range": "± 187689.37687605526"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_Select(ItemCount: 100)",
+            "value": 472.63574860436574,
+            "unit": "ns",
+            "range": "± 9.27906535870603"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_Select(ItemCount: 100)",
+            "value": 375.0373672945746,
+            "unit": "ns",
+            "range": "± 50.15967618164099"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_Select(ItemCount: 1000)",
+            "value": 9973.204674857003,
+            "unit": "ns",
+            "range": "± 31.27539838220196"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_Select(ItemCount: 1000)",
+            "value": 5281.071953102394,
+            "unit": "ns",
+            "range": "± 297.19335813698353"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_Select(ItemCount: 1024)",
+            "value": 13016.691700688114,
+            "unit": "ns",
+            "range": "± 32.092456313125275"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_Select(ItemCount: 1024)",
+            "value": 11405.44728515625,
+            "unit": "ns",
+            "range": "± 20.035125132443433"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_Select(ItemCount: 100000)",
+            "value": 5844313.622916667,
+            "unit": "ns",
+            "range": "± 23843.077303924743"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_Select(ItemCount: 100000)",
+            "value": 999972.0036892361,
+            "unit": "ns",
+            "range": "± 1021.93465945396"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_Select(ItemCount: 1000000)",
+            "value": 66098647.48214286,
+            "unit": "ns",
+            "range": "± 377119.3971071823"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_Select(ItemCount: 1000000)",
+            "value": 8612461.533135775,
+            "unit": "ns",
+            "range": "± 1041661.9783601305"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.Array_Select(ItemCount: 1000000)",
+            "value": 4235767.4082704745,
+            "unit": "ns",
+            "range": "± 8005.220674619892"
+          },
+          {
+            "name": "RankSelectBitVectorBenchmark.RankSelectBitVector_Select(ItemCount: 1000000)",
+            "value": 25598.71744506836,
+            "unit": "ns",
+            "range": "± 179.68823730976095"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_SortPrefix(ItemCount: 100)",
+            "value": 484.2037629465903,
+            "unit": "ns",
+            "range": "± 7.787231216351429"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_SortPrefix(ItemCount: 100)",
+            "value": 341.1191005706787,
+            "unit": "ns",
+            "range": "± 10.509826216851664"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_SortPrefix(ItemCount: 1000)",
+            "value": 9354.773580616918,
+            "unit": "ns",
+            "range": "± 720.9902076021372"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_SortPrefix(ItemCount: 1000)",
+            "value": 5386.197676296892,
+            "unit": "ns",
+            "range": "± 554.2837471910912"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_SortPrefix(ItemCount: 100000)",
+            "value": 5853938.558854166,
+            "unit": "ns",
+            "range": "± 21589.296078848005"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_SortPrefix(ItemCount: 100000)",
+            "value": 1100463.3629324776,
+            "unit": "ns",
+            "range": "± 46128.365703004994"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_SortPrefix(ItemCount: 1000000)",
+            "value": 66519874.133928575,
+            "unit": "ns",
+            "range": "± 646429.5026468084"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_SortPrefix(ItemCount: 1000000)",
+            "value": 8786092.697467672,
+            "unit": "ns",
+            "range": "± 143644.15365454115"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopK(ItemCount: 100)",
+            "value": 482.8157632827759,
+            "unit": "ns",
+            "range": "± 8.059362899554047"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopK(ItemCount: 100)",
+            "value": 76.05158060150487,
+            "unit": "ns",
+            "range": "± 0.4187220174887741"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopK(ItemCount: 1000)",
+            "value": 8366.379252507137,
+            "unit": "ns",
+            "range": "± 106.55432975161644"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopK(ItemCount: 1000)",
+            "value": 1378.0128606387548,
+            "unit": "ns",
+            "range": "± 8.012319625495985"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopK(ItemCount: 100000)",
+            "value": 1873760.5280845906,
+            "unit": "ns",
+            "range": "± 7822.697409033124"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopK(ItemCount: 100000)",
+            "value": 413572.3807373047,
+            "unit": "ns",
+            "range": "± 1434.050185289748"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopK(ItemCount: 1000000)",
+            "value": 20657696.480324075,
+            "unit": "ns",
+            "range": "± 284964.44941346"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopK(ItemCount: 1000000)",
+            "value": 5457512.978515625,
+            "unit": "ns",
+            "range": "± 14256.564624687317"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopKHeap(ItemCount: 100)",
+            "value": 167.5071525020259,
+            "unit": "ns",
+            "range": "± 2.1553992279319028"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopKHeap(ItemCount: 100)",
+            "value": 75.9393460888129,
+            "unit": "ns",
+            "range": "± 0.11912128263328046"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopKHeap(ItemCount: 1000)",
+            "value": 2362.3445929068107,
+            "unit": "ns",
+            "range": "± 4.990735331922825"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopKHeap(ItemCount: 1000)",
+            "value": 1373.0223010253906,
+            "unit": "ns",
+            "range": "± 1.3536102187463273"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopKHeap(ItemCount: 100000)",
+            "value": 560435.4249855324,
+            "unit": "ns",
+            "range": "± 1674.0326772000913"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopKHeap(ItemCount: 100000)",
+            "value": 412947.9175180289,
+            "unit": "ns",
+            "range": "± 982.3075674587923"
+          },
+          {
+            "name": "PartialSortBenchmark.Array_TopKHeap(ItemCount: 1000000)",
+            "value": 6677134.919719827,
+            "unit": "ns",
+            "range": "± 106805.8605919186"
+          },
+          {
+            "name": "PartialSortBenchmark.PartialSort_TopKHeap(ItemCount: 1000000)",
+            "value": 5449611.785416666,
+            "unit": "ns",
+            "range": "± 10407.776803246326"
+          },
+          {
+            "name": "EnumSetBenchmark.HashSet_Union",
+            "value": 430.9785843906981,
+            "unit": "ns",
+            "range": "± 8.740086856491805"
+          },
+          {
+            "name": "EnumSetBenchmark.EnumSet_Union",
+            "value": 22.308552720423403,
+            "unit": "ns",
+            "range": "± 0.47231311926189634"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Add(ItemCount: 1000)",
+            "value": 33741.8330808367,
+            "unit": "ns",
+            "range": "± 366.0759201745862"
+          },
+          {
+            "name": "CeleritySetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 10231.848835754394,
+            "unit": "ns",
+            "range": "± 111.40773993780968"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Add(ItemCount: 1000)",
+            "value": 31594.062880943562,
+            "unit": "ns",
+            "range": "± 166.55347243355354"
+          },
+          {
+            "name": "CeleritySetBenchmark.CeleritySet_Add(ItemCount: 1000)",
+            "value": 7538.409792582194,
+            "unit": "ns",
+            "range": "± 62.223520566325746"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Add(ItemCount: 100000)",
+            "value": 17387539.529166665,
+            "unit": "ns",
+            "range": "± 164233.06754716576"
+          },
+          {
+            "name": "CeleritySetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 4221396.678199405,
+            "unit": "ns",
+            "range": "± 99170.33964000383"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Add(ItemCount: 100000)",
+            "value": 12167688.004464285,
+            "unit": "ns",
+            "range": "± 163670.13229649863"
+          },
+          {
+            "name": "CeleritySetBenchmark.CeleritySet_Add(ItemCount: 100000)",
+            "value": 2748903.260811942,
+            "unit": "ns",
+            "range": "± 52013.748191888655"
+          },
+          {
+            "name": "SuffixArrayBenchmark.Dictionary_Build(ItemCount: 1000)",
+            "value": 53336.35743995949,
+            "unit": "ns",
+            "range": "± 531.2859624513754"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Build(ItemCount: 1000)",
+            "value": 40929.874347555226,
+            "unit": "ns",
+            "range": "± 524.1833527699288"
+          },
+          {
+            "name": "SuffixArrayBenchmark.Dictionary_Build(ItemCount: 100000)",
+            "value": 13145232.005642362,
+            "unit": "ns",
+            "range": "± 468785.0907857561"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Build(ItemCount: 100000)",
+            "value": 8895679.715786638,
+            "unit": "ns",
+            "range": "± 92503.18129713151"
+          },
+          {
+            "name": "SuffixArrayBenchmark.String_Contains(ItemCount: 1000)",
+            "value": 857.1318082151741,
+            "unit": "ns",
+            "range": "± 17.301395994730957"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Contains(ItemCount: 1000)",
+            "value": 676.981904912878,
+            "unit": "ns",
+            "range": "± 0.42746522103503903"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Contains(ItemCount: 1000)",
+            "value": 12577.52110525278,
+            "unit": "ns",
+            "range": "± 32.40638024240789"
+          },
+          {
+            "name": "CeleritySetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 3655.994961420695,
+            "unit": "ns",
+            "range": "± 3.4266559010126065"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Contains(ItemCount: 1000)",
+            "value": 14191.6897519868,
+            "unit": "ns",
+            "range": "± 81.17322508511448"
+          },
+          {
+            "name": "CeleritySetBenchmark.CeleritySet_Contains(ItemCount: 1000)",
+            "value": 1593.8395713397435,
+            "unit": "ns",
+            "range": "± 44.64727471936534"
+          },
+          {
+            "name": "SuffixArrayBenchmark.String_Contains(ItemCount: 100000)",
+            "value": 72156.97027813947,
+            "unit": "ns",
+            "range": "± 60.614810540173465"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Contains(ItemCount: 100000)",
+            "value": 1117.5252814974103,
+            "unit": "ns",
+            "range": "± 4.393135173408354"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Contains(ItemCount: 100000)",
+            "value": 13285969.06796875,
+            "unit": "ns",
+            "range": "± 108970.69008131904"
+          },
+          {
+            "name": "CeleritySetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1186034.4415564905,
+            "unit": "ns",
+            "range": "± 17655.508051215726"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Contains(ItemCount: 100000)",
+            "value": 10803254.958333334,
+            "unit": "ns",
+            "range": "± 11738.34864032876"
+          },
+          {
+            "name": "CeleritySetBenchmark.CeleritySet_Contains(ItemCount: 100000)",
+            "value": 391825.24920864764,
+            "unit": "ns",
+            "range": "± 5351.313728018121"
+          },
+          {
+            "name": "SuffixArrayBenchmark.String_Count(ItemCount: 1000)",
+            "value": 1467.6911535944257,
+            "unit": "ns",
+            "range": "± 50.16253966399211"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Count(ItemCount: 1000)",
+            "value": 1239.5193561145238,
+            "unit": "ns",
+            "range": "± 0.3920466218284024"
+          },
+          {
+            "name": "SuffixArrayBenchmark.String_Count(ItemCount: 100000)",
+            "value": 127394.6437536169,
+            "unit": "ns",
+            "range": "± 256.0187090851849"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Count(ItemCount: 100000)",
+            "value": 2148.3816571728935,
+            "unit": "ns",
+            "range": "± 4.713800236055228"
+          },
+          {
+            "name": "SuffixArrayBenchmark.Dictionary_CountIndexed(ItemCount: 1000)",
+            "value": 193.401631565094,
+            "unit": "ns",
+            "range": "± 0.8355106360773793"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_CountIndexed(ItemCount: 1000)",
+            "value": 1252.4456941816543,
+            "unit": "ns",
+            "range": "± 0.9691177868960227"
+          },
+          {
+            "name": "SuffixArrayBenchmark.Dictionary_CountIndexed(ItemCount: 100000)",
+            "value": 208.10784792017054,
+            "unit": "ns",
+            "range": "± 1.2290588098435276"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_CountIndexed(ItemCount: 100000)",
+            "value": 2151.9356497192384,
+            "unit": "ns",
+            "range": "± 2.2960257547889236"
+          },
+          {
+            "name": "DequeBenchmark.LinkedList_Enumerate(ItemCount: 1000)",
+            "value": 1282.8796189853124,
+            "unit": "ns",
+            "range": "± 1.1584884458828837"
+          },
+          {
+            "name": "DequeBenchmark.Deque_Enumerate(ItemCount: 1000)",
+            "value": 824.2432151017366,
+            "unit": "ns",
+            "range": "± 0.35347107049656307"
+          },
+          {
+            "name": "DequeBenchmark.LinkedList_Enumerate(ItemCount: 100000)",
+            "value": 117727.45047607421,
+            "unit": "ns",
+            "range": "± 77.54765836987335"
+          },
+          {
+            "name": "DequeBenchmark.Deque_Enumerate(ItemCount: 100000)",
+            "value": 81975.37998610277,
+            "unit": "ns",
+            "range": "± 105.50569765377124"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Guid_Bcl",
+            "value": 1156.933418750763,
+            "unit": "ns",
+            "range": "± 1.4438038880379165"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Guid_EqualityComparer",
+            "value": 2661.389560241699,
+            "unit": "ns",
+            "range": "± 0.8069841165395671"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Guid_Celerity",
+            "value": 7081.571262359619,
+            "unit": "ns",
+            "range": "± 9.179769516149827"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Guid_Celerity_Hash64",
+            "value": 7082.116852795636,
+            "unit": "ns",
+            "range": "± 8.758318321184177"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 10684.920583089193,
+            "unit": "ns",
+            "range": "± 87.10411545495066"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 10914.898744254277,
+            "unit": "ns",
+            "range": "± 170.86596430939116"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.CelerityDictionary_Insert(ItemCount: 1000)",
+            "value": 7176.328350067139,
+            "unit": "ns",
+            "range": "± 220.84041951083657"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.HashCachingDictionary_Insert(ItemCount: 1000)",
+            "value": 8252.46266647865,
+            "unit": "ns",
+            "range": "± 111.57003907962996"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 3384243.640435988,
+            "unit": "ns",
+            "range": "± 55620.083464833726"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 4052141.5164331896,
+            "unit": "ns",
+            "range": "± 99979.48012484137"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.CelerityDictionary_Insert(ItemCount: 100000)",
+            "value": 4153244.3337053573,
+            "unit": "ns",
+            "range": "± 50827.114034106926"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.HashCachingDictionary_Insert(ItemCount: 100000)",
+            "value": 5684908.899009147,
+            "unit": "ns",
+            "range": "± 136334.721643828"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int32_Bcl",
+            "value": 597.9824818097628,
+            "unit": "ns",
+            "range": "± 0.4771867117016176"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int32_EqualityComparer",
+            "value": 588.6891271591187,
+            "unit": "ns",
+            "range": "± 0.5945405192887198"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int32_Identity",
+            "value": 590.487089225224,
+            "unit": "ns",
+            "range": "± 0.38035739256528656"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int32_WangNaive",
+            "value": 1097.341498336792,
+            "unit": "ns",
+            "range": "± 1.026226256151239"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int32_Wang",
+            "value": 2644.462198751944,
+            "unit": "ns",
+            "range": "± 1.248070787536771"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int32_Murmur3",
+            "value": 2367.5402639829194,
+            "unit": "ns",
+            "range": "± 1.0964805148197831"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_Bcl",
+            "value": 1207.5921615453867,
+            "unit": "ns",
+            "range": "± 0.7490843591782872"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_EqualityComparer",
+            "value": 1097.6543706258137,
+            "unit": "ns",
+            "range": "± 1.0304686035737416"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_Identity",
+            "value": 590.5008709430695,
+            "unit": "ns",
+            "range": "± 0.5524649660914367"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_WangNaive",
+            "value": 1631.7611110551018,
+            "unit": "ns",
+            "range": "± 0.8378333541608198"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_Wang",
+            "value": 3646.0557982581004,
+            "unit": "ns",
+            "range": "± 5.0829405760705395"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_Murmur3",
+            "value": 2076.964535346398,
+            "unit": "ns",
+            "range": "± 1.2354900966289688"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_Wang_Hash64",
+            "value": 3644.6289508526143,
+            "unit": "ns",
+            "range": "± 1.1448361741162303"
+          },
+          {
+            "name": "IntegerHasherBenchmark.Int64_Murmur3_Hash64",
+            "value": 2076.867314202445,
+            "unit": "ns",
+            "range": "± 1.3666240220192103"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 3762.4472926213193,
+            "unit": "ns",
+            "range": "± 18.6287746289577"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 3658.6046777452743,
+            "unit": "ns",
+            "range": "± 5.889341271282853"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.CelerityDictionary_Lookup(ItemCount: 1000)",
+            "value": 1974.861258210807,
+            "unit": "ns",
+            "range": "± 110.76419600610721"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.HashCachingDictionary_Lookup(ItemCount: 1000)",
+            "value": 2199.1224477044466,
+            "unit": "ns",
+            "range": "± 4.237526618416773"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1240984.2056790865,
+            "unit": "ns",
+            "range": "± 5389.145719843788"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1233431.522494612,
+            "unit": "ns",
+            "range": "± 4566.713624805212"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.CelerityDictionary_Lookup(ItemCount: 100000)",
+            "value": 488378.66766131367,
+            "unit": "ns",
+            "range": "± 2930.289248840304"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.HashCachingDictionary_Lookup(ItemCount: 100000)",
+            "value": 648375.8818359375,
+            "unit": "ns",
+            "range": "± 11516.00858904881"
+          },
+          {
+            "name": "FenwickTreeBenchmark.Array_Mixed(ItemCount: 1000)",
+            "value": 157081.73317777194,
+            "unit": "ns",
+            "range": "± 459.6966074451499"
+          },
+          {
+            "name": "FenwickTreeBenchmark.FenwickTree_Mixed(ItemCount: 1000)",
+            "value": 8799.014848436627,
+            "unit": "ns",
+            "range": "± 202.1369924997693"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Mixed(ItemCount: 1000)",
+            "value": 46921.74409077962,
+            "unit": "ns",
+            "range": "± 399.14757076880403"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Mixed(ItemCount: 1000)",
+            "value": 44376.50085144043,
+            "unit": "ns",
+            "range": "± 689.9196892589621"
+          },
+          {
+            "name": "FenwickTreeBenchmark.Array_Mixed(ItemCount: 100000)",
+            "value": 142726440.5,
+            "unit": "ns",
+            "range": "± 507833.26227193355"
+          },
+          {
+            "name": "FenwickTreeBenchmark.FenwickTree_Mixed(ItemCount: 100000)",
+            "value": 480164.0356069711,
+            "unit": "ns",
+            "range": "± 12881.910177676196"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Mixed(ItemCount: 100000)",
+            "value": 26279685.42299107,
+            "unit": "ns",
+            "range": "± 159988.66149592804"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Mixed(ItemCount: 100000)",
+            "value": 20034694.909375,
+            "unit": "ns",
+            "range": "± 169640.03051926434"
+          },
+          {
+            "name": "SuffixArrayBenchmark.String_Occurrences(ItemCount: 1000)",
+            "value": 1664.0801849365234,
+            "unit": "ns",
+            "range": "± 166.13977003672088"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Occurrences(ItemCount: 1000)",
+            "value": 1373.6841462453206,
+            "unit": "ns",
+            "range": "± 1.0565813293693238"
+          },
+          {
+            "name": "SuffixArrayBenchmark.String_Occurrences(ItemCount: 100000)",
+            "value": 138664.27294921875,
+            "unit": "ns",
+            "range": "± 11196.067810292605"
+          },
+          {
+            "name": "SuffixArrayBenchmark.SuffixArray_Occurrences(ItemCount: 100000)",
+            "value": 12170.810846768893,
+            "unit": "ns",
+            "range": "± 66.26914624174566"
+          },
+          {
+            "name": "DequeBenchmark.LinkedList_PushFront(ItemCount: 1000)",
+            "value": 30843.345864661653,
+            "unit": "ns",
+            "range": "± 2944.6846542210155"
+          },
+          {
+            "name": "DequeBenchmark.Deque_PushFront(ItemCount: 1000)",
+            "value": 14983.474226804125,
+            "unit": "ns",
+            "range": "± 1237.9782069095875"
+          },
+          {
+            "name": "DequeBenchmark.LinkedList_PushFront(ItemCount: 100000)",
+            "value": 1388985.2592592593,
+            "unit": "ns",
+            "range": "± 19564.79289407102"
+          },
+          {
+            "name": "DequeBenchmark.Deque_PushFront(ItemCount: 100000)",
+            "value": 602118.5769230769,
+            "unit": "ns",
+            "range": "± 110897.7996663932"
+          },
+          {
+            "name": "DequeBenchmark.LinkedList_Queue(ItemCount: 1000)",
+            "value": 39729.79710144927,
+            "unit": "ns",
+            "range": "± 3757.3694030258007"
+          },
+          {
+            "name": "DequeBenchmark.Deque_Queue(ItemCount: 1000)",
+            "value": 22518.31347150259,
+            "unit": "ns",
+            "range": "± 2719.8606192124207"
+          },
+          {
+            "name": "DequeBenchmark.LinkedList_Queue(ItemCount: 100000)",
+            "value": 3750769.4752475247,
+            "unit": "ns",
+            "range": "± 173157.15573704106"
+          },
+          {
+            "name": "DequeBenchmark.Deque_Queue(ItemCount: 100000)",
+            "value": 357276.0576923077,
+            "unit": "ns",
+            "range": "± 14849.826068110086"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_RangeScan(ItemCount: 1000)",
+            "value": 128.06875506762802,
+            "unit": "ns",
+            "range": "± 0.9447981015739172"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_RangeScan(ItemCount: 1000)",
+            "value": 63.95842912367412,
+            "unit": "ns",
+            "range": "± 0.7128591136830553"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_RangeScan(ItemCount: 100000)",
+            "value": 7652.940281620732,
+            "unit": "ns",
+            "range": "± 179.09182975107322"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_RangeScan(ItemCount: 100000)",
+            "value": 3822.3043379607025,
+            "unit": "ns",
+            "range": "± 5.560960296936747"
+          },
+          {
+            "name": "FenwickTreeBenchmark.Array_RangeSum(ItemCount: 1000)",
+            "value": 193233.40537867052,
+            "unit": "ns",
+            "range": "± 367.72872769229394"
+          },
+          {
+            "name": "FenwickTreeBenchmark.FenwickTree_RangeSum(ItemCount: 1000)",
+            "value": 5316.919117680302,
+            "unit": "ns",
+            "range": "± 4.279273367727303"
+          },
+          {
+            "name": "FenwickTreeBenchmark.Array_RangeSum(ItemCount: 100000)",
+            "value": 138448705.78846154,
+            "unit": "ns",
+            "range": "± 100665.13247422596"
+          },
+          {
+            "name": "FenwickTreeBenchmark.FenwickTree_RangeSum(ItemCount: 100000)",
+            "value": 162390.73508522726,
+            "unit": "ns",
+            "range": "± 2935.3092503838875"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Remove(ItemCount: 1000)",
+            "value": 475439.8488372093,
+            "unit": "ns",
+            "range": "± 15379.610849284038"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 62645.359375,
+            "unit": "ns",
+            "range": "± 6004.398819558004"
+          },
+          {
+            "name": "CeleritySetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 23724.956790123455,
+            "unit": "ns",
+            "range": "± 1366.3616770403687"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 61138.90306122449,
+            "unit": "ns",
+            "range": "± 7536.945036816348"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Remove(ItemCount: 1000)",
+            "value": 197103.80555555556,
+            "unit": "ns",
+            "range": "± 3755.984531912805"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.CelerityDictionary_Remove(ItemCount: 1000)",
+            "value": 100376.27737226278,
+            "unit": "ns",
+            "range": "± 5507.032416841759"
+          },
+          {
+            "name": "CeleritySetBenchmark.CeleritySet_Remove(ItemCount: 1000)",
+            "value": 93885.32954545454,
+            "unit": "ns",
+            "range": "± 2163.082920340678"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.HashCachingDictionary_Remove(ItemCount: 1000)",
+            "value": 86458.30729166667,
+            "unit": "ns",
+            "range": "± 6924.221593981835"
+          },
+          {
+            "name": "BTreeSetBenchmark.SortedSet_Remove(ItemCount: 100000)",
+            "value": 20257629.39285714,
+            "unit": "ns",
+            "range": "± 109278.93534991232"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 1543378.6,
+            "unit": "ns",
+            "range": "± 13607.476095121765"
+          },
+          {
+            "name": "CeleritySetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1285859.6851851852,
+            "unit": "ns",
+            "range": "± 8783.196937627932"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 1769150.0263157894,
+            "unit": "ns",
+            "range": "± 323131.83237428236"
+          },
+          {
+            "name": "BTreeSetBenchmark.BTreeSet_Remove(ItemCount: 100000)",
+            "value": 12762397.814814815,
+            "unit": "ns",
+            "range": "± 39749.24728270098"
+          },
+          {
+            "name": "CelerityDictionaryBenchmark.CelerityDictionary_Remove(ItemCount: 100000)",
+            "value": 7860242.948275862,
+            "unit": "ns",
+            "range": "± 92015.86393023535"
+          },
+          {
+            "name": "CeleritySetBenchmark.CeleritySet_Remove(ItemCount: 100000)",
+            "value": 1141106.2692307692,
+            "unit": "ns",
+            "range": "± 8520.72088761364"
+          },
+          {
+            "name": "HashCachingDictionaryBenchmark.HashCachingDictionary_Remove(ItemCount: 100000)",
+            "value": 2653459.6475409837,
+            "unit": "ns",
+            "range": "± 2245271.5155610456"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt32_Bcl",
+            "value": 598.053529492131,
+            "unit": "ns",
+            "range": "± 0.6639195286155603"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt32_EqualityComparer",
+            "value": 588.2846499902231,
+            "unit": "ns",
+            "range": "± 0.43696187786350077"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt32_Identity",
+            "value": 590.2983780588422,
+            "unit": "ns",
+            "range": "± 0.2891463774256278"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt32_WangNaive",
+            "value": 1096.3401935283955,
+            "unit": "ns",
+            "range": "± 0.6605384432702005"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt32_Wang",
+            "value": 2644.1286711516204,
+            "unit": "ns",
+            "range": "± 1.8814901751439774"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt32_Murmur3",
+            "value": 2367.6356441356515,
+            "unit": "ns",
+            "range": "± 1.1494762776351433"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_Bcl",
+            "value": 1259.1998320988246,
+            "unit": "ns",
+            "range": "± 53.07563520179123"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_EqualityComparer",
+            "value": 1097.6640332539876,
+            "unit": "ns",
+            "range": "± 1.1596096474560273"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_Identity",
+            "value": 595.2194942694443,
+            "unit": "ns",
+            "range": "± 5.222340237292106"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_Murmur3",
+            "value": 2075.5800331115724,
+            "unit": "ns",
+            "range": "± 0.8432841540695349"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_Wang",
+            "value": 3643.8528263909475,
+            "unit": "ns",
+            "range": "± 2.6595661742630985"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_WangNaive",
+            "value": 1631.2708021799724,
+            "unit": "ns",
+            "range": "± 0.5015022909233541"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_Murmur3_Hash64",
+            "value": 2078.2066554316766,
+            "unit": "ns",
+            "range": "± 1.4500775058358142"
+          },
+          {
+            "name": "IntegerHasherBenchmark.UInt64_Wang_Hash64",
+            "value": 3646.3354103381816,
+            "unit": "ns",
+            "range": "± 5.090145259481558"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.List_Accumulate(ItemCount: 1000)",
+            "value": 2111.2924398694718,
+            "unit": "ns",
+            "range": "± 34.606048078828394"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.RunningStatistics_Accumulate(ItemCount: 1000)",
+            "value": 6465.344161840586,
+            "unit": "ns",
+            "range": "± 4.742913831349686"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.List_Accumulate(ItemCount: 100000)",
+            "value": 365067.2350802951,
+            "unit": "ns",
+            "range": "± 29751.39177127575"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.RunningStatistics_Accumulate(ItemCount: 100000)",
+            "value": 650515.7762661638,
+            "unit": "ns",
+            "range": "± 369.36064959798495"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_Add(ItemCount: 1000)",
+            "value": 32621.483739837397,
+            "unit": "ns",
+            "range": "± 1542.7590742591171"
+          },
+          {
+            "name": "TrieBenchmark.Trie_Add(ItemCount: 1000)",
+            "value": 597702.8301886793,
+            "unit": "ns",
+            "range": "± 16243.56576491354"
+          },
+          {
+            "name": "IntSetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 14243.471830749511,
+            "unit": "ns",
+            "range": "± 477.2806414859109"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 12882.110980329842,
+            "unit": "ns",
+            "range": "± 259.6663496183921"
+          },
+          {
+            "name": "IntSetBenchmark.IntSet_Add(ItemCount: 1000)",
+            "value": 9116.608214314778,
+            "unit": "ns",
+            "range": "± 145.48444809649138"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_Add(ItemCount: 1000)",
+            "value": 17918.084433419364,
+            "unit": "ns",
+            "range": "± 244.10787499109722"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_Add(ItemCount: 100000)",
+            "value": 4637868.75,
+            "unit": "ns",
+            "range": "± 1238217.8746902582"
+          },
+          {
+            "name": "TrieBenchmark.Trie_Add(ItemCount: 100000)",
+            "value": 26489064.01724138,
+            "unit": "ns",
+            "range": "± 374879.4232419101"
+          },
+          {
+            "name": "IntSetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 5074972.839021382,
+            "unit": "ns",
+            "range": "± 124231.4245389093"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 4685421.609882813,
+            "unit": "ns",
+            "range": "± 343298.4469391894"
+          },
+          {
+            "name": "IntSetBenchmark.IntSet_Add(ItemCount: 100000)",
+            "value": 3268908.5677532325,
+            "unit": "ns",
+            "range": "± 76690.69772016886"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_Add(ItemCount: 100000)",
+            "value": 6335652.663119612,
+            "unit": "ns",
+            "range": "± 62277.051917529614"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_Build(ItemCount: 1000)",
+            "value": 941.1371253477324,
+            "unit": "ns",
+            "range": "± 69.30723031394702"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_Build(ItemCount: 1000)",
+            "value": 65647.87180044137,
+            "unit": "ns",
+            "range": "± 9040.436062142699"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_Build(ItemCount: 100000)",
+            "value": 781082.8184116909,
+            "unit": "ns",
+            "range": "± 9132.770136573432"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_Build(ItemCount: 100000)",
+            "value": 22038321.097222224,
+            "unit": "ns",
+            "range": "± 174780.97007238553"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Cancel(ItemCount: 1000)",
+            "value": 23307.491978609625,
+            "unit": "ns",
+            "range": "± 3538.2778621490443"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_CancelAddressable(ItemCount: 1000)",
+            "value": 559424.5253164558,
+            "unit": "ns",
+            "range": "± 22497.126619930757"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Cancel(ItemCount: 1000)",
+            "value": 48037.747826086954,
+            "unit": "ns",
+            "range": "± 4458.035929434755"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Cancel(ItemCount: 100000)",
+            "value": 1016966.4848484849,
+            "unit": "ns",
+            "range": "± 352243.3049768475"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_CancelAddressable(ItemCount: 100000)",
+            "value": 8257686.777777778,
+            "unit": "ns",
+            "range": "± 27770.518899522172"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Cancel(ItemCount: 100000)",
+            "value": 469428.7090909091,
+            "unit": "ns",
+            "range": "± 27433.512222955935"
+          },
+          {
+            "name": "IntSetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4740.233527854637,
+            "unit": "ns",
+            "range": "± 12.468514612417293"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4734.9871143613545,
+            "unit": "ns",
+            "range": "± 23.154170453860537"
+          },
+          {
+            "name": "IntSetBenchmark.IntSet_Contains(ItemCount: 1000)",
+            "value": 1814.507599258423,
+            "unit": "ns",
+            "range": "± 20.900653730874694"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_Contains(ItemCount: 1000)",
+            "value": 2523.508204973661,
+            "unit": "ns",
+            "range": "± 30.17504980111674"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 18345.579047893654,
+            "unit": "ns",
+            "range": "± 167.36949972060893"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.CeleritySet_Contains(ItemCount: 1000)",
+            "value": 24312.877748413084,
+            "unit": "ns",
+            "range": "± 58.58340447942128"
+          },
+          {
+            "name": "IntSetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1561692.4877025464,
+            "unit": "ns",
+            "range": "± 17183.792263406714"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1580691.1581682477,
+            "unit": "ns",
+            "range": "± 5613.170070229181"
+          },
+          {
+            "name": "IntSetBenchmark.IntSet_Contains(ItemCount: 100000)",
+            "value": 571891.2875976562,
+            "unit": "ns",
+            "range": "± 1797.5225753461732"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_Contains(ItemCount: 100000)",
+            "value": 735712.4242983217,
+            "unit": "ns",
+            "range": "± 8353.814740572932"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 3585660.5466056033,
+            "unit": "ns",
+            "range": "± 47881.202967912286"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.CeleritySet_Contains(ItemCount: 100000)",
+            "value": 5117209.412560096,
+            "unit": "ns",
+            "range": "± 81896.0553082041"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_ContainsMissing(ItemCount: 1000)",
+            "value": 4537.135898166232,
+            "unit": "ns",
+            "range": "± 3.439511061999383"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_ContainsMissing(ItemCount: 1000)",
+            "value": 2741.391647338867,
+            "unit": "ns",
+            "range": "± 3.2648524399101664"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1921169.2446875,
+            "unit": "ns",
+            "range": "± 2811.4134391422094"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1178044.6392106682,
+            "unit": "ns",
+            "range": "± 932.6343172149657"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Drain(ItemCount: 1000)",
+            "value": 490320.0759493671,
+            "unit": "ns",
+            "range": "± 17688.803914987468"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_DrainAddressable(ItemCount: 1000)",
+            "value": 1663939.111111111,
+            "unit": "ns",
+            "range": "± 51614.45522207703"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Drain(ItemCount: 1000)",
+            "value": 33093.07070707071,
+            "unit": "ns",
+            "range": "± 4252.154674103532"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Drain(ItemCount: 100000)",
+            "value": 10788595.689655172,
+            "unit": "ns",
+            "range": "± 44814.89862048704"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_DrainAddressable(ItemCount: 100000)",
+            "value": 42956996.333333336,
+            "unit": "ns",
+            "range": "± 270257.36332443735"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Drain(ItemCount: 100000)",
+            "value": 3037570.9285714286,
+            "unit": "ns",
+            "range": "± 51089.47485135565"
+          },
+          {
+            "name": "IntDictionaryBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 15209.25624706127,
+            "unit": "ns",
+            "range": "± 633.1157956138803"
+          },
+          {
+            "name": "IntDictionaryBenchmark.IntDictionary_Insert(ItemCount: 1000)",
+            "value": 12229.009088643392,
+            "unit": "ns",
+            "range": "± 99.93692969702758"
+          },
+          {
+            "name": "IntDictionaryBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 4279581.232514881,
+            "unit": "ns",
+            "range": "± 99884.6514160823"
+          },
+          {
+            "name": "IntDictionaryBenchmark.IntDictionary_Insert(ItemCount: 100000)",
+            "value": 4971451.321777344,
+            "unit": "ns",
+            "range": "± 139391.40669280832"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_KNearest(ItemCount: 1000)",
+            "value": 4155651.2509375,
+            "unit": "ns",
+            "range": "± 4111.546711345996"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_KNearest(ItemCount: 1000)",
+            "value": 1266779.3542829242,
+            "unit": "ns",
+            "range": "± 3447.3537584755322"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_KNearest(ItemCount: 100000)",
+            "value": 193967956.05128208,
+            "unit": "ns",
+            "range": "± 267154.20679488184"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_KNearest(ItemCount: 100000)",
+            "value": 1744799.1747685184,
+            "unit": "ns",
+            "range": "± 48103.07049762533"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 18420.758195548224,
+            "unit": "ns",
+            "range": "± 372.8526318527877"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.CelerityDictionary_Lookup(ItemCount: 1000)",
+            "value": 26314.20660018921,
+            "unit": "ns",
+            "range": "± 50.55749850860158"
+          },
+          {
+            "name": "IntDictionaryBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 5042.637058681912,
+            "unit": "ns",
+            "range": "± 290.3820781372027"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 13216.157684058473,
+            "unit": "ns",
+            "range": "± 571.6825041190366"
+          },
+          {
+            "name": "IntDictionaryBenchmark.IntDictionary_Lookup(ItemCount: 1000)",
+            "value": 2141.7861894460825,
+            "unit": "ns",
+            "range": "± 3.7768727377742546"
+          },
+          {
+            "name": "TrieBenchmark.Trie_Lookup(ItemCount: 1000)",
+            "value": 40865.77810668945,
+            "unit": "ns",
+            "range": "± 250.85855768842094"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 3676130.618359375,
+            "unit": "ns",
+            "range": "± 17362.97699502668"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.CelerityDictionary_Lookup(ItemCount: 100000)",
+            "value": 5916085.918258102,
+            "unit": "ns",
+            "range": "± 378762.7477024967"
+          },
+          {
+            "name": "IntDictionaryBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1547266.731515067,
+            "unit": "ns",
+            "range": "± 46655.88648474031"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 2681478.943498884,
+            "unit": "ns",
+            "range": "± 5533.306227811072"
+          },
+          {
+            "name": "IntDictionaryBenchmark.IntDictionary_Lookup(ItemCount: 100000)",
+            "value": 683501.387032645,
+            "unit": "ns",
+            "range": "± 5743.697323028773"
+          },
+          {
+            "name": "TrieBenchmark.Trie_Lookup(ItemCount: 100000)",
+            "value": 8575074.270982143,
+            "unit": "ns",
+            "range": "± 280822.431708632"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.Dictionary_LookupMissing(ItemCount: 1000)",
+            "value": 14965.716679014009,
+            "unit": "ns",
+            "range": "± 67.6593339076148"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.CelerityDictionary_LookupMissing(ItemCount: 1000)",
+            "value": 28755.56292665922,
+            "unit": "ns",
+            "range": "± 333.50310138033177"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.Dictionary_LookupMissing(ItemCount: 100000)",
+            "value": 4246441.965666118,
+            "unit": "ns",
+            "range": "± 281168.4690738972"
+          },
+          {
+            "name": "StringKeyProbeBenchmark.CelerityDictionary_LookupMissing(ItemCount: 100000)",
+            "value": 6133588.715238764,
+            "unit": "ns",
+            "range": "± 234400.21653172167"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.Linq_Moments(ItemCount: 1000)",
+            "value": 4691.040383605957,
+            "unit": "ns",
+            "range": "± 2.86322419219213"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.RunningStatistics_Moments(ItemCount: 1000)",
+            "value": 9072.151420593262,
+            "unit": "ns",
+            "range": "± 10.517346989161785"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.Linq_Moments(ItemCount: 100000)",
+            "value": 469689.0919015067,
+            "unit": "ns",
+            "range": "± 183.81866860571373"
+          },
+          {
+            "name": "RunningStatisticsBenchmark.RunningStatistics_Moments(ItemCount: 100000)",
+            "value": 909029.2005208334,
+            "unit": "ns",
+            "range": "± 546.4755968528568"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_NearestQuery(ItemCount: 1000)",
+            "value": 1159987.3401925224,
+            "unit": "ns",
+            "range": "± 4156.141270872446"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_NearestQuery(ItemCount: 1000)",
+            "value": 97084.46637078052,
+            "unit": "ns",
+            "range": "± 3130.9496458218455"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_NearestQuery(ItemCount: 100000)",
+            "value": 102947121.3828125,
+            "unit": "ns",
+            "range": "± 268934.81096405885"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_NearestQuery(ItemCount: 100000)",
+            "value": 296855.3150499132,
+            "unit": "ns",
+            "range": "± 1761.511853644149"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_NearestSorted(ItemCount: 1000)",
+            "value": 141428.707421875,
+            "unit": "ns",
+            "range": "± 1566.918104026572"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_NearestSorted(ItemCount: 1000)",
+            "value": 98445.09632195366,
+            "unit": "ns",
+            "range": "± 2164.905424076295"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_NearestSorted(ItemCount: 100000)",
+            "value": 732933.0354191706,
+            "unit": "ns",
+            "range": "± 2424.4363141141994"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_NearestSorted(ItemCount: 100000)",
+            "value": 296620.82851225755,
+            "unit": "ns",
+            "range": "± 1228.8324955429928"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_PrefixMatch(ItemCount: 1000)",
+            "value": 73676.13259548611,
+            "unit": "ns",
+            "range": "± 439.78569421489385"
+          },
+          {
+            "name": "TrieBenchmark.Trie_PrefixMatch(ItemCount: 1000)",
+            "value": 56242.713490077425,
+            "unit": "ns",
+            "range": "± 207.2754203998806"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_PrefixMatch(ItemCount: 100000)",
+            "value": 7403450.22193287,
+            "unit": "ns",
+            "range": "± 12291.037497368177"
+          },
+          {
+            "name": "TrieBenchmark.Trie_PrefixMatch(ItemCount: 100000)",
+            "value": 8058873.062802419,
+            "unit": "ns",
+            "range": "± 1926369.1962227323"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_RadiusQuery(ItemCount: 1000)",
+            "value": 1040604.5462472098,
+            "unit": "ns",
+            "range": "± 1063.9760557540021"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_RadiusQuery(ItemCount: 1000)",
+            "value": 120461.90050397601,
+            "unit": "ns",
+            "range": "± 877.4729204053751"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_RadiusQuery(ItemCount: 100000)",
+            "value": 104334040.74166667,
+            "unit": "ns",
+            "range": "± 247636.65009611598"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_RadiusQuery(ItemCount: 100000)",
+            "value": 1999082.0653935184,
+            "unit": "ns",
+            "range": "± 15036.198003763642"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_RadiusSlab(ItemCount: 1000)",
+            "value": 115746.18580364359,
+            "unit": "ns",
+            "range": "± 2067.781470334109"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_RadiusSlab(ItemCount: 1000)",
+            "value": 119596.0242739077,
+            "unit": "ns",
+            "range": "± 1034.6071765000127"
+          },
+          {
+            "name": "KdTreeBenchmark.Array_RadiusSlab(ItemCount: 100000)",
+            "value": 6971614.588831019,
+            "unit": "ns",
+            "range": "± 6939.85668038011"
+          },
+          {
+            "name": "KdTreeBenchmark.KdTree_RadiusSlab(ItemCount: 100000)",
+            "value": 1975136.3969029018,
+            "unit": "ns",
+            "range": "± 6515.946430363577"
+          },
+          {
+            "name": "IntDictionaryBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 92948.61170212766,
+            "unit": "ns",
+            "range": "± 6140.266948269599"
+          },
+          {
+            "name": "IntSetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 33969.00769230769,
+            "unit": "ns",
+            "range": "± 3779.272490643358"
+          },
+          {
+            "name": "IntDictionaryBenchmark.IntDictionary_Remove(ItemCount: 1000)",
+            "value": 94669.1329787234,
+            "unit": "ns",
+            "range": "± 8441.364340164366"
+          },
+          {
+            "name": "IntSetBenchmark.IntSet_Remove(ItemCount: 1000)",
+            "value": 89678.62931034483,
+            "unit": "ns",
+            "range": "± 5094.456467426146"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 29579.853846153845,
+            "unit": "ns",
+            "range": "± 4109.114327442453"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_Remove(ItemCount: 1000)",
+            "value": 109428.95,
+            "unit": "ns",
+            "range": "± 8163.291952015471"
+          },
+          {
+            "name": "IntDictionaryBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 2281374.4758064514,
+            "unit": "ns",
+            "range": "± 225070.25716517508"
+          },
+          {
+            "name": "IntSetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1715673.6607142857,
+            "unit": "ns",
+            "range": "± 16815.821252317146"
+          },
+          {
+            "name": "IntDictionaryBenchmark.IntDictionary_Remove(ItemCount: 100000)",
+            "value": 2179525.5257142857,
+            "unit": "ns",
+            "range": "± 511522.43545356684"
+          },
+          {
+            "name": "IntSetBenchmark.IntSet_Remove(ItemCount: 100000)",
+            "value": 1334906.4833333334,
+            "unit": "ns",
+            "range": "± 10429.80888465375"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1704280.051724138,
+            "unit": "ns",
+            "range": "± 20283.388903213756"
+          },
+          {
+            "name": "RobinHoodSetBenchmark.RobinHoodSet_Remove(ItemCount: 100000)",
+            "value": 1366940.9375,
+            "unit": "ns",
+            "range": "± 37394.3479648919"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Round(ItemCount: 1000)",
+            "value": 42635.85021330181,
+            "unit": "ns",
+            "range": "± 915.1377674684136"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_RoundAddressable(ItemCount: 1000)",
+            "value": 71431.15631734914,
+            "unit": "ns",
+            "range": "± 517.2479555864801"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Round(ItemCount: 1000)",
+            "value": 15903.121064284753,
+            "unit": "ns",
+            "range": "± 125.4165022718612"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Round(ItemCount: 100000)",
+            "value": 16413944.162037037,
+            "unit": "ns",
+            "range": "± 95862.44220433444"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_RoundAddressable(ItemCount: 100000)",
+            "value": 17236315.084375,
+            "unit": "ns",
+            "range": "± 346055.6268834651"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Round(ItemCount: 100000)",
+            "value": 2345237.2637246624,
+            "unit": "ns",
+            "range": "± 52382.08375314298"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Schedule(ItemCount: 1000)",
+            "value": 79603.16230366493,
+            "unit": "ns",
+            "range": "± 9284.262245147795"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_ScheduleAddressable(ItemCount: 1000)",
+            "value": 436140.6666666667,
+            "unit": "ns",
+            "range": "± 20740.22991966795"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Schedule(ItemCount: 1000)",
+            "value": 71075.42432432433,
+            "unit": "ns",
+            "range": "± 6557.707369601747"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Schedule(ItemCount: 100000)",
+            "value": 1191039.16,
+            "unit": "ns",
+            "range": "± 265712.12552195723"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_ScheduleAddressable(ItemCount: 100000)",
+            "value": 6492692.647959184,
+            "unit": "ns",
+            "range": "± 991113.9273586517"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Schedule(ItemCount: 100000)",
+            "value": 1882459.6751592357,
+            "unit": "ns",
+            "range": "± 496146.16878753674"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_SpanLookup(ItemCount: 1000)",
+            "value": 42168.438189276334,
+            "unit": "ns",
+            "range": "± 229.68830923429172"
+          },
+          {
+            "name": "TrieBenchmark.Trie_SpanLookup(ItemCount: 1000)",
+            "value": 42863.60807856807,
+            "unit": "ns",
+            "range": "± 256.2853556394042"
+          },
+          {
+            "name": "TrieBenchmark.Dictionary_SpanLookup(ItemCount: 100000)",
+            "value": 6413065.477455357,
+            "unit": "ns",
+            "range": "± 153601.7271390442"
+          },
+          {
+            "name": "TrieBenchmark.Trie_SpanLookup(ItemCount: 100000)",
+            "value": 9277699.864039179,
+            "unit": "ns",
+            "range": "± 334827.6906741584"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Tick(ItemCount: 1000)",
+            "value": 511442.67441860464,
+            "unit": "ns",
+            "range": "± 18854.23993223173"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_TickAddressable(ItemCount: 1000)",
+            "value": 1376763.8275862068,
+            "unit": "ns",
+            "range": "± 9178.65889701667"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Tick(ItemCount: 1000)",
+            "value": 921665.4642857143,
+            "unit": "ns",
+            "range": "± 26859.81284576995"
+          },
+          {
+            "name": "TimerWheelBenchmark.PriorityQueue_Tick(ItemCount: 100000)",
+            "value": 10916599.9,
+            "unit": "ns",
+            "range": "± 54424.86020088804"
+          },
+          {
+            "name": "TimerWheelBenchmark.IndexedPriorityQueue_TickAddressable(ItemCount: 100000)",
+            "value": 44571134.416666664,
+            "unit": "ns",
+            "range": "± 789989.8116344666"
+          },
+          {
+            "name": "TimerWheelBenchmark.TimerWheel_Tick(ItemCount: 100000)",
+            "value": 3820159.8882352943,
+            "unit": "ns",
+            "range": "± 370715.80283168564"
+          },
+          {
+            "name": "EnumMapBenchmark.Dictionary_Add",
+            "value": 602.0468052864074,
+            "unit": "ns",
+            "range": "± 14.366651461866017"
+          },
+          {
+            "name": "EnumMapBenchmark.EnumMap_Add",
+            "value": 149.43510675430298,
+            "unit": "ns",
+            "range": "± 0.9430343455411411"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 11951.047059740338,
+            "unit": "ns",
+            "range": "± 62.66014967798339"
+          },
+          {
+            "name": "LongSetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 13123.247403281075,
+            "unit": "ns",
+            "range": "± 340.2724620291954"
+          },
+          {
+            "name": "TopKSketchBenchmark.Dictionary_Add(ItemCount: 1000)",
+            "value": 13129.001354762486,
+            "unit": "ns",
+            "range": "± 45.352902887024854"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_Add(ItemCount: 1000)",
+            "value": 10748.417360872836,
+            "unit": "ns",
+            "range": "± 212.61756360196603"
+          },
+          {
+            "name": "LongSetBenchmark.LongSet_Add(ItemCount: 1000)",
+            "value": 9327.57000066879,
+            "unit": "ns",
+            "range": "± 211.06693853377263"
+          },
+          {
+            "name": "TopKSketchBenchmark.TopKSketch_Add(ItemCount: 1000)",
+            "value": 86626.25246582032,
+            "unit": "ns",
+            "range": "± 1543.7055064956207"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 4611355.598789062,
+            "unit": "ns",
+            "range": "± 353196.37853415165"
+          },
+          {
+            "name": "LongSetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 4791680.097115384,
+            "unit": "ns",
+            "range": "± 148848.83298073497"
+          },
+          {
+            "name": "TopKSketchBenchmark.Dictionary_Add(ItemCount: 100000)",
+            "value": 3239890.8589564734,
+            "unit": "ns",
+            "range": "± 48566.30509844869"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_Add(ItemCount: 100000)",
+            "value": 5160926.265759698,
+            "unit": "ns",
+            "range": "± 56633.106509616"
+          },
+          {
+            "name": "LongSetBenchmark.LongSet_Add(ItemCount: 100000)",
+            "value": 6086894.290876116,
+            "unit": "ns",
+            "range": "± 45226.958456109984"
+          },
+          {
+            "name": "TopKSketchBenchmark.TopKSketch_Add(ItemCount: 100000)",
+            "value": 14586617.665409483,
+            "unit": "ns",
+            "range": "± 24918.001409907494"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_ArgSort(ItemCount: 100)",
+            "value": 786.4057814280192,
+            "unit": "ns",
+            "range": "± 1.1955680321428153"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_ArgSort(ItemCount: 100)",
+            "value": 2794.662806447347,
+            "unit": "ns",
+            "range": "± 12.332674743213973"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_ArgSort(ItemCount: 1000)",
+            "value": 12173.501307520373,
+            "unit": "ns",
+            "range": "± 179.07416870009897"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_ArgSort(ItemCount: 1000)",
+            "value": 19630.282845332706,
+            "unit": "ns",
+            "range": "± 186.68157333047128"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_ArgSort(ItemCount: 100000)",
+            "value": 6227418.753627232,
+            "unit": "ns",
+            "range": "± 16538.134872792118"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_ArgSort(ItemCount: 100000)",
+            "value": 2068123.3697415865,
+            "unit": "ns",
+            "range": "± 3342.463211828104"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_ArgSort(ItemCount: 1000000)",
+            "value": 73258597.13265307,
+            "unit": "ns",
+            "range": "± 91435.10600994722"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_ArgSort(ItemCount: 1000000)",
+            "value": 19757360.851293102,
+            "unit": "ns",
+            "range": "± 39119.825377209265"
+          },
+          {
+            "name": "SpatialGridBenchmark.Dictionary_Churn(ItemCount: 1000)",
+            "value": 12431.202475327711,
+            "unit": "ns",
+            "range": "± 18.859265542952286"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Churn(ItemCount: 1000)",
+            "value": 1561.8047072337224,
+            "unit": "ns",
+            "range": "± 13.036632061919745"
+          },
+          {
+            "name": "SpatialGridBenchmark.Dictionary_Churn(ItemCount: 100000)",
+            "value": 1356153.664134838,
+            "unit": "ns",
+            "range": "± 8705.019906502848"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Churn(ItemCount: 100000)",
+            "value": 281533.5161320613,
+            "unit": "ns",
+            "range": "± 10316.309351377782"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4721.785537719727,
+            "unit": "ns",
+            "range": "± 8.227074231009597"
+          },
+          {
+            "name": "LongSetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4793.174274597168,
+            "unit": "ns",
+            "range": "± 53.9492912661409"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_Contains(ItemCount: 1000)",
+            "value": 2530.379288426152,
+            "unit": "ns",
+            "range": "± 3.43492610617967"
+          },
+          {
+            "name": "LongSetBenchmark.LongSet_Contains(ItemCount: 1000)",
+            "value": 2003.199482091268,
+            "unit": "ns",
+            "range": "± 10.273975307183994"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1552153.2738932292,
+            "unit": "ns",
+            "range": "± 1753.6254190588616"
+          },
+          {
+            "name": "LongSetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1644104.7451822916,
+            "unit": "ns",
+            "range": "± 23476.406131331118"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_Contains(ItemCount: 100000)",
+            "value": 723968.6500069754,
+            "unit": "ns",
+            "range": "± 2757.023277768795"
+          },
+          {
+            "name": "LongSetBenchmark.LongSet_Contains(ItemCount: 100000)",
+            "value": 641719.3532063802,
+            "unit": "ns",
+            "range": "± 2516.567229156942"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_ContainsMissing(ItemCount: 1000)",
+            "value": 4538.396471941913,
+            "unit": "ns",
+            "range": "± 5.173695845956891"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_ContainsMissing(ItemCount: 1000)",
+            "value": 2954.408423529731,
+            "unit": "ns",
+            "range": "± 2.873225625481692"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1942647.3041087964,
+            "unit": "ns",
+            "range": "± 6795.2123616949375"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1132117.8946707589,
+            "unit": "ns",
+            "range": "± 2068.740547260163"
+          },
+          {
+            "name": "EnumMapBenchmark.Dictionary_Enumerate",
+            "value": 50.21414644409109,
+            "unit": "ns",
+            "range": "± 0.04804498080735135"
+          },
+          {
+            "name": "EnumMapBenchmark.EnumMap_Enumerate",
+            "value": 39.78730827782835,
+            "unit": "ns",
+            "range": "± 0.021752707244824535"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Except(ItemCount: 1000)",
+            "value": 12701.28731918335,
+            "unit": "ns",
+            "range": "± 46.222215527460286"
+          },
+          {
+            "name": "SortedSpanBenchmark.Linq_ExceptLinq(ItemCount: 1000)",
+            "value": 19953.670814915706,
+            "unit": "ns",
+            "range": "± 434.6245906757728"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Except(ItemCount: 1000)",
+            "value": 2112.9086601822464,
+            "unit": "ns",
+            "range": "± 4.173168697403392"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Except(ItemCount: 100000)",
+            "value": 2453256.0029947916,
+            "unit": "ns",
+            "range": "± 33763.59981319958"
+          },
+          {
+            "name": "SortedSpanBenchmark.Linq_ExceptLinq(ItemCount: 100000)",
+            "value": 3479607.6141276043,
+            "unit": "ns",
+            "range": "± 45351.54552188135"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Except(ItemCount: 100000)",
+            "value": 873205.7880497685,
+            "unit": "ns",
+            "range": "± 320.4106855761197"
+          },
+          {
+            "name": "SpatialGridBenchmark.Dictionary_Frame(ItemCount: 1000)",
+            "value": 58844.287777709964,
+            "unit": "ns",
+            "range": "± 311.53299861844"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Frame(ItemCount: 1000)",
+            "value": 5470.9224490461675,
+            "unit": "ns",
+            "range": "± 30.772816612945853"
+          },
+          {
+            "name": "SpatialGridBenchmark.Dictionary_Frame(ItemCount: 100000)",
+            "value": 7763084.968149038,
+            "unit": "ns",
+            "range": "± 49730.757531854266"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Frame(ItemCount: 100000)",
+            "value": 1923454.1586371528,
+            "unit": "ns",
+            "range": "± 5385.07213515679"
+          },
+          {
+            "name": "LongDictionaryBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 14825.765547858344,
+            "unit": "ns",
+            "range": "± 269.9363137213508"
+          },
+          {
+            "name": "LongDictionaryBenchmark.LongDictionary_Insert(ItemCount: 1000)",
+            "value": 11395.712118421283,
+            "unit": "ns",
+            "range": "± 64.28151670976196"
+          },
+          {
+            "name": "LongDictionaryBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 4982028.297395834,
+            "unit": "ns",
+            "range": "± 42546.287790098824"
+          },
+          {
+            "name": "LongDictionaryBenchmark.LongDictionary_Insert(ItemCount: 100000)",
+            "value": 6748134.197916667,
+            "unit": "ns",
+            "range": "± 56867.30854612563"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Intersect(ItemCount: 1000)",
+            "value": 19860.333466102336,
+            "unit": "ns",
+            "range": "± 563.4057669731271"
+          },
+          {
+            "name": "SortedSpanBenchmark.Linq_IntersectLinq(ItemCount: 1000)",
+            "value": 14620.702921142578,
+            "unit": "ns",
+            "range": "± 123.41900668248708"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Intersect(ItemCount: 1000)",
+            "value": 2674.3852633158367,
+            "unit": "ns",
+            "range": "± 5.649205522563272"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Intersect(ItemCount: 100000)",
+            "value": 3768847.6351023708,
+            "unit": "ns",
+            "range": "± 41143.626663939"
+          },
+          {
+            "name": "SortedSpanBenchmark.Linq_IntersectLinq(ItemCount: 100000)",
+            "value": 2685699.9302083333,
+            "unit": "ns",
+            "range": "± 23209.00013482593"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Intersect(ItemCount: 100000)",
+            "value": 864901.9469401041,
+            "unit": "ns",
+            "range": "± 7258.243324148569"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_IntersectAsymmetric(ItemCount: 1000)",
+            "value": 7589.0235595703125,
+            "unit": "ns",
+            "range": "± 42.68533774030159"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_IntersectAsymmetric(ItemCount: 1000)",
+            "value": 97.92554075803075,
+            "unit": "ns",
+            "range": "± 0.2958202121098509"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_IntersectAsymmetric(ItemCount: 100000)",
+            "value": 1593994.0196659483,
+            "unit": "ns",
+            "range": "± 10865.393194538678"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_IntersectAsymmetric(ItemCount: 100000)",
+            "value": 13196.297166766542,
+            "unit": "ns",
+            "range": "± 500.6505096600204"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_IntersectCount(ItemCount: 1000)",
+            "value": 12074.95464296694,
+            "unit": "ns",
+            "range": "± 37.09380854660342"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_IntersectCount(ItemCount: 1000)",
+            "value": 2079.082698398166,
+            "unit": "ns",
+            "range": "± 2.93061175845431"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_IntersectCount(ItemCount: 100000)",
+            "value": 2416943.6539481026,
+            "unit": "ns",
+            "range": "± 21187.114347861712"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_IntersectCount(ItemCount: 100000)",
+            "value": 840433.4543372844,
+            "unit": "ns",
+            "range": "± 442.9359314620828"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Keys(ItemCount: 100)",
+            "value": 471.14208961416176,
+            "unit": "ns",
+            "range": "± 0.512488359853142"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Keys(ItemCount: 100)",
+            "value": 2138.6660667419433,
+            "unit": "ns",
+            "range": "± 8.831966269069044"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Keys(ItemCount: 1000)",
+            "value": 8561.000326538086,
+            "unit": "ns",
+            "range": "± 95.70773511484549"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Keys(ItemCount: 1000)",
+            "value": 14902.524543457032,
+            "unit": "ns",
+            "range": "± 890.315245022942"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Keys(ItemCount: 100000)",
+            "value": 5630759.289351852,
+            "unit": "ns",
+            "range": "± 85968.44959448835"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Keys(ItemCount: 100000)",
+            "value": 1447279.484765625,
+            "unit": "ns",
+            "range": "± 13175.115179125229"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Keys(ItemCount: 1000000)",
+            "value": 67447795.31896552,
+            "unit": "ns",
+            "range": "± 1438558.0358471046"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Keys(ItemCount: 1000000)",
+            "value": 14005111.577083332,
+            "unit": "ns",
+            "range": "± 155549.72016167952"
+          },
+          {
+            "name": "EnumMapBenchmark.Dictionary_Lookup",
+            "value": 117.61936607531139,
+            "unit": "ns",
+            "range": "± 0.12766710019291475"
+          },
+          {
+            "name": "EnumMapBenchmark.EnumMap_Lookup",
+            "value": 63.0125110915729,
+            "unit": "ns",
+            "range": "± 0.0880975422521175"
+          },
+          {
+            "name": "LongDictionaryBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 4901.732768091662,
+            "unit": "ns",
+            "range": "± 23.39679882039631"
+          },
+          {
+            "name": "LongDictionaryBenchmark.LongDictionary_Lookup(ItemCount: 1000)",
+            "value": 2278.741579055786,
+            "unit": "ns",
+            "range": "± 7.269786268552237"
+          },
+          {
+            "name": "LongDictionaryBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1583249.5376674107,
+            "unit": "ns",
+            "range": "± 1531.4225580073253"
+          },
+          {
+            "name": "LongDictionaryBenchmark.LongDictionary_Lookup(ItemCount: 100000)",
+            "value": 695540.2253069197,
+            "unit": "ns",
+            "range": "± 2701.8534098498335"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Overlaps(ItemCount: 1000)",
+            "value": 7977.781597561307,
+            "unit": "ns",
+            "range": "± 43.60535349104671"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Overlaps(ItemCount: 1000)",
+            "value": 8.227207753393385,
+            "unit": "ns",
+            "range": "± 0.006690499844121892"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Overlaps(ItemCount: 100000)",
+            "value": 1205880.7554552802,
+            "unit": "ns",
+            "range": "± 16132.366846922574"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Overlaps(ItemCount: 100000)",
+            "value": 4.390473858668254,
+            "unit": "ns",
+            "range": "± 0.022717994094262048"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Pairs(ItemCount: 100)",
+            "value": 707.832902095936,
+            "unit": "ns",
+            "range": "± 4.037195309499063"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Pairs(ItemCount: 100)",
+            "value": 2716.3561213458024,
+            "unit": "ns",
+            "range": "± 5.2248939347997"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Pairs(ItemCount: 1000)",
+            "value": 11232.264354160854,
+            "unit": "ns",
+            "range": "± 28.652865046430897"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Pairs(ItemCount: 1000)",
+            "value": 19549.998337881905,
+            "unit": "ns",
+            "range": "± 550.3657733931952"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Pairs(ItemCount: 100000)",
+            "value": 6220323.709321121,
+            "unit": "ns",
+            "range": "± 36077.527001059214"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Pairs(ItemCount: 100000)",
+            "value": 2117330.8747106483,
+            "unit": "ns",
+            "range": "± 78608.60165832438"
+          },
+          {
+            "name": "RadixSortBenchmark.Array_Pairs(ItemCount: 1000000)",
+            "value": 73756218.11330047,
+            "unit": "ns",
+            "range": "± 102953.8370281194"
+          },
+          {
+            "name": "RadixSortBenchmark.RadixSort_Pairs(ItemCount: 1000000)",
+            "value": 19557046.05172414,
+            "unit": "ns",
+            "range": "± 65087.5159513099"
+          },
+          {
+            "name": "SpatialGridBenchmark.Dictionary_Query(ItemCount: 1000)",
+            "value": 23796.115814208984,
+            "unit": "ns",
+            "range": "± 128.91363154175542"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Query(ItemCount: 1000)",
+            "value": 3851.4855888911657,
+            "unit": "ns",
+            "range": "± 57.24741802146208"
+          },
+          {
+            "name": "SpatialGridBenchmark.Dictionary_Query(ItemCount: 100000)",
+            "value": 6803567.95954241,
+            "unit": "ns",
+            "range": "± 27305.970998554854"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Query(ItemCount: 100000)",
+            "value": 1658978.4686802456,
+            "unit": "ns",
+            "range": "± 16946.84319472026"
+          },
+          {
+            "name": "SpatialGridBenchmark.KdTree_Rebuild(ItemCount: 1000)",
+            "value": 146261.6859741211,
+            "unit": "ns",
+            "range": "± 540.0574371807181"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Rebuild(ItemCount: 1000)",
+            "value": 5585.580805460612,
+            "unit": "ns",
+            "range": "± 28.108647436067507"
+          },
+          {
+            "name": "SpatialGridBenchmark.KdTree_Rebuild(ItemCount: 100000)",
+            "value": 26660412.384698275,
+            "unit": "ns",
+            "range": "± 87520.36920448791"
+          },
+          {
+            "name": "SpatialGridBenchmark.SpatialGrid_Rebuild(ItemCount: 100000)",
+            "value": 1908587.689520474,
+            "unit": "ns",
+            "range": "± 3634.7739729675677"
+          },
+          {
+            "name": "EnumMapBenchmark.Dictionary_Remove",
+            "value": 3631.22,
+            "unit": "ns",
+            "range": "± 355.32303072220935"
+          },
+          {
+            "name": "EnumMapBenchmark.EnumMap_Remove",
+            "value": 1937.2666666666667,
+            "unit": "ns",
+            "range": "± 414.8203363922674"
+          },
+          {
+            "name": "LongDictionaryBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 87035.48979591837,
+            "unit": "ns",
+            "range": "± 9989.96681560146"
+          },
+          {
+            "name": "LongSetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 83085.05517241379,
+            "unit": "ns",
+            "range": "± 4112.872112140584"
+          },
+          {
+            "name": "LongDictionaryBenchmark.LongDictionary_Remove(ItemCount: 1000)",
+            "value": 98987.67543859649,
+            "unit": "ns",
+            "range": "± 4344.7325406151185"
+          },
+          {
+            "name": "LongSetBenchmark.LongSet_Remove(ItemCount: 1000)",
+            "value": 84084.21052631579,
+            "unit": "ns",
+            "range": "± 4297.774187936637"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 31675.534161490683,
+            "unit": "ns",
+            "range": "± 4846.775611206712"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_Remove(ItemCount: 1000)",
+            "value": 113622.97222222222,
+            "unit": "ns",
+            "range": "± 8363.958233735373"
+          },
+          {
+            "name": "LongDictionaryBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 2023015.1875,
+            "unit": "ns",
+            "range": "± 34204.13103864606"
+          },
+          {
+            "name": "LongSetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1973298.9310344828,
+            "unit": "ns",
+            "range": "± 16369.3990397829"
+          },
+          {
+            "name": "LongDictionaryBenchmark.LongDictionary_Remove(ItemCount: 100000)",
+            "value": 2662622.5217391304,
+            "unit": "ns",
+            "range": "± 2114161.1416589264"
+          },
+          {
+            "name": "LongSetBenchmark.LongSet_Remove(ItemCount: 100000)",
+            "value": 1436087.448275862,
+            "unit": "ns",
+            "range": "± 15961.360757726783"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1724288.5333333334,
+            "unit": "ns",
+            "range": "± 18111.56559139116"
+          },
+          {
+            "name": "HashCachingSetBenchmark.HashCachingSet_Remove(ItemCount: 100000)",
+            "value": 1521401.25,
+            "unit": "ns",
+            "range": "± 55770.92449598055"
+          },
+          {
+            "name": "TopKSketchBenchmark.Dictionary_TopK(ItemCount: 1000)",
+            "value": 29.790174866716068,
+            "unit": "ns",
+            "range": "± 0.609551438731005"
+          },
+          {
+            "name": "TopKSketchBenchmark.TopKSketch_TopK(ItemCount: 1000)",
+            "value": 1226.4045511245727,
+            "unit": "ns",
+            "range": "± 4.279567720170498"
+          },
+          {
+            "name": "TopKSketchBenchmark.Dictionary_TopK(ItemCount: 100000)",
+            "value": 29.207641178911384,
+            "unit": "ns",
+            "range": "± 0.5520839700029617"
+          },
+          {
+            "name": "TopKSketchBenchmark.TopKSketch_TopK(ItemCount: 100000)",
+            "value": 1174.57261523494,
+            "unit": "ns",
+            "range": "± 3.8277161066305743"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Union(ItemCount: 1000)",
+            "value": 18058.840994093152,
+            "unit": "ns",
+            "range": "± 386.1358762543669"
+          },
+          {
+            "name": "SortedSpanBenchmark.Linq_UnionLinq(ItemCount: 1000)",
+            "value": 19406.02280317034,
+            "unit": "ns",
+            "range": "± 345.3539756376158"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Union(ItemCount: 1000)",
+            "value": 2833.7196745554606,
+            "unit": "ns",
+            "range": "± 12.961007978092345"
+          },
+          {
+            "name": "SortedSpanBenchmark.HashSet_Union(ItemCount: 100000)",
+            "value": 3302168.482682292,
+            "unit": "ns",
+            "range": "± 50621.36425713894"
+          },
+          {
+            "name": "SortedSpanBenchmark.Linq_UnionLinq(ItemCount: 100000)",
+            "value": 5012764.000664063,
+            "unit": "ns",
+            "range": "± 526762.6715428128"
+          },
+          {
+            "name": "SortedSpanBenchmark.SortedSpan_Union(ItemCount: 100000)",
+            "value": 922711.7492254849,
+            "unit": "ns",
+            "range": "± 344.8853078590023"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 11912.961692810059,
+            "unit": "ns",
+            "range": "± 179.21689296185193"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 14981.591474745008,
+            "unit": "ns",
+            "range": "± 3539.693389585579"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_Add(ItemCount: 1000)",
+            "value": 12047.309426669417,
+            "unit": "ns",
+            "range": "± 23.35124078663237"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Add(ItemCount: 1000)",
+            "value": 33879.446749983166,
+            "unit": "ns",
+            "range": "± 100.45457715991773"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.PooledCeleritySet_Add(ItemCount: 1000)",
+            "value": 8273.776263201678,
+            "unit": "ns",
+            "range": "± 90.31695458516629"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_Add(ItemCount: 1000)",
+            "value": 26130.193631402377,
+            "unit": "ns",
+            "range": "± 38.68988546377186"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 3403044.967268319,
+            "unit": "ns",
+            "range": "± 49795.59402913297"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 4710979.865513393,
+            "unit": "ns",
+            "range": "± 42347.936345635404"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_Add(ItemCount: 100000)",
+            "value": 4690197.560416667,
+            "unit": "ns",
+            "range": "± 68679.7968026161"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Add(ItemCount: 100000)",
+            "value": 10682918.763020834,
+            "unit": "ns",
+            "range": "± 48898.70558134285"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.PooledCeleritySet_Add(ItemCount: 100000)",
+            "value": 2863415.0692349137,
+            "unit": "ns",
+            "range": "± 39567.318922572864"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_Add(ItemCount: 100000)",
+            "value": 4496432.2585227275,
+            "unit": "ns",
+            "range": "± 71669.65023922175"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_And(ItemCount: 1024)",
+            "value": 53.007659153143564,
+            "unit": "ns",
+            "range": "± 0.26001725200867626"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_And(ItemCount: 1024)",
+            "value": 1532.4377341637244,
+            "unit": "ns",
+            "range": "± 307.64737334811076"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_And(ItemCount: 1000000)",
+            "value": 42843.861547851564,
+            "unit": "ns",
+            "range": "± 573.0148480914661"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_And(ItemCount: 1000000)",
+            "value": 4462701.790736607,
+            "unit": "ns",
+            "range": "± 2371.6821794294437"
+          },
+          {
+            "name": "AhoCorasickBenchmark.Regex_Build(ItemCount: 1000)",
+            "value": 284139.1498300058,
+            "unit": "ns",
+            "range": "± 5147.194220429817"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_Build(ItemCount: 1000)",
+            "value": 58035.38084355107,
+            "unit": "ns",
+            "range": "± 581.2774046968956"
+          },
+          {
+            "name": "AhoCorasickBenchmark.Regex_Build(ItemCount: 100000)",
+            "value": 287934.52052659256,
+            "unit": "ns",
+            "range": "± 1296.8914827617934"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_Build(ItemCount: 100000)",
+            "value": 61895.50728212554,
+            "unit": "ns",
+            "range": "± 404.32952926491834"
+          },
+          {
+            "name": "DisjointSetBenchmark.Dictionary_Components(ItemCount: 1000)",
+            "value": 18084.551213400704,
+            "unit": "ns",
+            "range": "± 141.62015578086266"
+          },
+          {
+            "name": "DisjointSetBenchmark.DisjointSet_Components(ItemCount: 1000)",
+            "value": 16014.21809060233,
+            "unit": "ns",
+            "range": "± 31.19933359021723"
+          },
+          {
+            "name": "DisjointSetBenchmark.Dictionary_Components(ItemCount: 100000)",
+            "value": 4168271.6121651786,
+            "unit": "ns",
+            "range": "± 34076.08943896787"
+          },
+          {
+            "name": "DisjointSetBenchmark.DisjointSet_Components(ItemCount: 100000)",
+            "value": 3288262.33390625,
+            "unit": "ns",
+            "range": "± 102824.71545837467"
+          },
+          {
+            "name": "DisjointSetBenchmark.Dictionary_Connected(ItemCount: 1000)",
+            "value": 9152.180469360352,
+            "unit": "ns",
+            "range": "± 7.525667676696787"
+          },
+          {
+            "name": "DisjointSetBenchmark.DisjointSet_Connected(ItemCount: 1000)",
+            "value": 12148.37024806096,
+            "unit": "ns",
+            "range": "± 44.69492128001566"
+          },
+          {
+            "name": "DisjointSetBenchmark.Dictionary_Connected(ItemCount: 100000)",
+            "value": 252775.12170410156,
+            "unit": "ns",
+            "range": "± 1809.651916665375"
+          },
+          {
+            "name": "DisjointSetBenchmark.DisjointSet_Connected(ItemCount: 100000)",
+            "value": 334342.05984700524,
+            "unit": "ns",
+            "range": "± 1646.010361063693"
+          },
+          {
+            "name": "AhoCorasickBenchmark.String_Contains(ItemCount: 1000)",
+            "value": 15272.493290901184,
+            "unit": "ns",
+            "range": "± 1865.4522378852653"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_Contains(ItemCount: 1000)",
+            "value": 6094.386348451887,
+            "unit": "ns",
+            "range": "± 7.50867865955764"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4705.978378295898,
+            "unit": "ns",
+            "range": "± 12.844433564417322"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4732.939937591553,
+            "unit": "ns",
+            "range": "± 5.547884143947981"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_Contains(ItemCount: 1000)",
+            "value": 4728.884784851074,
+            "unit": "ns",
+            "range": "± 9.615101233211403"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Contains(ItemCount: 1000)",
+            "value": 13481.246160234723,
+            "unit": "ns",
+            "range": "± 31.99991944564"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.PooledCeleritySet_Contains(ItemCount: 1000)",
+            "value": 1928.210116113935,
+            "unit": "ns",
+            "range": "± 13.942283579732557"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_Contains(ItemCount: 1000)",
+            "value": 2847.248924119132,
+            "unit": "ns",
+            "range": "± 3.5712134226276167"
+          },
+          {
+            "name": "AhoCorasickBenchmark.String_Contains(ItemCount: 100000)",
+            "value": 1051928.4064520474,
+            "unit": "ns",
+            "range": "± 36004.251057680005"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_Contains(ItemCount: 100000)",
+            "value": 1065955.8590494792,
+            "unit": "ns",
+            "range": "± 15508.64829277122"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1542580.5294989224,
+            "unit": "ns",
+            "range": "± 13416.121496587657"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1575883.9014033566,
+            "unit": "ns",
+            "range": "± 1089.419087233251"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_Contains(ItemCount: 100000)",
+            "value": 1556126.91796875,
+            "unit": "ns",
+            "range": "± 12327.45279310491"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Contains(ItemCount: 100000)",
+            "value": 8332241.837139423,
+            "unit": "ns",
+            "range": "± 12457.77727126288"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.PooledCeleritySet_Contains(ItemCount: 100000)",
+            "value": 574365.2857118804,
+            "unit": "ns",
+            "range": "± 733.4763253976661"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_Contains(ItemCount: 100000)",
+            "value": 623218.361467634,
+            "unit": "ns",
+            "range": "± 1441.257826473441"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_ContainsMissing(ItemCount: 1000)",
+            "value": 4539.169852665493,
+            "unit": "ns",
+            "range": "± 4.894736401725818"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_ContainsMissing(ItemCount: 1000)",
+            "value": 2364.4129123687744,
+            "unit": "ns",
+            "range": "± 2.947244891740118"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_ContainsMissing(ItemCount: 100000)",
+            "value": 1922681.378627232,
+            "unit": "ns",
+            "range": "± 3047.806562047069"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_ContainsMissing(ItemCount: 100000)",
+            "value": 338497.7886836611,
+            "unit": "ns",
+            "range": "± 615.5817631631604"
+          },
+          {
+            "name": "AhoCorasickBenchmark.Regex_ContainsRegex(ItemCount: 1000)",
+            "value": 100962.83142829663,
+            "unit": "ns",
+            "range": "± 1880.0068512500902"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_ContainsRegex(ItemCount: 1000)",
+            "value": 6090.847756249564,
+            "unit": "ns",
+            "range": "± 7.402382316710793"
+          },
+          {
+            "name": "AhoCorasickBenchmark.Regex_ContainsRegex(ItemCount: 100000)",
+            "value": 10609505.97625,
+            "unit": "ns",
+            "range": "± 21853.37821559496"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_ContainsRegex(ItemCount: 100000)",
+            "value": 1059080.1846713363,
+            "unit": "ns",
+            "range": "± 13520.138160560571"
+          },
+          {
+            "name": "AhoCorasickBenchmark.String_Count(ItemCount: 1000)",
+            "value": 33573.06535602438,
+            "unit": "ns",
+            "range": "± 613.0952797247805"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_Count(ItemCount: 1000)",
+            "value": 5759.317168624313,
+            "unit": "ns",
+            "range": "± 6.518023094456224"
+          },
+          {
+            "name": "AhoCorasickBenchmark.String_Count(ItemCount: 100000)",
+            "value": 4290899.241244612,
+            "unit": "ns",
+            "range": "± 188408.18283197904"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_Count(ItemCount: 100000)",
+            "value": 1037755.1268780048,
+            "unit": "ns",
+            "range": "± 853.6160343179135"
+          },
+          {
+            "name": "AhoCorasickBenchmark.String_CountFew(ItemCount: 1000)",
+            "value": 933.7726580756051,
+            "unit": "ns",
+            "range": "± 21.20014953814664"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_CountFew(ItemCount: 1000)",
+            "value": 3904.5675446082805,
+            "unit": "ns",
+            "range": "± 4.098727630465847"
+          },
+          {
+            "name": "AhoCorasickBenchmark.String_CountFew(ItemCount: 100000)",
+            "value": 97874.1359375,
+            "unit": "ns",
+            "range": "± 5669.731583779773"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_CountFew(ItemCount: 100000)",
+            "value": 500474.48466435185,
+            "unit": "ns",
+            "range": "± 441.25843775825143"
+          },
+          {
+            "name": "AhoCorasickBenchmark.Regex_EnumerateMatches(ItemCount: 1000)",
+            "value": 28038.556498600887,
+            "unit": "ns",
+            "range": "± 137.5419346163433"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_EnumerateMatches(ItemCount: 1000)",
+            "value": 6591.676120616771,
+            "unit": "ns",
+            "range": "± 7.511185409516865"
+          },
+          {
+            "name": "AhoCorasickBenchmark.Regex_EnumerateMatches(ItemCount: 100000)",
+            "value": 5186508.381911058,
+            "unit": "ns",
+            "range": "± 7214.496499490372"
+          },
+          {
+            "name": "AhoCorasickBenchmark.AhoCorasick_EnumerateMatches(ItemCount: 100000)",
+            "value": 1087792.6534375,
+            "unit": "ns",
+            "range": "± 9474.891424648487"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Except(ItemCount: 1000)",
+            "value": 66195.04545454546,
+            "unit": "ns",
+            "range": "± 2554.913395338529"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Except(ItemCount: 1000)",
+            "value": 72945.68586387434,
+            "unit": "ns",
+            "range": "± 8951.811607640873"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Except(ItemCount: 100000)",
+            "value": 2507485.339285714,
+            "unit": "ns",
+            "range": "± 13046.352653387368"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Except(ItemCount: 100000)",
+            "value": 1071207.5,
+            "unit": "ns",
+            "range": "± 10785.148616179424"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.Dictionary_Insert(ItemCount: 1000)",
+            "value": 12910.244199625651,
+            "unit": "ns",
+            "range": "± 398.1003083503892"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.PooledCelerityDictionary_Insert(ItemCount: 1000)",
+            "value": 8190.075609560366,
+            "unit": "ns",
+            "range": "± 19.886721420443106"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.Dictionary_Insert(ItemCount: 100000)",
+            "value": 4844796.622135417,
+            "unit": "ns",
+            "range": "± 87941.14432644393"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.PooledCelerityDictionary_Insert(ItemCount: 100000)",
+            "value": 2955185.4696903937,
+            "unit": "ns",
+            "range": "± 17588.17521149489"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_IntersectClustered(ItemCount: 1000)",
+            "value": 40493.08378378378,
+            "unit": "ns",
+            "range": "± 6707.904847466933"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_IntersectClustered(ItemCount: 1000)",
+            "value": 1629.295,
+            "unit": "ns",
+            "range": "± 325.01908405507504"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_IntersectClustered(ItemCount: 100000)",
+            "value": 963598.0178571428,
+            "unit": "ns",
+            "range": "± 8747.879052452428"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_IntersectClustered(ItemCount: 100000)",
+            "value": 1956.691823899371,
+            "unit": "ns",
+            "range": "± 395.3915852572254"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_IntersectDense(ItemCount: 1000)",
+            "value": 42717.90957446808,
+            "unit": "ns",
+            "range": "± 2828.869831079413"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_IntersectDense(ItemCount: 1000)",
+            "value": 53035.106896551726,
+            "unit": "ns",
+            "range": "± 4186.211259892662"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_IntersectDense(ItemCount: 100000)",
+            "value": 3072268.72,
+            "unit": "ns",
+            "range": "± 7860.001396946442"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_IntersectDense(ItemCount: 100000)",
+            "value": 90298.75,
+            "unit": "ns",
+            "range": "± 35875.49644841639"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_IntersectSparse(ItemCount: 1000)",
+            "value": 53394.97260273973,
+            "unit": "ns",
+            "range": "± 5558.5579846044375"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_IntersectSparse(ItemCount: 1000)",
+            "value": 57878.15706806283,
+            "unit": "ns",
+            "range": "± 7325.122887163179"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_IntersectSparse(ItemCount: 100000)",
+            "value": 3865480.975,
+            "unit": "ns",
+            "range": "± 47215.65999749827"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_IntersectSparse(ItemCount: 100000)",
+            "value": 960653.7857142857,
+            "unit": "ns",
+            "range": "± 3963.714834055837"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.Dictionary_Lookup(ItemCount: 1000)",
+            "value": 4754.635107369259,
+            "unit": "ns",
+            "range": "± 23.458912059018232"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.PooledCelerityDictionary_Lookup(ItemCount: 1000)",
+            "value": 2348.7717680249893,
+            "unit": "ns",
+            "range": "± 15.634936553085378"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.Dictionary_Lookup(ItemCount: 100000)",
+            "value": 1591280.0410853794,
+            "unit": "ns",
+            "range": "± 2178.529523583036"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.PooledCelerityDictionary_Lookup(ItemCount: 100000)",
+            "value": 711481.3605018029,
+            "unit": "ns",
+            "range": "± 2315.690130762637"
+          },
+          {
+            "name": "SegmentTreeBenchmark.Array_Mixed(ItemCount: 1000)",
+            "value": 186755.3019919882,
+            "unit": "ns",
+            "range": "± 7099.675961930349"
+          },
+          {
+            "name": "SegmentTreeBenchmark.SegmentTree_Mixed(ItemCount: 1000)",
+            "value": 40178.11148071289,
+            "unit": "ns",
+            "range": "± 278.22015604185793"
+          },
+          {
+            "name": "SegmentTreeBenchmark.Array_Mixed(ItemCount: 100000)",
+            "value": 22368342.695833333,
+            "unit": "ns",
+            "range": "± 107508.64050602596"
+          },
+          {
+            "name": "SegmentTreeBenchmark.SegmentTree_Mixed(ItemCount: 100000)",
+            "value": 1272694.0285295758,
+            "unit": "ns",
+            "range": "± 8303.343771471387"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_Or(ItemCount: 1024)",
+            "value": 53.95320642789205,
+            "unit": "ns",
+            "range": "± 0.5885279794974971"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_Or(ItemCount: 1024)",
+            "value": 1207.1438834091712,
+            "unit": "ns",
+            "range": "± 29.360597719902458"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_Or(ItemCount: 1000000)",
+            "value": 42617.950345720565,
+            "unit": "ns",
+            "range": "± 513.5868511594714"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_Or(ItemCount: 1000000)",
+            "value": 4463732.612980769,
+            "unit": "ns",
+            "range": "± 3215.104608930838"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_PopCount(ItemCount: 1024)",
+            "value": 1238.2300110544477,
+            "unit": "ns",
+            "range": "± 2.343272693738786"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_PopCount(ItemCount: 1024)",
+            "value": 7.034812533855439,
+            "unit": "ns",
+            "range": "± 0.009643519104641212"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_PopCount(ItemCount: 1000000)",
+            "value": 4824532.501157408,
+            "unit": "ns",
+            "range": "± 3081.4692790557397"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_PopCount(ItemCount: 1000000)",
+            "value": 4933.587175096784,
+            "unit": "ns",
+            "range": "± 5.856236016530345"
+          },
+          {
+            "name": "SegmentTreeBenchmark.Array_RangeMin(ItemCount: 1000)",
+            "value": 250742.56217447916,
+            "unit": "ns",
+            "range": "± 3534.7650865144496"
+          },
+          {
+            "name": "SegmentTreeBenchmark.SegmentTree_RangeMin(ItemCount: 1000)",
+            "value": 21600.05303428913,
+            "unit": "ns",
+            "range": "± 309.1774249027808"
+          },
+          {
+            "name": "SegmentTreeBenchmark.Array_RangeMin(ItemCount: 100000)",
+            "value": 41441882.52884615,
+            "unit": "ns",
+            "range": "± 923011.6777935267"
+          },
+          {
+            "name": "SegmentTreeBenchmark.SegmentTree_RangeMin(ItemCount: 100000)",
+            "value": 271297.56632777624,
+            "unit": "ns",
+            "range": "± 5150.041687236339"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.Dictionary_Remove(ItemCount: 1000)",
+            "value": 80542.1015625,
+            "unit": "ns",
+            "range": "± 7224.427047616484"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 31403.290322580644,
+            "unit": "ns",
+            "range": "± 4205.74851834715"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.PooledCelerityDictionary_Remove(ItemCount: 1000)",
+            "value": 130994.39795918367,
+            "unit": "ns",
+            "range": "± 12899.23482543992"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.PooledCeleritySet_Remove(ItemCount: 1000)",
+            "value": 114169.67525773196,
+            "unit": "ns",
+            "range": "± 8733.895514176096"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_Remove(ItemCount: 1000)",
+            "value": 31601.729357798165,
+            "unit": "ns",
+            "range": "± 3065.5696162227205"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_Remove(ItemCount: 1000)",
+            "value": 72603.06666666667,
+            "unit": "ns",
+            "range": "± 4894.780560385558"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.Dictionary_Remove(ItemCount: 100000)",
+            "value": 2023308.9642857143,
+            "unit": "ns",
+            "range": "± 6008.959232199267"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1698522.448275862,
+            "unit": "ns",
+            "range": "± 10811.03195016952"
+          },
+          {
+            "name": "PooledCelerityDictionaryBenchmark.PooledCelerityDictionary_Remove(ItemCount: 100000)",
+            "value": 1587044.0679012346,
+            "unit": "ns",
+            "range": "± 50210.99640633718"
+          },
+          {
+            "name": "PooledCeleritySetBenchmark.PooledCeleritySet_Remove(ItemCount: 100000)",
+            "value": 1296894.5461538462,
+            "unit": "ns",
+            "range": "± 52454.36370176662"
+          },
+          {
+            "name": "SwissSetBenchmark.HashSet_Remove(ItemCount: 100000)",
+            "value": 1700992.55,
+            "unit": "ns",
+            "range": "± 11546.169391165313"
+          },
+          {
+            "name": "SwissSetBenchmark.SwissSet_Remove(ItemCount: 100000)",
+            "value": 1058268.4137931035,
+            "unit": "ns",
+            "range": "± 9300.427254076792"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Union(ItemCount: 1000)",
+            "value": 36779.61057692308,
+            "unit": "ns",
+            "range": "± 1615.0992709829825"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Union(ItemCount: 1000)",
+            "value": 79813.70050761421,
+            "unit": "ns",
+            "range": "± 9295.25350205683"
+          },
+          {
+            "name": "DisjointSetBenchmark.Dictionary_Union(ItemCount: 1000)",
+            "value": 93420.83556256976,
+            "unit": "ns",
+            "range": "± 572.7948867407273"
+          },
+          {
+            "name": "DisjointSetBenchmark.DisjointSet_Union(ItemCount: 1000)",
+            "value": 26206.768797193254,
+            "unit": "ns",
+            "range": "± 63.12991609196822"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.HashSet_Union(ItemCount: 100000)",
+            "value": 3925050.796296296,
+            "unit": "ns",
+            "range": "± 12724.077393831605"
+          },
+          {
+            "name": "CompressedIntSetBenchmark.CompressedIntSet_Union(ItemCount: 100000)",
+            "value": 1183765.5,
+            "unit": "ns",
+            "range": "± 12371.2181587806"
+          },
+          {
+            "name": "DisjointSetBenchmark.Dictionary_Union(ItemCount: 100000)",
+            "value": 38956992.27472527,
+            "unit": "ns",
+            "range": "± 289216.60197406274"
+          },
+          {
+            "name": "DisjointSetBenchmark.DisjointSet_Union(ItemCount: 100000)",
+            "value": 8420883.879111841,
+            "unit": "ns",
+            "range": "± 174779.69448509548"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_Xor(ItemCount: 1024)",
+            "value": 54.07614832265036,
+            "unit": "ns",
+            "range": "± 0.5004660065611709"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_Xor(ItemCount: 1024)",
+            "value": 1232.3858249099167,
+            "unit": "ns",
+            "range": "± 4.872597009921623"
+          },
+          {
+            "name": "BitSetBenchmark.BitArray_Xor(ItemCount: 1000000)",
+            "value": 43111.23537902832,
+            "unit": "ns",
+            "range": "± 511.4708447104119"
+          },
+          {
+            "name": "BitSetBenchmark.BitSet_Xor(ItemCount: 1000000)",
+            "value": 4465366.816127232,
+            "unit": "ns",
+            "range": "± 2805.4699444423227"
           }
         ]
       }
