@@ -480,6 +480,11 @@ function escapeHtml(s) {
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
     { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',     vs: 'PriorityQueue<int, int>', ops: ['Enqueue', 'DecreaseKey'] },
+    // TimerWheel is the deadline container, benchmarked against the BCL PriorityQueue with the lazy-deletion
+    // workaround its missing Remove forces. Round is the whole workload — schedule, cancel nine in ten, run
+    // the clock out — and Schedule, Cancel, Drain and Tick take it apart. Tick drives the clock one tick at a
+    // time, which is the arm that charges the wheel for its slot sweep.
+    { key: 'TimerWheel',          title: 'TimerWheel<int>',                          vs: 'PriorityQueue<int, long>', ops: ['Round', 'Schedule', 'Cancel', 'Drain', 'Tick'] },
     // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
     // SpanLookup probes from a ReadOnlySpan<char> slice, which the baseline must first turn into a string.
     { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch', 'SpanLookup'] },

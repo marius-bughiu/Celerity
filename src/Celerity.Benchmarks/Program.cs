@@ -48,6 +48,7 @@ internal class Program
         typeof(DequeBenchmark),
         typeof(DisjointSetBenchmark),
         typeof(IndexedPriorityQueueBenchmark),
+        typeof(TimerWheelBenchmark),
         typeof(TrieBenchmark),
         typeof(StringInternTableBenchmark),
         typeof(SuffixArrayBenchmark),

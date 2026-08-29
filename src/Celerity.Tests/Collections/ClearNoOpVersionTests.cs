@@ -342,6 +342,14 @@ public class ClearNoOpVersionTests
             () => grid.GetEnumerator(), grid.Clear, () => grid.Count, () => grid.Add(1, 1, 1));
     }
 
+    [Fact]
+    public void TimerWheelClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var wheel = new TimerWheel<int>(4, 2);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => wheel.GetEnumerator(), wheel.Clear, () => wheel.Count, () => wheel.Schedule(3, 1));
+    }
+
     // ---- The two documented exceptions ------------------------------------------------------------
 
     [Fact]
