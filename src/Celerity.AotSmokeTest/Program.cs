@@ -1168,9 +1168,14 @@ void Check(bool condition, string message)
     document.AppendAndClear(tail);
     Check(tail.Length == 0 && document.ToString() == before, "Rope rejoins and empties the source");
 
+    // 4549 is the sum of the code units of "The very best of times, it was the worst of times." — the text
+    // after all four edits above, including the indexer's 't' -> 'T', which is worth 32 less than the
+    // unmutated string's 4581. Spelled out because a bare total invites being re-derived from the wrong
+    // intermediate state.
     var characters = 0;
     foreach (var c in document) characters += c;
     Check(characters == 4549, "Rope enumerates every character");
+    Check(characters == document.ToString().Sum(c => c), "Rope enumeration agrees with materialization");
 
     var chunked = 0;
     foreach (var chunk in document.GetChunks()) chunked += chunk.Length;
