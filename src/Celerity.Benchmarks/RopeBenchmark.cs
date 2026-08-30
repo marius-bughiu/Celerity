@@ -35,10 +35,12 @@ using Celerity.Collections;
 /// </para>
 /// <para>
 /// <c>Append</c> is in here to be lost. Appending to the end of a <see cref="StringBuilder"/> is a bounds
-/// check and a store, a rope has to descend a tree first, and publishing that is the house rule. So is
-/// <c>SplitJoin</c>, from the other side: cutting a document in two and rejoining it is <c>O(log n)</c> for a
+/// check and a store, a rope has to descend a tree first, and publishing that is the house rule.
+/// <c>SplitJoin</c> is the mirror image: cutting a document in two and rejoining it is <c>O(log n)</c> for a
 /// rope and a full copy for a <see cref="StringBuilder"/>, which has no such operation and has to go through
-/// <see cref="StringBuilder.ToString()"/> to fake one.
+/// <see cref="StringBuilder.ToString()"/> to fake one. It rebuilds per iteration for the same reason the edit
+/// groups do — a split leaves a leaf boundary behind it, so repeating one at a fixed position would measure
+/// the boundary path rather than a real cut.
 /// </para>
 /// <para>
 /// The two document sizes are chosen to straddle the crossover rather than to flatter the type. At ten
@@ -62,6 +64,13 @@ public class RopeBenchmark
 
     // Probes per invocation for the read groups, which are far cheaper per operation than an edit.
     private const int ProbeCount = 500;
+
+    // Split-and-rejoin cycles per invocation. Each cuts at a different position, because cutting repeatedly at
+    // the *same* one measures the wrong thing: the first cut splits the leaf it lands in and leaves a leaf
+    // boundary there, so every later cut at that position takes the boundary path and never pays for the
+    // one-leaf copy a real split does. The rope also gains a leaf per cycle, which is why this group rebuilds
+    // its containers per iteration rather than running against a persistent instance.
+    private const int SplitCount = 100;
 
     // The Remove arms shrink the document as they go, so their positions are taken modulo what is left. The
     // floor keeps that modulus positive whatever the document size is set to.
@@ -285,24 +294,38 @@ public class RopeBenchmark
 
     // ---- SplitJoin: the operation StringBuilder has to fake --------------------------------------------
 
+    [IterationSetup(Target = nameof(StringBuilder_SplitJoin))]
+    public void SetupForBuilderSplitJoin() => builder = new StringBuilder(source);
+
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("SplitJoin")]
     public int StringBuilder_SplitJoin()
     {
-        int middle = builder.Length / 2;
-        string head = builder.ToString(0, middle);
-        string tail = builder.ToString(middle, builder.Length - middle);
-        builder = new StringBuilder(head.Length + tail.Length);
-        builder.Append(head).Append(tail);
+        for (int i = 0; i < SplitCount; i++)
+        {
+            int at = probePositions[i] % builder.Length;
+            string head = builder.ToString(0, at);
+            string tail = builder.ToString(at, builder.Length - at);
+            builder = new StringBuilder(head.Length + tail.Length);
+            builder.Append(head).Append(tail);
+        }
+
         return builder.Length;
     }
+
+    [IterationSetup(Target = nameof(Rope_SplitJoin))]
+    public void SetupForRopeSplitJoin() => rope = new Rope(source);
 
     [Benchmark]
     [BenchmarkCategory("SplitJoin")]
     public int Rope_SplitJoin()
     {
-        Rope tail = rope.Split(rope.Length / 2);
-        rope.AppendAndClear(tail);
+        for (int i = 0; i < SplitCount; i++)
+        {
+            Rope tail = rope.Split(probePositions[i] % rope.Length);
+            rope.AppendAndClear(tail);
+        }
+
         return rope.Length;
     }
 }

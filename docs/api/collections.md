@@ -5892,7 +5892,7 @@ A **rope**: a balanced tree of bounded character runs, so an edit anywhere in a 
 
 A `StringBuilder` is a linked list of chunks whose head is the *end* of the text. That makes appending excellent and everything else linear in the document: `Insert` and `Remove` walk the chunk list to reach the position and then shift what follows. Ten times the document is ten times the cost of one edit — which is a quadratic build if you are assembling a document out of order.
 
-A rope descends a tree instead, so the cost of an edit is set by the **depth** of the document rather than its length, and the only characters that move are the ones inside a single leaf. It also has two operations the BCL has none of at any cost: `Split` cuts a document in two and `AppendAndClear` joins two back together, both `O(log n)`, where `string.Concat`, `Substring` and slice-then-copy are all a full copy.
+A rope descends a tree instead, so the cost of an edit is set by the **depth** of the document rather than its length, and the only characters that move are the ones inside a single leaf. It also has two operations the BCL has none of at any cost: `Split` cuts a document in two and `AppendAndClear` joins two back together, both `O(log n)`, where `string.Concat`, `Substring` and slice-then-copy are all a full copy. Neither copies the *document*: a split copies at most the one leaf the cut lands inside, and a join copies nothing at all.
 
 `List<char>` is worse than either on every editing axis — one flat array, so every edit is a whole-tail `memmove` — and `string` is immutable, so it is not in the running.
 
@@ -5906,42 +5906,44 @@ An AVL tree. Leaves hold a `char` buffer of at most `ChunkSize` code units (512 
 
 ### Measured
 
-Against `StringBuilder`, with `List<char>` as the naive arm, at ten thousand and a million characters. **These are development-machine numbers on BenchmarkDotNet's default job**; CI publishes its own on [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at each merge to `main`.
+Against `StringBuilder`, with `List<char>` as the naive arm, at ten thousand and a million characters. **These are development-machine numbers**; CI publishes its own on [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at each merge to `main`.
 
 The unit that matters is **Edit** — two hundred five-character insertions at scattered positions, each paired with a removal elsewhere, so the document ends the round at the length it started:
 
 | Edit | `StringBuilder` | `List<char>` | `Rope` | vs `StringBuilder` |
 | --- | ---: | ---: | ---: | ---: |
-| 1,000,000 chars | 6.05 ms | 17.65 ms | 57.84 µs | **105x** |
-| 10,000 chars | 41.38 µs | 118.2 µs | 27.56 µs | **1.50x** |
+| 1,000,000 chars | 5.99 ms | 17.4 ms | 61 µs | **98x** |
+| 10,000 chars | 41.5 µs | 118 µs | 27.9 µs | **1.49x** |
 
 Taken apart, and with the two operations the BCL cannot express at all:
 
 | At 1,000,000 | `StringBuilder` | `Rope` | Ratio |
 | --- | ---: | ---: | ---: |
-| Insert ×200 | 2.94 ms | 30.60 µs | **96x** |
-| Remove ×200 | 3.18 ms | 31.12 µs | **102x** |
-| Split + rejoin | 329.2 µs | 71.31 ns | **4,616x** |
-| **Index ×500** | 621.2 ns | 4.39 µs | **0.14x — a 7.1x loss** |
-| **Append (build by 5-char appends)** | 142.9 µs | 5.26 ms | **0.03x — a 36.8x loss** |
-| **`ToString()`** | 67.26 µs | 113.2 µs | **0.60x — a 1.68x loss** |
+| Insert ×200 | 2.82 ms | 37 µs | **~76x** |
+| Remove ×200 | 3.13 ms | 33 µs | **~94x** |
+| Split + rejoin ×100 | 27.5 ms | 38.6 µs | **~713x** |
+| **Index ×500** | 621 ns | 4.39 µs | **0.14x — a 7.1x loss** |
+| **Append (build by 5-char appends)** | 143 µs | 5.26 ms | **0.03x — a 36.8x loss** |
+| **`ToString()`** | 67.3 µs | 113 µs | **0.60x — a 1.68x loss** |
 
 | At 10,000 | `StringBuilder` | `Rope` | Ratio |
 | --- | ---: | ---: | ---: |
-| Insert ×200 | 28.65 µs | 21.14 µs | 1.36x |
-| Remove ×200 | 21.72 µs | 14.30 µs | 1.52x |
-| Split + rejoin | 1.22 µs | 37.32 ns | **32.7x** |
-| **Index ×500** | 620.9 ns | 1.90 µs | **0.33x — a 3.1x loss** |
-| **Append** | 1.20 µs | 23.35 µs | **0.05x — a 19.4x loss** |
-| **`ToString()`** | 578.1 ns | 631.5 ns | 0.92x — a 1.09x loss |
+| Insert ×200 | 21.7 µs | 15.8 µs | 1.38x |
+| Remove ×200 | 23 µs | 15.5 µs | ~1.5x |
+| Split + rejoin ×100 | 89 µs | 21.5 µs | **4.2x** |
+| **Index ×500** | 621 ns | 1.90 µs | **0.33x — a 3.1x loss** |
+| **Append** | 1.20 µs | 23.4 µs | **0.05x — a 19.4x loss** |
+| **`ToString()`** | 578 ns | 631 ns | 0.92x — a 1.09x loss |
 
-**The editing arms allocate nothing.** `Edit`, `Insert` and `Remove` all measure 0 B for the rope, against 20–21 KB for the `StringBuilder` arms that allocate at all — the leaf slack means the ordinary short edit lands in a leaf that already has room, so it is a `memmove` and nothing more. `Split` + rejoin allocates 712 B at a million characters against `StringBuilder`'s 4.00 MB, because the rope relinks nodes where the baseline has to copy the document twice through `ToString()`.
+**The editing arms allocate nothing.** `Edit`, `Insert` and `Remove` all measure 0 B for the rope, against 20–21 KB for the `StringBuilder` arms that allocate at all — the leaf slack means the ordinary short edit lands in a leaf that already has room, so it is a `memmove` and nothing more. A hundred split-and-rejoin cycles allocate 186 KB at a million characters against `StringBuilder`'s **400 MB**, because the rope relinks nodes and copies at most one boundary leaf per cut where the baseline copies the whole document twice through `ToString()`.
 
-**Two of the three pre-registered bars from [#404](https://github.com/marius-bughiu/Celerity/issues/404) clear, and the third was pre-registered on a false premise.** The ship gate — at least 10x on the edit round at a million characters — comes in at 105x, and `Remove` in isolation at 102x against a bar of 10x. The indexer criterion asked for at least 5x and the result is a **7.1x loss**, because the premise was wrong: `StringBuilder`'s indexer is `O(chunks)`, but a builder *constructed from a string* is a **single chunk**, so it indexes directly. The `O(chunks)` walk is what an edited builder degrades into, not what the benchmark's builder does. The bar should never have been set; it is published as a loss rather than quietly dropped.
+**The four mutating groups run one invocation per iteration**, because each needs its containers rebuilt, and they move run to run as a result: across four runs `Insert` at a million swung between 64x and 92x, and `Remove` between 77x and 106x. Read those as directions rather than as ratios to three figures. The read groups and the allocation figures are stable.
+
+**Two of the three pre-registered bars from [#404](https://github.com/marius-bughiu/Celerity/issues/404) clear, and the third was pre-registered on a false premise.** The ship gate — at least 10x on the edit round at a million characters — comes in at 98x, and `Remove` in isolation at about 94x against a bar of 10x. The indexer criterion asked for at least 5x and the result is a **7.1x loss**, because the premise was wrong: `StringBuilder`'s indexer is `O(chunks)`, but a builder *constructed from a string* is a **single chunk**, so it indexes directly. The `O(chunks)` walk is what an edited builder degrades into, not what the benchmark's builder does. The bar should never have been set; it is published as a loss rather than quietly dropped.
 
 **Where the crossover actually is.** The issue expected ten thousand characters to be below it. It is not: the edit round wins at every size measured, down to **200 characters (1.6x)**, 1,000 (3.6x) and 4,000 (9.2x). What *is* size-sensitive is the isolated arms — a separate sweep put `Insert` at a **1.11x loss** and `Remove` at a **1.33x loss** at four thousand characters, both within noise of parity, recovering to wins by ten thousand. Read the small-document story as *a wash on single edits, a win on a round of them*, not as a cliff.
 
-**One correction is worth recording, because it changed the headline by a factor of five.** The `Edit` arms originally ran against a persistent instance, since the workload is length-neutral by construction. That is wrong for this baseline: a `StringBuilder` splits a chunk on every mid-document insertion and never merges them back, so its chunk list grows without bound even though its length does not, and the arm got steadily slower the more invocations BenchmarkDotNet chose — per-op cost was still climbing after sixteen warmup iterations at a million characters, and the baseline read 19 ms with a ±63 ms error. Rebuilding every container per iteration puts it at 6.05 ms with a ±0.09 ms error. The published ratio is **105x**, not the 560x the drifting harness reported.
+**Two harness errors are recorded, because both moved a published figure.** The `Edit` arms originally ran against a persistent instance, since the workload is length-neutral by construction. That is wrong for this baseline: a `StringBuilder` splits a chunk on every mid-document insertion and never merges them back, so its chunk list grows without bound even though its length does not, and the arm got steadily slower the more invocations BenchmarkDotNet chose — per-op cost was still climbing after sixteen warmup iterations at a million characters, and the baseline read 19 ms with a ±63 ms error. Rebuilding every container per iteration puts it at 5.99 ms, and the ratio at 98x rather than the 560x the drifting harness reported. `SplitJoin` had the mirror-image fault: it cut repeatedly at a *fixed* midpoint, and since a split leaves a leaf boundary where it cuts, every invocation after the first took the boundary path and never paid for the one-leaf copy a real cut does. Cutting at varying positions and rebuilding per iteration took that figure from 4,616x to **713x** — still the largest margin this type has, and now an honest one.
 
 ### API
 
@@ -5955,7 +5957,7 @@ Taken apart, and with the two operations the BCL cannot express at all:
 | `void Insert(int index, char / string / ReadOnlySpan<char>)` | Insert at `index`; `Length` appends. `O(log n)`, and **allocation-free** when the target leaf has room — the ordinary case for the short insertions an editor produces. Inserting nothing is a no-op that does not invalidate enumerators. |
 | `void Remove(int index, int count)` | `O(log n)` whatever `count` is: whole leaves inside the range are unlinked rather than copied, and at most the two leaves the ends fall inside are compacted. Removing nothing is a no-op. |
 | `Rope Split(int index)` | Truncates this rope to `index` characters and returns the rest as a new rope with the same `ChunkSize`. `O(log n)`: the tree is cut along one root-to-leaf path and the sides rejoined, so no character moves except inside the one leaf the cut falls within. Splitting at `Length` returns an empty rope and is a no-op. |
-| `void AppendAndClear(Rope source)` | Moves every character of `source` onto the end in `O(log n)`, **leaving `source` empty**. `ArgumentException` if `source` is this rope. |
+| `void AppendAndClear(Rope source)` | Moves every character of `source` onto the end in `O(log n)`, **leaving `source` empty**. `ArgumentException` if `source` is this rope. This is the one mutation that does *not* run the defragmenting rebuild, which is what makes that `O(log n)` unconditional rather than amortized — a join adopts the source's leaves in whatever shape it left them, and rebuilding here would turn a node relink into an `O(n)` copy of the document. Any fragmentation it leaves is resolved by the next `Insert` / `Remove` that trips the gate, or by `TrimExcess()`. |
 | `int IndexOf(char value)` / `IndexOf(char value, int startIndex)` | A vectorized `MemoryExtensions.IndexOf` per leaf rather than a character at a time. Finding a multi-character *pattern* is not this type's job — build the text into a [`SuffixArray`](#suffixarray), or run a pattern set through [`AhoCorasick`](#ahocorasick). |
 | `void CopyTo(Span<char>)` / `CopyTo(int index, Span<char>, int count)` | Copy out, whole or by range. |
 | `string ToString()` / `ToString(int index, int count)` | Materialize, whole or by range. A full copy, as it is for `StringBuilder`. |
@@ -5993,8 +5995,9 @@ document.Remove(0, 7);
 char first = document[0];
 int firstLineBreak = document.IndexOf('\n');
 
-// Cut the document in two and put it back the other way round — both O(log n), and neither
-// copies the text. AppendAndClear *moves*, which is why it empties its argument.
+// Cut the document in two and put it back the other way round, both O(log n). Neither copies
+// the *document*: a split copies at most the one leaf the cut lands inside, and the join copies
+// nothing at all. AppendAndClear *moves*, which is why it empties its argument.
 Rope tail = document.Split(firstLineBreak + 1);
 tail.AppendAndClear(document);      // document is now empty
 document.AppendAndClear(tail);      // and tail is

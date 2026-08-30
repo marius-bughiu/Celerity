@@ -37,6 +37,7 @@ namespace Celerity.Collections;
 /// <b>Splitting and joining are the operations nothing in the BCL has.</b> <see cref="Split(int)"/> cuts the
 /// rope in two and <see cref="AppendAndClear(Rope)"/> joins two back together, both in <c>O(log n)</c>, where
 /// every BCL equivalent — <c>string.Concat</c>, <c>Substring</c>, slicing a span and copying — is a full copy.
+/// What a split copies is at most the one leaf the cut falls inside, never the document.
 /// <see cref="AppendAndClear(Rope)"/> empties its argument, and is named for it: joining is a <i>move</i> of
 /// the source's nodes, not a copy of its characters, so leaving the source pointing at buffers this rope now
 /// mutates would alias them. A copying join is <c>rope.Append(other.ToString())</c> and costs the copy.
@@ -502,6 +503,16 @@ public sealed class Rope : IReadOnlyList<char>
     /// <c>rope.Append(source.ToString())</c>.
     /// </para>
     /// <para>
+    /// <b>This is the one mutation that does not run the defragmenting rebuild</b>, which is what makes the
+    /// <c>O(log n)</c> unconditional rather than amortized. A join adopts <paramref name="source"/>'s leaves
+    /// in whatever shape that rope left them — joining a rope with a much smaller <see cref="ChunkSize"/>
+    /// brings in many more leaves than this rope's length warrants — and rebuilding for that here would turn
+    /// a node relink into an <c>O(n)</c> copy of the whole document. The fragmentation it can leave behind is
+    /// resolved by the next <see cref="Insert(int, ReadOnlySpan{char})"/> or <see cref="Remove"/> that trips
+    /// the gate, or by <see cref="TrimExcess"/>. <see cref="Split"/> is silent for the same reason, which
+    /// keeps the two halves of the pair symmetric.
+    /// </para>
+    /// <para>
     /// Moving from an empty rope is a no-op that does not invalidate enumerators on either side.
     /// </para>
     /// </remarks>
@@ -522,7 +533,6 @@ public sealed class Rope : IReadOnlyList<char>
         source._length = 0;
         source._version++;
         _version++;
-        RebuildIfFragmented();
     }
 
     /// <summary>

@@ -501,6 +501,54 @@ public class RopeTests
         Assert.Equal("t" + Repeat('b', 200) + "s", other.ToString());
     }
 
+    /// <summary>
+    /// <see cref="Rope.AppendAndClear"/> is the one mutation that does not run the defragmenting rebuild, and
+    /// that is what makes its documented <c>O(log n)</c> unconditional rather than amortized. A join adopts
+    /// the source's leaves in whatever shape that rope left them, so a source with a much smaller chunk size
+    /// brings in far more leaves than the destination's length warrants — rebuilding for that here would turn
+    /// a node relink into a copy of the whole document. The fragmentation is left for the next edit or for
+    /// <see cref="Rope.TrimExcess"/> to resolve, and both halves of that are pinned below.
+    /// </summary>
+    [Fact]
+    public void AppendAndClear_ShouldNotRebuild_WhenTheSourceBringsInFarMoreLeavesThanTheLengthWarrants()
+    {
+        var wide = new Rope(Repeat('a', 600));
+        var narrow = new Rope(Repeat('b', 600), Tiny);
+
+        int wideLeaves = wide.LeafCount;
+        int narrowLeaves = narrow.LeafCount;
+
+        // The source is fragmented far past the destination's rebuild threshold on its own.
+        Assert.True(narrowLeaves > (2 * IdealLeaves(wide)) + 8);
+
+        wide.AppendAndClear(narrow);
+
+        // Every leaf came across untouched: no O(n) copy hid inside the join.
+        Assert.Equal(wideLeaves + narrowLeaves, wide.LeafCount);
+        Assert.Equal(Repeat('a', 600) + Repeat('b', 600), wide.ToString());
+
+        // The next edit trips the gate the join declined to, and compacts what the join left behind.
+        wide.Insert(0, "!");
+
+        Assert.Equal(IdealLeaves(wide), wide.LeafCount);
+        Assert.Equal("!" + Repeat('a', 600) + Repeat('b', 600), wide.ToString());
+    }
+
+    [Fact]
+    public void AppendAndClear_ShouldLeaveFragmentationForTrimExcess_WhenNoEditFollowsIt()
+    {
+        var wide = new Rope(Repeat('a', 600));
+        var narrow = new Rope(Repeat('b', 600), Tiny);
+
+        wide.AppendAndClear(narrow);
+        Assert.True(wide.LeafCount > IdealLeaves(wide));
+
+        wide.TrimExcess();
+
+        Assert.Equal(IdealLeaves(wide), wide.LeafCount);
+        Assert.Equal(Repeat('a', 600) + Repeat('b', 600), wide.ToString());
+    }
+
     [Fact]
     public void AppendAndClear_ShouldDoNothing_WhenTheSourceIsEmpty()
     {

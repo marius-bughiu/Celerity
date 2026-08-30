@@ -6,17 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`Rope`** in `Celerity.Collections` — a **rope**: a balanced tree of bounded character runs, so an edit anywhere in a large block of text costs `O(log n)` instead of the `O(n)` a contiguous buffer charges. The library's only *mutable* text type; `Trie`, `SuffixArray` and `AhoCorasick` all search text that does not change. `StringBuilder` is a chunk list whose head is the *end*, which makes appending excellent and every other operation linear in the **document**, and it has no split or join at any cost. On a round of 200 scattered insert/remove pairs it measures **105x** `StringBuilder` at a million characters and **1.50x** at ten thousand, with split-plus-rejoin at **4,616x** (712 B against 4.00 MB), and the editing arms allocate nothing at all. Traded for that: **appending is 36.8x slower** — use a `StringBuilder` if that is all you do — random access is **7.1x** slower, `ToString()` 1.68x, and memory is about 2.7 bytes per character. Closes [#404](https://github.com/marius-bughiu/Celerity/issues/404).
-
-- Dedicated coverage for `Rope`: `RopeTests` (constructors, both halves of the indexer, every mutating path and every read path, with the boundary cases where an edit meets a leaf edge), `RopeEnumerationTests` (both enumerators and the invalidation rule), `RopeDocumentationExampleTests` (the published example, run), and `RopeDifferentialTests` — a CsCheck property against `StringBuilder` as the oracle, which asserts the AVL bound alongside the text so a tree that silently degenerated into a list cannot pass on content alone.
-
-- `Rope` rows in the cross-collection shared suites: `ClearNoOpVersionTests` (a `Clear()` that removes nothing must not bump the version) and `EnumeratorInvalidationAndClearCoverageTests` (the `Reset()` version check, and the rope's own deliberate exception — assigning through the indexer moves nothing, so it does not invalidate an enumerator).
-
-- `RopeBenchmark`, registered in `Program.cs`'s CI-tracked suite, against `StringBuilder` with `List<char>` as the naive arm, and dashboard wiring for it on all three pages — including registering `StringBuilder` as a BCL type in the two benchmark pages, without which every Rope card would have rendered blank.
-
-- `Rope` in the Native AOT smoke test: the node graph and the two struct enumerators are the shape a trimmed, JIT-less runtime is most likely to get wrong.
-
-- `Rope` documentation: a full section in [docs/api/collections.md](docs/api/collections.md), and README entries in the collections list, the usage examples and the "Choosing a collection" decision table.
+- **`Rope`** in `Celerity.Collections` — a **rope**: a balanced tree of bounded character runs, so an edit anywhere in a large block of text costs `O(log n)` instead of the `O(n)` a contiguous buffer charges. The library's only *mutable* text type; `Trie`, `SuffixArray` and `AhoCorasick` all search text that does not change. `StringBuilder` is a chunk list whose head is the *end*, which makes appending excellent and every other operation linear in the **document**, and it has no split or join at any cost. On a round of scattered insert/remove pairs this measures **98x** `StringBuilder` at a million characters and **1.49x** at ten thousand, with split-and-rejoin cycles **hundreds of times** faster, and its editing paths allocate nothing. **Not a general `StringBuilder` replacement**: appending is **36.8x slower**, random access **7.1x**, `ToString()` 1.68x, and memory is about 2.7 bytes per character. Closes [#404](https://github.com/marius-bughiu/Celerity/issues/404).
 
 ### Changed
 

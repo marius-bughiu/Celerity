@@ -44,8 +44,8 @@ public class RopeDocumentationExampleTests
         int firstLineBreak = document.IndexOf('\n');
         Assert.True(firstLineBreak > 0);
 
-        // "Cut the document in two and put it back the other way round — both O(log n), and neither copies
-        //  the text."
+        // "Cut the document in two and put it back the other way round, both O(log n). Neither copies the
+        //  *document*: a split copies at most the one leaf the cut lands inside."
         string before = document.ToString();
         Rope tail = document.Split(firstLineBreak + 1);
 
