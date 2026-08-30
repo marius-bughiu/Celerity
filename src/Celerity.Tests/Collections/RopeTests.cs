@@ -527,19 +527,34 @@ public class RopeTests
         Assert.Equal("abcdefghij", rope.ToString());
     }
 
+    /// <summary>
+    /// The join refuses a source with a different <see cref="Rope.ChunkSize"/>, and that refusal is what keeps
+    /// <see cref="Rope.ChunkSize"/> a real bound rather than a preference. Adoption is the point of the
+    /// operation, so a wider source leaf would enter this tree and could then be cut by
+    /// <see cref="Rope.Split"/> into a replacement wider still — at which point every "at most ChunkSize
+    /// characters move" guarantee on Insert, Remove and Split would silently mean "at most the whole
+    /// document". Refusing the join is what makes those bounds true.
+    /// </summary>
     [Fact]
-    public void Split_ShouldCutInsideAForeignLeaf_WhenTheLeafIsWiderThanThisRopesChunkSize()
+    public void AppendAndClear_ShouldThrow_WhenTheSourceHasADifferentChunkSize()
     {
-        // A leaf moved in from a rope with a larger chunk size is wider than this rope's own chunk size, so
-        // cutting inside it has to allocate a replacement leaf wider than the chunk size too.
-        var wide = new Rope(Repeat('w', 64), 64);
         var narrow = new Rope("abcd", Tiny);
-        narrow.AppendAndClear(wide);
+        var wide = new Rope(Repeat('w', 64), 64);
 
-        Rope tail = narrow.Split(20);
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => narrow.AppendAndClear(wide));
+        Assert.Contains("same ChunkSize", ex.Message);
 
-        Assert.Equal("abcd" + Repeat('w', 16), narrow.ToString());
-        Assert.Equal(Repeat('w', 48), tail.ToString());
+        // Refused on the pairing, not on the contents: an empty source of the wrong width throws too, so the
+        // call cannot succeed or fail depending on runtime data.
+        Assert.Throws<ArgumentException>(() => narrow.AppendAndClear(new Rope(64)));
+
+        // Both ropes are untouched by the rejection.
+        Assert.Equal("abcd", narrow.ToString());
+        Assert.Equal(Repeat('w', 64), wide.ToString());
+
+        // The documented way to join across chunk sizes, which copies and is honestly O(n).
+        narrow.Append(wide.ToString());
+        Assert.Equal("abcd" + Repeat('w', 64), narrow.ToString());
     }
 
     [Fact]
@@ -580,57 +595,53 @@ public class RopeTests
 
     /// <summary>
     /// <see cref="Rope.AppendAndClear"/> is the one mutation that does not run the defragmenting rebuild, and
-    /// that is what makes its documented <c>O(log n)</c> unconditional rather than amortized. A join adopts
-    /// the source's leaves in whatever shape that rope left them, so a source with a much smaller chunk size
-    /// brings in far more leaves than the destination's length warrants — rebuilding for that here would turn
-    /// a node relink into a copy of the whole document. The fragmentation is left for the next edit or for
+    /// that is what makes its documented <c>O(log n)</c> unconditional rather than amortized: rebuilding for a
+    /// join would turn a node relink into a copy of the whole document. Fifty single-character ropes joined
+    /// one at a time drive the leaf count far past the gate — fifty leaves for fifty characters — and it stays
+    /// there, which no rebuild would allow. The fragmentation is left for the next edit or for
     /// <see cref="Rope.TrimExcess"/> to resolve, and both halves of that are pinned below.
     /// </summary>
     [Fact]
-    public void AppendAndClear_ShouldNotRebuild_WhenTheSourceBringsInFarMoreLeavesThanTheLengthWarrants()
+    public void AppendAndClear_ShouldNotRebuild_WhenJoiningDrivesTheLeafCountPastTheGate()
     {
-        var wide = new Rope(Repeat('a', 600));
-        var narrow = new Rope(Repeat('b', 600), Tiny);
+        var rope = new Rope(Tiny);
+        for (int i = 0; i < 50; i++)
+            rope.AppendAndClear(new Rope("x", Tiny));
 
-        int wideLeaves = wide.LeafCount;
-        int narrowLeaves = narrow.LeafCount;
+        Assert.Equal(50, rope.Length);
 
-        // The source is fragmented far past the destination's rebuild threshold on its own.
-        Assert.True(narrowLeaves > (2 * IdealLeaves(wide)) + 8);
-
-        wide.AppendAndClear(narrow);
-
-        // Every leaf came across untouched: no O(n) copy hid inside the join.
-        Assert.Equal(wideLeaves + narrowLeaves, wide.LeafCount);
-        Assert.Equal(Repeat('a', 600) + Repeat('b', 600), wide.ToString());
+        // One leaf per join, every one of them carried across untouched: no O(n) copy hid inside the join.
+        Assert.Equal(50, rope.LeafCount);
+        Assert.True(rope.LeafCount > (2 * IdealLeaves(rope)) + 8);
+        Assert.Equal(Repeat('x', 50), rope.ToString());
 
         // The next edit trips the gate the join declined to, and compacts what the join left behind.
-        wide.Insert(0, "!");
+        rope.Insert(0, "!");
 
-        Assert.Equal(IdealLeaves(wide), wide.LeafCount);
-        Assert.Equal("!" + Repeat('a', 600) + Repeat('b', 600), wide.ToString());
+        Assert.Equal(IdealLeaves(rope), rope.LeafCount);
+        Assert.Equal("!" + Repeat('x', 50), rope.ToString());
     }
 
     [Fact]
     public void AppendAndClear_ShouldLeaveFragmentationForTrimExcess_WhenNoEditFollowsIt()
     {
-        var wide = new Rope(Repeat('a', 600));
-        var narrow = new Rope(Repeat('b', 600), Tiny);
+        var rope = new Rope(Tiny);
+        for (int i = 0; i < 50; i++)
+            rope.AppendAndClear(new Rope("x", Tiny));
 
-        wide.AppendAndClear(narrow);
-        Assert.True(wide.LeafCount > IdealLeaves(wide));
+        Assert.True(rope.LeafCount > IdealLeaves(rope));
 
-        wide.TrimExcess();
+        rope.TrimExcess();
 
-        Assert.Equal(IdealLeaves(wide), wide.LeafCount);
-        Assert.Equal(Repeat('a', 600) + Repeat('b', 600), wide.ToString());
+        Assert.Equal(IdealLeaves(rope), rope.LeafCount);
+        Assert.Equal(Repeat('x', 50), rope.ToString());
     }
 
     [Fact]
     public void AppendAndClear_ShouldDoNothing_WhenTheSourceIsEmpty()
     {
         Rope rope = Deep("abc");
-        var empty = new Rope();
+        var empty = new Rope(Tiny);
 
         rope.AppendAndClear(empty);
 

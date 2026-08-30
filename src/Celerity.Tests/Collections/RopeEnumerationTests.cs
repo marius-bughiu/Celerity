@@ -172,7 +172,7 @@ public class RopeEnumerationTests
         { "Clear", rope => rope.Clear() },
         { "TrimExcess", rope => rope.TrimExcess() },
         { "Split", rope => rope.Split(4) },
-        { "AppendAndClear", rope => rope.AppendAndClear(new Rope("more")) },
+        { "AppendAndClear", rope => rope.AppendAndClear(new Rope("more", Tiny)) },
     };
 
     [Theory]
@@ -198,7 +198,7 @@ public class RopeEnumerationTests
         { "InsertNothing", rope => rope.Insert(2, string.Empty) },
         { "RemoveNothing", rope => rope.Remove(2, 0) },
         { "SplitAtLength", rope => rope.Split(rope.Length) },
-        { "AppendEmptySource", rope => rope.AppendAndClear(new Rope()) },
+        { "AppendEmptySource", rope => rope.AppendAndClear(new Rope(Tiny)) },
     };
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 
 namespace Celerity.Collections;
 
@@ -239,11 +240,14 @@ public sealed class Rope : IReadOnlyList<char>
     public int Length => _length;
 
     /// <summary>
-    /// Gets the maximum number of characters this rope puts in a leaf it allocates.
+    /// Gets the maximum number of characters any leaf of this rope holds.
     /// </summary>
     /// <remarks>
-    /// Leaves moved in by <see cref="AppendAndClear(Rope)"/> keep the size the rope that allocated them chose,
-    /// until a <see cref="TrimExcess"/> or an automatic rebuild normalizes them.
+    /// This is a real bound, not a preference: every leaf buffer is exactly this wide, and
+    /// <see cref="AppendAndClear(Rope)"/> refuses a source with a different chunk size precisely so that a
+    /// wider leaf cannot enter the tree by adoption and then be sliced. It is what lets
+    /// <see cref="Insert(int, ReadOnlySpan{char})"/>, <see cref="Remove"/> and <see cref="Split"/> bound the
+    /// characters they move by a constant rather than by the document.
     /// </remarks>
     public int ChunkSize => _chunkSize;
 
@@ -366,10 +370,16 @@ public sealed class Rope : IReadOnlyList<char>
     /// <paramref name="index"/> is negative or greater than <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n + k)</c> in the document length and the <c>k</c> characters inserted. The <c>k</c> term is
-    /// not incidental: text that does not fit in the target leaf is copied into a fresh run of leaves, so
-    /// inserting a megabyte costs a megabyte however shallow the tree is. What the tree buys is that the
-    /// <i>document</i> never moves — only the inserted text and at most one leaf do.
+    /// <c>O(log n + k)</c> <b>amortized</b>, in the document length and the <c>k</c> characters inserted. Three
+    /// terms, and each is there for a reason. The <c>log n</c> is the descent. The <c>k</c> is not incidental:
+    /// text that does not fit in the target leaf is copied into a fresh run of leaves, so inserting a megabyte
+    /// costs a megabyte however shallow the tree is. And <b>amortized</b> is doing real work, because the one
+    /// call in a fragmentation cycle that trips the rebuild gate is <c>O(n)</c> for that call — the same shape
+    /// as the growth resize inside <see cref="TimerWheel{TValue}.Schedule"/>. That rebuild cannot recur until
+    /// <c>n / ChunkSize</c> further edits have re-fragmented the tree, which is what makes the amortized cost
+    /// <c>O(ChunkSize)</c> rather than <c>O(n)</c>; <see cref="TrimExcess"/> pays it on demand instead.
+    /// What the tree buys is that the <i>document</i> never moves — only the inserted text and at most
+    /// <see cref="ChunkSize"/> characters of one leaf do.
     /// <para>
     /// For the short insertions an editor actually produces the <c>k</c> term vanishes and so does the
     /// allocation: when the target leaf has room, this is one
@@ -413,11 +423,16 @@ public sealed class Rope : IReadOnlyList<char>
     /// <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n)</c> whatever <paramref name="count"/> is. The recursion follows the range's two boundary
-    /// paths and nothing else: any subtree lying wholly inside the range is unlinked at its own root without
-    /// being descended into, so removing a million characters costs no more than removing ten, and at most the
-    /// two leaves the ends fall inside are compacted. Removing everything is <c>O(1)</c>. Removing nothing is
-    /// a no-op that does not invalidate enumerators.
+    /// <c>O(log n)</c> <b>amortized</b>, whatever <paramref name="count"/> is. The recursion follows the
+    /// range's two boundary paths and nothing else: any subtree lying wholly inside the range is unlinked at
+    /// its own root without being descended into, so removing a million characters costs no more than removing
+    /// ten, and the only characters that move are inside the at most two leaves the ends fall in — at most
+    /// <see cref="ChunkSize"/> of them each. Removing everything is <c>O(1)</c>.
+    /// <para>
+    /// <b>Amortized</b> for the same reason <see cref="Insert(int, ReadOnlySpan{char})"/> is: a removal can
+    /// trip the fragmentation rebuild, and the one call in a cycle that does is <c>O(n)</c>. Removing nothing
+    /// is a no-op that does not invalidate enumerators.
+    /// </para>
     /// </remarks>
     public void Remove(int index, int count)
     {
@@ -483,8 +498,11 @@ public sealed class Rope : IReadOnlyList<char>
     /// <paramref name="index"/> is negative or greater than <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n)</c>: the tree is cut along one root-to-leaf path and the two sides rejoined, so no
-    /// character moves except inside the single leaf the cut falls within. Splitting at <see cref="Length"/>
+    /// <c>O(log n)</c>, unconditionally — this does not run the fragmentation rebuild, so unlike
+    /// <see cref="Insert(int, ReadOnlySpan{char})"/> and <see cref="Remove"/> there is no amortized term. The
+    /// tree is cut along one root-to-leaf path and the two sides rejoined, and the only characters that move
+    /// are the suffix of the single leaf the cut falls within — at most <see cref="ChunkSize"/> of them,
+    /// which is what the equal-chunk-size rule on <see cref="AppendAndClear(Rope)"/> exists to guarantee. Splitting at <see cref="Length"/>
     /// returns an empty rope and is a no-op that does not invalidate enumerators.
     /// <see cref="AppendAndClear(Rope)"/> is the inverse.
     /// </remarks>
@@ -514,7 +532,9 @@ public sealed class Rope : IReadOnlyList<char>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException"><paramref name="source"/> is this rope.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="source"/> is this rope, or its <see cref="ChunkSize"/> differs from this rope's.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// This is a <b>move</b>, and the emptying is the point rather than a side effect: joining two ropes
@@ -524,14 +544,23 @@ public sealed class Rope : IReadOnlyList<char>
     /// <c>rope.Append(source.ToString())</c>.
     /// </para>
     /// <para>
+    /// <b>Both ropes must have the same <see cref="ChunkSize"/></b>, and a mismatch throws rather than being
+    /// absorbed. Adoption is the whole point of the operation, so a source with wider leaves would put leaves
+    /// into this tree that are wider than its own bound — and every "at most <see cref="ChunkSize"/>
+    /// characters move" guarantee on <see cref="Insert(int, ReadOnlySpan{char})"/>, <see cref="Remove"/> and
+    /// <see cref="Split"/> would quietly become "at most the whole document". Refusing the join keeps those
+    /// bounds true. A cross-chunk-size join is <c>rope.Append(other.ToString())</c>, which copies and is
+    /// honestly <c>O(n)</c>.
+    /// </para>
+    /// <para>
     /// <b>This is the one mutation that does not run the defragmenting rebuild</b>, which is what makes the
-    /// <c>O(log n)</c> unconditional rather than amortized. A join adopts <paramref name="source"/>'s leaves
-    /// in whatever shape that rope left them — joining a rope with a much smaller <see cref="ChunkSize"/>
-    /// brings in many more leaves than this rope's length warrants — and rebuilding for that here would turn
-    /// a node relink into an <c>O(n)</c> copy of the whole document. The fragmentation it can leave behind is
-    /// resolved by the next <see cref="Insert(int, ReadOnlySpan{char})"/> or <see cref="Remove"/> that trips
-    /// the gate, or by <see cref="TrimExcess"/>. <see cref="Split"/> is silent for the same reason, which
-    /// keeps the two halves of the pair symmetric.
+    /// <c>O(log n)</c> unconditional rather than amortized. A join still adopts <paramref name="source"/>'s
+    /// leaves in whatever <i>fill</i> that rope left them — a heavily edited source brings in more leaves than
+    /// this rope's length warrants — and rebuilding for that here would turn a node relink into an
+    /// <c>O(n)</c> copy of the whole document. The fragmentation it can leave behind is resolved by the next
+    /// <see cref="Insert(int, ReadOnlySpan{char})"/> or <see cref="Remove"/> that trips the gate, or by
+    /// <see cref="TrimExcess"/>. <see cref="Split"/> is silent for the same reason, which keeps the two halves
+    /// of the pair symmetric.
     /// </para>
     /// <para>
     /// Moving from an empty rope is a no-op that does not invalidate enumerators on either side.
@@ -542,6 +571,15 @@ public sealed class Rope : IReadOnlyList<char>
         ArgumentNullException.ThrowIfNull(source);
         if (ReferenceEquals(source, this))
             throw new ArgumentException("A rope cannot be appended to itself.", nameof(source));
+
+        if (source._chunkSize != _chunkSize)
+        {
+            throw new ArgumentException(
+                "A rope can only be joined with one of the same ChunkSize, because a join adopts the source's " +
+                "leaves rather than copying them. Use Append(source.ToString()) to join ropes of different " +
+                "chunk sizes, which copies and therefore costs O(n).",
+                nameof(source));
+        }
 
         if (source._length == 0)
             return;
@@ -584,16 +622,22 @@ public sealed class Rope : IReadOnlyList<char>
         ArgumentOutOfRangeException.ThrowIfNegative(startIndex);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(startIndex, _length);
 
-        int position = startIndex;
-        while (position < _length)
+        if (startIndex == _length)
+            return -1;
+
+        var cursor = new LeafCursor();
+        int position = cursor.Seek(_root, startIndex);
+
+        // Only the first leaf is entered partway in; every leaf after it is scanned whole.
+        int offset = startIndex - position;
+        for (Node? leaf = cursor.Next(); leaf is not null; leaf = cursor.Next())
         {
-            Node leaf = FindLeaf(_root!, position, out int leafStart);
-            int offset = position - leafStart;
             int found = leaf.Text!.AsSpan(offset, leaf.Length - offset).IndexOf(value);
             if (found >= 0)
-                return position + found;
+                return position + offset + found;
 
-            position = leafStart + leaf.Length;
+            position += leaf.Length;
+            offset = 0;
         }
 
         return -1;
@@ -717,12 +761,102 @@ public sealed class Rope : IReadOnlyList<char>
         return node;
     }
 
-    // A leaf's buffer is its capacity, and is normally the chunk size whatever the leaf currently holds. The
-    // wider case is reachable only through SplitCore, cutting a leaf that AppendAndClear moved in from a rope
-    // with a larger chunk size than this one's.
+    // A leaf's buffer is its capacity, and is always exactly the chunk size whatever the leaf currently holds.
+    // That invariant is what makes ChunkSize a real bound rather than a preference: every caller here passes at
+    // most _fill characters (BuildBalanced) or a slice of an existing leaf (SplitCore), and AppendAndClear
+    // refuses a source whose chunk size differs, so no wider leaf can enter the tree to be sliced later.
+    // The deepest an AVL tree of leaves can be within an int-length document. A minimal AVL tree of height h
+    // has Fib(h + 1) leaves, and Fib(47) already exceeds int.MaxValue, so 45 is the true ceiling; 48 leaves
+    // headroom. Held inline in the enumerators, exactly as BTreeSet holds its traversal path.
+    private const int MaxDepth = 48;
+
+    [InlineArray(MaxDepth)]
+    private struct PathBuffer
+    {
+        private Node? _element0;
+    }
+
+    // The in-order leaf walk shared by both enumerators and by IndexOf. It exists because the obvious
+    // alternative — asking FindLeaf for the leaf containing the next position — re-descends from the root for
+    // every leaf, which turns a full enumeration into O(leaves x log leaves) node visits instead of
+    // O(leaves). Carrying the descent path instead visits each node once over the whole walk. That is worth
+    // most at the small chunk sizes this type supports, where a document is many more leaves than it is deep.
+    private struct LeafCursor
+    {
+        private PathBuffer _path;
+        private int _depth;
+
+        // Seeds the walk at the leaf holding `position`, and reports where that leaf starts. Position zero
+        // seeds a walk of the whole rope; IndexOf uses the general form to start partway in.
+        internal int Seek(Node? root, int position)
+        {
+            _depth = 0;
+            if (root is null)
+                return 0;
+
+            int start = 0;
+            Node node = root;
+            while (true)
+            {
+                _path[_depth++] = node;
+                if (node.Text is not null)
+                    return start;
+
+                int leftLength = node.Left!.Length;
+                if (position - start < leftLength)
+                {
+                    node = node.Left;
+                }
+                else
+                {
+                    start += leftLength;
+                    node = node.Right!;
+                }
+            }
+        }
+
+        // The leaf the cursor stands on, after advancing the path to the one after it. Null when the walk is
+        // finished. Each node is pushed once and popped once across a full walk.
+        internal Node? Next()
+        {
+            if (_depth == 0)
+                return null;
+
+            Node leaf = _path[--_depth]!;
+
+            Node child = leaf;
+            while (_depth > 0)
+            {
+                Node parent = _path[_depth - 1]!;
+                if (ReferenceEquals(parent.Left, child))
+                {
+                    PushLeftSpine(parent.Right!);
+                    break;
+                }
+
+                child = parent;
+                _depth--;
+            }
+
+            return leaf;
+        }
+
+        private void PushLeftSpine(Node node)
+        {
+            while (true)
+            {
+                _path[_depth++] = node;
+                if (node.Text is not null)
+                    return;
+
+                node = node.Left!;
+            }
+        }
+    }
+
     private Node NewLeaf(ReadOnlySpan<char> text)
     {
-        var buffer = new char[text.Length > _chunkSize ? text.Length : _chunkSize];
+        var buffer = new char[_chunkSize];
         text.CopyTo(buffer);
         return new Node { Text = buffer, Length = text.Length, Leaves = 1, Height = 1 };
     }
@@ -1058,25 +1192,24 @@ public sealed class Rope : IReadOnlyList<char>
     {
         private readonly Rope _rope;
         private readonly int _version;
+        private LeafCursor _cursor;
         private char[] _chunk;
-        private int _start;
         private int _count;
-        private int _position;
 
         internal ChunkEnumerator(Rope rope)
         {
             _rope = rope;
             _version = rope._version;
+            _cursor = new LeafCursor();
+            _cursor.Seek(rope._root, 0);
             _chunk = [];
-            _start = 0;
             _count = 0;
-            _position = 0;
         }
 
         /// <summary>
         /// Gets the current run. Empty before the first <see cref="MoveNext"/> and after the last.
         /// </summary>
-        public readonly ReadOnlySpan<char> Current => _chunk.AsSpan(_start, _count);
+        public readonly ReadOnlySpan<char> Current => _chunk.AsSpan(0, _count);
 
         /// <summary>
         /// Returns this enumerator, so it can be used directly in a <c>foreach</c>.
@@ -1094,19 +1227,16 @@ public sealed class Rope : IReadOnlyList<char>
             if (_version != _rope._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
-            if (_position >= _rope._length)
+            Node? leaf = _cursor.Next();
+            if (leaf is null)
             {
                 _chunk = [];
-                _start = 0;
                 _count = 0;
                 return false;
             }
 
-            Node leaf = FindLeaf(_rope._root!, _position, out int leafStart);
             _chunk = leaf.Text!;
-            _start = _position - leafStart;
-            _count = leaf.Length - _start;
-            _position = leafStart + leaf.Length;
+            _count = leaf.Length;
             return true;
         }
     }
@@ -1120,20 +1250,21 @@ public sealed class Rope : IReadOnlyList<char>
     {
         private readonly Rope _rope;
         private readonly int _version;
+        private LeafCursor _cursor;
         private char[] _chunk;
         private int _offset;
         private int _chunkEnd;
-        private int _position;
         private char _current;
 
         internal Enumerator(Rope rope)
         {
             _rope = rope;
             _version = rope._version;
+            _cursor = new LeafCursor();
+            _cursor.Seek(rope._root, 0);
             _chunk = [];
             _offset = 0;
             _chunkEnd = 0;
-            _position = 0;
             _current = '\0';
         }
 
@@ -1161,17 +1292,16 @@ public sealed class Rope : IReadOnlyList<char>
                 return true;
             }
 
-            if (_position >= _rope._length)
+            Node? leaf = _cursor.Next();
+            if (leaf is null)
             {
                 _current = '\0';
                 return false;
             }
 
-            Node leaf = FindLeaf(_rope._root!, _position, out int leafStart);
             _chunk = leaf.Text!;
-            _offset = _position - leafStart;
+            _offset = 0;
             _chunkEnd = leaf.Length;
-            _position = leafStart + leaf.Length;
             _current = _chunk[_offset++];
             return true;
         }
@@ -1190,10 +1320,11 @@ public sealed class Rope : IReadOnlyList<char>
             if (_version != _rope._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
+            _cursor = new LeafCursor();
+            _cursor.Seek(_rope._root, 0);
             _chunk = [];
             _offset = 0;
             _chunkEnd = 0;
-            _position = 0;
             _current = '\0';
         }
     }
