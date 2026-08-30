@@ -872,7 +872,11 @@ public sealed class Rope : IReadOnlyList<char>
         if (text.Length <= _fill)
             return NewLeaf(text);
 
-        int leaves = (text.Length + _fill - 1) / _fill;
+        // Ceiling division written as a subtraction rather than as (length + _fill - 1) / _fill, because the
+        // addend form wraps for a span within _fill characters of int.MaxValue — which the documented capacity
+        // limit permits — and a negative leaf count would take the build apart. text.Length is at least one
+        // here, so the subtraction is safe.
+        int leaves = ((text.Length - 1) / _fill) + 1;
         int split = (leaves / 2) * _fill;
         var node = new Node { Left = BuildBalanced(text[..split]), Right = BuildBalanced(text[split..]) };
         Update(node);
@@ -1181,8 +1185,13 @@ public sealed class Rope : IReadOnlyList<char>
     // The constant slack keeps a rope of a few leaves from rebuilding on every other edit.
     private void RebuildIfFragmented()
     {
-        int ideal = (_length + _fill - 1) / _fill;
-        if (_root is not null && _root.Leaves > (2 * ideal) + 8)
+        if (_root is null)
+            return;
+
+        // The same overflow-safe ceiling division as BuildBalanced. A non-null root means at least one
+        // character, so the subtraction cannot underflow.
+        int ideal = ((_length - 1) / _fill) + 1;
+        if (_root.Leaves > (2 * ideal) + 8)
             Rebuild();
     }
 
