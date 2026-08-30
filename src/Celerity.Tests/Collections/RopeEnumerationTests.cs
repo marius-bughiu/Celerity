@@ -8,11 +8,12 @@ namespace Celerity.Tests.Collections;
 /// interface-typed enumerators, and the invalidation rule.
 ///
 /// <para>
-/// The rule with a decision behind it is assignment through the indexer. It changes what the rope
-/// <i>says</i>, but it replaces one code unit inside one leaf and moves nothing — no leaf is split, no node is
-/// relinked, no chunk boundary moves — so the sequence an enumerator is walking is unchanged and invalidating
-/// would be gratuitous. That is the same call this library's dictionaries make when an indexer overwrites an
-/// existing key, and it is pinned here so a later change cannot quietly tighten it.
+/// The rule is <b>structural</b> rather than textual, and the two operations that prove it are the ones that
+/// come apart. Assignment through the indexer changes what the rope <i>says</i> and does not invalidate: it
+/// replaces one code unit inside one leaf, splits nothing, relinks nothing and moves no chunk boundary, so the
+/// sequence an enumerator is walking is unchanged. <see cref="Rope.TrimExcess"/> is the mirror image — it
+/// leaves the text identical and <i>does</i> invalidate, because it rebuilds every leaf. Stating the rule as
+/// "whatever changes the text" would get both of them backwards, so both are pinned here.
 /// </para>
 ///
 /// <para>

@@ -83,10 +83,20 @@ namespace Celerity.Collections;
 /// <para>
 /// Enumeration yields characters in order, and <see cref="GetChunks"/> yields the underlying runs as
 /// <see cref="ReadOnlySpan{T}"/> for a zero-copy read path, mirroring
-/// <see cref="System.Text.StringBuilder.GetChunks"/>. Both are invalidated by any operation that changes the
-/// text. Assigning through the indexer is deliberately <i>not</i> such an operation: it replaces one code unit
-/// in place, moves nothing and changes no chunk boundary, so an in-flight enumerator stays valid — the same
-/// call this library's dictionaries make when an indexer overwrites an existing key.
+/// <see cref="System.Text.StringBuilder.GetChunks"/>.
+/// </para>
+/// <para>
+/// <b>Both are invalidated by whatever rebuilds or relinks leaves, which is not the same thing as whatever
+/// changes the text.</b> The rule is structural because an enumerator walks the leaf sequence, not the
+/// characters: <see cref="Insert(int, ReadOnlySpan{char})"/>, <see cref="Append(char)"/>,
+/// <see cref="Remove"/>, <see cref="Clear"/>, <see cref="Split"/> and <see cref="AppendAndClear(Rope)"/> all
+/// invalidate, and so does <see cref="TrimExcess"/> — which rebuilds every leaf while leaving the text
+/// identical. The one mutation that does <i>not</i> invalidate is assignment through the indexer, which
+/// changes the text and nothing else: it replaces one code unit inside one leaf, splits nothing, relinks
+/// nothing and moves no chunk boundary, so the sequence an enumerator is walking is untouched. That is the
+/// same call this library's dictionaries make when an indexer overwrites an existing key. An operation that
+/// changes nothing at all — inserting an empty span, removing zero characters, clearing an empty rope,
+/// splitting at <see cref="Length"/>, joining an empty source — invalidates nothing either.
 /// </para>
 /// </remarks>
 public sealed class Rope : IReadOnlyList<char>
