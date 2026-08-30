@@ -295,7 +295,7 @@ public class RopeTests
     /// <para>
     /// The sequence below is a shrunk reproduction found by searching randomized large-insert sequences for a
     /// tree exceeding the <i>exact</i> AVL height bound. It is not hypothetical: with the join removed it
-    /// produces 368 leaves at depth 14, where a minimal AVL tree of height 14 needs 377. Note that the loose
+    /// produces 368 leaves at depth 14, where 368 leaves permit a height of 12 at most. Note that the loose
     /// <c>1.45 log2(L) + 2</c> bound used elsewhere in the suite does <b>not</b> catch this, which is why the
     /// exact Fibonacci bound is computed here.
     /// </para>
@@ -325,25 +325,23 @@ public class RopeTests
         Assert.Equal(2175, rope.Length);
     }
 
-    // The tallest an AVL tree of this many leaves can be: a minimal one of height h has Fib(h + 1) leaves.
+    // The tallest an AVL tree of this many leaves can be. N(h), the fewest leaves at height h, runs 1, 2, 3,
+    // 5, 8, 13, ... — leaves are height 1 and every internal node has exactly two children, so
+    // N(h) = N(h-1) + N(h-2). The answer is the largest h whose N(h) still fits in the leaf count.
     private static int MaxAvlHeight(int leaves)
     {
-        if (leaves <= 1)
-            return leaves;
-
-        int previous = 1;
-        int current = 1;
+        int previous = 1;   // N(1)
+        int current = 2;    // N(2)
         int height = 1;
-        while (true)
+        while (current <= leaves)
         {
             int next = previous + current;
-            if (next > leaves)
-                return height + 1;
-
             previous = current;
             current = next;
             height++;
         }
+
+        return height;
     }
 
     [Fact]

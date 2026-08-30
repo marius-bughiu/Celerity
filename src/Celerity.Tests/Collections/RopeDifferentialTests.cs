@@ -54,21 +54,23 @@ public class RopeDifferentialTests
             $"Depth {rope.Depth} exceeds the exact AVL bound {bound} for {rope.LeafCount} leaves.");
     }
 
+    // The tallest an AVL tree of this many leaves can be. N(h), the fewest leaves at height h, runs 1, 2, 3,
+    // 5, 8, 13, ... — leaves are height 1 and every internal node has exactly two children, so
+    // N(h) = N(h-1) + N(h-2). The answer is the largest h whose N(h) still fits in the leaf count.
     private static int MaxAvlHeight(int leaves)
     {
-        int previous = 1;
-        int current = 1;
+        int previous = 1;   // N(1)
+        int current = 2;    // N(2)
         int height = 1;
-        while (true)
+        while (current <= leaves)
         {
             int next = previous + current;
-            if (next > leaves)
-                return height + 1;
-
             previous = current;
             current = next;
             height++;
         }
+
+        return height;
     }
 
     private static string Alphabet(Random rand, int length)
