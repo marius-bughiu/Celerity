@@ -5877,3 +5877,132 @@ timeouts.Advance(timeouts.CurrentTick + 5_000_000, fired);
 foreach ((long deadline, PendingRequest? pending) in timeouts)
     Console.WriteLine($"{pending} has {deadline - timeouts.CurrentTick} ticks left");
 ```
+
+## Rope
+
+```csharp
+public sealed class Rope : IReadOnlyList<char>
+```
+
+A **rope**: a balanced tree of bounded character runs, so an edit anywhere in a large block of text costs `O(log n)` instead of the `O(n)` that shifting a contiguous buffer costs. It is the structure behind every serious text editor's buffer — Xi, CodeMirror 6, Helix — and it answers *change this text in the middle, over and over*.
+
+**This is the library's only mutable text type.** [`Trie<TValue>`](#trietvalue), [`SuffixArray`](#suffixarray) and [`AhoCorasick`](#ahocorasick) all *search* text that does not change; this one *edits* it and does not search it. Reach for those to find something, and for this to change something.
+
+### Why not StringBuilder
+
+A `StringBuilder` is a linked list of chunks whose head is the *end* of the text. That makes appending excellent and everything else linear in the document: `Insert` and `Remove` walk the chunk list to reach the position and then shift what follows. Ten times the document is ten times the cost of one edit — which is a quadratic build if you are assembling a document out of order.
+
+A rope descends a tree instead, so the cost of an edit is set by the **depth** of the document rather than its length, and the only characters that move are the ones inside a single leaf. It also has two operations the BCL has none of at any cost: `Split` cuts a document in two and `AppendAndClear` joins two back together, both `O(log n)`, where `string.Concat`, `Substring` and slice-then-copy are all a full copy.
+
+`List<char>` is worse than either on every editing axis — one flat array, so every edit is a whole-tail `memmove` — and `string` is immutable, so it is not in the running.
+
+### How it works
+
+An AVL tree. Leaves hold a `char` buffer of at most `ChunkSize` code units (512 by default, one KiB); internal nodes hold no text and cache their subtree's character count, leaf count and height, so locating a position is a descent comparing indices that never touches a leaf until it arrives. Because a rope owns its nodes exclusively, they are mutated in place rather than rebuilt — **an insert whose target leaf has room allocates nothing at all** and is one `Array.Copy` of at most a chunk.
+
+**Leaves are built with slack, on purpose.** A rebuild fills each leaf to three quarters of `ChunkSize` rather than to the brim, because a leaf with no room left splits on the very first character inserted into it — and a rope whose leaves are all full splits one on *every* edit, turning what should be an in-place `memmove` into two allocations and a rebalance. That quarter is not an implementation detail: filling leaves to capacity instead measured a **2.9x loss** to `StringBuilder` on inserts into a ten-thousand-character document, and 823 KB allocated per two hundred edits where the shipped version allocates nothing.
+
+**Fragmentation is the remaining cost, and it is amortized away.** Edits still eventually overflow leaves and split them. The rope tracks `LeafCount` and rebuilds itself into three-quarter-full leaves once that passes twice what the length needs. The rebuild is `O(n)` for the single call that pays it and cannot recur until `n / ChunkSize` further edits have re-fragmented the tree, which is `O(ChunkSize)` amortized per edit — the same shape as the growth resize inside [`TimerWheel<TValue>`](#timerwheeltvalue). `TrimExcess()` forces one, and `LeafCount` and `Depth` are public so the trade is observable rather than folklore.
+
+### Measured
+
+Against `StringBuilder`, with `List<char>` as the naive arm, at ten thousand and a million characters. **These are development-machine numbers on BenchmarkDotNet's default job**; CI publishes its own on [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at each merge to `main`.
+
+The unit that matters is **Edit** — two hundred five-character insertions at scattered positions, each paired with a removal elsewhere, so the document ends the round at the length it started:
+
+| Edit | `StringBuilder` | `List<char>` | `Rope` | vs `StringBuilder` |
+| --- | ---: | ---: | ---: | ---: |
+| 1,000,000 chars | 6.05 ms | 17.65 ms | 57.84 µs | **105x** |
+| 10,000 chars | 41.38 µs | 118.2 µs | 27.56 µs | **1.50x** |
+
+Taken apart, and with the two operations the BCL cannot express at all:
+
+| At 1,000,000 | `StringBuilder` | `Rope` | Ratio |
+| --- | ---: | ---: | ---: |
+| Insert ×200 | 2.94 ms | 30.60 µs | **96x** |
+| Remove ×200 | 3.18 ms | 31.12 µs | **102x** |
+| Split + rejoin | 329.2 µs | 71.31 ns | **4,616x** |
+| **Index ×500** | 621.2 ns | 4.39 µs | **0.14x — a 7.1x loss** |
+| **Append (build by 5-char appends)** | 142.9 µs | 5.26 ms | **0.03x — a 36.8x loss** |
+| **`ToString()`** | 67.26 µs | 113.2 µs | **0.60x — a 1.68x loss** |
+
+| At 10,000 | `StringBuilder` | `Rope` | Ratio |
+| --- | ---: | ---: | ---: |
+| Insert ×200 | 28.65 µs | 21.14 µs | 1.36x |
+| Remove ×200 | 21.72 µs | 14.30 µs | 1.52x |
+| Split + rejoin | 1.22 µs | 37.32 ns | **32.7x** |
+| **Index ×500** | 620.9 ns | 1.90 µs | **0.33x — a 3.1x loss** |
+| **Append** | 1.20 µs | 23.35 µs | **0.05x — a 19.4x loss** |
+| **`ToString()`** | 578.1 ns | 631.5 ns | 0.92x — a 1.09x loss |
+
+**The editing arms allocate nothing.** `Edit`, `Insert` and `Remove` all measure 0 B for the rope, against 20–21 KB for the `StringBuilder` arms that allocate at all — the leaf slack means the ordinary short edit lands in a leaf that already has room, so it is a `memmove` and nothing more. `Split` + rejoin allocates 712 B at a million characters against `StringBuilder`'s 4.00 MB, because the rope relinks nodes where the baseline has to copy the document twice through `ToString()`.
+
+**Two of the three pre-registered bars from [#404](https://github.com/marius-bughiu/Celerity/issues/404) clear, and the third was pre-registered on a false premise.** The ship gate — at least 10x on the edit round at a million characters — comes in at 105x, and `Remove` in isolation at 102x against a bar of 10x. The indexer criterion asked for at least 5x and the result is a **7.1x loss**, because the premise was wrong: `StringBuilder`'s indexer is `O(chunks)`, but a builder *constructed from a string* is a **single chunk**, so it indexes directly. The `O(chunks)` walk is what an edited builder degrades into, not what the benchmark's builder does. The bar should never have been set; it is published as a loss rather than quietly dropped.
+
+**Where the crossover actually is.** The issue expected ten thousand characters to be below it. It is not: the edit round wins at every size measured, down to **200 characters (1.6x)**, 1,000 (3.6x) and 4,000 (9.2x). What *is* size-sensitive is the isolated arms — a separate sweep put `Insert` at a **1.11x loss** and `Remove` at a **1.33x loss** at four thousand characters, both within noise of parity, recovering to wins by ten thousand. Read the small-document story as *a wash on single edits, a win on a round of them*, not as a cliff.
+
+**One correction is worth recording, because it changed the headline by a factor of five.** The `Edit` arms originally ran against a persistent instance, since the workload is length-neutral by construction. That is wrong for this baseline: a `StringBuilder` splits a chunk on every mid-document insertion and never merges them back, so its chunk list grows without bound even though its length does not, and the arm got steadily slower the more invocations BenchmarkDotNet chose — per-op cost was still climbing after sixteen warmup iterations at a million characters, and the baseline read 19 ms with a ±63 ms error. Rebuilding every container per iteration puts it at 6.05 ms with a ±0.09 ms error. The published ratio is **105x**, not the 560x the drifting harness reported.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `Rope()` / `Rope(int chunkSize)` | An empty rope. `chunkSize` is the leaf **capacity**, at least `MinChunkSize` (8); a rebuild fills a leaf to three quarters of it and leaves the rest as room to edit into. |
+| `Rope(string text)` / `Rope(ReadOnlySpan<char> text)` (each also with a `chunkSize`) | Builds balanced with three-quarter-full leaves in one pass, so a rope constructed from existing text starts in the shape `TrimExcess()` would put it in. `ArgumentNullException` on a `null` string. |
+| `int Length { get; }` | Characters — UTF-16 code units. |
+| `char this[int index] { get; set; }` | Get and set, both a descent of `Depth` index comparisons. The setter replaces one code unit in place and moves nothing, so it does **not** invalidate an in-flight enumerator. |
+| `void Append(char / string / ReadOnlySpan<char>)` | Append at the end. See the caveats: this is a loss to `StringBuilder`. |
+| `void Insert(int index, char / string / ReadOnlySpan<char>)` | Insert at `index`; `Length` appends. `O(log n)`, and **allocation-free** when the target leaf has room — the ordinary case for the short insertions an editor produces. Inserting nothing is a no-op that does not invalidate enumerators. |
+| `void Remove(int index, int count)` | `O(log n)` whatever `count` is: whole leaves inside the range are unlinked rather than copied, and at most the two leaves the ends fall inside are compacted. Removing nothing is a no-op. |
+| `Rope Split(int index)` | Truncates this rope to `index` characters and returns the rest as a new rope with the same `ChunkSize`. `O(log n)`: the tree is cut along one root-to-leaf path and the sides rejoined, so no character moves except inside the one leaf the cut falls within. Splitting at `Length` returns an empty rope and is a no-op. |
+| `void AppendAndClear(Rope source)` | Moves every character of `source` onto the end in `O(log n)`, **leaving `source` empty**. `ArgumentException` if `source` is this rope. |
+| `int IndexOf(char value)` / `IndexOf(char value, int startIndex)` | A vectorized `MemoryExtensions.IndexOf` per leaf rather than a character at a time. Finding a multi-character *pattern* is not this type's job — build the text into a [`SuffixArray`](#suffixarray), or run a pattern set through [`AhoCorasick`](#ahocorasick). |
+| `void CopyTo(Span<char>)` / `CopyTo(int index, Span<char>, int count)` | Copy out, whole or by range. |
+| `string ToString()` / `ToString(int index, int count)` | Materialize, whole or by range. A full copy, as it is for `StringBuilder`. |
+| `ChunkEnumerator GetChunks()` | The zero-copy read path: each underlying run as a `ReadOnlySpan<char>` over the rope's own storage. Mirrors `StringBuilder.GetChunks()`, but yields spans rather than `ReadOnlyMemory<char>`, so writing a rope out needs no intermediate `string`. |
+| `void TrimExcess()` | Force the defragmenting rebuild, `O(n)`. A no-op on an empty rope. |
+| `void Clear()` | Release the whole tree. A rope's storage *is* its structure, so there is no retained capacity to reuse. A no-op on an already empty rope. |
+| `int ChunkSize { get; }` / `int LeafCount { get; }` / `int Depth { get; }` | The geometry, so the trade is observable: a compact rope has `ceil(Length / (ChunkSize * 3 / 4))` leaves, and the tree stays within about 1.44 log2(`LeafCount`) deep however the edits arrive. |
+| `Enumerator GetEnumerator()` | Struct enumerator over the characters, in order. |
+
+### Caveats
+
+- **Appending is a loss, and a large one.** Appending to the end of a `StringBuilder` is a bounds check and a store; a rope descends a tree first. If your text is only ever appended to, use a `StringBuilder` — that is what it is for, and this type does not try to beat it.
+- **Random access is a loss too**, for a reason worth stating plainly: a `StringBuilder` built from a string is a *single chunk*, so its indexer resolves directly. The `O(chunks)` walk its indexer is famous for is what an *edited* builder degrades into, not what a freshly built one does, and the benchmark measures the favourable shape.
+- **`AppendAndClear` empties its argument, and is named for it.** Joining relinks the source's nodes into this tree instead of copying its characters, so leaving the source pointing at buffers this rope now mutates would alias them. Emptying it is what makes the `O(log n)` honest. For a join that leaves the source intact, pay the copy: `rope.Append(source.ToString())`.
+- **Memory is higher than a `StringBuilder`'s.** Every leaf carries a `ChunkSize`-character buffer whatever it currently holds, so a compact rope costs about 2.7 bytes per character against two, plus a node per leaf and per internal node. A fragmented one costs more until it rebuilds.
+- **Indices are UTF-16 code units**, exactly as `StringBuilder` and `string` index. A rope will split a surrogate pair or a combining sequence if that is where it is told to cut; find grapheme boundaries with `System.Globalization.StringInfo` first if that matters.
+- **A rope holds at most `int.MaxValue` characters**; an insert that would pass that throws `OutOfMemoryException` rather than overflowing.
+- **Not thread-safe**, like every collection here.
+- **Enumeration is invalidated** by any operation that changes the text — `Insert`, `Append`, `Remove`, `Clear`, `TrimExcess`, `Split`, `AppendAndClear`. Assigning through the indexer deliberately does *not* invalidate it: it replaces one code unit, splits no leaf, relinks no node and moves no chunk boundary, so the sequence an enumerator is walking is unchanged. That is the family's own rule, the one `SpatialGrid<TValue>.Move` and `TimerWheel<TValue>`'s empty advance are held to.
+- **Chunk boundaries are an implementation detail.** They move as the rope is edited and are not text boundaries of any kind.
+
+### Usage example
+
+```csharp
+// A document that keeps changing in the middle: an editor buffer, a template being spliced,
+// a log assembled out of order.
+var document = new Rope(File.ReadAllText("chapter.md"));
+
+// An edit costs the depth of the tree, not the length of the document. The leaf it lands in
+// has room, so this allocates nothing at all.
+document.Insert(11, "very ");
+document.Remove(0, 7);
+
+// Random access, and a scan for a character.
+char first = document[0];
+int firstLineBreak = document.IndexOf('\n');
+
+// Cut the document in two and put it back the other way round — both O(log n), and neither
+// copies the text. AppendAndClear *moves*, which is why it empties its argument.
+Rope tail = document.Split(firstLineBreak + 1);
+tail.AppendAndClear(document);      // document is now empty
+document.AppendAndClear(tail);      // and tail is
+
+// The zero-copy read path: write the document out without ever materializing it as one string.
+foreach (ReadOnlySpan<char> chunk in document.GetChunks())
+    Console.Out.Write(chunk);
+
+// After a burst of edits that will not be followed by more, compact the leaves.
+document.TrimExcess();
+```
