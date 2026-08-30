@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using Celerity.Collections;
 using CsCheck;
@@ -80,6 +81,155 @@ public class RopeDifferentialTests
             chars[i] = (char)('a' + rand.Next(26));
 
         return new string(chars);
+    }
+
+    // ---- structural validation over the private node graph -------------------------------------------
+    //
+    // Reflection into the tree, following the pattern DequeEnumerationTests and RankedSetTests already use to
+    // reach a collection's internals. The public Depth / LeafCount pair only bounds the *root* height, and
+    // that is necessary but not sufficient for the AVL invariant: a locally unbalanced node can sit inside a
+    // tree whose overall height is still legal, which is exactly the form the large-insert defect took before
+    // it was found — the rope was one level past legal only for some shapes, and structurally wrong for many
+    // more. This walks every node instead, and checks the cached metadata each one carries as well, since a
+    // stale Length or Leaves would corrupt every descent that trusts it.
+
+    private static readonly FieldInfo RootField =
+        typeof(Rope).GetField("_root", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+    private static FieldInfo Field(object node, string name) =>
+        node.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public)!;
+
+    private static void AssertStructurallyValid(Rope rope)
+    {
+        object? root = RootField.GetValue(rope);
+        if (root is null)
+        {
+            Assert.Equal(0, rope.Length);
+            Assert.Equal(0, rope.LeafCount);
+            Assert.Equal(0, rope.Depth);
+            return;
+        }
+
+        (int length, int leaves, int height) = ValidateNode(root, rope.ChunkSize);
+
+        Assert.Equal(rope.Length, length);
+        Assert.Equal(rope.LeafCount, leaves);
+        Assert.Equal(rope.Depth, height);
+    }
+
+    private static (int Length, int Leaves, int Height) ValidateNode(object node, int chunkSize)
+    {
+        var text = (char[]?)Field(node, "Text").GetValue(node);
+        object? left = Field(node, "Left").GetValue(node);
+        object? right = Field(node, "Right").GetValue(node);
+        int length = (int)Field(node, "Length").GetValue(node)!;
+        int leaves = (int)Field(node, "Leaves").GetValue(node)!;
+        int height = (int)Field(node, "Height").GetValue(node)!;
+
+        if (text is not null)
+        {
+            Assert.Null(left);
+            Assert.Null(right);
+            Assert.Equal(chunkSize, text.Length);       // ChunkSize is a real bound, not a preference
+            Assert.InRange(length, 1, text.Length);     // an emptied leaf is unlinked, never kept
+            Assert.Equal(1, leaves);
+            Assert.Equal(1, height);
+            return (length, leaves, height);
+        }
+
+        Assert.NotNull(left);
+        Assert.NotNull(right);
+
+        (int leftLength, int leftLeaves, int leftHeight) = ValidateNode(left!, chunkSize);
+        (int rightLength, int rightLeaves, int rightHeight) = ValidateNode(right!, chunkSize);
+
+        // The AVL invariant itself, at this node rather than at the root.
+        Assert.InRange(leftHeight - rightHeight, -1, 1);
+
+        // And the cached metadata every descent trusts.
+        Assert.Equal(leftLength + rightLength, length);
+        Assert.Equal(leftLeaves + rightLeaves, leaves);
+        Assert.Equal(1 + Math.Max(leftHeight, rightHeight), height);
+
+        return (length, leaves, height);
+    }
+
+    /// <summary>
+    /// Randomized operation sequences validated <i>per node</i> after every step, rather than by the root-height
+    /// bound the other properties use. This is the assertion that can see a locally unbalanced node, and it is
+    /// deliberately run over shorter sequences and smaller ropes than
+    /// <see cref="AnEditSequence_ShouldAgreeWithStringBuilder_WhenDrivenRandomly"/>, because walking the whole
+    /// tree through reflection on every step is far more expensive than comparing two strings.
+    /// </summary>
+    [Fact]
+    public void EveryNode_ShouldSatisfyTheAvlInvariantAndItsCachedMetadata_WhenDrivenRandomly()
+    {
+        Gen<(int ChunkSize, uint Seed)> gen = Gen.Select(Gen.Int[Rope.MinChunkSize, 16], Gen.UInt);
+        gen.Sample(spec =>
+        {
+            var rand = new Random((int)spec.Seed);
+            var rope = new Rope(spec.ChunkSize);
+            var oracle = new StringBuilder();
+
+            for (int step = 0; step < 40; step++)
+            {
+                switch (rand.Next(6))
+                {
+                    case 0:
+                    case 1:
+                    {
+                        int index = rand.Next(oracle.Length + 1);
+                        string text = Alphabet(rand, rand.Next(1, 10));
+                        rope.Insert(index, text);
+                        oracle.Insert(index, text);
+                        break;
+                    }
+
+                    case 2:
+                    {
+                        // The large insert: this is the operation that grows a child by many levels at once,
+                        // and the one whose rebalancing was wrong.
+                        int index = rand.Next(oracle.Length + 1);
+                        string text = Alphabet(rand, rand.Next(60, 400));
+                        rope.Insert(index, text);
+                        oracle.Insert(index, text);
+                        break;
+                    }
+
+                    case 3:
+                    {
+                        if (oracle.Length == 0)
+                            break;
+
+                        int index = rand.Next(oracle.Length);
+                        int count = rand.Next(1, oracle.Length - index + 1);
+                        rope.Remove(index, count);
+                        oracle.Remove(index, count);
+                        break;
+                    }
+
+                    case 4:
+                    {
+                        int index = rand.Next(oracle.Length + 1);
+                        Rope tail = rope.Split(index);
+                        AssertStructurallyValid(tail);
+                        rope.AppendAndClear(tail);
+                        break;
+                    }
+
+                    default:
+                    {
+                        rope.TrimExcess();
+                        break;
+                    }
+                }
+
+                AssertStructurallyValid(rope);
+                Assert.Equal(oracle.Length, rope.Length);
+            }
+
+            Assert.Equal(oracle.ToString(), rope.ToString());
+        }, iter: 200);
     }
 
     [Fact]
