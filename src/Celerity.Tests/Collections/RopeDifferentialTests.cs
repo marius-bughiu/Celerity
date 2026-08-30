@@ -35,8 +35,11 @@ public class RopeDifferentialTests
     private static readonly Gen<(int ChunkSize, uint Seed)> GenScenario =
         Gen.Select(Gen.Int[Rope.MinChunkSize, 24], Gen.UInt);
 
-    // The AVL bound: a tree of n leaves has height at most log_phi(n + 2) - 1.33, which is comfortably under
-    // 1.45 * log2(n) + 2. A degenerate tree blows through this long before it reaches it.
+    // The *exact* AVL bound rather than a logarithmic approximation of it: a minimal AVL tree of height h has
+    // Fib(h + 1) leaves, so the tallest a tree of L leaves may be is the largest h with Fib(h + 1) <= L. The
+    // looser 1.45 log2(L) + 2 form is what this started as, and it was too slack to be worth much — it misses
+    // a tree that is one whole level past legal, which is exactly the shape a one-step rebalance applied to a
+    // child that grew by many levels at once produces. Pinning the real bound is what makes this able to fail.
     private static void AssertBalanced(Rope rope)
     {
         if (rope.LeafCount <= 1)
@@ -45,10 +48,27 @@ public class RopeDifferentialTests
             return;
         }
 
-        double bound = (1.45 * Math.Log2(rope.LeafCount)) + 2;
+        int bound = MaxAvlHeight(rope.LeafCount);
         Assert.True(
             rope.Depth <= bound,
-            $"Depth {rope.Depth} exceeds the AVL bound {bound:F2} for {rope.LeafCount} leaves.");
+            $"Depth {rope.Depth} exceeds the exact AVL bound {bound} for {rope.LeafCount} leaves.");
+    }
+
+    private static int MaxAvlHeight(int leaves)
+    {
+        int previous = 1;
+        int current = 1;
+        int height = 1;
+        while (true)
+        {
+            int next = previous + current;
+            if (next > leaves)
+                return height + 1;
+
+            previous = current;
+            current = next;
+            height++;
+        }
     }
 
     private static string Alphabet(Random rand, int length)

@@ -1050,12 +1050,33 @@ public sealed class Rope : IReadOnlyList<char>
         }
 
         int leftLength = node.Left!.Length;
+        Node left;
+        Node right;
         if (index <= leftLength)
-            node.Left = InsertCore(node.Left, index, text);
+        {
+            left = InsertCore(node.Left, index, text);
+            right = node.Right!;
+        }
         else
-            node.Right = InsertCore(node.Right!, index - leftLength, text);
+        {
+            left = node.Left;
+            right = InsertCore(node.Right!, index - leftLength, text);
+        }
 
-        return Balance(node);
+        // A leaf that overflows is replaced by a whole subtree, and inserting a large span builds a tall one:
+        // a child can gain many levels in a single call, not the one an insert into an ordinary AVL tree adds.
+        // Balance is only defined for children within two of each other — a single rotation cannot close a
+        // wider gap — so anything wider goes through Join, which descends the taller side's spine. The same
+        // shape RemoveCore uses, and for the same reason.
+        int slope = left.Height - right.Height;
+        if (slope is >= -2 and <= 2)
+        {
+            node.Left = left;
+            node.Right = right;
+            return Balance(node);
+        }
+
+        return Join(left, right)!;
     }
 
     // Returns the subtree with the range gone, or null if nothing is left of it. A range that straddles the
