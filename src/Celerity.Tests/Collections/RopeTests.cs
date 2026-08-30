@@ -101,6 +101,29 @@ public class RopeTests
         Assert.Equal(Repeat('x', 100), rope.ToString());
     }
 
+    /// <summary>
+    /// The documented fill is <c>ChunkSize - ChunkSize / 4</c> — three quarters of the capacity rounded
+    /// <i>up</i> — which is not the same as <c>ChunkSize * 3 / 4</c> for a chunk size that is not a multiple
+    /// of four. Nine fills to seven, not six. The docs used to state the floor form; this pins the real one so
+    /// the two cannot drift apart again.
+    /// </summary>
+    [Theory]
+    [InlineData(8, 6)]
+    [InlineData(9, 7)]
+    [InlineData(10, 8)]
+    [InlineData(11, 9)]
+    [InlineData(512, 384)]
+    public void Constructor_ShouldFillLeavesToThreeQuartersRoundedUp_WhenTheChunkSizeIsNotAMultipleOfFour(
+        int chunkSize,
+        int expectedFill)
+    {
+        // A text of exactly one fill's worth is one leaf; one more character has to become two.
+        Assert.Equal(1, new Rope(Repeat('x', expectedFill), chunkSize).LeafCount);
+        Assert.Equal(2, new Rope(Repeat('x', expectedFill + 1), chunkSize).LeafCount);
+
+        Assert.Equal(chunkSize - (chunkSize / 4), expectedFill);
+    }
+
     [Fact]
     public void Constructor_ShouldThrow_WhenTheTextIsNull()
     {

@@ -56,7 +56,10 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Fragmentation is the remaining cost, and it is amortized away.</b> Edits still eventually overflow
 /// leaves and split them, driving the average fill down and the tree deeper than the character count warrants.
-/// The rope tracks <see cref="LeafCount"/> and rebuilds itself once that passes twice what the length needs.
+/// The rope tracks <see cref="LeafCount"/> and rebuilds itself once that passes
+/// <c>2 x ideal + 8</c>, where <c>ideal</c> is the leaf count a compacted rope of the same length would have.
+/// The eight-leaf grace window is there so a rope of a handful of leaves does not rebuild on every other
+/// edit, and it is why a small rope can sit well above twice its ideal count without being touched.
 /// The rebuild is <c>O(n)</c> for the single call that pays it and cannot recur until <c>n / ChunkSize</c>
 /// further edits have re-fragmented the tree, which is <c>O(ChunkSize)</c> amortized per edit — the same shape
 /// as the growth resize inside <see cref="TimerWheel{TValue}.Schedule"/>. <see cref="TrimExcess"/> forces one,
@@ -147,8 +150,9 @@ public sealed class Rope : IReadOnlyList<char>
 
     private readonly int _chunkSize;
 
-    // The number of characters a leaf is filled to when the rope builds or rebuilds one: three quarters of
-    // the capacity, so a freshly built leaf has room for an edit and does not have to split on the first one.
+    // The number of characters a leaf is filled to when the rope builds or rebuilds one: three quarters of the
+    // capacity rounded up (a chunk size of nine fills to seven), so a freshly built leaf has room for an edit
+    // and does not have to split on the first one.
     // A rope built with leaves filled to capacity splits one on *every* insertion, which is the difference
     // between an in-place memmove and two allocations plus a rebalance.
     private readonly int _fill;
@@ -265,10 +269,12 @@ public sealed class Rope : IReadOnlyList<char>
     /// Gets the number of leaves in the tree — the fragmentation signal.
     /// </summary>
     /// <remarks>
-    /// A compact rope has <c>ceil(Length / (ChunkSize * 3 / 4))</c> leaves — the three quarters being the fill
-    /// a rebuild targets, so that a freshly built leaf has room for an edit. Edits split leaves and push this
-    /// above that figure; the rope rebuilds itself once it passes twice it, and <see cref="TrimExcess"/>
-    /// forces the rebuild early.
+    /// A compact rope has <c>ceil(Length / fill)</c> leaves, where <c>fill</c> is
+    /// <c>ChunkSize - ChunkSize / 4</c> — three quarters of the capacity rounded <i>up</i>, so a chunk size of
+    /// nine fills to seven rather than to six. Leaving that quarter free is what gives a freshly built leaf
+    /// room for an edit. Editing splits leaves and pushes this above that figure; the rope rebuilds itself
+    /// once it passes <c>2 x ideal + 8</c>, the eight-leaf grace window keeping a small rope from rebuilding
+    /// on every other edit, and <see cref="TrimExcess"/> forces the rebuild early.
     /// </remarks>
     public int LeafCount => _root?.Leaves ?? 0;
 
@@ -478,13 +484,15 @@ public sealed class Rope : IReadOnlyList<char>
     }
 
     /// <summary>
-    /// Rebuilds the tree balanced, with each leaf filled to three quarters of <see cref="ChunkSize"/>, undoing
-    /// the fragmentation that editing causes.
+    /// Rebuilds the tree balanced, with each leaf filled to <c>ChunkSize - ChunkSize / 4</c> characters —
+    /// three quarters of the capacity, rounded up — undoing the fragmentation that editing causes.
     /// </summary>
     /// <remarks>
-    /// <c>O(n)</c>, and the rope does this for itself once <see cref="LeafCount"/> passes twice what the
-    /// length needs; call it directly after a burst of edits that will not be followed by more, or before
-    /// measuring memory. On an empty rope it is a no-op that does not invalidate enumerators.
+    /// <c>O(n)</c>, and the rope does this for itself once <see cref="LeafCount"/> passes
+    /// <c>2 x ideal + 8</c> — not merely twice the ideal count, since the eight-leaf grace window keeps a
+    /// small rope from rebuilding on every other edit. Call it directly after a burst of edits that will not
+    /// be followed by more, or before measuring memory. On an empty rope it is a no-op that does not
+    /// invalidate enumerators.
     /// </remarks>
     public void TrimExcess()
     {
