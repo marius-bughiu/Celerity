@@ -236,6 +236,56 @@ public class RopeTests
         Assert.Equal(106, rope.Length);
     }
 
+    /// <summary>
+    /// <see cref="Rope.GetChunks"/> yields spans over the rope's own leaf buffers, so a caller can hand one
+    /// straight back to <see cref="Rope.Insert(int, ReadOnlySpan{char})"/>. When the slice comes from the very
+    /// leaf the insertion lands in, the in-place path's shift would overwrite the source before reading it:
+    /// inserting <c>chunk[4..]</c> of <c>"abcdef"</c> at 0 produced <c>"cdabcdef"</c> instead of
+    /// <c>"efabcdef"</c>. Only a source at or after the insertion point is corrupted, which is why the
+    /// before-the-point case is pinned here too rather than assumed to be the same test.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 4, 6, "efabcdef")]
+    [InlineData(0, 0, 6, "abcdefabcdef")]
+    [InlineData(2, 3, 6, "abdefcdef")]
+    [InlineData(6, 1, 3, "abcdefbc")]
+    [InlineData(3, 0, 2, "abcabdef")]
+    public void Insert_ShouldInsertWhatTheSpanSaid_WhenTheTextAliasesTheRopesOwnStorage(
+        int index,
+        int from,
+        int to,
+        string expected)
+    {
+        var rope = new Rope("abcdef");
+
+        Rope.ChunkEnumerator chunks = rope.GetChunks();
+        Assert.True(chunks.MoveNext());
+        Assert.Equal("abcdef", chunks.Current.ToString());
+
+        rope.Insert(index, chunks.Current[from..to]);
+
+        Assert.Equal(expected, rope.ToString());
+    }
+
+    /// <summary>
+    /// The same aliasing input on the path that overflows the leaf instead of editing it in place. That path
+    /// reads the leaf into a fresh run of leaves and never writes the buffer, so it is already safe — pinned
+    /// so a later change to the overflow branch cannot quietly acquire the bug the in-place branch had.
+    /// </summary>
+    [Fact]
+    public void Insert_ShouldInsertWhatTheSpanSaid_WhenAnAliasingInsertOverflowsTheLeaf()
+    {
+        Rope rope = OneFullLeaf();
+        string before = rope.ToString();
+
+        Rope.ChunkEnumerator chunks = rope.GetChunks();
+        Assert.True(chunks.MoveNext());
+
+        rope.Insert(1, chunks.Current[(Tiny - 2)..]);
+
+        Assert.Equal(before[..1] + before[(Tiny - 2)..] + before[1..], rope.ToString());
+    }
+
     [Fact]
     public void Insert_ShouldDoNothing_WhenTheTextIsEmpty()
     {

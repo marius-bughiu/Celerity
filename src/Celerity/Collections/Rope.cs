@@ -377,6 +377,13 @@ public sealed class Rope : IReadOnlyList<char>
     /// all</b>. That is the path the three-quarter leaf fill exists to keep reachable.
     /// </para>
     /// <para>
+    /// <paramref name="text"/> may be a slice of this rope's own storage — a span handed out by
+    /// <see cref="GetChunks"/>, including one taken from the very leaf the insertion lands in. That case is
+    /// detected and the source copied before anything moves, so it inserts what the span said rather than
+    /// what the shift left behind. It is the one input that costs an allocation on the otherwise
+    /// allocation-free path.
+    /// </para>
+    /// <para>
     /// Inserting nothing is a no-op that does not invalidate enumerators.
     /// </para>
     /// </remarks>
@@ -866,9 +873,18 @@ public sealed class Rope : IReadOnlyList<char>
             {
                 // The allocation-free path, and the common one: the leaf has room, so the insert is a shift of
                 // the leaf's tail and a copy, with no node touched above.
-                Array.Copy(buffer, index, buffer, index + text.Length, node.Length - index);
-                text.CopyTo(buffer.AsSpan(index));
-                node.Length += text.Length;
+                //
+                // Unless the caller handed back a slice of this very leaf, which GetChunks makes possible
+                // because it yields spans over the rope's own storage: the shift below would then overwrite
+                // the source before it is read, and rope.Insert(0, chunk[4..]) over "abcdef" would produce
+                // "cdabcdef" rather than "efabcdef". An overlapping source is snapshotted first. The test is
+                // two pointer comparisons on the path that matters, and only the path that would otherwise
+                // corrupt pays for the copy.
+                ReadOnlySpan<char> source = text.Overlaps(buffer) ? (ReadOnlySpan<char>)text.ToArray() : text;
+
+                Array.Copy(buffer, index, buffer, index + source.Length, node.Length - index);
+                source.CopyTo(buffer.AsSpan(index));
+                node.Length += source.Length;
                 return node;
             }
 
