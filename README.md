@@ -871,7 +871,8 @@ Timers thread through one flat entry array as intrusive lists, so there is no ob
 ```csharp
 var document = new Rope(File.ReadAllText("chapter.md"));
 
-document.Insert(11, "very ");        // O(log n) — and allocation-free when the leaf has room
+document.Insert(11, "very ");        // O(log n + inserted length) — and for a short edit that
+                                     // lands in a leaf with room, allocation-free
 document.Remove(0, 7);
 char first = document[0];
 

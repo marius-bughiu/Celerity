@@ -5,7 +5,9 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A <b>rope</b>: a balanced tree of bounded character runs, so an edit anywhere in a large block of text
-/// costs <c>O(log n)</c> instead of the <c>O(n)</c> that shifting a contiguous buffer costs — the container
+/// costs <c>O(log n)</c> in the length of the <i>document</i> — plus the length of the text being inserted,
+/// which has to be copied wherever it goes — instead of the <c>O(n)</c> that shifting a contiguous buffer
+/// costs on every edit whatever its size. It is the container
 /// for <i>text that keeps changing in the middle</i>, which is the one text operation
 /// <see cref="System.Text.StringBuilder"/> is linear in.
 /// </summary>
@@ -364,9 +366,19 @@ public sealed class Rope : IReadOnlyList<char>
     /// <paramref name="index"/> is negative or greater than <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n)</c>, and free of allocation entirely when the leaf the insertion lands in has room for
-    /// <paramref name="text"/> — which is the ordinary case for the short insertions an editor produces.
+    /// <c>O(log n + k)</c> in the document length and the <c>k</c> characters inserted. The <c>k</c> term is
+    /// not incidental: text that does not fit in the target leaf is copied into a fresh run of leaves, so
+    /// inserting a megabyte costs a megabyte however shallow the tree is. What the tree buys is that the
+    /// <i>document</i> never moves — only the inserted text and at most one leaf do.
+    /// <para>
+    /// For the short insertions an editor actually produces the <c>k</c> term vanishes and so does the
+    /// allocation: when the target leaf has room, this is one
+    /// <see cref="Array.Copy(Array, int, Array, int, int)"/> within that leaf and <b>nothing is allocated at
+    /// all</b>. That is the path the three-quarter leaf fill exists to keep reachable.
+    /// </para>
+    /// <para>
     /// Inserting nothing is a no-op that does not invalidate enumerators.
+    /// </para>
     /// </remarks>
     public void Insert(int index, ReadOnlySpan<char> text)
     {
@@ -860,8 +872,10 @@ public sealed class Rope : IReadOnlyList<char>
                 return node;
             }
 
-            // The leaf overflows. Reuse it for whichever side of the cut is the whole of it, so an append —
-            // where the insertion point is the leaf's end — never copies the leaf it lands on.
+            // The leaf overflows, so this is the O(k) half of the bound: the inserted text is copied into a
+            // fresh run of leaves. Reuse the existing leaf for whichever side of the cut is the whole of it,
+            // so an append — where the insertion point is the leaf's end — never copies the leaf it lands on,
+            // and a mid-leaf insert copies only that one leaf on top of the text itself.
             Node? head;
             Node? tail;
             if (index == node.Length)
