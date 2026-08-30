@@ -134,8 +134,9 @@ public sealed class Rope : IReadOnlyList<char>
         public Node? Right;
 
         // Non-null exactly on a leaf, and that doubles as the node-kind discriminator so no separate flag or
-        // type test is needed. The buffer's own length is the leaf's capacity, which is not necessarily
-        // ChunkSize: AppendAndClear can move in leaves a rope with a different chunk size allocated.
+        // type test is needed. The buffer is always exactly _chunkSize wide: NewLeaf is the only allocator and
+        // AppendAndClear refuses a source of a different chunk size, so no foreign width can enter the tree.
+        // Several bounds below rest on that invariant.
         public char[]? Text;
 
         // Characters in this subtree. On a leaf this is the used prefix of Text.
@@ -386,8 +387,12 @@ public sealed class Rope : IReadOnlyList<char>
     /// <paramref name="index"/> is negative or greater than <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n + k)</c> <b>amortized</b>, in the document length and the <c>k</c> characters inserted. Three
-    /// terms, and each is there for a reason. The <c>log n</c> is the descent. The <c>k</c> is not incidental:
+    /// <c>O(log n + k + ChunkSize)</c> <b>amortized</b>, in the document length, the <c>k</c> characters
+    /// inserted, and the leaf width. Four terms, and each is there for a reason. The <c>log n</c> is the
+    /// descent. The <see cref="ChunkSize"/> term is the shift within the target leaf, and it is written out
+    /// rather than folded away as a constant because it is <i>chosen by the caller</i>: at the default 512 it
+    /// is a rounding error, but a rope configured with a chunk size the size of its document has no
+    /// logarithmic behaviour left to offer. The <c>k</c> is not incidental:
     /// text that does not fit in the target leaf is copied into a fresh run of leaves, so inserting a megabyte
     /// costs a megabyte however shallow the tree is. And <b>amortized</b> is doing real work, because the one
     /// call in a fragmentation cycle that trips the rebuild gate is <c>O(n)</c> for that call — the same shape
@@ -439,11 +444,12 @@ public sealed class Rope : IReadOnlyList<char>
     /// <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n)</c> <b>amortized</b>, whatever <paramref name="count"/> is. The recursion follows the
-    /// range's two boundary paths and nothing else: any subtree lying wholly inside the range is unlinked at
-    /// its own root without being descended into, so removing a million characters costs no more than removing
-    /// ten, and the only characters that move are inside the at most two leaves the ends fall in — at most
-    /// <see cref="ChunkSize"/> of them each. Removing everything is <c>O(1)</c>.
+    /// <c>O(log n + ChunkSize)</c> <b>amortized</b>, whatever <paramref name="count"/> is. The recursion
+    /// follows the range's two boundary paths and nothing else: any subtree lying wholly inside the range is
+    /// unlinked at its own root without being descended into, so removing a million characters costs no more
+    /// than removing ten. The <see cref="ChunkSize"/> term is the compaction of the at most two leaves the
+    /// ends fall in, and it is written out rather than folded away as a constant because the caller chooses
+    /// it. Removing everything is <c>O(1)</c>.
     /// <para>
     /// <b>Amortized</b> for the same reason <see cref="Insert(int, ReadOnlySpan{char})"/> is: a removal can
     /// trip the fragmentation rebuild, and the one call in a cycle that does is <c>O(n)</c>. Removing nothing
@@ -516,11 +522,12 @@ public sealed class Rope : IReadOnlyList<char>
     /// <paramref name="index"/> is negative or greater than <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n)</c>, unconditionally — this does not run the fragmentation rebuild, so unlike
-    /// <see cref="Insert(int, ReadOnlySpan{char})"/> and <see cref="Remove"/> there is no amortized term. The
-    /// tree is cut along one root-to-leaf path and the two sides rejoined, and the only characters that move
-    /// are the suffix of the single leaf the cut falls within — at most <see cref="ChunkSize"/> of them,
-    /// which is what the equal-chunk-size rule on <see cref="AppendAndClear(Rope)"/> exists to guarantee. Splitting at <see cref="Length"/>
+    /// <c>O(log n + ChunkSize)</c>, and unconditionally so — this does not run the fragmentation rebuild, so
+    /// unlike <see cref="Insert(int, ReadOnlySpan{char})"/> and <see cref="Remove"/> there is no amortized
+    /// term. The tree is cut along one root-to-leaf path and the two sides rejoined, and the only characters
+    /// that move are the suffix of the single leaf the cut falls within — at most <see cref="ChunkSize"/> of
+    /// them, which is what the equal-chunk-size rule on <see cref="AppendAndClear(Rope)"/> exists to
+    /// guarantee, and which is the caller's own choice rather than a constant of the type. Splitting at <see cref="Length"/>
     /// returns an empty rope and is a no-op that does not invalidate enumerators.
     /// <see cref="AppendAndClear(Rope)"/> is the inverse.
     /// </remarks>
