@@ -5,10 +5,12 @@ using System.Runtime.CompilerServices;
 namespace Celerity.Collections;
 
 /// <summary>
-/// A <b>rope</b>: a balanced tree of bounded character runs, so an edit anywhere in a large block of text
-/// costs <c>O(log n)</c> in the length of the <i>document</i> — plus the length of the text being inserted,
-/// which has to be copied wherever it goes — instead of the <c>O(n)</c> that shifting a contiguous buffer
-/// costs on every edit whatever its size. It is the container
+/// A <b>rope</b>: a balanced tree of bounded character runs, so the cost of an edit stops scaling with the
+/// document. Where a contiguous buffer shifts <c>O(n)</c> characters on every edit whatever its size, this
+/// moves at most one leaf — <see cref="Insert(int, ReadOnlySpan{char})"/> is
+/// <c>O(log n + k + ChunkSize)</c> and <see cref="Remove"/> <c>O(log n + ChunkSize)</c>, both
+/// <b>amortized</b> over the rebuild described below, with the exact terms on each member. It is the
+/// container
 /// for <i>text that keeps changing in the middle</i>, which is the one text operation
 /// <see cref="System.Text.StringBuilder"/> is linear in.
 /// </summary>
@@ -38,9 +40,10 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// <b>Splitting and joining are the operations nothing in the BCL has.</b> <see cref="Split(int)"/> cuts the
-/// rope in two and <see cref="AppendAndClear(Rope)"/> joins two back together, both in <c>O(log n)</c>, where
-/// every BCL equivalent — <c>string.Concat</c>, <c>Substring</c>, slicing a span and copying — is a full copy.
-/// What a split copies is at most the one leaf the cut falls inside, never the document.
+/// rope in two in <c>O(log n + ChunkSize)</c> — the second term being the one leaf the cut falls inside,
+/// which it copies — and <see cref="AppendAndClear(Rope)"/> joins two back together in <c>O(log n)</c>,
+/// copying nothing at all. Every BCL equivalent — <c>string.Concat</c>, <c>Substring</c>, slicing a span and
+/// copying — is a full copy of the document.
 /// <see cref="AppendAndClear(Rope)"/> empties its argument, and is named for it: joining is a <i>move</i> of
 /// the source's nodes, not a copy of its characters, so leaving the source pointing at buffers this rope now
 /// mutates would alias them. A copying join is <c>rope.Append(other.ToString())</c> and costs the copy.

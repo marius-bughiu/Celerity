@@ -5884,7 +5884,7 @@ foreach ((long deadline, PendingRequest? pending) in timeouts)
 public sealed class Rope : IReadOnlyList<char>
 ```
 
-A **rope**: a balanced tree of bounded character runs, so an edit anywhere in a large block of text costs `O(log n)` instead of the `O(n)` that shifting a contiguous buffer costs. It is the structure behind every serious text editor's buffer — Xi, CodeMirror 6, Helix — and it answers *change this text in the middle, over and over*.
+A **rope**: a balanced tree of bounded character runs, so the cost of an edit stops scaling with the document. Where a contiguous buffer shifts `O(n)` characters on every edit whatever its size, this moves at most one leaf — `Insert` is `O(log n + k + ChunkSize)` and `Remove` `O(log n + ChunkSize)`, both **amortized** over the rebuild described below. It is the structure behind every serious text editor's buffer — Xi, CodeMirror 6, Helix — and it answers *change this text in the middle, over and over*.
 
 **This is the library's only mutable text type.** [`Trie<TValue>`](#trietvalue), [`SuffixArray`](#suffixarray) and [`AhoCorasick`](#ahocorasick) all *search* text that does not change; this one *edits* it and does not search it. Reach for those to find something, and for this to change something.
 
@@ -5892,7 +5892,7 @@ A **rope**: a balanced tree of bounded character runs, so an edit anywhere in a 
 
 A `StringBuilder` is a linked list of chunks whose head is the *end* of the text. That makes appending excellent and everything else linear in the document: `Insert` and `Remove` walk the chunk list to reach the position and then shift what follows. Ten times the document is ten times the cost of one edit — which is a quadratic build if you are assembling a document out of order.
 
-A rope descends a tree instead, so the cost of an edit is set by the **depth** of the document rather than its length, and the only characters that move are the inserted ones and at most a single leaf. (Inserting `k` characters still costs `O(k)` to copy them wherever they land — what the tree removes is the document-sized term, not the text's own.) It also has two operations the BCL has none of at any cost: `Split` cuts a document in two and `AppendAndClear` joins two back together, both `O(log n)`, where `string.Concat`, `Substring` and slice-then-copy are all a full copy. Neither copies the *document*: a split copies at most the one leaf the cut lands inside, and a join copies nothing at all.
+A rope descends a tree instead, so the cost of an edit is set by the **depth** of the document rather than its length, and the only characters that move are the inserted ones and at most a single leaf. An edit that trips the fragmentation gate rebuilds the tree and is `O(n)` for that one call, which is why the `Insert` and `Remove` bounds are amortized. (Inserting `k` characters still costs `O(k)` to copy them wherever they land — what the tree removes is the document-sized term, not the text's own.) It also has two operations the BCL has none of at any cost: `Split` cuts a document in two in `O(log n + ChunkSize)` — the second term being the one leaf the cut lands inside, which it copies — and `AppendAndClear` joins two back together in `O(log n)`, copying nothing at all. `string.Concat`, `Substring` and slice-then-copy are each a full copy of the document.
 
 `List<char>` is worse than either on every editing axis — one flat array, so every edit is a whole-tail `memmove` — and `string` is immutable, so it is not in the running.
 
