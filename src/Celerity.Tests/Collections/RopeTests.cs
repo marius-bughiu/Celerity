@@ -366,6 +366,33 @@ public class RopeTests
         Assert.Equal(string.Empty, rope.ToString());
     }
 
+    /// <summary>
+    /// A range that covers a whole subtree unlinks it at that subtree's root rather than descending into it,
+    /// which is what makes <see cref="Rope.Remove"/> <c>O(log n)</c> in the document rather than
+    /// <c>O(leaves removed)</c>. The observable consequences are pinned here: the interior of a wide range
+    /// disappears whatever its size, and removing everything collapses the tree outright.
+    /// </summary>
+    [Fact]
+    public void Remove_ShouldUnlinkWholeSubtrees_WhenTheRangeCoversThemEntirely()
+    {
+        var rope = new Rope(Repeat('x', 4000), Tiny);
+        Assert.True(rope.Depth > 5);
+
+        // A wide interior range: everything but four characters at each end.
+        rope.Remove(4, rope.Length - 8);
+
+        Assert.Equal(8, rope.Length);
+        Assert.Equal(Repeat('x', 8), rope.ToString());
+
+        // And the degenerate case the early-out handles at the root.
+        var whole = new Rope(Repeat('y', 4000), Tiny);
+        whole.Remove(0, whole.Length);
+
+        Assert.Equal(0, whole.Length);
+        Assert.Equal(0, whole.LeafCount);
+        Assert.Equal(0, whole.Depth);
+    }
+
     [Fact]
     public void Remove_ShouldTrimEachEnd_WhenTheRangeIsAPrefixOrASuffix()
     {

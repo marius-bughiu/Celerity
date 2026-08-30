@@ -413,8 +413,10 @@ public sealed class Rope : IReadOnlyList<char>
     /// <see cref="Length"/>.
     /// </exception>
     /// <remarks>
-    /// <c>O(log n)</c> whatever <paramref name="count"/> is: whole leaves inside the range are unlinked rather
-    /// than copied, and at most the two leaves the range's ends fall inside are compacted. Removing nothing is
+    /// <c>O(log n)</c> whatever <paramref name="count"/> is. The recursion follows the range's two boundary
+    /// paths and nothing else: any subtree lying wholly inside the range is unlinked at its own root without
+    /// being descended into, so removing a million characters costs no more than removing ten, and at most the
+    /// two leaves the ends fall inside are compacted. Removing everything is <c>O(1)</c>. Removing nothing is
     /// a no-op that does not invalidate enumerators.
     /// </remarks>
     public void Remove(int index, int count)
@@ -927,6 +929,14 @@ public sealed class Rope : IReadOnlyList<char>
     // together with Join unless their heights are still close enough to reuse this node.
     private static Node? RemoveCore(Node node, int index, int count)
     {
+        // A subtree the range covers entirely goes as a unit, without descending into it. This is what makes
+        // Remove O(log n) rather than O(leaves removed): without it, deleting a wide range — or the whole
+        // document — would walk every leaf under it only to return null from each. With it the recursion
+        // follows the range's two boundary paths and nothing else, and everything between those paths is
+        // unlinked at the highest node that is wholly inside them.
+        if (index == 0 && count == node.Length)
+            return null;
+
         if (node.Text is not null)
         {
             int end = index + count;
@@ -934,7 +944,10 @@ public sealed class Rope : IReadOnlyList<char>
                 Array.Copy(node.Text, end, node.Text, index, node.Length - end);
 
             node.Length -= count;
-            return node.Length == 0 ? null : node;
+
+            // Never empty: a leaf can only be emptied by a range that covers it exactly, and the early-out
+            // above already unlinked that leaf without descending into it.
+            return node;
         }
 
         int leftLength = node.Left!.Length;
