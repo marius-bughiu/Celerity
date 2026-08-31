@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`LfuCache<TKey, TValue, THasher>`** in `Celerity.Collections` — a fixed-capacity **least-frequently-used cache**, the frequency-ordered sibling of `LruCache`. Reach for it when a batch job or backfill sweeps a cache that interactive traffic depends on: an LRU loses its whole working set to that scan, while here an entry read more than once survives it and at most one of them is lost. Entries read only once are not protected — the policy keeps demonstrated reuse, and frequencies never age, so `LruCache` stays the right pick when recency is what matters. Note before swapping: unlike `LruCache`, any read invalidates an active enumerator, and so does a value overwrite. Closes [#407](https://github.com/marius-bughiu/Celerity/issues/407).
+- **`LfuCache<TKey, TValue, THasher>`** in `Celerity.Collections` — a fixed-capacity **least-frequently-used cache**, the frequency-ordered sibling of `LruCache`. Reach for it when a batch job or backfill sweeps a cache that interactive traffic depends on: an LRU loses its whole working set to that scan, while here anything read more than once survives it. Entries read only once are not protected, and frequencies never age — `LruCache` stays the right pick when recency is what matters. Enumerator and frequency semantics differ from `LruCache`; see [the API reference](docs/api/collections.md#lfucachetkey-tvalue-thasher). Closes [#407](https://github.com/marius-bughiu/Celerity/issues/407).
 
 ### Changed
 

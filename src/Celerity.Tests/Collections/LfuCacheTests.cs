@@ -455,6 +455,30 @@ public class LfuCacheTests
     }
 
     [Fact]
+    public void SourceConstructor_DuplicateAfterEviction_StartsOverAtFrequencyOne()
+    {
+        // The condition on the duplicate rule: a repeat only raises a frequency while the earlier
+        // occurrence is still resident. Here key 1 is evicted before its second occurrence arrives, so
+        // that occurrence is a fresh insert rather than an overwrite — an evicted entry keeps no
+        // history, exactly as with Remove followed by a re-add.
+        var source = new[]
+        {
+            new KeyValuePair<int, string?>(1, "one"),
+            new KeyValuePair<int, string?>(2, "two"),
+            new KeyValuePair<int, string?>(3, "three"),  // capacity 2: evicts 1, the oldest at frequency 1
+            new KeyValuePair<int, string?>(4, "four"),   // evicts 2
+            new KeyValuePair<int, string?>(1, "uno"),    // 1 is gone, so this is a brand-new entry
+        };
+
+        var cache = new LfuCache<int, string?, Int32WangHasher>(2, source);
+
+        Assert.True(cache.ContainsKey(1));
+        Assert.Equal("uno", cache.TryPeek(1, out string? v) ? v : null);
+        Assert.True(cache.TryGetFrequency(1, out long frequency));
+        Assert.Equal(1L, frequency);            // frequency 1, not the 2 a surviving duplicate would give
+    }
+
+    [Fact]
     public void SourceConstructor_NullSource_Throws()
     {
         Assert.Throws<ArgumentNullException>(

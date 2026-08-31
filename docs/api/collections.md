@@ -3782,7 +3782,10 @@ public LfuCache(
 The first overload creates an empty cache that retains at most `capacity` entries. The `source`
 overload primes it by inserting each pair in enumeration order, each arriving at a frequency of 1. A
 later duplicate key overwrites the earlier value and counts as a further use, raising that entry's
-frequency above the singletons around it.
+frequency above the singletons around it — **but only while the earlier occurrence is still
+resident**. In a source longer than `capacity` an early occurrence may already have been evicted, in
+which case the later one is a fresh frequency-1 insert: an evicted entry keeps no history, exactly as
+with `Remove` followed by a re-add.
 
 If the source is **duplicate-free**, every key arrives at frequency 1, ties break by recency, and the
 effect is the familiar one: the earliest keys are evicted and the last `capacity` survive. **With

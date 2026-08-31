@@ -174,7 +174,10 @@ public class LfuCache<TKey, TValue, THasher>
     /// Initializes a new cache with the given <paramref name="capacity"/> and primes it from
     /// <paramref name="source"/>. Pairs are inserted in enumeration order, each arriving with a
     /// frequency of 1. A later duplicate key overwrites the earlier value and counts as a further use,
-    /// raising that entry's frequency above the singletons around it.
+    /// raising that entry's frequency above the singletons around it — but only while the earlier
+    /// occurrence is <i>still resident</i>. In a source longer than <paramref name="capacity"/> an
+    /// early occurrence may already have been evicted, in which case the later one is a fresh
+    /// frequency-1 insert and the earlier use is not carried over: an evicted entry keeps no history.
     /// </summary>
     /// <remarks>
     /// If the source is <b>duplicate-free</b> every key arrives at frequency 1, ties break by recency,
