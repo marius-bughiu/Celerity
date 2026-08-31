@@ -4,6 +4,20 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`LfuCache<TKey, TValue, THasher>`** in `Celerity.Collections` — a fixed-capacity **least-frequently-used cache**, the frequency-ordered sibling of `LruCache`, with `O(1)` get/put *worst case* and ties broken by least-recently-used. It exists for the one failure mode recency cannot see: an **LRU is scan-vulnerable**, so a single sequential pass over `Capacity` cold keys evicts the entire hot set no matter how often those keys were used — the ordinary shape of a table scan or a backfill sharing a cache with steady-state traffic. Here a scan key arrives at frequency 1 and is the next thing evicted, so the hot set survives. Frequency buckets and their entry chains are threaded through fixed-size arrays allocated once, so the hot get/put/evict path **allocates nothing**, against an idiomatic `Dictionary` + `SortedSet` LFU that is `O(log n)` per operation and allocates a tree node per insert. Two things are traded for that: **frequencies never age**, so a key that was hot long ago can hold its slot — `LruCache` stays the right pick when recency is what matters — and *every* hit is a structural change, so unlike `LruCache` there is no already-at-the-front exemption and any read invalidates an active enumerator. `TryGetFrequency` exposes the use count the eviction order is sorted on; it has no `LruCache` analogue. Closes [#407](https://github.com/marius-bughiu/Celerity/issues/407).
+
+- Dedicated tests for `LfuCache` mirroring the four `LruCache` files: core surface and frequency accounting, eviction ordering (including the scan-resistance property, asserted against an `LruCache` of the same capacity losing its hot set), enumeration and version invalidation, and a seeded differential run against a sort-based reference LFU that checks count, membership, every value, every frequency and the exact eviction order after every operation.
+
+- `LfuCache` rows in the cross-collection shared tests that already covered `LruCache` — `ClearNoOpVersionTests`, `EnumeratorInvalidationAndClearCoverageTests` — and its addition to `DictionaryInterfaceTests`' out-of-scope note, which applies to it for the same reason it applies to `LruCache`: a cache evicts on insert, so `Add` could silently drop an unrelated entry.
+
+- `LfuCacheBenchmark` in `Celerity.Benchmarks`, registered in `Program.cs` so the joined CI report picks it up, measuring put / get / get-missing against the idiomatic `Dictionary` + `SortedSet` LFU baseline.
+
+- Dashboard wiring for `LfuCache`: a ship card in `web/index.html` and `COLLECTIONS` entries in `web/dev/bench/index.html` and `web/dev/bench/detail.html`, without which the benchmark data would publish but not render.
+
+- Docs for `LfuCache`: a full section in [docs/api/collections.md](docs/api/collections.md#lfucachetkey-tvalue-thasher), plus the collections list, the *Caches* walkthrough and the "Choosing a collection" table in `README.md`, the index line in `docs/README.md`, and a block in the Native AOT smoke test (`docs/aot.md` counts follow).
+
 ### Changed
 
 - **The benchmark suite runs on merges to `main` instead of on every pull request.** It was by a wide margin the largest consumer of this repository's CI minutes — a same-runner A/B against `main` over eight runners, re-paid on every review commit. A regression is now read off [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at the merge commit that introduced it, and *Actions → Benchmarks → Run workflow* measures any ref on demand. The per-PR comparison comment is gone with it. The relevance gate that skips a run whose diff cannot move a measured number now applies to `main` as well, so a documentation or comment-only commit costs nothing. No change to the shipped packages.

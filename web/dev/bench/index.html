@@ -474,6 +474,7 @@ function escapeHtml(s) {
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                   vs: 'Dictionary<int, int>',  ops: ['Add', 'Estimate'] },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                       vs: 'Dictionary<int, int>',  ops: ['Add', 'TopK'] },
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] },
+    { key: 'LfuCache',            title: 'LfuCache<int, int, ...>',                  vs: 'Dictionary + SortedSet LFU', ops: ['Put', 'Get', 'GetMissing'] },
     // Deque is a sequence collection benchmarked against LinkedList (the BCL's only O(1)-both-ends type).
     { key: 'Deque',               title: 'Deque<int>',                               vs: 'LinkedList<int>',       ops: ['PushFront', 'Queue', 'Enumerate'] },
     // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.

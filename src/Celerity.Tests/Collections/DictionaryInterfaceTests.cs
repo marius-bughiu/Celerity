@@ -36,9 +36,10 @@ namespace Celerity.Tests.Collections;
 ///
 /// <para>
 /// <b>Out of scope.</b> <see cref="FrozenCelerityDictionary{TValue, THasher}"/> is immutable by
-/// construction, <see cref="LruCache{TKey, TValue, THasher}"/> evicts on insert (so <c>Add</c>
-/// could silently drop an unrelated entry, which the interface's contract does not allow) and
-/// <see cref="CelerityMultiMap{TKey, TValue, THasher}"/> holds many values per key. All three keep
+/// construction, <see cref="LruCache{TKey, TValue, THasher}"/> and
+/// <see cref="LfuCache{TKey, TValue, THasher}"/> evict on insert (so <c>Add</c> could silently drop
+/// an unrelated entry, which the interface's contract does not allow) and
+/// <see cref="CelerityMultiMap{TKey, TValue, THasher}"/> holds many values per key. All four keep
 /// the read-only interface only. <see cref="Trie{TValue}"/> is a genuine one-value-per-key mutable
 /// dictionary and could join, but its <c>Keys</c> / <c>Values</c> are lazy
 /// <see cref="IEnumerable{T}"/> traversals rather than the counted struct views the rest of the

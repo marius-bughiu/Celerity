@@ -302,6 +302,28 @@ public class EnumeratorInvalidationAndClearCoverageTests
         Assert.Throws<InvalidOperationException>(() => second.MoveNext());
     }
 
+    [Fact]
+    public void LfuCacheEnumeratorReset_ShouldThrowInvalidOperationException_WhenCacheModified()
+    {
+        var cache = new LfuCache<int, string, Int32WangHasher>(4);
+        cache.Add(1, "a");
+        cache.Add(2, "b");
+
+        var enumerator = cache.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        cache.AddOrUpdate(3, "c");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        // Unlike LruCache, a plain read is enough to invalidate: raising a frequency always moves the
+        // entry to a different bucket, so there is no already-at-the-front exemption.
+        var second = cache.GetEnumerator();
+        Assert.True(cache.TryGet(1, out _));
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
     // ---- Target B: Clear() / capacity early-outs and reference-clearing arms ------------------------
 
     [Fact]
@@ -357,6 +379,26 @@ public class EnumeratorInvalidationAndClearCoverageTests
     public void LruCacheClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
     {
         var cache = new LruCache<int, string, Int32WangHasher>(4);
+        var enumerator = cache.GetEnumerator();
+
+        cache.Clear();
+
+        Assert.Equal(0, cache.Count);
+        Assert.Equal(4, cache.Capacity);
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(0, seen);
+
+        cache.Add(1, "a");
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
+    public void LfuCacheClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
+    {
+        var cache = new LfuCache<int, string, Int32WangHasher>(4);
         var enumerator = cache.GetEnumerator();
 
         cache.Clear();

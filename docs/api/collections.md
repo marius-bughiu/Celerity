@@ -3668,6 +3668,178 @@ if (cache.TryPeekLeastRecentlyUsed(out long coldKey, out _))
     Console.WriteLine($"Next to be evicted: user {coldKey}");
 ```
 
+## LfuCache&lt;TKey, TValue, THasher&gt;
+
+A fixed-capacity **least-frequently-used (LFU) cache** parameterized on a custom hash provider: an
+`O(1)` get/put map that automatically **evicts the least-frequently-used entry** when a new key would
+push the count past `Capacity`, breaking ties between equally-frequent entries by
+least-recently-used.
+
+```csharp
+public class LfuCache<TKey, TValue, THasher>
+    : IReadOnlyCollection<KeyValuePair<TKey, TValue?>>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+The BCL ships no bounded cache of any policy, and [`LruCache`](#lrucachetkey-tvalue-thasher) is this
+library's answer for the recency-ordered one. `LfuCache` is its frequency-ordered sibling, and it
+exists to cover the one failure mode recency cannot see: **an LRU is scan-vulnerable**. Because
+recency is the only thing it measures, a single sequential pass over `Capacity` cold keys evicts the
+entire hot set no matter how often those hot keys were used, and every subsequent lookup misses until
+the cache is re-warmed. That is the ordinary shape of a table scan, a backfill, or a crawler sharing a
+cache with steady-state traffic. A frequency-ordered cache is immune to it: a key seen once during the
+scan has a frequency of 1 and is the first thing evicted, so the hot set survives untouched.
+
+The idiomatic .NET LFU pairs a `Dictionary` from key to its `(value, frequency, last-use stamp)`
+triple with a `SortedSet` over that triple, whose minimum is the eviction victim. That is `O(log n)`
+per operation — every hit changes the frequency, so the entry has to leave and re-enter the set — and
+it **allocates a red-black tree node per insertion**. `LfuCache` is `O(1)` *worst case* on every
+operation and, after construction, **allocates nothing** on the hot get/put/evict path.
+
+### How it works
+
+Entries live in **frequency buckets** — one bucket per distinct use count currently present — and the
+buckets themselves are held in a doubly-linked list in **ascending frequency order**. Within a bucket
+the entries form an intrusive most-recently-used → least-recently-used chain, so the eviction victim
+is always exactly defined: the LRU entry of the lowest-frequency bucket. This is the structure from
+Shah, Mitra and Matani, *"An O(1) algorithm for implementing the LFU cache eviction scheme"*.
+
+Both the entry chains and the bucket list are threaded through **fixed-size arrays allocated once at
+construction**. `Capacity` bucket slots are always enough, because a live bucket holds at least one of
+the at-most-`Capacity` entries. A key→slot index dogfoods
+`CelerityDictionary<TKey, int, THasher>` — which is where `THasher` is used, and which also supplies
+the out-of-band handling for a `default(TKey)` or `null` key (so a string hasher is never invoked with
+`null`). Because a slot index is **stable across bucket movement**, a cache hit relinks chains but
+never touches the index. When a new key arrives at capacity, the victim's slot is **recycled in
+place** for the newcomer, so steady-state churn neither allocates nor frees.
+
+Promoting an entry from `f` to `f + 1` moves it into the bucket for `f + 1`, creating that bucket if
+no entry currently sits there. One case avoids the bucket churn entirely: when the entry is the **sole
+occupant** of its bucket and nothing sits at `f + 1`, the bucket it would move to is the bucket it is
+already in, so the bucket is **relabelled in place** — no allocation, and no relink of the frequency
+chain, because `f + 1` is still strictly above the previous bucket and strictly below the next one.
+
+### Reads are mutating
+
+LFU semantics require a lookup to count as a *use*. The indexer getter and `TryGet` therefore
+**increment the entry's frequency**, which moves it to another bucket and invalidates any in-progress
+enumerator (matching "collection was modified" semantics). Unlike `LruCache` there is **no exemption
+for an entry that is already at the front**: raising a frequency from `f` to `f + 1` always moves the
+entry, so *every* hit is a structural change. Overwriting a value through `AddOrUpdate` or the indexer
+setter is also a use, which makes this the one type in the library where a pure value write
+invalidates an enumerator. To inspect the cache without counting a use — and without invalidating an
+active enumerator — use `TryPeek`, `ContainsKey`, `TryGetFrequency`, or the
+`TryPeekLeastFrequentlyUsed` / `TryPeekMostFrequentlyUsed` inspectors.
+
+### The tradeoff, stated plainly
+
+Frequencies are `long` and **never age**. That is classic LFU, and it means a key that was hot long
+ago can hold its slot indefinitely against a key that is hot now. `LfuCache` is therefore the right
+pick for a **stable, skewed popularity distribution** — the Zipfian read cache — and for any workload
+where scans must not evict the hot set. For recency-dominated or shifting workloads, where what was
+popular yesterday is irrelevant today, [`LruCache`](#lrucachetkey-tvalue-thasher) remains the right
+pick. Neither is universally better; pick the one whose notion of "worth keeping" matches the
+workload.
+
+### Constructors
+
+```csharp
+public LfuCache(int capacity)
+
+public LfuCache(
+    int capacity,
+    IEnumerable<KeyValuePair<TKey, TValue?>> source)
+```
+
+The first overload creates an empty cache that retains at most `capacity` entries. The `source`
+overload primes it by inserting each pair in enumeration order, each arriving at a frequency of 1, so
+if the source yields more than `capacity` distinct keys the earliest ones are evicted and the last
+`capacity` survive. A later duplicate key overwrites the earlier value and counts as a further use,
+raising that entry's frequency above the singletons around it.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity` is less than 1.
+- `ArgumentNullException` if `source` is `null` (enumerable overload).
+
+### Methods and properties
+
+- `int Capacity` — the maximum number of entries retained before eviction.
+- `int Count` — the current number of entries (never greater than `Capacity`).
+- `TValue? this[TKey key]` — **get** counts as a use and throws `KeyNotFoundException` if absent;
+  **set** adds the key at frequency 1 (evicting the least-frequently-used entry first if full) or
+  overwrites an existing value and counts as a use.
+- `bool TryGet(TKey key, out TValue? value)` — a *use*: increments the entry's frequency on a hit.
+- `bool TryPeek(TKey key, out TValue? value)` — reads without counting a use.
+- `bool ContainsKey(TKey key)` — membership test; does not count as a use.
+- `bool TryGetFrequency(TKey key, out long frequency)` — reads an entry's use count (one for the
+  insert, plus one per subsequent read or overwrite) without counting a use. This has no `LruCache`
+  analogue: recency has no scalar to report, whereas frequency is exactly the quantity the eviction
+  order is sorted on.
+- `void AddOrUpdate(TKey key, TValue? value)` — inserts at frequency 1 (evicting the victim if full),
+  or overwrites and counts the write as a use.
+- `void Add(TKey key, TValue? value)` — inserts at frequency 1; throws `ArgumentException` if the key
+  already exists.
+- `bool TryAdd(TKey key, TValue? value)` — inserts at frequency 1 if absent (evicting the victim if
+  full); returns `false` and leaves the cache unchanged — including every frequency, since a rejected
+  add is not a use — if the key exists.
+- `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` — removes an entry, optionally
+  returning its value. The frequency is discarded: re-adding the key later starts it back at 1.
+- `void Clear()` — removes all entries; the backing storage (sized to `Capacity`) is retained.
+- `bool TryPeekLeastFrequentlyUsed(out TKey? key, out TValue? value)` — reads the next eviction
+  candidate (lowest frequency, least recently used among equals) without counting a use.
+- `bool TryPeekMostFrequentlyUsed(out TKey? key, out TValue? value)` — reads the most-frequently-used
+  entry without counting a use.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator yielding entries in
+  **most-frequently-used → least-frequently-used** order, most-recently-used first within one
+  frequency. Enumeration is a peek and does not count as a use.
+
+### Default-key handling
+
+`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key. The dogfooded index
+stores it out-of-band, so the whole surface (get / set / peek / remove) works with it and the hasher
+is never invoked with `null`.
+
+### Thread safety
+
+`LfuCache` is not thread-safe; concurrent callers must synchronize externally. In particular, note
+that reads count as uses and mutate the bucket structure, so even a read-mostly workload needs a
+write lock (or an external concurrent cache) under concurrency.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A bounded cache in front of an expensive lookup, on a workload where a nightly batch job scans
+// every product while interactive traffic keeps hitting the same popular few. Under LRU the scan
+// would evict the popular set every night; under LFU it cannot.
+var cache = new LfuCache<long, Product, Int64WangHasher>(capacity: 10_000);
+
+Product GetProduct(long productId)
+{
+    if (cache.TryGet(productId, out Product? cached))
+        return cached!;               // a hit raises the entry's frequency
+
+    Product fresh = LoadFromDatabase(productId);
+    cache[productId] = fresh;         // insert at frequency 1; the coldest entry is evicted if full
+    return fresh;
+}
+
+// The batch scan touches every id exactly once, so each scanned product enters at frequency 1 and is
+// evicted by the next one. The interactive hot set, sitting at much higher frequencies, is untouched.
+foreach (long id in AllProductIds())
+    _ = GetProduct(id);
+
+// Inspect the cache without counting uses.
+if (cache.TryPeekLeastFrequentlyUsed(out long coldKey, out _))
+    Console.WriteLine($"Next to be evicted: product {coldKey}");
+
+if (cache.TryGetFrequency(bestSellerId, out long uses))
+    Console.WriteLine($"Best seller served from cache {uses} times");
+```
+
 ## Deque&lt;T&gt;
 
 A growable **double-ended queue** backed by a single **circular buffer**: an array with a moving
