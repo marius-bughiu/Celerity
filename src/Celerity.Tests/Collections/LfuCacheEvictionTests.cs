@@ -273,10 +273,11 @@ public class LfuCacheEvictionTests
     [Fact]
     public void ScanDoesNotEvictTheHotSet()
     {
-        // The property LfuCache exists for. A hot set is used enough to climb clear of frequency 1,
-        // then a sequential scan an entire capacity long sweeps through. Under LRU the scan would
-        // evict every hot key; under LFU each scan key arrives at frequency 1 and is evicted by the
-        // next one, so the hot set is untouched.
+        // The property LfuCache exists for, in the case where the cache has room to spare: a hot set
+        // half the capacity, used enough to climb clear of frequency 1, then a sequential scan four
+        // times the capacity sweeps through. Under LRU the scan evicts every hot key; under LFU the
+        // scan keys fill the spare room and then evict each other, so the hot set is untouched.
+        // LfuCacheFullOfHotKeys_LosesExactlyOneEntryToAScan below covers the boundary this avoids.
         const int Capacity = 16;
         const int HotKeys = 8;
 
@@ -308,5 +309,56 @@ public class LfuCacheEvictionTests
 
         for (int k = 0; k < HotKeys; k++)
             Assert.False(lru.ContainsKey(k));
+    }
+
+
+    [Fact]
+    public void FullOfHotKeys_LosesExactlyOneEntryToAScan()
+    {
+        // The boundary the test above deliberately leaves room around. With *every* slot already
+        // holding a hot entry, the first cold key cannot arrive for free: there is no frequency-1
+        // entry to drop yet, so it displaces the least-recently-used of the hot entries. From the
+        // second cold key onward there always is one — the previous cold key — so it is evicted
+        // instead. A scan therefore costs exactly one resident entry however long it runs, which is
+        // the honest form of the claim: bounded, not zero. The LRU contrast is unchanged: it loses
+        // the whole hot set.
+        const int Capacity = 16;
+
+        var cache = Cache(Capacity);
+        for (int k = 0; k < Capacity; k++)
+            cache[k] = k;                       // full, no spare slots
+        for (int pass = 0; pass < 5; pass++)
+            for (int k = 0; k < Capacity; k++)
+                _ = cache[k];                   // every hot key reaches frequency 7
+
+        // Key 0 is the least-recently-used at the shared top frequency, so it is the one displaced.
+        Assert.True(cache.TryPeekLeastFrequentlyUsed(out int predicted, out _));
+        Assert.Equal(0, predicted);
+
+        for (int scan = 1000; scan < 1000 + 4 * Capacity; scan++)
+            cache[scan] = scan;                 // a scan four times the capacity
+
+        int lost = 0;
+        for (int k = 0; k < Capacity; k++)
+            if (!cache.ContainsKey(k)) lost++;
+
+        Assert.Equal(1, lost);                  // exactly one, not zero and not the whole set
+        Assert.False(cache.ContainsKey(0));     // and it is the one that was predicted
+        Assert.Equal(Capacity, cache.Count);
+
+        // The same scan through an LRU of the same capacity costs every hot key instead of one.
+        var lru = new LruCache<int, int, Int32WangHasher>(Capacity);
+        for (int k = 0; k < Capacity; k++)
+            lru[k] = k;
+        for (int pass = 0; pass < 5; pass++)
+            for (int k = 0; k < Capacity; k++)
+                _ = lru[k];
+        for (int scan = 1000; scan < 1000 + 4 * Capacity; scan++)
+            lru[scan] = scan;
+
+        int lruLost = 0;
+        for (int k = 0; k < Capacity; k++)
+            if (!lru.ContainsKey(k)) lruLost++;
+        Assert.Equal(Capacity, lruLost);
     }
 }

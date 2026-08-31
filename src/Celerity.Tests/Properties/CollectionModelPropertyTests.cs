@@ -1043,6 +1043,157 @@ public class CollectionModelPropertyTests
         Assert.Equal(oracle.OrderBy(p => p.Key), enumerated.OrderBy(p => p.Key));
     }
 
+    // ---- LfuCache (bounded, evicting) vs a sort-based frequency model --------
+
+    // The BCL ships no cache of any policy, so the oracle here is the *definition* of LFU rather than
+    // a BCL type: every live key carries its use count and the stamp of its most recent use, and the
+    // eviction order is read off by sorting — "lowest count first, oldest stamp breaking ties" — with
+    // none of the frequency-bucket machinery under test. The capacity is deliberately tiny so that
+    // almost every insert evicts, which is where a bucket-chain or free-slot bug would live, and the
+    // key domain is small (and spans 0 and negatives) so promotions, ties and the out-of-band
+    // default-key slot all fire densely. CsCheck shrinks a failing sequence to a minimal reproduction.
+    private enum LfuOp { Put, Get, TryAdd, Remove, Peek, Clear }
+
+    private static readonly Gen<(int capacity, List<(LfuOp op, int key, int value)> ops)> GenLfuOps =
+        Gen.Select(
+            Gen.Int[1, 6],
+            Gen.Select(
+                Gen.Int[0, 99].Select(n => n < 34 ? LfuOp.Put
+                                         : n < 62 ? LfuOp.Get
+                                         : n < 72 ? LfuOp.TryAdd
+                                         : n < 87 ? LfuOp.Remove
+                                         : n < 97 ? LfuOp.Peek
+                                         : LfuOp.Clear),
+                Gen.Int[-4, 8],
+                Gen.Int[0, 1000])
+            .Select((op, key, value) => (op, key, value))
+            .List[0, 120])
+        .Select((capacity, ops) => (capacity, ops));
+
+    [Fact]
+    public void LfuCache_ShouldMatch_FrequencyOrderedModel()
+    {
+        GenLfuOps.Sample(input =>
+        {
+            (int capacity, List<(LfuOp op, int key, int value)> ops) = input;
+
+            var sut = new LfuCache<int, int, Int32WangNaiveHasher>(capacity);
+            var values = new Dictionary<int, int>();
+            var freq = new Dictionary<int, long>();
+            var stamp = new Dictionary<int, long>();
+            long clock = 0;
+
+            void Use(int key)
+            {
+                freq[key] += 1;
+                stamp[key] = ++clock;
+            }
+
+            // The next entry an insert-at-capacity would drop.
+            int Victim()
+            {
+                int victim = 0;
+                long bestFreq = long.MaxValue, bestStamp = long.MaxValue;
+                foreach (int key in values.Keys)
+                {
+                    long f = freq[key], t = stamp[key];
+                    if (f < bestFreq || (f == bestFreq && t < bestStamp))
+                    {
+                        victim = key;
+                        bestFreq = f;
+                        bestStamp = t;
+                    }
+                }
+                return victim;
+            }
+
+            void Put(int key, int value)
+            {
+                if (values.ContainsKey(key))
+                {
+                    values[key] = value;
+                    Use(key);
+                    return;
+                }
+                if (values.Count == capacity)
+                {
+                    int victim = Victim();
+                    values.Remove(victim);
+                    freq.Remove(victim);
+                    stamp.Remove(victim);
+                }
+                values[key] = value;
+                freq[key] = 1;
+                stamp[key] = ++clock;
+            }
+
+            foreach ((LfuOp op, int key, int value) in ops)
+            {
+                switch (op)
+                {
+                    case LfuOp.Put:
+                        sut.AddOrUpdate(key, value);
+                        Put(key, value);
+                        break;
+                    case LfuOp.Get:
+                    {
+                        bool hit = values.TryGetValue(key, out int expected);
+                        if (hit) Use(key);
+                        Assert.Equal(hit, sut.TryGet(key, out int actual));
+                        if (hit) Assert.Equal(expected, actual);
+                        break;
+                    }
+                    case LfuOp.TryAdd:
+                    {
+                        bool added = !values.ContainsKey(key);
+                        if (added) Put(key, value);
+                        Assert.Equal(added, sut.TryAdd(key, value));
+                        break;
+                    }
+                    case LfuOp.Remove:
+                    {
+                        bool removed = values.Remove(key);
+                        if (removed) { freq.Remove(key); stamp.Remove(key); }
+                        Assert.Equal(removed, sut.Remove(key));
+                        break;
+                    }
+                    case LfuOp.Peek:
+                        // A peek must not count as a use in either implementation.
+                        Assert.Equal(values.ContainsKey(key), sut.TryPeek(key, out _));
+                        break;
+                    case LfuOp.Clear:
+                        sut.Clear();
+                        values.Clear();
+                        freq.Clear();
+                        stamp.Clear();
+                        break;
+                }
+            }
+
+            Assert.Equal(values.Count, sut.Count);
+            Assert.True(sut.Count <= capacity);
+
+            for (int k = -4; k <= 8; k++)
+            {
+                bool present = values.ContainsKey(k);
+                Assert.Equal(present, sut.ContainsKey(k));
+                Assert.Equal(present, sut.TryPeek(k, out int v));
+                if (present) Assert.Equal(values[k], v);
+
+                Assert.Equal(present, sut.TryGetFrequency(k, out long f));
+                if (present) Assert.Equal(freq[k], f);
+            }
+
+            // The eviction order itself, which is the whole contract of the type.
+            Assert.Equal(
+                values.Keys.OrderByDescending(k => freq[k]).ThenByDescending(k => stamp[k]).ToList(),
+                sut.Select(e => e.Key).ToList());
+
+            Assert.Equal(values.Count > 0, sut.TryPeekLeastFrequentlyUsed(out int lfu, out _));
+            if (values.Count > 0) Assert.Equal(Victim(), lfu);
+        }, iter: 2000);
+    }
+
     private static void AssertDictEquivalent(
         PooledCelerityDictionary<int, int, Int32WangNaiveHasher> sut,
         Dictionary<int, int> oracle)

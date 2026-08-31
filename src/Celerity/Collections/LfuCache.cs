@@ -24,8 +24,14 @@ namespace Celerity.Collections;
 /// sequential pass over <see cref="Capacity"/> cold keys evicts the entire hot set no matter how often
 /// those hot keys were used, and every subsequent lookup misses until the cache is re-warmed. That is
 /// the ordinary shape of a table scan, a backfill, or a crawler sharing a cache with steady-state
-/// traffic. A frequency-ordered cache is immune to it: a key seen once during the scan has a frequency
-/// of 1 and is the first thing evicted, so the hot set survives untouched.
+/// traffic. A frequency-ordered cache bounds that damage to a single entry: a key seen once during the
+/// scan has a frequency of 1 and is the first thing evicted, so each cold key is dropped by the next
+/// one rather than by a hot entry. Stated exactly — <b>a scan costs at most one resident entry,
+/// however long it runs</b>. The one is the boundary: if the cache is already full when the scan
+/// starts, the first cold key has no frequency-1 entry to displace yet and takes the
+/// least-recently-used of the lowest-frequency residents; from the second cold key onward there
+/// always is one. Where there is spare room, the cost is zero. Either way the contrast with LRU is
+/// the point — LRU loses the <i>entire</i> hot set, not one of it.
 /// </para>
 /// <para>
 /// <b>Structure.</b> Entries live in <i>frequency buckets</i> — one bucket per distinct use count

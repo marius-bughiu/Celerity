@@ -3687,8 +3687,16 @@ exists to cover the one failure mode recency cannot see: **an LRU is scan-vulner
 recency is the only thing it measures, a single sequential pass over `Capacity` cold keys evicts the
 entire hot set no matter how often those hot keys were used, and every subsequent lookup misses until
 the cache is re-warmed. That is the ordinary shape of a table scan, a backfill, or a crawler sharing a
-cache with steady-state traffic. A frequency-ordered cache is immune to it: a key seen once during the
-scan has a frequency of 1 and is the first thing evicted, so the hot set survives untouched.
+cache with steady-state traffic. A frequency-ordered cache bounds that damage to a single entry: a key
+seen once during the scan has a frequency of 1 and is the first thing evicted, so each cold key is
+dropped by the next one rather than by a hot entry.
+
+Stated exactly, **a scan costs at most one resident entry, however long it runs**. The "one" is the
+boundary case: if the cache is already full when the scan begins, the first cold key has no
+frequency-1 entry to displace yet, so it takes the least-recently-used of the lowest-frequency
+residents; from the second cold key onward there always is one. Where the cache has spare room the
+cost is zero. Either way the contrast is the point — an LRU loses the *entire* hot set, not one entry
+of it.
 
 The idiomatic .NET LFU pairs a `Dictionary` from key to its `(value, frequency, last-use stamp)`
 triple with a `SortedSet` over that triple, whose minimum is the eviction victim. That is `O(log n)`

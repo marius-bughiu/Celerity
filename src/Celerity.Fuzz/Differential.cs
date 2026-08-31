@@ -47,6 +47,7 @@ internal static class Differential
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
         ("RankedSet", RankedSetCase),
+        ("LfuCache", LfuCacheCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -978,6 +979,143 @@ internal static class Differential
     }
 
     // Order-sensitive comparison: both sequences must yield the same elements in the same positions.
+    // LfuCache vs a sort-based reference LFU. The BCL has no cache of any policy, so the oracle is the
+    // definition rather than a BCL type: every key carries its use count and the stamp of its most
+    // recent use, and the eviction order is "lowest count first, oldest stamp breaking ties" — read off
+    // by sorting, with none of the bucket machinery under test. What this reconciles that the xUnit
+    // differential cannot is depth: the soak runs far more operations per case, over capacities small
+    // enough that eviction is almost every insert, which is where a bucket-chain or free-slot bug lives.
+    private static void LfuCacheCase(Random rng)
+    {
+        int capacity = rng.Next(1, 9);
+        var sut = new LfuCache<int, int, Int32WangNaiveHasher>(capacity);
+
+        var values = new Dictionary<int, int>();
+        var freq = new Dictionary<int, long>();
+        var stamp = new Dictionary<int, long>();
+        long clock = 0;
+
+        void Use(int key)
+        {
+            freq[key] += 1;
+            stamp[key] = ++clock;
+        }
+
+        // The next entry an insert-at-capacity would drop: lowest frequency, oldest stamp among equals.
+        int Victim()
+        {
+            int victim = 0;
+            long bestFreq = long.MaxValue, bestStamp = long.MaxValue;
+            foreach (int key in values.Keys)
+            {
+                long f = freq[key], t = stamp[key];
+                if (f < bestFreq || (f == bestFreq && t < bestStamp))
+                {
+                    victim = key;
+                    bestFreq = f;
+                    bestStamp = t;
+                }
+            }
+            return victim;
+        }
+
+        void Put(int key, int value)
+        {
+            if (values.ContainsKey(key))
+            {
+                values[key] = value;
+                Use(key);
+                return;
+            }
+            if (values.Count == capacity)
+            {
+                int victim = Victim();
+                values.Remove(victim);
+                freq.Remove(victim);
+                stamp.Remove(victim);
+            }
+            values[key] = value;
+            freq[key] = 1;
+            stamp[key] = ++clock;
+        }
+
+        int ops = OpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            int value = rng.Next();
+            switch (rng.Next(0, 20))
+            {
+                case < 7:
+                    sut.AddOrUpdate(key, value);
+                    Put(key, value);
+                    break;
+                case < 13:
+                {
+                    bool hit = values.TryGetValue(key, out int expected);
+                    if (hit) Use(key);
+                    Check(sut.TryGet(key, out int actual) == hit, $"TryGet({key}) hit");
+                    Check(!hit || actual == expected, $"TryGet({key}) value");
+                    break;
+                }
+                case < 15:
+                {
+                    bool added = !values.ContainsKey(key);
+                    if (added) Put(key, value);
+                    Check(sut.TryAdd(key, value) == added, $"TryAdd({key})");
+                    break;
+                }
+                case < 18:
+                {
+                    bool removed = values.Remove(key);
+                    if (removed) { freq.Remove(key); stamp.Remove(key); }
+                    Check(sut.Remove(key) == removed, $"Remove({key})");
+                    break;
+                }
+                case < 19:
+                    // A peek must not count as a use in either implementation.
+                    Check(sut.TryPeek(key, out int peeked) == values.ContainsKey(key), $"TryPeek({key})");
+                    Check(!values.TryGetValue(key, out int want) || peeked == want, $"TryPeek({key}) value");
+                    break;
+                default:
+                    sut.Clear();
+                    values.Clear();
+                    freq.Clear();
+                    stamp.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == values.Count, $"Count {sut.Count} != {values.Count}");
+        Check(sut.Count <= capacity, $"Count {sut.Count} exceeds capacity {capacity}");
+
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool expectedPresent = values.ContainsKey(k);
+            Check(sut.ContainsKey(k) == expectedPresent, $"ContainsKey({k})");
+            Check(sut.TryPeek(k, out int v) == expectedPresent, $"TryPeek({k})");
+            Check(!expectedPresent || v == values[k], $"value at {k}");
+            Check(sut.TryGetFrequency(k, out long f) == expectedPresent, $"TryGetFrequency({k})");
+            Check(!expectedPresent || f == freq[k], $"frequency at {k}: {f} != {(expectedPresent ? freq[k] : 0)}");
+        }
+
+        // The eviction order itself — most-frequently-used first, most-recently-used breaking ties.
+        CheckSameSequence(
+            sut.Select(e => e.Key),
+            values.Keys.OrderByDescending(k => freq[k]).ThenByDescending(k => stamp[k]),
+            "enumeration");
+
+        if (values.Count > 0)
+        {
+            Check(sut.TryPeekLeastFrequentlyUsed(out int lfu, out _), "TryPeekLeastFrequentlyUsed on a non-empty cache");
+            Check(lfu == Victim(), $"next victim {lfu} != {Victim()}");
+        }
+        else
+        {
+            Check(!sut.TryPeekLeastFrequentlyUsed(out _, out _), "TryPeekLeastFrequentlyUsed on an empty cache");
+        }
+    }
+
     private static void CheckSameSequence(IEnumerable<int> actual, IEnumerable<int> expected, string what)
     {
         using IEnumerator<int> a = actual.GetEnumerator();
