@@ -3860,7 +3860,10 @@ Product GetProduct(long productId)
 }
 
 // The batch scan touches every id exactly once, so each scanned product enters at frequency 1 and is
-// evicted by the next one. The interactive hot set, sitting at much higher frequencies, is untouched.
+// evicted by the next one rather than by a popular product. Every product the interactive traffic has
+// requested more than once outranks the scan and survives it; at most one of them is lost, and only if
+// the cache was full with nothing at frequency 1 when the scan began. A product served exactly once is
+// at the scan's own frequency and goes with it.
 foreach (long id in AllProductIds())
     _ = GetProduct(id);
 

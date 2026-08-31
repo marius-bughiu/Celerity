@@ -978,7 +978,6 @@ internal static class Differential
             $"range[{from},{to})");
     }
 
-    // Order-sensitive comparison: both sequences must yield the same elements in the same positions.
     // LfuCache vs a sort-based reference LFU. The BCL has no cache of any policy, so the oracle is the
     // definition rather than a BCL type: every key carries its use count and the stamp of its most
     // recent use, and the eviction order is "lowest count first, oldest stamp breaking ties" — read off
@@ -1116,6 +1115,7 @@ internal static class Differential
         }
     }
 
+    // Order-sensitive comparison: both sequences must yield the same elements in the same positions.
     private static void CheckSameSequence(IEnumerable<int> actual, IEnumerable<int> expected, string what)
     {
         using IEnumerator<int> a = actual.GetEnumerator();
