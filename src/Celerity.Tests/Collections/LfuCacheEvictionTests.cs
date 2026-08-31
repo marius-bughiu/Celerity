@@ -277,7 +277,10 @@ public class LfuCacheEvictionTests
         // half the capacity, used enough to climb clear of frequency 1, then a sequential scan four
         // times the capacity sweeps through. Under LRU the scan evicts every hot key; under LFU the
         // scan keys fill the spare room and then evict each other, so the hot set is untouched.
-        // LfuCacheFullOfHotKeys_LosesExactlyOneEntryToAScan below covers the boundary this avoids.
+        // The precondition is what the hot loop below establishes — these keys are *above* frequency 1.
+        // FullOfHotKeys_LosesExactlyOneEntryToAScan covers the full-cache boundary, and
+        // FrequencyOneResidents_AreEvictedByAScanExactlyLikeTheScanItself covers the case where the
+        // precondition does not hold and the protection therefore does not apply.
         const int Capacity = 16;
         const int HotKeys = 8;
 
@@ -319,9 +322,10 @@ public class LfuCacheEvictionTests
         // holding a hot entry, the first cold key cannot arrive for free: there is no frequency-1
         // entry to drop yet, so it displaces the least-recently-used of the hot entries. From the
         // second cold key onward there always is one — the previous cold key — so it is evicted
-        // instead. A scan therefore costs exactly one resident entry however long it runs, which is
-        // the honest form of the claim: bounded, not zero. The LRU contrast is unchanged: it loses
-        // the whole hot set.
+        // instead. A scan therefore costs exactly one of these entries however long it runs, which is
+        // the honest form of the claim: bounded, not zero. Note the precondition, which
+        // FrequencyOneResidents_AreEvictedByAScanExactlyLikeTheScanItself shows is load-bearing: every
+        // resident here is above frequency 1. The LRU contrast is unchanged: it loses the whole hot set.
         const int Capacity = 16;
 
         var cache = Cache(Capacity);
@@ -360,5 +364,44 @@ public class LfuCacheEvictionTests
         for (int k = 0; k < Capacity; k++)
             if (!lru.ContainsKey(k)) lruLost++;
         Assert.Equal(Capacity, lruLost);
+    }
+
+
+    [Fact]
+    public void FrequencyOneResidents_AreEvictedByAScanExactlyLikeTheScanItself()
+    {
+        // The limit of scan resistance, and the reason the guarantee is conditional. An entry that was
+        // inserted and never read again sits at frequency 1 — the same frequency a one-shot scan key
+        // arrives at — so the only thing separating them is the recency tie-break, and the resident is
+        // the older of the two. It is therefore taken first. LFU protects what has proven popular, and
+        // an entry used exactly once has proven nothing.
+        var neverReRead = Cache(3);
+        neverReRead[1] = 1;
+        neverReRead[2] = 2;
+        neverReRead[3] = 3;                     // three residents, all still at frequency 1
+
+        for (int scan = 100; scan < 106; scan++)
+            neverReRead[scan] = scan;
+
+        for (int k = 1; k <= 3; k++)
+            Assert.False(neverReRead.ContainsKey(k));   // all three go, not one
+
+        // The mixed case says the same thing more precisely: the scan takes exactly the frequency-1
+        // residents and stops there. The entry read even twice more is above the scan and survives it.
+        var mixed = Cache(3);
+        mixed[10] = 10;
+        mixed[11] = 11;
+        mixed[12] = 12;
+        _ = mixed[12];
+        _ = mixed[12];                          // 12 reaches frequency 3; 10 and 11 stay at 1
+
+        for (int scan = 200; scan < 220; scan++)
+            mixed[scan] = scan;                 // a scan more than six times the capacity
+
+        Assert.False(mixed.ContainsKey(10));
+        Assert.False(mixed.ContainsKey(11));
+        Assert.True(mixed.ContainsKey(12));
+        Assert.True(mixed.TryGetFrequency(12, out long frequency));
+        Assert.Equal(3L, frequency);            // and it was never touched by the scan
     }
 }

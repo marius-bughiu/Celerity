@@ -24,14 +24,25 @@ namespace Celerity.Collections;
 /// sequential pass over <see cref="Capacity"/> cold keys evicts the entire hot set no matter how often
 /// those hot keys were used, and every subsequent lookup misses until the cache is re-warmed. That is
 /// the ordinary shape of a table scan, a backfill, or a crawler sharing a cache with steady-state
-/// traffic. A frequency-ordered cache bounds that damage to a single entry: a key seen once during the
-/// scan has a frequency of 1 and is the first thing evicted, so each cold key is dropped by the next
-/// one rather than by a hot entry. Stated exactly — <b>a scan costs at most one resident entry,
-/// however long it runs</b>. The one is the boundary: if the cache is already full when the scan
-/// starts, the first cold key has no frequency-1 entry to displace yet and takes the
-/// least-recently-used of the lowest-frequency residents; from the second cold key onward there
-/// always is one. Where there is spare room, the cost is zero. Either way the contrast with LRU is
-/// the point — LRU loses the <i>entire</i> hot set, not one of it.
+/// traffic. A frequency-ordered cache protects what has proven popular from that, and the guarantee is
+/// worth stating precisely because it is <b>conditional</b>:
+/// </para>
+/// <para>
+/// <b>An entry used more than once survives a scan of any length — at most one of them is lost.</b>
+/// A one-shot scan key arrives at frequency 1, so it is outranked by anything read even twice, and
+/// each cold key is dropped by the next cold key rather than by a popular entry. The "at most one" is
+/// the boundary: if the cache is full and <i>nothing</i> is at frequency 1 when the scan starts, the
+/// first cold key has no peer to displace and takes the least-recently-used of the lowest-frequency
+/// residents; from the second cold key onward there always is one. With spare room, the cost is zero.
+/// </para>
+/// <para>
+/// <b>Entries still at frequency 1 are not protected, and should not be.</b> An entry inserted and
+/// never read again sits at exactly the frequency a scan key arrives at, so only the recency tie-break
+/// separates them — and the resident is the older of the two, so it is taken first. A scan will
+/// evict every such entry. That is not a defect in the policy, it is the policy: LFU protects what has
+/// demonstrated reuse, and an entry used exactly once has demonstrated none. What it buys you is that
+/// the popular set is not collateral damage, which under LRU it always is — an LRU loses its
+/// <i>entire</i> working set to the same scan, however hot those entries were.
 /// </para>
 /// <para>
 /// <b>Structure.</b> Entries live in <i>frequency buckets</i> — one bucket per distinct use count
