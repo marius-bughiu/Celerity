@@ -3671,9 +3671,10 @@ if (cache.TryPeekLeastRecentlyUsed(out long coldKey, out _))
 ## LfuCache&lt;TKey, TValue, THasher&gt;
 
 A fixed-capacity **least-frequently-used (LFU) cache** parameterized on a custom hash provider: an
-`O(1)` get/put map that automatically **evicts the least-frequently-used entry** when a new key would
-push the count past `Capacity`, breaking ties between equally-frequent entries by
-least-recently-used.
+expected-`O(1)` get/put map that automatically **evicts the least-frequently-used entry** when a new
+key would push the count past `Capacity`, breaking ties between equally-frequent entries by
+least-recently-used. The eviction bookkeeping itself is `O(1)` *worst case*; the **How it works**
+section below says what each half of that bound covers.
 
 ```csharp
 public class LfuCache<TKey, TValue, THasher>

@@ -4,9 +4,11 @@ using Celerity.Hashing;
 namespace Celerity.Collections;
 
 /// <summary>
-/// A fixed-capacity <b>least-frequently-used (LFU) cache</b>: an <c>O(1)</c> get/put map that
+/// A fixed-capacity <b>least-frequently-used (LFU) cache</b>: an expected-<c>O(1)</c> get/put map that
 /// automatically evicts the least-frequently-used entry when a new key would push the count past
-/// <see cref="Capacity"/>, breaking ties between equally-frequent entries by least-recently-used.
+/// <see cref="Capacity"/>, breaking ties between equally-frequent entries by least-recently-used. The
+/// eviction bookkeeping itself is <c>O(1)</c> <i>worst case</i>; the qualifier on the whole operation
+/// is the open-addressed key-index probe, as on every hash-backed collection here.
 /// Parameterized on a custom <see cref="IHashProvider{T}"/> so key hashing devirtualizes and inlines.
 /// </summary>
 /// <typeparam name="TKey">The type of the keys.</typeparam>
