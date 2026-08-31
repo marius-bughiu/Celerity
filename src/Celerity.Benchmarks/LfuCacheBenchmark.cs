@@ -9,8 +9,10 @@ using Celerity.Hashing;
 // complexity class and the allocation. The idiomatic version pays O(log n) per operation — every hit
 // removes and reinserts a set node because the key's frequency changed — and allocates a red-black
 // tree node per insertion, whereas LfuCache keeps its frequency buckets and their entry chains in
-// fixed-size arrays allocated once at construction, so every operation is O(1) worst case and the hot
-// get/put/evict path allocates nothing. The [MemoryDiagnoser] Allocated column is the headline on the
+// fixed-size arrays allocated once at construction, so its policy bookkeeping is O(1) worst case
+// rather than logarithmic and the hot get/put/evict path allocates nothing. (End to end an operation
+// is expected O(1), not worst-case: it also probes the open-addressed key index, whose probe length
+// grows on clustered keys like every other hash-backed collection here.) The [MemoryDiagnoser] Allocated column is the headline on the
 // Put category: sustained eviction churn allocates a fresh tree node per insert in the baseline and
 // zero in LfuCache. Get is where the complexity gap shows up on its own, since a hit is a pure
 // frequency bump — two constant-time relinks here against a remove-plus-reinsert there. The baseline is
@@ -46,7 +48,12 @@ public class LfuCacheBenchmark
         for (int i = 0; i < ItemCount; i++)
         {
             missKeys[i] = rand.Next(int.MaxValue / 2, int.MaxValue);
-            churnKeys[i] = warm + 1 + i; // disjoint from the warm set, all distinct -> every insert evicts
+            // Disjoint from the warm set and all distinct, so an insert can only evict, never update.
+            // At ItemCount=1000 the warm set is 1000 against a Capacity of 1024, so the first 24 puts
+            // fill the remaining slots before the churn becomes eviction-for-eviction; that is 2.4% of
+            // the arm, it lands on both implementations identically, and the shape is inherited from
+            // LruCacheBenchmark so the two stay directly comparable.
+            churnKeys[i] = warm + 1 + i;
         }
 
         lfu = new LfuCache<int, int, Int32WangHasher>(Capacity);

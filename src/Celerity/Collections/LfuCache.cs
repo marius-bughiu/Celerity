@@ -32,8 +32,12 @@ namespace Celerity.Collections;
 /// currently present — and the buckets themselves are held in a doubly-linked list in ascending
 /// frequency order. Within a bucket the entries form an intrusive recency chain, so the eviction
 /// victim is always exactly defined: the least-recently-used entry of the lowest-frequency bucket.
-/// Promotion, insertion and eviction each touch a constant number of links, so every operation is
-/// <c>O(1)</c> <i>worst case</i> rather than amortized. This is the structure from Shah, Mitra and
+/// Promotion, insertion and eviction each touch a constant number of links, so the <b>policy
+/// bookkeeping</b> is <c>O(1)</c> <i>worst case</i> rather than amortized or logarithmic — that is the
+/// part being contrasted with a sorted-structure LFU. A complete cache operation also probes the key
+/// index, which is open-addressed with linear probing, so <b>end to end an operation is expected
+/// <c>O(1)</c></b>, degrading with probe length on clustered or adversarial keys exactly as every
+/// other hash-backed collection in this library does. This is the structure from Shah, Mitra and
 /// Matani, <i>"An O(1) algorithm for implementing the LFU cache eviction scheme"</i>.
 /// </para>
 /// <para>
@@ -62,6 +66,14 @@ namespace Celerity.Collections;
 /// popular yesterday is irrelevant today, <see cref="LruCache{TKey, TValue, THasher}"/> remains the
 /// right pick. Neither is universally better; pick the one whose notion of "worth keeping" matches the
 /// workload.
+/// </para>
+/// <para>
+/// The counter is a <see cref="long"/> and is not clamped, which makes
+/// <see cref="long.MaxValue"/> the ceiling on a single entry's use count. Reaching it is not
+/// physically possible: it takes 2<sup>63</sup> hits on one key, which is close to three centuries of
+/// continuous use at a billion hits a second. This is exactly why the counter is a
+/// <see cref="long"/> and not an <see cref="int"/> — an <see cref="int"/> ceiling is a real bug, since
+/// 2<sup>31</sup> hits is minutes of ordinary traffic.
 /// </para>
 /// <para>This type is not thread-safe; concurrent callers must synchronize externally.</para>
 /// </remarks>
@@ -142,11 +154,17 @@ public class LfuCache<TKey, TValue, THasher>
     /// <summary>
     /// Initializes a new cache with the given <paramref name="capacity"/> and primes it from
     /// <paramref name="source"/>. Pairs are inserted in enumeration order, each arriving with a
-    /// frequency of 1, so if the source yields more than <paramref name="capacity"/> distinct keys the
-    /// earliest ones are evicted and the last <paramref name="capacity"/> survive. A later duplicate
-    /// key overwrites the earlier value and counts as a further use, raising that entry's frequency
-    /// above the singletons around it.
+    /// frequency of 1. A later duplicate key overwrites the earlier value and counts as a further use,
+    /// raising that entry's frequency above the singletons around it.
     /// </summary>
+    /// <remarks>
+    /// If the source is <b>duplicate-free</b> every key arrives at frequency 1, ties break by recency,
+    /// and the effect is the familiar one: the earliest keys are evicted and the last
+    /// <paramref name="capacity"/> survive. <b>With duplicates that no longer holds</b>, and
+    /// deliberately so — a key repeated early reaches a frequency the later singletons never do, and
+    /// outlives them. Seeding <c>{1, 1, 2, 3}</c> into a capacity of 2 keeps <c>1</c> and <c>3</c>,
+    /// not the last two distinct keys.
+    /// </remarks>
     /// <param name="capacity">The maximum number of entries the cache retains. Must be at least 1.</param>
     /// <param name="source">The key/value pairs to seed the cache with.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is less than 1.</exception>

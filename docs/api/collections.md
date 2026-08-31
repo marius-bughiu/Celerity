@@ -3693,8 +3693,15 @@ scan has a frequency of 1 and is the first thing evicted, so the hot set survive
 The idiomatic .NET LFU pairs a `Dictionary` from key to its `(value, frequency, last-use stamp)`
 triple with a `SortedSet` over that triple, whose minimum is the eviction victim. That is `O(log n)`
 per operation — every hit changes the frequency, so the entry has to leave and re-enter the set — and
-it **allocates a red-black tree node per insertion**. `LfuCache` is `O(1)` *worst case* on every
-operation and, after construction, **allocates nothing** on the hot get/put/evict path.
+it **allocates a red-black tree node per insertion**. `LfuCache` replaces that logarithmic term with
+a constant one — its **policy bookkeeping is `O(1)` worst case** — and, after construction,
+**allocates nothing** on the hot get/put/evict path.
+
+A note on what that bound covers. The bucket and chain relinking is worst-case constant, but a
+complete cache operation also probes the key index, and that index is open-addressed with linear
+probing, so its probe length grows with clustering. **End to end, an operation is expected `O(1)`**,
+on the same terms as every other hash-backed collection in this library; it is the *policy* half —
+the half a sorted-structure LFU pays `O(log n)` for — that is worst-case constant.
 
 ### How it works
 
@@ -3741,6 +3748,11 @@ popular yesterday is irrelevant today, [`LruCache`](#lrucachetkey-tvalue-thasher
 pick. Neither is universally better; pick the one whose notion of "worth keeping" matches the
 workload.
 
+The counter is a `long` and is not clamped, so `long.MaxValue` is the ceiling on a single entry's use
+count. Reaching it is not physically possible — 2<sup>63</sup> hits on one key is close to three
+centuries of continuous use at a billion hits a second — which is precisely why the counter is a
+`long` rather than an `int`, where the ceiling *would* be reachable in minutes of ordinary traffic.
+
 ### Constructors
 
 ```csharp
@@ -3752,10 +3764,15 @@ public LfuCache(
 ```
 
 The first overload creates an empty cache that retains at most `capacity` entries. The `source`
-overload primes it by inserting each pair in enumeration order, each arriving at a frequency of 1, so
-if the source yields more than `capacity` distinct keys the earliest ones are evicted and the last
-`capacity` survive. A later duplicate key overwrites the earlier value and counts as a further use,
-raising that entry's frequency above the singletons around it.
+overload primes it by inserting each pair in enumeration order, each arriving at a frequency of 1. A
+later duplicate key overwrites the earlier value and counts as a further use, raising that entry's
+frequency above the singletons around it.
+
+If the source is **duplicate-free**, every key arrives at frequency 1, ties break by recency, and the
+effect is the familiar one: the earliest keys are evicted and the last `capacity` survive. **With
+duplicates that no longer holds**, and deliberately so — a key repeated early reaches a frequency the
+later singletons never do, and outlives them. Seeding `{1, 1, 2, 3}` into a capacity of 2 keeps `1`
+and `3`, not the last two distinct keys.
 
 **Throws:**
 
