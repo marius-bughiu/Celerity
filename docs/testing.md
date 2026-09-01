@@ -153,7 +153,8 @@ node scripts/check_doc_anchors.js --list        # every anchor each file defines
 `check_doc_anchors.js` resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown. It also rejects a link to an anchor that resolves *today* and will not stay put — a heading's id is only stable if nothing can renumber it out from under the link:
 
 - when a heading text **repeats**, GitHub numbers the repeats (`#measured`, `#measured-1`, …) and every one of those ids is a position, the unsuffixed first included;
-- when an id has the shape `#base-<n>` and some heading in the file slugs to `#base`, it sits on that heading's numbering line and a second `#base` would be numbered onto it — even though it was never generated from it.
+- when an id has the shape `#base-<n>` and some heading in the file slugs to `#base`, it sits on that heading's numbering line — enough further `#base` repeats get numbered onto it and take it, even though it was never generated from it. Only suffixes the disambiguator can produce count: it starts at `-1` and never pads, so `#foo-0` and `#foo-01` are on no numbering line;
+- when two elements answer to the same id — a heading and a hand-written `<a id>`, or two anchors — GitHub emits it on both and the link resolves to whichever the document reaches first.
 
 Both are silent: the markdown is well-formed, the link resolves, and the only symptom is landing in the wrong section. All five `#measured-N` links in the API reference had drifted onto the wrong collection's benchmark table this way, with CI green throughout ([#409](https://github.com/marius-bughiu/Celerity/issues/409)). Link to a unique hand-written `<a id>` instead; [CONTRIBUTING.md](../CONTRIBUTING.md#never-link-to-a-repeated-headings-generated-anchor) has the recipe.
 

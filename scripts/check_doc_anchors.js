@@ -26,8 +26,13 @@
 //      `#measured-2` — so those ids name positions, not headings, and inserting one
 //      more repeat *above* renames every one of them downward, the unsuffixed first
 //      included. The same is true of an id merely *shaped* like `#base-<n>` when some
-//      heading slugs to `#base`: it sits on that heading's numbering line and a second
-//      `#base` would be numbered onto it, whoever holds it now.
+//      heading slugs to `#base`: it sits on that heading's numbering line, and enough
+//      further `#base` repeats — n of them, since the count starts at one — get numbered
+//      onto it and take it from whoever holds it. Only a suffix the disambiguator can
+//      actually produce counts: it starts at `-1` and never pads, so `#foo-0` and
+//      `#foo-01` are on no numbering line at all.
+//      Beyond that, an id that *two* elements answer to is decided by document order
+//      rather than by which one meant it, so a link to it is rejected as well.
 //      Repeated headings are fine to *have* — CHANGELOG.md is built on them. This bans
 //      linking *to* one. Give the target a hand-written `<a id>` of its own — a *unique*
 //      one: an `<a id="measured-1">` that collides with a generated id renders a second
@@ -71,6 +76,11 @@ const SKIP_DIRS = new Set([
 
 const SLUG_STRIP = /[^\p{L}\p{N}\p{M} _-]/gu;
 
+// The shape GitHub's disambiguator can produce: `-1`, `-2`, ... — it starts counting at
+// one and never pads, so `#foo-0` and `#foo-01` are not on any heading's numbering line
+// and stay perfectly good targets.
+const GENERATED_SUFFIX = /^(.*)-([1-9]\d*)$/;
+
 function slugify(text) {
   return text.toLowerCase().trim().replace(SLUG_STRIP, '').replace(/ /g, '-');
 }
@@ -78,10 +88,12 @@ function slugify(text) {
 // Repeated headings disambiguate with a `-1`, `-2`, ... suffix, counted per document.
 // CHANGELOG.md leans on this heavily: every release repeats `### Added`.
 //
-// `base` is the slug before disambiguation, which is what groups the repeats together for
-// rule 4. It matters that this is the *pre-suffix* slug rather than a regex strip of a
-// trailing `-N`: a heading that slugs to `foo-1` on its own text — `### Foo 1` — has base
-// `foo-1`, is in no group with `### Foo`, and stays a perfectly stable target.
+// `base` is the slug before disambiguation, which is what groups the *repeats* together.
+// It matters that this is the pre-suffix slug rather than a regex strip of a trailing
+// `-N`: a heading that slugs to `foo-1` on its own text — `### Foo 1` — has base `foo-1`
+// and is in no group with `### Foo`. That settles which headings are repeats of each
+// other and nothing more. Whether `#foo-1` is *linkable* is a separate question, decided
+// below: it is on `#foo`'s numbering line whether or not it was generated from it.
 function makeSlugger() {
   const occurrences = Object.create(null);
   return function slug(text) {
@@ -197,8 +209,14 @@ function parseMarkdown(text) {
   const lines = blankFences(text.split(/\r?\n/));
   const slug = makeSlugger();
   const anchors = new Set();
+  const claimants = new Map(); // id -> how many elements answer to it
   const groups = new Map(); // base slug -> the ids GitHub numbered off it, in order
   const links = [];
+
+  const claim = (id) => {
+    anchors.add(id);
+    claimants.set(id, (claimants.get(id) ?? 0) + 1);
+  };
 
   lines.forEach((line, index) => {
     const heading = /^\s{0,3}#{1,6}\s+(.*?)\s*$/.exec(line);
@@ -206,7 +224,7 @@ function parseMarkdown(text) {
       const text = renderHeadingText(heading[1].replace(/\s+#+\s*$/, ''));
       if (text) {
         const id = slug(text);
-        anchors.add(id.slug);
+        claim(id.slug);
         if (!groups.has(id.base)) groups.set(id.base, []);
         groups.get(id.base).push(id.slug);
       }
@@ -220,7 +238,7 @@ function parseMarkdown(text) {
     // headings are the reason to look for one.
     const declared = /<a\s[^>]*(?:id|name)\s*=\s*["']([^"']+)["']/gi;
     for (let m = declared.exec(prose); m; m = declared.exec(prose)) {
-      anchors.add(m[1]);
+      claim(m[1]);
     }
 
     // Inline links, reference definitions and raw `<a href>` all point somewhere.
@@ -256,10 +274,15 @@ function parseMarkdown(text) {
   }
   for (const id of anchors) {
     if (positional.has(id)) continue;
-    const suffix = /^(.*)-\d+$/.exec(id);
+    const suffix = GENERATED_SUFFIX.exec(id);
     if (suffix && groups.has(suffix[1])) {
-      positional.set(id, { kind: 'contested', base: suffix[1] });
+      positional.set(id, { kind: 'contested', base: suffix[1], nth: Number(suffix[2]) });
     }
+  }
+
+  // An id two things answer to is decided by document order, not by which one meant it.
+  for (const [id, count] of claimants) {
+    if (count > 1 && !positional.has(id)) positional.set(id, { kind: 'duplicate', count });
   }
   return { anchors, positional, links };
 }
@@ -295,10 +318,16 @@ function collectMarkdown() {
 const POSITIONAL_PREFIX = 'positional anchor';
 
 function positionalReason(fragment, where, group) {
+  if (group.kind === 'duplicate') {
+    return `${POSITIONAL_PREFIX}: #${fragment} is claimed by ${group.count} elements in `
+      + `${where} — GitHub emits the id on each of them, and the link resolves to whichever `
+      + 'the document reaches first rather than to the one that meant it';
+  }
   if (group.kind === 'contested') {
+    const more = group.nth === 1 ? 'one more heading' : `${group.nth} more headings`;
     return `${POSITIONAL_PREFIX}: #${fragment} sits on the numbering line of "#${group.base}" `
-      + `in ${where} — a second heading slugging to "#${group.base}" would be numbered onto `
-      + 'this id and take it, whoever holds it now';
+      + `in ${where} — ${more} slugging to "#${group.base}" would be numbered onto this id `
+      + 'and take it, whoever holds it now';
   }
   const ordinal = `${group.index + 1} of ${group.count}`;
   return `${POSITIONAL_PREFIX}: #${fragment} is heading ${ordinal} sharing the slug `
@@ -421,6 +450,26 @@ const RULE_FOUR_CASES = [
     expect: ['a.md:5 positional'],
   },
   {
+    name: 'a suffix GitHub cannot generate is not on any numbering line — zero',
+    files: { 'a.md': '## Foo\n## Foo 0\n\n[x](#foo-0)\n' },
+    expect: [],
+  },
+  {
+    name: '...nor a padded one, since the disambiguator never pads',
+    files: { 'a.md': '## Foo\n## Foo 01\n\n[x](#foo-01)\n' },
+    expect: [],
+  },
+  {
+    name: 'a heading and an authored anchor that answer to the same id are both claimants',
+    files: { 'a.md': '## Solo\n<a id="solo"></a>\n\n[x](#solo)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
+    name: 'two authored anchors sharing an id are rejected on the same footing',
+    files: { 'a.md': '<a id="x"></a>\n<a id="x"></a>\n\n[y](#x)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
     name: 'a missing anchor is still a missing anchor',
     files: { 'a.md': '## Dup\n## Dup\n\n[x](#dup-7)\n' },
     expect: ['a.md:4 missing'],
@@ -538,13 +587,15 @@ function main() {
         '`#measured-2` — and none of those ids belongs to a heading. They belong to positions,\n' +
         'and one more repeat inserted *above* renames every one of them downward, the\n' +
         'unsuffixed first included. An id merely shaped like `#base-<n>` is on the same\n' +
-        'line whenever something slugs to `#base`, even if it was never generated from it.\n' +
+        'line whenever something slugs to `#base`: enough further repeats get numbered onto\n' +
+        'it and take it, even though it was never generated from it.\n' +
         'Put an anchor of its own on the heading you meant:\n\n' +
         '    <a id="measured-timerwheel"></a>\n\n' +
         '    ### Measured\n\n' +
         'then write `](#measured-timerwheel)`. Make it unique — an `<a id="measured-1">` only\n' +
         'adds a second element carrying an id GitHub already generated, and the fragment still\n' +
-        'resolves to whichever of the two the document reaches first.'
+        'resolves to whichever of the two the document reaches first — which is also why a\n' +
+        'link to any id that two elements answer to is rejected.'
       );
     }
     process.exit(1);

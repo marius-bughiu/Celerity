@@ -154,7 +154,9 @@ GitHub tells repeated headings apart by numbering them: where `### Measured` occ
 
 Note that the ban covers the **unsuffixed** first occurrence too. `#measured` looks like the stable one and is not: it is first only until something is inserted above it.
 
-It also covers an id that merely *looks* numbered. If any heading slugs to `#foo`, then `#foo-1` is on that heading's numbering line whoever holds it — so a `### Foo 1` that owns `#foo-1` today loses it the moment a second `### Foo` appears above it, and moves to `#foo-1-1`. Nothing about `### Foo 1` gives that away, which is why the script checks it for you.
+It also covers an id that merely *looks* numbered. If any heading slugs to `#foo`, then `#foo-1` is on that heading's numbering line whoever holds it — so a `### Foo 1` that owns `#foo-1` today loses it the moment a second `### Foo` appears above it, and moves to `#foo-1-1`. Further out the same is true of `#foo-2`, which two more `### Foo` headings would reach. Nothing about `### Foo 1` gives that away, which is why the script checks it for you.
+
+Only suffixes GitHub can actually generate count: the disambiguator starts at `-1` and never pads, so `#foo-0` and `#foo-01` are on no numbering line and are fine to link to.
 
 Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you need to link to one, this is the one place you *should* hand-write an anchor. Give the heading an id of its own and point at that:
 
@@ -164,7 +166,7 @@ Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you
 ### Measured
 ```
 
-An id you wrote is stable because nothing counts it — but it has to be **unique**. An `<a id="measured-1">` rescues nothing: the page then carries that id twice, once on your anchor and once on the heading GitHub numbered, and the fragment resolves to whichever comes first in the document. The script rejects that collision for the same reason it rejects the bare `-N`. `--list` marks every generated anchor `(positional — do not link)` so you can tell the two apart at a glance.
+An id you wrote is stable because nothing counts it — but it has to be **unique**. An `<a id="measured-1">` rescues nothing: the page then carries that id twice, once on your anchor and once on the heading GitHub numbered, and the fragment resolves to whichever comes first in the document. The script rejects any id two elements answer to, whether the other claimant is a numbered heading, an ordinary one, or a second `<a id>`. `--list` marks every generated anchor `(positional — do not link)` so you can tell the two apart at a glance.
 
 ## Constant naming
 
