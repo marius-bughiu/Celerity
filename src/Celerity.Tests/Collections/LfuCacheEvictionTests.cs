@@ -16,7 +16,7 @@ public class LfuCacheEvictionTests
     private static LfuCache<int, int, Int32WangHasher> Cache(int capacity) => new(capacity);
 
     [Fact]
-    public void InsertPastCapacity_EvictsLeastFrequentlyUsed()
+    public void Add_ShouldEvictTheLeastFrequentlyUsed_WhenInsertingPastCapacity()
     {
         var cache = Cache(3);
         cache.Add(1, 10);
@@ -35,7 +35,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void EqualFrequencies_BreakTiesByLeastRecentlyUsed()
+    public void Add_ShouldBreakTiesByLeastRecentlyUsed_WhenFrequenciesAreEqual()
     {
         var cache = Cache(3);
         cache.Add(1, 10);
@@ -53,7 +53,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void CountNeverExceedsCapacity()
+    public void Indexer_ShouldNeverExceedCapacity_WhenInsertingManyKeys()
     {
         var cache = Cache(4);
         for (int i = 0; i < 1000; i++)
@@ -65,7 +65,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void GetRaisesFrequency_SparingEntryFromEviction()
+    public void IndexerGet_ShouldSpareTheEntryFromEviction_WhenItRaisesFrequency()
     {
         var cache = Cache(3);
         cache.Add(1, 10);
@@ -80,7 +80,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void TryGetRaisesFrequency_SparingEntryFromEviction()
+    public void TryGet_ShouldSpareTheEntryFromEviction_WhenItRaisesFrequency()
     {
         var cache = Cache(3);
         cache.Add(1, 10);
@@ -95,7 +95,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void OverwriteExistingKey_RaisesFrequency()
+    public void IndexerSet_ShouldSpareTheEntryFromEviction_WhenItOverwritesAnExistingKey()
     {
         var cache = Cache(3);
         cache.Add(1, 10);
@@ -114,7 +114,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void AddOrUpdate_OnExistingKey_RaisesFrequency()
+    public void AddOrUpdate_ShouldSpareTheEntryFromEviction_WhenKeyExists()
     {
         var cache = Cache(3);
         cache.Add(1, 10);
@@ -129,7 +129,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void TryAdd_AtCapacity_EvictsLeastFrequentlyUsed()
+    public void TryAdd_ShouldEvictTheLeastFrequentlyUsed_WhenAtCapacity()
     {
         var cache = Cache(2);
         cache.Add(1, 10);
@@ -144,7 +144,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void CapacityOne_BehavesAsSingleSlot()
+    public void Indexer_ShouldBehaveAsASingleSlot_WhenCapacityIsOne()
     {
         var cache = Cache(1);
         cache[1] = 10;
@@ -158,7 +158,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void EvictedKey_ReportsCorrectVictimBeforeEviction()
+    public void TryPeekLeastFrequentlyUsed_ShouldNameTheNextVictim_WhenTheCacheIsFull()
     {
         var cache = Cache(3);
         cache.Add(1, 10);
@@ -176,7 +176,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void SoleOccupantPromotion_RelabelsBucketWithoutLosingOrder()
+    public void TryGet_ShouldKeepFrequencyOrder_WhenPromotingTheSoleOccupantOfABucket()
     {
         // Exercises the in-place relabel path: an entry alone in its bucket promoted when no bucket
         // holds f + 1. Repeated promotion must keep the frequency chain correctly ordered.
@@ -202,7 +202,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void PromotionIntoAnExistingHigherBucket_MergesCorrectly()
+    public void TryGet_ShouldMergeIntoTheExistingBucket_WhenOneAlreadyHoldsTheNextFrequency()
     {
         // 1 and 2 both reach frequency 2, so the second promotion lands in a bucket that already
         // exists rather than creating one, and the source bucket is freed only when it empties.
@@ -230,7 +230,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void LastEntryPromotion_KeepsMinAndMaxConsistent()
+    public void TryGet_ShouldKeepTheBucketChainConsistent_WhenTheCacheHoldsOneEntry()
     {
         // A single-entry cache: every promotion frees and relabels the only bucket, so _minBucket and
         // _maxBucket must stay pointed at it.
@@ -248,7 +248,7 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void RepeatedEvictionChurn_KeepsIndexAndBucketsConsistent()
+    public void Indexer_ShouldKeepIndexAndBucketsConsistent_WhenChurnedRepeatedly()
     {
         var cache = Cache(8);
         for (int round = 0; round < 200; round++)
@@ -271,15 +271,15 @@ public class LfuCacheEvictionTests
     }
 
     [Fact]
-    public void ScanDoesNotEvictTheHotSet()
+    public void Indexer_ShouldNotEvictTheHotSet_WhenAScanRunsAndTheCacheHasSpareRoom()
     {
         // The property LfuCache exists for, in the case where the cache has room to spare: a hot set
         // half the capacity, used enough to climb clear of frequency 1, then a sequential scan four
         // times the capacity sweeps through. Under LRU the scan evicts every hot key; under LFU the
         // scan keys fill the spare room and then evict each other, so the hot set is untouched.
         // The precondition is what the hot loop below establishes — these keys are *above* frequency 1.
-        // FullOfHotKeys_LosesExactlyOneEntryToAScan covers the full-cache boundary, and
-        // FrequencyOneResidents_AreEvictedByAScanExactlyLikeTheScanItself covers the case where the
+        // Indexer_ShouldLoseExactlyOneEntry_WhenAScanRunsAgainstAFullCacheOfHotKeys covers the full-cache boundary, and
+        // Indexer_ShouldEvictFrequencyOneResidents_WhenAScanRuns covers the case where the
         // precondition does not hold and the protection therefore does not apply.
         const int Capacity = 16;
         const int HotKeys = 8;
@@ -316,7 +316,7 @@ public class LfuCacheEvictionTests
 
 
     [Fact]
-    public void FullOfHotKeys_LosesExactlyOneEntryToAScan()
+    public void Indexer_ShouldLoseExactlyOneEntry_WhenAScanRunsAgainstAFullCacheOfHotKeys()
     {
         // The boundary the test above deliberately leaves room around. With *every* slot already
         // holding a hot entry, the first cold key cannot arrive for free: there is no frequency-1
@@ -324,7 +324,7 @@ public class LfuCacheEvictionTests
         // second cold key onward there always is one — the previous cold key — so it is evicted
         // instead. A scan therefore costs exactly one of these entries however long it runs, which is
         // the honest form of the claim: bounded, not zero. Note the precondition, which
-        // FrequencyOneResidents_AreEvictedByAScanExactlyLikeTheScanItself shows is load-bearing: every
+        // Indexer_ShouldEvictFrequencyOneResidents_WhenAScanRuns shows is load-bearing: every
         // resident here is above frequency 1. The LRU contrast is unchanged: it loses the whole hot set.
         const int Capacity = 16;
 
@@ -368,7 +368,7 @@ public class LfuCacheEvictionTests
 
 
     [Fact]
-    public void FrequencyOneResidents_AreEvictedByAScanExactlyLikeTheScanItself()
+    public void Indexer_ShouldEvictFrequencyOneResidents_WhenAScanRuns()
     {
         // The limit of scan resistance, and the reason the guarantee is conditional. An entry that was
         // inserted and never read again sits at frequency 1 — the same frequency a one-shot scan key

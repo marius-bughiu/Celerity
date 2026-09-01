@@ -25,14 +25,14 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void EmptyCache_YieldsNothing()
+    public void GetEnumerator_ShouldYieldNothing_WhenCacheIsEmpty()
     {
         var cache = Cache();
         Assert.Empty(KeysInOrder(cache));
     }
 
     [Fact]
-    public void Enumerates_MostFrequentToLeastFrequent()
+    public void GetEnumerator_ShouldYieldMostFrequentFirst_WhenFrequenciesDiffer()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -47,7 +47,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void WithinOneFrequency_YieldsMostRecentFirst()
+    public void GetEnumerator_ShouldYieldMostRecentFirst_WhenFrequenciesAreEqual()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -58,7 +58,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void SpansMultipleBuckets_InDescendingFrequencyOrder()
+    public void GetEnumerator_ShouldYieldDescendingFrequencyOrder_WhenEntriesSpanMultipleBuckets()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -76,7 +76,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void Get_ReordersEnumerationSequence()
+    public void GetEnumerator_ShouldReflectTheNewOrder_WhenAReadRaisesAFrequency()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -89,7 +89,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void Enumeration_YieldsCurrentValues()
+    public void GetEnumerator_ShouldYieldCurrentValues_WhenAValueWasOverwritten()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -107,7 +107,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void StructuralMutation_DuringEnumeration_Throws()
+    public void MoveNext_ShouldThrowInvalidOperationException_WhenTheCacheIsStructurallyMutated()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -120,7 +120,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void MutatingRead_DuringEnumeration_Throws()
+    public void MoveNext_ShouldThrowInvalidOperationException_WhenAReadCountsAsAUse()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -133,7 +133,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void ReadOfAlreadyMostFrequentEntry_StillInvalidatesEnumerator()
+    public void MoveNext_ShouldThrowInvalidOperationException_WhenTheMostFrequentEntryIsRead()
     {
         // The point of departure from LruCache: promoting the front entry is a no-op there, but here
         // it always moves the entry to a different frequency bucket, so it always invalidates.
@@ -151,7 +151,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void ValueOverwrite_DuringEnumeration_Throws()
+    public void MoveNext_ShouldThrowInvalidOperationException_WhenAValueIsOverwritten()
     {
         // Overwriting a value counts as a use here, unlike the rest of the library where a pure value
         // write leaves enumerators valid. Pinned deliberately so the difference cannot drift silently.
@@ -166,7 +166,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void Peek_DuringEnumeration_DoesNotThrow()
+    public void MoveNext_ShouldNotThrow_WhenOnlyPeeksOccurDuringEnumeration()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -186,7 +186,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void FailedTryGet_DuringEnumeration_DoesNotThrow()
+    public void MoveNext_ShouldNotThrow_WhenOperationsMissDuringEnumeration()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -203,7 +203,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void Reset_RestartsFromMostFrequentlyUsed()
+    public void Reset_ShouldRestartFromTheMostFrequentlyUsed_WhenCalledMidEnumeration()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -222,7 +222,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void Reset_AfterMutation_Throws()
+    public void Reset_ShouldThrowInvalidOperationException_WhenTheCacheWasModified()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -233,7 +233,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void BoxedEnumerable_AgreesWithStructPath()
+    public void GetEnumerator_ShouldAgreeWithTheBoxedPath_WhenEnumeratedThroughIEnumerable()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -253,7 +253,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void MoveNext_PastEnd_StaysFalse()
+    public void MoveNext_ShouldStayFalse_WhenCalledPastTheEnd()
     {
         var cache = Cache();
         cache.Add(1, 10);
@@ -265,7 +265,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void MoveNext_PastEnd_OnEmptyCache_StaysFalse()
+    public void MoveNext_ShouldStayFalse_WhenCalledPastTheEndOfAnEmptyCache()
     {
         var cache = Cache();
 
@@ -275,7 +275,7 @@ public class LfuCacheEnumerationTests
     }
 
     [Fact]
-    public void Enumeration_CoversEveryEntry_AcrossManyBuckets()
+    public void GetEnumerator_ShouldCoverEveryEntry_WhenEachBucketHoldsOne()
     {
         // One entry per distinct frequency: every bucket holds exactly one entry, so the enumerator
         // steps bucket-to-bucket on every MoveNext.

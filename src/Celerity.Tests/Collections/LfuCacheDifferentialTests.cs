@@ -125,7 +125,7 @@ public class LfuCacheDifferentialTests
     [InlineData(3)]
     [InlineData(8)]
     [InlineData(16)]
-    public void RandomOps_MatchReferenceLfu(int capacity)
+    public void RandomOperations_ShouldMatchTheReferenceLfu_WhenAppliedToBoth(int capacity)
     {
         const int Seeds = 40;
         const int OpsPerSeed = 400;

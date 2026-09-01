@@ -19,14 +19,14 @@ public class LfuCacheTests
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(int.MinValue)]
-    public void Constructor_RejectsNonPositiveCapacity(int capacity)
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenCapacityIsNotPositive(int capacity)
     {
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new LfuCache<int, string, Int32WangHasher>(capacity));
         Assert.Equal("capacity", ex.ParamName);
     }
 
     [Fact]
-    public void NewCache_IsEmpty()
+    public void Constructor_ShouldProduceAnEmptyCache_WhenOnlyCapacityIsGiven()
     {
         var cache = NewCache(8);
         Assert.Equal(8, cache.Capacity);
@@ -40,7 +40,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Indexer_SetThenGet_RoundTrips()
+    public void Indexer_ShouldRoundTripValues_WhenSetThenGet()
     {
         var cache = NewCache();
         cache[1] = "one";
@@ -52,7 +52,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Indexer_Get_MissingKey_Throws()
+    public void IndexerGet_ShouldThrowKeyNotFound_WhenKeyIsAbsent()
     {
         var cache = NewCache();
         cache[1] = "one";
@@ -60,7 +60,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Indexer_Set_OverwritesExistingValue_WithoutGrowingCount()
+    public void IndexerSet_ShouldOverwriteWithoutGrowingCount_WhenKeyExists()
     {
         var cache = NewCache();
         cache[1] = "one";
@@ -71,7 +71,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void TryGet_HitAndMiss()
+    public void TryGet_ShouldReturnValueOrDefault_WhenKeyIsPresentOrAbsent()
     {
         var cache = NewCache();
         cache[7] = "seven";
@@ -84,7 +84,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void InsertedEntry_StartsAtFrequencyOne()
+    public void Add_ShouldStartTheEntryAtFrequencyOne_WhenKeyIsNew()
     {
         var cache = NewCache();
         cache.Add(1, "one");
@@ -94,7 +94,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void TryGet_CountsAsUse_AndRaisesFrequency()
+    public void TryGet_ShouldRaiseFrequency_WhenItHits()
     {
         var cache = NewCache();
         cache.Add(1, "one");                    // frequency 1
@@ -107,7 +107,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void IndexerGet_CountsAsUse_AndRaisesFrequency()
+    public void IndexerGet_ShouldRaiseFrequency_WhenItHits()
     {
         var cache = NewCache();
         cache.Add(1, "one");                    // frequency 1
@@ -120,7 +120,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void IndexerSet_OnExistingKey_CountsAsUse()
+    public void IndexerSet_ShouldRaiseFrequency_WhenKeyExists()
     {
         var cache = NewCache();
         cache[1] = "one";   // insert, frequency 1
@@ -131,7 +131,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void TryPeek_DoesNotCountAsUse()
+    public void TryPeek_ShouldLeaveFrequencyUnchanged_WhenItHits()
     {
         var cache = NewCache(2);
         cache.Add(1, "one");
@@ -150,7 +150,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void ContainsKey_DoesNotCountAsUse()
+    public void ContainsKey_ShouldLeaveFrequencyUnchanged_WhenKeyIsPresent()
     {
         var cache = NewCache(2);
         cache.Add(1, "one");
@@ -164,7 +164,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void TryGetFrequency_DoesNotCountAsUse()
+    public void TryGetFrequency_ShouldLeaveFrequencyUnchanged_WhenItHits()
     {
         var cache = NewCache();
         cache.Add(1, "one");
@@ -176,7 +176,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void TryGetFrequency_MissingKey_ReturnsFalseAndZero()
+    public void TryGetFrequency_ShouldReturnFalseAndZero_WhenKeyIsAbsent()
     {
         var cache = NewCache();
         cache.Add(1, "one");
@@ -186,7 +186,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Add_NewKey_Inserts()
+    public void Add_ShouldInsertTheEntry_WhenKeyIsNew()
     {
         var cache = NewCache();
         cache.Add(1, "one");
@@ -195,7 +195,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Add_DuplicateKey_Throws()
+    public void Add_ShouldThrowArgumentException_WhenKeyAlreadyExists()
     {
         var cache = NewCache();
         cache.Add(1, "one");
@@ -204,7 +204,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void TryAdd_ReturnsFalseOnDuplicate_AndLeavesValueAndFrequencyUnchanged()
+    public void TryAdd_ShouldReturnFalseAndChangeNothing_WhenKeyAlreadyExists()
     {
         var cache = NewCache();
         Assert.True(cache.TryAdd(1, "one"));
@@ -218,7 +218,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void AddOrUpdate_InsertsThenUpdates()
+    public void AddOrUpdate_ShouldInsertThenOverwriteAndCountAUse_WhenCalledTwice()
     {
         var cache = NewCache();
         cache.AddOrUpdate(1, "one");
@@ -233,7 +233,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Remove_Existing_ReturnsTrueAndValue()
+    public void Remove_ShouldReturnTrueAndTheValue_WhenKeyIsPresent()
     {
         var cache = NewCache();
         cache[1] = "one";
@@ -247,7 +247,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Remove_Missing_ReturnsFalse()
+    public void Remove_ShouldReturnFalse_WhenKeyIsAbsent()
     {
         var cache = NewCache();
         cache[1] = "one";
@@ -257,7 +257,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Remove_DiscardsFrequency_SoReinsertStartsAtOne()
+    public void Remove_ShouldDiscardFrequency_WhenTheKeyIsLaterReinserted()
     {
         var cache = NewCache();
         cache.Add(1, "one");
@@ -272,7 +272,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Remove_ThenReinsert_ReusesFreedSlotCorrectly()
+    public void Remove_ShouldFreeTheSlotForReuse_WhenFollowedByAnInsert()
     {
         var cache = NewCache(2);
         cache[1] = "one";
@@ -287,7 +287,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Remove_FromASharedFrequencyBucket_LeavesTheOthers()
+    public void Remove_ShouldLeaveTheOtherEntries_WhenTheBucketIsShared()
     {
         // Three entries all at frequency 1 share one bucket; removing the middle one must not disturb
         // the other two or free the bucket out from under them.
@@ -308,7 +308,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void Clear_EmptiesCacheButKeepsCapacity()
+    public void Clear_ShouldEmptyTheCacheButKeepCapacity_WhenEntriesExist()
     {
         var cache = NewCache(3);
         cache[1] = "one";
@@ -330,7 +330,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void PeekLfuAndMfu_TrackFrequency()
+    public void TryPeekLeastAndMostFrequentlyUsed_ShouldTrackFrequency_WhenUsesAccumulate()
     {
         var cache = NewCache(3);
         cache.Add(1, "one");
@@ -356,7 +356,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void CapacityOne_EvictsOnEveryNewKey()
+    public void Add_ShouldEvictTheOnlyEntry_WhenCapacityIsOne()
     {
         var cache = NewCache(1);
         cache.Add(1, "one");
@@ -372,7 +372,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void DefaultKey_IsSupported()
+    public void Indexer_ShouldSupportTheDefaultKey_WhenKeyIsZero()
     {
         // 0 is default(int); the underlying index stores it out-of-band. Exercise the full surface.
         var cache = NewCache(3);
@@ -389,7 +389,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void ReferenceKeys_WorkThroughDefaultHasher()
+    public void Indexer_ShouldSupportReferenceKeys_WhenUsingDefaultHasher()
     {
         var cache = new LfuCache<string, int, DefaultHasher<string>>(3);
         cache["a"] = 1;
@@ -401,7 +401,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void NullValues_AreStoredAndReturned()
+    public void Indexer_ShouldStoreAndReturnNull_WhenValueIsNull()
     {
         var cache = new LfuCache<int, string?, Int32WangHasher>(2);
         cache[1] = null;
@@ -411,7 +411,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void SourceConstructor_SeedsLastSurvivors()
+    public void SourceConstructor_ShouldKeepTheLastKeys_WhenSourceIsDuplicateFreeAndOversized()
     {
         var source = new[]
         {
@@ -433,7 +433,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void SourceConstructor_DuplicateKey_RaisesFrequencyAndKeepsIt()
+    public void SourceConstructor_ShouldRaiseFrequencyAndKeepTheEntry_WhenSourceRepeatsAResidentKey()
     {
         var source = new[]
         {
@@ -455,7 +455,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void SourceConstructor_DuplicateAfterEviction_StartsOverAtFrequencyOne()
+    public void SourceConstructor_ShouldStartOverAtFrequencyOne_WhenTheDuplicateArrivesAfterEviction()
     {
         // The condition on the duplicate rule: a repeat only raises a frequency while the earlier
         // occurrence is still resident. Here key 1 is evicted before its second occurrence arrives, so
@@ -479,7 +479,7 @@ public class LfuCacheTests
     }
 
     [Fact]
-    public void SourceConstructor_NullSource_Throws()
+    public void SourceConstructor_ShouldThrowArgumentNull_WhenSourceIsNull()
     {
         Assert.Throws<ArgumentNullException>(
             () => new LfuCache<int, string?, Int32WangHasher>(4, null!));
