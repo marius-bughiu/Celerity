@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 //
-// Fails when a markdown link in this repository points at an anchor that does not exist.
+// Fails when a markdown link in this repository points at an anchor that does not exist,
+// or at one that exists only by position and will not stay where it is.
 //
 // A broken intra-document link is invisible in review: the markdown is well-formed, the
 // diff looks right, and the only symptom is that clicking the link scrolls nowhere. The
@@ -19,7 +20,13 @@
 //   1. every same-file `](#fragment)` resolves to a heading slug or an explicit HTML
 //      anchor in that file;
 //   2. every relative `](other.md#fragment)` resolves in the file it names;
-//   3. every relative link target that is not a URL exists on disk.
+//   3. every relative link target that is not a URL exists on disk;
+//   4. no link points at a *positional* anchor — the `-1`, `-2`, ... suffix GitHub
+//      generates for a repeated heading. Such an anchor resolves, which is exactly why
+//      it is dangerous: it is attached to whichever repeat happened to be counted at
+//      the time, and it silently retargets when another repeat is inserted above it.
+//      Repeated headings are fine to *have* — CHANGELOG.md is built on them. This bans
+//      linking *to* one. Give the target a hand-written `<a id>` and link to that.
 //
 // The slug rule below mirrors github-slugger, which is what GitHub itself renders with.
 // It was checked against the live rendering rather than inferred; to re-confirm it after
@@ -64,6 +71,10 @@ function slugify(text) {
 
 // Repeated headings disambiguate with a `-1`, `-2`, ... suffix, counted per document.
 // CHANGELOG.md leans on this heavily: every release repeats `### Added`.
+//
+// The `positional` flag says the suffix was *generated* here rather than written by the
+// author, which is what rule 4 keys on. A heading that slugs to `foo-1` on its own text
+// — `### Foo 1` — is not positional and is a perfectly stable target.
 function makeSlugger() {
   const occurrences = Object.create(null);
   return function slug(text) {
@@ -74,7 +85,7 @@ function makeSlugger() {
       result = `${original}-${occurrences[original]}`;
     }
     occurrences[result] = 0;
-    return result;
+    return { slug: result, positional: result !== original };
   };
 }
 
@@ -176,13 +187,19 @@ function parseFile(file) {
   const lines = blankFences(raw);
   const slug = makeSlugger();
   const anchors = new Set();
+  const generated = new Set();
+  const explicit = new Set();
   const links = [];
 
   lines.forEach((line, index) => {
     const heading = /^\s{0,3}#{1,6}\s+(.*?)\s*$/.exec(line);
     if (heading) {
       const text = renderHeadingText(heading[1].replace(/\s+#+\s*$/, ''));
-      if (text) anchors.add(slug(text));
+      if (text) {
+        const id = slug(text);
+        anchors.add(id.slug);
+        if (id.positional) generated.add(id.slug);
+      }
     }
 
     // Headings keep their code spans (the content renders and slugs); everything below
@@ -191,9 +208,10 @@ function parseFile(file) {
 
     // A hand-written `<a id>` / `<a name>` is an anchor too, and setext-style or HTML
     // headings are the reason to look for one.
-    const explicit = /<a\s[^>]*(?:id|name)\s*=\s*["']([^"']+)["']/gi;
-    for (let m = explicit.exec(prose); m; m = explicit.exec(prose)) {
+    const declared = /<a\s[^>]*(?:id|name)\s*=\s*["']([^"']+)["']/gi;
+    for (let m = declared.exec(prose); m; m = declared.exec(prose)) {
       anchors.add(m[1]);
+      explicit.add(m[1]);
     }
 
     // Inline links, reference definitions and raw `<a href>` all point somewhere.
@@ -210,7 +228,8 @@ function parseFile(file) {
     }
   });
 
-  return { anchors, links };
+  const positional = new Set([...generated].filter((a) => !explicit.has(a)));
+  return { anchors, positional, links };
 }
 
 // ---- Walking the tree ---------------------------------------------------------------
@@ -239,6 +258,14 @@ function collectMarkdown() {
     files = walk('.', []);
   }
   return files.map((f) => f.split(path.sep).join('/').replace(/^\.\//, '')).sort();
+}
+
+const POSITIONAL_PREFIX = 'positional anchor';
+
+function positionalReason(fragment, where) {
+  const base = fragment.replace(/-\d+$/, '');
+  return `${POSITIONAL_PREFIX}: #${fragment} is a repeat of "#${base}" in ${where}, `
+    + 'numbered by position — it retargets when another repeat is inserted above it';
 }
 
 function isExternal(target) {
@@ -276,9 +303,27 @@ function selfTest() {
 
   // Repeated headings disambiguate rather than collide — CHANGELOG.md depends on it.
   const slug = makeSlugger();
-  const repeats = ['Added', 'Added', 'Added'].map(slug).join(' ');
+  const ids = ['Added', 'Added', 'Added'].map(slug);
+  const repeats = ids.map((i) => i.slug).join(' ');
   if (repeats !== 'added added-1 added-2') {
     failures.push(`  repeated headings\n      expected "added added-1 added-2", got "${repeats}"`);
+  }
+
+  // ...and only the disambiguated ones are positional. Rule 4 rests on this distinction:
+  // the first of a set of repeats keeps a stable id and stays linkable.
+  const flags = ids.map((i) => i.positional).join(',');
+  if (flags !== 'false,true,true') {
+    failures.push(`  positional flags\n      expected "false,true,true", got "${flags}"`);
+  }
+
+  // A suffix the author wrote is not a suffix the slugger generated. `### Measured 1`
+  // slugs to `measured-1` on its own text, and linking to it is fine.
+  const authored = makeSlugger()('Measured 1');
+  if (authored.slug !== 'measured-1' || authored.positional) {
+    failures.push(
+      '  authored numeric suffix\n      expected #measured-1 non-positional, got '
+      + `#${authored.slug} positional=${authored.positional}`
+    );
   }
 
   if (failures.length > 0) {
@@ -286,7 +331,7 @@ function selfTest() {
     console.error(failures.join('\n'));
     process.exit(1);
   }
-  console.log(`ok: ${SELF_TEST_CASES.length + 1} slug case(s) pinned.`);
+  console.log(`ok: ${SELF_TEST_CASES.length + 3} slug case(s) pinned.`);
 }
 
 function main() {
@@ -303,7 +348,10 @@ function main() {
   if (process.argv.includes('--list')) {
     for (const file of files) {
       console.log(`${file}:`);
-      for (const anchor of parsed.get(file).anchors) console.log(`  #${anchor}`);
+      const { anchors, positional } = parsed.get(file);
+      for (const anchor of anchors) {
+        console.log(`  #${anchor}${positional.has(anchor) ? '   (positional — do not link)' : ''}`);
+      }
     }
     return;
   }
@@ -326,8 +374,11 @@ function main() {
       }
 
       if (rawPath === '') {
-        if (fragment && !parsed.get(file).anchors.has(fragment)) {
+        const here = parsed.get(file);
+        if (fragment && !here.anchors.has(fragment)) {
           problems.push({ file, line, target, reason: 'no such anchor in this file' });
+        } else if (fragment && here.positional.has(fragment)) {
+          problems.push({ file, line, target, reason: positionalReason(fragment, 'this file') });
         }
         continue;
       }
@@ -345,6 +396,8 @@ function main() {
       if (!other) continue; // an untracked or skipped markdown file
       if (!other.anchors.has(fragment)) {
         problems.push({ file, line, target, reason: `no such anchor in ${resolved}` });
+      } else if (other.positional.has(fragment)) {
+        problems.push({ file, line, target, reason: positionalReason(fragment, resolved) });
       }
     }
   }
@@ -360,6 +413,17 @@ function main() {
       'punctuation without substituting a separator, then turn spaces into dashes. Run\n' +
       '`node scripts/check_doc_anchors.js --list` to see the anchors a file actually defines.'
     );
+    if (problems.some((p) => p.reason.startsWith(POSITIONAL_PREFIX))) {
+      console.error(
+        '\nA positional anchor is the `-1`, `-2`, ... suffix GitHub generates to tell repeated\n' +
+        'headings apart. It resolves today and points somewhere else tomorrow, because the\n' +
+        'count shifts the moment another repeat is added above it. Put a stable anchor on the\n' +
+        'heading you meant and link to that instead:\n\n' +
+        '    <a id="measured-timerwheel"></a>\n\n' +
+        '    ### Measured\n\n' +
+        'then write `](#measured-timerwheel)`.'
+      );
+    }
     process.exit(1);
   }
 

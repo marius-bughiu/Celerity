@@ -5261,6 +5261,8 @@ Footprint is one array object per bucket — roughly one per three quarters of a
 
 Reach for it when the positional questions are asked of a set that changes. Reach for [`BTreeSet<T, TComparer>`](#btreesett-tcomparer) when they are never asked, for [`CeleritySet`](#celeritysett-thasher) or [`IntSet`](#intsetthasher) when order itself is not part of the question, and for a sorted `List<T>` when the set is built once and only queried — indexing one array is `O(1)` and unbeatable, and this type does not pretend otherwise. At a thousand elements the hand-rolled list wins the mixed workload outright — the numbers are below, and tracked on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedSet).
 
+<a id="measured-rankedset"></a>
+
 ### Measured
 
 CI's sharded A/B run, `int` elements, shuffled inserts. Every group carries three arms: `SortedSet<T>` (the
@@ -5410,6 +5412,8 @@ Duplicate edges **collapse** during that pass: this is an edge *set*, which is w
 
 Both traversals use the caller's destination buffer as the traversal queue, so the only other state is a bitmap or an in-degree array rented from `ArrayPool<T>` and returned. Once the pool is warm a repeated traversal allocates nothing — `ArrayPool<T>.Shared` allocates when it has no suitable buffer, so a first or contended call can still allocate.
 
+<a id="measured-compressedgraph"></a>
+
 ### Measured
 
 At 100,000 vertices and 800,000 distinct edges (average degree 8, a random DAG), against the two hand-rolls:
@@ -5520,7 +5524,7 @@ A **suffix array**: a build-once, immutable index over a block of text that answ
 
 ### When to reach for it
 
-Any workload where one block of text is queried many times: log and document search, source-code search, near-duplicate and plagiarism detection, bioinformatics, and any "how many times does X appear" counter over a corpus that does not change. The crossover is the whole story, because **a single query against a text read once is a loss here**, and stays one until the query count amortizes the build — roughly 1,000 counting queries at 100,000 characters, and it *improves* as the text grows. See [Measured](#measured-1).
+Any workload where one block of text is queried many times: log and document search, source-code search, near-duplicate and plagiarism detection, bioinformatics, and any "how many times does X appear" counter over a corpus that does not change. The crossover is the whole story, because **a single query against a text read once is a loss here**, and stays one until the query count amortizes the build — roughly 1,000 counting queries at 100,000 characters, and it *improves* as the text grows. See [Measured](#measured-suffixarray).
 
 It is also the only structure here that can answer *what is the longest substring that occurs twice*. `TryGetLongestRepeatedSubstring` reads that off the LCP array in one linear pass; the naive answer is quadratic and no scan-shaped API can express the question at all.
 
@@ -5533,6 +5537,8 @@ The text is treated as its **cyclic shifts with a sentinel appended** — a symb
 **Locating** a pattern is a binary search over that order — two of them when both ends of the range are needed. The suffixes starting with a pattern are **contiguous** in it, so `CountOccurrences` is the width of that range at `O(m log n)` and nothing is enumerated, and `TryGetOccurrences` hands back a slice of the index's own array with no copy at all. That `O(m log n)` is the floor the members build on and not the cost of every one of them: `Contains` needs only one of the two searches, `IndexOf` adds an `O(k)` pass because the order groups the matches without sorting them by position, `CopyOccurrences` and `GetOccurrences` add an `O(k log k)` sort, and `TryGetLongestRepeatedSubstring` is `O(n)` over the LCP array and does no search at all. The API table below states each.
 
 What the index **retains** is the text copy and the two result arrays and nothing else — every scratch buffer the build needs is rented from `ArrayPool<T>` and returned. That is not the same as allocating nothing: `ArrayPool<T>.Shared` allocates when it has no suitable buffer, so a first or contended build still allocates its scratch, exactly as [`CompressedGraph`](#compressedgraph)'s traversals do.
+
+<a id="measured-suffixarray"></a>
 
 ### Measured
 
@@ -5587,7 +5593,7 @@ At **1,000 characters** the scan margins all but vanish — **1.26x**, **1.34x**
 ### Caveats
 
 - **Build-once.** The index is immutable; changing the text means building a new one, as with [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue), [`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) and [`CompressedGraph`](#compressedgraph). Nothing mutates, so enumeration is never invalidated and concurrent readers need no synchronization.
-- **The build has to be amortized, and one query does not do it.** The build costs what many scans of the same text would. At 100,000 characters it pays for itself at roughly 1,000 counting queries against the same text, and at 1,000 characters at roughly 3,900 — see [Measured](#measured-1). Below the crossover `IndexOf` is the right answer.
+- **The build has to be amortized, and one query does not do it.** The build costs what many scans of the same text would. At 100,000 characters it pays for itself at roughly 1,000 counting queries against the same text, and at 1,000 characters at roughly 3,900 — see [Measured](#measured-suffixarray). Below the crossover `IndexOf` is the right answer.
 - **Ordinal, over UTF-16 code units.** Suffixes are ordered by `char` value — what `StringComparison.Ordinal` compares. There is no culture-aware, case-insensitive or normalizing mode and there will not be: a linguistic comparison is not a total order over fixed-length units, so the suffixes could not be sorted once and binary-searched. Fold the text and the pattern the same way before indexing when case-insensitive matching is wanted. A surrogate pair sorts as its two code units, so a match can begin at a low surrogate — check the boundary in your own text when that matters.
 - **About 10 bytes per character, retained.** The text copy is 2, and the suffix and LCP arrays are 4 each. That is five times what the text alone costs, and it is the other half of the reason to check the crossover. The build's scratch is five more `int` buffers, rented from `ArrayPool<T>` and returned rather than held.
 
@@ -5630,7 +5636,7 @@ The BCL has nothing that answers the same question. `string.IndexOf` and `Memory
 
 ### When to reach for it
 
-Any workload with many needles and a haystack that keeps arriving: log and alert scanning, keyword / profanity / brand filters, WAF and IOC rule sets, dictionary tokenizers and CJK word segmentation, DLP scanning, ad-block and URL rule matching. **Three things decide, not one**: how many patterns, whether they actually hit, and how long the text is — the last of those is not a tie-breaker but a verdict-flipper, since the 256-pattern absent-membership arm *loses* at 100,000 characters and *wins* at 1,000. See [Measured](#measured-2). At a few dozen patterns the k-`IndexOf` loop wins outright and you should write it.
+Any workload with many needles and a haystack that keeps arriving: log and alert scanning, keyword / profanity / brand filters, WAF and IOC rule sets, dictionary tokenizers and CJK word segmentation, DLP scanning, ad-block and URL rule matching. **Three things decide, not one**: how many patterns, whether they actually hit, and how long the text is — the last of those is not a tie-breaker but a verdict-flipper, since the 256-pattern absent-membership arm *loses* at 100,000 characters and *wins* at 1,000. See [Measured](#measured-ahocorasick). At a few dozen patterns the k-`IndexOf` loop wins outright and you should write it.
 
 ### How it works
 
@@ -5641,6 +5647,8 @@ The second link is the **output link**: several patterns can end at the same pos
 Both are computed in one breadth-first pass, which is also the order the states are **laid out** in. The trie is flattened into a compressed-row child table — an offset per state into one contiguous edge array, sorted by character — so a transition is a binary search over one state's edges and there are no per-node objects. Breadth-first order is what makes the single pass possible: a state's failure target has strictly smaller depth and therefore a smaller id, so it is already written by the time the pass needs it. The scratch trie the flattening reads is rented from `ArrayPool<T>` and returned.
 
 One layer sits on top. The root is where a scan spends most of its steps — every character that continues no partial match resolves there — so the root's ASCII transitions are held in a **direct-mapped 128-entry table** and cost one load instead of a binary search. Non-ASCII falls back to the search. That table is a fixed 512 bytes whatever the pattern set looks like, and it is worth 1.7–2x on the small-pattern-set arms.
+
+<a id="measured-ahocorasick"></a>
 
 ### Measured
 
@@ -5719,7 +5727,7 @@ The match carries a position and a length rather than the matched text, so produ
 
 - **Overlapping matches are reported, not resolved.** Over `"ushers"` with `"he"`, `"she"` and `"hers"` there are three matches — `"she"` at 1, `"he"` at 2 and `"hers"` at 2 — and all three are produced. A `Regex` alternation consumes the text as it matches and so reports one of them. Picking a winner is left to the caller, because the caller is the only one who knows whether the right policy is longest, first-listed, or all of them.
 - **The reporting order is by end position, not by start.** Ascending `End`, and **longest first** among matches ending together, which is the order the automaton discovers them in. With `"bc"` and `"abcd"` over `"abcd"`, `"bc"` is reported first because it ends first, even though `"abcd"` starts earlier — and `TryFindFirst` returns `"bc"` for the same reason. A single left-to-right pass cannot do better: when `"bc"` completes, the automaton has no way to know whether the longer pattern starting earlier will complete at all. Sort by `Start` when leftmost order is wanted.
-- **The pattern count decides, and below the crossover this loses.** At eight patterns the k-`IndexOf` loop is 4–5x faster, and on CI it still wins the 256-pattern *absent-membership* arm outright, because a scan with no candidate to verify stays inside its vectorized sweep and covers many characters per step where this pass covers one. Counting present patterns is the shape that turns over, at 4.1x. See [Measured](#measured-2).
+- **The pattern count decides, and below the crossover this loses.** At eight patterns the k-`IndexOf` loop is 4–5x faster, and on CI it still wins the 256-pattern *absent-membership* arm outright, because a scan with no candidate to verify stays inside its vectorized sweep and covers many characters per step where this pass covers one. Counting present patterns is the shape that turns over, at 4.1x. See [Measured](#measured-ahocorasick).
 - **Build-once.** The automaton is immutable; changing the pattern set means building a new one, as with [`SuffixArray`](#suffixarray), [`KdTree<TValue>`](#kdtreetvalue), [`RTree<TValue>`](#rtreetvalue) and [`CompressedGraph`](#compressedgraph). Nothing mutates, so concurrent readers need no synchronization and an enumerator can never be invalidated.
 - **Ordinal, over UTF-16 code units.** Characters are compared by value — what `StringComparison.Ordinal` compares. There is no culture-aware or case-insensitive mode: fold the patterns and the text the same way before building when case-insensitive matching is wanted. A surrogate pair is two code units, so a pattern may match starting at a low surrogate — check the boundary in your own text when that matters.
 - **Duplicates collapse; the empty pattern is rejected.** The same pattern supplied twice yields one entry, keeping the id of its first appearance, so `Count` is the number of *distinct* patterns. The empty string would match at every position and make `ContainsAny` vacuously `true`, so it throws rather than being silently absorbed.
@@ -5764,7 +5772,7 @@ A **hierarchical timing wheel**: a container of pending **deadlines**, with cons
 
 Almost every timeout is cancelled rather than fired: the reply arrived, the lease was renewed, the connection closed cleanly. That is the axis the obvious structures fail on. The standard `PriorityQueue` workaround is **lazy deletion** — push everything, keep a `HashSet` of cancelled ids, discard tombstones on pop — which makes the cancel itself cheap and then charges for it at drain time, on a heap that has grown with the timers that will never fire and still holds their payloads.
 
-Reach for this type when you have a **population** of pending deadlines: request and RPC timeouts, connection idle-reaping, lease and session expiry, retry backoff, rate-limiter windows, delayed-message queues. Do not reach for it for a handful of timers — see [Measured](#measured-2), where the round falls from 6.81x at a hundred thousand to 2.56x at a thousand, and two of the four groups it decomposes into turn into losses.
+Reach for this type when you have a **population** of pending deadlines: request and RPC timeouts, connection idle-reaping, lease and session expiry, retry backoff, rate-limiter windows, delayed-message queues. Do not reach for it for a handful of timers — see [Measured](#measured-timerwheel), where the round falls from 6.81x at a hundred thousand to 2.56x at a thousand, and two of the four groups it decomposes into turn into losses.
 
 ### How it works
 
@@ -5773,6 +5781,8 @@ Reach for this type when you have a **population** of pending deadlines: request
 **`Advance` is not the textbook tick-at-a-time loop.** The classical wheel steps one tick, then one more, cascading whenever the low wheel wraps, which makes a jump cost `O(ticks)` — a caller that misses a second of wall clock at millisecond granularity would pay a thousand iterations over empty slots for it. This one computes, per level, exactly the slots the move crosses and walks them from the top level down, firing what is due and staging what is not for re-insertion against the new time. The work is `O(levels × slots + fired + cascaded)` **however far the clock jumped**, and `O(ticks + fired + cascaded)` for the ordinary small step — the cascade term belongs in both, because the single tick that carries the clock across a level boundary reaches that level's whole slot and moves everything on it down, which can be any number of timers and fire none of them. A cascade only ever moves a timer *down* a level, so each timer is touched at most once per level over its whole life, which is what keeps that term amortized rather than repeated.
 
 A timer scheduled with a **zero** delay is due at the current tick, which no wheel slot can hold — every slot is strictly in the future — so it goes on a separate already-due list that the next `Advance` drains whatever tick it names.
+
+<a id="measured-timerwheel"></a>
 
 ### Measured
 
