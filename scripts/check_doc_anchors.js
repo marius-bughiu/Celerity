@@ -21,11 +21,13 @@
 //      anchor in that file;
 //   2. every relative `](other.md#fragment)` resolves in the file it names;
 //   3. every relative link target that is not a URL exists on disk;
-//   4. no link points at *any* member of a repeated-heading group. When a heading text
-//      occurs more than once, GitHub numbers the repeats — `#measured`, `#measured-1`,
-//      `#measured-2` — and every one of those ids is a position rather than a heading.
-//      Inserting one more repeat *above* renames all of them downward, including the
-//      unsuffixed first, so a link to the base id drifts exactly as a link to `-1` does.
+//   4. no link points at an anchor that can be renumbered out from under it. GitHub
+//      tells repeated headings apart by counting them — `#measured`, `#measured-1`,
+//      `#measured-2` — so those ids name positions, not headings, and inserting one
+//      more repeat *above* renames every one of them downward, the unsuffixed first
+//      included. The same is true of an id merely *shaped* like `#base-<n>` when some
+//      heading slugs to `#base`: it sits on that heading's numbering line and a second
+//      `#base` would be numbered onto it, whoever holds it now.
 //      Repeated headings are fine to *have* — CHANGELOG.md is built on them. This bans
 //      linking *to* one. Give the target a hand-written `<a id>` of its own — a *unique*
 //      one: an `<a id="measured-1">` that collides with a generated id renders a second
@@ -235,17 +237,29 @@ function parseMarkdown(text) {
     }
   });
 
-  // An id is stable only when it is the slug of its own heading's text *and* no other
-  // heading wanted that slug. Two ways to fail: the heading repeats, so every id in the
-  // group is a position — or the heading is unique but its slug was already taken by
-  // someone else's repeat, so GitHub renumbered this one and will renumber it again if
-  // that collision goes away.
+  // An id is stable only when nothing can take it away. Two ways to fail:
+  //
+  //   repeat    — the heading text occurs more than once, so every id in the group is a
+  //               position: one more repeat above renames them all downward, unsuffixed
+  //               first included.
+  //   contested — the id has the shape `<base>-<n>` for a heading base that exists in
+  //               this document, so it is on the numbering line of *that* heading even
+  //               though it was not generated from it. `## Foo` / `## Foo 1` / `## Foo`
+  //               slugs to `foo` / `foo-1` / `foo-2`; `#foo-1` belongs to `## Foo 1`
+  //               today, and inserting one more `## Foo` above hands it to that instead
+  //               and renumbers `## Foo 1` to `foo-1-1`. Nothing about `## Foo 1`'s own
+  //               group says so — the collision is with a different group entirely.
   const positional = new Map();
   for (const [base, ids] of groups) {
-    ids.forEach((id, index) => {
-      if (ids.length < 2 && id === base) return;
-      positional.set(id, { base, index, count: ids.length, renumbered: id !== base });
-    });
+    if (ids.length < 2) continue;
+    ids.forEach((id, index) => positional.set(id, { kind: 'repeat', base, index, count: ids.length }));
+  }
+  for (const id of anchors) {
+    if (positional.has(id)) continue;
+    const suffix = /^(.*)-\d+$/.exec(id);
+    if (suffix && groups.has(suffix[1])) {
+      positional.set(id, { kind: 'contested', base: suffix[1] });
+    }
   }
   return { anchors, positional, links };
 }
@@ -281,10 +295,10 @@ function collectMarkdown() {
 const POSITIONAL_PREFIX = 'positional anchor';
 
 function positionalReason(fragment, where, group) {
-  if (group.count < 2) {
-    return `${POSITIONAL_PREFIX}: #${fragment} in ${where} is a renumbering — this `
-      + `heading's own slug is "#${group.base}", which another heading had already `
-      + 'taken, so the number moves if that one does';
+  if (group.kind === 'contested') {
+    return `${POSITIONAL_PREFIX}: #${fragment} sits on the numbering line of "#${group.base}" `
+      + `in ${where} — a second heading slugging to "#${group.base}" would be numbered onto `
+      + 'this id and take it, whoever holds it now';
   }
   const ordinal = `${group.index + 1} of ${group.count}`;
   return `${POSITIONAL_PREFIX}: #${fragment} is heading ${ordinal} sharing the slug `
@@ -365,9 +379,19 @@ const RULE_FOUR_CASES = [
     expect: [],
   },
   {
-    name: 'an authored suffix is not a generated one — `### Measured 1` stays linkable',
-    files: { 'a.md': '## Measured\n## Measured 1\n\n[x](#measured-1)\n' },
+    name: 'an authored suffix is stable when nothing else slugs to its base',
+    files: { 'a.md': '## Measured 1\n## Other\n\n[x](#measured-1)\n' },
     expect: [],
+  },
+  {
+    name: 'an authored suffix is contested once a heading slugs to its base',
+    files: { 'a.md': '## Measured\n## Measured 1\n\n[x](#measured-1)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
+    name: 'the collision can come from a group the id is not in',
+    files: { 'a.md': '## Foo\n## Foo 1\n## Foo\n\n[x](#foo-1)\n' },
+    expect: ['a.md:5 positional'],
   },
   {
     name: 'a unique authored anchor rescues a repeated heading',
@@ -391,6 +415,8 @@ const RULE_FOUR_CASES = [
   },
   {
     name: 'a heading renumbered around someone else\'s repeat is unstable too',
+    // `## Foo` twice pushes `## Foo 1` off `#foo-1` and onto `#foo-1-1`, which is in turn
+    // on the numbering line of the base `foo-1` that `## Foo 1` still wants.
     files: { 'a.md': '## Foo\n## Foo\n## Foo 1\n\n[x](#foo-1-1)\n' },
     expect: ['a.md:5 positional'],
   },
@@ -511,7 +537,9 @@ function main() {
         '\nWhen a heading text repeats, GitHub numbers the repeats — `#measured`, `#measured-1`,\n' +
         '`#measured-2` — and none of those ids belongs to a heading. They belong to positions,\n' +
         'and one more repeat inserted *above* renames every one of them downward, the\n' +
-        'unsuffixed first included. Put an anchor of its own on the heading you meant:\n\n' +
+        'unsuffixed first included. An id merely shaped like `#base-<n>` is on the same\n' +
+        'line whenever something slugs to `#base`, even if it was never generated from it.\n' +
+        'Put an anchor of its own on the heading you meant:\n\n' +
         '    <a id="measured-timerwheel"></a>\n\n' +
         '    ### Measured\n\n' +
         'then write `](#measured-timerwheel)`. Make it unique — an `<a id="measured-1">` only\n' +

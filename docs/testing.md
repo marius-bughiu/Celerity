@@ -129,6 +129,36 @@ The release-notes gate is the one piece that is pure shell and therefore outside
 ./.github/scripts/extract-release-notes.sh 2.4.0
 ```
 
+## Script guards
+
+Four checks are plain Node scripts rather than xUnit tests, because what they inspect is not compiled: markdown links, source-file naming, the dashboard's collection roster, and which paths make a benchmark run worth spending. Each is its own `ci.yml` job.
+
+| Guard | Fails on | Job |
+|---|---|---|
+| [`check_doc_anchors.js`](../scripts/check_doc_anchors.js) | A markdown link to a missing file, a missing anchor, or an anchor no heading can keep — see below. | `doc-anchors` |
+| [`check_constant_naming.js`](../scripts/check_constant_naming.js) | A `const` in a shipping package that is not `PascalCase`. | `constant-naming` |
+| [`check_dashboard_coverage.js`](../scripts/check_dashboard_coverage.js) | A benchmarked collection the dashboard does not list, so its data publishes to a card that never renders. | `dashboard-coverage` |
+| [`benchmark_relevant_changes.js`](../scripts/benchmark_relevant_changes.js) | Nothing — it decides whether a commit can move a measured number, so the benchmark run can be skipped when it cannot. | `benchmark-gate` |
+
+**Three of the four have a `--self-test` mode, and CI runs it as a separate step from the check itself.** The distinction is the point: the check tells you whether the repository is currently well-formed, and `--self-test` tells you whether the check still knows what well-formed means. A guard whose own rule has silently drifted passes everything, which is the failure mode that costs the most to notice.
+
+```bash
+node scripts/check_doc_anchors.js --self-test   # is the rule still right?
+node scripts/check_doc_anchors.js               # is the repository still right?
+node scripts/check_doc_anchors.js --list        # every anchor each file defines
+```
+
+### Anchors that resolve to the wrong place
+
+`check_doc_anchors.js` resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown. It also rejects a link to an anchor that resolves *today* and will not stay put — a heading's id is only stable if nothing can renumber it out from under the link:
+
+- when a heading text **repeats**, GitHub numbers the repeats (`#measured`, `#measured-1`, …) and every one of those ids is a position, the unsuffixed first included;
+- when an id has the shape `#base-<n>` and some heading in the file slugs to `#base`, it sits on that heading's numbering line and a second `#base` would be numbered onto it — even though it was never generated from it.
+
+Both are silent: the markdown is well-formed, the link resolves, and the only symptom is landing in the wrong section. All five `#measured-N` links in the API reference had drifted onto the wrong collection's benchmark table this way, with CI green throughout ([#409](https://github.com/marius-bughiu/Celerity/issues/409)). Link to a unique hand-written `<a id>` instead; [CONTRIBUTING.md](../CONTRIBUTING.md#never-link-to-a-repeated-headings-generated-anchor) has the recipe.
+
+The rule is pinned two ways: slug cases against ids GitHub actually rendered, and fixtures that run whole documents through the real parser and checker so a rejection path cannot be deleted without `--self-test` noticing.
+
 ## Code coverage
 
 Coverage is collected with [coverlet](https://github.com/coverlet-coverage/coverlet) and scoped to all eight shipping assemblies — `Celerity`, `Celerity.Hashing`, `Celerity.Primitives`, `Celerity.Sorting`, `Celerity.Statistics`, `Celerity.Ring`, `Celerity.Sentinel`, `Celerity.Cardinality` — via [`src/coverage.runsettings`](../src/coverage.runsettings). The test, benchmark, fuzz, and AOT-smoke assemblies are tooling, not the subject under measurement.

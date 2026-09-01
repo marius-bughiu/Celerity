@@ -133,7 +133,7 @@ The trap is that GitHub slugs a heading by lowercasing its **rendered** text and
 
 The doubled `t` in the first two rows is `…Set` meeting `T` once the `<` between them is deleted — and it happens whether the generic is entity-encoded or written with bare angle brackets, since bare `<T, THasher>` is not a valid HTML tag and renders as text. The doubled dash in the third row is the arrow vanishing between two spaces. None of the three is what anyone writes by hand.
 
-[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to any anchor a repeated heading generates. Never *guess* a heading's anchor — ask the script:
+[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to any anchor that a repeated heading can renumber. Never *guess* a heading's anchor — ask the script:
 
 ```bash
 node scripts/check_doc_anchors.js --list    # every anchor each file defines
@@ -153,6 +153,8 @@ gh api repos/marius-bughiu/Celerity/contents/docs/api/collections.md \
 GitHub tells repeated headings apart by numbering them: where `### Measured` occurs five times, the ids are `#measured`, `#measured-1` … `#measured-4`. **Linking to any of them is banned, and the script fails the build on it.** The anchor resolves — that is the whole problem. Each id names a *position*, not a heading, so inserting one more `### Measured` above renames every one of them downward and silently moves the links onto the wrong collection's table, in a diff that touches none of them. That is not hypothetical: all five `#measured-N` links in the API reference had drifted onto the wrong collection's benchmarks before the rule existed ([#409](https://github.com/marius-bughiu/Celerity/issues/409)).
 
 Note that the ban covers the **unsuffixed** first occurrence too. `#measured` looks like the stable one and is not: it is first only until something is inserted above it.
+
+It also covers an id that merely *looks* numbered. If any heading slugs to `#foo`, then `#foo-1` is on that heading's numbering line whoever holds it — so a `### Foo 1` that owns `#foo-1` today loses it the moment a second `### Foo` appears above it, and moves to `#foo-1-1`. Nothing about `### Foo 1` gives that away, which is why the script checks it for you.
 
 Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you need to link to one, this is the one place you *should* hand-write an anchor. Give the heading an id of its own and point at that:
 
