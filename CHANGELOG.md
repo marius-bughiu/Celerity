@@ -6,11 +6,11 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
-- **Five links in the API reference pointed at the wrong collection's benchmark table.** `SuffixArray`'s "see Measured" landed on `CompressedGraph`, and `AhoCorasick`'s and `TimerWheel`'s both landed on `SuffixArray`. Each `### Measured` section now carries a named anchor of its own, so the links say which table they mean. Closes [#409](https://github.com/marius-bughiu/Celerity/issues/409).
+- **Five links in the API reference pointed at the wrong collection's benchmark table.** `SuffixArray`'s "see Measured" landed on `CompressedGraph`, and `AhoCorasick`'s and `TimerWheel`'s on `SuffixArray`. Each `### Measured` section now carries a named anchor, so a link says which table it means. Closes [#409](https://github.com/marius-bughiu/Celerity/issues/409).
 
 ### Changed
 
-- **`scripts/check_doc_anchors.js` now rejects links to any anchor a repeated heading generates** — `#measured`, `#measured-1`, `#measured-2` and the rest. Such a link resolves, so the guard used to pass it, and every one of those ids names a position rather than a heading: one more repeat inserted above renames them all downward, the unsuffixed first included. Repeated headings are still fine to have; link to a unique hand-written `<a id>` instead. `--list` now marks the generated ones.
+- **`scripts/check_doc_anchors.js` now rejects links to any anchor a repeated heading generates** — `#measured`, `#measured-1` and the rest. Each names a position rather than a heading, so it resolves today and points elsewhere once another repeat is added. Repeated headings stay legal; link to a unique hand-written `<a id>` instead, which `--list` helps you tell apart. Closes [#409](https://github.com/marius-bughiu/Celerity/issues/409).
 
 - **The benchmark suite runs on merges to `main` instead of on every pull request.** It was by a wide margin the largest consumer of this repository's CI minutes — a same-runner A/B against `main` over eight runners, re-paid on every review commit. A regression is now read off [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at the merge commit that introduced it, and *Actions → Benchmarks → Run workflow* measures any ref on demand. The per-PR comparison comment is gone with it. The relevance gate that skips a run whose diff cannot move a measured number now applies to `main` as well, so a documentation or comment-only commit costs nothing. No change to the shipped packages.
 
