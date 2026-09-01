@@ -54,6 +54,7 @@ internal class Program
         typeof(StringInternTableBenchmark),
         typeof(SuffixArrayBenchmark),
         typeof(AhoCorasickBenchmark),
+        typeof(RopeBenchmark),
         typeof(FenwickTreeBenchmark),
         typeof(SegmentTreeBenchmark),
         typeof(KdTreeBenchmark),

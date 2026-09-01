@@ -1167,6 +1167,73 @@ void Check(bool condition, string message)
     Check(wide.ContainsAny(new string('a', 100) + "b"), "AhoCorasick matches deep into a degenerate text");
 }
 
+// Rope — the mutable text tree. What is ILC-specific here is the node graph plus the two struct enumerators:
+// a rope is a class-per-node structure whose leaves each own a char[], and its chunk enumerator hands out
+// ReadOnlySpan<char> slices over those buffers, which is the shape a trimmed, JIT-less runtime is most likely
+// to get wrong. Exercise the balanced build, the allocation-free in-leaf edit, the paths that split and
+// collapse leaves, the AVL split and join, both enumerators, and the automatic defragmenting rebuild.
+{
+    var document = new Rope("It was the best of times, it was the worst of times.");
+
+    Check(document.Length == 52, "Rope holds the text length");
+    Check(document[7] == 't' && document[document.Length - 1] == '.', "Rope indexes by descent");
+
+    document.Insert(11, "very ");
+    Check(document.ToString().StartsWith("It was the very best", StringComparison.Ordinal),
+        "Rope inserts in the middle");
+
+    document.Remove(0, 7);
+    Check(document.ToString().StartsWith("the very best", StringComparison.Ordinal), "Rope removes a prefix");
+
+    document[0] = 'T';
+    Check(document[0] == 'T', "Rope assigns through the indexer");
+
+    Check(document.IndexOf('v') == 4 && document.IndexOf('z') == -1, "Rope scans its leaves for a character");
+    Check(document.ToString(4, 4) == "very", "Rope materializes a range");
+
+    var buffer = new char[4];
+    document.CopyTo(4, buffer, 4);
+    Check(new string(buffer) == "very", "Rope copies a range into a span");
+
+    // Split and join: the two operations nothing in the BCL has, and the ones that exercise the AVL machinery
+    // rather than a single leaf memmove. AppendAndClear moves, so the source is left empty.
+    var before = document.ToString();
+    var tail = document.Split(9);
+    Check(document.Length == 9 && tail.Length == before.Length - 9, "Rope splits in O(log n)");
+
+    document.AppendAndClear(tail);
+    Check(tail.Length == 0 && document.ToString() == before, "Rope rejoins and empties the source");
+
+    // 4549 is the sum of the code units of "The very best of times, it was the worst of times." — the text
+    // after all four edits above, including the indexer's 't' -> 'T', which is worth 32 less than the
+    // unmutated string's 4581. Spelled out because a bare total invites being re-derived from the wrong
+    // intermediate state.
+    var characters = 0;
+    foreach (var c in document) characters += c;
+    Check(characters == 4549, "Rope enumerates every character");
+    Check(characters == document.ToString().Sum(c => c), "Rope enumeration agrees with materialization");
+
+    var chunked = 0;
+    foreach (var chunk in document.GetChunks()) chunked += chunk.Length;
+    Check(chunked == document.Length, "Rope enumerates its runs as spans");
+
+    // A tiny chunk size over a long text: leaves overflow and split on almost every edit, the tree runs many
+    // levels deep, and the automatic rebuild that undoes the fragmentation fires repeatedly.
+    var fragmented = new Rope(new string('a', 4000), Rope.MinChunkSize);
+    for (var i = 0; i < 500; i++)
+        fragmented.Insert(i * 3, "bc");
+
+    Check(fragmented.Length == 5000, "Rope survives a long run of splitting edits");
+    Check(fragmented.Depth <= 40, "Rope stays balanced under a long run of edits");
+
+    fragmented.TrimExcess();
+    var fill = Rope.MinChunkSize - (Rope.MinChunkSize / 4);
+    Check(fragmented.LeafCount == (5000 + fill - 1) / fill, "Rope compacts its leaves on TrimExcess");
+
+    fragmented.Remove(0, fragmented.Length);
+    Check(fragmented.Length == 0 && fragmented.LeafCount == 0, "Rope releases its tree when emptied");
+}
+
 // BTreeDictionary / BTreeSet — the ordered collections. Two things are worth pinning under ILC here:
 // the struct-comparer generic (DefaultComparer<T> plus a hand-written one, so the constrained
 // IComparer<T> calls specialize per comparer), and the [InlineArray] traversal buffers behind the

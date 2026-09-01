@@ -358,6 +358,16 @@ public class ClearNoOpVersionTests
             () => wheel.GetEnumerator(), wheel.Clear, () => wheel.Count, () => wheel.Schedule(3, 1));
     }
 
+    [Fact]
+    public void RopeClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        // A rope's "count" is its character count; the element shape is char rather than an entry, which is
+        // exactly the variation the boxed-IEnumerator helper exists to absorb.
+        var rope = new Rope();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => rope.GetEnumerator(), rope.Clear, () => rope.Length, () => rope.Append("text"));
+    }
+
     // ---- The two documented exceptions ------------------------------------------------------------
 
     [Fact]

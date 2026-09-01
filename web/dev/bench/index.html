@@ -539,6 +539,13 @@ function escapeHtml(s) {
     // because that is where the crossover is. EnumerateMatches compares against the alternation on a workload where
     // this side does strictly more work — it reports overlapping matches and the Regex does not.
     { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',         vs: 'a k-IndexOf loop on the Contains/Count/CountFew cards, or one Regex alternation on the ContainsRegex/EnumerateMatches/Build cards — compiled on the query cards, uncompiled on Build', ops: ['Contains', 'ContainsRegex', 'Count', 'CountFew', 'EnumerateMatches', 'Build'] },
+    // Rope is the mutable text tree, benchmarked against StringBuilder — the type a caller reaches for when a
+    // block of text has to change, and the one that is linear in the document on every operation but appending.
+    // Edit is the whole workload (paired insertions and removals at scattered positions); Insert and Remove take
+    // it apart. Index, Append and Materialize are published losses: a StringBuilder built from a string is one
+    // chunk, so it indexes directly, and appending to its end is a bounds check and a store. The item count is
+    // characters, and the two sizes straddle where a memmove stops being cheap.
+    { key: 'Rope',                title: 'Rope (mutable text)',                      vs: 'StringBuilder',         ops: ['Edit', 'Insert', 'Remove', 'SplitJoin', 'Index', 'Append', 'Materialize'], items: [10000, 1000000] },
     // The Celerity.Sorting package. These are span algorithms rather than collections, so "items" is
     // the span length and the sweep starts at 100 on purpose: radix and counting sort are expected to
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
@@ -586,7 +593,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'Regex']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
