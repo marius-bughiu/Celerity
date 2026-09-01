@@ -141,9 +141,16 @@ node scripts/check_doc_anchors.js           # check every link
 node scripts/check_doc_anchors.js --self-test
 ```
 
+`--self-test` pins the slug rule itself against ids GitHub actually rendered, so a rewrite of the rule cannot quietly start inventing anchors. If you need to re-confirm the rule after a heading rename, ask GitHub directly:
+
+```bash
+gh api repos/marius-bughiu/Celerity/contents/docs/api/collections.md \
+  -H "Accept: application/vnd.github.html" | grep -oE 'id="user-content-[a-z0-9-]*"'
+```
+
 ### Never link to a repeated heading's generated anchor
 
-GitHub tells repeated headings apart by numbering them: the second `### Measured` in a file is `#measured-1`, the third `#measured-2`, and so on. **Linking to one of those is banned, and the script fails the build on it.** The anchor resolves — that is the whole problem. It is bound to a position rather than to a heading, so inserting one more `### Measured` above it silently moves every link below onto the wrong collection's table, and nothing in review or CI notices. That is not hypothetical: all five `#measured-N` links in the API reference had drifted onto the wrong collection's benchmarks before the rule existed ([#409](https://github.com/marius-bughiu/Celerity/issues/409)).
+GitHub tells repeated headings apart by numbering them: the second `### Measured` in a file is `#measured-1`, the third `#measured-2`, and so on. **Linking to one of those is banned, and the script fails the build on it.** The anchor resolves — that is the whole problem. It is bound to a position rather than to a heading, so inserting one more `### Measured` above it silently moves every link below onto the wrong collection's table, in a diff that touches none of them. That is not hypothetical: all five `#measured-N` links in the API reference had drifted onto the wrong collection's benchmarks before the rule existed ([#409](https://github.com/marius-bughiu/Celerity/issues/409)).
 
 Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you need to link to one, give it an anchor of its own and point at that:
 
@@ -154,13 +161,6 @@ Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you
 ```
 
 An id you wrote is stable because nothing counts it. `--list` marks every generated anchor `(positional — do not link)` so you can tell the two apart at a glance.
-
-`--self-test` pins the slug rule itself against ids GitHub actually rendered, so a rewrite of the rule cannot quietly start inventing anchors. If you need to re-confirm the rule after a heading rename, ask GitHub directly:
-
-```bash
-gh api repos/marius-bughiu/Celerity/contents/docs/api/collections.md \
-  -H "Accept: application/vnd.github.html" | grep -oE 'id="user-content-[a-z0-9-]*"'
-```
 
 ## Constant naming
 
