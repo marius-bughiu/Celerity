@@ -3691,7 +3691,7 @@ the cache is re-warmed. That is the ordinary shape of a table scan, a backfill, 
 cache with steady-state traffic. A frequency-ordered cache protects what has proven popular from that,
 and the guarantee is worth stating precisely, because it is **conditional**.
 
-**An entry used more than once survives a scan of any length — at most one of them is lost.** A
+**A scan of any length costs at most one entry that has been used more than once.** A
 one-shot scan key arrives at frequency 1, so it is outranked by anything read even twice, and each cold
 key is dropped by the next cold key rather than by a popular entry. The "at most one" is the boundary
 case: if the cache is full and *nothing* is at frequency 1 when the scan begins, the first cold key has
@@ -3865,9 +3865,9 @@ Product GetProduct(long productId)
 
 // The batch scan touches every id exactly once, so each scanned product enters at frequency 1 and is
 // evicted by the next one rather than by a popular product. Every product the interactive traffic has
-// requested more than once outranks the scan and survives it; at most one of them is lost, and only if
-// the cache was full with nothing at frequency 1 when the scan began. A product served exactly once is
-// at the scan's own frequency and goes with it.
+// requested more than once outranks the scan, and the whole scan costs at most one of them — one only
+// if the cache was full with nothing at frequency 1 when it began, none if there was spare room. A
+// product served exactly once is at the scan's own frequency and goes with it.
 foreach (long id in AllProductIds())
     _ = GetProduct(id);
 

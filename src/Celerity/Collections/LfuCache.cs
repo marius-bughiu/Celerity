@@ -30,7 +30,7 @@ namespace Celerity.Collections;
 /// worth stating precisely because it is <b>conditional</b>:
 /// </para>
 /// <para>
-/// <b>An entry used more than once survives a scan of any length — at most one of them is lost.</b>
+/// <b>A scan of any length costs at most one entry that has been used more than once.</b>
 /// A one-shot scan key arrives at frequency 1, so it is outranked by anything read even twice, and
 /// each cold key is dropped by the next cold key rather than by a popular entry. The "at most one" is
 /// the boundary: if the cache is full and <i>nothing</i> is at frequency 1 when the scan starts, the
