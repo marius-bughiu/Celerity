@@ -42,9 +42,10 @@ namespace Celerity.Collections;
 /// never read again sits at exactly the frequency a scan key arrives at, so only the recency tie-break
 /// separates them — and the resident is the older of the two, so it is taken first. A scan will
 /// evict every such entry. That is not a defect in the policy, it is the policy: LFU protects what has
-/// demonstrated reuse, and an entry used exactly once has demonstrated none. What it buys you is that
-/// the popular set is not collateral damage, which under LRU it always is — an LRU loses its
-/// <i>entire</i> working set to the same scan, however hot those entries were.
+/// demonstrated reuse, and an entry never read after its insert has demonstrated none. What it buys
+/// you is the bound above — the popular set gives up <i>at most one</i> entry to a scan, where under
+/// LRU it is collateral damage in full: an LRU loses its <i>entire</i> working set to the same scan,
+/// however hot those entries were.
 /// </para>
 /// <para>
 /// <b>Structure.</b> Entries live in <i>frequency buckets</i> — one bucket per distinct use count

@@ -3702,9 +3702,10 @@ second cold key onward there always is one. With spare room the cost is zero.
 never read again sits at exactly the frequency a scan key arrives at, so the only thing separating them
 is the recency tie-break — and the resident is the older of the two, so it goes first. A scan evicts
 every such entry. That is not a defect in the policy, it *is* the policy: LFU protects what has
-demonstrated reuse, and an entry used exactly once has demonstrated none. What you get in exchange is
-that the popular set is never collateral damage, which under an LRU it always is — the same scan costs
-an LRU its *entire* working set, however hot those entries were.
+demonstrated reuse, and an entry never read after its insert has demonstrated none. What you get in
+exchange is the bound above — the popular set gives up *at most one* entry to a scan, where under an
+LRU it is collateral damage in full: the same scan costs an LRU its *entire* working set, however hot
+those entries were.
 
 The idiomatic .NET LFU pairs a `Dictionary` from key to its `(value, frequency, last-use stamp)`
 triple with a `SortedSet` over that triple, whose minimum is the eviction victim. That is `O(log n)`
