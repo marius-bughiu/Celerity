@@ -133,7 +133,7 @@ The trap is that GitHub slugs a heading by lowercasing its **rendered** text and
 
 The doubled `t` in the first two rows is `…Set` meeting `T` once the `<` between them is deleted — and it happens whether the generic is entity-encoded or written with bare angle brackets, since bare `<T, THasher>` is not a valid HTML tag and renders as text. The doubled dash in the third row is the arrow vanishing between two spaces. None of the three is what anyone writes by hand.
 
-[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to a repeated heading's positional anchor. Don't hand-write an anchor — ask the script:
+[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to any anchor a repeated heading generates. Never *guess* a heading's anchor — ask the script:
 
 ```bash
 node scripts/check_doc_anchors.js --list    # every anchor each file defines
@@ -150,9 +150,11 @@ gh api repos/marius-bughiu/Celerity/contents/docs/api/collections.md \
 
 ### Never link to a repeated heading's generated anchor
 
-GitHub tells repeated headings apart by numbering them: the second `### Measured` in a file is `#measured-1`, the third `#measured-2`, and so on. **Linking to one of those is banned, and the script fails the build on it.** The anchor resolves — that is the whole problem. It is bound to a position rather than to a heading, so inserting one more `### Measured` above it silently moves every link below onto the wrong collection's table, in a diff that touches none of them. That is not hypothetical: all five `#measured-N` links in the API reference had drifted onto the wrong collection's benchmarks before the rule existed ([#409](https://github.com/marius-bughiu/Celerity/issues/409)).
+GitHub tells repeated headings apart by numbering them: where `### Measured` occurs five times, the ids are `#measured`, `#measured-1` … `#measured-4`. **Linking to any of them is banned, and the script fails the build on it.** The anchor resolves — that is the whole problem. Each id names a *position*, not a heading, so inserting one more `### Measured` above renames every one of them downward and silently moves the links onto the wrong collection's table, in a diff that touches none of them. That is not hypothetical: all five `#measured-N` links in the API reference had drifted onto the wrong collection's benchmarks before the rule existed ([#409](https://github.com/marius-bughiu/Celerity/issues/409)).
 
-Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you need to link to one, give it an anchor of its own and point at that:
+Note that the ban covers the **unsuffixed** first occurrence too. `#measured` looks like the stable one and is not: it is first only until something is inserted above it.
+
+Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you need to link to one, this is the one place you *should* hand-write an anchor. Give the heading an id of its own and point at that:
 
 ```markdown
 <a id="measured-timerwheel"></a>
@@ -160,7 +162,7 @@ Repeated headings are fine to *have* — `CHANGELOG.md` is built on them. If you
 ### Measured
 ```
 
-An id you wrote is stable because nothing counts it. `--list` marks every generated anchor `(positional — do not link)` so you can tell the two apart at a glance.
+An id you wrote is stable because nothing counts it — but it has to be **unique**. An `<a id="measured-1">` rescues nothing: the page then carries that id twice, once on your anchor and once on the heading GitHub numbered, and the fragment resolves to whichever comes first in the document. The script rejects that collision for the same reason it rejects the bare `-N`. `--list` marks every generated anchor `(positional — do not link)` so you can tell the two apart at a glance.
 
 ## Constant naming
 

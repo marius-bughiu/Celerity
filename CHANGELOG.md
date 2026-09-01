@@ -10,7 +10,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- **`scripts/check_doc_anchors.js` now rejects links to a repeated heading's positional anchor** — the `-1`, `-2`, ... suffix GitHub generates to tell repeats apart. Such a link resolves, so the guard used to pass it, and it retargets silently the moment another repeat is inserted above it. Repeated headings are still fine to have; link to a hand-written `<a id>` instead. `--list` now marks the positional ones.
+- **`scripts/check_doc_anchors.js` now rejects links to any anchor a repeated heading generates** — `#measured`, `#measured-1`, `#measured-2` and the rest. Such a link resolves, so the guard used to pass it, and every one of those ids names a position rather than a heading: one more repeat inserted above renames them all downward, the unsuffixed first included. Repeated headings are still fine to have; link to a unique hand-written `<a id>` instead. `--list` now marks the generated ones.
 
 - **The benchmark suite runs on merges to `main` instead of on every pull request.** It was by a wide margin the largest consumer of this repository's CI minutes — a same-runner A/B against `main` over eight runners, re-paid on every review commit. A regression is now read off [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at the merge commit that introduced it, and *Actions → Benchmarks → Run workflow* measures any ref on demand. The per-PR comparison comment is gone with it. The relevance gate that skips a run whose diff cannot move a measured number now applies to `main` as well, so a documentation or comment-only commit costs nothing. No change to the shipped packages.
 
