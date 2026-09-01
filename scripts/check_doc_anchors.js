@@ -235,10 +235,17 @@ function parseMarkdown(text) {
     }
   });
 
+  // An id is stable only when it is the slug of its own heading's text *and* no other
+  // heading wanted that slug. Two ways to fail: the heading repeats, so every id in the
+  // group is a position — or the heading is unique but its slug was already taken by
+  // someone else's repeat, so GitHub renumbered this one and will renumber it again if
+  // that collision goes away.
   const positional = new Map();
   for (const [base, ids] of groups) {
-    if (ids.length < 2) continue;
-    ids.forEach((id, index) => positional.set(id, { base, index, count: ids.length }));
+    ids.forEach((id, index) => {
+      if (ids.length < 2 && id === base) return;
+      positional.set(id, { base, index, count: ids.length, renumbered: id !== base });
+    });
   }
   return { anchors, positional, links };
 }
@@ -274,6 +281,11 @@ function collectMarkdown() {
 const POSITIONAL_PREFIX = 'positional anchor';
 
 function positionalReason(fragment, where, group) {
+  if (group.count < 2) {
+    return `${POSITIONAL_PREFIX}: #${fragment} in ${where} is a renumbering — this `
+      + `heading's own slug is "#${group.base}", which another heading had already `
+      + 'taken, so the number moves if that one does';
+  }
   const ordinal = `${group.index + 1} of ${group.count}`;
   return `${POSITIONAL_PREFIX}: #${fragment} is heading ${ordinal} sharing the slug `
     + `"#${group.base}" in ${where} — GitHub numbers repeats by position, so this `
@@ -376,6 +388,11 @@ const RULE_FOUR_CASES = [
     name: 'a cross-file link to a unique heading still passes',
     files: { 'a.md': '[x](b.md#solo)\n', 'b.md': '## Solo\n' },
     expect: [],
+  },
+  {
+    name: 'a heading renumbered around someone else\'s repeat is unstable too',
+    files: { 'a.md': '## Foo\n## Foo\n## Foo 1\n\n[x](#foo-1-1)\n' },
+    expect: ['a.md:5 positional'],
   },
   {
     name: 'a missing anchor is still a missing anchor',
