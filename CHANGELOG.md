@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`Rope`** in `Celerity.Collections` — a **rope**: a balanced tree of bounded character runs, so the cost of an edit stops scaling with the document: a short one is `O(log n + ChunkSize)` amortized, where a contiguous buffer charges `O(n)` on every edit whatever its size. The library's only *mutable* text type; `Trie`, `SuffixArray` and `AhoCorasick` all search text that does not change. `StringBuilder` is a chunk list whose head is the *end*, which makes appending excellent and every other operation linear in the **document**, and it has no split or join at any cost. On a round of scattered insert/remove pairs this measures **98x** `StringBuilder` at a million characters and **1.49x** at ten thousand, with split-and-rejoin cycles hundreds of times faster; the measured edit round allocates nothing, because a short insertion into a leaf with room is a `memmove` and no more. **Not a general `StringBuilder` replacement**: appending is **36.8x slower**, random access **7.1x**, `ToString()` 1.68x, and memory is about 2.7 bytes per character. Closes [#404](https://github.com/marius-bughiu/Celerity/issues/404).
+
 ### Changed
 
 - **The benchmark suite runs on merges to `main` instead of on every pull request.** It was by a wide margin the largest consumer of this repository's CI minutes — a same-runner A/B against `main` over eight runners, re-paid on every review commit. A regression is now read off [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at the merge commit that introduced it, and *Actions → Benchmarks → Run workflow* measures any ref on demand. The per-PR comparison comment is gone with it. The relevance gate that skips a run whose diff cannot move a measured number now applies to `main` as well, so a documentation or comment-only commit costs nothing. No change to the shipped packages.
