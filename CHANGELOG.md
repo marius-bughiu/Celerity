@@ -4,9 +4,11 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **Five links in the API reference pointed at the wrong collection's benchmark table.** `SuffixArray`'s "see Measured" landed on `CompressedGraph`, and `AhoCorasick`'s and `TimerWheel`'s on `SuffixArray`. Each `### Measured` section now carries a named anchor, so a link says which table it means. Closes [#409](https://github.com/marius-bughiu/Celerity/issues/409).
+- **`Rope`** in `Celerity.Collections` — a **rope**: a balanced tree of bounded character runs, so the cost of an edit stops scaling with the document: a short one is `O(log n + ChunkSize)` amortized, where a contiguous buffer charges `O(n)` on every edit whatever its size. The library's only *mutable* text type; `Trie`, `SuffixArray` and `AhoCorasick` all search text that does not change. `StringBuilder` is a chunk list whose head is the *end*, which makes appending excellent and every other operation linear in the **document**, and it has no split or join at any cost. On a round of scattered insert/remove pairs this measures **98x** `StringBuilder` at a million characters and **1.49x** at ten thousand, with split-and-rejoin cycles hundreds of times faster; the measured edit round allocates nothing, because a short insertion into a leaf with room is a `memmove` and no more. **Not a general `StringBuilder` replacement**: appending is **36.8x slower**, random access **7.1x**, `ToString()` 1.68x, and memory is about 2.7 bytes per character. Closes [#404](https://github.com/marius-bughiu/Celerity/issues/404).
+
+- **`LfuCache<TKey, TValue, THasher>`** in `Celerity.Collections` — a fixed-capacity **least-frequently-used cache**, the frequency-ordered sibling of `LruCache`. Reach for it when a batch job or backfill sweeps a cache that interactive traffic depends on: an LRU loses its whole working set to that scan, while here the whole scan costs at most one entry that has been read more than once. Entries never read after insertion are not protected, and frequencies never age — `LruCache` stays the right pick when recency is what matters. Enumerator and frequency semantics differ from `LruCache`; see [the API reference](docs/api/collections.md#lfucachetkey-tvalue-thasher). Closes [#407](https://github.com/marius-bughiu/Celerity/issues/407).
 
 ### Changed
 
@@ -17,6 +19,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Removed
 
 - **The package-validation gate no longer fails `pack` on a breaking API change.** Its baseline was a hand-bumped version that needed a follow-up commit after every release plus a CI job of its own to check that the bump had happened — three moving parts guarding a surface where a break is nearly always deliberate. Breaking changes continue to be called out in this changelog and in [docs/migration.md](docs/migration.md), source- and binary-breaking distinguished, and judged in review. The package-metadata and release-notes gates are untouched. No change to the shipped packages.
+
+### Fixed
+
+- **Five links in the API reference pointed at the wrong collection's benchmark table.** `SuffixArray`'s "see Measured" landed on `CompressedGraph`, and `AhoCorasick`'s and `TimerWheel`'s on `SuffixArray`. Each `### Measured` section now carries a named anchor, so a link says which table it means. Closes [#409](https://github.com/marius-bughiu/Celerity/issues/409).
 
 ## [3.0.1] - 2026-08-29
 

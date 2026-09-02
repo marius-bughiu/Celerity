@@ -235,6 +235,47 @@ public class EnumeratorInvalidationAndClearCoverageTests
         Assert.Throws<InvalidOperationException>(() => second.MoveNext());
     }
 
+    [Fact]
+    public void RopeEnumeratorReset_ShouldThrowInvalidOperationException_WhenRopeModified()
+    {
+        var rope = new Rope("abcdefghij", Rope.MinChunkSize);
+
+        Rope.Enumerator enumerator = rope.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        rope.Insert(3, "!");
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        Rope.Enumerator second = rope.GetEnumerator();
+        rope.Remove(0, 2);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    /// <summary>
+    /// The rope's own deliberate exception to the rule, alongside <see cref="SpatialGrid{TValue}"/>'s
+    /// <c>Move</c> and <see cref="TimerWheel{TValue}"/>'s empty advance: assigning through the indexer
+    /// replaces one code unit inside one leaf. No leaf splits, no node is relinked and no chunk boundary
+    /// moves, so the sequence an enumerator is walking is unchanged — the same call this library's
+    /// dictionaries make when an indexer overwrites an existing key.
+    /// </summary>
+    [Fact]
+    public void RopeIndexerSet_ShouldNotBumpTheVersion_BecauseTheSequenceIsUnchanged()
+    {
+        var rope = new Rope("abcdefghij", Rope.MinChunkSize);
+
+        Rope.Enumerator enumerator = rope.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        rope[6] = 'Z';
+
+        enumerator.Reset();
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal('a', enumerator.Current);
+        Assert.Equal("abcdefZhij", rope.ToString());
+    }
+
     /// <summary>
     /// The wheel's own deliberate exception to the rule, alongside <see cref="SpatialGrid{TValue}"/>'s
     /// <c>Move</c>: an advance that fires nothing can still <i>relocate</i> timers, cascading a level-1 slot's
@@ -302,6 +343,28 @@ public class EnumeratorInvalidationAndClearCoverageTests
         Assert.Throws<InvalidOperationException>(() => second.MoveNext());
     }
 
+    [Fact]
+    public void LfuCacheEnumeratorReset_ShouldThrowInvalidOperationException_WhenCacheModified()
+    {
+        var cache = new LfuCache<int, string, Int32WangHasher>(4);
+        cache.Add(1, "a");
+        cache.Add(2, "b");
+
+        var enumerator = cache.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        cache.AddOrUpdate(3, "c");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        // Unlike LruCache, a plain read is enough to invalidate: raising a frequency always moves the
+        // entry to a different bucket, so there is no already-at-the-front exemption.
+        var second = cache.GetEnumerator();
+        Assert.True(cache.TryGet(1, out _));
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
     // ---- Target B: Clear() / capacity early-outs and reference-clearing arms ------------------------
 
     [Fact]
@@ -357,6 +420,26 @@ public class EnumeratorInvalidationAndClearCoverageTests
     public void LruCacheClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
     {
         var cache = new LruCache<int, string, Int32WangHasher>(4);
+        var enumerator = cache.GetEnumerator();
+
+        cache.Clear();
+
+        Assert.Equal(0, cache.Count);
+        Assert.Equal(4, cache.Capacity);
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(0, seen);
+
+        cache.Add(1, "a");
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
+    public void LfuCacheClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
+    {
+        var cache = new LfuCache<int, string, Int32WangHasher>(4);
         var enumerator = cache.GetEnumerator();
 
         cache.Clear();

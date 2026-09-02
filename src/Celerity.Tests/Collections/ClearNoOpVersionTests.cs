@@ -318,6 +318,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void LfuCacheClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var cache = new LfuCache<int, string, Int32WangHasher>(capacity: 4);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => cache.GetEnumerator(), cache.Clear, () => cache.Count, () => cache.Add(1, "a"));
+    }
+
+    [Fact]
     public void IndexedPriorityQueueClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var queue = new IndexedPriorityQueue<int, int, Int32WangHasher>();
@@ -348,6 +356,16 @@ public class ClearNoOpVersionTests
         var wheel = new TimerWheel<int>(4, 2);
         AssertClearBumpsVersionOnlyWhenItRemovesSomething(
             () => wheel.GetEnumerator(), wheel.Clear, () => wheel.Count, () => wheel.Schedule(3, 1));
+    }
+
+    [Fact]
+    public void RopeClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        // A rope's "count" is its character count; the element shape is char rather than an entry, which is
+        // exactly the variation the boxed-IEnumerator helper exists to absorb.
+        var rope = new Rope();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => rope.GetEnumerator(), rope.Clear, () => rope.Length, () => rope.Append("text"));
     }
 
     // ---- The two documented exceptions ------------------------------------------------------------
