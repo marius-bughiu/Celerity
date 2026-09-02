@@ -45,6 +45,7 @@ internal class Program
         typeof(CountMinSketchBenchmark),
         typeof(TopKSketchBenchmark),
         typeof(LruCacheBenchmark),
+        typeof(LfuCacheBenchmark),
         typeof(DequeBenchmark),
         typeof(DisjointSetBenchmark),
         typeof(IndexedPriorityQueueBenchmark),

@@ -556,6 +556,42 @@ void Check(bool condition, string message)
     Check(seeded.Count == 2 && !seeded.ContainsKey(1) && seeded.ContainsKey(3), "LruCache source ctor evicts oldest");
 }
 
+// LfuCache — fixed-capacity least-frequently-used cache. Exercise put/get, the frequency
+// accounting, frequency-ordered eviction with the least-recently-used tie-break, the
+// scan-resistance the type exists for, peek/remove, the out-of-band default/zero key, and the
+// most-frequently-used-first struct enumerator.
+{
+    var cache = new LfuCache<int, string, Int32WangNaiveHasher>(3);
+    cache[0] = "zero"; // out-of-band default key
+    cache[1] = "one";
+    cache[2] = "two";
+    Check(cache.Count == 3 && cache[0] == "zero", "LfuCache put/get + default key");
+
+    // The indexer get above already counted as a use, so 0 sits at frequency 2 while 1 and 2 are
+    // still at 1. Inserting a fourth key evicts 1 — the oldest of the two singletons — not 0.
+    Check(cache.TryGetFrequency(0, out long zeroUses) && zeroUses == 2, "LfuCache TryGetFrequency");
+    cache[3] = "three";
+    Check(!cache.ContainsKey(1) && cache.ContainsKey(0), "LfuCache evicts LFU, spares read");
+
+    Check(cache.TryPeek(0, out string? peeked) && peeked == "zero", "LfuCache TryPeek");
+    // Surviving: 0 at frequency 2, then 2 and 3 at frequency 1 with 2 the older of them.
+    Check(cache.TryPeekLeastFrequentlyUsed(out int lfuKey, out _) && lfuKey == 2, "LfuCache peek LFU");
+    Check(cache.TryPeekMostFrequentlyUsed(out int mfuKey, out _) && mfuKey == 0, "LfuCache peek MFU");
+    Check(cache.Remove(2, out string? removed) && removed == "two", "LfuCache Remove out value");
+
+    // 0 (frequency 2) leads 3 (frequency 1).
+    var order = new List<int>();
+    foreach (var kvp in cache) order.Add(kvp.Key);
+    Check(order.Count == 2 && order[0] == 0 && order[1] == 3, "LfuCache MFU-first enumeration");
+
+    // The property the type exists for: a scan the length of the cache must not evict the hot key.
+    var scan = new LfuCache<int, int, Int32WangNaiveHasher>(4);
+    scan[100] = 1;
+    for (int i = 0; i < 5; i++) _ = scan[100];   // 100 reaches frequency 6
+    for (int k = 0; k < 12; k++) scan[k] = k;    // a stream of one-shot keys, 3x the capacity
+    Check(scan.ContainsKey(100), "LfuCache hot key survives a scan");
+}
+
 // Deque — growable double-ended queue over a circular buffer. Exercise both-ends push/pop,
 // the front-relative indexer, wrap-around growth, Try* peeks, the front-to-back struct
 // enumerator, and the IEnumerable constructor.
