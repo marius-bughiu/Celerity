@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 //
-// Fails when a markdown link in this repository points at an anchor that does not exist.
+// Fails when a markdown link in this repository points at an anchor that does not exist,
+// or at one that exists only by position and will not stay where it is.
 //
 // A broken intra-document link is invisible in review: the markdown is well-formed, the
 // diff looks right, and the only symptom is that clicking the link scrolls nowhere. The
@@ -19,7 +20,24 @@
 //   1. every same-file `](#fragment)` resolves to a heading slug or an explicit HTML
 //      anchor in that file;
 //   2. every relative `](other.md#fragment)` resolves in the file it names;
-//   3. every relative link target that is not a URL exists on disk.
+//   3. every relative link target that is not a URL exists on disk;
+//   4. no link points at an anchor that can be renumbered out from under it. GitHub
+//      tells repeated headings apart by counting them — `#measured`, `#measured-1`,
+//      `#measured-2` — so those ids name positions, not headings, and inserting one
+//      more repeat *above* renames every one of them downward, the unsuffixed first
+//      included. The same is true of an id merely *shaped* like `#base-<n>` when some
+//      heading slugs to `#base`: it sits on that heading's numbering line, and enough
+//      further `#base` repeats — n of them, since the count starts at one — get numbered
+//      onto it and take it from whoever holds it. Only a suffix the disambiguator can
+//      actually produce counts: it starts at `-1` and never pads, so `#foo-0` and
+//      `#foo-01` are on no numbering line at all.
+//      Beyond that, an id that *two* elements answer to is decided by document order
+//      rather than by which one meant it, so a link to it is rejected as well.
+//      Repeated headings are fine to *have* — CHANGELOG.md is built on them. This bans
+//      linking *to* one. Give the target a hand-written `<a id>` of its own — a *unique*
+//      one: an `<a id="measured-1">` that collides with a generated id renders a second
+//      element carrying that id, and the fragment still resolves to whichever comes
+//      first in the document, so a colliding anchor rescues nothing.
 //
 // The slug rule below mirrors github-slugger, which is what GitHub itself renders with.
 // It was checked against the live rendering rather than inferred; to re-confirm it after
@@ -58,12 +76,24 @@ const SKIP_DIRS = new Set([
 
 const SLUG_STRIP = /[^\p{L}\p{N}\p{M} _-]/gu;
 
+// The shape GitHub's disambiguator can produce: `-1`, `-2`, ... — it starts counting at
+// one and never pads, so `#foo-0` and `#foo-01` are not on any heading's numbering line
+// and stay perfectly good targets.
+const GENERATED_SUFFIX = /^(.*)-([1-9]\d*)$/;
+
 function slugify(text) {
   return text.toLowerCase().trim().replace(SLUG_STRIP, '').replace(/ /g, '-');
 }
 
 // Repeated headings disambiguate with a `-1`, `-2`, ... suffix, counted per document.
 // CHANGELOG.md leans on this heavily: every release repeats `### Added`.
+//
+// `base` is the slug before disambiguation, which is what groups the *repeats* together.
+// It matters that this is the pre-suffix slug rather than a regex strip of a trailing
+// `-N`: a heading that slugs to `foo-1` on its own text — `### Foo 1` — has base `foo-1`
+// and is in no group with `### Foo`. That settles which headings are repeats of each
+// other and nothing more. Whether `#foo-1` is *linkable* is a separate question, decided
+// below: it is on `#foo`'s numbering line whether or not it was generated from it.
 function makeSlugger() {
   const occurrences = Object.create(null);
   return function slug(text) {
@@ -74,7 +104,7 @@ function makeSlugger() {
       result = `${original}-${occurrences[original]}`;
     }
     occurrences[result] = 0;
-    return result;
+    return { slug: result, base: original };
   };
 }
 
@@ -172,17 +202,32 @@ function blankInlineCode(line) {
 }
 
 function parseFile(file) {
-  const raw = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-  const lines = blankFences(raw);
+  return parseMarkdown(fs.readFileSync(file, 'utf8'));
+}
+
+function parseMarkdown(text) {
+  const lines = blankFences(text.split(/\r?\n/));
   const slug = makeSlugger();
   const anchors = new Set();
+  const claimants = new Map(); // id -> how many elements answer to it
+  const groups = new Map(); // base slug -> the ids GitHub numbered off it, in order
   const links = [];
+
+  const claim = (id) => {
+    anchors.add(id);
+    claimants.set(id, (claimants.get(id) ?? 0) + 1);
+  };
 
   lines.forEach((line, index) => {
     const heading = /^\s{0,3}#{1,6}\s+(.*?)\s*$/.exec(line);
     if (heading) {
       const text = renderHeadingText(heading[1].replace(/\s+#+\s*$/, ''));
-      if (text) anchors.add(slug(text));
+      if (text) {
+        const id = slug(text);
+        claim(id.slug);
+        if (!groups.has(id.base)) groups.set(id.base, []);
+        groups.get(id.base).push(id.slug);
+      }
     }
 
     // Headings keep their code spans (the content renders and slugs); everything below
@@ -191,9 +236,9 @@ function parseFile(file) {
 
     // A hand-written `<a id>` / `<a name>` is an anchor too, and setext-style or HTML
     // headings are the reason to look for one.
-    const explicit = /<a\s[^>]*(?:id|name)\s*=\s*["']([^"']+)["']/gi;
-    for (let m = explicit.exec(prose); m; m = explicit.exec(prose)) {
-      anchors.add(m[1]);
+    const declared = /<a\s[^>]*(?:id|name)\s*=\s*["']([^"']+)["']/gi;
+    for (let m = declared.exec(prose); m; m = declared.exec(prose)) {
+      claim(m[1]);
     }
 
     // Inline links, reference definitions and raw `<a href>` all point somewhere.
@@ -210,7 +255,36 @@ function parseFile(file) {
     }
   });
 
-  return { anchors, links };
+  // An id is stable only when nothing can take it away. Two ways to fail:
+  //
+  //   repeat    — the heading text occurs more than once, so every id in the group is a
+  //               position: one more repeat above renames them all downward, unsuffixed
+  //               first included.
+  //   contested — the id has the shape `<base>-<n>` for a heading base that exists in
+  //               this document, so it is on the numbering line of *that* heading even
+  //               though it was not generated from it. `## Foo` / `## Foo 1` / `## Foo`
+  //               slugs to `foo` / `foo-1` / `foo-2`; `#foo-1` belongs to `## Foo 1`
+  //               today, and inserting one more `## Foo` above hands it to that instead
+  //               and renumbers `## Foo 1` to `foo-1-1`. Nothing about `## Foo 1`'s own
+  //               group says so — the collision is with a different group entirely.
+  const positional = new Map();
+  for (const [base, ids] of groups) {
+    if (ids.length < 2) continue;
+    ids.forEach((id, index) => positional.set(id, { kind: 'repeat', base, index, count: ids.length }));
+  }
+  for (const id of anchors) {
+    if (positional.has(id)) continue;
+    const suffix = GENERATED_SUFFIX.exec(id);
+    if (suffix && groups.has(suffix[1])) {
+      positional.set(id, { kind: 'contested', base: suffix[1], nth: Number(suffix[2]) });
+    }
+  }
+
+  // An id two things answer to is decided by document order, not by which one meant it.
+  for (const [id, count] of claimants) {
+    if (count > 1 && !positional.has(id)) positional.set(id, { kind: 'duplicate', count });
+  }
+  return { anchors, positional, links };
 }
 
 // ---- Walking the tree ---------------------------------------------------------------
@@ -239,6 +313,26 @@ function collectMarkdown() {
     files = walk('.', []);
   }
   return files.map((f) => f.split(path.sep).join('/').replace(/^\.\//, '')).sort();
+}
+
+const POSITIONAL_PREFIX = 'positional anchor';
+
+function positionalReason(fragment, where, group) {
+  if (group.kind === 'duplicate') {
+    return `${POSITIONAL_PREFIX}: #${fragment} is claimed by ${group.count} elements in `
+      + `${where} — GitHub emits the id on each of them, and the link resolves to whichever `
+      + 'the document reaches first rather than to the one that meant it';
+  }
+  if (group.kind === 'contested') {
+    const more = group.nth === 1 ? 'one more heading' : `${group.nth} more headings`;
+    return `${POSITIONAL_PREFIX}: #${fragment} sits on the numbering line of "#${group.base}" `
+      + `in ${where} — ${more} slugging to "#${group.base}" would be numbered onto this id `
+      + 'and take it, whoever holds it now';
+  }
+  const ordinal = `${group.index + 1} of ${group.count}`;
+  return `${POSITIONAL_PREFIX}: #${fragment} is heading ${ordinal} sharing the slug `
+    + `"#${group.base}" in ${where} — GitHub numbers repeats by position, so this `
+    + 'retargets when another is inserted above it';
 }
 
 function isExternal(target) {
@@ -276,38 +370,131 @@ function selfTest() {
 
   // Repeated headings disambiguate rather than collide — CHANGELOG.md depends on it.
   const slug = makeSlugger();
-  const repeats = ['Added', 'Added', 'Added'].map(slug).join(' ');
+  const repeats = ['Added', 'Added', 'Added'].map((t) => slug(t).slug).join(' ');
   if (repeats !== 'added added-1 added-2') {
     failures.push(`  repeated headings\n      expected "added added-1 added-2", got "${repeats}"`);
   }
 
+  for (const failure of ruleFourCases()) failures.push(failure);
+
   if (failures.length > 0) {
-    console.error('error: the slug rule no longer matches GitHub\'s rendering.\n');
+    console.error('error: the guard no longer behaves as pinned.\n');
     console.error(failures.join('\n'));
     process.exit(1);
   }
-  console.log(`ok: ${SELF_TEST_CASES.length + 1} slug case(s) pinned.`);
+  console.log(`ok: ${SELF_TEST_CASES.length + 1 + RULE_FOUR_CASES.length} case(s) pinned.`);
 }
 
-function main() {
-  if (process.argv.includes('--self-test')) {
-    selfTest();
-    return;
-  }
+// ---- Rule 4, pinned end to end ------------------------------------------------------
+// The slug cases above prove the ids; these prove the *verdicts*, over whole documents
+// run through the real `parseMarkdown` and `checkLinks`. Pinning the rule at the slugger
+// alone would stay green if the wiring in either were deleted, which is most of what
+// there is to get wrong here.
 
-  const files = collectMarkdown();
+const RULE_FOUR_CASES = [
+  {
+    name: 'a link to a generated repeat is rejected',
+    files: { 'a.md': '## Dup\n## Dup\n\n[x](#dup-1)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
+    name: 'a link to the *unsuffixed* first of a repeated group is rejected too',
+    files: { 'a.md': '## Dup\n## Dup\n\n[x](#dup)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
+    name: 'a heading that occurs once is a stable target',
+    files: { 'a.md': '## Solo\n## Other\n\n[x](#solo)\n' },
+    expect: [],
+  },
+  {
+    name: 'an authored suffix is stable when nothing else slugs to its base',
+    files: { 'a.md': '## Measured 1\n## Other\n\n[x](#measured-1)\n' },
+    expect: [],
+  },
+  {
+    name: 'an authored suffix is contested once a heading slugs to its base',
+    files: { 'a.md': '## Measured\n## Measured 1\n\n[x](#measured-1)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
+    name: 'the collision can come from a group the id is not in',
+    files: { 'a.md': '## Foo\n## Foo 1\n## Foo\n\n[x](#foo-1)\n' },
+    expect: ['a.md:5 positional'],
+  },
+  {
+    name: 'a unique authored anchor rescues a repeated heading',
+    files: { 'a.md': '## Dup\n<a id="dup-second"></a>\n\n## Dup\n\n[x](#dup-second)\n' },
+    expect: [],
+  },
+  {
+    name: 'an authored anchor colliding with a generated id rescues nothing',
+    files: { 'a.md': '## Dup\n## Dup\n<a id="dup-1"></a>\n\n[x](#dup-1)\n' },
+    expect: ['a.md:5 positional'],
+  },
+  {
+    name: 'the cross-file path applies rule 4 as well',
+    files: { 'a.md': '[x](b.md#dup-1)\n', 'b.md': '## Dup\n## Dup\n' },
+    expect: ['a.md:1 positional'],
+  },
+  {
+    name: 'a cross-file link to a unique heading still passes',
+    files: { 'a.md': '[x](b.md#solo)\n', 'b.md': '## Solo\n' },
+    expect: [],
+  },
+  {
+    name: 'a heading renumbered around someone else\'s repeat is unstable too',
+    // `## Foo` twice pushes `## Foo 1` off `#foo-1` and onto `#foo-1-1`, which is in turn
+    // on the numbering line of the base `foo-1` that `## Foo 1` still wants.
+    files: { 'a.md': '## Foo\n## Foo\n## Foo 1\n\n[x](#foo-1-1)\n' },
+    expect: ['a.md:5 positional'],
+  },
+  {
+    name: 'a suffix GitHub cannot generate is not on any numbering line — zero',
+    files: { 'a.md': '## Foo\n## Foo 0\n\n[x](#foo-0)\n' },
+    expect: [],
+  },
+  {
+    name: '...nor a padded one, since the disambiguator never pads',
+    files: { 'a.md': '## Foo\n## Foo 01\n\n[x](#foo-01)\n' },
+    expect: [],
+  },
+  {
+    name: 'a heading and an authored anchor that answer to the same id are both claimants',
+    files: { 'a.md': '## Solo\n<a id="solo"></a>\n\n[x](#solo)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
+    name: 'two authored anchors sharing an id are rejected on the same footing',
+    files: { 'a.md': '<a id="x"></a>\n<a id="x"></a>\n\n[y](#x)\n' },
+    expect: ['a.md:4 positional'],
+  },
+  {
+    name: 'a missing anchor is still a missing anchor',
+    files: { 'a.md': '## Dup\n## Dup\n\n[x](#dup-7)\n' },
+    expect: ['a.md:4 missing'],
+  },
+];
 
-  const parsed = new Map();
-  for (const file of files) parsed.set(file, parseFile(file));
-
-  if (process.argv.includes('--list')) {
-    for (const file of files) {
-      console.log(`${file}:`);
-      for (const anchor of parsed.get(file).anchors) console.log(`  #${anchor}`);
+function ruleFourCases() {
+  const failures = [];
+  for (const { name, files, expect } of RULE_FOUR_CASES) {
+    const names = Object.keys(files);
+    const parsed = new Map(names.map((f) => [f, parseMarkdown(files[f])]));
+    const problems = checkLinks(names, parsed, (f) => Object.hasOwn(files, f));
+    const actual = problems.map(
+      (p) => `${p.file}:${p.line} ${p.reason.startsWith(POSITIONAL_PREFIX) ? 'positional' : 'missing'}`
+    );
+    if (actual.join(' | ') !== expect.join(' | ')) {
+      failures.push(
+        `  ${name}\n      expected [${expect.join(', ')}], got [${actual.join(', ')}]`
+      );
     }
-    return;
   }
+  return failures;
+}
 
+function checkLinks(files, parsed, exists) {
   const problems = [];
 
   for (const file of files) {
@@ -325,17 +512,24 @@ function main() {
         // A malformed escape is not a percent-encoding; compare the fragment as written.
       }
 
-      if (rawPath === '') {
-        if (fragment && !parsed.get(file).anchors.has(fragment)) {
-          problems.push({ file, line, target, reason: 'no such anchor in this file' });
+      const verdict = (other, where) => {
+        if (!other.anchors.has(fragment)) {
+          return where === 'this file' ? 'no such anchor in this file' : `no such anchor in ${where}`;
         }
+        const group = other.positional.get(fragment);
+        return group ? positionalReason(fragment, where, group) : null;
+      };
+
+      if (rawPath === '') {
+        const reason = fragment ? verdict(parsed.get(file), 'this file') : null;
+        if (reason) problems.push({ file, line, target, reason });
         continue;
       }
 
       const resolved = path.posix.normalize(path.posix.join(dir, rawPath));
       if (resolved.startsWith('..')) continue; // outside the repository; not ours to check
 
-      if (!fs.existsSync(resolved)) {
+      if (!exists(resolved)) {
         problems.push({ file, line, target, reason: `no such file: ${resolved}` });
         continue;
       }
@@ -343,11 +537,38 @@ function main() {
 
       const other = parsed.get(resolved);
       if (!other) continue; // an untracked or skipped markdown file
-      if (!other.anchors.has(fragment)) {
-        problems.push({ file, line, target, reason: `no such anchor in ${resolved}` });
-      }
+
+      const reason = verdict(other, resolved);
+      if (reason) problems.push({ file, line, target, reason });
     }
   }
+
+  return problems;
+}
+
+function main() {
+  if (process.argv.includes('--self-test')) {
+    selfTest();
+    return;
+  }
+
+  const files = collectMarkdown();
+
+  const parsed = new Map();
+  for (const file of files) parsed.set(file, parseFile(file));
+
+  if (process.argv.includes('--list')) {
+    for (const file of files) {
+      console.log(`${file}:`);
+      const { anchors, positional } = parsed.get(file);
+      for (const anchor of anchors) {
+        console.log(`  #${anchor}${positional.has(anchor) ? '   (positional — do not link)' : ''}`);
+      }
+    }
+    return;
+  }
+
+  const problems = checkLinks(files, parsed, (f) => fs.existsSync(f));
 
   if (problems.length > 0) {
     console.error(`error: ${problems.length} broken markdown link(s).\n`);
@@ -360,6 +581,23 @@ function main() {
       'punctuation without substituting a separator, then turn spaces into dashes. Run\n' +
       '`node scripts/check_doc_anchors.js --list` to see the anchors a file actually defines.'
     );
+    if (problems.some((p) => p.reason.startsWith(POSITIONAL_PREFIX))) {
+      console.error(
+        '\nWhen a heading text repeats, GitHub numbers the repeats — `#measured`, `#measured-1`,\n' +
+        '`#measured-2` — and none of those ids belongs to a heading. They belong to positions,\n' +
+        'and one more repeat inserted *above* renames every one of them downward, the\n' +
+        'unsuffixed first included. An id merely shaped like `#base-<n>` is on the same\n' +
+        'line whenever something slugs to `#base`: enough further repeats get numbered onto\n' +
+        'it and take it, even though it was never generated from it.\n' +
+        'Put an anchor of its own on the heading you meant:\n\n' +
+        '    <a id="measured-timerwheel"></a>\n\n' +
+        '    ### Measured\n\n' +
+        'then write `](#measured-timerwheel)`. Make it unique — an `<a id="measured-1">` only\n' +
+        'adds a second element carrying an id GitHub already generated, and the fragment still\n' +
+        'resolves to whichever of the two the document reaches first — which is also why a\n' +
+        'link to any id that two elements answer to is rejected.'
+      );
+    }
     process.exit(1);
   }
 
