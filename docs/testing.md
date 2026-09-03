@@ -60,17 +60,19 @@ The input takes one of two shapes:
 
 The generated domains are deliberately narrow — small key ranges that include `0` and negatives, alphabets of two to six letters, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest.
 
-When a property fails, CsCheck **shrinks** the failing sequence to a minimal reproduction and prints a seed. Replay it by setting the seed:
+When a CsCheck property fails, it **shrinks** the failing sequence to a minimal reproduction and prints a seed. Replay it by setting the seed and filtering to the class that failed — the failure names it, and it may be in either home:
 
 ```bash
 # PowerShell
-$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter CollectionModelPropertyTests
+$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter RankedSetDifferentialTests
 ```
 
 ```bash
 # bash
-CsCheck_Seed='0000LASTpRINTED' dotnet test --filter CollectionModelPropertyTests
+CsCheck_Seed='0000LASTpRINTED' dotnet test --filter RankedSetDifferentialTests
 ```
+
+The seeded suites replay differently: they derive their sequence from a `Random` seed printed with the failure, so the case reproduces exactly but is not reduced — expect to read the whole trace rather than three operations.
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 
