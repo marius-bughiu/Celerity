@@ -85,17 +85,19 @@ The generated domains are deliberately narrow — small key ranges that include 
 
 ### What a failure gives you
 
-Five patterns are in use, and they differ in exactly the way that matters when one goes red — whether you get a reduced counterexample, a replayable seed, or neither. Check which kind you are looking at before hunting for a seed that may not exist.
+Five shapes are in use and they differ in exactly the way that matters when one goes red. **Identify the shape from the file in front of you** — the middle column is the tell — rather than looking your type up in a roster that will drift as suites are added.
 
-| Pattern | Suites | On failure |
+| Shape | How to recognize it | On failure |
 |---|---|---|
-| **Directly generated** — CsCheck generates the operation list or the input itself | `CollectionModelPropertyTests`, `RankedSet`, `BTreeDictionary`, `BTreeSet` | CsCheck **shrinks** to a minimal failing sequence and prints a seed. The best case: the counterexample is usually small enough to read directly. |
-| **Seed-driven, with a generated size** — CsCheck generates a `uint` *and* the dimensions, and `new Random(seed)` fills them in | `CompressedGraph` (vertex and edge counts), `SuffixArray` (text length, alphabet), `AhoCorasick` (pattern count and length, text length, alphabet), `KdTree`, `RTree`, `SpatialGrid`, `IntervalTree`, `CompressedIntSet`, `RankSelectBitVector` | The seed replays exactly, and the **size axes shrink** — CsCheck will find the smallest text or point count that still fails. What it cannot reduce is the *content* at that size, since a neighbouring seed is an unrelated draw. Usually enough to make a case readable. |
-| **Seed-driven, fixed length** — only the geometry is generated; the trace length is a constant in the test body | `Rope` (chunk size; 250 operations), `TimerWheel` (slots and levels; 400 steps) | The seed replays exactly and the geometry shrinks, but **the trace does not get shorter**. Expect to read the whole run. |
-| **Seed as a theory argument** — no CsCheck; `[Theory]` + `[InlineData(seed)]` | `Trie`, `FenwickTree`, `SegmentTree`, `SparseSet`, `StringInternTable`, and the two algebra suites (`SetAlgebra`, `EnumSetAlgebra`) | xUnit names the failing seed in the test case, so you know which run broke and rerun just that one. Still no reduction. |
-| **Seed looped inside** — `[Theory]` over some other parameter, seeds iterated in the body | `Deque`, `LruCache`, `LfuCache`, `DisjointSet`, `IndexedPriorityQueue`, `SketchMerge` | The failing *parameter* is named (a starting capacity), the failing **seed is not**. Add a print or a breakpoint to find it. |
+| **Directly generated** | CsCheck generates the operations or the input itself: `GenOp.List[0, 2500].Sample(...)` | Shrinks to a minimal counterexample and prints a seed. The best case. |
+| **Seed-driven, generated size** | `Gen.Select(Gen.Int[...], …, Gen.UInt)`, then `new Random(seed)` fills in the dimensions CsCheck chose | The seed replays exactly and the **size axes shrink**, so CsCheck finds the smallest text or point count that still fails. The *content* at that size cannot shrink — a neighbouring seed is an unrelated draw. |
+| **Seed-driven, fixed length** | `Gen.UInt` for the seed, but the loop bound is a literal in the body | Replays exactly, geometry shrinks, **the trace does not get shorter**. Expect to read the whole run. |
+| **Seed as a theory argument** | `[Theory]` + `[InlineData(1)] [InlineData(2)]…` bound to an `int seed` parameter | xUnit names the failing seed, so you rerun that one case. No reduction. |
+| **Seed looped inside** | `[Theory]` over something else (a capacity), with `for (int seed = …)` in the body | The failing *parameter* is named; the failing **seed is not**. Add a print or a breakpoint. |
 
-For the first three, replay by setting the seed and filtering to the class the failure names:
+At the time of writing that is four suites in the first shape, eleven in the second and third together, seven in the fourth and six in the fifth — but check the file rather than the count, which is what the middle column is for.
+
+For the first three shapes, replay by setting the seed and filtering to the class the failure names:
 
 ```bash
 # PowerShell
