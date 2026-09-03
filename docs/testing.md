@@ -21,10 +21,10 @@ Example-based unit tests are necessary but not sufficient for a data-structure l
 
 Celerity attacks those with two adversarial layers that don't rely on the author's imagination:
 
-- **Property-based testing** generates random operation sequences and checks an *invariant* — here, equivalence to a known-correct BCL collection — rather than a fixed expected output.
+- **Property-based testing** generates random operation sequences and checks an *invariant* — equivalence to a known-correct oracle — rather than a fixed expected output.
 - **Differential fuzzing** runs the same idea as an unbounded soak: keep generating sequences until something diverges, and when it does, hand back a seed that reproduces it.
 
-Both compare against a BCL oracle (`Dictionary<,>`, `HashSet<>`, or a `Dictionary<TKey, List<TValue>>` model for the multi-map). The oracle *is* the specification: Celerity claims drop-in parity, so any observable difference is a bug in Celerity.
+The oracle *is* the specification: any observable difference is a bug in Celerity. Where the BCL ships a counterpart it is the oracle — `Dictionary<,>` and `HashSet<>` for the hash family, `SortedSet<T>` for `RankedSet`, `StringBuilder` and `string` for `Rope`. Where it does not, the oracle is the definition or the naive loop the type replaces: LFU eviction order for `LfuCache`, a linearly-scanned list of deadlines for `TimerWheel`, every pattern tested at every position for `AhoCorasick`. What matters is that the oracle shares no code with the type under test.
 
 ## Behavioural unit tests
 
@@ -72,7 +72,7 @@ $env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter RankedSetDifferentia
 CsCheck_Seed='0000LASTpRINTED' dotnet test --filter RankedSetDifferentialTests
 ```
 
-The seeded suites replay differently: they derive their sequence from a `Random` seed printed with the failure, so the case reproduces exactly but is not reduced — expect to read the whole trace rather than three operations.
+The seeded suites do not work this way and do not need to: they loop over a fixed list of seeds inside a single `[Fact]` (`DequeDifferentialTests` runs seeds 0–39 of 500 operations each), so a failure already reproduces by rerunning the test. What they do not give you is reduction or a reported seed — the assertion names the divergence, not the case that produced it, so expect to add a print or a breakpoint rather than read a minimal counterexample.
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 

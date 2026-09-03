@@ -2328,7 +2328,13 @@ internal static class Differential
                     break;
             }
 
+            // The *content* is reconciled every step, not only at the end. Checking length alone would let a
+            // same-length divergence — a rotation that swaps two leaves, a split that copies the right
+            // characters to the wrong offset — survive until a later Clear or a dropped split tail erased it,
+            // and the case would pass with the bug still in the tree. This costs an O(n) comparison per
+            // operation, which the string oracle is already paying to rebuild itself.
             Check(sut.Length == oracle.Length, $"Length {sut.Length} != {oracle.Length}");
+            Check(sut.ToString() == oracle, $"content diverged after operation {op}");
 
             // The path buffer the enumerators walk is a fixed-size inline array with no runtime guard, so a
             // balance bug would corrupt memory rather than assert. Checking the bound here is the only place
