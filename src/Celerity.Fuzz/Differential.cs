@@ -2215,10 +2215,12 @@ internal static class Differential
 
     // ---- rope ----------------------------------------------------------------
 
-    // Rope against the string it models. This is the only mutable tree in Collections, so its state is
-    // path-dependent in a way a fixture cannot reach: a rebalance, a leaf split, or the amortized
-    // defragmenting rebuild goes wrong for a particular *history* of edits, not for a particular content, and
-    // the wrong answer surfaces many operations later as a character read from the wrong leaf.
+    // Rope against the string it models. Its state is path-dependent in a way a fixture cannot reach: a
+    // rebalance, a leaf split, or the amortized defragmenting rebuild goes wrong for a particular *history*
+    // of edits, not for a particular content, and the wrong answer surfaces many operations later as a
+    // character read from the wrong leaf. The B-trees and RankedSet restructure under mutation too; what is
+    // specific to a rope is that the restructuring moves *characters between leaves*, so a misplaced boundary
+    // silently changes the text rather than the order of keys that remain individually intact.
     //
     // The oracle is a plain string rebuilt after every step — quadratic, and deliberately so, because it
     // shares no code with the rope and has no state of its own to get wrong. Chunk sizes are drawn small
