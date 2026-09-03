@@ -49,7 +49,7 @@ dotnet test
 **These tests live in two places, and you need to look in both.** This guide previously named only the first, which led a reviewer to conclude that six collections had no property coverage when each in fact had a suite in the second ([#416](https://github.com/marius-bughiu/Celerity/issues/416)).
 
 - **`Celerity.Tests/Properties/CollectionModelPropertyTests.cs`** — the cross-family model suite. One file holding a property per type for the collections that share a shape and an oracle: the dictionaries and sets, the multi-map and multi-set, the frozen pair, the filters and sketches, and `BitSet`. Grouping them together is what makes the *family* comparable — the same generated operation list runs against every dictionary in turn. `LfuCache` also lives here, as the exception: its storage is a hash table, but eviction order is its whole contract, so it shares neither the oracle (the definition of LFU, not a BCL type) nor the property that order matters only through resize and deletion.
-- **`Celerity.Tests/Collections/<Type>DifferentialTests.cs`** — the per-type differential suites, one file per collection, and where every structurally distinctive type lives: `RankedSet`, `Rope`, `TimerWheel`, `CompressedGraph`, `SuffixArray`, `AhoCorasick`, the B-trees, the spatial indexes, `CompressedIntSet`, `RankSelectBitVector`. These oracles are type-specific — `SortedSet` plus its enumeration order for `RankedSet`'s ranks, `StringBuilder` for `Rope`, a naive scan for the text indexes — so they do not generalize into the shared file. Not every file here uses CsCheck: some drive a seeded `Random` instead, which is randomized but does not shrink.
+- **`Celerity.Tests/Collections/<Type>DifferentialTests.cs`** — the per-type differential suites, one file per collection, and where every structurally distinctive type lives: `RankedSet`, `Rope`, `TimerWheel`, `CompressedGraph`, `SuffixArray`, `AhoCorasick`, the B-trees, the spatial indexes, `CompressedIntSet`, `RankSelectBitVector`. These oracles are type-specific — `SortedSet` plus its enumeration order for `RankedSet`'s ranks, `StringBuilder` for `Rope`, a naive scan for the text indexes — so they do not generalize into the shared file. They are randomized, but not all in the same way, and that shows up when one fails: see [what a failure gives you](#what-a-failure-gives-you) below.
 
 **Where a new property test goes:** into `Collections/<Type>DifferentialTests.cs` unless your type is a member of an existing family in the model suite, in which case add a block there next to its siblings.
 
@@ -60,7 +60,17 @@ The input takes one of two shapes:
 
 The generated domains are deliberately narrow — small key ranges that include `0` and negatives, alphabets of two to six letters, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest.
 
-When a CsCheck property fails, it **shrinks** the failing sequence to a minimal reproduction and prints a seed. Replay it by setting the seed and filtering to the class that failed — the failure names it, and it may be in either home:
+### What a failure gives you
+
+Three patterns are in use, and they differ in exactly the way that matters when one goes red. Check which kind you are looking at before hunting for a seed that may not exist.
+
+| Pattern | Suites | On failure |
+|---|---|---|
+| **Directly generated** — CsCheck generates the operation list or the input itself | `CollectionModelPropertyTests`, `RankedSet`, `BTreeDictionary`, `BTreeSet` | CsCheck **shrinks** to a minimal failing sequence and prints a seed. The best case: the counterexample is usually three or four operations. |
+| **Seed-driven** — CsCheck generates a `uint`, and `new Random(seed)` builds the trace from it | `Rope`, `TimerWheel`, `CompressedGraph`, `SuffixArray`, `AhoCorasick`, `KdTree`, `RTree`, `SpatialGrid`, `IntervalTree`, `CompressedIntSet`, `RankSelectBitVector` | The seed prints and replays the case exactly, but **shrinking does not reduce it** — a smaller seed is a different trace, not a shorter one. Expect to read the whole run. |
+| **Fixed-seed loop** — no CsCheck; a `[Fact]` loops a hard-coded seed range | `Deque`, `Trie`, `LruCache`, `DisjointSet`, `IndexedPriorityQueue`, `FenwickTree`, `SegmentTree`, `SparseSet`, `StringInternTable` | Fully deterministic, so rerunning reproduces it — but nothing reports *which* seed failed. Add a print or a breakpoint. |
+
+For the first two, replay by setting the seed and filtering to the class the failure names:
 
 ```bash
 # PowerShell
@@ -72,7 +82,7 @@ $env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter RankedSetDifferentia
 CsCheck_Seed='0000LASTpRINTED' dotnet test --filter RankedSetDifferentialTests
 ```
 
-The seeded suites do not work this way and do not need to: they loop over a fixed list of seeds inside a single `[Fact]` (`DequeDifferentialTests` runs seeds 0–39 of 500 operations each), so a failure already reproduces by rerunning the test. What they do not give you is reduction or a reported seed — the assertion names the divergence, not the case that produced it, so expect to add a print or a breakpoint rather than read a minimal counterexample.
+Trading shrinking away for a seed is a deliberate choice in the second group, not an oversight: those types are driven by long operation sequences whose interesting states take hundreds of steps to reach, and a shrinker that can only resample the seed would spend its budget without getting closer. Where the operations *can* be generated directly — as in `RankedSet` — that is the better shape, because a reduced counterexample is worth more than a long reproducible one.
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 
