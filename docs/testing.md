@@ -75,16 +75,17 @@ The generated domains are deliberately narrow — small key ranges that include 
 
 ### What a failure gives you
 
-Four patterns are in use, and they differ in exactly the way that matters when one goes red — whether you get a reduced counterexample, a replayable seed, or neither. Check which kind you are looking at before hunting for a seed that may not exist.
+Five patterns are in use, and they differ in exactly the way that matters when one goes red — whether you get a reduced counterexample, a replayable seed, or neither. Check which kind you are looking at before hunting for a seed that may not exist.
 
 | Pattern | Suites | On failure |
 |---|---|---|
 | **Directly generated** — CsCheck generates the operation list or the input itself | `CollectionModelPropertyTests`, `RankedSet`, `BTreeDictionary`, `BTreeSet` | CsCheck **shrinks** to a minimal failing sequence and prints a seed. The best case: the counterexample is usually three or four operations. |
-| **Seed-driven** — CsCheck generates a `uint`, and `new Random(seed)` builds the trace from it | `Rope`, `TimerWheel`, `CompressedGraph`, `SuffixArray`, `AhoCorasick`, `KdTree`, `RTree`, `SpatialGrid`, `IntervalTree`, `CompressedIntSet`, `RankSelectBitVector` | The seed prints and replays the case exactly, but **shrinking does not reduce it** — a smaller seed is a different trace, not a shorter one. Expect to read the whole run. |
+| **Seed-driven, with a generated size** — CsCheck generates a `uint` *and* the dimensions, and `new Random(seed)` fills them in | `CompressedGraph` (vertex and edge counts), `SuffixArray` (text length, alphabet), `AhoCorasick` (pattern count and length, text length, alphabet), `KdTree`, `RTree`, `SpatialGrid`, `IntervalTree`, `CompressedIntSet`, `RankSelectBitVector` | The seed replays exactly, and the **size axes shrink** — CsCheck will find the smallest text or point count that still fails. What it cannot reduce is the *content* at that size, since a neighbouring seed is an unrelated draw. Usually enough to make a case readable. |
+| **Seed-driven, fixed length** — only the geometry is generated; the trace length is a constant in the test body | `Rope` (chunk size; 200 operations), `TimerWheel` (slots and levels; 400 steps) | The seed replays exactly and the geometry shrinks, but **the trace does not get shorter**. Expect to read the whole run. |
 | **Seed as a theory argument** — no CsCheck; `[Theory]` + `[InlineData(seed)]` | `Trie`, `FenwickTree`, `SegmentTree`, `SparseSet`, `StringInternTable`, and the two algebra suites (`SetAlgebra`, `EnumSetAlgebra`) | xUnit names the failing seed in the test case, so you know which run broke and rerun just that one. Still no reduction. |
 | **Seed looped inside** — `[Theory]` over some other parameter, seeds iterated in the body | `Deque`, `LruCache`, `DisjointSet`, `IndexedPriorityQueue` | The failing *parameter* is named (a starting capacity), the failing **seed is not**. Add a print or a breakpoint to find it. |
 
-For the first two, replay by setting the seed and filtering to the class the failure names:
+For the first three, replay by setting the seed and filtering to the class the failure names:
 
 ```bash
 # PowerShell
@@ -96,7 +97,7 @@ $env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter RankedSetDifferentia
 CsCheck_Seed='0000LASTpRINTED' dotnet test --filter RankedSetDifferentialTests
 ```
 
-The split between the first two rows is what CsCheck is handed, not how long the case runs: generate the operations or the input *as data* and it can reduce them; generate a `uint` and derive the content from it and it can only resample, because a neighbouring seed is an unrelated case. Both shapes appear for both kinds of type — `RankedSet` generates a 2,500-operation list directly, while `SuffixArray` derives a text from a seed. Directly generated is the better shape where it is practical, since a reduced counterexample beats a long reproducible one.
+What separates these is how much of the case CsCheck is handed *as data*. Hand it the operations and it reduces them to a minimal counterexample. Hand it the dimensions plus a seed and it reduces the dimensions but not the content, because a neighbouring seed is an unrelated draw. Hand it only a seed and a fixed loop count and it can reduce nothing about the trace. Directly generated is the better shape where it is practical, since a reduced counterexample beats a long reproducible one — but a generated size axis recovers most of the benefit for a fraction of the effort, which is why nine of the eleven seed-driven suites have one.
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 
