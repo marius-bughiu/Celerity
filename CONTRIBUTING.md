@@ -64,7 +64,6 @@ Most of these are enforced by review rather than by an analyzer — the constant
 ## Tests
 
 - Use xUnit.
-- Name tests `Method_ShouldExpectedBehavior_WhenCondition`.
 - Prefer `[Fact]` for a single case, `[Theory] + [InlineData]` for parameterized cases.
 - When fixing a bug, add a test that fails on `main` and passes on your branch. It's fine to reference the issue number in a comment.
 - New collections are expected to carry parity coverage at every layer: behavioural tests, a CsCheck property test against the closest BCL oracle, and a `Celerity.Fuzz` target. See the [Testing & coverage guide](docs/testing.md) for how each layer works and how to run them. Four points the rule leaves implicit:
