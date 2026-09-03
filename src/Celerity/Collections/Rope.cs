@@ -789,10 +789,6 @@ public sealed class Rope : IReadOnlyList<char>
         return node;
     }
 
-    // A leaf's buffer is its capacity, and is always exactly the chunk size whatever the leaf currently holds.
-    // That invariant is what makes ChunkSize a real bound rather than a preference: every caller here passes at
-    // most _fill characters (BuildBalanced) or a slice of an existing leaf (SplitCore), and AppendAndClear
-    // refuses a source whose chunk size differs, so no wider leaf can enter the tree to be sliced later.
     // The deepest an AVL tree of leaves can be within an int-length document. A minimal AVL tree of height h
     // has Fib(h + 1) leaves, and Fib(47) already exceeds int.MaxValue, so 45 is the true ceiling; 48 leaves
     // headroom. Held inline in the enumerators, exactly as BTreeSet holds its traversal path.
@@ -882,6 +878,10 @@ public sealed class Rope : IReadOnlyList<char>
         }
     }
 
+    // A leaf's buffer is its capacity, and is always exactly the chunk size whatever the leaf currently holds.
+    // That invariant is what makes ChunkSize a real bound rather than a preference: every caller here passes at
+    // most _fill characters (BuildBalanced) or a slice of an existing leaf (SplitCore), and AppendAndClear
+    // refuses a source whose chunk size differs, so no wider leaf can enter the tree to be sliced later.
     private Node NewLeaf(ReadOnlySpan<char> text)
     {
         var buffer = new char[_chunkSize];
