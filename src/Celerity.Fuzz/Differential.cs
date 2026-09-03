@@ -2294,6 +2294,12 @@ internal static class Differential
                     Check(sut.ToString() == oracle[..index], $"Split({index}) head");
                     Check(tail.ChunkSize == chunkSize, "Split did not carry the chunk size across");
 
+                    // Both halves, here rather than at the bottom of the loop. A split rebalances two trees
+                    // and the loop's guard only ever sees `sut` — so an over-deep tail that is dropped below,
+                    // or rejoined into a tree the join then rebalances, would never be inspected at all.
+                    Check(sut.Depth <= RopeMaxDepth, $"Split({index}) left an over-deep head");
+                    Check(tail.Depth <= RopeMaxDepth, $"Split({index}) produced an over-deep tail");
+
                     // Rejoining is the common case for the same reason the remove above is bounded: dropping
                     // the tail truncates, and a case that keeps truncating never gets deep.
                     if (rng.Next(0, 4) != 0)
@@ -2314,6 +2320,7 @@ internal static class Differential
                     // tree ever laid out — the case the equal-chunk-size rule exists to make safe.
                     string text = RopeText(rng, chunkSize);
                     var source = new Rope(text, chunkSize);
+                    Check(source.Depth <= RopeMaxDepth, "the bulk constructor built an over-deep rope");
                     sut.AppendAndClear(source);
                     oracle += text;
                     Check(source.Length == 0, "AppendAndClear left the source non-empty");
