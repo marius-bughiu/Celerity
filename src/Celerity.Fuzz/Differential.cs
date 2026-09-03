@@ -2328,7 +2328,14 @@ internal static class Differential
                     break;
             }
 
-            // The *content* is reconciled every step, not only at the end. Checking length alone would let a
+            // The depth bound goes first, before any read that walks a LeafCursor. The cursor holds its
+            // root-to-leaf path in a fixed-size inline array with no runtime guard, so on a tree one level
+            // too deep it writes past the buffer rather than throwing — and a guard that runs after the
+            // traversal it protects is not a guard. IndexOf below and the enumerators at the end both go
+            // through the cursor; ToString (CopyRange) and the indexer (FindLeaf) do not.
+            Check(sut.Depth <= RopeMaxDepth, $"Depth {sut.Depth} exceeded the enumerators' path buffer");
+
+            // Content is then reconciled every step, not only at the end. Checking length alone would let a
             // same-length divergence — a rotation that swaps two leaves, a split that copies the right
             // characters to the wrong offset — survive until a later Clear or a dropped split tail erased it,
             // and the case would pass with the bug still in the tree. This costs an O(n) comparison per
@@ -2353,11 +2360,6 @@ internal static class Differential
                 Check(sut.IndexOf(sought, probe) == oracle.IndexOf(sought, probe),
                     $"IndexOf({sought}, {probe}) diverged after operation {op}");
             }
-
-            // The path buffer the enumerators walk is a fixed-size inline array with no runtime guard, so a
-            // balance bug would corrupt memory rather than assert. Checking the bound here is the only place
-            // it is observable.
-            Check(sut.Depth <= RopeMaxDepth, $"Depth {sut.Depth} exceeded the enumerators' path buffer");
         }
 
         Check(sut.ToString() == oracle, "ToString diverged from the model");
