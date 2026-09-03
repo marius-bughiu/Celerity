@@ -27,7 +27,7 @@ Celerity attacks those with two adversarial layers that don't rely on the author
 The oracle *is* the specification, but what it asserts depends on what the type promises:
 
 - **Exact types** — the hash family, the ordered containers, `Rope`, the text indexes — must match the oracle observably, and any difference is a bug. Where the BCL ships a counterpart it is the oracle (`Dictionary<,>`, `HashSet<>`, `SortedSet<T>` for `RankedSet`, `StringBuilder` for `Rope`); where it does not, the oracle is the definition or the naive loop the type replaces (LFU eviction order for `LfuCache`, a linearly-scanned list of deadlines for `TimerWheel`, every pattern tested at every position for `AhoCorasick`).
-- **Probabilistic types** are *supposed* to differ from the exact answer, so the oracle checks the guarantee instead of equality: `BloomFilter`, `CuckooFilter` and `XorFilter` may report a false positive but never a false negative, `CountMinSketch` may overestimate but never under, and `HyperLogLog` must land within its advertised standard error. Asserting equality there would be asserting the wrong thing.
+- **Probabilistic types** are *supposed* to differ from the exact answer, so the oracle checks the guarantee instead of equality: `BloomFilter`, `CuckooFilter` and `XorFilter` may report a false positive but never a false negative, `CountMinSketch` may overestimate but never under, and `HyperLogLog` must land near the exact cardinality within a bound derived from its standard error — the accuracy suite allows three standard errors plus a small absolute slack for the small-range regime, since a standard error is a dispersion rather than a per-estimate ceiling. Asserting equality for any of these would be asserting the wrong thing.
 
 What matters in both cases is that the oracle shares no code with the type under test.
 
@@ -49,7 +49,7 @@ dotnet test
 
 ## Property-based tests (CsCheck)
 
-[CsCheck](https://github.com/AnthonyLloyd/CsCheck) makes parity the explicit contract: a test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the two stay observably equal. All of it runs on **every pull request** — `ci.yml` runs the test project unfiltered.
+[CsCheck](https://github.com/AnthonyLloyd/CsCheck) makes parity the explicit contract: a test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the relationship the type promises — observable equality for an exact type, the advertised one-sided guarantee or error bound for a probabilistic one (see [above](#philosophy-example-tests-then-adversarial-tests)). All of it runs on **every pull request** — `ci.yml` runs the test project unfiltered.
 
 **These tests live in two places, and you need to look in both.** This guide previously named only the first, which led a reviewer to conclude that six collections had no property coverage when each in fact had a suite in the second ([#416](https://github.com/marius-bughiu/Celerity/issues/416)).
 
@@ -84,9 +84,9 @@ Five patterns are in use, and they differ in exactly the way that matters when o
 
 | Pattern | Suites | On failure |
 |---|---|---|
-| **Directly generated** — CsCheck generates the operation list or the input itself | `CollectionModelPropertyTests`, `RankedSet`, `BTreeDictionary`, `BTreeSet` | CsCheck **shrinks** to a minimal failing sequence and prints a seed. The best case: the counterexample is usually three or four operations. |
+| **Directly generated** — CsCheck generates the operation list or the input itself | `CollectionModelPropertyTests`, `RankedSet`, `BTreeDictionary`, `BTreeSet` | CsCheck **shrinks** to a minimal failing sequence and prints a seed. The best case: the counterexample is usually small enough to read directly. |
 | **Seed-driven, with a generated size** — CsCheck generates a `uint` *and* the dimensions, and `new Random(seed)` fills them in | `CompressedGraph` (vertex and edge counts), `SuffixArray` (text length, alphabet), `AhoCorasick` (pattern count and length, text length, alphabet), `KdTree`, `RTree`, `SpatialGrid`, `IntervalTree`, `CompressedIntSet`, `RankSelectBitVector` | The seed replays exactly, and the **size axes shrink** — CsCheck will find the smallest text or point count that still fails. What it cannot reduce is the *content* at that size, since a neighbouring seed is an unrelated draw. Usually enough to make a case readable. |
-| **Seed-driven, fixed length** — only the geometry is generated; the trace length is a constant in the test body | `Rope` (chunk size; 200 operations), `TimerWheel` (slots and levels; 400 steps) | The seed replays exactly and the geometry shrinks, but **the trace does not get shorter**. Expect to read the whole run. |
+| **Seed-driven, fixed length** — only the geometry is generated; the trace length is a constant in the test body | `Rope` (chunk size; 250 operations), `TimerWheel` (slots and levels; 400 steps) | The seed replays exactly and the geometry shrinks, but **the trace does not get shorter**. Expect to read the whole run. |
 | **Seed as a theory argument** — no CsCheck; `[Theory]` + `[InlineData(seed)]` | `Trie`, `FenwickTree`, `SegmentTree`, `SparseSet`, `StringInternTable`, and the two algebra suites (`SetAlgebra`, `EnumSetAlgebra`) | xUnit names the failing seed in the test case, so you know which run broke and rerun just that one. Still no reduction. |
 | **Seed looped inside** — `[Theory]` over some other parameter, seeds iterated in the body | `Deque`, `LruCache`, `DisjointSet`, `IndexedPriorityQueue` | The failing *parameter* is named (a starting capacity), the failing **seed is not**. Add a print or a breakpoint to find it. |
 
