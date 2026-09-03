@@ -44,11 +44,10 @@ dotnet test
 
 ## Property-based tests (CsCheck)
 
-Two files under `Celerity.Tests/Properties/` use [CsCheck](https://github.com/AnthonyLloyd/CsCheck) to make parity the explicit contract. Each test:
+Two files under `Celerity.Tests/Properties/` use [CsCheck](https://github.com/AnthonyLloyd/CsCheck) to make parity the explicit contract. Each test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the two stay observably equal. The input takes one of two shapes, depending on the type:
 
-1. Generates a randomized list of mutating operations (`Set`, `Remove`, `TryAdd`, `Clear` for dictionaries; `Add`/`RemoveValue`/`RemoveAll` for the multi-map; etc.).
-2. Applies the **identical** sequence to a Celerity collection and a BCL oracle.
-3. Asserts the two are observably equal — `Count`, per-key lookups across the whole key domain, and full enumeration.
+- **Mutable types** — most of the suite — generate a list of operations (`Set`, `Remove`, `TryAdd`, `Clear` for dictionaries; `Add` / `RemoveValue` / `RemoveAll` for the multi-map; insert / remove / split / join for `Rope`; schedule / cancel / advance for `TimerWheel`) and apply the **identical** sequence to both sides, checking after each step and again at the end: `Count`, per-key lookups across the whole domain, and full enumeration.
+- **Build-once types** — `CompressedGraph`, `SuffixArray`, `AhoCorasick` — have no operation sequence. They generate the *input* instead (an edge list, a text, a pattern set), construct the type from it, and reconcile every query against the naive answer computed from the same input.
 
 The generated domains are deliberately narrow — tiny key ranges that include `0` and negatives, three-letter alphabets, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest. The number of sequences per invocation is set per test, from 20 for the cases that build large structures up to 2 000 for the cheapest ones.
 
