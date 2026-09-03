@@ -2336,6 +2336,24 @@ internal static class Differential
             Check(sut.Length == oracle.Length, $"Length {sut.Length} != {oracle.Length}");
             Check(sut.ToString() == oracle, $"content diverged after operation {op}");
 
+            // ToString walks the tree through CopyRange; the indexer descends through FindLeaf and IndexOf
+            // through LeafCursor.Seek. Three independent traversals, so a bug in either cursor is invisible
+            // to the content check above — and, like a content divergence, would be erased by a later Clear
+            // or dropped split tail if it were only checked once the run finished. Both ends plus one
+            // generated interior position keep this O(log n) per step; the exhaustive sweep still runs at
+            // the end.
+            if (oracle.Length > 0)
+            {
+                int probe = rng.Next(0, oracle.Length);
+                Check(sut[0] == oracle[0], $"[0] diverged after operation {op}");
+                Check(sut[oracle.Length - 1] == oracle[^1], $"[^1] diverged after operation {op}");
+                Check(sut[probe] == oracle[probe], $"[{probe}] diverged after operation {op}");
+
+                char sought = RopeChar(rng);
+                Check(sut.IndexOf(sought, probe) == oracle.IndexOf(sought, probe),
+                    $"IndexOf({sought}, {probe}) diverged after operation {op}");
+            }
+
             // The path buffer the enumerators walk is a fixed-size inline array with no runtime guard, so a
             // balance bug would corrupt memory rather than assert. Checking the bound here is the only place
             // it is observable.
