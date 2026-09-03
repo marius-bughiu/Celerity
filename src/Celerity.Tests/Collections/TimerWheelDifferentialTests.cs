@@ -53,12 +53,25 @@ public class TimerWheelDifferentialTests
                     case 1:
                     case 2:
                     case 3:
-                    case 4:
                     {
                         long delay = rand.Next((int)horizon);
                         int id = next++;
                         handles[id] = wheel.Schedule(delay, id);
                         deadlines[id] = wheel.CurrentTick + delay;
+                        pending.Add(id);
+                        break;
+                    }
+
+                    case 4:
+                    {
+                        // The absolute overload reaches the same slot arithmetic by a different route: it
+                        // takes a deadline on the caller's clock rather than an offset from the wheel's, so
+                        // the two disagree the moment the clock has moved and only one of them is rebasing.
+                        // A sequence that only ever schedules relatively cannot tell them apart.
+                        long deadline = wheel.CurrentTick + rand.Next((int)horizon);
+                        int id = next++;
+                        handles[id] = wheel.ScheduleAt(deadline, id);
+                        deadlines[id] = deadline;
                         pending.Add(id);
                         break;
                     }

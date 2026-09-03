@@ -12,6 +12,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
+- **`Rope` gained the `Celerity.Fuzz` target it shipped without**, and `TimerWheel`'s differential suite now covers `ScheduleAt` alongside `Schedule`. Testing only — no shipped code changed. Closes [#415](https://github.com/marius-bughiu/Celerity/issues/415).
+
+- **[docs/testing.md](docs/testing.md) now says where property tests live and what a failure in each kind hands you.** It described `Celerity.Tests/Properties/` as the only home, leaving the per-type and per-operation `Collections/*DifferentialTests.cs` suites undocumented — so a type covered there read as covered nowhere. Closes [#416](https://github.com/marius-bughiu/Celerity/issues/416).
+
 - **`scripts/check_doc_anchors.js` now rejects links to an anchor that cannot stay put** — one a repeated heading can renumber, or one that two elements answer to. Such a link resolves today and lands somewhere else once a heading is added above it. Repeated headings stay legal; link to a unique hand-written `<a id>` instead, which `--list` helps you tell apart. Closes [#409](https://github.com/marius-bughiu/Celerity/issues/409).
 
 - **The benchmark suite runs on merges to `main` instead of on every pull request.** It was by a wide margin the largest consumer of this repository's CI minutes — a same-runner A/B against `main` over eight runners, re-paid on every review commit. A regression is now read off [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) at the merge commit that introduced it, and *Actions → Benchmarks → Run workflow* measures any ref on demand. The per-PR comparison comment is gone with it. The relevance gate that skips a run whose diff cannot move a measured number now applies to `main` as well, so a documentation or comment-only commit costs nothing. No change to the shipped packages.

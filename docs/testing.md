@@ -8,7 +8,8 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 |---|---|---|---|
 | Behavioural unit tests | `Celerity.Tests` | Each public method does the right thing on hand-picked inputs, including collisions, resizes, and the out-of-band default/zero/null key. | `dotnet test` |
 | Edge-case coverage | alongside each type's tests (`*Tests.cs`, `*EnumerationTests.cs`, `*CollisionTests.cs`) | The corners example tests skip: non-generic `IEnumerable`/`IEnumerator` paths, `Reset()`, indexer misses, `Clear()` on empty, wrap-around backward-shift. | `dotnet test` |
-| Property-based tests | `Celerity.Tests/Properties/` | Across thousands of randomized operation sequences, every collection stays observably equal to its BCL oracle. | `dotnet test` |
+| Property-based tests (CsCheck) | **two homes** — `Celerity.Tests/Properties/CollectionModelPropertyTests.cs` and most of `Celerity.Tests/Collections/*DifferentialTests.cs` | Over CsCheck-generated operation sequences or inputs, a collection keeps the relationship it promises to an independent oracle — observable equality for an exact type, the advertised bound for an approximate one. A failure replays from a seed; how much of it *shrinks* depends on the shape (see below). | `dotnet test` |
+| Non-generated oracle tests | the thirteen `Celerity.Tests/Collections/*DifferentialTests.cs` that drive a bare `Random`, and the three `*AccuracyTests.cs` | The same oracle idea without CsCheck, over seeded streams or fixed datasets (`HyperLogLog`'s are fixed, with no `Random` at all): exact equality for the exact types (`Deque` against a `List`-backed reference deque, `Trie` against a `SortedDictionary`), the advertised guarantee for the approximate ones. Randomized but not generated, so **no shrinking**, and these do not satisfy the parity rule's property-test requirement. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
 | Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: every package packs with its symbols and metadata intact, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
@@ -21,10 +22,19 @@ Example-based unit tests are necessary but not sufficient for a data-structure l
 
 Celerity attacks those with two adversarial layers that don't rely on the author's imagination:
 
-- **Property-based testing** generates random operation sequences and checks an *invariant* — here, equivalence to a known-correct BCL collection — rather than a fixed expected output.
+- **Property-based testing** generates a randomized input — an operation sequence for a mutable type, or the construction input for a build-once one — and checks an *invariant* rather than a fixed expected output: the relationship the type promises to an independent oracle, which is equality for an exact type and a bound for an approximate one.
 - **Differential fuzzing** runs the same idea as an unbounded soak: keep generating sequences until something diverges, and when it does, hand back a seed that reproduces it.
 
-Both compare against a BCL oracle (`Dictionary<,>`, `HashSet<>`, or a `Dictionary<TKey, List<TValue>>` model for the multi-map). The oracle *is* the specification: Celerity claims drop-in parity, so any observable difference is a bug in Celerity.
+The oracle *is* the specification, but what it asserts depends on what the type promises:
+
+- **Exact types** — the hash family, the ordered containers, `Rope`, the text indexes — must match the oracle observably, and any difference is a bug. Where the BCL ships a counterpart it is the oracle (`Dictionary<,>`, `HashSet<>`, `SortedSet<T>` for `RankedSet`, `StringBuilder` for `Rope`); where it does not, the oracle is the definition or the naive loop the type replaces (LFU eviction order for `LfuCache`, a linearly-scanned list of deadlines for `TimerWheel`, every pattern tested at every position for `AhoCorasick`).
+- **Approximate types** are *supposed* to differ from the exact answer, so the oracle checks the guarantee instead of equality — and the guarantees are not all of one kind:
+  - **Deterministic bounds**, which hold for every input and can be asserted outright: `BloomFilter` and `XorFilter` never return a false negative, and `CuckooFilter` does not either **provided you only remove elements you added** — deleting one that was never inserted can clear a fingerprint belonging to a different element, which is why its differential model records only the copies it successfully stored; `CountMinSketch` never underestimates — though its *upper* bound is not deterministic, since it overestimates by no more than `epsilon · TotalCount` only with probability at least `1 − delta`; `TopKSketch` implements Space-Saving, whose `[count − error, count]` interval, no-underestimate property and heavy-hitter-never-missed theorem hold regardless of eviction tie-breaking, and which is exact while capacity is not exceeded.
+  - **A statistical bound**, which needs a tolerance: `HyperLogLog`'s standard error is a dispersion rather than a per-estimate ceiling, so its suite allows three standard errors plus a small absolute slack for the small-range regime.
+
+  Asserting equality for any of these would be asserting the wrong thing; so would asserting a statistical tolerance where a deterministic theorem applies.
+
+What matters in both cases is that the oracle shares no code with the type under test.
 
 ## Behavioural unit tests
 
@@ -44,27 +54,62 @@ dotnet test
 
 ## Property-based tests (CsCheck)
 
-`Celerity.Tests/Properties/CollectionModelPropertyTests.cs` uses [CsCheck](https://github.com/AnthonyLloyd/CsCheck) to make parity the explicit contract. Each test:
+[CsCheck](https://github.com/AnthonyLloyd/CsCheck) makes parity the explicit contract: a test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the relationship the type promises — observable equality for an exact type, the advertised guarantee or error bound for an approximate one (see [above](#philosophy-example-tests-then-adversarial-tests)). All of it runs on **every pull request** — `ci.yml` runs the test project unfiltered.
 
-1. Generates a randomized list of mutating operations (`Set`, `Remove`, `TryAdd`, `Clear` for dictionaries; `Add`/`RemoveValue`/`RemoveAll` for the multi-map; etc.).
-2. Applies the **identical** sequence to a Celerity collection and a BCL oracle.
-3. Asserts the two are observably equal — `Count`, per-key lookups across the whole key domain, and full enumeration.
+**These tests live in two places, and you need to look in both.** This guide previously named only the first, which led a reviewer to conclude that six collections had no property coverage when each in fact had a suite in the second ([#416](https://github.com/marius-bughiu/Celerity/issues/416)).
 
-The key domains are deliberately tiny (and include `0` and negatives) so collisions, resizes, the special zero/default/null-key slot, and backward-shift deletion all fire densely. Each test runs 2 000 sequences per invocation.
+- **`Celerity.Tests/Properties/CollectionModelPropertyTests.cs`** — the cross-family model suite. One file holding a property per type for the collections that share a shape and an oracle: the hash-table dictionaries and sets, the multi-map and multi-set, the frozen pair, `BloomFilter`, `CuckooFilter`, `CountMinSketch`, `HyperLogLog` and `BitSet`. It is not the whole of either family — `SmallSet`, `XorFilter` and `TopKSketch` are covered elsewhere or not at all; see the table below for how to check a given type. Grouping them together is what makes the *family* comparable — every dictionary is driven by the same generator against the same oracle shape, so a divergence in one is read against its siblings. Each test samples independently; it is the generator that is shared, not one sequence. `LfuCache` also lives here, as the exception: its storage is a hash table, but eviction order is its whole contract, so it shares neither the oracle (the definition of LFU, not a BCL type) nor the property that order matters only through resize and deletion.
+- **`Celerity.Tests/Collections/*DifferentialTests.cs`** — the differential suites, and where every structurally distinctive type lives. Usually one file per collection, named `<Type>DifferentialTests.cs`, but **not always**: `SetAlgebraDifferentialTests` carries `SmallSet` alongside seven hash-backed sets, and `EnumSetAlgebraDifferentialTests` carries `EnumSet`, which cannot join the `int`-parameterized battery. Types with a file of their own include: `RankedSet`, `Rope`, `TimerWheel`, `CompressedGraph`, `SuffixArray`, `AhoCorasick`, the B-trees, the spatial indexes, `CompressedIntSet`, `RankSelectBitVector`. These oracles are type-specific — `SortedSet` plus its enumeration order for `RankedSet`'s ranks, `StringBuilder` for `Rope`, a naive scan for the text indexes — so they do not generalize into the shared file. They are randomized, but not all in the same way, and that shows up when one fails: see [what a failure gives you](#what-a-failure-gives-you) below.
 
-When a property fails, CsCheck **shrinks** the failing sequence to a minimal reproduction and prints a seed. Replay it by setting the seed:
+**How to tell what covers a given type — and why you should check rather than infer.** Oracle coverage lives under at least four naming conventions, and no one of them is the index. Not all of it is *property-based*: the third column says which conventions are CsCheck-generated, and only those satisfy the parity rule in `CONTRIBUTING.md`.
+
+| Convention | Example | Property test? | What it is |
+|---|---|---|---|
+| `Properties/CollectionModelPropertyTests.cs` | `CelerityDictionary_ShouldMatch_BclDictionary` | **Yes** | The cross-family model suite above. |
+| `Collections/<Type>DifferentialTests.cs` | `RankedSetDifferentialTests` | **Mostly** — see the table below; some drive a bare `Random` | The per-type suites, the largest group. |
+| `Collections/<Operation>DifferentialTests.cs` | `SetAlgebraDifferentialTests` (carries `SmallSet`), `EnumSetAlgebraDifferentialTests`, `SketchMergeDifferentialTests` | Seeded, not CsCheck | Named for the *operation family*, so a search for `SmallSetDifferentialTests` finds nothing. |
+| `Collections/<Type>AccuracyTests.cs` | `TopKSketchAccuracyTests`, `CountMinSketchAccuracyTests`, `HyperLogLogAccuracyTests` | **No** — ordinary xUnit `[Fact]`/`[Theory]` cases; they build data from hard-coded seeds or fixed datasets, but nothing is CsCheck-generated, so nothing shrinks | Approximate types checked against an exact model for the guarantee each advertises, deterministic for `TopKSketch` and for `CountMinSketch`'s never-underestimate half, statistical for `CountMinSketch`'s error bound and for `HyperLogLog`. `TopKSketch` and `CountMinSketch` build their streams from hard-coded `Random` seeds; `HyperLogLog` uses fixed sequential and string datasets sized to its error bound. Oracle coverage, but **not** the CsCheck property the parity rule asks for. |
+
+Plus `src/Celerity.Fuzz/Differential.cs`, whose `Differential.All` roster is the nightly layer.
+
+So: **`grep -rl "\bYourType\b" src/Celerity.Tests/` and check `Differential.All`.** Do not conclude a type is uncovered because a file you expected does not exist — that inference is what produced [#416](https://github.com/marius-bughiu/Celerity/issues/416), and it went on to produce several more wrong rosters in the process of fixing it. Known gaps are tracked in [#418](https://github.com/marius-bughiu/Celerity/issues/418) rather than listed here, so there is one place to correct when they close.
+
+**Where a new property test goes:** into `Collections/<Type>DifferentialTests.cs` unless your type is a member of an existing family in the model suite, in which case add a block there next to its siblings.
+
+The input takes one of two shapes:
+
+- **Mutable types** generate a list of operations (`Set` / `Remove` / `TryAdd` / `Clear` for dictionaries; insert / remove / split / join for `Rope`; schedule / cancel / advance for `TimerWheel`) and apply the **identical** sequence to both sides, checking each operation's own result as it goes and reconciling the full observable state — `Count`, lookups across the whole domain, enumeration — at the end.
+- **Build-once types** — `CompressedGraph`, `SuffixArray`, `AhoCorasick` — have no operation sequence. They generate the *input* instead (an edge list, a text, a pattern set), construct the type from it, and reconcile every query against the naive answer computed from the same input.
+
+The generated domains are deliberately narrow — small key ranges that include `0` and negatives, alphabets of two to six letters, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest.
+
+### What a failure gives you
+
+Five shapes are in use and they differ in exactly the way that matters when one goes red. **Identify the shape from the file in front of you** — the middle column is the tell — rather than looking your type up in a roster that will drift as suites are added.
+
+| Shape | How to recognize it | On failure |
+|---|---|---|
+| **Directly generated** | CsCheck generates the operations or the input itself: `GenOp.List[0, 2500].Sample(...)` | Shrinks to a minimal counterexample and prints a seed. The best case. |
+| **Seed-driven, generated size** | `Gen.Select(Gen.Int[...], …, Gen.UInt)`, then `new Random(seed)` fills in the dimensions CsCheck chose | The seed replays exactly and the **size axes shrink**, so CsCheck finds the smallest text or point count that still fails. The *content* at that size cannot shrink — a neighbouring seed is an unrelated draw. |
+| **Seed-driven, fixed length** | `Gen.UInt` for the seed, but the loop bound is a literal in the body | Replays exactly, geometry shrinks, **the trace does not get shorter**. Expect to read the whole run. |
+| **Seed as a theory argument** | `[Theory]` + `[InlineData(1)] [InlineData(2)]…` bound to an `int seed` parameter | xUnit names the failing seed, so you rerun that one case. No reduction. |
+| **Seed looped inside** | `[Theory]` over something else (a capacity), with `for (int seed = …)` in the body | The failing *parameter* is named; the failing **seed is not**. Add a print or a breakpoint. |
+
+At the time of writing that is four suites in the first shape, eleven in the second and third together, seven in the fourth and six in the fifth — but check the file rather than the count, which is what the middle column is for.
+
+For the first three shapes, replay by setting the seed and filtering to the class the failure names:
 
 ```bash
 # PowerShell
-$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter CollectionModelPropertyTests
+$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter RankedSetDifferentialTests
 ```
 
 ```bash
 # bash
-CsCheck_Seed='0000LASTpRINTED' dotnet test --filter CollectionModelPropertyTests
+CsCheck_Seed='0000LASTpRINTED' dotnet test --filter RankedSetDifferentialTests
 ```
 
-Coverage targets: `CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`, `LongSet`, `CelerityMultiMap`, and `FrozenCelerityDictionary`.
+What separates these is how much of the case CsCheck is handed *as data*. Hand it the operations and it reduces them to a minimal counterexample. Hand it the dimensions plus a seed and it reduces the dimensions but not the content, because a neighbouring seed is an unrelated draw. Hand it only a seed and a fixed loop count and it can reduce nothing about the trace. Directly generated is the better shape where it is practical, since a reduced counterexample beats a long reproducible one — but a generated size axis recovers most of the benefit for a fraction of the effort, which is why nine of the eleven seed-driven suites have one.
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 

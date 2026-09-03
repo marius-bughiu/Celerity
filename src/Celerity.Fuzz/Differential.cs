@@ -66,6 +66,7 @@ internal static class Differential
         ("CompressedGraph", CompressedGraphCase),
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
+        ("Rope", RopeCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -2210,6 +2211,234 @@ internal static class Differential
         }
 
         return matched;
+    }
+
+    // ---- rope ----------------------------------------------------------------
+
+    // Rope against the string it models. Its state is path-dependent in a way a fixture cannot reach: a
+    // rebalance, a leaf split, or the amortized defragmenting rebuild goes wrong for a particular *history*
+    // of edits, not for a particular content, and the wrong answer surfaces many operations later as a
+    // character read from the wrong leaf. The B-trees and RankedSet restructure under mutation too; what is
+    // specific to a rope is that the restructuring moves *characters between leaves*, so a misplaced boundary
+    // silently changes the text rather than the order of keys that remain individually intact.
+    //
+    // The oracle is a plain string rebuilt after every step — quadratic, and deliberately so, because it
+    // shares no code with the rope and has no state of its own to get wrong. Chunk sizes are drawn small
+    // (MinChunkSize upwards) so that a case of a couple of hundred characters builds a tree several levels
+    // deep and every edit lands near a leaf boundary; at the shipped 512-character default the same case
+    // would never leave the root leaf.
+    //
+    // Split and AppendAndClear have no StringBuilder counterpart and are modelled as a slice and a
+    // concatenation. They are the pair that rewires the tree wholesale rather than one path through it, and
+    // the joined rope is kept as the case's subject afterwards so a later edit runs over a tree built by a
+    // join rather than by insertion.
+    private static void RopeCase(Random rng)
+    {
+        int chunkSize = rng.Next(Rope.MinChunkSize, Rope.MinChunkSize + 25);
+        var sut = new Rope(chunkSize);
+        string oracle = string.Empty;
+
+        int operations = OpCount(rng);
+        for (int op = 0; op < operations; op++)
+        {
+            // Every index is drawn over the whole valid range including both ends, and every length may be
+            // zero, because the boundary arithmetic is where an off-by-one lands. Three of those boundaries
+            // are documented no-ops — an empty insert, a zero-length remove, and Split(Length) — and the
+            // others are the extreme cases rather than no-ops: an insert at Length appends, and Split(0)
+            // moves the whole rope into the returned tail and leaves an empty one behind. This target does
+            // not hold an
+            // enumerator across an operation, so the *other* half of the no-op contract — that a Clear or a
+            // TrimExcess which changes nothing must not bump the version and tear down live enumerators —
+            // is not observable here; RopeEnumerationTests and ClearNoOpVersionTests pin that.
+            int index = rng.Next(0, oracle.Length + 1);
+
+            switch (rng.Next(0, 100))
+            {
+                case < 26:
+                {
+                    string text = RopeText(rng, chunkSize);
+                    sut.Insert(index, text);
+                    oracle = oracle.Insert(index, text);
+                    break;
+                }
+                case < 40:
+                {
+                    char value = RopeChar(rng);
+                    sut.Insert(index, value);
+                    oracle = oracle.Insert(index, value.ToString());
+                    break;
+                }
+                case < 54:
+                {
+                    string text = RopeText(rng, chunkSize);
+                    sut.Append(text);
+                    oracle += text;
+                    break;
+                }
+                case < 78:
+                {
+                    // Bounded to a window rather than drawn over the whole tail: a remove that can take
+                    // everything after `index` truncates instead of editing, and a case whose length keeps
+                    // collapsing never builds a tree more than a level or two deep — which is the whole
+                    // reason to fuzz this type. The window still spans the chunk size, so a remove can span
+                    // several whole leaves and force a merge.
+                    int count = rng.Next(0, Math.Min(oracle.Length - index, chunkSize * 3) + 1);
+                    sut.Remove(index, count);
+                    oracle = oracle.Remove(index, count);
+                    break;
+                }
+                case < 84:
+                {
+                    // A split leaves the head behind and hands back the tail; rejoining them has to restore
+                    // exactly the text that was there, so the pair is checked as a round trip before the tail
+                    // is either dropped or put back.
+                    Rope tail = sut.Split(index);
+                    Check(tail.ToString() == oracle[index..], $"Split({index}) tail");
+                    Check(sut.ToString() == oracle[..index], $"Split({index}) head");
+                    Check(tail.ChunkSize == chunkSize, "Split did not carry the chunk size across");
+
+                    // Both halves, here rather than at the bottom of the loop. A split rebalances two trees
+                    // and the loop's guard only ever sees `sut` — so an over-deep tail that is dropped below,
+                    // or rejoined into a tree the join then rebalances, would never be inspected at all.
+                    Check(sut.Depth <= RopeMaxDepth, $"Split({index}) left an over-deep head");
+                    Check(tail.Depth <= RopeMaxDepth, $"Split({index}) produced an over-deep tail");
+
+                    // Rejoining is the common case for the same reason the remove above is bounded: dropping
+                    // the tail truncates, and a case that keeps truncating never gets deep.
+                    if (rng.Next(0, 4) != 0)
+                    {
+                        sut.AppendAndClear(tail);
+                        Check(tail.Length == 0, "AppendAndClear left the source non-empty");
+                    }
+                    else
+                    {
+                        oracle = oracle[..index];
+                    }
+
+                    break;
+                }
+                case < 90:
+                {
+                    // A join whose source was built independently, so the adopted leaves are not ones this
+                    // tree ever laid out — the case the equal-chunk-size rule exists to make safe.
+                    string text = RopeText(rng, chunkSize);
+                    var source = new Rope(text, chunkSize);
+                    Check(source.Depth <= RopeMaxDepth, "the bulk constructor built an over-deep rope");
+                    sut.AppendAndClear(source);
+                    oracle += text;
+                    Check(source.Length == 0, "AppendAndClear left the source non-empty");
+                    break;
+                }
+                case < 98:
+                    // Forces the defragmenting rebuild mid-session rather than only at the amortized
+                    // threshold, so a later edit runs over a tree the rebuild laid out.
+                    sut.TrimExcess();
+                    break;
+                default:
+                    sut.Clear();
+                    oracle = string.Empty;
+                    break;
+            }
+
+            // The depth bound goes first, before any read that walks a LeafCursor. The cursor holds its
+            // root-to-leaf path in a fixed-size inline array with no runtime guard, so on a tree one level
+            // too deep it writes past the buffer rather than throwing — and a guard that runs after the
+            // traversal it protects is not a guard. IndexOf below and the enumerators at the end both go
+            // through the cursor; ToString (CopyRange) and the indexer (FindLeaf) do not.
+            Check(sut.Depth <= RopeMaxDepth, $"Depth {sut.Depth} exceeded the enumerators' path buffer");
+
+            // Content is then reconciled every step, not only at the end. Checking length alone would let a
+            // same-length divergence — a rotation that swaps two leaves, a split that copies the right
+            // characters to the wrong offset — survive until a later Clear or a dropped split tail erased it,
+            // and the case would pass with the bug still in the tree. This costs an O(n) comparison per
+            // operation, which the string oracle is already paying to rebuild itself.
+            Check(sut.Length == oracle.Length, $"Length {sut.Length} != {oracle.Length}");
+            Check(sut.ToString() == oracle, $"content diverged after operation {op}");
+
+            // ToString walks the tree through CopyRange; the indexer descends through FindLeaf and IndexOf
+            // through LeafCursor.Seek. Three independent traversals, so a bug in either cursor is invisible
+            // to the content check above — and, like a content divergence, would be erased by a later Clear
+            // or dropped split tail if it were only checked once the run finished. Both ends plus one
+            // generated interior position keep this O(log n) per step; the exhaustive sweep still runs at
+            // the end.
+            if (oracle.Length > 0)
+            {
+                int probe = rng.Next(0, oracle.Length);
+                Check(sut[0] == oracle[0], $"[0] diverged after operation {op}");
+                Check(sut[oracle.Length - 1] == oracle[^1], $"[^1] diverged after operation {op}");
+                Check(sut[probe] == oracle[probe], $"[{probe}] diverged after operation {op}");
+
+                char sought = RopeChar(rng);
+                Check(sut.IndexOf(sought, probe) == oracle.IndexOf(sought, probe),
+                    $"IndexOf({sought}, {probe}) diverged after operation {op}");
+            }
+        }
+
+        Check(sut.ToString() == oracle, "ToString diverged from the model");
+
+        // Two independent descents plus the cursor, over the same tree. The indexer goes through FindLeaf and
+        // ToString through CopyRange, so those two really are separate; the character enumerator and
+        // GetChunks both drive a LeafCursor, so they share a traversal and a cursor-ordering bug would move
+        // them together. They are still worth checking separately — they differ in what they hand back, and
+        // GetChunks exposes the leaf buffers directly — but not as three independent votes.
+        for (int i = 0; i < oracle.Length; i++)
+            Check(sut[i] == oracle[i], $"[{i}]");
+
+        CheckSameSequence(sut.Select(c => (int)c), oracle.Select(c => (int)c), "enumeration");
+
+        var chunked = new StringBuilder(oracle.Length);
+        foreach (ReadOnlySpan<char> chunk in sut.GetChunks())
+        {
+            Check(chunk.Length > 0, "GetChunks yielded an empty chunk");
+            Check(chunk.Length <= chunkSize, "GetChunks yielded a chunk wider than the chunk size");
+            chunked.Append(chunk);
+        }
+
+        Check(chunked.ToString() == oracle, "GetChunks diverged from the model");
+
+        // Sampled rather than exhaustive: IndexOf is O(n) per call, so checking every start would make the
+        // case quadratic in a length a long run lets reach thousands, and cost the soak the case rate that
+        // is the whole point of it. Both ends are always included, since those are the boundary cases.
+        int stride = (oracle.Length / 16) + 1;
+        for (int start = 0; start <= oracle.Length; start += stride)
+        {
+            char value = RopeChar(rng);
+            Check(sut.IndexOf(value, start) == oracle.IndexOf(value, start), $"IndexOf({value}, {start})");
+        }
+
+        Check(sut.IndexOf(RopeChar(rng), oracle.Length) == -1, "IndexOf past the last character");
+
+        if (oracle.Length > 0)
+        {
+            int index = rng.Next(0, oracle.Length);
+            int count = rng.Next(0, oracle.Length - index + 1);
+            Check(sut.ToString(index, count) == oracle.Substring(index, count), $"ToString({index}, {count})");
+
+            var copied = new char[count];
+            sut.CopyTo(index, copied, count);
+            Check(copied.AsSpan().SequenceEqual(oracle.AsSpan(index, count)), $"CopyTo({index}, {count})");
+        }
+    }
+
+    // Matches Rope's own MaxDepth, which is private: the deepest an AVL tree of leaves can be inside an
+    // int-length document, with headroom. A case that trips this has found a rebalance bug, not a deep rope.
+    private const int RopeMaxDepth = 48;
+
+    // A three-letter alphabet, for the same reason the text structures above use one: it makes long runs of
+    // equal characters the norm, so IndexOf and the leaf-boundary arithmetic are exercised where a wide
+    // alphabet would make every position distinguishable.
+    private static char RopeChar(Random rng) => (char)('a' + rng.Next(3));
+
+    private static string RopeText(Random rng, int chunkSize)
+    {
+        // Spanning the chunk size on both sides is the point: a shorter insert fits inside one leaf, an insert
+        // of exactly the chunk size fills one, and a longer one has to be laid out across several.
+        int length = rng.Next(0, (chunkSize * 2) + 1);
+        var text = new StringBuilder(length);
+        for (int i = 0; i < length; i++)
+            text.Append(RopeChar(rng));
+
+        return text.ToString();
     }
 
     // ---- interval tree -------------------------------------------------------
