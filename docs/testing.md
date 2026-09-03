@@ -8,7 +8,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 |---|---|---|---|
 | Behavioural unit tests | `Celerity.Tests` | Each public method does the right thing on hand-picked inputs, including collisions, resizes, and the out-of-band default/zero/null key. | `dotnet test` |
 | Edge-case coverage | alongside each type's tests (`*Tests.cs`, `*EnumerationTests.cs`, `*CollisionTests.cs`) | The corners example tests skip: non-generic `IEnumerable`/`IEnumerator` paths, `Reset()`, indexer misses, `Clear()` on empty, wrap-around backward-shift. | `dotnet test` |
-| Property-based tests | **two homes** — `Celerity.Tests/Properties/` (cross-family model suite) and `Celerity.Tests/Collections/*DifferentialTests.cs` (per type, and a few per operation family) | Over randomized operation sequences or generated inputs, an *exact* collection stays observably equal to its oracle, and a *probabilistic* one stays inside the guarantee it advertises. Coverage is broad but not universal; the section below says how to check a given type. | `dotnet test` |
+| Property-based tests | **two homes** — `Celerity.Tests/Properties/` (cross-family model suite) and `Celerity.Tests/Collections/*DifferentialTests.cs` (per type, and a few per operation family) | Over randomized operation sequences or generated inputs, an *exact* collection stays observably equal to its oracle, and an *approximate* one stays inside the guarantee it advertises. Coverage is broad but not universal; the section below says how to check a given type. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
 | Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: every package packs with its symbols and metadata intact, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
@@ -27,7 +27,11 @@ Celerity attacks those with two adversarial layers that don't rely on the author
 The oracle *is* the specification, but what it asserts depends on what the type promises:
 
 - **Exact types** — the hash family, the ordered containers, `Rope`, the text indexes — must match the oracle observably, and any difference is a bug. Where the BCL ships a counterpart it is the oracle (`Dictionary<,>`, `HashSet<>`, `SortedSet<T>` for `RankedSet`, `StringBuilder` for `Rope`); where it does not, the oracle is the definition or the naive loop the type replaces (LFU eviction order for `LfuCache`, a linearly-scanned list of deadlines for `TimerWheel`, every pattern tested at every position for `AhoCorasick`).
-- **Probabilistic types** are *supposed* to differ from the exact answer, so the oracle checks the guarantee instead of equality: `BloomFilter`, `CuckooFilter` and `XorFilter` may report a false positive but never a false negative, `CountMinSketch` may overestimate but never under, and `HyperLogLog` must land near the exact cardinality within a bound derived from its standard error — the accuracy suite allows three standard errors plus a small absolute slack for the small-range regime, since a standard error is a dispersion rather than a per-estimate ceiling. Asserting equality for any of these would be asserting the wrong thing.
+- **Approximate types** are *supposed* to differ from the exact answer, so the oracle checks the guarantee instead of equality — and the guarantees are not all of one kind:
+  - **Deterministic bounds**, which hold for every input and can be asserted outright: `BloomFilter`, `CuckooFilter` and `XorFilter` never return a false negative; `CountMinSketch` never underestimates; `TopKSketch` implements Space-Saving, whose `[count − error, count]` interval, no-underestimate property and heavy-hitter-never-missed theorem hold regardless of eviction tie-breaking, and which is exact while capacity is not exceeded.
+  - **A statistical bound**, which needs a tolerance: `HyperLogLog`'s standard error is a dispersion rather than a per-estimate ceiling, so its suite allows three standard errors plus a small absolute slack for the small-range regime.
+
+  Asserting equality for any of these would be asserting the wrong thing; so would asserting a statistical tolerance where a deterministic theorem applies.
 
 What matters in both cases is that the oracle shares no code with the type under test.
 
@@ -49,7 +53,7 @@ dotnet test
 
 ## Property-based tests (CsCheck)
 
-[CsCheck](https://github.com/AnthonyLloyd/CsCheck) makes parity the explicit contract: a test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the relationship the type promises — observable equality for an exact type, the advertised one-sided guarantee or error bound for a probabilistic one (see [above](#philosophy-example-tests-then-adversarial-tests)). All of it runs on **every pull request** — `ci.yml` runs the test project unfiltered.
+[CsCheck](https://github.com/AnthonyLloyd/CsCheck) makes parity the explicit contract: a test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the relationship the type promises — observable equality for an exact type, the advertised guarantee or error bound for an approximate one (see [above](#philosophy-example-tests-then-adversarial-tests)). All of it runs on **every pull request** — `ci.yml` runs the test project unfiltered.
 
 **These tests live in two places, and you need to look in both.** This guide previously named only the first, which led a reviewer to conclude that six collections had no property coverage when each in fact had a suite in the second ([#416](https://github.com/marius-bughiu/Celerity/issues/416)).
 
@@ -63,7 +67,7 @@ dotnet test
 | `Properties/CollectionModelPropertyTests.cs` | `CelerityDictionary_ShouldMatch_BclDictionary` | The cross-family model suite above. |
 | `Collections/<Type>DifferentialTests.cs` | `RankedSetDifferentialTests` | The per-type suites, the largest group. |
 | `Collections/<Operation>DifferentialTests.cs` | `SetAlgebraDifferentialTests` (carries `SmallSet`), `EnumSetAlgebraDifferentialTests` | Named for the *operation family*, so a search for `SmallSetDifferentialTests` finds nothing. |
-| `Collections/<Type>AccuracyTests.cs` | `TopKSketchAccuracyTests`, `CountMinSketchAccuracyTests`, `HyperLogLogAccuracyTests` | Probabilistic types checked against an exact model — not for equality but for the guarantee each advertises. Inputs vary: `TopKSketch` and `CountMinSketch` use fixed-seed random streams, `HyperLogLog` uses fixed sequential and string datasets sized to its error bound. |
+| `Collections/<Type>AccuracyTests.cs` | `TopKSketchAccuracyTests`, `CountMinSketchAccuracyTests`, `HyperLogLogAccuracyTests` | Approximate types checked against an exact model — not for equality but for the guarantee each advertises, deterministic for the first two and statistical for `HyperLogLog`. Inputs vary: `TopKSketch` and `CountMinSketch` use fixed-seed random streams, `HyperLogLog` uses fixed sequential and string datasets sized to its error bound. |
 
 Plus `src/Celerity.Fuzz/Differential.cs`, whose `Differential.All` roster is the nightly layer.
 

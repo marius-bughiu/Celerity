@@ -2242,8 +2242,11 @@ internal static class Differential
         for (int op = 0; op < operations; op++)
         {
             // Every index is drawn over the whole valid range including both ends, and every length may be
-            // zero: an insert at Length, a remove of nothing and a split at either end are all documented
-            // no-ops, and the boundary arithmetic is where an off-by-one lands. This target does not hold an
+            // zero, because the boundary arithmetic is where an off-by-one lands. Three of those boundaries
+            // are documented no-ops — an empty insert, a zero-length remove, and Split(Length) — and the
+            // others are the extreme cases rather than no-ops: an insert at Length appends, and Split(0)
+            // moves the whole rope into the returned tail and leaves an empty one behind. This target does
+            // not hold an
             // enumerator across an operation, so the *other* half of the no-op contract — that a Clear or a
             // TrimExcess which changes nothing must not bump the version and tear down live enumerators —
             // is not observable here; RopeEnumerationTests and ClearNoOpVersionTests pin that.
@@ -2373,8 +2376,11 @@ internal static class Differential
 
         Check(sut.ToString() == oracle, "ToString diverged from the model");
 
-        // Three independent read paths over the same tree: the indexer seeks per character, the enumerator
-        // walks leaves in order, and GetChunks hands out the leaf buffers untouched.
+        // Two independent descents plus the cursor, over the same tree. The indexer goes through FindLeaf and
+        // ToString through CopyRange, so those two really are separate; the character enumerator and
+        // GetChunks both drive a LeafCursor, so they share a traversal and a cursor-ordering bug would move
+        // them together. They are still worth checking separately — they differ in what they hand back, and
+        // GetChunks exposes the leaf buffers directly — but not as three independent votes.
         for (int i = 0; i < oracle.Length; i++)
             Check(sut[i] == oracle[i], $"[{i}]");
 
