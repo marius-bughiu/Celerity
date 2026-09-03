@@ -2243,8 +2243,10 @@ internal static class Differential
         {
             // Every index is drawn over the whole valid range including both ends, and every length may be
             // zero: an insert at Length, a remove of nothing and a split at either end are all documented
-            // no-ops, and a no-op that is not one is exactly the kind of bug an enumerator-invalidation or
-            // version-bump mistake produces.
+            // no-ops, and the boundary arithmetic is where an off-by-one lands. This target does not hold an
+            // enumerator across an operation, so the *other* half of the no-op contract — that a Clear or a
+            // TrimExcess which changes nothing must not bump the version and tear down live enumerators —
+            // is not observable here; RopeEnumerationTests and ClearNoOpVersionTests pin that.
             int index = rng.Next(0, oracle.Length + 1);
 
             switch (rng.Next(0, 100))
