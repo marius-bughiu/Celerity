@@ -49,7 +49,7 @@ dotnet test                  # xUnit
 - Hashers are `struct`s passed as generic constraints (`where THasher : struct, IHashProvider<T>`) so the JIT devirtualizes them — do not turn them into classes/interfaces.
 - Avoid allocations on hot paths.
 
-Full coding conventions, the test-naming scheme (`Method_ShouldExpectedBehavior_WhenCondition`), and the parity-coverage expectation for new collections are in `CONTRIBUTING.md`.
+Full coding conventions and the parity-coverage expectation for new collections are in `CONTRIBUTING.md`.
 
 ## CHANGELOG
 

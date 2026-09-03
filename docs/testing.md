@@ -38,7 +38,7 @@ What matters in both cases is that the oracle shares no code with the type under
 
 ## Behavioural unit tests
 
-The bulk of the suite lives in `Celerity.Tests`, mirroring the library's folder layout. Test names follow `Method_ShouldExpectedBehavior_WhenCondition`. Notable categories:
+The bulk of the suite lives in `Celerity.Tests`, mirroring the library's folder layout. Notable categories:
 
 - **Collision tests** (`*CollisionTests.cs`) — force every key down one probe chain with a constant hasher, then verify lookups, removals, and backward-shift deletion keep every entry findable.
 - **Enumeration tests** (`*EnumerationTests.cs`) — the struct enumerators, `Keys`/`Values` views, mid-enumeration mutation detection, and the non-generic interface surface (`IEnumerable.GetEnumerator()`, `object IEnumerator.Current`, `IEnumerator.Reset()`).

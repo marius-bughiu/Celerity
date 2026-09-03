@@ -75,7 +75,7 @@ dotnet pack --configuration Release
 ### Testing
 - Use xUnit for unit tests
 - Test class names should match the class being tested with `Tests` suffix (e.g., `CelerityDictionaryTests`)
-- Use descriptive test method names following pattern: `Method_ShouldExpectedBehavior_WhenCondition`
+- Use descriptive test method names
 - Use `[Fact]` for parameterless tests, `[Theory]` with `[InlineData]` for parameterized tests
 
 ### Performance Considerations
