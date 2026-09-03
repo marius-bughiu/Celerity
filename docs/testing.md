@@ -8,7 +8,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 |---|---|---|---|
 | Behavioural unit tests | `Celerity.Tests` | Each public method does the right thing on hand-picked inputs, including collisions, resizes, and the out-of-band default/zero/null key. | `dotnet test` |
 | Edge-case coverage | alongside each type's tests (`*Tests.cs`, `*EnumerationTests.cs`, `*CollisionTests.cs`) | The corners example tests skip: non-generic `IEnumerable`/`IEnumerator` paths, `Reset()`, indexer misses, `Clear()` on empty, wrap-around backward-shift. | `dotnet test` |
-| Property-based tests (CsCheck) | **two homes** — `Celerity.Tests/Properties/CollectionModelPropertyTests.cs` and most of `Celerity.Tests/Collections/*DifferentialTests.cs` | Over CsCheck-generated operation sequences or inputs, a collection stays observably equal to its oracle; a failure shrinks and replays from a seed. | `dotnet test` |
+| Property-based tests (CsCheck) | **two homes** — `Celerity.Tests/Properties/CollectionModelPropertyTests.cs` and most of `Celerity.Tests/Collections/*DifferentialTests.cs` | Over CsCheck-generated operation sequences or inputs, a collection keeps the relationship it promises to an independent oracle — observable equality for an exact type, the advertised bound for an approximate one. A failure replays from a seed; how much of it *shrinks* depends on the shape (see below). | `dotnet test` |
 | Non-generated oracle tests | the thirteen `Celerity.Tests/Collections/*DifferentialTests.cs` that drive a bare `Random`, and the three `*AccuracyTests.cs` | The same oracle idea without CsCheck, over seeded streams or fixed datasets (`HyperLogLog`'s are fixed, with no `Random` at all): exact equality for the exact types (`Deque` against a `List`-backed reference deque, `Trie` against a `SortedDictionary`), the advertised guarantee for the approximate ones. Randomized but not generated, so **no shrinking**, and these do not satisfy the parity rule's property-test requirement. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
@@ -22,7 +22,7 @@ Example-based unit tests are necessary but not sufficient for a data-structure l
 
 Celerity attacks those with two adversarial layers that don't rely on the author's imagination:
 
-- **Property-based testing** generates a randomized input — an operation sequence for a mutable type, or the construction input for a build-once one — and checks an *invariant*, equivalence to a known-correct oracle, rather than a fixed expected output.
+- **Property-based testing** generates a randomized input — an operation sequence for a mutable type, or the construction input for a build-once one — and checks an *invariant* rather than a fixed expected output: the relationship the type promises to an independent oracle, which is equality for an exact type and a bound for an approximate one.
 - **Differential fuzzing** runs the same idea as an unbounded soak: keep generating sequences until something diverges, and when it does, hand back a seed that reproduces it.
 
 The oracle *is* the specification, but what it asserts depends on what the type promises:
