@@ -12,9 +12,9 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- **Every collection added under the parity rule now carries all three test layers.** `RankedSet`, `Rope`, `TimerWheel`, `CompressedGraph`, `SuffixArray` and `AhoCorasick` gained a CsCheck property test against an oracle, so they are compared on every pull request rather than only by the nightly fuzz soak; `Rope` gained the `Celerity.Fuzz` target it shipped without. Testing only — no shipped code changed. Closes [#415](https://github.com/marius-bughiu/Celerity/issues/415). Closes [#416](https://github.com/marius-bughiu/Celerity/issues/416).
+- **`Rope` gained the `Celerity.Fuzz` target it shipped without**, and `TimerWheel`'s differential suite now covers `ScheduleAt` alongside `Schedule`. Testing only — no shipped code changed. Closes [#415](https://github.com/marius-bughiu/Celerity/issues/415).
 
-- **`CONTRIBUTING.md` and [docs/testing.md](docs/testing.md) now state the parity rule precisely** — the property test and the fuzz target are separate gates rather than alternatives, and the oracle may be a definition where the BCL ships no counterpart. The pre-rule backlog is rostered in [#418](https://github.com/marius-bughiu/Celerity/issues/418).
+- **[docs/testing.md](docs/testing.md) and `CONTRIBUTING.md` now say where property tests actually live.** The guide named only `Celerity.Tests/Properties/`, so the per-type `Collections/<Type>DifferentialTests.cs` suites — which is where every structurally distinctive collection is covered — read as not existing, and a review concluded six collections had no property coverage on that basis. Both documents now describe the two homes and which one a new test belongs in. Closes [#416](https://github.com/marius-bughiu/Celerity/issues/416).
 
 - **`scripts/check_doc_anchors.js` now rejects links to an anchor that cannot stay put** — one a repeated heading can renumber, or one that two elements answer to. Such a link resolves today and lands somewhere else once a heading is added above it. Repeated headings stay legal; link to a unique hand-written `<a id>` instead, which `--list` helps you tell apart. Closes [#409](https://github.com/marius-bughiu/Celerity/issues/409).
 

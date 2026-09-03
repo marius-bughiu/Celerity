@@ -44,31 +44,33 @@ dotnet test
 
 ## Property-based tests (CsCheck)
 
-Two files under `Celerity.Tests/Properties/` use [CsCheck](https://github.com/AnthonyLloyd/CsCheck) to make parity the explicit contract. Each test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the two stay observably equal. The input takes one of two shapes, depending on the type:
+[CsCheck](https://github.com/AnthonyLloyd/CsCheck) makes parity the explicit contract: a test generates a randomized input, drives the Celerity type and an oracle from it, and asserts the two stay observably equal. All of it runs on **every pull request** — `ci.yml` runs the test project unfiltered.
 
-- **Mutable types** — most of the suite — generate a list of operations (`Set`, `Remove`, `TryAdd`, `Clear` for dictionaries; `Add` / `RemoveValue` / `RemoveAll` for the multi-map; insert / remove / split / join for `Rope`; schedule / cancel / advance for `TimerWheel`) and apply the **identical** sequence to both sides, checking after each step and again at the end: `Count`, per-key lookups across the whole domain, and full enumeration.
+**These tests live in two places, and you need to look in both.** This guide previously named only the first, which led a reviewer to conclude that six collections had no property coverage when each in fact had a suite in the second ([#416](https://github.com/marius-bughiu/Celerity/issues/416)).
+
+- **`Celerity.Tests/Properties/CollectionModelPropertyTests.cs`** — the cross-family model suite. One file holding a property per type for the collections that share a shape and an oracle: the dictionaries and sets, the multi-map and multi-set, the frozen pair, the filters and sketches, `BitSet`, and `LfuCache`. Grouping them together is what makes the *family* comparable — the same generated operation list runs against every dictionary in turn.
+- **`Celerity.Tests/Collections/<Type>DifferentialTests.cs`** — the per-type differential suites, one file per collection, and where every structurally distinctive type lives: `RankedSet`, `Rope`, `TimerWheel`, `CompressedGraph`, `SuffixArray`, `AhoCorasick`, the B-trees, the spatial indexes, `CompressedIntSet`, `RankSelectBitVector`. These oracles are type-specific — `SortedSet` plus its enumeration order for `RankedSet`'s ranks, `StringBuilder` for `Rope`, a naive scan for the text indexes — so they do not generalize into the shared file. Not every file here uses CsCheck: some drive a seeded `Random` instead, which is randomized but does not shrink.
+
+**Where a new property test goes:** into `Collections/<Type>DifferentialTests.cs` unless your type is a member of an existing family in the model suite, in which case add a block there next to its siblings.
+
+The input takes one of two shapes:
+
+- **Mutable types** generate a list of operations (`Set` / `Remove` / `TryAdd` / `Clear` for dictionaries; insert / remove / split / join for `Rope`; schedule / cancel / advance for `TimerWheel`) and apply the **identical** sequence to both sides, checking each operation's own result as it goes and reconciling the full observable state — `Count`, lookups across the whole domain, enumeration — at the end.
 - **Build-once types** — `CompressedGraph`, `SuffixArray`, `AhoCorasick` — have no operation sequence. They generate the *input* instead (an edge list, a text, a pattern set), construct the type from it, and reconcile every query against the naive answer computed from the same input.
 
-The generated domains are deliberately narrow — tiny key ranges that include `0` and negatives, three-letter alphabets, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest. The number of sequences per invocation is set per test, from 20 for the cases that build large structures up to 2 000 for the cheapest ones.
+The generated domains are deliberately narrow — small key ranges that include `0` and negatives, alphabets of two to six letters, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest.
 
 When a property fails, CsCheck **shrinks** the failing sequence to a minimal reproduction and prints a seed. Replay it by setting the seed:
 
 ```bash
 # PowerShell
-$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter PropertyTests
+$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter CollectionModelPropertyTests
 ```
 
 ```bash
 # bash
-CsCheck_Seed='0000LASTpRINTED' dotnet test --filter PropertyTests
+CsCheck_Seed='0000LASTpRINTED' dotnet test --filter CollectionModelPropertyTests
 ```
-
-The suite is split by what is on trial, not by collection family:
-
-- **`CollectionModelPropertyTests.cs`** — types whose storage is a flat table, each modelled against a BCL collection of the same shape: the dictionaries and sets, the multi-map and multi-set, the frozen pair, the filters and sketches, and `BitSet`. `LfuCache` is the exception among them and worth naming — its storage is a hash table, but eviction order is its whole contract, so its oracle is the definition of LFU rather than a BCL type and its answer depends on the order of every access.
-- **`StructuredCollectionPropertyTests.cs`** — types where the *layout* is what is being tested, and the answer depends on how the structure reached its current shape: `RankedSet` (bucket splits, drops and merges, and the Fenwick index over them), `Rope` (AVL rebalancing and the defragmenting rebuild), `TimerWheel` (cascades between levels), `CompressedGraph` (the CSR layout read back by binary search), `SuffixArray` (prefix doubling) and `AhoCorasick` (failure and output links). Most of these have no BCL counterpart at all, so the oracle is the definition or the naive loop the type replaces.
-
-Both are per-PR gates. The types still missing a property test are the ones that predate the parity rule; they are being backfilled under [#418](https://github.com/marius-bughiu/Celerity/issues/418).
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 

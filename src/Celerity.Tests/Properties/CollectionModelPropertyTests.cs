@@ -20,15 +20,6 @@ namespace Celerity.Tests.Properties;
 // collisions, resizes, the out-of-band zero/default-key slot, and backward-shift
 // deletion all fire densely. CsCheck shrinks any failing sequence to a minimal
 // reproduction and prints the seed for replay.
-//
-// This file holds the types whose storage is a flat table: the dictionaries and sets,
-// the multi-map and multi-set, the frozen pair, the filters and sketches, and BitSet —
-// each modelled against a BCL collection of the same shape. LfuCache is the exception
-// among them: its storage is a hash table, but its eviction order is the contract, so
-// its oracle is the definition of LFU and its answer depends on the access sequence.
-//
-// The types where the layout itself is what is being tested — the tree, the graph, the
-// text indexes and the timer wheel — live in StructuredCollectionPropertyTests.cs.
 public class CollectionModelPropertyTests
 {
     // A randomized mutation against a key/value dictionary.
