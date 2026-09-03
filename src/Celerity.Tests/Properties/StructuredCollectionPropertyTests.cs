@@ -9,10 +9,15 @@ namespace Celerity.Tests.Properties;
 
 // Issue #416 — the property-test roster covered only the hash-table family.
 //
-// CollectionModelPropertyTests.cs holds the flat, hash-shaped half of the library: every type there models
-// as a Dictionary or a HashSet, and the sequence of operations matters only through resize and deletion.
-// This file holds the other half — the tree, the graph, the text structures and the timer wheel — where the
-// answer depends on how the structure got into its current shape, not only on what it currently holds:
+// The split between that file and this one is by what is on trial, not by whether order matters.
+// CollectionModelPropertyTests.cs holds the types whose storage is a flat table — the dictionaries and sets,
+// the multi-map and multi-set, the frozen pair, the filters and sketches, BitSet — where the oracle is a BCL
+// collection of the same shape and a probe answers directly. LfuCache sits there too, and is the exception
+// worth naming: its storage is a hash table, but its eviction order is the whole contract, so its model is
+// the definition of LFU rather than a BCL type and its answer depends on the order of every access.
+//
+// This file holds the types where the *layout* is what is being tested — the tree, the graph, the text
+// indexes and the timer wheel, whose answers depend on how the structure got into its current shape:
 //
 //   RankedSet        sqrt-decomposed buckets with a Fenwick tree over their lengths
 //   Rope             an AVL tree of character leaves, rebalanced and defragmented as it is edited
@@ -121,35 +126,47 @@ public class StructuredCollectionPropertyTests
         }, iter: 1_000);
     }
 
-    // The same model at a size that splits a bucket. A bucket holds 512 elements before it divides, so the
-    // property above — over a domain of 45 values — never reaches SplitBucket, the shift of every later slot,
-    // or the Fenwick rebuild behind them, and neither does the fuzz target, whose domain is narrower still.
-    // This one inserts past that boundary in a random order, then deletes back through it, so the structural
-    // half of the type is reached by a generated sequence rather than only by a fixed-size fixture.
+    // The same model at a size that reaches the structural half of the type. A bucket holds 512 elements
+    // before it divides, so the property above — over a domain of 45 values — never reaches SplitBucket, the
+    // shift of every later slot, or the Fenwick rebuild behind them, and neither does the fuzz target, whose
+    // domain is narrower still. This one inserts past that boundary in a generated order, then deletes back
+    // through it in a way that reaches the two removal-side paths as well.
     [Fact]
     public void RankedSet_ShouldMatch_SortedSetModel_AcrossABucketSplit()
     {
-        Gen.Int[0, 2_999].List[1_200, 1_600].Sample(items =>
-        {
-            var sut = new RankedSet<int>();
-            var oracle = new SortedSet<int>();
+        Gen.Select(Gen.Int[0, 2_999].List[1_200, 1_600], Gen.Int[0, 99])
+            .Sample((items, offsetPercent) =>
+            {
+                var sut = new RankedSet<int>();
+                var oracle = new SortedSet<int>();
 
-            foreach (int item in items)
-                Assert.Equal(oracle.Add(item), sut.TryAdd(item));
+                foreach (int item in items)
+                    Assert.Equal(oracle.Add(item), sut.TryAdd(item));
 
-            AssertRankedEquivalent(sut, oracle, sampleOnly: true);
+                AssertRankedEquivalent(sut, oracle, sampleOnly: true);
 
-            // Delete roughly half, taken from alternating ends so buckets empty unevenly and the removal has
-            // to drop one and shift the rest rather than always shrinking the last.
-            var order = items.Distinct().ToList();
-            for (int i = 0; i < order.Count; i += 2)
-                Assert.Equal(oracle.Remove(order[i]), sut.Remove(order[i]));
+                // A *contiguous run in sorted order*, not a scattered half. The two removal-side paths are
+                // both threshold-driven: a bucket is dropped only when it empties, and merged into a
+                // neighbour only once it falls below a quarter of its capacity. Deleting every second
+                // element thins all of them evenly to around half full, which trips neither. A run long
+                // enough to span a whole bucket empties the ones it covers outright and leaves the two at
+                // its edges thin enough to merge; the offset is generated, so which buckets those are moves
+                // from case to case.
+                var sorted = oracle.ToList();
+                int length = (sorted.Count * 3) / 5;
+                int start = ((sorted.Count - length) * offsetPercent) / 100;
 
-            AssertRankedEquivalent(sut, oracle, sampleOnly: true);
+                foreach (int item in sorted.GetRange(start, length))
+                {
+                    Assert.True(oracle.Remove(item));
+                    Assert.True(sut.Remove(item));
+                }
 
-            sut.TrimExcess();
-            AssertRankedEquivalent(sut, oracle, sampleOnly: true);
-        }, iter: 20);
+                AssertRankedEquivalent(sut, oracle, sampleOnly: true);
+
+                sut.TrimExcess();
+                AssertRankedEquivalent(sut, oracle, sampleOnly: true);
+            }, iter: 20);
     }
 
     private static void AssertRankedEquivalent(RankedSet<int> sut, SortedSet<int> oracle, int from, int to)

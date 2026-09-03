@@ -64,10 +64,10 @@ $env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter PropertyTests
 CsCheck_Seed='0000LASTpRINTED' dotnet test --filter PropertyTests
 ```
 
-The suite is split by what the oracle has to be, not by collection family:
+The suite is split by what is on trial, not by collection family:
 
-- **`CollectionModelPropertyTests.cs`** — the hash-shaped half. Every type here models as a `Dictionary` or a `HashSet`, so the sequence of operations matters only through resize and deletion: the dictionaries and sets, the multi-map and multi-set, the frozen pair, the filters and sketches, `BitSet`, and `LfuCache`.
-- **`StructuredCollectionPropertyTests.cs`** — the half where the answer depends on how the structure reached its current shape, not only on what it holds: `RankedSet` (bucket splits and the Fenwick index over them), `Rope` (AVL rebalancing and the defragmenting rebuild), `TimerWheel` (cascades between levels), `CompressedGraph` (the CSR layout read back by binary search), `SuffixArray` (prefix doubling) and `AhoCorasick` (failure and output links). Several of these have no BCL counterpart at all, so the oracle is the definition or the naive loop the type replaces.
+- **`CollectionModelPropertyTests.cs`** — types whose storage is a flat table, each modelled against a BCL collection of the same shape: the dictionaries and sets, the multi-map and multi-set, the frozen pair, the filters and sketches, and `BitSet`. `LfuCache` is the exception among them and worth naming — its storage is a hash table, but eviction order is its whole contract, so its oracle is the definition of LFU rather than a BCL type and its answer depends on the order of every access.
+- **`StructuredCollectionPropertyTests.cs`** — types where the *layout* is what is being tested, and the answer depends on how the structure reached its current shape: `RankedSet` (bucket splits, drops and merges, and the Fenwick index over them), `Rope` (AVL rebalancing and the defragmenting rebuild), `TimerWheel` (cascades between levels), `CompressedGraph` (the CSR layout read back by binary search), `SuffixArray` (prefix doubling) and `AhoCorasick` (failure and output links). Most of these have no BCL counterpart at all, so the oracle is the definition or the naive loop the type replaces.
 
 Both are per-PR gates. The types still missing a property test are the ones that predate the parity rule; they are being backfilled under [#418](https://github.com/marius-bughiu/Celerity/issues/418).
 
