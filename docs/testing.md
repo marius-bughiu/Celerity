@@ -44,27 +44,32 @@ dotnet test
 
 ## Property-based tests (CsCheck)
 
-`Celerity.Tests/Properties/CollectionModelPropertyTests.cs` uses [CsCheck](https://github.com/AnthonyLloyd/CsCheck) to make parity the explicit contract. Each test:
+Two files under `Celerity.Tests/Properties/` use [CsCheck](https://github.com/AnthonyLloyd/CsCheck) to make parity the explicit contract. Each test:
 
 1. Generates a randomized list of mutating operations (`Set`, `Remove`, `TryAdd`, `Clear` for dictionaries; `Add`/`RemoveValue`/`RemoveAll` for the multi-map; etc.).
 2. Applies the **identical** sequence to a Celerity collection and a BCL oracle.
 3. Asserts the two are observably equal — `Count`, per-key lookups across the whole key domain, and full enumeration.
 
-The key domains are deliberately tiny (and include `0` and negatives) so collisions, resizes, the special zero/default/null-key slot, and backward-shift deletion all fire densely. Each test runs 2 000 sequences per invocation.
+The generated domains are deliberately narrow — tiny key ranges that include `0` and negatives, three-letter alphabets, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest. The number of sequences per invocation is set per test, from 20 for the cases that build large structures up to 2 000 for the cheapest ones.
 
 When a property fails, CsCheck **shrinks** the failing sequence to a minimal reproduction and prints a seed. Replay it by setting the seed:
 
 ```bash
 # PowerShell
-$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter CollectionModelPropertyTests
+$env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter PropertyTests
 ```
 
 ```bash
 # bash
-CsCheck_Seed='0000LASTpRINTED' dotnet test --filter CollectionModelPropertyTests
+CsCheck_Seed='0000LASTpRINTED' dotnet test --filter PropertyTests
 ```
 
-Coverage targets: `CelerityDictionary`, `IntDictionary`, `LongDictionary`, `CeleritySet`, `IntSet`, `LongSet`, `CelerityMultiMap`, and `FrozenCelerityDictionary`.
+The suite is split by what the oracle has to be, not by collection family:
+
+- **`CollectionModelPropertyTests.cs`** — the hash-shaped half. Every type here models as a `Dictionary` or a `HashSet`, so the sequence of operations matters only through resize and deletion: the dictionaries and sets, the multi-map and multi-set, the frozen pair, the filters and sketches, `BitSet`, and `LfuCache`.
+- **`StructuredCollectionPropertyTests.cs`** — the half where the answer depends on how the structure reached its current shape, not only on what it holds: `RankedSet` (bucket splits and the Fenwick index over them), `Rope` (AVL rebalancing and the defragmenting rebuild), `TimerWheel` (cascades between levels), `CompressedGraph` (the CSR layout read back by binary search), `SuffixArray` (prefix doubling) and `AhoCorasick` (failure and output links). Several of these have no BCL counterpart at all, so the oracle is the definition or the naive loop the type replaces.
+
+Both are per-PR gates. The types still missing a property test are the ones that predate the parity rule; they are being backfilled under [#418](https://github.com/marius-bughiu/Celerity/issues/418).
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 

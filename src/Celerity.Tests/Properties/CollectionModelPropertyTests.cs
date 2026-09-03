@@ -20,6 +20,11 @@ namespace Celerity.Tests.Properties;
 // collisions, resizes, the out-of-band zero/default-key slot, and backward-shift
 // deletion all fire densely. CsCheck shrinks any failing sequence to a minimal
 // reproduction and prints the seed for replay.
+//
+// This file holds the hash-shaped half of the library — every type here models as a
+// Dictionary or a HashSet, so the operation sequence matters only through resize and
+// deletion. The tree, graph, text and timer structures, whose answers depend on how
+// they reached their current shape, live in StructuredCollectionPropertyTests.cs.
 public class CollectionModelPropertyTests
 {
     // A randomized mutation against a key/value dictionary.

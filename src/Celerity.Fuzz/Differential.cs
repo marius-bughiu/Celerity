@@ -66,6 +66,7 @@ internal static class Differential
         ("CompressedGraph", CompressedGraphCase),
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
+        ("Rope", RopeCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -2210,6 +2211,191 @@ internal static class Differential
         }
 
         return matched;
+    }
+
+    // ---- rope ----------------------------------------------------------------
+
+    // Rope against the string it models. This is the only mutable tree in Collections, so its state is
+    // path-dependent in a way a fixture cannot reach: a rebalance, a leaf split, or the amortized
+    // defragmenting rebuild goes wrong for a particular *history* of edits, not for a particular content, and
+    // the wrong answer surfaces many operations later as a character read from the wrong leaf.
+    //
+    // The oracle is a plain string rebuilt after every step — quadratic, and deliberately so, because it
+    // shares no code with the rope and has no state of its own to get wrong. Chunk sizes are drawn small
+    // (MinChunkSize upwards) so that a case of a couple of hundred characters builds a tree several levels
+    // deep and every edit lands near a leaf boundary; at the shipped 512-character default the same case
+    // would never leave the root leaf.
+    //
+    // Split and AppendAndClear have no StringBuilder counterpart and are modelled as a slice and a
+    // concatenation. They are the pair that rewires the tree wholesale rather than one path through it, and
+    // the joined rope is kept as the case's subject afterwards so a later edit runs over a tree built by a
+    // join rather than by insertion.
+    private static void RopeCase(Random rng)
+    {
+        int chunkSize = rng.Next(Rope.MinChunkSize, Rope.MinChunkSize + 25);
+        var sut = new Rope(chunkSize);
+        string oracle = string.Empty;
+
+        int operations = OpCount(rng);
+        for (int op = 0; op < operations; op++)
+        {
+            // Every index is drawn over the whole valid range including both ends, and every length may be
+            // zero: an insert at Length, a remove of nothing and a split at either end are all documented
+            // no-ops, and a no-op that is not one is exactly the kind of bug an enumerator-invalidation or
+            // version-bump mistake produces.
+            int index = rng.Next(0, oracle.Length + 1);
+
+            switch (rng.Next(0, 100))
+            {
+                case < 26:
+                {
+                    string text = RopeText(rng, chunkSize);
+                    sut.Insert(index, text);
+                    oracle = oracle.Insert(index, text);
+                    break;
+                }
+                case < 40:
+                {
+                    char value = RopeChar(rng);
+                    sut.Insert(index, value);
+                    oracle = oracle.Insert(index, value.ToString());
+                    break;
+                }
+                case < 54:
+                {
+                    string text = RopeText(rng, chunkSize);
+                    sut.Append(text);
+                    oracle += text;
+                    break;
+                }
+                case < 78:
+                {
+                    // Bounded to a window rather than drawn over the whole tail: a remove that can take
+                    // everything after `index` truncates instead of editing, and a case whose length keeps
+                    // collapsing never builds a tree more than a level or two deep — which is the whole
+                    // reason to fuzz this type. The window still spans the chunk size, so a remove can span
+                    // several whole leaves and force a merge.
+                    int count = rng.Next(0, Math.Min(oracle.Length - index, chunkSize * 3) + 1);
+                    sut.Remove(index, count);
+                    oracle = oracle.Remove(index, count);
+                    break;
+                }
+                case < 84:
+                {
+                    // A split leaves the head behind and hands back the tail; rejoining them has to restore
+                    // exactly the text that was there, so the pair is checked as a round trip before the tail
+                    // is either dropped or put back.
+                    Rope tail = sut.Split(index);
+                    Check(tail.ToString() == oracle[index..], $"Split({index}) tail");
+                    Check(sut.ToString() == oracle[..index], $"Split({index}) head");
+                    Check(tail.ChunkSize == chunkSize, "Split did not carry the chunk size across");
+
+                    // Rejoining is the common case for the same reason the remove above is bounded: dropping
+                    // the tail truncates, and a case that keeps truncating never gets deep.
+                    if (rng.Next(0, 4) != 0)
+                    {
+                        sut.AppendAndClear(tail);
+                        Check(tail.Length == 0, "AppendAndClear left the source non-empty");
+                    }
+                    else
+                    {
+                        oracle = oracle[..index];
+                    }
+
+                    break;
+                }
+                case < 90:
+                {
+                    // A join whose source was built independently, so the adopted leaves are not ones this
+                    // tree ever laid out — the case the equal-chunk-size rule exists to make safe.
+                    string text = RopeText(rng, chunkSize);
+                    var source = new Rope(text, chunkSize);
+                    sut.AppendAndClear(source);
+                    oracle += text;
+                    Check(source.Length == 0, "AppendAndClear left the source non-empty");
+                    break;
+                }
+                case < 98:
+                    // Forces the defragmenting rebuild mid-session rather than only at the amortized
+                    // threshold, so a later edit runs over a tree the rebuild laid out.
+                    sut.TrimExcess();
+                    break;
+                default:
+                    sut.Clear();
+                    oracle = string.Empty;
+                    break;
+            }
+
+            Check(sut.Length == oracle.Length, $"Length {sut.Length} != {oracle.Length}");
+
+            // The path buffer the enumerators walk is a fixed-size inline array with no runtime guard, so a
+            // balance bug would corrupt memory rather than assert. Checking the bound here is the only place
+            // it is observable.
+            Check(sut.Depth <= RopeMaxDepth, $"Depth {sut.Depth} exceeded the enumerators' path buffer");
+        }
+
+        Check(sut.ToString() == oracle, "ToString diverged from the model");
+
+        // Three independent read paths over the same tree: the indexer seeks per character, the enumerator
+        // walks leaves in order, and GetChunks hands out the leaf buffers untouched.
+        for (int i = 0; i < oracle.Length; i++)
+            Check(sut[i] == oracle[i], $"[{i}]");
+
+        CheckSameSequence(sut.Select(c => (int)c), oracle.Select(c => (int)c), "enumeration");
+
+        var chunked = new StringBuilder(oracle.Length);
+        foreach (ReadOnlySpan<char> chunk in sut.GetChunks())
+        {
+            Check(chunk.Length > 0, "GetChunks yielded an empty chunk");
+            Check(chunk.Length <= chunkSize, "GetChunks yielded a chunk wider than the chunk size");
+            chunked.Append(chunk);
+        }
+
+        Check(chunked.ToString() == oracle, "GetChunks diverged from the model");
+
+        // Sampled rather than exhaustive: IndexOf is O(n) per call, so checking every start would make the
+        // case quadratic in a length a long run lets reach thousands, and cost the soak the case rate that
+        // is the whole point of it. Both ends are always included, since those are the boundary cases.
+        int stride = (oracle.Length / 16) + 1;
+        for (int start = 0; start <= oracle.Length; start += stride)
+        {
+            char value = RopeChar(rng);
+            Check(sut.IndexOf(value, start) == oracle.IndexOf(value, start), $"IndexOf({value}, {start})");
+        }
+
+        Check(sut.IndexOf(RopeChar(rng), oracle.Length) == -1, "IndexOf past the last character");
+
+        if (oracle.Length > 0)
+        {
+            int index = rng.Next(0, oracle.Length);
+            int count = rng.Next(0, oracle.Length - index + 1);
+            Check(sut.ToString(index, count) == oracle.Substring(index, count), $"ToString({index}, {count})");
+
+            var copied = new char[count];
+            sut.CopyTo(index, copied, count);
+            Check(copied.AsSpan().SequenceEqual(oracle.AsSpan(index, count)), $"CopyTo({index}, {count})");
+        }
+    }
+
+    // Matches Rope's own MaxDepth, which is private: the deepest an AVL tree of leaves can be inside an
+    // int-length document, with headroom. A case that trips this has found a rebalance bug, not a deep rope.
+    private const int RopeMaxDepth = 48;
+
+    // A three-letter alphabet, for the same reason the text structures above use one: it makes long runs of
+    // equal characters the norm, so IndexOf and the leaf-boundary arithmetic are exercised where a wide
+    // alphabet would make every position distinguishable.
+    private static char RopeChar(Random rng) => (char)('a' + rng.Next(3));
+
+    private static string RopeText(Random rng, int chunkSize)
+    {
+        // Spanning the chunk size on both sides is the point: a shorter insert fits inside one leaf, an insert
+        // of exactly the chunk size fills one, and a longer one has to be laid out across several.
+        int length = rng.Next(0, (chunkSize * 2) + 1);
+        var text = new StringBuilder(length);
+        for (int i = 0; i < length; i++)
+            text.Append(RopeChar(rng));
+
+        return text.ToString();
     }
 
     // ---- interval tree -------------------------------------------------------
