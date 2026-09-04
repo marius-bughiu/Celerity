@@ -23,7 +23,9 @@ public class WaveletTreeBenchmark
     private const int QueryCount = 100;
 
     // 1024 distinct values is exactly ten levels at both sizes, so the sweep varies the sequence length
-    // without also varying the descent depth.
+    // without also varying the descent depth. Sampling alone would not guarantee that: drawing ItemCount
+    // values with replacement leaves some codes unused, so the setup seeds every code once and shuffles, and
+    // the alphabet is exactly 1024 by construction at both sizes rather than by luck.
     private const int Alphabet = 1024;
 
     private int[] values = null!;
@@ -45,8 +47,18 @@ public class WaveletTreeBenchmark
         var rand = new Random(42);
 
         values = new int[ItemCount];
-        for (int i = 0; i < values.Length; i++)
+        for (int i = 0; i < Alphabet; i++)
+            values[i] = i;
+        for (int i = Alphabet; i < values.Length; i++)
             values[i] = rand.Next(Alphabet);
+
+        // Fisher-Yates, so the seeded prefix does not leave the first 1024 positions sorted — which would
+        // hand both the sort baseline and the descent an unrepresentative shortcut.
+        for (int i = values.Length - 1; i > 0; i--)
+        {
+            int j = rand.Next(i + 1);
+            (values[i], values[j]) = (values[j], values[i]);
+        }
 
         tree = new WaveletTree(values);
         windowLength = Math.Max(1, ItemCount / 100);

@@ -6252,8 +6252,9 @@ questions a range fold cannot:
   window, in `O(log σ)`.
 - **`RangeCount(start, length, min, max)`** — how many values inside a window fall in a
   value band, in `O(log σ)`.
-- **`Rank(index, value)`** / **`Select(rank, value)`** — occurrences of one value below a
-  position, and where the `k`-th of them is.
+- **`Rank(index, value)`** — occurrences of one value below a position, in `O(log σ)`.
+- **`Select(rank, value)`** — where the `k`-th of them is. This one is *not* a single
+  descent: it binary-searches `Rank`, so it costs `O(log n · log σ)`.
 
 `σ` is the number of *distinct* values, not the range of an `int`: the values are
 coordinate-compressed at construction, so a thousand distinct latencies cost ten levels
@@ -6281,7 +6282,8 @@ build-once workloads and the library then never shipped.
 
 The sequence is a **snapshot taken at construction** and the type has no mutating member.
 A caller who changes an element must build a new `WaveletTree`, which costs
-`O(Length · log σ)`. That makes this the wrong type for a sequence still being written —
+`O(Length · log Length)` — the sort that fixes the coordinate compression dominates the
+`O(Length · log σ)` of building the levels, whatever the alphabet. That makes this the wrong type for a sequence still being written —
 a live metrics buffer, a ring of the last `n` samples — where a rebuild per update is
 strictly *worse* than the scan it replaces. Collect into an array (or a `Deque<T>`) there
 and build the index once the window has settled.
@@ -6293,29 +6295,31 @@ first — see the measured table below, where the 1024-element arm loses.
 ### Measured
 
 BenchmarkDotNet short job, .NET 10, Apple Silicon, `WaveletTreeBenchmark`. The sequence
-holds 1,024 distinct values (exactly ten levels at both sizes) and the window is **1% of
-the sequence**. The baseline is what a caller writes over the same `int[]`: a copy of the
-window plus `Array.Sort` for a quantile, a counting loop for the rest.
+holds exactly 1,024 distinct values — every symbol is seeded once and the sequence then
+shuffled, so the alphabet is ten levels at both sizes by construction rather than by luck
+— and the window is **1% of the sequence**. The baseline is what a caller writes over the
+same `int[]`: a copy of the window plus `Array.Sort` for a quantile, a counting loop for
+the rest.
 
 | Query | `ItemCount` | Window | Baseline | `WaveletTree` | Ratio |
 | --- | --- | --- | --- | --- | --- |
-| `Quantile` | 1,000,000 | 10,000 | 34.35 ms | 10.32 µs | **3,330× faster** |
-| `Rank` | 1,000,000 | — | 21.13 ms | 10.44 µs | **2,024× faster** |
-| `RangeCount` | 1,000,000 | 10,000 | 898.3 µs | 22.11 µs | **40.6× faster** |
-| `Quantile` | 1,024 | 10 | 3.15 µs | 7.02 µs | 2.3× *slower* |
-| `RangeCount` | 1,024 | 10 | 0.55 µs | 8.09 µs | 14.9× *slower* |
-| `Rank` | 1,024 | — | 32.01 µs | 4.93 µs | 6.5× faster |
+| `Quantile` | 1,000,000 | 10,000 | 27.57 ms | 8.93 µs | **3,087× faster** |
+| `Rank` | 1,000,000 | — | 18.48 ms | 9.20 µs | **2,010× faster** |
+| `RangeCount` | 1,000,000 | 10,000 | 870.4 µs | 19.31 µs | **45.1× faster** |
+| `Quantile` | 1,024 | 10 | 1.98 µs | 6.22 µs | 3.1× *slower* |
+| `RangeCount` | 1,024 | 10 | 0.44 µs | 6.09 µs | 13.7× *slower* |
+| `Rank` | 1,024 | — | 18.66 µs | 6.03 µs | 3.1× faster |
 
-(100 queries per measurement, so a per-query `Quantile` at a million values is ~103 ns
-against ~344 µs.) The pre-registered kill criteria for the type were **≥10×** on
+(100 queries per measurement, so a per-query `Quantile` at a million values is ~89 ns
+against ~276 µs.) The pre-registered kill criteria for the type were **≥10×** on
 `RangeCount` and **≥5×** on `Quantile` at a million values; both cleared by a wide margin.
 The 1,024-element rows are kept because they are where the fixed ten-level descent loses
 to a ten-element loop — that is the boundary the "when not to use this" section above is
 drawn from, not a number to round away. `Rank` wins even there because its query position
 is random over the *whole* sequence rather than confined to the window.
 
-Build is the price of the index and the row that keeps the tradeoff honest: 122.7 ms
-against 244.1 µs to clone the array at a million values, most of it the one `Array.Sort`
+Build is the price of the index and the row that keeps the tradeoff honest: 129.9 ms
+against 258.0 µs to clone the array at a million values, most of it the one `Array.Sort`
 that fixes the coordinate compression. It is pure overhead a caller only recovers by
 querying many times.
 
@@ -6337,7 +6341,11 @@ edge, banking the whole zeros half whenever the code's bit is set.
 Space is one bit per element per level plus each level's rank index at its documented 25%:
 `Length · ceil(log2 σ)` bits × 1.25, plus the symbol table. For a million values over a
 thousand-symbol alphabet that is about **1.5 MB against the 4 MB** of the `int[]` it
-indexes. `IndexSizeInBytes` reports the exact figure for a given instance.
+indexes. `IndexSizeInBytes` reports the payload figure for a given instance — the bit
+vectors, their rank indexes, the per-level zero counts and the symbol table. It is
+payload rather than retained-object size: the CLR's per-array header and the level
+references are excluded, the same accounting `RankSelectBitVector.IndexSizeInBytes` uses,
+and they are a fixed few tens of bytes per level that do not scale with the data.
 
 ### Constructor
 
@@ -6352,8 +6360,17 @@ freed. An `int[]` converts implicitly; a `List<int>` reaches it through
 There is deliberately **no `IEnumerable<int>` overload**: an `int[]` argument converts to
 both that and `ReadOnlySpan<int>`, which is an ambiguity at every call site.
 
-Building is `O(n log σ)`. Every scratch buffer is rented from `ArrayPool<T>` and returned;
-what the index retains is the symbol table and the levels.
+Building is `O(n log n)`. The coordinate compression sorts a copy of the whole input and
+deduplicates it in place — that is the `O(n log n)` term, and it dominates whatever the
+alphabet is, since a million copies of one value still pay for the sort. Building the
+levels is the `O(n log σ)` term on top.
+
+The **level-building** buffers (two code arrays and a bit buffer) are rented from
+`ArrayPool<T>` and returned. The coordinate compression is **not** pooled: it allocates
+the `n`-element array it sorts, and when the input holds duplicates it allocates the
+compact symbol table too and leaves the sorted array to the collector. Pooling is also
+not the same as allocating nothing — `ArrayPool<T>.Shared` allocates when it has no
+suitable buffer.
 
 ### Methods and properties
 
@@ -6363,7 +6380,7 @@ what the index retains is the symbol table and the levels.
 | `int AlphabetSize { get; }` | The number of *distinct* values — the `σ` every query cost is set by. |
 | `int LevelCount { get; }` | `ceil(log2(AlphabetSize))`, the number of rank steps a query performs. A sequence of at most one distinct value needs no levels and reports `0`. |
 | `ReadOnlySpan<int> Symbols { get; }` | The distinct values, ascending. |
-| `int IndexSizeInBytes { get; }` | The total size of the index — level bit vectors, their rank indexes, and the symbol table. Compare against `Length * sizeof(int)`. |
+| `int IndexSizeInBytes { get; }` | The index payload — level bit vectors, their rank indexes, the per-level zero counts, and the symbol table. Excludes CLR array headers and the level references, as `RankSelectBitVector.IndexSizeInBytes` does. Compare against `Length * sizeof(int)`. |
 | `int this[int index] { get; }` | The value at a position, in `O(log σ)` — not the array's `O(1)`. A caller that reads positions far more often than it queries ranges should keep the array alongside the index. `ArgumentOutOfRangeException` outside `[0, Length)`. |
 | `int Rank(int index, int value)` | Occurrences of `value` strictly below `index`, which runs from `0` to `Length` **inclusive**. An absent value yields `0`. |
 | `int RangeRank(int start, int length, int value)` | Occurrences of `value` inside the window `[start, start + length)`. |

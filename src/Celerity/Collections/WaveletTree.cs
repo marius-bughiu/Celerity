@@ -8,14 +8,17 @@ namespace Celerity.Collections;
 /// An <b>immutable</b> succinct index over a fixed sequence of <see cref="int"/> values that answers the
 /// questions a range fold cannot: <see cref="Quantile"/> — the <c>k</c>-th smallest value inside a positional
 /// window — <see cref="RangeCount"/> — how many values inside a window fall in a band — and
-/// <see cref="Rank(int, int)"/> / <see cref="Select(int, int)"/> for a single value, each in
-/// <c>O(log sigma)</c> for an alphabet of <c>sigma</c> distinct values, independent of how wide the window is.
+/// <see cref="Rank(int, int)"/> for a single value. Each of those is one <c>O(log sigma)</c> descent for an
+/// alphabet of <c>sigma</c> distinct values, independent of how wide the window is.
+/// <see cref="Select(int, int)"/> is the one query that is not a single descent: it binary-searches
+/// <see cref="Rank(int, int)"/> and so costs <c>O(log n * log sigma)</c>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>Build once, query many.</b> The sequence is a snapshot taken at construction and there is no mutating
 /// member: a caller that changes an element must build a new <see cref="WaveletTree"/>, which costs
-/// <c>O(Length * log sigma)</c>. That makes this the wrong type for a sequence that is still being written —
+/// <c>O(Length * log Length)</c> — the sort that fixes the coordinate compression dominates the
+/// <c>O(Length * log sigma)</c> of building the levels, whatever the alphabet. That makes this the wrong type for a sequence that is still being written —
 /// a live metrics buffer, a ring of the last <c>n</c> samples — where a rebuild per update is strictly worse
 /// than the scan it replaces. Collect into an array (or a <see cref="Deque{T}"/>) there and build the index
 /// once the window has settled.
@@ -85,12 +88,19 @@ public sealed class WaveletTree : IReadOnlyList<int>
     /// overload: an <c>int[]</c> argument converts to both, which is an ambiguity at every call site.
     /// </param>
     /// <remarks>
-    /// Building is <c>O(n log sigma)</c>: the distinct values are sorted once to fix the coordinate
-    /// compression, then each of the <c>ceil(log2(sigma))</c> levels writes one bit per position and stably
-    /// partitions the codes for the level below. Every scratch buffer is rented from
-    /// <see cref="ArrayPool{T}"/> and returned; what the index retains is the symbol table and the levels. That
-    /// is not the same as allocating nothing — <see cref="ArrayPool{T}.Shared"/> allocates when it has no
-    /// suitable buffer, so a first or contended build still allocates its scratch.
+    /// Building is <c>O(n log n)</c>. The coordinate compression sorts a copy of the whole input and
+    /// deduplicates it in place, which is the <c>O(n log n)</c> term and dominates whatever the alphabet is —
+    /// a million copies of one value still pay for the sort. Each of the <c>ceil(log2(sigma))</c> levels then
+    /// writes one bit per position and stably partitions the codes for the level below, which is the
+    /// <c>O(n log sigma)</c> term.
+    /// <para>
+    /// The <b>level-building</b> buffers — the two code arrays and the bit buffer — are rented from
+    /// <see cref="ArrayPool{T}"/> and returned. The coordinate compression is not pooled: it allocates the
+    /// <c>n</c>-element array it sorts, and when the input holds duplicates it allocates the compact symbol
+    /// table too and leaves the sorted array to the collector. Pooling is also not the same as allocating
+    /// nothing — <see cref="ArrayPool{T}.Shared"/> allocates when it has no suitable buffer, so a first or
+    /// contended build still allocates its scratch.
+    /// </para>
     /// </remarks>
     public WaveletTree(ReadOnlySpan<int> values)
     {
@@ -152,14 +162,21 @@ public sealed class WaveletTree : IReadOnlyList<int>
     public ReadOnlySpan<int> Symbols => _symbols;
 
     /// <summary>
-    /// Gets the total size in bytes of the index — the level bit vectors, their rank/select indexes, and the
-    /// symbol table — excluding nothing. Compare it against <c>Length * sizeof(int)</c>, the array it replaces.
+    /// Gets the size in bytes of the index payload: the level bit vectors, their rank/select indexes, the
+    /// per-level zero counts, and the symbol table. Compare it against <c>Length * sizeof(int)</c>, the array
+    /// it replaces.
     /// </summary>
+    /// <remarks>
+    /// This is payload, not retained-object size: it excludes the CLR's per-array header and the
+    /// <see cref="RankSelectBitVector"/> references themselves, the same accounting
+    /// <see cref="RankSelectBitVector.IndexSizeInBytes"/> uses. Those are a fixed few tens of bytes per level
+    /// and do not scale with the data.
+    /// </remarks>
     public int IndexSizeInBytes
     {
         get
         {
-            int total = _symbols.Length * sizeof(int);
+            int total = (_symbols.Length + _zeros.Length) * sizeof(int);
             if (_levels.Length == 0)
                 return total;
 
