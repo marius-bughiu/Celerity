@@ -1983,6 +1983,54 @@ void Check(bool condition, string message)
     Check(roundTrip.Length == 600 && roundTrip.Count == indexed.Count, "RankSelectBitVector ToBitSet");
 }
 
+// WaveletTree — immutable succinct index over a fixed sequence of ints, built on one
+// RankSelectBitVector per level. Exercise the coordinate compression, the indexer's
+// level walk, Rank / RangeRank / Select / TrySelect, Quantile and RangeCount, plus the
+// two level-free degenerate shapes, over a sequence long enough to span several 256-bit
+// superblocks so the AOT publish compiles the stable partition, the interval descent and
+// the ArrayPool scratch path.
+{
+    int[] values = new int[600];
+    for (int i = 0; i < values.Length; i++) values[i] = (i * 7) % 11;
+    var wavelet = new WaveletTree(values);
+
+    Check(wavelet.Length == 600 && wavelet.AlphabetSize == 11, "WaveletTree compression");
+    Check(wavelet.LevelCount == 4, "WaveletTree level count");
+    Check(wavelet.IndexSizeInBytes > 0, "WaveletTree index size");
+
+    bool valuesOk = true;
+    for (int i = 0; i < values.Length; i++) valuesOk &= wavelet[i] == values[i];
+    Check(valuesOk, "WaveletTree indexer");
+
+    int[] sorted = (int[])values.Clone();
+    Array.Sort(sorted);
+    Check(wavelet.Quantile(0, 600, 0) == sorted[0], "WaveletTree quantile minimum");
+    Check(wavelet.Quantile(0, 600, 299) == sorted[299], "WaveletTree quantile median");
+    Check(wavelet.Quantile(0, 600, 599) == sorted[599], "WaveletTree quantile maximum");
+
+    int inBand = 0;
+    for (int i = 100; i < 400; i++) if (values[i] >= 3 && values[i] <= 7) inBand++;
+    Check(wavelet.RangeCount(100, 300, 3, 7) == inBand, "WaveletTree range count");
+    Check(wavelet.RangeCount(100, 300, 20, 30) == 0, "WaveletTree range count outside the alphabet");
+
+    int occurrences = 0;
+    for (int i = 0; i < values.Length; i++) if (values[i] == 5) occurrences++;
+    Check(wavelet.Rank(600, 5) == occurrences, "WaveletTree rank");
+    Check(wavelet.RangeRank(0, 600, 5) == occurrences, "WaveletTree range rank");
+    Check(wavelet[wavelet.Select(0, 5)] == 5, "WaveletTree select");
+    Check(!wavelet.TrySelect(occurrences, 5, out int noSuchOccurrence) && noSuchOccurrence == -1,
+        "WaveletTree try-select past the last occurrence");
+
+    int replayed = 0;
+    foreach (int value in wavelet) replayed += value;
+    Check(replayed == values.Sum(), "WaveletTree enumeration");
+
+    var single = new WaveletTree(new[] { 9, 9, 9 });
+    Check(single.LevelCount == 0 && single.Quantile(0, 3, 2) == 9, "WaveletTree single-symbol alphabet");
+    var empty = new WaveletTree(Array.Empty<int>());
+    Check(empty.Length == 0 && empty.AlphabetSize == 0, "WaveletTree empty sequence");
+}
+
 // HyperLogLog — probabilistic cardinality estimator (no out-of-band slot; default(T)
 // is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
 // is never called with null). Exercise Add / EstimateCardinality / Clear / UnionWith

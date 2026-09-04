@@ -6236,3 +6236,187 @@ foreach (ReadOnlySpan<char> chunk in document.GetChunks())
 // After a burst of edits that will not be followed by more, compact the leaves.
 document.TrimExcess();
 ```
+
+---
+
+## WaveletTree
+
+```csharp
+public sealed class WaveletTree : IReadOnlyList<int>
+```
+
+An **immutable** succinct index over a fixed sequence of `int` values that answers the
+questions a range fold cannot:
+
+- **`Quantile(start, length, k)`** — the `k`-th smallest value inside a positional
+  window, in `O(log σ)`.
+- **`RangeCount(start, length, min, max)`** — how many values inside a window fall in a
+  value band, in `O(log σ)`.
+- **`Rank(index, value)`** / **`Select(rank, value)`** — occurrences of one value below a
+  position, and where the `k`-th of them is.
+
+`σ` is the number of *distinct* values, not the range of an `int`: the values are
+coordinate-compressed at construction, so a thousand distinct latencies cost ten levels
+whatever their magnitude.
+
+### The gap it fills
+
+The library indexes **positions** three ways and every one of them collapses the value
+axis:
+
+- [`FenwickTree<T>`](#fenwicktreet) and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid)
+  fold a range down to *one* value. `SegmentTree` with `MinMonoid` answers "the smallest
+  value in `[i, j)`" and structurally cannot answer "the **k-th** smallest" — a monoid
+  fold has no way to keep the `k - 1` values it discarded.
+- [`RankSelectBitVector`](#rankselectbitvector) ranks and selects over **bits**, not over
+  a sequence of values.
+- [`RankedSet<T, TComparer>`](#rankedsett-tcomparer) gives order statistics over the
+  **whole set**: `Rank` and `ElementAt` are global, there is no positional window, and
+  being a *set* it cannot hold the duplicate values a log of measurements is made of.
+
+This is the structure `RankSelectBitVector`'s own documentation named as one of its
+build-once workloads and the library then never shipped.
+
+### When *not* to use this — read first
+
+The sequence is a **snapshot taken at construction** and the type has no mutating member.
+A caller who changes an element must build a new `WaveletTree`, which costs
+`O(Length · log σ)`. That makes this the wrong type for a sequence still being written —
+a live metrics buffer, a ring of the last `n` samples — where a rebuild per update is
+strictly *worse* than the scan it replaces. Collect into an array (or a `Deque<T>`) there
+and build the index once the window has settled.
+
+It is also the wrong type for a **small** window. Every query is a fixed descent of
+`ceil(log2 σ)` levels, so on a short sequence the counting loop it replaces finishes
+first — see the measured table below, where the 1024-element arm loses.
+
+### Measured
+
+BenchmarkDotNet short job, .NET 10, Apple Silicon, `WaveletTreeBenchmark`. The sequence
+holds 1,024 distinct values (exactly ten levels at both sizes) and the window is **1% of
+the sequence**. The baseline is what a caller writes over the same `int[]`: a copy of the
+window plus `Array.Sort` for a quantile, a counting loop for the rest.
+
+| Query | `ItemCount` | Window | Baseline | `WaveletTree` | Ratio |
+| --- | --- | --- | --- | --- | --- |
+| `Quantile` | 1,000,000 | 10,000 | 34.35 ms | 10.32 µs | **3,330× faster** |
+| `Rank` | 1,000,000 | — | 21.13 ms | 10.44 µs | **2,024× faster** |
+| `RangeCount` | 1,000,000 | 10,000 | 898.3 µs | 22.11 µs | **40.6× faster** |
+| `Quantile` | 1,024 | 10 | 3.15 µs | 7.02 µs | 2.3× *slower* |
+| `RangeCount` | 1,024 | 10 | 0.55 µs | 8.09 µs | 14.9× *slower* |
+| `Rank` | 1,024 | — | 32.01 µs | 4.93 µs | 6.5× faster |
+
+(100 queries per measurement, so a per-query `Quantile` at a million values is ~103 ns
+against ~344 µs.) The pre-registered kill criteria for the type were **≥10×** on
+`RangeCount` and **≥5×** on `Quantile` at a million values; both cleared by a wide margin.
+The 1,024-element rows are kept because they are where the fixed ten-level descent loses
+to a ten-element loop — that is the boundary the "when not to use this" section above is
+drawn from, not a number to round away. `Rank` wins even there because its query position
+is random over the *whole* sequence rather than confined to the window.
+
+Build is the price of the index and the row that keeps the tradeoff honest: 122.7 ms
+against 244.1 µs to clone the array at a million values, most of it the one `Array.Sort`
+that fixes the coordinate compression. It is pure overhead a caller only recovers by
+querying many times.
+
+### How it works, and what it costs
+
+The distinct values are sorted once into a symbol table, so a value's *code* is its index
+in that table and codes are ascending in value. Each of the `ceil(log2 σ)` levels is one
+`RankSelectBitVector` holding one bit of the code per position, and the sequence is
+**stably partitioned** by that bit — every clear bit first, in order, then every set bit —
+before the next level is built. That is the wavelet *matrix* arrangement: every level is
+contiguous and needs a single zero-count rather than a node object per subtree.
+
+Every query is then a descent that maps a position (or a half-open interval) from one
+level to the next with a rank, which is why the cost is set by the alphabet and not by the
+data. `Quantile` compares `k` against how many *zeros* the window holds at each level and
+follows the half that contains the answer; `RangeCount` runs two descents, one per band
+edge, banking the whole zeros half whenever the code's bit is set.
+
+Space is one bit per element per level plus each level's rank index at its documented 25%:
+`Length · ceil(log2 σ)` bits × 1.25, plus the symbol table. For a million values over a
+thousand-symbol alphabet that is about **1.5 MB against the 4 MB** of the `int[]` it
+indexes. `IndexSizeInBytes` reports the exact figure for a given instance.
+
+### Constructor
+
+```csharp
+public WaveletTree(ReadOnlySpan<int> values)
+```
+
+Builds an index over `values`, which is copied — the caller's buffer may be reused or
+freed. An `int[]` converts implicitly; a `List<int>` reaches it through
+`CollectionsMarshal.AsSpan` without a copy, and any other sequence through `ToArray()`.
+
+There is deliberately **no `IEnumerable<int>` overload**: an `int[]` argument converts to
+both that and `ReadOnlySpan<int>`, which is an ambiguity at every call site.
+
+Building is `O(n log σ)`. Every scratch buffer is rented from `ArrayPool<T>` and returned;
+what the index retains is the symbol table and the levels.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Length { get; }` | The number of values in the indexed sequence. |
+| `int AlphabetSize { get; }` | The number of *distinct* values — the `σ` every query cost is set by. |
+| `int LevelCount { get; }` | `ceil(log2(AlphabetSize))`, the number of rank steps a query performs. A sequence of at most one distinct value needs no levels and reports `0`. |
+| `ReadOnlySpan<int> Symbols { get; }` | The distinct values, ascending. |
+| `int IndexSizeInBytes { get; }` | The total size of the index — level bit vectors, their rank indexes, and the symbol table. Compare against `Length * sizeof(int)`. |
+| `int this[int index] { get; }` | The value at a position, in `O(log σ)` — not the array's `O(1)`. A caller that reads positions far more often than it queries ranges should keep the array alongside the index. `ArgumentOutOfRangeException` outside `[0, Length)`. |
+| `int Rank(int index, int value)` | Occurrences of `value` strictly below `index`, which runs from `0` to `Length` **inclusive**. An absent value yields `0`. |
+| `int RangeRank(int start, int length, int value)` | Occurrences of `value` inside the window `[start, start + length)`. |
+| `int Select(int rank, int value)` | The position of the `rank`-th occurrence of `value`, counting from zero. `O(log n · log σ)` — a binary search whose predicate is `Rank`. Throws `ArgumentOutOfRangeException` when the occurrence does not exist. |
+| `bool TrySelect(int rank, int value, out int position)` | The non-throwing form: returns `false` and sets `position` to `-1`. |
+| `int Quantile(int start, int length, int k)` | The `k`-th smallest value in the window, counting from zero and counting duplicates — `Quantile(s, n, 0)` is the minimum and `Quantile(s, n, n - 1)` the maximum. The window must be non-empty and `k` inside `[0, length)`. |
+| `int RangeCount(int start, int length, int minValue, int maxValue)` | How many values in the window fall in the **inclusive** band. The band edges need not occur in the sequence. An inverted band (`maxValue < minValue`) is empty and yields `0` rather than throwing. |
+| `Enumerator GetEnumerator()` | Replays the sequence in its original order. Each value is reconstructed through the levels, so enumeration is `O(n log σ)` overall. |
+
+Every windowed member throws `ArgumentOutOfRangeException` when `start` or `length` is
+negative or the window runs past `Length`.
+
+The type holds no mutable state after construction, so instances are safe to share across
+threads.
+
+### Caveats
+
+- **Build-once.** The index is immutable; changing a value means building a new one, as
+  with [`RankSelectBitVector`](#rankselectbitvector) and
+  [`SuffixArray`](#suffixarray).
+- **`int` values only.** The coordinate compression is over `int`, so a `double` or
+  `DateTime` axis has to be projected onto one by the caller (latency in µs, a tick count)
+  — which is also what keeps the descent branch-free of a comparer call.
+- **Position reads are `O(log σ)`, not `O(1)`.** The sequence is not stored; it is
+  reconstructed. Keep the array too if random access is the hot path.
+- **The window, not the alphabet, is what has to be large** for the type to pay. Ten
+  levels beat a scan of ten thousand and lose to a scan of ten.
+- **Not thread-safe to build concurrently with use** — but it has no mutable state once
+  built, so sharing a finished instance is safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A million request latencies in arrival order, as an int[] of milliseconds.
+var index = new WaveletTree(latencies);
+
+// The median latency of requests 400,000 through 500,000. No sort, no copy, and the
+// cost does not grow with the width of the window.
+int median = index.Quantile(400_000, 100_000, 50_000);
+
+// The p99 of that same window.
+int p99 = index.Quantile(400_000, 100_000, 99_000);
+
+// How many of those requests breached a 250 ms SLO.
+int breaches = index.RangeCount(400_000, 100_000, 251, int.MaxValue);
+
+// How many times exactly 200 ms was recorded in the whole run, and where first.
+int exact = index.Rank(index.Length, 200);
+if (index.TrySelect(0, 200, out int firstAt))
+    Console.WriteLine($"first 200 ms request was #{firstAt}");
+
+Console.WriteLine($"{index.AlphabetSize} distinct latencies over {index.LevelCount} levels, "
+                + $"index costs {index.IndexSizeInBytes} bytes vs {index.Length * sizeof(int)}");
+```
