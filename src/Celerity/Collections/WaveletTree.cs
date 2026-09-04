@@ -442,9 +442,8 @@ public sealed class WaveletTree : IReadOnlyList<int>
         if (code < 0)
             return 0;
 
-        if (_levels.Length == 0)
-            return hi - lo;
-
+        // A single-symbol alphabet has no levels, so the loop below does not run and the whole interval is
+        // occurrences of the one value there is — which is exactly what `hi - lo` reports.
         for (int level = 0; level < _levels.Length; level++)
         {
             RankSelectBitVector bits = _levels[level];
