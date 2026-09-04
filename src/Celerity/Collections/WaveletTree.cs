@@ -18,10 +18,10 @@ namespace Celerity.Collections;
 /// <b>Build once, query many.</b> The sequence is a snapshot taken at construction and there is no mutating
 /// member: a caller that changes an element must build a new <see cref="WaveletTree"/>, which costs
 /// <c>O(Length * log Length)</c> — the sort that fixes the coordinate compression dominates the
-/// <c>O(Length * log sigma)</c> of building the levels, whatever the alphabet. That makes this the wrong type for a sequence that is still being written —
-/// a live metrics buffer, a ring of the last <c>n</c> samples — where a rebuild per update is strictly worse
-/// than the scan it replaces. Collect into an array (or a <see cref="Deque{T}"/>) there and build the index
-/// once the window has settled.
+/// <c>O(Length * log sigma)</c> of building the levels, whatever the alphabet. That makes this the wrong type
+/// for a sequence that is still being written — a live metrics buffer, a ring of the last <c>n</c> samples —
+/// where a rebuild per update is strictly worse than the scan it replaces. Collect into an array (or a
+/// <see cref="Deque{T}"/>) there and build the index once the window has settled.
 /// </para>
 /// <para>
 /// The BCL has no counterpart, and neither does the rest of this library. <see cref="SegmentTree{T, TMonoid}"/>
