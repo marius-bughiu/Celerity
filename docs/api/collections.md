@@ -6407,8 +6407,11 @@ threads.
   — which is also what keeps the descent branch-free of a comparer call.
 - **Position reads are `O(log σ)`, not `O(1)`.** The sequence is not stored; it is
   reconstructed. Keep the array too if random access is the hot path.
-- **The window, not the alphabet, is what has to be large** for the type to pay. Ten
-  levels beat a scan of ten thousand and lose to a scan of ten.
+- **The window has to be large relative to the descent depth** for the type to pay, and
+  the depth is `ceil(log2 σ)` — so a wider alphabet moves the crossover up, it does not
+  sit at a fixed window size. The measured case is the ten-level one, where ten levels
+  beat a scan of ten thousand and lose to a scan of ten; read the table above as that
+  case rather than as a universal boundary.
 - **Not thread-safe to build concurrently with use** — but it has no mutable state once
   built, so sharing a finished instance is safe.
 
