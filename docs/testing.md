@@ -79,7 +79,7 @@ So: **`grep -rl "\bYourType\b" src/Celerity.Tests/` and check `Differential.All`
 The input takes one of two shapes:
 
 - **Mutable types** generate a list of operations (`Set` / `Remove` / `TryAdd` / `Clear` for dictionaries; insert / remove / split / join for `Rope`; schedule / cancel / advance for `TimerWheel`) and apply the **identical** sequence to both sides, checking each operation's own result as it goes and reconciling the full observable state — `Count`, lookups across the whole domain, enumeration — at the end.
-- **Build-once types** — `CompressedGraph`, `SuffixArray`, `AhoCorasick` — have no operation sequence. They generate the *input* instead (an edge list, a text, a pattern set), construct the type from it, and reconcile every query against the naive answer computed from the same input.
+- **Build-once types** — `CompressedGraph`, `SuffixArray`, `AhoCorasick`, `WaveletTree` — have no operation sequence. They generate the *input* instead (an edge list, a text, a pattern set), construct the type from it, and reconcile every query against the naive answer computed from the same input.
 
 The generated domains are deliberately narrow — small key ranges that include `0` and negatives, alphabets of two to six letters, wheels of two slots — so that the interesting cases fire densely rather than rarely: collisions, resizes, the special zero/default/null-key slot and backward-shift deletion for the hash family; a suffix that parts late, a pattern nested inside another, a cascade between wheel levels or an edit landing on a leaf boundary for the rest.
 

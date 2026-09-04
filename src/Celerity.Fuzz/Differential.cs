@@ -57,6 +57,7 @@ internal static class Differential
         ("XorFilter", XorFilterCase),
         ("BitSet", BitSetCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
+        ("WaveletTree", WaveletTreeCase),
         ("SegmentTree", SegmentTreeCase),
         ("KdTree", KdTreeCase),
         ("SpatialGrid", SpatialGridCase),
@@ -1364,6 +1365,76 @@ internal static class Differential
         // ToBitSet feeds the mutable type back in; re-indexing it must be a fixed point.
         var rebuilt = new RankSelectBitVector(sut.ToBitSet());
         Check(rebuilt.Length == length && rebuilt.Count == positions.Count, "ToBitSet round trip disagreed");
+    }
+
+    // ---- wavelet tree --------------------------------------------------------
+
+    // WaveletTree is immutable, so the randomization is in the sequence rather than in an operation sequence:
+    // a random length that straddles the 64-bit block and 256-bit superblock boundaries of every level's rank
+    // index, over a random alphabet width that reaches both level-free degenerate shapes (empty, one symbol)
+    // and an alphabet wide enough to need several levels. Every query is then reconciled against the brute
+    // force it exists to replace — a sort of the window for a quantile, a counting loop for everything else.
+    private static void WaveletTreeCase(Random rng)
+    {
+        int length = rng.Next(0, 700);
+        int alphabet = rng.Next(1, 40);
+        int origin = rng.Next(-1000, 1000);
+
+        int[] values = new int[length];
+        for (int i = 0; i < length; i++)
+            values[i] = origin + rng.Next(alphabet);
+
+        var sut = new WaveletTree(values);
+        int[] symbols = values.Distinct().OrderBy(v => v).ToArray();
+
+        Check(sut.Length == length, "WaveletTree Length disagreed");
+        Check(sut.AlphabetSize == symbols.Length, "WaveletTree AlphabetSize disagreed");
+        Check(sut.Symbols.ToArray().SequenceEqual(symbols), "WaveletTree Symbols disagreed");
+
+        for (int i = 0; i < length; i++)
+            Check(sut[i] == values[i], $"WaveletTree value at {i} disagreed");
+
+        Check(sut.ToArray().SequenceEqual(values), "WaveletTree enumeration disagreed");
+
+        // Rank against the counting loop, for every symbol and one that is deliberately absent.
+        foreach (int value in symbols.Append(int.MaxValue))
+        {
+            int seen = 0;
+            for (int i = 0; i <= length; i++)
+            {
+                Check(sut.Rank(i, value) == seen, $"WaveletTree Rank({i}) disagreed");
+                if (i < length && values[i] == value)
+                    seen++;
+            }
+
+            int[] occurrences = Enumerable.Range(0, length).Where(i => values[i] == value).ToArray();
+            for (int k = 0; k < occurrences.Length; k++)
+                Check(sut.Select(k, value) == occurrences[k], $"WaveletTree Select({k}) disagreed");
+
+            Check(!sut.TrySelect(occurrences.Length, value, out int missing) && missing == -1,
+                "WaveletTree TrySelect past the last occurrence disagreed");
+        }
+
+        for (int trial = 0; trial < 12; trial++)
+        {
+            int start = length == 0 ? 0 : rng.Next(length + 1);
+            int window = rng.Next(length - start + 1);
+            int[] sorted = values.Skip(start).Take(window).OrderBy(v => v).ToArray();
+
+            for (int k = 0; k < sorted.Length; k++)
+                Check(sut.Quantile(start, window, k) == sorted[k], $"WaveletTree Quantile({k}) disagreed");
+
+            int lo = origin + rng.Next(-2, alphabet + 2);
+            int hi = lo + rng.Next(-1, alphabet + 2);
+            Check(sut.RangeCount(start, window, lo, hi) == sorted.Count(v => v >= lo && v <= hi),
+                "WaveletTree RangeCount disagreed");
+
+            foreach (int value in symbols)
+            {
+                Check(sut.RangeRank(start, window, value) == sorted.Count(v => v == value),
+                    "WaveletTree RangeRank disagreed");
+            }
+        }
     }
 
     // ---- segment tree --------------------------------------------------------

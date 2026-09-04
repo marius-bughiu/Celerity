@@ -563,6 +563,11 @@ function escapeHtml(s) {
     // same benchmark carry their own op names (SelectByIndex, RankBinarySearch, ...) so they stay out of
     // these buckets and each card still resolves to exactly one BCL and one Celerity measurement.
     { key: 'RankedSet',           title: 'RankedSet<int>',                           vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Select', 'Rank', 'Mixed'] },
+    // WaveletTree is the build-once index over a sequence of ints, benchmarked against what a caller
+    // writes over the same int[]: a copy plus Array.Sort of the window for a quantile, a counting loop
+    // for the rest. The window is 1% of the sequence, so the 1024 arm is where the fixed ten-level
+    // descent loses to a ten-element scan and the 1,000,000 arm is where it does not.
+    { key: 'WaveletTree',         title: 'WaveletTree',                              vs: 'int[] sort / count loop', ops: ['Quantile', 'RangeCount', 'Rank', 'Build'], items: [1024, 1000000] },
     // StringKeyProbe tracks the reference-type-key probe path — every other card here keys on int/long,
     // where the JIT devirtualizes the per-probe comparison and the codegen question does not arise.
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
