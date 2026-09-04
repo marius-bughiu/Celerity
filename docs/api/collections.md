@@ -6249,12 +6249,13 @@ An **immutable** succinct index over a fixed sequence of `int` values that answe
 questions a range fold cannot:
 
 - **`Quantile(start, length, k)`** — the `k`-th smallest value inside a positional
-  window, in `O(log σ)`.
+  window. One descent, `O(log σ)`.
 - **`RangeCount(start, length, min, max)`** — how many values inside a window fall in a
-  value band, in `O(log σ)`.
-- **`Rank(index, value)`** — occurrences of one value below a position, in `O(log σ)`.
-- **`Select(rank, value)`** — where the `k`-th of them is. This one is *not* a single
-  descent: it binary-searches `Rank`, so it costs `O(log n · log σ)`.
+  value band. Two descents, one per band edge, so `O(log σ)` at twice the constant.
+- **`Rank(index, value)`** — occurrences of one value below a position. One descent,
+  `O(log σ)`.
+- **`Select(rank, value)`** — where the `k`-th of them is. The one query outside that
+  bound: it binary-searches `Rank`, so it costs `O(log n · log σ)`.
 
 `σ` is the number of *distinct* values, not the range of an `int`: the values are
 coordinate-compressed at construction, so a thousand distinct latencies cost ten levels
@@ -6378,9 +6379,9 @@ suitable buffer.
 | --- | --- |
 | `int Length { get; }` | The number of values in the indexed sequence. |
 | `int AlphabetSize { get; }` | The number of *distinct* values — the `σ` every query cost is set by. |
-| `int LevelCount { get; }` | `ceil(log2(AlphabetSize))`, the number of rank steps a query performs. A sequence of at most one distinct value needs no levels and reports `0`. |
+| `int LevelCount { get; }` | `ceil(log2(AlphabetSize))` — the depth of a single descent, and so the unit every query cost is counted in: one descent for `Quantile` and `Rank`, two for `RangeCount`, one per binary-search step for `Select`. A sequence of at most one distinct value needs no levels and reports `0`. |
 | `ReadOnlySpan<int> Symbols { get; }` | The distinct values, ascending. |
-| `int IndexSizeInBytes { get; }` | The index payload — level bit vectors, their rank indexes, the per-level zero counts, and the symbol table. Excludes CLR array headers and the level references, as `RankSelectBitVector.IndexSizeInBytes` does. Compare against `Length * sizeof(int)`. |
+| `long IndexSizeInBytes { get; }` | The index payload — level bit vectors, their rank indexes, the per-level zero counts, and the symbol table. Excludes CLR array headers and the level references, as `RankSelectBitVector.IndexSizeInBytes` does. A `long`, as `CompressedIntSet.MemoryUsageInBytes` is, because a wide enough alphabet passes `int.MaxValue` bytes before any single array does. Compare against `Length * sizeof(int)`. |
 | `int this[int index] { get; }` | The value at a position, in `O(log σ)` — not the array's `O(1)`. A caller that reads positions far more often than it queries ranges should keep the array alongside the index. `ArgumentOutOfRangeException` outside `[0, Length)`. |
 | `int Rank(int index, int value)` | Occurrences of `value` strictly below `index`, which runs from `0` to `Length` **inclusive**. An absent value yields `0`. |
 | `int RangeRank(int start, int length, int value)` | Occurrences of `value` inside the window `[start, start + length)`. |

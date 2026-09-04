@@ -59,16 +59,20 @@ public class WaveletTreeTests
     }
 
     [Fact]
-    public void IndexSizeInBytes_ShouldCountEveryLevelAndTheSymbolTable()
+    public void IndexSizeInBytes_ShouldPinEveryComponentOfThePayload()
     {
         var tree = new WaveletTree(Sample);
 
-        // Three levels of two words each (ten positions round up to one 64-bit word, and the vector's own
-        // block index adds to that) plus a five-entry symbol table — the exact figure is layout-dependent, so
-        // the assertion is that it is charged for and grows with the level count.
-        var wider = new WaveletTree(Enumerable.Range(0, 1000).ToArray());
+        // Pinned exactly, so dropping any one component fails rather than merely shrinking the number:
+        //   symbol table   5 symbols  * 4 = 20
+        //   zero counts    3 levels   * 4 = 12
+        //   level words    3 levels   * 8 = 24   (ten positions round up to one 64-bit word each)
+        //   rank indexes   3 levels   * 5 = 15   (one superblock int + one block byte per level)
+        const long ExpectedPayload = 20 + 12 + 24 + 15;
+        Assert.Equal(ExpectedPayload, tree.IndexSizeInBytes);
 
-        Assert.True(tree.IndexSizeInBytes > tree.AlphabetSize * sizeof(int));
+        // And it grows with the level count rather than being a constant that happens to match.
+        var wider = new WaveletTree(Enumerable.Range(0, 1000).ToArray());
         Assert.True(wider.IndexSizeInBytes > tree.IndexSizeInBytes);
     }
 

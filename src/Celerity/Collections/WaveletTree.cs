@@ -8,9 +8,10 @@ namespace Celerity.Collections;
 /// An <b>immutable</b> succinct index over a fixed sequence of <see cref="int"/> values that answers the
 /// questions a range fold cannot: <see cref="Quantile"/> — the <c>k</c>-th smallest value inside a positional
 /// window — <see cref="RangeCount"/> — how many values inside a window fall in a band — and
-/// <see cref="Rank(int, int)"/> for a single value. Each of those is one <c>O(log sigma)</c> descent for an
-/// alphabet of <c>sigma</c> distinct values, independent of how wide the window is.
-/// <see cref="Select(int, int)"/> is the one query that is not a single descent: it binary-searches
+/// <see cref="Rank(int, int)"/> for a single value. Each of those is <c>O(log sigma)</c> for an alphabet of
+/// <c>sigma</c> distinct values, independent of how wide the window is — <see cref="Quantile"/> and
+/// <see cref="Rank(int, int)"/> as a single descent, <see cref="RangeCount"/> as two, one per band edge.
+/// <see cref="Select(int, int)"/> is the one query outside that bound: it binary-searches
 /// <see cref="Rank(int, int)"/> and so costs <c>O(log n * log sigma)</c>.
 /// </summary>
 /// <remarks>
@@ -150,8 +151,10 @@ public sealed class WaveletTree : IReadOnlyList<int>
     public int AlphabetSize => _symbols.Length;
 
     /// <summary>
-    /// Gets the number of levels, <c>ceil(log2(AlphabetSize))</c>, which is the number of rank steps every
-    /// query performs. A sequence of at most one distinct value needs no levels and reports <c>0</c>.
+    /// Gets the number of levels, <c>ceil(log2(AlphabetSize))</c> — the depth of a single descent, and so the
+    /// unit every query cost is counted in: one descent for <see cref="Quantile"/> and
+    /// <see cref="Rank(int, int)"/>, two for <see cref="RangeCount"/>, and one per binary-search step for
+    /// <see cref="Select"/>. A sequence of at most one distinct value needs no levels and reports <c>0</c>.
     /// </summary>
     public int LevelCount => _levels.Length;
 
@@ -167,20 +170,27 @@ public sealed class WaveletTree : IReadOnlyList<int>
     /// it replaces.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This is payload, not retained-object size: it excludes the CLR's per-array header and the
     /// <see cref="RankSelectBitVector"/> references themselves, the same accounting
     /// <see cref="RankSelectBitVector.IndexSizeInBytes"/> uses. Those are a fixed few tens of bytes per level
     /// and do not scale with the data.
+    /// </para>
+    /// <para>
+    /// The figure is a <see cref="long"/>, as <see cref="CompressedIntSet.MemoryUsageInBytes"/> is, because an
+    /// <see cref="int"/> cannot hold it: a wide enough alphabet needs a symbol table and enough levels to pass
+    /// <see cref="int.MaxValue"/> bytes long before any single array does.
+    /// </para>
     /// </remarks>
-    public int IndexSizeInBytes
+    public long IndexSizeInBytes
     {
         get
         {
-            int total = (_symbols.Length + _zeros.Length) * sizeof(int);
+            long total = (long)(_symbols.Length + _zeros.Length) * sizeof(int);
             if (_levels.Length == 0)
                 return total;
 
-            int bytesPerLevel = WordCount(_length) * sizeof(ulong);
+            long bytesPerLevel = (long)WordCount(_length) * sizeof(ulong);
             for (int level = 0; level < _levels.Length; level++)
                 total += bytesPerLevel + _levels[level].IndexSizeInBytes;
 
