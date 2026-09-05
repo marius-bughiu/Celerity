@@ -28,11 +28,11 @@ namespace Celerity.Collections;
 /// <c>2p - length</c> elements, and since <c>p &lt;= length &lt; 2p</c> that is never zero — at an exact power
 /// of two the two windows are the <i>same</i> window and the whole range is folded twice, which is the
 /// maximal case rather than an exception to it. A one-element query is the extreme: it combines a value with
-/// itself. That is harmless exactly when the operation is idempotent — <c>Combine(a, a) == a</c> — which is
-/// why this type takes
-/// <see cref="IIdempotentMonoid{T}"/> rather than <see cref="IMonoid{T}"/>. Minimum, maximum, gcd and bitwise
-/// and/or qualify; <b>sum does not</b>, and <c>SparseTable&lt;int, SumMonoid&lt;int&gt;&gt;</c> therefore does
-/// not compile. For range sums over an immutable sequence, a precomputed prefix array answers in <c>O(1)</c>
+/// itself. That is harmless exactly when the operation is idempotent — <c>Combine(a, a) == a</c> — which is why
+/// this type takes <see cref="IIdempotentMonoid{T}"/> rather than <see cref="IMonoid{T}"/>. Minimum, maximum,
+/// gcd and bitwise and/or qualify; <b>sum does not</b>, and
+/// <c>SparseTable&lt;int, SumMonoid&lt;int&gt;&gt;</c> therefore does not compile.
+/// For range sums over an immutable sequence, a precomputed prefix array answers in <c>O(1)</c>
 /// with two lines of code; for sums over a mutable one, use <see cref="FenwickTree{T}"/>.
 /// </para>
 /// <para>
