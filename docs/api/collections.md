@@ -4742,7 +4742,7 @@ They throw `ArgumentNullException` on a null source, and never alias a caller-su
 | `int Count { get; }` | The number of elements in the indexed sequence. |
 | `int LevelCount { get; }` | The number of precomputed window rows — `floor(log2(Count)) + 1`, and `0` for an empty table. Row `k` holds the fold of every window of length `2ᵏ`. |
 | `T Aggregate { get; }` | The fold of every element — `Query(0, Count)`, and `Identity` for an empty table. `O(1)`, unlike `SegmentTree.Aggregate`. |
-| `long IndexSizeInBytes { get; }` | The backing array's size: `LevelCount · Count` cells, each `sizeof(T)`. A `long`, because the product can exceed `int.MaxValue` for a wide `T` before the cell count does. For a reference-type `T` it counts the references, not the objects they point at. |
+| `long IndexSizeInBytes { get; }` | The backing array's size: `LevelCount · Count` cells, each `sizeof(T)`. A `long`, because the product can exceed `int.MaxValue` for a wide `T` before the cell count does. For a reference-type `T` it measures the references and nothing they point at, so it is a **floor**: the first row holds your own objects, but every row above holds whatever `Combine` returned, and a lawful idempotent fold may allocate a fresh aggregate per cell (immutable-set union) rather than selecting an operand. |
 | `T this[int index] { get; }` | The value at `index`, in `O(1)` — the values are the table's first row, so this is a direct array read. Get-only. |
 | `T Query(int start, int endExclusive)` | The fold of the elements in the half-open range `[start, endExclusive)`, in `O(1)`. An empty range yields `Identity`. |
 | `Enumerator GetEnumerator()` | Struct enumerator yielding the values in index order (`O(n)` total, over a contiguous slice). |

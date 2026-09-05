@@ -185,9 +185,16 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
     /// <para>
     /// The figure is a <see cref="long"/>, as <see cref="WaveletTree.IndexSizeInBytes"/> is, because the
     /// product can exceed <see cref="int.MaxValue"/> for a wide <typeparamref name="T"/> well before the cell
-    /// count itself does. For a reference-type <typeparamref name="T"/> it counts the references the table
-    /// holds, not the objects they point at — the table stores each element once per row, but they are the
-    /// same object.
+    /// count itself does.
+    /// </para>
+    /// <para>
+    /// For a <b>reference-type</b> <typeparamref name="T"/> it measures the array of references and nothing
+    /// they point at, so it is a <i>floor</i> rather than the whole cost. The first row holds the caller's own
+    /// elements, but every row above it holds whatever <see cref="IMonoid{T}.Combine"/> returned, and that is
+    /// only an existing object for a fold that selects one of its operands (as
+    /// <see cref="MinMonoid{T}"/>-style folds and a "keep the leftmost" fold do). A lawful idempotent fold is
+    /// free to allocate — immutable-set union is the standard example — in which case the table also retains
+    /// up to one fresh object per aggregate cell, which this property does not see.
     /// </para>
     /// </remarks>
     public long IndexSizeInBytes => (long)_table.Length * Unsafe.SizeOf<T>();
