@@ -19,8 +19,12 @@ namespace Celerity.Collections;
 /// aggregates to <c>T.MinValue</c>; and <c>NaN</c> loses every <c>&gt;</c> comparison, so it is discarded from
 /// the left operand and kept from the right.
 /// </para>
+/// <para>
+/// <b>Idempotent</b> like <see cref="MinMonoid{T}"/>, so it implements <see cref="IIdempotentMonoid{T}"/> and
+/// can fold a <see cref="SparseTable{T, TMonoid}"/> as well as a segment tree.
+/// </para>
 /// </remarks>
-public readonly struct MaxMonoid<T> : IMonoid<T>
+public readonly struct MaxMonoid<T> : IIdempotentMonoid<T>
     where T : struct, INumber<T>, IMinMaxValue<T>
 {
     /// <summary>Gets the identity, <c>T.MinValue</c> — no stored value can fall below it.</summary>

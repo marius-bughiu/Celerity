@@ -498,6 +498,14 @@ function escapeHtml(s) {
     // SegmentTree covers the folds a Fenwick tree structurally cannot — the baseline is the same plain long[],
     // scanned for the range minimum, because the BCL has no range-aggregate structure at all.
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',       vs: 'long[] (naive range min)', ops: ['Mixed', 'RangeMin'] },
+    // SparseTable is the build-once counterpart: same fold, same baseline, no updates. Build is charted
+    // alongside RangeMin on purpose — the n log n table is what the constant-time query is bought with, and
+    // reading either card alone misstates the trade. The class also measures SegmentTree over the same
+    // sequence, which is the comparison that actually decides between the two types, but those arms are named
+    // SegmentTree_Cross* and are deliberately not charted: this index keys one BCL and one Celerity value per
+    // bucket, so a second Celerity arm sharing an op would overwrite the first. They are read off the
+    // BenchmarkDotNet report and published in docs/api/collections.md instead.
+    { key: 'SparseTable',         title: 'SparseTable<long, MinMonoid<long>>',       vs: 'long[] (naive range min); the SegmentTree head-to-head is measured in the same class and published in the API reference', ops: ['RangeMin', 'Build'] },
     // KdTree indexes the plane, which no ordered structure can. Two baselines per question: the plain scan
     // over every point, and the better hand-roll that orders them by x and works outward from the query.
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',          vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards', ops: ['NearestQuery', 'NearestSorted', 'RadiusQuery', 'RadiusSlab', 'KNearest', 'Build'] },

@@ -6,6 +6,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`SparseTable<T, TMonoid>`** in `Celerity.Collections` — an **immutable** range-aggregate table that answers the same fold as `SegmentTree` in **`O(1)`** instead of `O(log n)`, for sequences that never change after build. Bought with an `O(n log n)` build and `levels × n` cells: about **4–5x** a segment tree's build and **5–8.5x** its memory, so it repays at roughly 800–1,000 queries at 1,000 elements and 65,000 at 100,000 — below that the segment tree is still the better type. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
+
+- **`IIdempotentMonoid<T>`** in `Celerity.Collections` — an `IMonoid<T>` that also promises `Combine(a, a) == a`, which is what `SparseTable` needs, since the two windows it combines always overlap — completely, when the range length is a power of two. `MinMonoid`, `MaxMonoid`, `BitwiseAndMonoid` and `BitwiseOrMonoid` implement it; `SumMonoid` deliberately does not, so `SparseTable<int, SumMonoid<int>>` is a compile error rather than a silently doubled overlap. Additive — `SegmentTree` keeps its `IMonoid<T>` constraint and all five folds. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
+
+- **The `SparseTable` rollout that ships with it** — dedicated, shared-suite, CsCheck-property, fuzz and AOT coverage, plus a registered benchmark and its dashboard cards. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
+
 - **`WaveletTree`** in `Celerity.Collections` — an **immutable** succinct index over a fixed sequence of `int` values that answers what a range fold cannot: the `k`-th smallest value inside a positional window (`Quantile`), how many values in that window fall in a value band (`RangeCount`), and the rank of a single value — each `O(log σ)` over the *distinct* values, independent of how wide the window is (`Select` binary-searches `Rank`, so it is `O(log n · log σ)`). `SegmentTree` folds a window down to one value and so cannot reach the `k`-th; `RankedSet` ranks a whole set with no window and no duplicates; the BCL has neither. Build-once, and on a short window the fixed descent loses to the scan it replaces — both measured in the API reference. Closes [#424](https://github.com/marius-bughiu/Celerity/issues/424).
 
 - **The `WaveletTree` rollout that ships with it** — `WaveletTreeTests` / `WaveletTreeDifferentialTests` / `WaveletTreeEnumerationTests`, a `Celerity.Fuzz` target and a `Celerity.AotSmokeTest` block, and `WaveletTreeBenchmark` registered in the CI-tracked suite with its dashboard card. Closes [#424](https://github.com/marius-bughiu/Celerity/issues/424).
@@ -15,6 +21,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - **`LfuCache<TKey, TValue, THasher>`** in `Celerity.Collections` — a fixed-capacity **least-frequently-used cache**, the frequency-ordered sibling of `LruCache`. Reach for it when a batch job or backfill sweeps a cache that interactive traffic depends on: an LRU loses its whole working set to that scan, while here the whole scan costs at most one entry that has been read more than once. Entries never read after insertion are not protected, and frequencies never age — `LruCache` stays the right pick when recency is what matters. Enumerator and frequency semantics differ from `LruCache`; see [the API reference](docs/api/collections.md#lfucachetkey-tvalue-thasher). Closes [#407](https://github.com/marius-bughiu/Celerity/issues/407).
 
 ### Changed
+
+- **The `SegmentTree` docs no longer send readers to a structure the library did not ship.** Both the README's decision table and the API reference's "Choosing it" said that an immutable sequence wants "a sparse table"; both now link [`SparseTable<T, TMonoid>`](docs/api/collections.md#sparsetablet-tmonoid) and state what it costs. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
 
 - **`Rope` gained the `Celerity.Fuzz` target it shipped without**, and `TimerWheel`'s differential suite now covers `ScheduleAt` alongside `Schedule`. Testing only — no shipped code changed. Closes [#415](https://github.com/marius-bughiu/Celerity/issues/415).
 
