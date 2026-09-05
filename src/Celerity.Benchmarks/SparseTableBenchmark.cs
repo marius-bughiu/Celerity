@@ -11,14 +11,33 @@ using Celerity.Collections;
 // The third arm is the point of the class. Both Celerity types answer the same question, and the documented
 // reason to reach for this one is that the sequence never changes after build — so the comparison that decides
 // between them is SparseTable's O(1) two-load query against SegmentTree's O(log n) descent, and the price it
-// is paid for. Both categories therefore carry all three arms:
+// is paid for. Both BenchmarkDotNet categories therefore carry all three arms:
 //
 //   RangeMin — a batch of half-open range-minimum queries against a pre-built structure. This is where the
 //              table is supposed to win, and by a constant factor over SegmentTree rather than an asymptotic
 //              one over the array.
 //   Build    — the same structures constructed from the same seed. This is what the O(1) query costs:
 //              O(n log n) time into levels * n cells, against SegmentTree's O(n) into 2n. A caller who queries
-//              a handful of times should read these two cards together rather than only the first.
+//              a handful of times should read these two together rather than only the first.
+//
+// Measuring all three in one class rather than reading SegmentTree's own card off the dashboard is deliberate:
+// SegmentTreeBenchmark draws its range bounds from a different point in its own Random(42) stream, so a
+// cross-class ratio would be comparing two different query sets. Here every arm queries the same rangeStart /
+// rangeEnd arrays built once in Setup.
+//
+// ---- Why the SegmentTree arms are named Cross* -------------------------------------------------------------
+//
+// The dashboard's data model is two series per (collection, op, itemCount) bucket: web/dev/bench/index.html
+// parses the *method* name, classifies the type before the underscore as BCL or Celerity, and stores one value
+// under each. Two Celerity arms sharing an op would land in the same slot and one would silently overwrite the
+// other — the card would then plot whichever ran last while labelling it SparseTable.
+//
+// So the two charted pairs keep the plain op names (Array_* against SparseTable_*, which is what the
+// SparseTable cards render) and the SegmentTree arms take an op of their own. Their bucket holds a single
+// value and no BCL arm, so no card is drawn for it and nothing is overwritten; the numbers are read off the
+// BenchmarkDotNet report, where the BenchmarkCategory keeps all three arms in one group against the same
+// Array baseline. Charting them instead would mean teaching every consumer of that index to key by type name,
+// which is a change to shared dashboard code that 63 collections depend on.
 //
 // The baseline arms are named Array_* so the dashboard classifies them as the reference series. The query
 // count is capped the same way SegmentTreeBenchmark caps its operation count: the Array_RangeMin arm is
@@ -90,7 +109,7 @@ public class SparseTableBenchmark
 
     [Benchmark]
     [BenchmarkCategory("RangeMin")]
-    public long SegmentTree_RangeMin()
+    public long SegmentTree_CrossRangeMin()
     {
         long sink = 0;
         for (int i = 0; i < rangeStart.Length; i++)
@@ -125,7 +144,7 @@ public class SparseTableBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Build")]
-    public long SegmentTree_Build()
+    public long SegmentTree_CrossBuild()
     {
         var tree = new SegmentTree<long, MinMonoid<long>>(initial);
 
