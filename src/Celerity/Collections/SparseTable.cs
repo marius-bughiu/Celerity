@@ -76,9 +76,10 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
     // the tail of each row is left at default(T) and never read, because a query only ever indexes a row with
     // an offset its window fits inside.
     //
-    // Flat rather than jagged: the meaningful entries number sum(_length - 2^k + 1) over the rows, which is
-    // about _length cells short of the rectangle, so the padding costs one row's worth in total and buys a
-    // single allocation, one bounds check per read, and rows that are contiguous with each other.
+    // Flat rather than jagged: the meaningful entries number sum(_length - 2^k + 1) over the rows, so the
+    // padding is exactly 2^_levelCount - 1 - _levelCount cells. Since 2^_levelCount lies in
+    // (_length, 2 * _length], that is between roughly one and two rows' worth — at _length = 8 it is 11 of the
+    // 32 cells. It buys a single allocation, one bounds check per read, and rows contiguous with each other.
     private readonly T[] _table;
     private readonly int _length;
     private readonly int _levelCount;
@@ -178,8 +179,8 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
     /// <para>
     /// This is the quantity being traded for the <c>O(1)</c> query, so it is worth measuring rather than
     /// estimating: a <see cref="SegmentTree{T, TMonoid}"/> over the same sequence holds <c>2n</c> cells, and
-    /// this holds <c>n * (floor(log2(n)) + 1)</c> — ten times as many at a thousand elements, and twenty at a
-    /// million.
+    /// this holds <c>n * (floor(log2(n)) + 1)</c> — <c>10n</c> against <c>2n</c> at a thousand elements, so
+    /// five times as many, and <c>20n</c> against <c>2n</c> at a million, so ten times.
     /// </para>
     /// <para>
     /// The figure is a <see cref="long"/>, as <see cref="WaveletTree.IndexSizeInBytes"/> is, because the

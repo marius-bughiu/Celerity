@@ -14,8 +14,10 @@ using Celerity.Collections;
 // is paid for. Both BenchmarkDotNet categories therefore carry all three arms:
 //
 //   RangeMin — a batch of half-open range-minimum queries against a pre-built structure. This is where the
-//              table is supposed to win, and by a constant factor over SegmentTree rather than an asymptotic
-//              one over the array.
+//              table is supposed to win. Both comparisons are asymptotic — O(1) against the array's O(n) and
+//              against SegmentTree's O(log n) — but they widen at very different rates: the array ratio grows
+//              linearly in n, while the SegmentTree ratio grows only as log n, which is why it moves from
+//              about 9x to about 16x across two orders of magnitude and reads like a large constant.
 //   Build    — the same structures constructed from the same seed. This is what the O(1) query costs:
 //              O(n log n) time into levels * n cells, against SegmentTree's O(n) into 2n. A caller who queries
 //              a handful of times should read these two together rather than only the first.
