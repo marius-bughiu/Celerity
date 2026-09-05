@@ -23,9 +23,13 @@ namespace Celerity.Collections;
 /// and answers an arbitrary range from the two such windows that cover it.
 /// </para>
 /// <para>
-/// The catch is in that word <i>cover</i>: the two windows <b>overlap</b> unless the range length is itself a
-/// power of two, so every element in the overlap is folded in twice. That is harmless exactly when the
-/// operation is idempotent — <c>Combine(a, a) == a</c> — which is why this type takes
+/// The catch is in that word <i>cover</i>: the two windows <b>always overlap</b>, so some element is folded in
+/// twice on every non-empty query. Writing <c>p</c> for the window width, their intersection is
+/// <c>2p - length</c> elements, and since <c>p &lt;= length &lt; 2p</c> that is never zero — at an exact power
+/// of two the two windows are the <i>same</i> window and the whole range is folded twice, which is the
+/// maximal case rather than an exception to it. A one-element query is the extreme: it combines a value with
+/// itself. That is harmless exactly when the operation is idempotent — <c>Combine(a, a) == a</c> — which is
+/// why this type takes
 /// <see cref="IIdempotentMonoid{T}"/> rather than <see cref="IMonoid{T}"/>. Minimum, maximum, gcd and bitwise
 /// and/or qualify; <b>sum does not</b>, and <c>SparseTable&lt;int, SumMonoid&lt;int&gt;&gt;</c> therefore does
 /// not compile. For range sums over an immutable sequence, a precomputed prefix array answers in <c>O(1)</c>
@@ -267,10 +271,13 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
 
     // The range fold, without validation — shared by Query and Aggregate.
     //
-    // Take the largest power of two that fits inside the range, and cover the range with the window of that
-    // width at each end. Their union is exactly [start, endExclusive) and their intersection is whatever the
-    // range length exceeds the power of two by, which idempotence lets us fold in twice. The left window is
-    // combined first, so index order is preserved for a non-commutative fold.
+    // Take the largest power of two p that fits inside the range, and cover the range with the p-wide window
+    // at each end. Their union is exactly [start, endExclusive); their intersection is 2p - length elements,
+    // which p <= length < 2p makes strictly positive, so *every* non-empty query folds something in twice and
+    // relies on idempotence. When length is exactly p the two windows coincide and both reads below hit the
+    // same cell — the degenerate case, deliberately not special-cased: a branch to skip the second combine
+    // would cost more on the hot path than the combine it saves, and idempotence is required regardless.
+    // The left window is combined first, so index order is preserved for a non-commutative fold.
     private T QueryCore(int start, int endExclusive)
     {
         int length = endExclusive - start;

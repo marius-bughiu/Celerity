@@ -10,13 +10,17 @@ namespace Celerity.Collections;
 /// <para>
 /// The interface declares no members of its own. It exists so the law can be stated in the type system rather
 /// than only in prose: a sparse table answers a range in <c>O(1)</c> by covering it with <b>two overlapping</b>
-/// power-of-two windows and combining them, so every element in the overlap is folded in <i>twice</i>. That is
-/// harmless exactly when re-folding a value changes nothing, and wrong otherwise.
+/// power-of-two windows and combining them, so every element in the overlap is folded in <i>twice</i>. The
+/// overlap is never empty — for a window width <c>p</c> it is <c>2p - length</c> elements, and
+/// <c>p &lt;= length &lt; 2p</c> — so this applies to every non-empty range, most starkly at an exact power of
+/// two, where the two windows are the same window. That is harmless exactly when re-folding a value changes
+/// nothing, and wrong otherwise.
 /// </para>
 /// <para>
 /// Sum is the operation this excludes, and it is not hypothetical: <see cref="SumMonoid{T}"/> ships, and
 /// <c>SparseTable&lt;int, SumMonoid&lt;int&gt;&gt;</c> would otherwise compile and quietly return inflated
-/// answers for every range whose length is not a power of two. Constraining the table to this interface turns
+/// answers for every non-empty range — a one-element query alone would compute <c>a + a</c>. Constraining the
+/// table to this interface turns
 /// that into a compile error. The four shipped folds that <i>are</i> idempotent —
 /// <see cref="MinMonoid{T}"/>, <see cref="MaxMonoid{T}"/>, <see cref="BitwiseAndMonoid{T}"/> and
 /// <see cref="BitwiseOrMonoid{T}"/> — implement it, and <see cref="SegmentTree{T, TMonoid}"/> is unaffected: it
@@ -52,8 +56,8 @@ namespace Celerity.Collections;
 /// </code>
 /// <para>
 /// Declaring the interface is an assertion the compiler cannot check. An implementation that is not actually
-/// idempotent gives an unspecified answer for ranges whose length is not a power of two, in the same way a
-/// non-associative <see cref="IMonoid{T}"/> gives an unspecified answer to a segment-tree query.
+/// idempotent gives an unspecified answer for any non-empty range, in the same way a non-associative
+/// <see cref="IMonoid{T}"/> gives an unspecified answer to a segment-tree query.
 /// </para>
 /// </remarks>
 public interface IIdempotentMonoid<T> : IMonoid<T>

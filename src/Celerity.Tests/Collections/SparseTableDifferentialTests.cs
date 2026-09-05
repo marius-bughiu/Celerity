@@ -11,10 +11,12 @@ namespace Celerity.Tests.Collections;
 /// <para>
 /// The <b>overlap</b> is what is on trial here. A sparse table covers <c>[start, endExclusive)</c> with the two
 /// widest power-of-two windows that fit — one anchored at each end — and those windows share
-/// <c>2 * 2^k - length</c> elements whenever the length is not itself a power of two. Every element in that
-/// intersection is folded into the answer twice, and the type's correctness rests entirely on the claim that
-/// idempotence makes the repetition invisible. A suite that only queried power-of-two lengths would never
-/// exercise it, so the sweeps below query <i>every</i> range of the sequence.
+/// <c>2 * 2^k - length</c> elements. That intersection is never empty, since <c>2^k &lt;= length &lt; 2^(k+1)</c>:
+/// at an exact power of two the two windows are the <i>same</i> window and the whole range is folded twice,
+/// and every other length gives a partial overlap. Every element in the intersection is folded into the
+/// answer twice, and the type's correctness rests entirely on the claim that idempotence makes the repetition
+/// invisible. The sweeps below query <i>every</i> range of the sequence, so both the full-overlap case and
+/// every partial width — down to the one-element query, which combines a value with itself — are covered.
 /// </para>
 ///
 /// <para>

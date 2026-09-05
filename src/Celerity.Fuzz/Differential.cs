@@ -1495,10 +1495,11 @@ internal static class Differential
     // the answer. Two things carry the weight here.
     //
     // First, the length straddles several powers of two, because a sparse table covers a range with the two
-    // widest power-of-two windows that fit and those windows *overlap* by 2 * 2^k - length. Only a length that
-    // is not itself a power of two produces an overlap at all, and the type's whole correctness argument is
-    // that idempotence makes the doubly-folded elements invisible. Every range of every generated sequence is
-    // reconciled, so every overlap width the length admits is exercised.
+    // widest power-of-two windows that fit and those windows *overlap* by 2 * 2^k - length, which is never
+    // zero: an exact power of two makes them the same window (the whole range folded twice) and any other
+    // length makes the overlap partial. The type's whole correctness argument is that idempotence makes the
+    // doubly-folded elements invisible. Every range of every generated sequence is reconciled, so both the
+    // full-overlap case and every partial width the length admits are exercised.
     //
     // Second, the fold is *non-commutative* — "the first non-zero value wins", which is also idempotent, and
     // therefore one of the few folds that can be both accepted by the type and sensitive to the order its two

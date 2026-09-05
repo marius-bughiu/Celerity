@@ -4652,9 +4652,9 @@ public interface IIdempotentMonoid<T> : IMonoid<T>
 
 The interface declares no members. It exists so a law can be stated in the type system rather than only in prose.
 
-The `O(1)` query works by covering `[start, endExclusive)` with the two widest power-of-two windows that fit, one anchored at each end. Unless the range length is *itself* a power of two those windows **overlap**, by `2·2ᵏ - length` elements, and everything in the overlap is folded into the answer **twice**. That is harmless exactly when re-folding a value changes nothing — `Combine(a, a) == a` — and wrong otherwise.
+The `O(1)` query works by covering `[start, endExclusive)` with the two widest power-of-two windows that fit, one anchored at each end. Those windows **always overlap**, by `2·2ᵏ - length` elements — and since `2ᵏ ≤ length < 2ᵏ⁺¹`, that count is never zero. At an exact power of two the two windows are the *same* window and the whole range is folded twice; at any other length the overlap is partial. Everything in it is folded into the answer **twice**, which is harmless exactly when re-folding a value changes nothing — `Combine(a, a) == a` — and wrong otherwise.
 
-Sum is the operation this excludes, and it is not hypothetical: `SumMonoid<T>` ships, and without the constraint `SparseTable<int, SumMonoid<int>>` would compile and quietly return inflated answers for every range whose length is not a power of two. Constraining the table to `IIdempotentMonoid<T>` makes that a **compile error** instead.
+Sum is the operation this excludes, and it is not hypothetical: `SumMonoid<T>` ships, and without the constraint `SparseTable<int, SumMonoid<int>>` would compile and quietly return inflated answers for **every non-empty range** — a one-element query alone would compute `a + a`. Constraining the table to `IIdempotentMonoid<T>` makes that a **compile error** instead.
 
 Four of the five shipped folds are idempotent and declare it:
 
@@ -4689,7 +4689,7 @@ public readonly struct GcdMonoid : IIdempotentMonoid<uint>
 var table = new SparseTable<uint, GcdMonoid>(values);
 ```
 
-Declaring the interface is an assertion the compiler cannot check. A fold that is not actually idempotent gives an unspecified answer for ranges whose length is not a power of two, in the same way a non-associative `IMonoid<T>` gives an unspecified answer to a segment-tree query.
+Declaring the interface is an assertion the compiler cannot check. A fold that is not actually idempotent gives an unspecified answer for any non-empty range, in the same way a non-associative `IMonoid<T>` gives an unspecified answer to a segment-tree query.
 
 The **domain** rule from [`IMonoid<T>`](#the-fold-imonoidt) carries over: idempotence is required only over the values the implementation declares itself defined for. For a floating-point `T`, `MinMonoid<T>` and `MaxMonoid<T>` are defined over the finite values, where idempotence holds; `NaN` is outside the domain and fails it, as it fails the identity law.
 
@@ -4697,7 +4697,7 @@ The **domain** rule from [`IMonoid<T>`](#the-fold-imonoidt) carries over: idempo
 
 The table is one flat array of `levels` rows, each `n` wide, where `levels` is `floor(log2(n)) + 1`. Row `k` holds, at offset `i`, the fold of the window `[i, i + 2ᵏ)`. Row `0` is the original values, which is why the indexer is a direct array read and enumeration streams a contiguous slice. Each later row is built from the one below it — `row[k][i] = Combine(row[k-1][i], row[k-1][i + 2ᵏ⁻¹])` — one combine per cell, so the build is `O(n log n)`.
 
-A query takes `k = floor(log2(length))`, the widest window that still fits inside the range, and combines the row-`k` entries at `start` and at `endExclusive - 2ᵏ`. Their union is exactly the range; their intersection is whatever the length exceeds `2ᵏ` by, and idempotence is what lets it be folded in twice.
+A query takes `k = floor(log2(length))`, the widest window that still fits inside the range, and combines the row-`k` entries at `start` and at `endExclusive - 2ᵏ`. Their union is exactly the range; their intersection is `2·2ᵏ - length` elements — not `length - 2ᵏ`, which is the width of the non-overlapping prefix — and idempotence is what lets it be folded in twice. When `length` is exactly `2ᵏ` the two entries are the same cell, so the query combines a value with itself; that degenerate case is deliberately not special-cased, since a branch to skip the second combine would cost more on the hot path than the combine it saves, and idempotence is required for the partial overlaps regardless.
 
 The layout is flat rather than jagged. Only the first `n - 2ᵏ + 1` entries of row `k` are meaningful, so the rectangle carries about one row's worth of padding in total — in exchange for a single allocation, one bounds check per read, and rows contiguous with each other.
 

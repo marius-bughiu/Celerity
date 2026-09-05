@@ -184,6 +184,26 @@ public class SparseTableTests
     }
 
     [Fact]
+    public void Query_PowerOfTwoLength_ShouldFoldTheSameWindowTwiceWithoutChangingTheAnswer()
+    {
+        // The case that is easy to state backwards: at an exact power-of-two length the two anchored windows
+        // are not merely overlapping, they are the *same* window — `endExclusive - (1 << level)` equals
+        // `start` — so the query combines one cell with itself and leans on idempotence hardest. A length-1
+        // range is the extreme; 2, 4 and 8 are the rest of the family. A sum fold would double every one of
+        // these, which is why the constraint is not restricted to non-power-of-two lengths.
+        int[] values = [4, 1, 6, 2, 5, 3, 9, 7];
+
+        foreach (int length in new[] { 1, 2, 4, 8 })
+        {
+            for (int start = 0; start + length <= values.Length; start++)
+            {
+                int expected = values.Skip(start).Take(length).Min();
+                Assert.Equal(expected, new SparseTable<int, MinMonoid<int>>(values).Query(start, start + length));
+            }
+        }
+    }
+
+    [Fact]
     public void Query_WholeRange_ShouldMatchAggregate()
     {
         var table = new SparseTable<int, MaxMonoid<int>>(new[] { 5, 3, 9, 1 });
@@ -193,10 +213,11 @@ public class SparseTableTests
     }
 
     [Fact]
-    public void Query_NonPowerOfTwoLength_ShouldFoldTheOverlapWithoutChangingTheAnswer()
+    public void Query_NonPowerOfTwoLength_ShouldFoldThePartialOverlapWithoutChangingTheAnswer()
     {
         // Length 3 is covered by two length-2 windows that share the middle element; length 5 by two length-4
-        // windows sharing three. These are the ranges a non-idempotent fold would get wrong.
+        // windows sharing three — the intersection is 2p - length, not length - p. These are the *partial*
+        // overlaps; the power-of-two lengths below are the total ones.
         int[] values = [4, 1, 6, 2, 5];
         var table = new SparseTable<int, MinMonoid<int>>(values);
 
