@@ -4707,7 +4707,7 @@ Non-commutative folds are safe: the left window is combined first, so a fold lik
 
 The `O(1)` query is bought with an `O(n log n)` build into `levels · n` cells, against a segment tree's `O(n)` build into `2n`. At a thousand elements that is ten rows rather than two; at a hundred thousand, seventeen. `IndexSizeInBytes` reports the figure so the trade can be measured rather than guessed.
 
-This is the number to check first, because it decides the type. Measured on the class's own benchmark over `long` values, against a `SegmentTree<long, MinMonoid<long>>` over the same sequence:
+This is the number to check first, because it decides the type. Measured on the short-run local sweep over `long` values, against a `SegmentTree<long, MinMonoid<long>>` over the same sequence — the same provenance as the `SegmentTree` figures above, and the dashboard carries the CI-run series:
 
 | | 1,000 elements | 100,000 elements |
 | --- | --- | --- |
