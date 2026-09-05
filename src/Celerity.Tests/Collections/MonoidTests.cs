@@ -8,6 +8,13 @@ namespace Celerity.Tests.Collections;
 /// breaks either produces a wrong range aggregate that no test of the tree's own walk would attribute to the
 /// monoid. The documented floating-point caveat on <see cref="MinMonoid{T}"/> / <see cref="MaxMonoid{T}"/> is
 /// pinned here too, so it reads as a stated limit rather than a latent bug.
+///
+/// <para>
+/// A <b>third</b> law applies to the four folds that also declare <see cref="IIdempotentMonoid{T}"/>:
+/// <c>Combine(a, a) == a</c>. <see cref="SparseTable{T, TMonoid}"/> combines two overlapping windows and so
+/// relies on it, and the interface is an assertion the compiler cannot check — so each claim is checked here,
+/// together with the fact that <see cref="SumMonoid{T}"/> deliberately does not make it.
+/// </para>
 /// </summary>
 public class MonoidTests
 {
@@ -183,5 +190,111 @@ public class MonoidTests
                 Assert.Equal(fenwick.RangeSum(start, end), segment.Query(start, end));
 
         Assert.Equal(fenwick.Total, segment.Aggregate);
+    }
+
+    // ---- the idempotence law, and which folds claim it ---------------------------------------------
+
+    [Fact]
+    public void MinMonoid_ShouldBeIdempotent_AndDeclareIt()
+    {
+        var monoid = default(MinMonoid<int>);
+
+        Assert.Equal(7, monoid.Combine(7, 7));
+        Assert.Equal(int.MinValue, monoid.Combine(int.MinValue, int.MinValue));
+        Assert.Equal(monoid.Identity, monoid.Combine(monoid.Identity, monoid.Identity));
+        Assert.IsAssignableFrom<IIdempotentMonoid<int>>(monoid);
+    }
+
+    [Fact]
+    public void MaxMonoid_ShouldBeIdempotent_AndDeclareIt()
+    {
+        var monoid = default(MaxMonoid<int>);
+
+        Assert.Equal(7, monoid.Combine(7, 7));
+        Assert.Equal(int.MaxValue, monoid.Combine(int.MaxValue, int.MaxValue));
+        Assert.Equal(monoid.Identity, monoid.Combine(monoid.Identity, monoid.Identity));
+        Assert.IsAssignableFrom<IIdempotentMonoid<int>>(monoid);
+    }
+
+    [Fact]
+    public void BitwiseAndMonoid_ShouldBeIdempotent_AndDeclareIt()
+    {
+        var monoid = default(BitwiseAndMonoid<uint>);
+
+        Assert.Equal(0b1011u, monoid.Combine(0b1011u, 0b1011u));
+        Assert.Equal(monoid.Identity, monoid.Combine(monoid.Identity, monoid.Identity));
+        Assert.IsAssignableFrom<IIdempotentMonoid<uint>>(monoid);
+    }
+
+    [Fact]
+    public void BitwiseOrMonoid_ShouldBeIdempotent_AndDeclareIt()
+    {
+        var monoid = default(BitwiseOrMonoid<uint>);
+
+        Assert.Equal(0b1011u, monoid.Combine(0b1011u, 0b1011u));
+        Assert.Equal(monoid.Identity, monoid.Combine(monoid.Identity, monoid.Identity));
+        Assert.IsAssignableFrom<IIdempotentMonoid<uint>>(monoid);
+    }
+
+    [Fact]
+    public void SumMonoid_ShouldNotBeIdempotent_AndShouldNotDeclareIt()
+    {
+        // The negative case is the one that matters: this is why SparseTable<T, TMonoid> constrains to
+        // IIdempotentMonoid<T> rather than IMonoid<T>. Doubling is exactly the error a sparse table would
+        // make over the elements two overlapping windows share, so `SparseTable<int, SumMonoid<int>>` does
+        // not compile — which cannot be asserted here, only demonstrated by the missing interface.
+        var monoid = default(SumMonoid<int>);
+
+        Assert.Equal(14, monoid.Combine(7, 7));
+        Assert.NotEqual(7, monoid.Combine(7, 7));
+        Assert.IsNotAssignableFrom<IIdempotentMonoid<int>>(monoid);
+    }
+
+    [Fact]
+    public void UserWrittenGcdMonoid_ShouldBeIdempotent_AndFoldASparseTable()
+    {
+        // The sample from IIdempotentMonoid<T>'s docs: gcd(a, a) == a, which is what lets it fold a table.
+        var monoid = default(GcdMonoid);
+
+        Assert.Equal(12u, monoid.Combine(12u, 12u));
+        Assert.IsAssignableFrom<IIdempotentMonoid<uint>>(monoid);
+
+        var table = new SparseTable<uint, GcdMonoid>(new uint[] { 12, 18, 24 });
+
+        Assert.Equal(6u, table.Query(0, 3));
+    }
+
+    [Fact]
+    public void SparseTable_ShouldAgreeWithSegmentTree_OnEveryShippedIdempotentFold()
+    {
+        // The four folds both types accept, reconciled across the two routes to the same answer.
+        int[] values = [5, 3, 9, 1, 7, 2];
+        uint[] masks = [0b1111, 0b1110, 0b1100, 0b0101, 0b0111];
+
+        for (int start = 0; start <= values.Length; start++)
+        {
+            for (int end = start; end <= values.Length; end++)
+            {
+                Assert.Equal(
+                    new SegmentTree<int, MinMonoid<int>>(values).Query(start, end),
+                    new SparseTable<int, MinMonoid<int>>(values).Query(start, end));
+                Assert.Equal(
+                    new SegmentTree<int, MaxMonoid<int>>(values).Query(start, end),
+                    new SparseTable<int, MaxMonoid<int>>(values).Query(start, end));
+            }
+        }
+
+        for (int start = 0; start <= masks.Length; start++)
+        {
+            for (int end = start; end <= masks.Length; end++)
+            {
+                Assert.Equal(
+                    new SegmentTree<uint, BitwiseAndMonoid<uint>>(masks).Query(start, end),
+                    new SparseTable<uint, BitwiseAndMonoid<uint>>(masks).Query(start, end));
+                Assert.Equal(
+                    new SegmentTree<uint, BitwiseOrMonoid<uint>>(masks).Query(start, end),
+                    new SparseTable<uint, BitwiseOrMonoid<uint>>(masks).Query(start, end));
+            }
+        }
     }
 }

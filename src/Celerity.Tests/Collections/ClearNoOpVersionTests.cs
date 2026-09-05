@@ -35,7 +35,10 @@ namespace Celerity.Tests.Collections;
 /// same oversight. The probabilistic sketches (<c>BloomFilter</c>,
 /// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>TopKSketch</c>) are out of scope
 /// entirely: they track no version and expose no enumerator, so there is nothing for a redundant
-/// <c>Clear()</c> to invalidate.
+/// <c>Clear()</c> to invalidate. The <b>build-once</b> types are out of scope one step further still —
+/// <see cref="WaveletTree"/> and <see cref="SparseTable{T, TMonoid}"/> are immutable after construction, so
+/// they expose no <c>Clear()</c> to be redundant and carry no version for one to bump; their enumerators
+/// cannot be invalidated by anything and are pinned on that basis in their own suites.
 /// </para>
 /// </summary>
 public class ClearNoOpVersionTests

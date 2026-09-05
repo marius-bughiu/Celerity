@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Numerics;
+using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
 using Celerity.Primitives;
@@ -59,6 +60,7 @@ internal static class Differential
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("WaveletTree", WaveletTreeCase),
         ("SegmentTree", SegmentTreeCase),
+        ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
         ("SpatialGrid", SpatialGridCase),
         ("TimerWheel", TimerWheelCase),
@@ -1487,6 +1489,64 @@ internal static class Differential
         CheckSegmentTree(sut, oracle, rng, exhaustive: true);
     }
 
+    // ---- sparse table --------------------------------------------------------
+
+    // The same oracle as the segment tree — a plain array folded left to right — against the other route to
+    // the answer. Two things carry the weight here.
+    //
+    // First, the length straddles several powers of two, because a sparse table covers a range with the two
+    // widest power-of-two windows that fit and those windows *overlap* by 2 * 2^k - length. Only a length that
+    // is not itself a power of two produces an overlap at all, and the type's whole correctness argument is
+    // that idempotence makes the doubly-folded elements invisible. Every range of every generated sequence is
+    // reconciled, so every overlap width the length admits is exercised.
+    //
+    // Second, the fold is *non-commutative* — "the first non-zero value wins", which is also idempotent, and
+    // therefore one of the few folds that can be both accepted by the type and sensitive to the order its two
+    // windows are combined in. Under min or max a table that combined right-before-left would pass.
+    //
+    // The table is immutable, so the randomization is in the sequence rather than in an operation sequence, as
+    // it is for WaveletTree.
+    private static void SparseTableCase(Random rng)
+    {
+        int length = rng.Next(0, 130);
+        var oracle = new int[length];
+        for (int i = 0; i < length; i++)
+            oracle[i] = rng.Next(0, 4) == 0 ? 0 : rng.Next(1, 100);   // zeroes are the identity
+
+        var sut = new SparseTable<int, FirstNonZero>(oracle);
+
+        Check(sut.Count == length, "SparseTable Count disagreed");
+        Check(sut.LevelCount == (length == 0 ? 0 : BitOperations.Log2((uint)length) + 1),
+            "SparseTable LevelCount disagreed");
+        Check(sut.IndexSizeInBytes == (long)sut.LevelCount * length * sizeof(int),
+            "SparseTable IndexSizeInBytes disagreed");
+
+        int i2 = 0;
+        foreach (int value in sut)
+        {
+            Check(value == oracle[i2], $"SparseTable element {i2} disagreed");
+            Check(sut[i2] == oracle[i2], $"SparseTable indexer {i2} disagreed");
+            i2++;
+        }
+
+        Check(i2 == length, "SparseTable enumeration length disagreed");
+        Check(sut.Aggregate == FoldFirstNonZero(oracle, 0, length), "SparseTable Aggregate disagreed");
+
+        // Exhaustive over every range, and cross-checked against the segment tree, which reaches the same
+        // answer by a walk that never overlaps. A disagreement localizes the defect to one of the two.
+        var tree = new SegmentTree<int, FirstNonZero>(oracle);
+        for (int start = 0; start <= length; start++)
+        {
+            for (int end = start; end <= length; end++)
+            {
+                int expected = FoldFirstNonZero(oracle, start, end);
+                Check(sut.Query(start, end) == expected, $"SparseTable Query({start}, {end}) disagreed");
+                Check(sut.Query(start, end) == tree.Query(start, end),
+                    $"SparseTable and SegmentTree disagreed on ({start}, {end})");
+            }
+        }
+    }
+
     // KdTree against the brute-force scan a caller writes instead. The failure mode a fuzzer is here to catch
     // is a wrong prune, which loses a match silently rather than throwing, so every query shape is reconciled
     // against an oracle that prunes nothing. Coordinates come off a small integer grid so duplicate points and
@@ -1918,7 +1978,7 @@ internal static class Differential
     /// <summary>
     /// "The first non-zero value wins": associative, identity <c>0</c>, and deliberately non-commutative.
     /// </summary>
-    private readonly struct FirstNonZero : IMonoid<int>
+    private readonly struct FirstNonZero : IIdempotentMonoid<int>
     {
         public int Identity => 0;
 

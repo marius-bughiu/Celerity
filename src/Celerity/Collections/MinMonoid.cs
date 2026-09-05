@@ -27,8 +27,15 @@ namespace Celerity.Collections;
 /// where it sits. Both are the ordinary consequences of ordering IEEE values by <c>&lt;</c>; if you need
 /// IEEE-exact minimum semantics, pass a custom <see cref="IMonoid{T}"/> that calls <c>T.Min</c>.
 /// </para>
+/// <para>
+/// <b>Idempotent</b>, so it implements <see cref="IIdempotentMonoid{T}"/> and can also fold a
+/// <see cref="SparseTable{T, TMonoid}"/>: <c>Combine(a, a)</c> is <c>a</c>, so the two overlapping windows a
+/// sparse table combines may double-count the overlap without changing the answer. Range minimum over a
+/// sequence that is <i>immutable</i> after build is that type's headline workload, as this is the segment
+/// tree's.
+/// </para>
 /// </remarks>
-public readonly struct MinMonoid<T> : IMonoid<T>
+public readonly struct MinMonoid<T> : IIdempotentMonoid<T>
     where T : struct, INumber<T>, IMinMaxValue<T>
 {
     /// <summary>Gets the identity, <c>T.MaxValue</c> — no stored value can exceed it.</summary>

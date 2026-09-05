@@ -21,7 +21,12 @@ namespace Celerity.Tests.Collections;
 /// <see cref="OutOfMemoryException"/> — is precisely the evidence that the length check runs first and that
 /// nothing is allocated or enumerated on the way to it. The whole test costs no memory at all.
 /// <see cref="SegmentTree{T, TMonoid}"/> takes the same fast path against a lower ceiling
-/// (<c>Array.MaxLength / 2</c>, since it stores two cells per element) and is pinned the same way.
+/// (<c>Array.MaxLength / 2</c>, since it stores two cells per element) and is pinned the same way, as does
+/// <see cref="SparseTable{T, TMonoid}"/> — whose ceiling is lower again and, unlike the other two, is not a
+/// fixed fraction of <see cref="Array.MaxLength"/>: it stores <c>floor(log2(n)) + 1</c> cells per element, so
+/// the limit depends on the length being checked. That is the case where the check earns its keep rather
+/// than merely improving a message, because the cell count is computed in <see cref="long"/> precisely so the
+/// <c>int</c> multiplication cannot wrap to a small or negative array length and silently corrupt the table.
 /// </para>
 ///
 /// <para>
@@ -139,6 +144,57 @@ public class OversizedSourceAndResidualGuardTests
         Assert.Equal(1, tree.Aggregate);
         Assert.Equal(4, tree[2]);
         Assert.Equal(1, tree.Query(0, 3));
+    }
+
+    // ---- SparseTable: a ceiling that moves with the length -----------------------------------------
+
+    [Fact]
+    public void SparseTableConstructor_ShouldThrowArgumentException_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        // A table over int.MaxValue elements would need 31 rows of int.MaxValue cells. The product is
+        // computed as a long for exactly this reason — as an int it wraps, and the constructor would allocate
+        // a nonsensically small array instead of reporting anything.
+        var oversized = new LyingCountCollection(int.MaxValue);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(
+            () => new SparseTable<int, MinMonoid<int>>(oversized));
+
+        Assert.Equal("values", ex.ParamName);
+        Assert.Contains("exceeds the maximum array length", ex.Message);
+    }
+
+    [Fact]
+    public void SparseTableConstructor_ShouldNotEnumerateOrCopy_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        var oversized = new LyingCountCollection(int.MaxValue);
+
+        Assert.Throws<ArgumentException>(() => new SparseTable<int, MinMonoid<int>>(oversized));
+    }
+
+    [Fact]
+    public void SparseTableConstructor_ShouldRejectALengthASegmentTreeWouldAccept()
+    {
+        // The ceilings genuinely differ, and this is the evidence: a length inside SegmentTree's
+        // Array.MaxLength / 2 allowance still needs 27 rows here, which is far outside a single array. The
+        // message says so and names the type to fall back to.
+        var oversized = new LyingCountCollection(Array.MaxLength / 4);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(
+            () => new SparseTable<int, MinMonoid<int>>(oversized));
+
+        Assert.Contains("SegmentTree", ex.Message);
+    }
+
+    [Fact]
+    public void SparseTableConstructor_ShouldAcceptCountedSource_WhenTheTableFitsInOneArray()
+    {
+        var table = new SparseTable<int, MinMonoid<int>>(new List<int> { 3, 1, 4, 1, 5 });
+
+        Assert.Equal(5, table.Count);
+        Assert.Equal(3, table.LevelCount);
+        Assert.Equal(1, table.Aggregate);
+        Assert.Equal(4, table[2]);
+        Assert.Equal(1, table.Query(0, 3));
     }
 
     // ---- Trie.Enumerator: the exhausted state latches ----------------------------------------------

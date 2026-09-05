@@ -810,6 +810,34 @@ void Check(bool condition, string message)
     Check(words.Aggregate == "abc" && words.Query(1, 3) == "bc", "SegmentTree reference-typed elements");
 }
 
+// SparseTable — the build-once half of the range-aggregate space. Everything SegmentTree pins about ILC and
+// struct monoids applies here too, plus one thing specific to this type: the fold arrives constrained to
+// IIdempotentMonoid<T> rather than IMonoid<T>, so the compiler has to specialize against a *derived* generic
+// interface, and the shipped monoids reach it through a second inheritance hop. Exercise the seeded build, the
+// O(1) query at a non-power-of-two length (where the two windows genuinely overlap), the empty range, the
+// reported shape, and the struct enumerator.
+{
+    var sp = new SparseTable<long, MinMonoid<long>>(new long[] { 3, 1, 4, 1, 5, 9, 2 });
+    Check(sp.Count == 7 && sp.LevelCount == 3 && sp.Aggregate == 1, "SparseTable seeded build + aggregate");
+    Check(sp.Query(0, 3) == 1 && sp.Query(4, 7) == 2 && sp.Query(2, 2) == long.MaxValue,
+        "SparseTable range queries + empty range");
+    Check(sp.Query(1, 6) == 1 && sp.Query(2, 5) == 1, "SparseTable overlapping-window queries");
+    Check(sp[0] == 3 && sp[6] == 2, "SparseTable indexer reads the first row");
+    Check(sp.IndexSizeInBytes == 3L * 7 * sizeof(long), "SparseTable reports its cell count");
+
+    var spValues = new List<long>();
+    foreach (long v in sp) spValues.Add(v);
+    Check(spValues.Count == 7 && spValues[5] == 9, "SparseTable enumerates its values");
+
+    // A second monoid over a second element type, so the fold really is specialized per instantiation, and a
+    // reference-typed element type, which has no value-type layout for ILC to specialize around.
+    var spMasks = new SparseTable<int, BitwiseOrMonoid<int>>(new[] { 0b0001, 0b0010, 0b0100 });
+    Check(spMasks.Aggregate == 0b0111 && spMasks.Query(0, 2) == 0b0011, "SparseTable bitwise-or instantiation");
+
+    var spWords = new SparseTable<string, AotFirstNonEmptyMonoid>(new[] { "", "b", "c" });
+    Check(spWords.Aggregate == "b" && spWords.Query(2, 3) == "c", "SparseTable reference-typed elements");
+}
+
 // KdTree — the build-once spatial index. What is ILC-specific here is the query core: both traversals are
 // generic over struct type arguments the compiler has to specialize ahead of time — the range walk over a
 // region *and* a visitor — two regions crossed with three visitors, so six instantiations that must each be
@@ -3058,6 +3086,17 @@ internal readonly struct AotConcatMonoid : IMonoid<string>
     public string Identity => string.Empty;
 
     public string Combine(string left, string right) => left + right;
+}
+
+// The same idea for the SparseTable instantiation above, with the one difference that matters here: it
+// implements IIdempotentMonoid<string>, so ILC compiles a constrained call reached through the derived
+// interface. Concatenation could not serve — it is not idempotent — so this keeps the leftmost non-empty
+// value, which is.
+internal readonly struct AotFirstNonEmptyMonoid : IIdempotentMonoid<string>
+{
+    public string Identity => string.Empty;
+
+    public string Combine(string left, string right) => left.Length != 0 ? left : right;
 }
 
 // A ushort-backed enum for the EnumSet instantiation above: a second closed generic whose

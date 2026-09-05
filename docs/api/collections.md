@@ -4605,7 +4605,7 @@ Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `i
 
 ### Choosing it
 
-Reach for `SegmentTree<T, TMonoid>` when you maintain a **mutable sequence** and repeatedly ask for the aggregate of a range *while* the values change, under a fold with **no inverse**. If the fold is addition, use `FenwickTree<T>` — same asymptotics, half the memory, shorter constant. If the sequence is **immutable** after you build it, a sparse table answers range minima in `O(1)` and a precomputed prefix array answers sums in `O(1)`, both with less code. If you **only ever update** and never query a range, a raw array is simpler. And if you need to update whole ranges at a time, this is not the type — see above. This type is not thread-safe; concurrent callers must synchronize externally.
+Reach for `SegmentTree<T, TMonoid>` when you maintain a **mutable sequence** and repeatedly ask for the aggregate of a range *while* the values change, under a fold with **no inverse**. If the fold is addition, use `FenwickTree<T>` — same asymptotics, half the memory, shorter constant. If the sequence is **immutable** after you build it, [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid) answers any idempotent fold in `O(1)` — at an `O(n log n)` build and `levels · n` cells — and a precomputed prefix array answers sums in `O(1)` with less code than either. If you **only ever update** and never query a range, a raw array is simpler. And if you need to update whole ranges at a time, this is not the type — see above. This type is not thread-safe; concurrent callers must synchronize externally.
 
 ### Usage example
 
@@ -4627,6 +4627,154 @@ Console.WriteLine(book.Aggregate);     // 102
 // A different fold over the same shape: which flags does every entry in the window still set?
 var masks = new SegmentTree<int, BitwiseAndMonoid<int>>(new[] { 0b1111, 0b1110, 0b1100, 0b0101 });
 Console.WriteLine(Convert.ToString(masks.Query(0, 3), 2));   // 1100
+```
+
+## SparseTable&lt;T, TMonoid&gt;
+
+```csharp
+public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
+    where TMonoid : struct, IIdempotentMonoid<T>
+```
+
+A **sparse table** is an immutable, array-backed sequence that answers the aggregate of any half-open range under an **idempotent** associative operation in `O(1)` — two array reads and one combine, with no loop and no descent.
+
+It is the **build-once** half of the range-aggregate space. [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) answers the same question in `O(log n)` and accepts point updates; when the sequence never changes after you build it, that descent is paid on every query for a mutability nobody uses. A sparse table precomputes the fold of every window whose length is a power of two, and answers an arbitrary range from the two such windows that cover it.
+
+The BCL has no range-aggregate structure of any kind, so the outside baseline is the same one the segment tree measures against: a plain `T[]` and a hand-written loop folding the slice, `O(n)` per query. There is not even a span helper to lean on — `Span<T>` has no `Min` or `Max`, let alone an arbitrary combine.
+
+### The extra law: `IIdempotentMonoid<T>`
+
+```csharp
+public interface IIdempotentMonoid<T> : IMonoid<T>
+{
+}
+```
+
+The interface declares no members. It exists so a law can be stated in the type system rather than only in prose.
+
+The `O(1)` query works by covering `[start, endExclusive)` with the two widest power-of-two windows that fit, one anchored at each end. Unless the range length is *itself* a power of two those windows **overlap**, by `2·2ᵏ - length` elements, and everything in the overlap is folded into the answer **twice**. That is harmless exactly when re-folding a value changes nothing — `Combine(a, a) == a` — and wrong otherwise.
+
+Sum is the operation this excludes, and it is not hypothetical: `SumMonoid<T>` ships, and without the constraint `SparseTable<int, SumMonoid<int>>` would compile and quietly return inflated answers for every range whose length is not a power of two. Constraining the table to `IIdempotentMonoid<T>` makes that a **compile error** instead.
+
+Four of the five shipped folds are idempotent and declare it:
+
+| Fold | `Combine(a, a)` | Accepted by `SparseTable` |
+| --- | --- | --- |
+| `MinMonoid<T>` | `a` | ✅ |
+| `MaxMonoid<T>` | `a` | ✅ |
+| `BitwiseAndMonoid<T>` | `a` | ✅ |
+| `BitwiseOrMonoid<T>` | `a` | ✅ |
+| `SumMonoid<T>` | `2a` | ❌ — does not compile |
+
+For sums over an immutable sequence, a precomputed prefix array answers in `O(1)` with two lines of code; over a mutable one, use [`FenwickTree<T>`](#fenwicktreet).
+
+`SegmentTree<T, TMonoid>` is unaffected by the addition. Its query never overlaps, so it keeps the plain `IMonoid<T>` constraint and still accepts all five folds.
+
+To fold by an idempotent operation the built-in monoids do not cover, implement the derived interface on a field-free struct. Greatest common divisor is the standard example — `gcd(a, a)` is `a`:
+
+```csharp
+public readonly struct GcdMonoid : IIdempotentMonoid<uint>
+{
+    public uint Identity => 0;   // gcd(0, a) == a
+
+    public uint Combine(uint left, uint right)
+    {
+        while (right != 0)
+            (left, right) = (right, left % right);
+
+        return left;
+    }
+}
+
+var table = new SparseTable<uint, GcdMonoid>(values);
+```
+
+Declaring the interface is an assertion the compiler cannot check. A fold that is not actually idempotent gives an unspecified answer for ranges whose length is not a power of two, in the same way a non-associative `IMonoid<T>` gives an unspecified answer to a segment-tree query.
+
+The **domain** rule from [`IMonoid<T>`](#the-fold-imonoidt) carries over: idempotence is required only over the values the implementation declares itself defined for. For a floating-point `T`, `MinMonoid<T>` and `MaxMonoid<T>` are defined over the finite values, where idempotence holds; `NaN` is outside the domain and fails it, as it fails the identity law.
+
+### How it works
+
+The table is one flat array of `levels` rows, each `n` wide, where `levels` is `floor(log2(n)) + 1`. Row `k` holds, at offset `i`, the fold of the window `[i, i + 2ᵏ)`. Row `0` is the original values, which is why the indexer is a direct array read and enumeration streams a contiguous slice. Each later row is built from the one below it — `row[k][i] = Combine(row[k-1][i], row[k-1][i + 2ᵏ⁻¹])` — one combine per cell, so the build is `O(n log n)`.
+
+A query takes `k = floor(log2(length))`, the widest window that still fits inside the range, and combines the row-`k` entries at `start` and at `endExclusive - 2ᵏ`. Their union is exactly the range; their intersection is whatever the length exceeds `2ᵏ` by, and idempotence is what lets it be folded in twice.
+
+The layout is flat rather than jagged. Only the first `n - 2ᵏ + 1` entries of row `k` are meaningful, so the rectangle carries about one row's worth of padding in total — in exchange for a single allocation, one bounds check per read, and rows contiguous with each other.
+
+Non-commutative folds are safe: the left window is combined first, so a fold like "keep the leftmost non-empty value" gets the answer a left-to-right scan would give. An exhaustive differential sweep over every length and every range, under a fold that is both idempotent and non-commutative, pins both the overlap and the ordering.
+
+### What it costs
+
+The `O(1)` query is bought with an `O(n log n)` build into `levels · n` cells, against a segment tree's `O(n)` build into `2n`. At a thousand elements that is ten rows rather than two; at a hundred thousand, seventeen. `IndexSizeInBytes` reports the figure so the trade can be measured rather than guessed.
+
+This is the number to check first, because it decides the type. Measured on the class's own benchmark over `long` values, against a `SegmentTree<long, MinMonoid<long>>` over the same sequence:
+
+| | 1,000 elements | 100,000 elements |
+| --- | --- | --- |
+| Query batch, vs the array scan | **122x** | **8,200x** |
+| Query batch, vs `SegmentTree` | **10.9x** | **18.8x** |
+| Build, vs `SegmentTree` | **4.9x slower** | **4.9x slower** |
+| Memory, vs `SegmentTree` | **5x** (80 KB) | **8.5x** (13.6 MB) |
+
+So the build is repaid at roughly **960** queries at a thousand elements and **63,000** at a hundred thousand. Below that a segment tree is the better type even on a sequence that never changes, and on a range short enough to scan the array beats both.
+
+### The documented BCL-beating workload
+
+A sequence that is **built once and queried many times**, under a fold with no inverse: range minima and maxima over a fixed history, per-window capability masks (`BitwiseAndMonoid`), range gcd, "cheapest offer in this band" over a book snapshot that is replaced rather than edited. Against a plain array these are `O(n·q)`; against the table they are `O(q)`. See the [sparse-table benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=SparseTable) on the dashboard, and read its **Build** card alongside its **RangeMin** card — either one alone misstates the trade.
+
+### Constructors
+
+```csharp
+public SparseTable(IEnumerable<T> values)                   // O(n log n) build over values, in order
+public SparseTable(IEnumerable<T> values, TMonoid monoid)
+```
+
+The constructors take `IEnumerable<T>` rather than `ReadOnlySpan<T>` — unlike [`WaveletTree`](#wavelettree), and like `SegmentTree<T, TMonoid>`, the type a caller arrives here from. Offering both would make `new SparseTable<…>(anArray)` ambiguous on `net8.0`, and the table copies its input either way, so nothing is lost. A counted source (`T[]`, `List<T>`, …) is measured and copied straight into the first row; an uncounted one is materialized once.
+
+They throw `ArgumentNullException` on a null source, and never alias a caller-supplied array — later writes to the source are not observed. `ArgumentException` is thrown when the source is long enough that `levels · n` would exceed `Array.MaxLength`; unlike the segment tree's ceiling this is not a fixed fraction of that limit, since the cells per element grow with the length. The product is computed as a `long` for exactly that reason: as an `int` it would wrap, and the constructor would allocate a nonsensically small array rather than report anything. The `monoid`-taking overload exists for a fold that carries state; a field-free monoid needs it not, since the other closes over `default(TMonoid)`.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of elements in the indexed sequence. |
+| `int LevelCount { get; }` | The number of precomputed window rows — `floor(log2(Count)) + 1`, and `0` for an empty table. Row `k` holds the fold of every window of length `2ᵏ`. |
+| `T Aggregate { get; }` | The fold of every element — `Query(0, Count)`, and `Identity` for an empty table. `O(1)`, unlike `SegmentTree.Aggregate`. |
+| `long IndexSizeInBytes { get; }` | The backing array's size: `LevelCount · Count` cells, each `sizeof(T)`. A `long`, because the product can exceed `int.MaxValue` for a wide `T` before the cell count does. For a reference-type `T` it counts the references, not the objects they point at. |
+| `T this[int index] { get; }` | The value at `index`, in `O(1)` — the values are the table's first row, so this is a direct array read. Get-only. |
+| `T Query(int start, int endExclusive)` | The fold of the elements in the half-open range `[start, endExclusive)`, in `O(1)`. An empty range yields `Identity`. |
+| `Enumerator GetEnumerator()` | Struct enumerator yielding the values in index order (`O(n)` total, over a contiguous slice). |
+
+`Query` takes the same arguments, in the same order, under the same half-open convention as `SegmentTree.Query`, so a caller who discovers their sequence is static can change the type and leave the call sites alone. What is *not* there is the rest of the segment tree's surface: there is no indexer setter, no `Combine`, and no `Clear`. The table is immutable, which is the whole trade.
+
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Because nothing mutates after construction there is no version counter and an enumerator can never be invalidated — which also makes an instance safe to share across threads once built, unlike every mutable collection in this library.
+
+### Choosing it
+
+Reach for `SparseTable<T, TMonoid>` when the sequence is **immutable after you build it**, the fold is **idempotent**, and you will query it **many** times — enough to clear the crossover in [What it costs](#what-it-costs). If the sequence changes, this is not the type: there is no point update, and rebuilding costs `O(n log n)` — use [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid). If you will query it only a handful of times, the segment tree's cheaper build wins even on a static sequence. If the fold is addition, a precomputed prefix array answers in `O(1)` with less code and less memory than either. And if the ranges you ask about are short, the array scan beats both — a scan of a few dozen contiguous values never leaves cache. This type is not thread-safe to *build* concurrently, but is safe to share for reading once built.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A finished run's latency history: fixed once the run ends, questioned repeatedly afterwards.
+long[] latencies = { 105, 102, 108, 101, 110, 103, 107, 104 };
+var history = new SparseTable<long, MinMonoid<long>>(latencies);
+
+Console.WriteLine(history.Query(0, 4));   // 101 — fastest request in the first window
+Console.WriteLine(history.Query(4, 8));   // 103 — and in the second
+Console.WriteLine(history.Aggregate);     // 101 — fastest overall, in O(1)
+
+// Every one of those is two array reads and one comparison, whatever the window's width.
+Console.WriteLine(history.Query(1, 7));   // 101 — a six-wide window costs the same as a two-wide one
+
+// A different fold over the same shape: which flags did every entry in the window still set?
+var masks = new SparseTable<int, BitwiseAndMonoid<int>>(new[] { 0b1111, 0b1110, 0b1100, 0b0101 });
+Console.WriteLine(Convert.ToString(masks.Query(0, 3), 2));   // 1100
+
+// SumMonoid<int> is deliberately not accepted — a sparse table would double-count the overlap:
+// var wrong = new SparseTable<int, SumMonoid<int>>(latencies);   // does not compile
 ```
 
 ## KdTree&lt;TValue&gt;

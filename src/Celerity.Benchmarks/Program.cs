@@ -57,6 +57,7 @@ internal class Program
         typeof(RopeBenchmark),
         typeof(FenwickTreeBenchmark),
         typeof(SegmentTreeBenchmark),
+        typeof(SparseTableBenchmark),
         typeof(KdTreeBenchmark),
         typeof(SpatialGridBenchmark),
         typeof(RTreeBenchmark),

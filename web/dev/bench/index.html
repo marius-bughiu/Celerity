@@ -498,6 +498,11 @@ function escapeHtml(s) {
     // SegmentTree covers the folds a Fenwick tree structurally cannot — the baseline is the same plain long[],
     // scanned for the range minimum, because the BCL has no range-aggregate structure at all.
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',       vs: 'long[] (naive range min)', ops: ['Mixed', 'RangeMin'] },
+    // SparseTable is the build-once counterpart: same fold, same baseline, no updates. Its cards carry a third
+    // arm — SegmentTree over the same sequence — because the decision this type exists for is O(1) against
+    // O(log n), not against the array. Build is charted alongside RangeMin on purpose: the n log n table is
+    // what the constant-time query is bought with, and reading either card alone misstates the trade.
+    { key: 'SparseTable',         title: 'SparseTable<long, MinMonoid<long>>',       vs: 'long[] (naive range min); SegmentTree<long, MinMonoid<long>> on the second arm of every card', ops: ['RangeMin', 'Build'] },
     // KdTree indexes the plane, which no ordered structure can. Two baselines per question: the plain scan
     // over every point, and the better hand-roll that orders them by x and works outward from the query.
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',          vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards', ops: ['NearestQuery', 'NearestSorted', 'RadiusQuery', 'RadiusSlab', 'KNearest', 'Build'] },

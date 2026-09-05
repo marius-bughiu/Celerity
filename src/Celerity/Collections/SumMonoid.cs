@@ -12,6 +12,14 @@ namespace Celerity.Collections;
 /// has an inverse and a Fenwick tree exploits that. Prefer <see cref="FenwickTree{T}"/> for sums; this monoid
 /// exists so the segment tree can be differentially tested against it, and for the case where a single tree
 /// has to be switchable between a sum fold and a non-invertible one.
+/// <para>
+/// This is the one shipped fold that is <b>not</b> idempotent — <c>a + a</c> is not <c>a</c> — so it
+/// deliberately does not implement <see cref="IIdempotentMonoid{T}"/> and cannot fold a
+/// <see cref="SparseTable{T, TMonoid}"/>. That table covers a range with two <i>overlapping</i> windows, which
+/// would count the overlap twice; the constraint turns what would be a silently inflated sum into a compile
+/// error. For prefix and range sums over an immutable sequence, a precomputed prefix array answers in
+/// <c>O(1)</c> and is the right tool.
+/// </para>
 /// </remarks>
 public readonly struct SumMonoid<T> : IMonoid<T>
     where T : struct, INumberBase<T>

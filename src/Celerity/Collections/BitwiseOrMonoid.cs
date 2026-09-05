@@ -9,8 +9,12 @@ namespace Celerity.Collections;
 /// <remarks>
 /// The mirror of <see cref="BitwiseAndMonoid{T}"/> — "which flags does <i>any</i> entry in this window set?".
 /// Non-invertible for the same reason, so <see cref="FenwickTree{T}"/> cannot answer it.
+/// <para>
+/// <b>Idempotent</b> — <c>a | a</c> is <c>a</c> — so it implements <see cref="IIdempotentMonoid{T}"/> and can
+/// fold a <see cref="SparseTable{T, TMonoid}"/> as well.
+/// </para>
 /// </remarks>
-public readonly struct BitwiseOrMonoid<T> : IMonoid<T>
+public readonly struct BitwiseOrMonoid<T> : IIdempotentMonoid<T>
     where T : struct, INumberBase<T>, IBitwiseOperators<T, T, T>
 {
     /// <summary>Gets the identity, all bits clear — oring with it leaves every bit as it was.</summary>

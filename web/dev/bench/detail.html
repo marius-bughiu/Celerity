@@ -397,6 +397,7 @@
     { key: 'StringInternTable',   title: 'StringInternTable',                     vs: 'HashSet<string> / Dictionary<string, string>' },
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' },
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',    vs: 'long[] (naive range min)' },
+    { key: 'SparseTable',         title: 'SparseTable<long, MinMonoid<long>>',    vs: 'long[] (naive range min); SegmentTree<long, MinMonoid<long>> on the second arm of every card' },
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',       vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards' },
     { key: 'SpatialGrid',         title: 'SpatialGrid<int> (moving points)',      vs: 'Dictionary<(int, int), List<int>> (bucketed grid)' },
     { key: 'RTree',               title: 'RTree<int> (2-D extent index)',         vs: 'SpatialBox[] scan — naive, or minX-sorted on the Sorted cards' },
