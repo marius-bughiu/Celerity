@@ -271,29 +271,31 @@ public class MonoidTests
         int[] values = [5, 3, 9, 1, 7, 2];
         uint[] masks = [0b1111, 0b1110, 0b1100, 0b0101, 0b0111];
 
+        var minTree = new SegmentTree<int, MinMonoid<int>>(values);
+        var minTable = new SparseTable<int, MinMonoid<int>>(values);
+        var maxTree = new SegmentTree<int, MaxMonoid<int>>(values);
+        var maxTable = new SparseTable<int, MaxMonoid<int>>(values);
+
         for (int start = 0; start <= values.Length; start++)
         {
             for (int end = start; end <= values.Length; end++)
             {
-                Assert.Equal(
-                    new SegmentTree<int, MinMonoid<int>>(values).Query(start, end),
-                    new SparseTable<int, MinMonoid<int>>(values).Query(start, end));
-                Assert.Equal(
-                    new SegmentTree<int, MaxMonoid<int>>(values).Query(start, end),
-                    new SparseTable<int, MaxMonoid<int>>(values).Query(start, end));
+                Assert.Equal(minTree.Query(start, end), minTable.Query(start, end));
+                Assert.Equal(maxTree.Query(start, end), maxTable.Query(start, end));
             }
         }
+
+        var andTree = new SegmentTree<uint, BitwiseAndMonoid<uint>>(masks);
+        var andTable = new SparseTable<uint, BitwiseAndMonoid<uint>>(masks);
+        var orTree = new SegmentTree<uint, BitwiseOrMonoid<uint>>(masks);
+        var orTable = new SparseTable<uint, BitwiseOrMonoid<uint>>(masks);
 
         for (int start = 0; start <= masks.Length; start++)
         {
             for (int end = start; end <= masks.Length; end++)
             {
-                Assert.Equal(
-                    new SegmentTree<uint, BitwiseAndMonoid<uint>>(masks).Query(start, end),
-                    new SparseTable<uint, BitwiseAndMonoid<uint>>(masks).Query(start, end));
-                Assert.Equal(
-                    new SegmentTree<uint, BitwiseOrMonoid<uint>>(masks).Query(start, end),
-                    new SparseTable<uint, BitwiseOrMonoid<uint>>(masks).Query(start, end));
+                Assert.Equal(andTree.Query(start, end), andTable.Query(start, end));
+                Assert.Equal(orTree.Query(start, end), orTable.Query(start, end));
             }
         }
     }
