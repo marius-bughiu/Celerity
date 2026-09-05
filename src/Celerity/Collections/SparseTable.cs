@@ -40,17 +40,18 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>What it costs.</b> The table holds <c>levels * n</c> cells, where <c>levels</c> is
 /// <c>floor(log2(n)) + 1</c>, and the build performs one combine per meaningful cell above the first row:
-/// <c>O(n log n)</c> time and memory, against a segment tree's <c>O(n)</c> build into <c>2n</c> cells. At a million elements that is twenty rows
-/// rather than two, so this type earns its place when a sequence is built once and queried <i>many</i> times.
+/// <c>O(n log n)</c> time and memory, against a segment tree's <c>O(n)</c> build into <c>2n</c> cells. At a
+/// million elements that is twenty rows rather than two, so this type earns its place when a sequence is
+/// built once and queried <i>many</i> times.
 /// A handful of queries does not repay the build, and a range short enough to scan does not repay the table at
 /// all. <see cref="IndexSizeInBytes"/> reports the figure so the trade can be measured rather than guessed.
 /// </para>
 /// <para>
 /// Commutativity is not required, and the two windows are combined in index order — left window first — so a
-/// non-commutative idempotent fold ("keep the leftmost", set union) gets the answer a left-to-right scan
-/// would give. Note that overlap makes the ordering weaker than a segment tree's: elements in the overlap are
-/// visited on both sides, so a fold that distinguishes <i>how many times</i> it saw a value is already
-/// excluded by the idempotence requirement.
+/// non-commutative idempotent fold — "keep the leftmost value that qualifies" is the shape, and the one the
+/// differential suite runs on — gets the answer a left-to-right scan would give. Note that overlap makes the
+/// ordering weaker than a segment tree's: elements in the overlap are visited on both sides, so a fold that
+/// distinguishes <i>how many times</i> it saw a value is already excluded by the idempotence requirement.
 /// </para>
 /// <para>
 /// It implements <see cref="IReadOnlyList{T}"/> because the original values are stored outright as the first
