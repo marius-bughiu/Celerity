@@ -292,6 +292,10 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
         return _monoid.Combine(_table[row + start], _table[row + endExclusive - (1 << level)]);
     }
 
+    // The largest logical length SegmentTree<T, TMonoid> can hold — its layout stores two cells per element.
+    // Mirrored here only so the ceiling message can tell the caller whether that type is actually a way out.
+    private static readonly int SegmentTreeMaxLength = Array.MaxLength / 2;
+
     // The number of rows a table of `length` elements needs, with the ceiling check that keeps the flat
     // rectangle inside a single array. Zero rows for an empty table: it has no windows and every query on it
     // is the empty range.
@@ -302,11 +306,20 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
 
         int levels = BitOperations.Log2((uint)length) + 1;
         if ((long)levels * length > Array.MaxLength)
+        {
+            // SegmentTree is only a fallback for a length inside its *own* ceiling: it stores two cells per
+            // element, so it stops at Array.MaxLength / 2. Above that it would reject the same source, and
+            // recommending it would send the caller to a second identical failure.
+            string fallback = length <= SegmentTreeMaxLength
+                ? "Use SegmentTree<T, TMonoid> instead — it stores 2n cells and answers the same query in O(log n)."
+                : $"SegmentTree<T, TMonoid> cannot hold it either (its own ceiling is {SegmentTreeMaxLength} " +
+                  "elements, since it stores two cells per element); partition the sequence.";
+
             throw new ArgumentException(
                 $"A sparse table over {length} elements needs {levels} rows of {length} cells, which exceeds " +
-                $"the maximum array length of {Array.MaxLength}. Use SegmentTree<T, TMonoid> instead — it " +
-                "stores 2n cells and answers the same query in O(log n).",
+                $"the maximum array length of {Array.MaxLength}. {fallback}",
                 paramName);
+        }
 
         return levels;
     }

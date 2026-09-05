@@ -161,6 +161,11 @@ public class OversizedSourceAndResidualGuardTests
 
         Assert.Equal("values", ex.ParamName);
         Assert.Contains("exceeds the maximum array length", ex.Message);
+
+        // int.MaxValue is also past SegmentTree's own Array.MaxLength / 2 ceiling, so the message must not
+        // send the caller there — it would hit an identical rejection.
+        Assert.DoesNotContain("Use SegmentTree", ex.Message);
+        Assert.Contains("cannot hold it either", ex.Message);
     }
 
     [Fact]
@@ -175,14 +180,15 @@ public class OversizedSourceAndResidualGuardTests
     public void SparseTableConstructor_ShouldRejectALengthASegmentTreeWouldAccept()
     {
         // The ceilings genuinely differ, and this is the evidence: a length inside SegmentTree's
-        // Array.MaxLength / 2 allowance still needs 27 rows here, which is far outside a single array. The
-        // message says so and names the type to fall back to.
+        // Array.MaxLength / 2 allowance still needs 30 rows here, which is far outside a single array. Because
+        // this length *is* one SegmentTree can hold, the message names it as the way out — unlike the
+        // int.MaxValue case above, where it says the opposite.
         var oversized = new LyingCountCollection(Array.MaxLength / 4);
 
         ArgumentException ex = Assert.Throws<ArgumentException>(
             () => new SparseTable<int, MinMonoid<int>>(oversized));
 
-        Assert.Contains("SegmentTree", ex.Message);
+        Assert.Contains("Use SegmentTree<T, TMonoid> instead", ex.Message);
     }
 
     [Fact]
