@@ -4747,11 +4747,11 @@ They throw `ArgumentNullException` on a null source, and never alias a caller-su
 
 `Query` takes the same arguments, in the same order, under the same half-open convention as `SegmentTree.Query`, so a caller who discovers their sequence is static can change the type and leave the call sites alone. What is *not* there is the rest of the segment tree's surface: there is no indexer setter, no `Combine`, and no `Clear`. The table is immutable, which is the whole trade.
 
-Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Because nothing mutates after construction there is no version counter and an enumerator can never be invalidated — which also makes an instance safe to share across threads once built, unlike every mutable collection in this library.
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Because nothing mutates after construction there is no version counter and an enumerator can never be invalidated, and concurrent readers need no synchronization *as far as the table itself is concerned*. One caveat, the same one [`IntervalTree`](#intervaltreetkey-tvalue-tcomparer) carries: every query calls `TMonoid`, so a monoid that is not itself thread-safe makes concurrent queries unsafe however immutable the table is. The five shipped folds are stateless, so the ordinary case is safe; a stateful monoid — which the two-argument constructor exists to accept — is the caller's to reason about.
 
 ### Choosing it
 
-Reach for `SparseTable<T, TMonoid>` when the sequence is **immutable after you build it**, the fold is **idempotent**, and you will query it **many** times — enough to clear the crossover in [What it costs](#what-it-costs). If the sequence changes, this is not the type: there is no point update, and rebuilding costs `O(n log n)` — use [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid). If you will query it only a handful of times, the segment tree's cheaper build wins even on a static sequence. If the fold is addition, a precomputed prefix array answers in `O(1)` with less code and less memory than either. And if the ranges you ask about are short, the array scan beats both — a scan of a few dozen contiguous values never leaves cache. This type is not thread-safe to *build* concurrently, but is safe to share for reading once built.
+Reach for `SparseTable<T, TMonoid>` when the sequence is **immutable after you build it**, the fold is **idempotent**, and you will query it **many** times — enough to clear the crossover in [What it costs](#what-it-costs). If the sequence changes, this is not the type: there is no point update, and rebuilding costs `O(n log n)` — use [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid). If you will query it only a handful of times, the segment tree's cheaper build wins even on a static sequence. If the fold is addition, a precomputed prefix array answers in `O(1)` with less code and less memory than either. And if the ranges you ask about are short, the array scan beats both — a scan of a few dozen contiguous values never leaves cache. Once built, an instance is safe to share for reading, provided the fold is too — see the member notes above.
 
 ### Usage example
 
@@ -4773,8 +4773,9 @@ Console.WriteLine(history.Query(1, 7));   // 101 — a six-wide window costs the
 var masks = new SparseTable<int, BitwiseAndMonoid<int>>(new[] { 0b1111, 0b1110, 0b1100, 0b0101 });
 Console.WriteLine(Convert.ToString(masks.Query(0, 3), 2));   // 1100
 
-// SumMonoid<int> is deliberately not accepted — a sparse table would double-count the overlap:
-// var wrong = new SparseTable<int, SumMonoid<int>>(latencies);   // does not compile
+// SumMonoid<long> is deliberately not accepted — a sparse table would double-count the overlap:
+// var wrong = new SparseTable<long, SumMonoid<long>>(latencies);   // CS0315: SumMonoid<long> has no
+//                                                                 // conversion to IIdempotentMonoid<long>
 ```
 
 ## KdTree&lt;TValue&gt;

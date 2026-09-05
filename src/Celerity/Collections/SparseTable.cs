@@ -55,9 +55,12 @@ namespace Celerity.Collections;
 /// <para>
 /// It implements <see cref="IReadOnlyList{T}"/> because the original values are stored outright as the first
 /// row of the table: the indexer is a direct array read, and enumeration streams a contiguous slice. Nothing
-/// mutates after construction, so there is no version counter and an enumerator can never be invalidated —
-/// which also makes instances safe to share across threads once built, unlike every mutable collection in this
-/// library.
+/// mutates after construction, so there is no version counter and an enumerator can never be invalidated, and
+/// concurrent readers need no synchronization <i>as far as the table itself is concerned</i> — with the same
+/// caveat <see cref="IntervalTree{TKey, TValue}"/> carries: every query calls
+/// <typeparamref name="TMonoid"/>, so a monoid that is not itself thread-safe makes concurrent queries unsafe
+/// however immutable the table is. The five shipped folds are stateless, so the ordinary case is safe; a
+/// stateful monoid, which the two-argument constructor exists to accept, is the caller's to reason about.
 /// </para>
 /// </remarks>
 public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>

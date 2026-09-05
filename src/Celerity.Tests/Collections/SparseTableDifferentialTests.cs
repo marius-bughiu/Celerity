@@ -1,4 +1,5 @@
 using Celerity.Collections;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
@@ -24,9 +25,92 @@ namespace Celerity.Tests.Collections;
 /// <see cref="SegmentTreeDifferentialTests"/> makes, with the difference that the folds available here must
 /// also be idempotent, which rules <see cref="ConcatMonoid"/> out.
 /// </para>
+///
+/// <para>
+/// Three layers, narrowest first. The <b>CsCheck property</b> generates the sequence from its own two axes —
+/// length and value spread — so a disagreement shrinks to a minimal reproduction with the seed printed; it is
+/// the layer that runs on every pull request and the one <c>CONTRIBUTING.md</c> requires. The seeded theories
+/// below it drive the same reconciliation from fixed <see cref="Random"/> streams, and the length sweep at the
+/// end walks every length from 1 to 9 and around each power of two up to 64 deterministically, rather than
+/// hoping a sample lands on the boundaries where the row count changes.
+/// </para>
+///
+/// <para>
+/// The <b>value spread</b> is a real axis rather than decoration. A wide spread separates the values, so a
+/// query that read the wrong window almost always returns a visibly wrong answer; a narrow one fills the
+/// sequence with duplicates, which is where the overlap is folding the <i>same</i> value in twice and where a
+/// fold that quietly double-counted would most often agree with the oracle by luck. Both ends are generated.
+/// </para>
 /// </summary>
 public class SparseTableDifferentialTests
 {
+    // Length and value spread are the two axes that decide what a case can reach: the length fixes the row
+    // count and every overlap width the queries can produce, and the spread fixes how often the overlap is
+    // folding a duplicate rather than a distinct value. Zero length is included — an empty table has no rows
+    // and every query on it is the empty range.
+    private static readonly Gen<(int Length, int Spread, uint Seed)> GenSequences =
+        Gen.Select(Gen.Int[0, 80], Gen.Int[1, 60], Gen.UInt);
+
+    [Fact]
+    public void EveryRange_ShouldMatchTheNaiveScan_UnderGeneratedSequences()
+    {
+        GenSequences.Sample(
+            spec => AssertAgreesWithOracles(BuildSequence(spec.Length, spec.Spread, spec.Seed)),
+            iter: 250);
+    }
+
+    // The generated sequence, and the reconciliation the property and the sweeps below all share. Three folds
+    // at once, because they are on trial for different reasons: MinMonoid is the commutative headline case and
+    // is also cross-checked against SegmentTree, which reaches the same answer by a walk that never overlaps;
+    // FirstNonZeroMonoid is idempotent *and* non-commutative, so it is the only one that can observe the order
+    // the two windows are combined in; and the shape properties are checked once per sequence.
+    private static int[] BuildSequence(int length, int spread, uint seed)
+    {
+        var rand = new Random(unchecked((int)seed));
+        var values = new int[length];
+        for (int i = 0; i < length; i++)
+            values[i] = rand.Next(0, spread);
+
+        return values;
+    }
+
+    private static void AssertAgreesWithOracles(int[] values)
+    {
+        int n = values.Length;
+
+        var minTable = new SparseTable<int, MinMonoid<int>>(values);
+        var minTree = new SegmentTree<int, MinMonoid<int>>(values);
+        var firstTable = new SparseTable<int, FirstNonZeroMonoid>(values);
+
+        Assert.Equal(n, minTable.Count);
+        Assert.Equal(n == 0 ? 0 : (int)Math.Floor(Math.Log2(n)) + 1, minTable.LevelCount);
+        Assert.Equal((long)minTable.LevelCount * n * sizeof(int), minTable.IndexSizeInBytes);
+        Assert.Equal(values, minTable);
+        Assert.Equal(minTree.Aggregate, minTable.Aggregate);
+
+        for (int i = 0; i < n; i++)
+            Assert.Equal(values[i], minTable[i]);
+
+        for (int start = 0; start <= n; start++)
+        {
+            for (int end = start; end <= n; end++)
+            {
+                int min = int.MaxValue;
+                int first = 0;
+                for (int i = start; i < end; i++)
+                {
+                    min = Math.Min(min, values[i]);
+                    if (first == 0)
+                        first = values[i];
+                }
+
+                Assert.Equal(min, minTable.Query(start, end));
+                Assert.Equal(minTree.Query(start, end), minTable.Query(start, end));
+                Assert.Equal(first, firstTable.Query(start, end));
+            }
+        }
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(7)]
