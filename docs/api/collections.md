@@ -4711,12 +4711,14 @@ This is the number to check first, because it decides the type. Measured on the 
 
 | | 1,000 elements | 100,000 elements |
 | --- | --- | --- |
-| Query batch, vs the array scan | **122x** | **8,200x** |
-| Query batch, vs `SegmentTree` | **10.9x** | **18.8x** |
-| Build, vs `SegmentTree` | **4.9x slower** | **4.9x slower** |
+| Query batch, vs the array scan | **~100–120x** | **~8,200x** |
+| Query batch, vs `SegmentTree` | **~9–11x** | **~16–19x** |
+| Build, vs `SegmentTree` | **~4–5x slower** | **~4–5x slower** |
 | Memory, vs `SegmentTree` | **5x** (80 KB) | **8.5x** (13.6 MB) |
 
-So the build is repaid at roughly **960** queries at a thousand elements and **63,000** at a hundred thousand. Below that a segment tree is the better type even on a sequence that never changes, and on a range short enough to scan the array beats both.
+The timing figures are **ranges because they are ranges**: two short local runs of identical code disagree by up to 25% on these arms, so a single-run figure would read more precise than the measurement is. The memory column is exact — it is an allocation count, not a timing. The dashboard's CI series is the one to trust for regressions.
+
+So the build is repaid somewhere around **800–1,000** queries at a thousand elements and **65,000** at a hundred thousand. Below that a segment tree is the better type even on a sequence that never changes, and on a range short enough to scan the array beats both.
 
 ### The documented BCL-beating workload
 

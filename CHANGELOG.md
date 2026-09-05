@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`SparseTable<T, TMonoid>`** in `Celerity.Collections` — an **immutable** range-aggregate table that answers the same fold as `SegmentTree` in **`O(1)`** instead of `O(log n)`, for sequences that never change after build. Bought with an `O(n log n)` build and `levels × n` cells: **4.9x** a segment tree's build and **5–8.5x** its memory, so it repays at roughly 960 queries at 1,000 elements and 63,000 at 100,000 — below that the segment tree is still the better type. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
+- **`SparseTable<T, TMonoid>`** in `Celerity.Collections` — an **immutable** range-aggregate table that answers the same fold as `SegmentTree` in **`O(1)`** instead of `O(log n)`, for sequences that never change after build. Bought with an `O(n log n)` build and `levels × n` cells: about **4–5x** a segment tree's build and **5–8.5x** its memory, so it repays at roughly 800–1,000 queries at 1,000 elements and 65,000 at 100,000 — below that the segment tree is still the better type. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
 
 - **`IIdempotentMonoid<T>`** in `Celerity.Collections` — an `IMonoid<T>` that also promises `Combine(a, a) == a`, which is what `SparseTable` needs to fold its two overlapping windows. `MinMonoid`, `MaxMonoid`, `BitwiseAndMonoid` and `BitwiseOrMonoid` implement it; `SumMonoid` deliberately does not, so `SparseTable<int, SumMonoid<int>>` is a compile error rather than a silently doubled overlap. Additive — `SegmentTree` keeps its `IMonoid<T>` constraint and all five folds. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
 
