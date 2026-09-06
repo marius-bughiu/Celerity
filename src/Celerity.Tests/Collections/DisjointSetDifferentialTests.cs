@@ -1,14 +1,22 @@
 using Celerity.Collections;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Deterministic, seeded differential coverage for <see cref="DisjointSet{T}"/>. Each seed drives the same
-/// random stream of add / union / connectivity operations into the disjoint-set and into an independent
-/// naive reference model (a <see cref="Dictionary{TKey, TValue}"/> from element to its explicit member
-/// <see cref="HashSet{T}"/>, merged the slow O(n) way), then asserts after every operation that the two
-/// agree on element count, set count, per-element connectivity, and component size. This is the strongest
+/// Property-based differential coverage for <see cref="DisjointSet{T}"/> against an independent naive
+/// reference model (a <see cref="Dictionary{TKey, TValue}"/> from element to its explicit member
+/// <see cref="HashSet{T}"/>, merged the slow O(n) way). CsCheck generates the starting capacity and the
+/// stream of add / union / connectivity operations, and asserts after every operation that the two agree
+/// on element count and set count, then reconciles the whole universe — per-element connectivity,
+/// component size and the <c>GetComponents</c> partition — once the stream is done. This is the strongest
 /// guard against a union-by-size / path-halving bug that only surfaces after many interleaved merges.
+///
+/// <para>
+/// The universe is deliberately small relative to the operation count so components genuinely coalesce:
+/// over a wide domain almost every union joins two singletons, and the size-ordered merge that is the
+/// actual risk surface is never reached.
+/// </para>
 /// </summary>
 public class DisjointSetDifferentialTests
 {
@@ -58,45 +66,44 @@ public class DisjointSetDifferentialTests
         public int ComponentSize(int x) => _componentOf[x].Count;
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    public void RandomOps_MatchReferenceModel(int startCapacity)
-    {
-        const int Seeds = 40;
-        const int OpsPerSeed = 600;
-        const int Universe = 60; // small universe so components genuinely coalesce
+    private enum Op { Add, Union, Connected }
 
-        for (int seed = 0; seed < Seeds; seed++)
+    private const int Universe = 60;
+
+    private static readonly Gen<Op> GenKind =
+        Gen.Int[0, 2].Select(n => (Op)n);
+
+    private static readonly Gen<(Op Kind, int A, int B)> GenOp =
+        Gen.Select(GenKind, Gen.Int[0, Universe - 1], Gen.Int[0, Universe - 1]);
+
+    private static readonly Gen<(int StartCapacity, List<(Op Kind, int A, int B)> Ops)> GenScript =
+        Gen.Select(Gen.Int[0, 4], GenOp.List[0, 500]);
+
+    [Fact]
+    public void DisjointSet_ShouldMatch_ANaiveUnionFind()
+    {
+        GenScript.Sample(script =>
         {
-            var rng = new Random(seed * 7919 + startCapacity);
-            var ds = new DisjointSet<int>(startCapacity);
+            var ds = new DisjointSet<int>(script.StartCapacity);
             var oracle = new OracleUnionFind();
 
-            for (int op = 0; op < OpsPerSeed; op++)
+            foreach (var (kind, a, b) in script.Ops)
             {
-                int roll = rng.Next(3);
-                if (roll == 0)
+                switch (kind)
                 {
-                    int x = rng.Next(Universe);
-                    ds.Add(x);
-                    oracle.Add(x);
-                }
-                else if (roll == 1)
-                {
-                    int a = rng.Next(Universe);
-                    int b = rng.Next(Universe);
-                    ds.Union(a, b);
-                    oracle.Union(a, b);
-                }
-                else
-                {
-                    int a = rng.Next(Universe);
-                    int b = rng.Next(Universe);
-                    Assert.Equal(oracle.Connected(a, b), ds.Connected(a, b));
+                    case Op.Add:
+                        ds.Add(a);
+                        oracle.Add(a);
+                        break;
+
+                    case Op.Union:
+                        ds.Union(a, b);
+                        oracle.Union(a, b);
+                        break;
+
+                    case Op.Connected:
+                        Assert.Equal(oracle.Connected(a, b), ds.Connected(a, b));
+                        break;
                 }
 
                 Assert.Equal(oracle.Count, ds.Count);
@@ -126,6 +133,6 @@ public class DisjointSetDifferentialTests
                 foreach (int member in group)
                     Assert.True(oracle.Connected(anchor, member));
             }
-        }
+        }, iter: 40);
     }
 }

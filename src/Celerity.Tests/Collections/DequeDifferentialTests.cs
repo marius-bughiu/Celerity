@@ -1,14 +1,22 @@
 using Celerity.Collections;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Deterministic, seeded differential coverage for <see cref="Deque{T}"/>. Each seed drives the same random
-/// stream of end operations (push/pop front and back, plus index reads and the occasional clear) into the
-/// deque and into an independent reference deque built from a <see cref="List{T}"/> (front = index 0), then
-/// asserts that after every single operation the two agree on count, the exact front-to-back element
-/// sequence, both ends, and a random index read. This is the strongest guard against a wrap-around or
-/// growth-re-linearization bug in the circular buffer that only surfaces after many mixed operations.
+/// Property-based differential coverage for <see cref="Deque{T}"/> against an independent reference
+/// deque built from a <see cref="List{T}"/> (front = index 0). CsCheck generates the starting
+/// capacity and the stream of end operations — push/pop front and back, peeks, index reads and the
+/// occasional clear — and asserts after every single operation that the two agree on count, on the
+/// exact front-to-back element sequence, on both ends, and on an index read. This is the strongest
+/// guard against a wrap-around or growth-re-linearization bug in the circular buffer that only
+/// surfaces after many mixed operations.
+///
+/// <para>
+/// The starting capacity is generated rather than enumerated because it decides where the first
+/// wrap lands: capacity 0 and 1 reach the growth path immediately, and a small odd capacity puts
+/// the boundary in the middle of the operation stream instead of at a round number.
+/// </para>
 /// </summary>
 public class DequeDifferentialTests
 {
@@ -44,68 +52,79 @@ public class DequeDifferentialTests
         public int[] ToArray() => _items.ToArray();
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    public void RandomOps_MatchReferenceDeque(int startCapacity)
-    {
-        const int Seeds = 40;
-        const int OpsPerSeed = 500;
+    private enum Op { PushFront, PushBack, PopFront, PopBack, IndexRead, Clear }
 
-        for (int seed = 0; seed < Seeds; seed++)
+    // Pushes outnumber pops so the deque grows and wraps rather than hovering near empty, and the
+    // clear stays rare for the same reason.
+    private static readonly Gen<Op> GenKind =
+        Gen.Int[0, 79].Select(n => n < 20 ? Op.PushFront
+                                 : n < 40 ? Op.PushBack
+                                 : n < 50 ? Op.PopFront
+                                 : n < 60 ? Op.PopBack
+                                 : n < 79 ? Op.IndexRead
+                                 : Op.Clear);
+
+    private static readonly Gen<(Op Kind, int Value, int Index)> GenOp =
+        Gen.Select(GenKind, Gen.Int, Gen.Int[0, 1023]);
+
+    private static readonly Gen<(int StartCapacity, List<(Op Kind, int Value, int Index)> Ops)> GenScript =
+        Gen.Select(Gen.Int[0, 4], GenOp.List[0, 400]);
+
+    [Fact]
+    public void Deque_ShouldMatch_AReferenceDeque()
+    {
+        GenScript.Sample(script =>
         {
-            var rng = new Random(seed * 6151 + startCapacity);
-            var deque = new Deque<int>(startCapacity);
+            var deque = new Deque<int>(script.StartCapacity);
             var oracle = new OracleDeque();
 
-            for (int op = 0; op < OpsPerSeed; op++)
+            foreach (var (kind, value, index) in script.Ops)
             {
-                int value = rng.Next();
-                switch (rng.Next(8))
+                switch (kind)
                 {
-                    case 0:
-                    case 1:
+                    case Op.PushFront:
                         deque.PushFront(value);
                         oracle.PushFront(value);
                         break;
-                    case 2:
-                    case 3:
+
+                    case Op.PushBack:
                         deque.PushBack(value);
                         oracle.PushBack(value);
                         break;
-                    case 4:
-                        Assert.Equal(oracle.Count > 0, deque.TryPeekFront(out int pf));
+
+                    case Op.PopFront:
+                        // The peek is asserted first, including its false on empty, so a pop that
+                        // returns the right element from the wrong end is still caught.
+                        Assert.Equal(oracle.Count > 0, deque.TryPeekFront(out int front));
                         if (oracle.Count > 0)
                         {
-                            Assert.Equal(oracle[0], pf);
+                            Assert.Equal(oracle[0], front);
                             Assert.Equal(oracle.PopFront(), deque.PopFront());
                         }
                         break;
-                    case 5:
-                        Assert.Equal(oracle.Count > 0, deque.TryPeekBack(out int pb));
+
+                    case Op.PopBack:
+                        Assert.Equal(oracle.Count > 0, deque.TryPeekBack(out int back));
                         if (oracle.Count > 0)
                         {
-                            Assert.Equal(oracle[oracle.Count - 1], pb);
+                            Assert.Equal(oracle[oracle.Count - 1], back);
                             Assert.Equal(oracle.PopBack(), deque.PopBack());
                         }
                         break;
-                    case 6:
-                        if (oracle.Count > 0)
-                        {
-                            int idx = rng.Next(oracle.Count);
-                            Assert.Equal(oracle[idx], deque[idx]);
-                        }
+
+                    case Op.IndexRead when oracle.Count > 0:
+                    {
+                        int i = index % oracle.Count;
+                        Assert.Equal(oracle[i], deque[i]);
                         break;
-                    default:
-                        // Occasional clear (rarely, so the deque usually keeps growing/wrapping).
-                        if (rng.Next(10) == 0)
-                        {
-                            deque.Clear();
-                            oracle.Clear();
-                        }
+                    }
+
+                    case Op.IndexRead:
+                        break;
+
+                    case Op.Clear:
+                        deque.Clear();
+                        oracle.Clear();
                         break;
                 }
 
@@ -113,6 +132,6 @@ public class DequeDifferentialTests
                 Assert.Equal(oracle.Count, deque.Count);
                 Assert.Equal(oracle.ToArray(), deque.ToArray());
             }
-        }
+        }, iter: 40);
     }
 }

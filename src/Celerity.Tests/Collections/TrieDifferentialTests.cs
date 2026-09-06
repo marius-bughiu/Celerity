@@ -1,122 +1,141 @@
 using Celerity.Collections;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Deterministic, seeded differential coverage for <see cref="Trie{TValue}"/>. Each seed drives the same
-/// random stream of inserts, overwrites, removes, and lookups into the trie and into an independent
-/// <see cref="SortedDictionary{TKey, TValue}"/> oracle keyed by <see cref="StringComparer.Ordinal"/> (whose
-/// iteration order is exactly the trie's ascending-ordinal order), then asserts after every operation that the
-/// two agree on count, per-key membership and value, the full ordered entry sequence, prefix enumeration, and
-/// the longest-prefix match. Keys are drawn from a tiny alphabet with short lengths so prefixes collide
-/// heavily — the case that exercises node sharing and bottom-up removal pruning.
+/// Property-based differential coverage for <see cref="Trie{TValue}"/> against an independent
+/// <see cref="SortedDictionary{TKey, TValue}"/> oracle keyed by <see cref="StringComparer.Ordinal"/>
+/// — whose iteration order is exactly the trie's ascending-ordinal order. CsCheck generates the
+/// stream of inserts, overwrites, removes, lookups, prefix enumerations and longest-prefix matches,
+/// and asserts after every operation that the two agree on count, per-key membership and value, the
+/// filtered prefix set, and the longest stored prefix of a query; the full ordered key and value
+/// sequences are reconciled once the stream is done.
+///
+/// <para>
+/// Keys are drawn from a four-symbol alphabet at lengths up to four, so prefixes collide heavily —
+/// that is the case that exercises shared interior nodes and the bottom-up removal pruning, and a
+/// wider alphabet would spend the whole run on disjoint singleton branches.
+/// </para>
+///
+/// <para>
+/// Every key in the script is generated data rather than a draw from a seeded <c>Random</c>, so a
+/// divergence shrinks to the few keys that caused it — including the empty key, which is both a
+/// valid entry and the prefix of everything, and which CsCheck reaches by shrinking rather than
+/// by the alphabet needing a special case.
+/// </para>
 /// </summary>
 public class TrieDifferentialTests
 {
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(7)]
-    [InlineData(42)]
-    [InlineData(1234)]
-    public void RandomizedOperations_MatchSortedDictionaryOracle(int seed)
-    {
-        var rand = new Random(seed);
-        var trie = new Trie<int>();
-        var oracle = new SortedDictionary<string, int>(StringComparer.Ordinal);
+    private enum Op { IndexerSet, TryAdd, Remove, Lookup, PrefixScan, LongestPrefix }
 
-        const int Steps = 4000;
-        for (int step = 0; step < Steps; step++)
+    // A four-symbol alphabet at lengths 0..4: 341 possible keys, so a few hundred operations
+    // revisit the same interior nodes many times over.
+    private static readonly Gen<char> GenSymbol = Gen.Int[0, 3].Select(i => "abc-"[i]);
+
+    private static readonly Gen<string> GenKey = Gen.String[GenSymbol, 0, 4];
+
+    private static readonly Gen<Op> GenKind =
+        Gen.Int[0, 99].Select(n => n < 22 ? Op.IndexerSet
+                                 : n < 45 ? Op.TryAdd
+                                 : n < 65 ? Op.Remove
+                                 : n < 80 ? Op.Lookup
+                                 : n < 90 ? Op.PrefixScan
+                                 : Op.LongestPrefix);
+
+    // `Query` is a second, independent key: the longest-prefix match asks about a string that need
+    // not be stored, and `PrefixLength` truncates `Key` to a proper prefix of itself.
+    private static readonly Gen<(Op Kind, string Key, int Value, string Query, int PrefixLength)> GenOp =
+        Gen.Select(GenKind, GenKey, Gen.Int[0, 1_000_000], GenKey, Gen.Int[0, 4]);
+
+    [Fact]
+    public void Trie_ShouldMatch_ASortedDictionary()
+    {
+        GenOp.List[0, 400].Sample(ops =>
         {
-            string key = RandomKey(rand);
-            int op = rand.Next(100);
+            var trie = new Trie<int>();
+            var oracle = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
-            if (op < 45)
+            foreach (var (kind, key, value, query, prefixLength) in ops)
             {
-                // Insert-or-overwrite via the indexer / TryAdd, mirroring the oracle.
-                int value = rand.Next(1_000_000);
-                if (rand.Next(2) == 0)
+                switch (kind)
                 {
-                    trie[key] = value;
-                    oracle[key] = value;
-                }
-                else
-                {
-                    bool trieAdded = trie.TryAdd(key, value);
-                    bool oracleAdded = !oracle.ContainsKey(key);
-                    if (oracleAdded)
+                    case Op.IndexerSet:
+                        trie[key] = value;
                         oracle[key] = value;
-                    Assert.Equal(oracleAdded, trieAdded);
+                        break;
+
+                    case Op.TryAdd:
+                    {
+                        bool oracleAdded = !oracle.ContainsKey(key);
+                        Assert.Equal(oracleAdded, trie.TryAdd(key, value));
+                        if (oracleAdded)
+                            oracle[key] = value;
+                        break;
+                    }
+
+                    case Op.Remove:
+                    {
+                        bool trieRemoved = trie.Remove(key, out int removedValue);
+                        bool oracleRemoved = oracle.TryGetValue(key, out int oracleValue);
+                        Assert.Equal(oracleRemoved, trieRemoved);
+                        if (oracleRemoved)
+                        {
+                            Assert.Equal(oracleValue, removedValue);
+                            oracle.Remove(key);
+                        }
+                        break;
+                    }
+
+                    case Op.Lookup:
+                    {
+                        bool present = oracle.TryGetValue(key, out int expected);
+                        Assert.Equal(present, trie.ContainsKey(key));
+                        Assert.Equal(present, trie.TryGetValue(key, out int actual));
+                        if (present)
+                            Assert.Equal(expected, actual);
+                        break;
+                    }
+
+                    case Op.PrefixScan:
+                    {
+                        // Prefix enumeration against the filtered, ordered oracle.
+                        string prefix = key[..Math.Min(prefixLength, key.Length)];
+                        string[] expected = oracle
+                            .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                            .Select(kv => kv.Key)
+                            .ToArray();
+
+                        Assert.Equal(expected, trie.GetKeysWithPrefix(prefix).ToArray());
+                        Assert.Equal(expected.Length > 0, trie.ContainsPrefix(prefix));
+                        break;
+                    }
+
+                    case Op.LongestPrefix:
+                    {
+                        // The oracle's longest stored prefix of the query, found the slow way.
+                        string? bestKey = oracle.Keys
+                            .Where(k => query.StartsWith(k, StringComparison.Ordinal))
+                            .OrderByDescending(k => k.Length)
+                            .FirstOrDefault();
+
+                        bool trieHit = trie.TryGetLongestPrefix(query, out string? trieKey, out int trieValue);
+                        Assert.Equal(bestKey is not null, trieHit);
+                        if (bestKey is not null)
+                        {
+                            Assert.Equal(bestKey, trieKey);
+                            Assert.Equal(oracle[bestKey], trieValue);
+                        }
+                        break;
+                    }
                 }
-            }
-            else if (op < 65)
-            {
-                bool trieRemoved = trie.Remove(key, out int removedValue);
-                bool oracleRemoved = oracle.TryGetValue(key, out int oracleValue);
-                Assert.Equal(oracleRemoved, trieRemoved);
-                if (oracleRemoved)
-                {
-                    Assert.Equal(oracleValue, removedValue);
-                    oracle.Remove(key);
-                }
-            }
-            else if (op < 80)
-            {
-                Assert.Equal(oracle.ContainsKey(key), trie.ContainsKey(key));
-                Assert.Equal(oracle.TryGetValue(key, out int expected), trie.TryGetValue(key, out int actual));
-                if (oracle.ContainsKey(key))
-                    Assert.Equal(expected, actual);
-            }
-            else if (op < 90)
-            {
-                // Prefix enumeration against the filtered, ordered oracle.
-                string prefix = key.Length == 0 ? key : key.Substring(0, rand.Next(key.Length + 1));
-                string[] expected = oracle
-                    .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
-                    .Select(kv => kv.Key)
-                    .ToArray();
-                string[] actual = trie.GetKeysWithPrefix(prefix).ToArray();
-                Assert.Equal(expected, actual);
-                Assert.Equal(expected.Length > 0, trie.ContainsPrefix(prefix));
-            }
-            else
-            {
-                // Longest-prefix match against the oracle's longest stored prefix of the query.
-                string query = RandomKey(rand);
-                string? bestKey = oracle.Keys
-                    .Where(k => query.StartsWith(k, StringComparison.Ordinal))
-                    .OrderByDescending(k => k.Length)
-                    .FirstOrDefault();
 
-                bool trieHit = trie.TryGetLongestPrefix(query, out string? trieKey, out int trieValue);
-                Assert.Equal(bestKey is not null, trieHit);
-                if (bestKey is not null)
-                {
-                    Assert.Equal(bestKey, trieKey);
-                    Assert.Equal(oracle[bestKey], trieValue);
-                }
+                Assert.Equal(oracle.Count, trie.Count);
             }
 
-            Assert.Equal(oracle.Count, trie.Count);
-        }
-
-        // Final full-sequence reconciliation of keys and values in order.
-        Assert.Equal(oracle.Keys.ToArray(), trie.Keys.ToArray());
-        Assert.Equal(oracle.Values.ToArray(), trie.Values.ToArray());
-    }
-
-    // Draws a short key from a 4-symbol alphabet (plus the occasional empty string) so keys collide on prefixes
-    // often, stressing shared interior nodes and the removal pruning path.
-    private static string RandomKey(Random rand)
-    {
-        const string Alphabet = "abc-";
-        int length = rand.Next(0, 5);
-        if (length == 0)
-            return string.Empty;
-
-        Span<char> chars = stackalloc char[length];
-        for (int i = 0; i < length; i++)
-            chars[i] = Alphabet[rand.Next(Alphabet.Length)];
-        return new string(chars);
+            // Final full-sequence reconciliation of keys and values in order.
+            Assert.Equal(oracle.Keys.ToArray(), trie.Keys.ToArray());
+            Assert.Equal(oracle.Values.ToArray(), trie.Values.ToArray());
+        }, iter: 40);
     }
 }

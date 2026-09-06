@@ -1,16 +1,24 @@
 using Celerity.Collections;
 using Celerity.Hashing;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Deterministic, seeded differential coverage for <see cref="LruCache{TKey, TValue, THasher}"/>.
-/// Each seed drives the same random stream of operations (put, get, try-add, remove, peek) into the
-/// cache and into an independent reference LRU built from a <see cref="Dictionary{TKey, TValue}"/>
-/// plus a <see cref="LinkedList{T}"/>, then asserts that after every single operation the two agree
-/// on count, membership, every key's value, and — the property that actually pins down the eviction
+/// Property-based differential coverage for <see cref="LruCache{TKey, TValue, THasher}"/> against an
+/// independent reference LRU built from a <see cref="Dictionary{TKey, TValue}"/> plus a
+/// <see cref="LinkedList{T}"/>. CsCheck generates the capacity and the stream of operations — put,
+/// get, try-add, remove, peek — and asserts that after every single operation the two agree on
+/// count, membership, every key's value, and — the property that actually pins down the eviction
 /// policy — the exact most-recently-used&#8594;least-recently-used ordering. This is the strongest
 /// guard against a recency-list or free-slot bug that only surfaces after many evictions.
+///
+/// <para>
+/// The capacity is generated alongside the script because the two interact: a capacity of one makes
+/// every insert an eviction, and a capacity near the key span makes evictions rare and updates
+/// common. Shrinking both together is what turns a failure into a readable case — typically a
+/// capacity of one or two and a handful of operations.
+/// </para>
 /// </summary>
 public class LruCacheDifferentialTests
 {
@@ -88,56 +96,66 @@ public class LruCacheDifferentialTests
         public List<int> KeysMruToLru() => new(_order);
     }
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(8)]
-    [InlineData(16)]
-    public void RandomOps_MatchReferenceLru(int capacity)
-    {
-        const int Seeds = 40;
-        const int OpsPerSeed = 400;
-        const int KeySpan = 20; // deliberately smaller than the op count so updates/evictions collide
+    private enum Op { AddOrUpdate, TryGet, TryAdd, Remove, TryPeek }
 
-        for (int seed = 0; seed < Seeds; seed++)
+    // Deliberately smaller than the operation count, so updates and evictions collide on the same
+    // keys instead of the cache filling once with distinct ones. Key 0 is default(int), which is
+    // the out-of-band slot the hash table stores separately.
+    private const int KeySpan = 20;
+
+    private static readonly Gen<Op> GenKind =
+        Gen.Int[0, 5].Select(n => n < 2 ? Op.AddOrUpdate : (Op)(n - 1));
+
+    private static readonly Gen<(Op Kind, int Key, int Value)> GenOp =
+        Gen.Select(GenKind, Gen.Int[0, KeySpan - 1], Gen.Int);
+
+    private static readonly Gen<(int Capacity, List<(Op Kind, int Key, int Value)> Ops)> GenScript =
+        Gen.Select(Gen.Int[1, 16], GenOp.List[0, 300]);
+
+    [Fact]
+    public void LruCache_ShouldMatch_AReferenceLru()
+    {
+        GenScript.Sample(script =>
         {
-            var rng = new Random(seed * 7919 + capacity);
+            int capacity = script.Capacity;
             var cache = new LruCache<int, int, Int32WangHasher>(capacity);
             var oracle = new OracleLru(capacity);
 
-            for (int op = 0; op < OpsPerSeed; op++)
+            foreach (var (kind, key, value) in script.Ops)
             {
-                int key = rng.Next(0, KeySpan); // includes 0 == default(int) to hit the out-of-band path
-                int value = rng.Next();
-                int choice = rng.Next(6);
-
-                switch (choice)
+                switch (kind)
                 {
-                    case 0:
-                    case 1:
+                    case Op.AddOrUpdate:
                         cache.AddOrUpdate(key, value);
                         oracle.Put(key, value);
                         break;
-                    case 2:
-                        bool cg = cache.TryGet(key, out int cv);
-                        bool og = oracle.TryGet(key, out int ov);
-                        Assert.Equal(og, cg);
-                        if (og) Assert.Equal(ov, cv);
+
+                    case Op.TryGet:
+                    {
+                        bool expected = oracle.TryGet(key, out int expectedValue);
+                        Assert.Equal(expected, cache.TryGet(key, out int actualValue));
+                        if (expected)
+                            Assert.Equal(expectedValue, actualValue);
                         break;
-                    case 3:
+                    }
+
+                    case Op.TryAdd:
                         Assert.Equal(oracle.TryAdd(key, value), cache.TryAdd(key, value));
                         break;
-                    case 4:
+
+                    case Op.Remove:
                         Assert.Equal(oracle.Remove(key), cache.Remove(key));
                         break;
-                    case 5:
+
+                    case Op.TryPeek:
+                    {
                         // Peek must not perturb recency in either implementation.
-                        bool cp = cache.TryPeek(key, out int cpv);
-                        bool opp = oracle.TryPeek(key, out int opv);
-                        Assert.Equal(opp, cp);
-                        if (opp) Assert.Equal(opv, cpv);
+                        bool expected = oracle.TryPeek(key, out int expectedValue);
+                        Assert.Equal(expected, cache.TryPeek(key, out int actualValue));
+                        if (expected)
+                            Assert.Equal(expectedValue, actualValue);
                         break;
+                    }
                 }
 
                 // Full-state agreement after every operation.
@@ -159,6 +177,6 @@ public class LruCacheDifferentialTests
                     cacheOrder.Add(kvp.Key);
                 Assert.Equal(oracle.KeysMruToLru(), cacheOrder);
             }
-        }
+        }, iter: 40);
     }
 }
