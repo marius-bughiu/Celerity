@@ -158,6 +158,26 @@ jobs:
       - name: Check constant naming in the shipping packages
         run: node scripts/check_constant_naming.js
 
+  # Whether a collection has randomized oracle coverage was tracked by hand, and the roster
+  # drifted every time: oracle suites live under four naming conventions that share no
+  # suffix, so a type is routinely covered by a file named after something else (#418). The
+  # 100% line-and-branch gate does not substitute — it proves the branches ran, not that the
+  # answers matched an oracle — so this asks the question mechanically instead.
+  property-coverage:
+    name: property-coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+
+      - name: Pin the type scanner and the code matcher
+        run: node scripts/check_property_coverage.js --self-test
+
+      - name: Check oracle coverage across Celerity.Collections
+        run: node scripts/check_property_coverage.js
+
   # The benchmark relevance gate decides whether an expensive sharded run happens at all,
   # so the C# lexer it rests on is pinned here rather than only exercised in the workflow
   # it gates — where a wrong answer costs either runner hours or an unmeasured commit, and

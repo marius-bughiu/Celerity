@@ -24,6 +24,14 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
+- **Randomized oracle coverage is now gated in CI instead of tracked by hand.** `scripts/check_property_coverage.js` enumerates the public collection types and fails when one is referenced by no differential, property or accuracy suite — so a collection that ships without oracle coverage is caught on the pull request that adds it, not by a later audit. `node scripts/check_property_coverage.js --list` prints the whole map. Testing and tooling only; no shipped code changed. Closes [#418](https://github.com/marius-bughiu/Celerity/issues/418).
+
+- **`EnumMap` and `XorFilter` gained the per-PR oracle suites they were missing** — the two gaps the new gate found. `EnumMap` is now reconciled against `Dictionary<,>` over generated operation sequences, and `XorFilter` against a `HashSet<>` membership oracle; `XorFilter` previously had only the nightly fuzz target. Testing only. Closes [#418](https://github.com/marius-bughiu/Celerity/issues/418).
+
+- **Nine differential suites now shrink their failures.** `Trie`, `LruCache`, `Deque`, `DisjointSet`, `IndexedPriorityQueue`, `FenwickTree`, `SegmentTree`, `SparseSet` and `StringInternTable` drove a bare `Random`, so a failure handed back a seed and a multi-thousand-step trace; they are now CsCheck-generated, so it reduces to a minimal counterexample. Same oracles, same assertions. Closes [#418](https://github.com/marius-bughiu/Celerity/issues/418).
+
+- **[docs/testing.md](docs/testing.md) and [ROADMAP.md](ROADMAP.md) record the gate** — how to ask which suites cover a type, and what to do when a new naming convention is added. Rostering the work also closes [#423](https://github.com/marius-bughiu/Celerity/issues/423).
+
 - **The `SegmentTree` docs no longer send readers to a structure the library did not ship.** Both the README's decision table and the API reference's "Choosing it" said that an immutable sequence wants "a sparse table"; both now link [`SparseTable<T, TMonoid>`](docs/api/collections.md#sparsetablet-tmonoid) and state what it costs. Closes [#426](https://github.com/marius-bughiu/Celerity/issues/426).
 
 - **`Rope` gained the `Celerity.Fuzz` target it shipped without**, and `TimerWheel`'s differential suite now covers `ScheduleAt` alongside `Schedule`. Testing only — no shipped code changed. Closes [#415](https://github.com/marius-bughiu/Celerity/issues/415).

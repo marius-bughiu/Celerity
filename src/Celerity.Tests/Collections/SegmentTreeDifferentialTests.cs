@@ -1,4 +1,5 @@
 using Celerity.Collections;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
@@ -24,52 +25,73 @@ namespace Celerity.Tests.Collections;
 /// </summary>
 public class SegmentTreeDifferentialTests
 {
-    [Theory]
-    [InlineData(1)]
-    [InlineData(7)]
-    [InlineData(42)]
-    [InlineData(123)]
-    [InlineData(2026)]
-    public void SegmentTree_ShouldMatchNaiveScan_UnderRandomOperations(int seed)
+    private enum Op { IndexerSet, Combine, Query, Clear }
+
+    // Updates dominate; a clear is rare enough that long interleavings survive to be interesting.
+    private static readonly Gen<Op> GenKind =
+        Gen.Int[0, 99].Select(n => n < 40 ? Op.IndexerSet
+                                 : n < 75 ? Op.Combine
+                                 : n < 98 ? Op.Query
+                                 : Op.Clear);
+
+    // Two index draws: point operations use the first, range queries use both as an unordered pair.
+    private static readonly Gen<(Op Kind, int First, int Second, int Value)> GenOp =
+        Gen.Select(GenKind, Gen.Int[0, 63], Gen.Int[0, 63], Gen.Int[-100, 100]);
+
+    private static readonly Gen<(int[] Initial, List<(Op Kind, int First, int Second, int Value)> Ops)> GenScript =
+        Gen.Select(Gen.Int[-50, 50].Array[1, 64], GenOp.List[0, 300]);
+
+    [Fact]
+    public void SegmentTree_ShouldMatch_ANaiveScan()
     {
-        var rand = new Random(seed);
-        int n = rand.Next(1, 64);
-
-        // The int[] goes in through the IEnumerable<T> constructor's counted (ICollection<T>) fast path, so
-        // this also exercises the O(n) linear-time build rather than a sequence of point inserts.
-        var initial = new int[n];
-        for (int i = 0; i < n; i++)
-            initial[i] = rand.Next(-50, 50);
-
-        var tree = new SegmentTree<int, MinMonoid<int>>(initial);
-        var model = (int[])initial.Clone();
-        AssertConsistent(tree, model, rand);
-
-        for (int step = 0; step < 1000; step++)
+        GenScript.Sample(script =>
         {
-            int op = rand.Next(0, 10);
-            if (op == 0)
-            {
-                tree.Clear();
-                Array.Fill(model, int.MaxValue);
-            }
-            else if (op <= 5)
-            {
-                int idx = rand.Next(0, n);
-                int value = rand.Next(-100, 100);
-                tree[idx] = value;
-                model[idx] = value;
-            }
-            else
-            {
-                int idx = rand.Next(0, n);
-                int value = rand.Next(-100, 100);
-                tree.Combine(idx, value);
-                model[idx] = Math.Min(model[idx], value);
-            }
+            int[] initial = script.Initial;
+            int n = initial.Length;
 
-            AssertConsistent(tree, model, rand);
-        }
+            // The int[] goes in through the IEnumerable<T> constructor's counted (ICollection<T>) fast
+            // path, so every case also exercises the O(n) build rather than a sequence of point inserts.
+            var tree = new SegmentTree<int, MinMonoid<int>>(initial);
+            var model = (int[])initial.Clone();
+            AssertConsistent(tree, model);
+
+            foreach (var (kind, first, second, value) in script.Ops)
+            {
+                int index = first % n;
+
+                switch (kind)
+                {
+                    case Op.IndexerSet:
+                        tree[index] = value;
+                        model[index] = value;
+                        break;
+
+                    case Op.Combine:
+                        tree.Combine(index, value);
+                        model[index] = Math.Min(model[index], value);
+                        break;
+
+                    case Op.Query:
+                    {
+                        // A half-open [a, b), so both empty (a == b) and full-width queries are reachable.
+                        int a = first % (n + 1);
+                        int b = second % (n + 1);
+                        if (a > b)
+                            (a, b) = (b, a);
+
+                        Assert.Equal(Fold(model, a, b), tree.Query(a, b));
+                        continue; // a query changes nothing, so the full reconciliation is redundant
+                    }
+
+                    case Op.Clear:
+                        tree.Clear();
+                        Array.Fill(model, int.MaxValue);
+                        break;
+                }
+
+                AssertConsistent(tree, model);
+            }
+        }, iter: 40);
     }
 
     /// <summary>
@@ -105,33 +127,34 @@ public class SegmentTreeDifferentialTests
     /// The same exhaustive sweep, but after point updates have refolded arbitrary paths to the root — a
     /// correct build with a wrongly ordered ancestor refold would pass the test above and fail this one.
     /// </summary>
-    [Theory]
-    [InlineData(11)]
-    [InlineData(97)]
-    public void Query_ShouldMatchAnOrderedScan_AfterPointUpdates_UnderANonCommutativeMonoid(int seed)
+    [Fact]
+    public void Query_ShouldMatchAnOrderedScan_AfterPointUpdates_UnderANonCommutativeMonoid()
     {
-        var rand = new Random(seed);
-
-        for (int n = 1; n <= 20; n++)
-        {
-            var values = new string[n];
-            for (int i = 0; i < n; i++)
-                values[i] = i.ToString();
-
-            var tree = new SegmentTree<string, ConcatMonoid>(values);
-
-            for (int step = 0; step < 20; step++)
+        // The length and the update script are generated together, and the range sweep stays exhaustive:
+        // shrinking a failure to the shortest length and the fewest updates is exactly the reduction that
+        // makes a mis-ordered ancestor refold readable.
+        Gen.Select(Gen.Int[1, 20], Gen.Select(Gen.Int[0, 19], Gen.Int[0, 999]).List[0, 20])
+            .Sample(script =>
             {
-                int idx = rand.Next(0, n);
-                string replacement = "<" + rand.Next(0, 1000) + ">";
-                tree[idx] = replacement;
-                values[idx] = replacement;
+                var (n, updates) = script;
+                var values = new string[n];
+                for (int i = 0; i < n; i++)
+                    values[i] = i.ToString();
 
-                for (int start = 0; start <= n; start++)
-                    for (int end = start; end <= n; end++)
-                        Assert.Equal(string.Concat(values[start..end]), tree.Query(start, end));
-            }
-        }
+                var tree = new SegmentTree<string, ConcatMonoid>(values);
+
+                foreach (var (rawIndex, token) in updates)
+                {
+                    int idx = rawIndex % n;
+                    string replacement = "<" + token + ">";
+                    tree[idx] = replacement;
+                    values[idx] = replacement;
+
+                    for (int start = 0; start <= n; start++)
+                        for (int end = start; end <= n; end++)
+                            Assert.Equal(string.Concat(values[start..end]), tree.Query(start, end));
+                }
+            }, iter: 40);
     }
 
     /// <summary>
@@ -169,7 +192,7 @@ public class SegmentTreeDifferentialTests
         }
     }
 
-    private static void AssertConsistent(SegmentTree<int, MinMonoid<int>> tree, int[] model, Random rand)
+    private static void AssertConsistent(SegmentTree<int, MinMonoid<int>> tree, int[] model)
     {
         Assert.Equal(model.Length, tree.Count);
 
@@ -183,19 +206,10 @@ public class SegmentTreeDifferentialTests
 
         Assert.Equal(Fold(model, 0, model.Length), tree.Aggregate);
 
-        // A batch of random half-open range queries, plus both degenerate ends.
+        // Both degenerate ends. Every other range is a generated Op.Query, so the bounds that diverge
+        // shrink alongside the updates that produced them.
         Assert.Equal(int.MaxValue, tree.Query(0, 0));
         Assert.Equal(int.MaxValue, tree.Query(model.Length, model.Length));
-
-        for (int q = 0; q < 8; q++)
-        {
-            int a = rand.Next(0, model.Length + 1);
-            int b = rand.Next(0, model.Length + 1);
-            if (a > b)
-                (a, b) = (b, a);
-
-            Assert.Equal(Fold(model, a, b), tree.Query(a, b));
-        }
     }
 
     private static int Fold(int[] model, int start, int endExclusive)

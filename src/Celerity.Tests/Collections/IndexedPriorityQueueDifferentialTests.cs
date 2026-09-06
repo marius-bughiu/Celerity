@@ -1,106 +1,91 @@
 using Celerity.Collections;
 using Celerity.Hashing;
+using CsCheck;
 
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Deterministic, seeded differential coverage for
-/// <see cref="IndexedPriorityQueue{TElement, TPriority, THasher}"/>. Each seed drives the same random stream
-/// of enqueue / enqueue-or-update / update / remove / dequeue operations into the priority queue and into an
-/// independent reference model (a plain <see cref="Dictionary{TKey, TValue}"/> from element to priority), and
-/// after every operation asserts the two agree on <c>Count</c>, membership, and the current minimum
-/// (element + priority). A final full drain asserts the dequeue sequence is monotonic under the comparer and
-/// reproduces exactly the oracle's remaining contents — the strongest guard against a sift-up/sift-down or
-/// index-bookkeeping bug that only surfaces after many interleaved heap mutations.
+/// Property-based differential coverage for
+/// <see cref="IndexedPriorityQueue{TElement, TPriority, THasher}"/> against an independent reference model
+/// (a plain <see cref="Dictionary{TKey, TValue}"/> from element to priority). CsCheck generates the
+/// starting capacity and the stream of enqueue / enqueue-or-update / update / remove / dequeue operations,
+/// and after every operation asserts the two agree on <c>Count</c>, membership, and the current extremum
+/// (element + priority). A final full drain asserts the dequeue sequence is monotonic under the comparer
+/// and reproduces exactly the oracle's remaining contents — the strongest guard against a
+/// sift-up/sift-down or index-bookkeeping bug that only surfaces after many interleaved heap mutations.
+///
+/// <para>
+/// The same generated script is run against a min-heap and against a max-heap built from an inverted
+/// comparer, so a sift that hard-codes a direction rather than consulting the comparer fails on one of the
+/// two. The element universe is small relative to the operation count, so elements are frequently already
+/// present and the update and reject paths are reached constantly.
+/// </para>
 /// </summary>
 public class IndexedPriorityQueueDifferentialTests
 {
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    public void RandomOps_MatchReferenceModel_MinHeap(int startCapacity)
+    private enum Op { TryEnqueue, EnqueueOrUpdate, Update, Remove, Dequeue }
+
+    private const int Universe = 40;
+
+    private static readonly Gen<(Op Kind, int Element, int Priority)> GenOp =
+        Gen.Select(Gen.Int[0, 4].Select(n => (Op)n), Gen.Int[0, Universe - 1], Gen.Int[0, 999]);
+
+    private static readonly Gen<(int StartCapacity, List<(Op Kind, int Element, int Priority)> Ops)> GenScript =
+        Gen.Select(Gen.Int[0, 3], GenOp.List[0, 400]);
+
+    [Fact]
+    public void IndexedPriorityQueue_ShouldMatch_AReferenceModel_AsAMinHeap() =>
+        Run(Comparer<int>.Default);
+
+    [Fact]
+    public void IndexedPriorityQueue_ShouldMatch_AReferenceModel_AsAMaxHeap() =>
+        Run(Comparer<int>.Create((a, b) => b.CompareTo(a)));
+
+    private static void Run(IComparer<int> comparer)
     {
-        RunDifferential(startCapacity, maxHeap: false);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(2)]
-    public void RandomOps_MatchReferenceModel_MaxHeap(int startCapacity)
-    {
-        RunDifferential(startCapacity, maxHeap: true);
-    }
-
-    private static void RunDifferential(int startCapacity, bool maxHeap)
-    {
-        const int Seeds = 40;
-        const int OpsPerSeed = 800;
-        const int Universe = 40; // small universe so elements are frequently already present
-
-        IComparer<int> comparer = maxHeap
-            ? Comparer<int>.Create((a, b) => b.CompareTo(a))
-            : Comparer<int>.Default;
-
-        for (int seed = 0; seed < Seeds; seed++)
+        GenScript.Sample(script =>
         {
-            var rng = new Random(seed * 6389 + startCapacity + (maxHeap ? 1 : 0));
-            var pq = new IndexedPriorityQueue<int, int, Int32WangHasher>(startCapacity, comparer);
+            var pq = new IndexedPriorityQueue<int, int, Int32WangHasher>(script.StartCapacity, comparer);
             var oracle = new Dictionary<int, int>();
 
-            for (int op = 0; op < OpsPerSeed; op++)
+            foreach (var (kind, element, priority) in script.Ops)
             {
-                int roll = rng.Next(5);
-                switch (roll)
+                switch (kind)
                 {
-                    case 0: // enqueue (skip if already present, matching the throwing contract)
-                    {
-                        int x = rng.Next(Universe);
-                        int prio = rng.Next(1000);
-                        if (pq.TryEnqueue(x, prio))
-                            oracle[x] = prio;
+                    case Op.TryEnqueue:
+                        // Skips when already present, matching the throwing overload's contract.
+                        if (pq.TryEnqueue(element, priority))
+                            oracle[element] = priority;
                         break;
-                    }
 
-                    case 1: // enqueue-or-update
-                    {
-                        int x = rng.Next(Universe);
-                        int prio = rng.Next(1000);
-                        pq.EnqueueOrUpdate(x, prio);
-                        oracle[x] = prio;
+                    case Op.EnqueueOrUpdate:
+                        pq.EnqueueOrUpdate(element, priority);
+                        oracle[element] = priority;
                         break;
-                    }
 
-                    case 2: // update (only when present)
-                    {
-                        int x = rng.Next(Universe);
-                        int prio = rng.Next(1000);
-                        if (oracle.ContainsKey(x))
+                    case Op.Update:
+                        if (oracle.ContainsKey(element))
                         {
-                            pq.Update(x, prio);
-                            oracle[x] = prio;
+                            pq.Update(element, priority);
+                            oracle[element] = priority;
                         }
                         else
                         {
-                            Assert.False(pq.TryUpdate(x, prio));
+                            Assert.False(pq.TryUpdate(element, priority));
                         }
-                        break;
-                    }
 
-                    case 3: // remove
+                        break;
+
+                    case Op.Remove:
                     {
-                        int x = rng.Next(Universe);
-                        bool present = oracle.Remove(x, out int expected);
-                        bool removed = pq.Remove(x, out int actual);
-                        Assert.Equal(present, removed);
+                        bool present = oracle.Remove(element, out int expected);
+                        Assert.Equal(present, pq.Remove(element, out int actual));
                         if (present)
                             Assert.Equal(expected, actual);
                         break;
                     }
 
-                    default: // dequeue the current minimum
-                    {
+                    case Op.Dequeue:
                         if (oracle.Count == 0)
                         {
                             Assert.False(pq.TryDequeue(out _, out _));
@@ -111,8 +96,8 @@ public class IndexedPriorityQueueDifferentialTests
                             AssertIsExtremum(oracle, comparer, e, p);
                             oracle.Remove(e);
                         }
+
                         break;
-                    }
                 }
 
                 Assert.Equal(oracle.Count, pq.Count);
@@ -140,7 +125,7 @@ public class IndexedPriorityQueueDifferentialTests
                 Assert.True(drained.TryGetValue(kv.Key, out int dp));
                 Assert.Equal(kv.Value, dp);
             }
-        }
+        }, iter: 40);
     }
 
     // The peeked element/priority must equal the oracle's current extremum (min for a default comparer, max
