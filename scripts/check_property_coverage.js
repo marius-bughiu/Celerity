@@ -404,8 +404,12 @@ function selfTest() {
     }
   }
 
-  // Blanking must not shift line numbers, which is what a contributor navigates by.
-  check('line count preserved', toCode(mentions).split('\n').length, mentions.split('\n').length);
+  // Blanking replaces a literal's characters rather than removing them, so a single-line
+  // literal stays on its own line and the surrounding code keeps its shape. (A literal that
+  // spans lines is collapsed by the lifted lexer, which is why nothing here reports a line
+  // number — the file is the whole of the answer.)
+  check('single-line blanking keeps the line structure',
+    toCode(mentions).split('\n').length, mentions.split('\n').length);
 
   // The tree itself: the roster is only useful while it still describes the tree.
   const { rows, misnamed, unclassified, stale } = resolve();

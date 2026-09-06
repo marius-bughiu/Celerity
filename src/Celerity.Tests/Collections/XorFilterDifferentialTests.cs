@@ -141,8 +141,11 @@ public class XorFilterDifferentialTests
         }, iter: 40);
     }
 
-    // The size claims the type advertises, which hold whatever the element type is: the peel needs
-    // ~1.23 slots per entry to converge, and the derived properties are read off the two counts.
+    // The size claims that hold whatever the element type is. The slot table is over-provisioned
+    // (the peel needs roughly 1.23 slots per entry to converge), but the assertion is only that it
+    // is never *under* the entry count — the exact provisioning factor is the implementation's to
+    // choose, and pinning it here would turn a tuning change into a test failure. What is pinned
+    // exactly is that both derived properties are read off the two counts and nothing else.
     private static void AssertShape<T, THasher>(XorFilter<T, THasher> sut, int oracleCount)
         where THasher : struct, IHashProvider<T>
     {
