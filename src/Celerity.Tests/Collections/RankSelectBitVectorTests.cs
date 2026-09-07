@@ -5,7 +5,8 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Behavioural coverage for <see cref="RankSelectBitVector"/>: the three constructors and their validation, the
 /// <see cref="RankSelectBitVector.Rank(int)"/> / <see cref="RankSelectBitVector.Rank0(int)"/> /
-/// <see cref="RankSelectBitVector.Select(int)"/> core, the block and superblock boundaries the two-level index
+/// <see cref="RankSelectBitVector.Select(int)"/> and <see cref="RankSelectBitVector.Select0(int)"/> cores,
+/// the block and superblock boundaries the two-level index
 /// pivots on, and the degenerate all-zero / all-one / empty vectors. The randomized reconciliation against a
 /// naive <c>bool[]</c> oracle lives in <see cref="RankSelectBitVectorDifferentialTests"/>.
 /// </summary>
@@ -226,6 +227,98 @@ public class RankSelectBitVectorTests
         Assert.Equal(-1, position);
     }
 
+    // ---- Select0: the complement walk, which the index has to derive rather than read ---------------
+
+    [Fact]
+    public void Select0_ShouldReturnThePositionOfTheKthClearBit()
+    {
+        // Every bit set except the eight listed, which straddle the word and superblock edges.
+        var bits = new BitSet(600, true);
+        foreach (int clear in new[] { 0, 63, 64, 255, 256, 511, 512, 599 })
+            bits.Set(clear, false);
+        var vector = new RankSelectBitVector(bits);
+
+        Assert.Equal(8, vector.Count0);
+        Assert.Equal(0, vector.Select0(0));
+        Assert.Equal(63, vector.Select0(1));
+        Assert.Equal(64, vector.Select0(2));
+        Assert.Equal(255, vector.Select0(3));
+        Assert.Equal(256, vector.Select0(4));
+        Assert.Equal(511, vector.Select0(5));
+        Assert.Equal(512, vector.Select0(6));
+        Assert.Equal(599, vector.Select0(7));
+    }
+
+    [Fact]
+    public void Select0_ShouldNotResolveIntoTheTailPadding_WhenTheVectorEndsMidWord()
+    {
+        // 70 bits is one full word plus six, so the final word carries 58 clear padding bits above the
+        // vector. Count0 must not see them, and the last real clear bit must be the last answer.
+        var vector = new RankSelectBitVector(new BitSet(70, true));
+        Assert.Equal(0, vector.Count0);
+        Assert.False(vector.TrySelect0(0, out _));
+
+        var withOne = new RankSelectBitVector(70, Enumerable.Range(0, 70).Where(i => i != 69));
+        Assert.Equal(1, withOne.Count0);
+        Assert.Equal(69, withOne.Select0(0));
+        Assert.False(withOne.TrySelect0(1, out _));
+    }
+
+    [Fact]
+    public void Select0_ShouldSkipFullSuperblocks()
+    {
+        // The mirror of Select_ShouldSkipEmptySuperblocks: the only clear bit is in the last superblock, so
+        // the superblock search and the word walk both have to step over long all-set runs.
+        var bits = new BitSet(4 * Superblock, true);
+        bits.Set(4 * Superblock - 1, false);
+        var vector = new RankSelectBitVector(bits);
+
+        Assert.Equal(1, vector.Count0);
+        Assert.Equal(4 * Superblock - 1, vector.Select0(0));
+    }
+
+    [Fact]
+    public void Select0_ShouldBeTheIdentity_OnAnAllClearVector()
+    {
+        var vector = new RankSelectBitVector(1000, Array.Empty<int>());
+
+        Assert.Equal(1000, vector.Count0);
+        for (int k = 0; k < 1000; k++)
+            Assert.Equal(k, vector.Select0(k));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public void Select0_ShouldThrow_WhenRankOutOfRange(int rank)
+    {
+        // Ten bits with seven set, so exactly three are clear.
+        var vector = new RankSelectBitVector(10, new[] { 0, 2, 3, 5, 6, 7, 8 });
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => vector.Select0(rank));
+        Assert.Equal("rank", ex.ParamName);
+    }
+
+    [Fact]
+    public void TrySelect0_ShouldReturnTrueAndThePosition_WhenRankInRange()
+    {
+        var vector = new RankSelectBitVector(10, new[] { 0, 2, 3, 5, 6, 7, 8 });
+
+        Assert.True(vector.TrySelect0(2, out int position));
+        Assert.Equal(9, position);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public void TrySelect0_ShouldReturnFalseAndMinusOne_WhenRankOutOfRange(int rank)
+    {
+        var vector = new RankSelectBitVector(10, new[] { 0, 2, 3, 5, 6, 7, 8 });
+
+        Assert.False(vector.TrySelect0(rank, out int position));
+        Assert.Equal(-1, position);
+    }
+
     [Fact]
     public void SelectAndRank_ShouldRoundTrip_OverEverySetBit()
     {
@@ -286,7 +379,9 @@ public class RankSelectBitVectorTests
         Assert.Equal(0, vector.Count);
         Assert.Equal(0, vector.Rank(0));
         Assert.Equal(0, vector.IndexSizeInBytes);
+        Assert.Equal(0, vector.Count0);
         Assert.False(vector.TrySelect(0, out _));
+        Assert.False(vector.TrySelect0(0, out _));
         Assert.Throws<ArgumentOutOfRangeException>(() => vector.Get(0));
     }
 

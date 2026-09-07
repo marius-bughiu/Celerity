@@ -5,7 +5,8 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// Property-based differential coverage for <see cref="RankSelectBitVector"/> against the naive
-/// <c>bool[]</c> oracle a caller writes by hand: rank is a counting loop, select is a scan. CsCheck generates
+/// <c>bool[]</c> oracle a caller writes by hand: rank is a counting loop, select is a scan, and both have a
+/// clear-bit twin. CsCheck generates
 /// random vectors (random length, random density) and queries every position of each, so any disagreement
 /// shrinks to a minimal reproduction with the seed printed.
 /// </summary>
@@ -40,6 +41,22 @@ public class RankSelectBitVectorDifferentialTests
 
             Assert.False(vector.TrySelect(vector.Count, out int missing));
             Assert.Equal(-1, missing);
+
+            // Select0 is the same scan over the complement. The tail padding of the final word is clear but
+            // sits above every real clear bit, so an in-range ordinal must never resolve into it.
+            List<int> zeros = ClearPositions(oracle);
+            Assert.Equal(zeros.Count, vector.Count0);
+            for (int k = 0; k < zeros.Count; k++)
+            {
+                Assert.Equal(zeros[k], vector.Select0(k));
+                Assert.True(vector.TrySelect0(k, out int position));
+                Assert.Equal(zeros[k], position);
+                Assert.False(vector[zeros[k]]);
+                Assert.Equal(k, vector.Rank0(zeros[k]));
+            }
+
+            Assert.False(vector.TrySelect0(vector.Count0, out int missingZero));
+            Assert.Equal(-1, missingZero);
         }, iter: 300);
     }
 
@@ -58,6 +75,8 @@ public class RankSelectBitVectorDifferentialTests
                 // Select(Rank(i)) is the identity exactly at a set bit; elsewhere it is the next set bit.
                 if (oracle[i])
                     Assert.Equal(i, vector.Select(vector.Rank(i)));
+                else
+                    Assert.Equal(i, vector.Select0(vector.Rank0(i)));
             }
         }, iter: 300);
     }
@@ -100,6 +119,18 @@ public class RankSelectBitVectorDifferentialTests
             if (oracle[i])
                 positions.Add(i);
         }
+        return positions;
+    }
+
+    private static List<int> ClearPositions(bool[] oracle)
+    {
+        var positions = new List<int>();
+        for (int i = 0; i < oracle.Length; i++)
+        {
+            if (!oracle[i])
+                positions.Add(i);
+        }
+
         return positions;
     }
 

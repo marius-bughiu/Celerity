@@ -29,7 +29,9 @@ namespace Celerity.Collections;
 /// The documented winning workloads are all build-once: dense↔sparse index remapping in column stores (map a
 /// dense row ordinal to its position in a sparse column and back), succinct and compressed tries, and wavelet
 /// trees. They share the shape this type is designed for — a bit vector that is filled, frozen, then queried
-/// many times.
+/// many times. Two of them ship as worked examples rather than exercises left to the caller:
+/// <see cref="SuccinctTrie{TValue}"/> holds a trie's shape as a unary degree sequence over one of these, and
+/// <see cref="WaveletTree"/> stacks one per level of its alphabet.
 /// </para>
 /// <para>
 /// <b>Layout and space.</b> The index is two arrays: an <see cref="int"/> per 256-bit superblock holding the
@@ -252,6 +254,58 @@ public sealed class RankSelectBitVector
     }
 
     /// <summary>
+    /// Returns the number of <i>clear</i> bits in the vector, the complement identity
+    /// <c><see cref="Length"/> - <see cref="Count"/></c>.
+    /// </summary>
+    public int Count0 => _length - _count;
+
+    /// <summary>
+    /// Returns the position of the <paramref name="rank"/>-th <i>clear</i> bit, counting from zero, in
+    /// <c>O(log n)</c> — the complement of <see cref="Select(int)"/>, and what a structure encoded as a
+    /// unary degree sequence navigates with.
+    /// </summary>
+    /// <param name="rank">The zero-based ordinal of the clear bit, from <c>0</c> to <see cref="Count0"/> minus one.</param>
+    /// <returns>The position <c>p</c> such that <c>Get(p)</c> is <c>false</c> and <c>Rank0(p) == rank</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="rank"/> is negative or not less than <see cref="Count0"/>. Use <see cref="TrySelect0"/>
+    /// to probe an out-of-range ordinal without an exception.
+    /// </exception>
+    /// <remarks>
+    /// The padding bits between <see cref="Length"/> and the end of the final word are clear, but they sit
+    /// above every clear bit of the vector proper, so an in-range <paramref name="rank"/> can never resolve
+    /// to one.
+    /// </remarks>
+    public int Select0(int rank)
+    {
+        if ((uint)rank >= (uint)(_length - _count))
+            ThrowRank0OutOfRange(rank);
+
+        return Select0Core(rank);
+    }
+
+    /// <summary>
+    /// Attempts to locate the <paramref name="rank"/>-th clear bit, counting from zero.
+    /// </summary>
+    /// <param name="rank">The zero-based ordinal of the clear bit.</param>
+    /// <param name="position">
+    /// When this method returns <c>true</c>, the position of that clear bit; otherwise <c>-1</c>.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> if <paramref name="rank"/> is in <c>[0, Count0)</c>; otherwise <c>false</c>.
+    /// </returns>
+    public bool TrySelect0(int rank, out int position)
+    {
+        if ((uint)rank >= (uint)(_length - _count))
+        {
+            position = -1;
+            return false;
+        }
+
+        position = Select0Core(rank);
+        return true;
+    }
+
+    /// <summary>
     /// Returns a new, mutable <see cref="BitSet"/> holding a copy of the indexed bits — the way to edit a vector
     /// and then rebuild the index over the result.
     /// </summary>
@@ -281,6 +335,55 @@ public sealed class RankSelectBitVector
             word++;
 
         return (word << WordShift) + SelectInWord(_words[word], remaining - _blockRanks[word]);
+    }
+
+    // The position of the first clear bit at or after `index`, by scanning words rather than searching the
+    // index — which is the cheaper answer whenever the caller already knows the target is nearby. It is
+    // internal because the guarantee it needs cannot be expressed in the signature: **the caller must know a
+    // clear bit exists at or after `index`**, and the loop below runs off the end of the words if none does.
+    //
+    // Being inside the vector is *not* that guarantee. When `Length` is not a multiple of 64 the padding
+    // above it is clear and stops the scan, but on an exact multiple there is no padding, so an all-set tail
+    // runs past `_words`. `SuccinctTrie` — the only caller — is safe for a structural reason rather than an
+    // incidental one: every LOUDS node's child block ends with a terminating 0, so a 0 exists at or after any
+    // block start it asks about. A second caller has to establish that for itself, not infer it from here.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int NextZero(int index)
+    {
+        int word = index >> WordShift;
+        ulong clear = ~_words[word] & (ulong.MaxValue << (index & WordMask));
+        while (clear == 0)
+            clear = ~_words[++word];
+
+        return (word << WordShift) + BitOperations.TrailingZeroCount(clear);
+    }
+
+    // The complement walk of SelectCore. The index stores set-bit counts, so every clear-bit count is derived
+    // from the span it covers: a superblock spans 256 bit positions and a word 64, so the clear bits before a
+    // superblock are `superblock * 256 - setBitsBefore`, and the clear bits before a word within its superblock
+    // are `wordsIntoSuperblock * 64 - setBitsBefore`. Both are non-decreasing, which is all the searches need.
+    private int Select0Core(int rank)
+    {
+        int lo = 0;
+        int hi = _superRanks.Length - 1;
+        while (lo < hi)
+        {
+            int mid = lo + ((hi - lo + 1) >> 1);
+            if ((mid << SuperblockShift) - _superRanks[mid] <= rank)
+                lo = mid;
+            else
+                hi = mid - 1;
+        }
+
+        int remaining = rank - ((lo << SuperblockShift) - _superRanks[lo]);
+        int first = lo << (SuperblockShift - WordShift);
+        int word = first;
+        int end = Math.Min(first + WordsPerSuperblock, _words.Length);
+        while (word + 1 < end && ((word + 1 - first) << WordShift) - _blockRanks[word + 1] <= remaining)
+            word++;
+
+        remaining -= ((word - first) << WordShift) - _blockRanks[word];
+        return (word << WordShift) + SelectInWord(~_words[word], remaining);
     }
 
     // Position of the `rank`-th set bit (counting from zero) of a word known to hold more than `rank` set bits,
@@ -403,4 +506,8 @@ public sealed class RankSelectBitVector
     private static void ThrowRankOutOfRange(int rank) =>
         throw new ArgumentOutOfRangeException(nameof(rank), rank,
             "Rank must be between 0 and Count minus one, inclusive.");
+
+    private static void ThrowRank0OutOfRange(int rank) =>
+        throw new ArgumentOutOfRangeException(nameof(rank), rank,
+            "Rank must be between 0 and Count0 minus one, inclusive.");
 }

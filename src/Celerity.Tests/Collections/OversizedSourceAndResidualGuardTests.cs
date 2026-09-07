@@ -41,6 +41,13 @@ namespace Celerity.Tests.Collections;
 /// exhausted short-circuit), and <see cref="Trie{TValue}.Enumerator.Reset"/> clears the state so the same
 /// enumerator replays the full sequence.
 /// </para>
+///
+/// <para>
+/// <see cref="SuccinctTrie{TValue}.Enumerator"/> reaches the same two exits over a completely different
+/// traversal — an explicit frame stack over LOUDS node numbers rather than a stack of node references — so
+/// it is held to the same contract here. It has no version check to pin, because the type it walks cannot
+/// be modified at all.
+/// </para>
 /// </summary>
 public class OversizedSourceAndResidualGuardTests
 {
@@ -309,6 +316,89 @@ public class OversizedSourceAndResidualGuardTests
         Assert.Equal(first, second);
 
         // And the replayed walk latches exactly as the first one did.
+        Assert.False(e.MoveNext());
+        Assert.False(e.MoveNext());
+    }
+
+    // ---- SuccinctTrie.Enumerator: the same two exits, over a succinct encoding ---------------------
+
+    private static SuccinctTrie<int> Frozen(params KeyValuePair<string, int>[] entries) => new(entries);
+
+    [Fact]
+    public void MoveNext_ShouldKeepReturningFalse_WhenTheSuccinctWalkDrained()
+    {
+        SuccinctTrie<int> trie = Frozen(
+            new KeyValuePair<string, int>("apple", 1),
+            new KeyValuePair<string, int>("app", 2),
+            new KeyValuePair<string, int>("banana", 3));
+
+        SuccinctTrie<int>.Enumerator e = trie.GetEnumerator();
+
+        var keys = new List<string>();
+        while (e.MoveNext())
+            keys.Add(e.Current.Key);
+
+        Assert.Equal(new[] { "app", "apple", "banana" }, keys);
+
+        Assert.False(e.MoveNext());
+        Assert.False(e.MoveNext());
+        Assert.False(e.MoveNext());
+    }
+
+    [Fact]
+    public void MoveNext_ShouldKeepReturningFalse_WhenTheSuccinctTrieIsEmpty()
+    {
+        // The no-traversal exit: the root has no children, so no frame stack is ever allocated and the
+        // enumerator latches on the first call.
+        SuccinctTrie<int> trie = Frozen();
+
+        SuccinctTrie<int>.Enumerator e = trie.GetEnumerator();
+
+        Assert.False(e.MoveNext());
+        Assert.False(e.MoveNext());
+        Assert.False(e.MoveNext());
+    }
+
+    [Fact]
+    public void MoveNext_ShouldKeepReturningFalse_WhenTheOnlySuccinctEntryIsTheEmptyStringKey()
+    {
+        // The other way into the no-traversal exit: the root itself is the only key.
+        SuccinctTrie<int> trie = Frozen(new KeyValuePair<string, int>(string.Empty, 42));
+
+        SuccinctTrie<int>.Enumerator e = trie.GetEnumerator();
+
+        Assert.True(e.MoveNext());
+        Assert.Equal(string.Empty, e.Current.Key);
+        Assert.Equal(42, e.Current.Value);
+
+        Assert.False(e.MoveNext());
+        Assert.False(e.MoveNext());
+    }
+
+    [Fact]
+    public void Reset_ShouldClearTheExhaustedState_WhenTheSuccinctWalkDrained()
+    {
+        SuccinctTrie<int> trie = Frozen(
+            new KeyValuePair<string, int>("ax", 1),
+            new KeyValuePair<string, int>("ay", 2));
+
+        SuccinctTrie<int>.Enumerator e = trie.GetEnumerator();
+
+        var first = new List<string>();
+        while (e.MoveNext())
+            first.Add(e.Current.Key);
+
+        Assert.False(e.MoveNext());
+
+        e.Reset();
+
+        var second = new List<string>();
+        while (e.MoveNext())
+            second.Add(e.Current.Key);
+
+        Assert.Equal(new[] { "ax", "ay" }, first);
+        Assert.Equal(first, second);
+
         Assert.False(e.MoveNext());
         Assert.False(e.MoveNext());
     }

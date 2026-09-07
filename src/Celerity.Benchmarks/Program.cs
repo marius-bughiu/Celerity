@@ -51,6 +51,7 @@ internal class Program
         typeof(IndexedPriorityQueueBenchmark),
         typeof(TimerWheelBenchmark),
         typeof(TrieBenchmark),
+        typeof(SuccinctTrieBenchmark),
         typeof(StringInternTableBenchmark),
         typeof(SuffixArrayBenchmark),
         typeof(AhoCorasickBenchmark),

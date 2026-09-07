@@ -1978,6 +1978,65 @@ void Check(bool condition, string message)
     }
 }
 
+// SuccinctTrie — the immutable LOUDS-encoded counterpart to Trie, and the composition
+// RankSelectBitVector's documentation names. Its whole navigation runs through that type's rank and select
+// — as WaveletTree's does, one vector per level — so the AOT publish has to keep both collections' generic
+// instantiations alive together, plus both of this one's traversal shapes (the struct enumerator and the
+// compiler-generated prefix iterators). Exercise
+// both constructors, exact and span-keyed lookup, the prefix surface, longest-prefix match, ordered
+// enumeration, and the two properties that report what the encoding costs.
+{
+    var succinct = new SuccinctTrie<int>(new[]
+    {
+        new KeyValuePair<string, int>("car", 3),
+        new KeyValuePair<string, int>("cart", 4),
+        new KeyValuePair<string, int>("cat", 5),
+        new KeyValuePair<string, int>("dog", 6),
+        new KeyValuePair<string, int>("", 0),   // the empty string terminates at the root
+    });
+
+    Check(succinct.Count == 5 && succinct["cart"] == 4 && succinct[""] == 0,
+        "SuccinctTrie entries ctor + empty-string key");
+    Check(succinct.NodeCount == 9 && succinct.IndexSizeInBytes > 0, "SuccinctTrie encoding size");
+    Check(succinct.TryGetValue("cat", out int succinctCat) && succinctCat == 5, "SuccinctTrie.TryGetValue");
+    Check(!succinct.TryGetValue("ca", out _), "SuccinctTrie interior node is not a key");
+    Check(succinct.ContainsKey("dog") && !succinct.ContainsKey("do"), "SuccinctTrie.ContainsKey");
+    Check(succinct.ContainsPrefix("ca") && !succinct.ContainsPrefix("z"), "SuccinctTrie.ContainsPrefix");
+
+    // The span overloads descend the same path without materializing a string.
+    ReadOnlySpan<char> carSlice = ">>cart<<".AsSpan(2, 4);
+    Check(succinct.ContainsKey(carSlice) && succinct.TryGetValue(carSlice, out int spanValue) && spanValue == 4,
+        "SuccinctTrie span-keyed lookup");
+
+    var succinctPrefixed = new List<string>();
+    foreach (var kvp in succinct.GetByPrefix("car")) succinctPrefixed.Add(kvp.Key);
+    Check(succinctPrefixed.Count == 2 && succinctPrefixed[0] == "car" && succinctPrefixed[1] == "cart",
+        "SuccinctTrie.GetByPrefix ordered subtree walk");
+    Check(!succinct.GetByPrefix("zz").Any(), "SuccinctTrie.GetByPrefix on a missing prefix yields nothing");
+    Check(new List<string>(succinct.GetKeysWithPrefix("do")) is [ "dog" ], "SuccinctTrie.GetKeysWithPrefix");
+
+    Check(succinct.TryGetLongestPrefix("cartoon", out string? succinctLongest, out int succinctLongestValue)
+        && succinctLongest == "cart" && succinctLongestValue == 4, "SuccinctTrie.TryGetLongestPrefix");
+    Check(succinct.TryGetLongestPrefix("zzz", out string? succinctRoot, out _) && succinctRoot!.Length == 0,
+        "SuccinctTrie.TryGetLongestPrefix falls back to the empty key");
+
+    var succinctKeys = new List<string>();
+    foreach (var kvp in succinct) succinctKeys.Add(kvp.Key);
+    Check(succinctKeys is ["", "car", "cart", "cat", "dog"], "SuccinctTrie ordered enumeration");
+    Check(new List<int>(succinct.Values) is [0, 3, 4, 5, 6], "SuccinctTrie.Values aligned with Keys");
+
+    // The snapshot constructor: fill a mutable trie, then freeze it.
+    var toFreeze = new Trie<string>();
+    toFreeze["alpha"] = "a";
+    toFreeze["alpine"] = "b";
+    var frozenTrie = new SuccinctTrie<string>(toFreeze);
+    Check(frozenTrie.Count == 2 && frozenTrie["alpine"] == "b", "SuccinctTrie Trie-snapshot ctor");
+
+    IReadOnlyDictionary<string, int> succinctView = succinct;
+    Check(succinctView.Count == 5 && succinctView.ContainsKey("cat") && succinctView["dog"] == 6,
+        "SuccinctTrie IReadOnlyDictionary surface");
+}
+
 // RankSelectBitVector — immutable succinct rank/select index over a dense bit vector.
 // Exercise all three constructors, the O(1) Rank / Rank0, the O(log n) Select and its
 // Try counterpart, and ToBitSet, over a vector long enough to span several 256-bit
@@ -1991,6 +2050,9 @@ void Check(bool condition, string message)
     Check(sparse.Select(0) == 0 && sparse.Select(3) == 255 && sparse.Select(6) == 999, "RankSelectBitVector select");
     Check(sparse.TrySelect(1, out int secondSetBit) && secondSetBit == 63, "RankSelectBitVector try-select");
     Check(!sparse.TrySelect(7, out int noSuchBit) && noSuchBit == -1, "RankSelectBitVector try-select past the end");
+    Check(sparse.Count0 == 993 && sparse.Select0(0) == 1 && sparse.Select0(61) == 62, "RankSelectBitVector select0");
+    Check(sparse.TrySelect0(62, out int clearAfter64) && clearAfter64 == 65, "RankSelectBitVector try-select0");
+    Check(!sparse.TrySelect0(993, out int noSuchClear) && noSuchClear == -1, "RankSelectBitVector try-select0 past the end");
     Check(sparse[256] && !sparse[257], "RankSelectBitVector get");
     Check(sparse.IndexSizeInBytes > 0, "RankSelectBitVector index size");
 
