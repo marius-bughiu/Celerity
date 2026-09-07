@@ -102,6 +102,48 @@ public class SuccinctTrieEnumerationTests
     }
 
     [Fact]
+    public void Values_ShouldNotAllocateAKeyStringPerEntry()
+    {
+        // Values walks the tree without reconstructing any key. Reading them off the entry enumerator would
+        // build and discard one string per terminal node, making a values-only pass allocate in proportion
+        // to the total length of every key — 1,000 keys of 40 characters is ~100 KB of pure garbage.
+        var entries = new List<KeyValuePair<string, int>>();
+        for (int i = 0; i < 1000; i++)
+            entries.Add(new KeyValuePair<string, int>($"{new string('k', 32)}{i:D8}", i));
+        var trie = new SuccinctTrie<int>(entries);
+
+        _ = trie.Values.Sum();   // warm the iterator machinery
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        long total = 0;
+        foreach (int value in trie.Values)
+            total += value;
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(499_500, total);
+        Assert.InRange(allocated, 0, 8_192);
+    }
+
+    [Fact]
+    public void Values_ShouldStayAlignedWithKeys_OnAShapeWithInteriorAndLeafTerminals()
+    {
+        // The key-free walk has to reach exactly the terminal nodes the keyed one does, in the same order:
+        // interior keys that are prefixes of others, leaves, and the root.
+        SuccinctTrie<int> trie = Build(string.Empty, "a", "ab", "abc", "b", "bc", "c");
+
+        Assert.Equal(trie.Keys.Select(k => trie[k]), trie.Values);
+        Assert.Equal(trie.Select(p => p.Value), trie.Values);
+    }
+
+    [Fact]
+    public void Values_OfATrieWithNoRootKey_ShouldSkipTheRoot()
+    {
+        SuccinctTrie<int> trie = Build("x", "y");
+
+        Assert.Equal([0, 1], trie.Values);
+    }
+
+    [Fact]
     public void ReadOnlyDictionary_Surface_ShouldAgreeWithTheConcreteOne()
     {
         SuccinctTrie<int> trie = Build("one", "two", "three");

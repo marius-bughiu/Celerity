@@ -43,8 +43,9 @@ namespace Celerity.Collections;
 /// of <c>n</c> nodes is <c>2n - 1</c> bits held in one <see cref="RankSelectBitVector"/> — this type is the
 /// composition that primitive's documentation names. Navigation is the textbook pair: node <c>v</c>'s child
 /// block runs from <c>Select0(v - 1) + 1</c> to <c>Select0(v)</c>, and the first child's node number is
-/// <c>Rank(start) + 1</c> — with the second select replaced by a scan for the next <c>0</c>, which is a
-/// single word read for any ordinary branching factor rather than a second search of the index. Edge labels live in one <see cref="char"/> array indexed by node number, with a
+/// <c>Rank(start) + 1</c> — with the second select replaced by a scan for the next <c>0</c>, which is
+/// <c>O(1 + b / 64)</c> words for a node of branching factor <c>b</c> rather than a second search of the
+/// index. Edge labels live in one <see cref="char"/> array indexed by node number, with a
 /// node's children contiguous and sorted, so a descent step is a binary search over that slice and
 /// enumeration is naturally in ascending ordinal order. Which nodes end a key is a second
 /// <see cref="RankSelectBitVector"/> over the node numbers, whose <c>Rank</c> indexes a compact value array —
@@ -399,7 +400,12 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
     public IEnumerable<string> Keys => GetKeysWithPrefix(string.Empty);
 
     /// <summary>Gets the values ordered by their keys' ascending ordinal order.</summary>
-    public IEnumerable<TValue?> Values => EnumerateValues(0, string.Empty);
+    /// <remarks>
+    /// This walks the tree without reconstructing any key, so a values-only pass allocates nothing per
+    /// entry — unlike reading <see cref="Values"/> off the entry enumerator, which would build and discard
+    /// a <see cref="string"/> for every terminal node.
+    /// </remarks>
+    public IEnumerable<TValue?> Values => EnumerateValues(0);
 
     /// <summary>
     /// Returns an allocation-free struct enumerator that yields every entry in ascending ordinal key order.
@@ -475,7 +481,8 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
     // One past the last bit of `node`'s child block: the position of the 0 that terminates it. Textbook LOUDS
     // names this `Select0(node)`, but the block is a run of 1s starting at `start`, so the terminating 0 is
     // the *next* one — a word scan from a known position rather than a second binary search over the
-    // superblock index, and one that reads a single word for any ordinary branching factor.
+    // superblock index, at O(1 + b / 64) words for a branching factor of b. The run can start anywhere in a
+    // word, so even a narrow node may straddle two; the win is that it is a small constant, not one word.
     private int ChildBlockEnd(int start) => _louds.NextZero(start);
 
     // The node reached by following `edge` out of `node`, or -1 when there is no such edge. A node's children
@@ -536,11 +543,56 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
             yield return walk.Current.Key;
     }
 
-    private IEnumerable<TValue?> EnumerateValues(int start, string startKey)
+    // The same ordinal-order depth-first walk the enumerator performs, with the path bookkeeping removed:
+    // a caller reading only values has no use for the key, and materializing one per terminal node would
+    // make a values-only pass allocate in proportion to the total length of every key. Frames are
+    // (next child, one past the last child) pairs, so a node is yielded before its subtree is descended.
+    private IEnumerable<TValue?> EnumerateValues(int start)
     {
-        Enumerator walk = new(this, start, startKey);
-        while (walk.MoveNext())
-            yield return walk.Current.Value;
+        if (start < 0)
+            yield break;
+
+        if (_terminal.Get(start))
+            yield return ValueOf(start);
+
+        if (!TryChildRange(start, out int next, out int end))
+            yield break;
+
+        var pending = new Stack<(int Next, int End)>();
+        pending.Push((next, end));
+
+        while (pending.Count > 0)
+        {
+            (int child, int last) = pending.Pop();
+            if (child == last)
+                continue;
+
+            // Resume this block at the following sibling once the child's subtree is exhausted.
+            pending.Push((child + 1, last));
+
+            if (_terminal.Get(child))
+                yield return ValueOf(child);
+
+            if (TryChildRange(child, out int firstGrandchild, out int lastGrandchild))
+                pending.Push((firstGrandchild, lastGrandchild));
+        }
+    }
+
+    // The half-open range of `node`'s children as node numbers, or false when it has none.
+    private bool TryChildRange(int node, out int first, out int end)
+    {
+        int start = ChildBlockStart(node);
+        int blockEnd = ChildBlockEnd(start);
+        if (start == blockEnd)
+        {
+            first = 0;
+            end = 0;
+            return false;
+        }
+
+        first = _louds.Rank(start) + 1;
+        end = first + (blockEnd - start);
+        return true;
     }
 
     /// <summary>
