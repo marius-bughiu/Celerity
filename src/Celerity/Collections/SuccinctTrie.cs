@@ -56,10 +56,12 @@ namespace Celerity.Collections;
 /// because nothing can invalidate it.
 /// </para>
 /// <para>
-/// The complexities stated on the members count each character step as <c>O(log n)</c> in the node count —
-/// the cost of the two selects — plus a binary search over the node's branching factor. The
-/// <c>O(key length)</c> shorthand used by <see cref="Trie{TValue}"/> does not apply here; the terms are
-/// written out where they matter.
+/// The complexities stated on the members count each character step as three terms: one <c>O(log n)</c>
+/// <see cref="RankSelectBitVector.Select0(int)"/> over the node count, a scan of <c>ceil(b / 64)</c> words
+/// for the <c>0</c> that terminates the child block, and a binary search over that block's <c>b</c> labels,
+/// where <c>b</c> is the node's branching factor. The middle term is one word read for the ordinary bounded
+/// alphabet and only grows for a pathologically wide node. The <c>O(key length)</c> shorthand used by
+/// <see cref="Trie{TValue}"/> does not apply here; the terms are written out where they matter.
 /// </para>
 /// </remarks>
 public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
@@ -400,8 +402,9 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
     /// <summary>
     /// Returns an allocation-free struct enumerator that yields every entry in ascending ordinal key order.
     /// Iterating via <c>foreach</c> avoids the state-machine allocation a compiler-generated iterator would
-    /// incur (the traversal itself lazily allocates a small stack and path buffer only when the trie has
-    /// children to walk). Nothing can modify the trie, so enumeration never has to check a version.
+    /// incur (the traversal lazily allocates a small stack and path buffer only when the trie has children to
+    /// walk, sized for the depth it actually reaches rather than for the longest key in the trie). Nothing
+    /// can modify the trie, so enumeration never has to check a version.
     /// </summary>
     /// <returns>A struct enumerator over the trie's entries in ascending key order.</returns>
     public Enumerator GetEnumerator() => new(this, 0, string.Empty);
@@ -527,7 +530,8 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
     /// A struct enumerator over a <see cref="SuccinctTrie{TValue}"/> subtree that yields entries in ascending
     /// ordinal key order. Because it is a struct, iterating via <c>foreach</c> avoids the allocation a
     /// compiler-generated <c>IEnumerator</c> would incur; it lazily allocates a small traversal stack and a
-    /// path buffer only when the start node has children to walk.
+    /// path buffer only when the start node has children to walk, and grows them to the depth the walk
+    /// actually reaches rather than to the longest key in the trie.
     /// </summary>
     public struct Enumerator : IEnumerator<KeyValuePair<string, TValue?>>
     {
@@ -535,6 +539,12 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
         // one: its first child's node number, how many of its children have been descended into, and how many
         // it has. Children are consecutive node numbers, so the first plus the offset names the next one.
         private const int FrameSize = 3;
+
+        // Frames (and path characters) to allocate on the first descent. The walk cannot go deeper than the
+        // longest key in the whole trie, but sizing the buffers from that up front would charge a shallow
+        // subtree for a long key elsewhere: one million-character key would make every prefix query allocate
+        // megabytes it never touches. They start small and double instead, capped at the true bound.
+        private const int InitialDepth = 8;
 
         private readonly SuccinctTrie<TValue> _trie;
         private readonly int _start;       // subtree root; its accumulated key is _startKey
@@ -600,7 +610,9 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
                 if (_stack![top + 1] < _stack[top + 2])
                 {
                     int child = _stack[top] + _stack[top + 1]++;
-                    _path![_depth++] = _trie._labels[child];
+                    if (_depth == _path!.Length)
+                        _path = Grown(_path, _depth + 1, _trie._maxKeyLength);
+                    _path[_depth++] = _trie._labels[child];
                     PushFrame(child);
                     if (_trie._terminal.Get(child))
                     {
@@ -634,17 +646,34 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
 
             if (_stack is null)
             {
-                // The deepest reachable node is the longest key, so the walk below `_startKey` can never need
-                // more frames — or more path characters — than that.
-                _stack = new int[((_trie._maxKeyLength - _startKey.Length) + 1) * FrameSize];
-                _path = new char[_trie._maxKeyLength];
+                // The deepest reachable node is the longest key in the trie, which bounds both buffers — but
+                // only bounds them. Start at InitialDepth and grow, so a subtree three levels deep allocates
+                // for three levels however long the longest key elsewhere is.
+                int frames = Math.Min(_trie._maxKeyLength - _startKey.Length + 1, InitialDepth);
+                _stack = new int[frames * FrameSize];
+                _path = new char[Math.Min(_trie._maxKeyLength, _startKey.Length + InitialDepth)];
                 _startKey.CopyTo(0, _path, 0, _startKey.Length);
+            }
+            else if (_frames * FrameSize == _stack.Length)
+            {
+                _stack = Grown(_stack, _stack.Length + FrameSize,
+                    (_trie._maxKeyLength - _startKey.Length + 1) * FrameSize);
             }
 
             int frame = _frames++ * FrameSize;
             _stack[frame] = start == end ? 0 : _trie._louds.Rank(start) + 1;
             _stack[frame + 1] = 0;
             _stack[frame + 2] = end - start;
+        }
+
+        // Doubles `buffer` — never past `ceiling`, and never short of `needed`, which the caller has already
+        // established is within the ceiling.
+        private static T[] Grown<T>(T[] buffer, int needed, int ceiling)
+        {
+            int capacity = Math.Min(ceiling, Math.Max(buffer.Length * 2, needed));
+            var grown = new T[capacity];
+            Array.Copy(buffer, grown, buffer.Length);
+            return grown;
         }
 
         /// <summary>Resets the enumerator to its initial position, before the first entry.</summary>

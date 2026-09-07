@@ -29,7 +29,9 @@ namespace Celerity.Collections;
 /// The documented winning workloads are all build-once: dense↔sparse index remapping in column stores (map a
 /// dense row ordinal to its position in a sparse column and back), succinct and compressed tries, and wavelet
 /// trees. They share the shape this type is designed for — a bit vector that is filled, frozen, then queried
-/// many times.
+/// many times. Two of them ship as worked examples rather than exercises left to the caller:
+/// <see cref="SuccinctTrie{TValue}"/> holds a trie's shape as a unary degree sequence over one of these, and
+/// <see cref="WaveletTree"/> stacks one per level of its alphabet.
 /// </para>
 /// <para>
 /// <b>Layout and space.</b> The index is two arrays: an <see cref="int"/> per 256-bit superblock holding the

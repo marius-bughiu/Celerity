@@ -165,7 +165,7 @@ The tree shape is a **level-order unary degree sequence** (LOUDS). Visiting node
 - node `v`'s child block starts at `Select0(v - 1) + 1` and ends at the next `0`;
 - the first child's node number is `Rank(start) + 1`, and the rest follow consecutively.
 
-Textbook LOUDS names that second bound `Select0(v)`. Because the block is a run of `1`s starting at a position already in hand, the terminating `0` is found by scanning forward instead — a single word read for any ordinary branching factor, rather than a second binary search of the index. That change alone measured roughly a **2× improvement** on every query arm below.
+Textbook LOUDS names that second bound `Select0(v)`. Because the block is a run of `1`s starting at a position already in hand, the terminating `0` is found by scanning forward instead — a single word read for any ordinary branching factor, rather than a second binary search of the index. That change alone measured **1.78× on `PrefixMatch` and 1.74× on `SpanLookup`** at 100,000 keys, the two arms timed on both sides of it.
 
 Edge labels live in one `char` array indexed by node number, with a node's children contiguous and their labels ascending, so a descent step is a binary search over that slice and enumeration comes out in ascending ordinal order for free. Which nodes end a key is a *second* `RankSelectBitVector` over the node numbers, whose `Rank` indexes a compact value array — so a node that is only a waypoint costs no value slot at all, and the keys themselves are never stored: a key exists only as a path through the labels.
 

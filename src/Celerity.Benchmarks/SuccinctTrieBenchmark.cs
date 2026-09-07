@@ -3,9 +3,12 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 
 // SuccinctTrie<int> vs the BCL's Dictionary<string, int>, on the same key shape TrieBenchmark uses so the two
-// tries can be read side by side. The standing against the dictionary is the trie standing: it loses the
-// exact-key operations (a walk of the key versus one hash) and wins PrefixMatch outright, because a
-// dictionary has no prefix index and must scan every entry and run StartsWith on it.
+// tries can be read side by side. It loses the exact-key operations, as any trie does — a walk of the key
+// against one hash. The prefix win is real but it is a matter of *selectivity*, which is why there are two
+// prefix categories and they have to be read together: PrefixMatch enumerates a sixteenth of the table per
+// prefix, so the dictionary's scan hits a match every sixteen entries and either trie is charged for
+// materializing 100,000 result strings — an arm neither trie wins. PrefixProbe is the same operation at the
+// selectivity a prefix index is actually reached for, and there both win by three orders of magnitude.
 //
 // What this type sells over Trie<TValue> is retained footprint, and that is deliberately *not* benchmarked
 // here: [MemoryDiagnoser] reports bytes allocated during the run, and the succinct build allocates a sort
@@ -15,8 +18,8 @@ using Celerity.Collections;
 // they are stated as retained bytes, and IndexSizeInBytes is pinned by the test suite instead.
 //
 // The Trie_Cross* arms are the honest other half of the trade: what the succinct encoding costs in query
-// time against the pointer-based trie. They carry op names of their own (CrossLookup, CrossPrefixMatch) so
-// each lands in a dashboard bucket by itself — two Celerity arms sharing an op would overwrite each other in
+// time against the pointer-based trie. They carry op names of their own (CrossLookup, CrossPrefixMatch,
+// CrossPrefixProbe) so each lands in a dashboard bucket by itself — two Celerity arms sharing an op would overwrite each other in
 // the index the cards are built from — while the shared [BenchmarkCategory] keeps the BenchmarkDotNet report
 // grouping all three against one baseline.
 [MemoryDiagnoser]
@@ -132,7 +135,8 @@ public class SuccinctTrieBenchmark
     }
 
     // What the succinct encoding costs against the pointer-based trie on the same walk: a reference follow
-    // per character becomes two selects over the LOUDS vector plus a binary search over the label slice.
+    // per character becomes one Select0 over the LOUDS vector, a word scan for the block's terminating zero,
+    // and a binary search over the label slice.
     [Benchmark]
     [BenchmarkCategory("Lookup")]
     public long Trie_CrossLookup()

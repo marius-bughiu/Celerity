@@ -10,11 +10,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **`RankSelectBitVector.Select0` / `TrySelect0` / `Count0`** — the clear-bit twin of `Select`, which the type was missing while shipping `Rank0`. A structure encoded as a unary degree sequence navigates with it, so the primitive could not support its own documented workload without it. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
 
-- **The `SuccinctTrie` rollout that ships with it** — `SuccinctTrieTests` / `SuccinctTrieEnumerationTests` / `SuccinctTrieDifferentialTests` (CsCheck, plus an exhaustive sweep over every subset of the short binary strings), new rows in the shared `SpanLookupTests` and `OversizedSourceAndResidualGuardTests` suites, `Select0` coverage in both `RankSelectBitVector` suites, a `Celerity.Fuzz` target reconciled against `Trie`, and a `Celerity.AotSmokeTest` block. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
-
-- **`SuccinctTrieBenchmark`**, registered in `Program.cs` and wired into the dashboard's ship card and both `COLLECTIONS` tables, with a `PrefixProbe` arm alongside `PrefixMatch` because only the selective one isolates the prefix index. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
-
-- **Docs for the new type** — an API-reference section carrying both pre-registered kill criteria as measured, README list, decision-table row and span-lookup rows, plus the docs index, AOT and testing rosters. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
+- **The `SuccinctTrie` rollout that ships with it** — dedicated, shared-suite, CsCheck-property, fuzz and AOT coverage (plus `Select0` coverage in both `RankSelectBitVector` suites), a registered benchmark with its dashboard cards, and the README / API-reference / testing-roster entries. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
 
 ## [3.1.0] - 2026-09-06
 

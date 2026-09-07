@@ -187,6 +187,47 @@ public class SuccinctTrieEnumerationTests
     }
 
     [Fact]
+    public void PrefixEnumeration_OfAShallowSubtree_ShouldNotAllocateForTheLongestKeyElsewhere()
+    {
+        // The traversal buffers are bounded by the longest key in the whole trie, but must not be *sized*
+        // from it: one very long key would otherwise charge every unrelated prefix query for a stack and a
+        // path buffer covering a depth it never reaches. Here one 100,000-character key sits beside a
+        // three-deep subtree, and walking that subtree must cost the subtree, not the outlier.
+        var entries = new List<KeyValuePair<string, int>>
+        {
+            new(new string('z', 100_000), 0),
+            new("abc", 1),
+            new("abd", 2),
+        };
+        var trie = new SuccinctTrie<int>(entries);
+
+        // Warm the iterator's own machinery so the measurement is the traversal buffers, not JIT-time noise.
+        _ = trie.GetKeysWithPrefix("ab").ToArray();
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        string[] keys = trie.GetKeysWithPrefix("ab").ToArray();
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(["abc", "abd"], keys);
+
+        // Sizing from the longest key would need 100,000 path chars plus ~100,000 three-int frames — over
+        // 1.4 MB. Anything in this range proves the buffers followed the depth actually reached.
+        Assert.InRange(allocated, 0, 16_384);
+    }
+
+    [Fact]
+    public void Enumeration_OfALongKey_ShouldGrowTheTraversalBuffersAsItDescends()
+    {
+        // The other side of the same change: the buffers start small, so a walk deeper than that initial
+        // capacity has to grow both of them — repeatedly, and without losing the path built so far.
+        string deep = new('a', 500);
+        var trie = new SuccinctTrie<int>([new KeyValuePair<string, int>(deep, 7), new KeyValuePair<string, int>("b", 8)]);
+
+        Assert.Equal([deep, "b"], trie.Keys);
+        Assert.Equal([deep], trie.GetKeysWithPrefix(new string('a', 300)));
+    }
+
+    [Fact]
     public void Enumeration_OfADeepChain_ShouldNotOverflowTheTraversalStack()
     {
         // One key of 4,000 characters is a 4,000-node chain: the stack the enumerator sizes from the longest
