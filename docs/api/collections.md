@@ -144,149 +144,7 @@ public Enumerator GetEnumerator()
 
 Returns a struct enumerator that yields `KeyValuePair<TKey, TValue?>`. The out-of-band default-key entry is yielded first if present. *Structurally* mutating the dictionary during enumeration — adding a new key, removing a key, or `Clear` — throws `InvalidOperationException` from the next `MoveNext` / `Reset` call, matching BCL `Dictionary<,>` semantics. Overwriting the value of an existing key via the indexer (`dict[existingKey] = newValue`) is *not* a structural change and does not invalidate an active enumerator, so the common "iterate and update values in place" pattern is legal. Iteration order is unspecified and may change between versions.
 
-### SuccinctTrie&lt;TValue&gt;
-
-An **immutable** prefix tree stored in **two bits per node**: the build-once counterpart to [`Trie<TValue>`](#trietvalue), answering the same prefix questions from a succinct encoding rather than from a graph of node objects. Implements `IReadOnlyDictionary<string, TValue?>`.
-
-```csharp
-public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
-```
-
-### The gap it fills
-
-[`RankSelectBitVector`](#rankselectbitvector) shipped as the primitive that "succinct and compressed **tries**, and **wavelet trees**" compose on — a phrase that appears in its own source, in the section above, and in the README's decision table. [`WaveletTree`](#wavelettree) closed the second half. This closes the first: it is that composition, and it is the same **build-once half of a shipped axis** that `SparseTable` is to `SegmentTree` and `FrozenCelerityDictionary` is to `CelerityDictionary`.
-
-The gap is a footprint one. `Trie<TValue>` is the right shape for a prefix tree that changes, and the wrong one for the very common case where it does not: every node is a heap object carrying an object header, a `char[]` of edge labels, a `Node[]` of child references, a child count, a value slot and a flag. A routing table, tokenizer dictionary, autocomplete corpus or static allow-list pays that per node forever and gets nothing back for it. The BCL has no answer either — `Dictionary<string, TValue>` has no prefix operation at all, and .NET 8/9/10 ship no succinct structures.
-
-### How it works
-
-The tree shape is a **level-order unary degree sequence** (LOUDS). Visiting nodes in breadth-first order, each contributes one `1` per child followed by a terminating `0`, so a tree of `n` nodes is `2n - 1` bits held in one `RankSelectBitVector`. Navigation is the textbook pair:
-
-- node `v`'s child block starts at `Select0(v - 1) + 1` and ends at the next `0`;
-- the first child's node number is `Rank(start) + 1`, and the rest follow consecutively.
-
-Textbook LOUDS names that second bound `Select0(v)`. Because the block is a run of `1`s starting at a position already in hand, the terminating `0` is found by scanning forward instead — a single word read for any ordinary branching factor, rather than a second binary search of the index. That change alone measured **1.78× on `PrefixMatch` and 1.74× on `SpanLookup`** at 100,000 keys, the two arms timed on both sides of it.
-
-Edge labels live in one `char` array indexed by node number, with a node's children contiguous and their labels ascending, so a descent step is a binary search over that slice and enumeration comes out in ascending ordinal order for free. Which nodes end a key is a *second* `RankSelectBitVector` over the node numbers, whose `Rank` indexes a compact value array — so a node that is only a waypoint costs no value slot at all, and the keys themselves are never stored: a key exists only as a path through the labels.
-
-Keys are compared and ordered by their UTF-16 code units (ordinal), matching `Trie<TValue>`. The empty string is a valid key, terminating at the root.
-
-### When *not* to use this — read first
-
-The key set is fixed at construction and there is no mutating member: no `Add`, no `Remove`, no indexer setter. Adding one key means rebuilding, which costs a sort of every key plus one level-order pass — so this is the wrong type for an index that grows as it is queried. Use `Trie<TValue>` there, and snapshot into a `SuccinctTrie<TValue>` (there is a constructor for exactly that) once the keys have settled.
-
-It is also the wrong type when **query latency**, not memory, is the binding constraint. Every measured query arm below is slower than the pointer-based trie, and the exact-key arms are much slower than a `Dictionary`. This type is bought for its footprint.
-
-### Measured
-
-BenchmarkDotNet short job, .NET 10, Apple Silicon, `SuccinctTrieBenchmark`, 100,000 keys of the form `ab_00012345` — the same key shape `TrieBenchmark` uses, so the two tries read side by side.
-
-**Footprint**, as bytes *retained* by the built structure (measured by settling the GC around a build from a source that is kept alive throughout, so no figure counts the key strings):
-
-| Structure | Retained | vs `SuccinctTrie` |
-| --- | --- | --- |
-| `Trie<int>` | 40.16 MB | **38.1× larger** |
-| `Dictionary<string, int>` | 3.04 MB | 2.9× larger — *and* it alone must keep every key `string` alive (~48 bytes each here, ~4.8 MB) |
-| `SuccinctTrie<int>` | 1.05 MB | — (`IndexSizeInBytes` reports 938 KB of it) |
-
-**Query time:**
-
-| Category | `Dictionary` | `SuccinctTrie` | `Trie` |
-| --- | --- | --- | --- |
-| `PrefixProbe` — the few completions of a nearly-complete token | 3.59 ms | **3.45 µs — 1,042× faster** | 1.43 µs |
-| `PrefixMatch` — enumerate a sixteenth of the table, per prefix | 3.08 ms | 11.18 ms — 3.6× *slower* | 3.59 ms |
-| `Lookup` — exact key, every key | 0.94 ms | 26.41 ms — 28× *slower* | 4.10 ms |
-| `SpanLookup` — exact key from a span | 2.14 ms + 4.8 MB allocated | 25.89 ms — 12× *slower*, **0 B** | — |
-| `Build` — from the whole key set | 1.59 ms | 19.81 ms — 12.5× *slower* | — |
-
-Two **pre-registered kill criteria** were set before the type was written, and both are recorded here as measured rather than rounded away:
-
-1. **≥5× smaller than `Trie<TValue>`.** Passed at **38.1×** — but only on the right quantity. The criterion was originally written as *allocated* bytes for the build, and by that measure the ratio is **1.19×**, essentially a wash: the succinct build allocates a sort buffer and several transient lists that it then drops. Allocated-during-build is not what this type is sold on; *retained* is, and that is the column above. It is also why the benchmark class deliberately charts no footprint arm — `[MemoryDiagnoser]` would confidently report the wrong number.
-2. **Still beats `Dictionary` on `GetByPrefix` by the margin `Trie` does.** Passed on `PrefixProbe` (1,042× against `Trie`'s 2,510×) and **missed on `PrefixMatch`**, where it is 3.6× slower than the dictionary. The measurement then showed the criterion was written on a false premise: `Trie` does not win that arm either (1.16× the dictionary — a slight loss). Bulk enumeration of a sixteenth of the table finds the dictionary a match every sixteen entries and charges either trie for materializing 100,000 result strings, so it does not isolate the prefix index at all. `PrefixProbe` — the same operation at the selectivity a prefix index is actually reached for — does, and both tries win it by three orders of magnitude. Both arms are on the dashboard and **the pair has to be read together**; either alone misstates the trade.
-
-See the [succinct-trie benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=SuccinctTrie) on the dashboard.
-
-### Constructors
-
-```csharp
-public SuccinctTrie(IEnumerable<KeyValuePair<string, TValue>> entries)
-public SuccinctTrie(Trie<TValue> source)
-```
-
-- The `entries` overload takes the whole key set; a later duplicate key overwrites the value set by an earlier one, matching `Trie<TValue>`'s bulk-load constructor.
-- The `source` overload snapshots a mutable `Trie<TValue>` — the "fill it, then freeze it" flow, mirroring `RankSelectBitVector(BitSet)`. Later changes to `source` do not affect the snapshot.
-
-**Throws:**
-
-- `ArgumentNullException` if `entries` or `source` is `null`, or any key in `entries` is `null`.
-
-### Indexer
-
-```csharp
-public TValue this[string key] { get; }
-```
-
-Getter only — the type is immutable. Throws `KeyNotFoundException` if `key` is absent (an interior prefix that was never stored counts as absent), and `ArgumentNullException` if `key` is `null`.
-
-### Methods and properties
-
-| Member | Description |
-|--------|-------------|
-| `int Count` | Number of keys. |
-| `int NodeCount` | Nodes in the encoded tree: the root plus one per distinct prefix of the stored keys. The tree shape occupies `2 × NodeCount - 1` bits. |
-| `long IndexSizeInBytes` | Bytes the encoding occupies — both bit vectors with their rank/select indexes, the labels, and the values. A *floor* for a reference-type `TValue`, which contributes pointers rather than objects. |
-| `bool ContainsKey(string key)` | Whether `key` is a stored key (an interior-only prefix returns `false`). |
-| `bool ContainsKey(ReadOnlySpan<char> key)` | The same, from a character span — no `string` is materialized. See [span-keyed lookups](#span-keyed-lookups). |
-| `bool TryGetValue(string key, out TValue? value)` | Non-throwing exact lookup. |
-| `bool TryGetValue(ReadOnlySpan<char> key, out TValue? value)` | The same, from a character span. |
-| `bool ContainsPrefix(string prefix)` | Whether any stored key starts with `prefix` (a key equal to the prefix counts). The empty prefix matches iff the trie is non-empty. |
-| `bool ContainsPrefix(ReadOnlySpan<char> prefix)` | The same, from a character span. |
-| `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
-| `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
-| `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
-| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
-| `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small frame stack and path buffer only when the trie has children to walk). |
-
-Every key-taking `string` member throws `ArgumentNullException` on a `null` argument. Nothing can modify the trie, so no enumerator can ever be invalidated and none carries a version check; instances hold no mutable state after construction and are safe to share across threads.
-
-### Empty-string and default handling
-
-The empty string is an ordinary key, terminating at the root. Any `TValue` — including `default`/`null` — is a valid value, since the terminal flag is held out of band in its own bit vector. `null` keys are rejected.
-
-### Choosing it
-
-Reach for `SuccinctTrie<TValue>` when the key set is **large, fixed, and its memory is the thing that hurts**: a shipped routing or tokenizer dictionary, an autocomplete corpus, a static allow/deny list, a prefix index held per-tenant or per-shard where 40 MB against 1 MB decides how many fit. Reach for [`Trie<TValue>`](#trietvalue) when the keys change, or when query latency matters more than footprint — it is several times faster on every arm. Reach for a `Dictionary<string, TValue>` when there are no prefix queries at all.
-
-### Usage example
-
-```csharp
-using Celerity.Collections;
-
-// Build once, from the whole route table.
-var routes = new SuccinctTrie<string>(
-[
-    new("/",                "home"),
-    new("/api",             "api-root"),
-    new("/api/v1/users",    "users-v1"),
-    new("/api/v1/orders",   "orders-v1"),
-]);
-
-// Autocomplete: every route under a prefix, already in sorted order.
-foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
-    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
-
-// Longest-prefix routing: the most specific stored route that prefixes the request.
-if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
-    Console.WriteLine($"matched {route} -> {handler}"); // matched /api/v1/users -> users-v1
-
-Console.WriteLine($"{routes.NodeCount} nodes in {routes.IndexSizeInBytes} bytes");
-
-// Or freeze a trie that was filled incrementally.
-var built = new Trie<string> { ["a"] = "1", ["ab"] = "2" };
-var frozen = new SuccinctTrie<string>(built);
-```
-
-## Span-keyed lookups (string keys)
+### Span-keyed lookups (string keys)
 
 When `TKey` is `string` and the hasher also implements `ISpanHashProvider` (every built-in `String*Hasher` does), `TryGetValue(ReadOnlySpan<char>, out TValue?)` and `ContainsKey(ReadOnlySpan<char>)` probe directly from a slice of a caller-held buffer — no `new string(span)` per lookup. See [span-keyed lookups](#span-keyed-lookups).
 
@@ -4446,6 +4304,148 @@ foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
 // Longest-prefix routing: the most specific stored route that prefixes the request.
 if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
     Console.WriteLine($"matched {route} -> {handler}"); // matched /api/v1/users -> users-v1
+```
+
+## SuccinctTrie&lt;TValue&gt;
+
+An **immutable** prefix tree stored in **two bits per node**: the build-once counterpart to [`Trie<TValue>`](#trietvalue), answering the same prefix questions from a succinct encoding rather than from a graph of node objects. Implements `IReadOnlyDictionary<string, TValue?>`.
+
+```csharp
+public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
+```
+
+### The gap it fills
+
+[`RankSelectBitVector`](#rankselectbitvector) shipped as the primitive that "succinct and compressed **tries**, and **wavelet trees**" compose on — a phrase that appears in its own source, in the section above, and in the README's decision table. [`WaveletTree`](#wavelettree) closed the second half. This closes the first: it is that composition, and it is the same **build-once half of a shipped axis** that `SparseTable` is to `SegmentTree` and `FrozenCelerityDictionary` is to `CelerityDictionary`.
+
+The gap is a footprint one. `Trie<TValue>` is the right shape for a prefix tree that changes, and the wrong one for the very common case where it does not: every node is a heap object carrying an object header, a `char[]` of edge labels, a `Node[]` of child references, a child count, a value slot and a flag. A routing table, tokenizer dictionary, autocomplete corpus or static allow-list pays that per node forever and gets nothing back for it. The BCL has no answer either — `Dictionary<string, TValue>` has no prefix operation at all, and .NET 8/9/10 ship no succinct structures.
+
+### How it works
+
+The tree shape is a **level-order unary degree sequence** (LOUDS). Visiting nodes in breadth-first order, each contributes one `1` per child followed by a terminating `0`, so a tree of `n` nodes is `2n - 1` bits held in one `RankSelectBitVector`. Navigation is the textbook pair:
+
+- node `v`'s child block starts at `Select0(v - 1) + 1` and ends at the next `0`;
+- the first child's node number is `Rank(start) + 1`, and the rest follow consecutively.
+
+Textbook LOUDS names that second bound `Select0(v)`. Because the block is a run of `1`s starting at a position already in hand, the terminating `0` is found by scanning forward instead — a single word read for any ordinary branching factor, rather than a second binary search of the index. That change alone measured **1.78× on `PrefixMatch` and 1.74× on `SpanLookup`** at 100,000 keys, the two arms timed on both sides of it.
+
+Edge labels live in one `char` array indexed by node number, with a node's children contiguous and their labels ascending, so a descent step is a binary search over that slice and enumeration comes out in ascending ordinal order for free. Which nodes end a key is a *second* `RankSelectBitVector` over the node numbers, whose `Rank` indexes a compact value array — so a node that is only a waypoint costs no value slot at all, and the keys themselves are never stored: a key exists only as a path through the labels.
+
+Keys are compared and ordered by their UTF-16 code units (ordinal), matching `Trie<TValue>`. The empty string is a valid key, terminating at the root.
+
+### When *not* to use this — read first
+
+The key set is fixed at construction and there is no mutating member: no `Add`, no `Remove`, no indexer setter. Adding one key means rebuilding, which costs a sort of every key plus one level-order pass — so this is the wrong type for an index that grows as it is queried. Use `Trie<TValue>` there, and snapshot into a `SuccinctTrie<TValue>` (there is a constructor for exactly that) once the keys have settled.
+
+It is also the wrong type when **query latency**, not memory, is the binding constraint. Every measured query arm below is slower than the pointer-based trie, and the exact-key arms are much slower than a `Dictionary`. This type is bought for its footprint.
+
+### Measured
+
+BenchmarkDotNet short job, .NET 10, Apple Silicon, `SuccinctTrieBenchmark`, 100,000 keys of the form `ab_00012345` — the same key shape `TrieBenchmark` uses, so the two tries read side by side.
+
+**Footprint**, as bytes *retained* by the built structure (measured by settling the GC around a build from a source that is kept alive throughout, so no figure counts the key strings):
+
+| Structure | Retained | vs `SuccinctTrie` |
+| --- | --- | --- |
+| `Trie<int>` | 40.16 MB | **38.1× larger** |
+| `Dictionary<string, int>` | 3.04 MB | 2.9× larger — *and* it alone must keep every key `string` alive (~48 bytes each here, ~4.8 MB) |
+| `SuccinctTrie<int>` | 1.05 MB | — (`IndexSizeInBytes` reports 938 KB of it) |
+
+**Query time:**
+
+| Category | `Dictionary` | `SuccinctTrie` | `Trie` |
+| --- | --- | --- | --- |
+| `PrefixProbe` — the few completions of a nearly-complete token | 3.59 ms | **3.45 µs — 1,042× faster** | 1.43 µs |
+| `PrefixMatch` — enumerate a sixteenth of the table, per prefix | 3.08 ms | 11.18 ms — 3.6× *slower* | 3.59 ms |
+| `Lookup` — exact key, every key | 0.94 ms | 26.41 ms — 28× *slower* | 4.10 ms |
+| `SpanLookup` — exact key from a span | 2.14 ms + 4.8 MB allocated | 25.89 ms — 12× *slower*, **0 B** | — |
+| `Build` — from the whole key set | 1.59 ms | 19.81 ms — 12.5× *slower* | — |
+
+Two **pre-registered kill criteria** were set before the type was written, and both are recorded here as measured rather than rounded away:
+
+1. **≥5× smaller than `Trie<TValue>`.** Passed at **38.1×** — but only on the right quantity. The criterion was originally written as *allocated* bytes for the build, and by that measure the ratio is **1.19×**, essentially a wash: the succinct build allocates a sort buffer and several transient lists that it then drops. Allocated-during-build is not what this type is sold on; *retained* is, and that is the column above. It is also why the benchmark class deliberately charts no footprint arm — `[MemoryDiagnoser]` would confidently report the wrong number.
+2. **Still beats `Dictionary` on `GetByPrefix` by the margin `Trie` does.** Passed on `PrefixProbe` (1,042× against `Trie`'s 2,510×) and **missed on `PrefixMatch`**, where it is 3.6× slower than the dictionary. The measurement then showed the criterion was written on a false premise: `Trie` does not win that arm either (1.16× the dictionary — a slight loss). Bulk enumeration of a sixteenth of the table finds the dictionary a match every sixteen entries and charges either trie for materializing 100,000 result strings, so it does not isolate the prefix index at all. `PrefixProbe` — the same operation at the selectivity a prefix index is actually reached for — does, and both tries win it by three orders of magnitude. Both arms are on the dashboard and **the pair has to be read together**; either alone misstates the trade.
+
+See the [succinct-trie benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=SuccinctTrie) on the dashboard.
+
+### Constructors
+
+```csharp
+public SuccinctTrie(IEnumerable<KeyValuePair<string, TValue>> entries)
+public SuccinctTrie(Trie<TValue> source)
+```
+
+- The `entries` overload takes the whole key set; a later duplicate key overwrites the value set by an earlier one, matching `Trie<TValue>`'s bulk-load constructor.
+- The `source` overload snapshots a mutable `Trie<TValue>` — the "fill it, then freeze it" flow, mirroring `RankSelectBitVector(BitSet)`. Later changes to `source` do not affect the snapshot.
+
+**Throws:**
+
+- `ArgumentNullException` if `entries` or `source` is `null`, or any key in `entries` is `null`.
+
+### Indexer
+
+```csharp
+public TValue this[string key] { get; }
+```
+
+Getter only — the type is immutable. Throws `KeyNotFoundException` if `key` is absent (an interior prefix that was never stored counts as absent), and `ArgumentNullException` if `key` is `null`.
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of keys. |
+| `int NodeCount` | Nodes in the encoded tree: the root plus one per distinct prefix of the stored keys. The tree shape occupies `2 × NodeCount - 1` bits. |
+| `long IndexSizeInBytes` | Bytes the encoding occupies — both bit vectors with their rank/select indexes, the labels, and the values. A *floor* for a reference-type `TValue`, which contributes pointers rather than objects. |
+| `bool ContainsKey(string key)` | Whether `key` is a stored key (an interior-only prefix returns `false`). |
+| `bool ContainsKey(ReadOnlySpan<char> key)` | The same, from a character span — no `string` is materialized. See [span-keyed lookups](#span-keyed-lookups). |
+| `bool TryGetValue(string key, out TValue? value)` | Non-throwing exact lookup. |
+| `bool TryGetValue(ReadOnlySpan<char> key, out TValue? value)` | The same, from a character span. |
+| `bool ContainsPrefix(string prefix)` | Whether any stored key starts with `prefix` (a key equal to the prefix counts). The empty prefix matches iff the trie is non-empty. |
+| `bool ContainsPrefix(ReadOnlySpan<char> prefix)` | The same, from a character span. |
+| `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
+| `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
+| `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small frame stack and path buffer only when the trie has children to walk). |
+
+Every key-taking `string` member throws `ArgumentNullException` on a `null` argument. Nothing can modify the trie, so no enumerator can ever be invalidated and none carries a version check; instances hold no mutable state after construction and are safe to share across threads.
+
+### Empty-string and default handling
+
+The empty string is an ordinary key, terminating at the root. Any `TValue` — including `default`/`null` — is a valid value, since the terminal flag is held out of band in its own bit vector. `null` keys are rejected.
+
+### Choosing it
+
+Reach for `SuccinctTrie<TValue>` when the key set is **large, fixed, and its memory is the thing that hurts**: a shipped routing or tokenizer dictionary, an autocomplete corpus, a static allow/deny list, a prefix index held per-tenant or per-shard where 40 MB against 1 MB decides how many fit. Reach for [`Trie<TValue>`](#trietvalue) when the keys change, or when query latency matters more than footprint — it is several times faster on every arm. Reach for a `Dictionary<string, TValue>` when there are no prefix queries at all.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Build once, from the whole route table.
+var routes = new SuccinctTrie<string>(
+[
+    new("/",                "home"),
+    new("/api",             "api-root"),
+    new("/api/v1/users",    "users-v1"),
+    new("/api/v1/orders",   "orders-v1"),
+]);
+
+// Autocomplete: every route under a prefix, already in sorted order.
+foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
+
+// Longest-prefix routing: the most specific stored route that prefixes the request.
+if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
+    Console.WriteLine($"matched {route} -> {handler}"); // matched /api/v1/users -> users-v1
+
+Console.WriteLine($"{routes.NodeCount} nodes in {routes.IndexSizeInBytes} bytes");
+
+// Or freeze a trie that was filled incrementally.
+var built = new Trie<string> { ["a"] = "1", ["ab"] = "2" };
+var frozen = new SuccinctTrie<string>(built);
 ```
 
 ## Span-keyed lookups

@@ -339,9 +339,14 @@ public sealed class RankSelectBitVector
 
     // The position of the first clear bit at or after `index`, by scanning words rather than searching the
     // index — which is the cheaper answer whenever the caller already knows the target is nearby. It is
-    // internal because the guarantee it needs cannot be expressed in the signature: the caller must know a
-    // clear bit exists at or after `index`, and the loop below runs off the end of the words if none does.
-    // Every in-vector position satisfies that, because the padding above `Length` in the final word is clear.
+    // internal because the guarantee it needs cannot be expressed in the signature: **the caller must know a
+    // clear bit exists at or after `index`**, and the loop below runs off the end of the words if none does.
+    //
+    // Being inside the vector is *not* that guarantee. When `Length` is not a multiple of 64 the padding
+    // above it is clear and stops the scan, but on an exact multiple there is no padding, so an all-set tail
+    // runs past `_words`. `SuccinctTrie` — the only caller — is safe for a structural reason rather than an
+    // incidental one: every LOUDS node's child block ends with a terminating 0, so a 0 exists at or after any
+    // block start it asks about. A second caller has to establish that for itself, not infer it from here.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal int NextZero(int index)
     {
