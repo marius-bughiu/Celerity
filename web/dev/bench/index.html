@@ -489,6 +489,9 @@ function escapeHtml(s) {
     // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
     // SpanLookup probes from a ReadOnlySpan<char> slice, which the baseline must first turn into a string.
     { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch', 'SpanLookup'] },
+    // SuccinctTrie is the build-once trie: the same prefix answers over a LOUDS encoding, sold on retained
+    // footprint rather than speed. Its Trie_Cross* arms carry op names of their own so they draw no card.
+    { key: 'SuccinctTrie',        title: 'SuccinctTrie<int>',                        vs: 'Dictionary<string, int>', ops: ['Build', 'Lookup', 'PrefixMatch', 'PrefixProbe', 'SpanLookup'] },
     // StringInternTable canonicalizes tokens probed as spans: it allocates one string per distinct token,
     // where the BCL arms must allocate one per occurrence before they can dedupe. Allocation is the headline.
     { key: 'StringInternTable',   title: 'StringInternTable',                        vs: 'HashSet<string> / Dictionary<string, string>', ops: ['Dedupe', 'Lookup'] },

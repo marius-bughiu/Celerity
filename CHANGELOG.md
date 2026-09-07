@@ -4,6 +4,18 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`SuccinctTrie<TValue>`** in `Celerity.Collections` — the **build-once** prefix tree, stored in **two bits per node**: the same `GetByPrefix` / `TryGetLongestPrefix` / ordered-enumeration surface as `Trie<TValue>`, over a LOUDS bit vector held in a `RankSelectBitVector` plus one label array, with the key strings never stored at all. This is the composition `RankSelectBitVector`'s own documentation named and the library never shipped. It buys **footprint**: at 100,000 keys it retains **1.05 MB against `Trie`'s 40.16 MB — 38.1x smaller**. ⚠️ **Every query arm is slower** — exact `Lookup` 28x a `Dictionary` and 6.4x `Trie`, build 12.5x — and the prefix win depends on selectivity: **1,042x** a `Dictionary` on a nearly-complete token with few completions, 3.6x *slower* on bulk-enumerating a sixteenth of the table (an arm `Trie` does not win either). Immutable, so a changed key set means a rebuild. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
+
+- **`RankSelectBitVector.Select0` / `TrySelect0` / `Count0`** — the clear-bit twin of `Select`, which the type was missing while shipping `Rank0`. A structure encoded as a unary degree sequence navigates with it, so the primitive could not support its own documented workload without it. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
+
+- **The `SuccinctTrie` rollout that ships with it** — `SuccinctTrieTests` / `SuccinctTrieEnumerationTests` / `SuccinctTrieDifferentialTests` (CsCheck, plus an exhaustive sweep over every subset of the short binary strings), new rows in the shared `SpanLookupTests` and `OversizedSourceAndResidualGuardTests` suites, `Select0` coverage in both `RankSelectBitVector` suites, a `Celerity.Fuzz` target reconciled against `Trie`, and a `Celerity.AotSmokeTest` block. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
+
+- **`SuccinctTrieBenchmark`**, registered in `Program.cs` and wired into the dashboard's ship card and both `COLLECTIONS` tables, with a `PrefixProbe` arm alongside `PrefixMatch` because only the selective one isolates the prefix index. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
+
+- **Docs for the new type** — an API-reference section carrying both pre-registered kill criteria as measured, README list, decision-table row and span-lookup rows, plus the docs index, AOT and testing rosters. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
+
 ## [3.1.0] - 2026-09-06
 
 ### Added

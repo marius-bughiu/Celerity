@@ -70,6 +70,7 @@ internal static class Differential
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
         ("Rope", RopeCase),
+        ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("CountMinSketch", CountMinSketchCase),
@@ -2643,6 +2644,92 @@ internal static class Differential
         Check(actual.Length == expected.Count, $"interval match count disagreed for [{start}, {end})");
         foreach (var match in actual)
             Check(expected.Contains(match.Value), $"unexpected match {match.Value} for [{start}, {end})");
+    }
+
+    // ---- succinct trie ------------------------------------------------------
+
+    // SuccinctTrie against the pointer-based Trie it freezes, which reaches every one of the same answers
+    // through an unrelated representation: node objects and child arrays against a LOUDS bit vector, a label
+    // array and two rank/select indexes. Nothing is shared between them but the contract, so an agreement is
+    // real evidence and a disagreement localizes to one of the two. Keys come off a narrow alphabet with
+    // short lengths, so heavy prefix sharing, keys that are prefixes of other keys, duplicates and the empty
+    // key are all common rather than rare — the shapes in which a child block that starts one bit early
+    // still answers plausibly.
+    private static void SuccinctTrieCase(Random rng)
+    {
+        int alphabet = rng.Next(1, 5);
+        int maxLength = rng.Next(1, 9);
+        int count = rng.Next(0, 80);
+
+        var oracle = new Trie<int>();
+        var entries = new List<KeyValuePair<string, int>>(count);
+        var probes = new List<string> { string.Empty };
+
+        var builder = new StringBuilder(maxLength);
+        for (int i = 0; i < count; i++)
+        {
+            builder.Clear();
+            int length = rng.Next(0, maxLength + 1);
+            for (int c = 0; c < length; c++)
+                builder.Append((char)('a' + rng.Next(alphabet)));
+
+            string key = builder.ToString();
+            entries.Add(new KeyValuePair<string, int>(key, i));
+            oracle[key] = i;   // the indexer is last-one-wins, matching the succinct constructor
+
+            probes.Add(key);
+            probes.Add(key + (char)('a' + rng.Next(alphabet + 1)));
+            if (key.Length > 1)
+                probes.Add(key[..rng.Next(1, key.Length)]);
+        }
+
+        var sut = new SuccinctTrie<int>(entries);
+
+        Check(sut.Count == oracle.Count, "SuccinctTrie Count disagreed");
+        Check(sut.NodeCount >= 1, "SuccinctTrie NodeCount is below the root");
+        Check(sut.IndexSizeInBytes > 0, "SuccinctTrie IndexSizeInBytes is not positive");
+
+        // Enumeration order and content, against the trie that orders by walking sorted child arrays.
+        List<KeyValuePair<string, int>> expectedEntries = oracle.Select(p => new KeyValuePair<string, int>(p.Key, p.Value)).ToList();
+        List<KeyValuePair<string, int>> actualEntries = sut.Select(p => new KeyValuePair<string, int>(p.Key, p.Value)).ToList();
+        Check(actualEntries.Count == expectedEntries.Count, "SuccinctTrie enumeration length disagreed");
+        for (int i = 0; i < actualEntries.Count; i++)
+        {
+            Check(actualEntries[i].Key == expectedEntries[i].Key, $"SuccinctTrie key at {i} disagreed");
+            Check(actualEntries[i].Value == expectedEntries[i].Value, $"SuccinctTrie value at {i} disagreed");
+        }
+
+        foreach (string probe in probes)
+        {
+            bool expectedHit = oracle.TryGetValue(probe, out int expectedValue);
+            bool actualHit = sut.TryGetValue(probe, out int actualValue);
+            Check(actualHit == expectedHit, $"SuccinctTrie TryGetValue('{probe}') disagreed");
+            Check(actualValue == expectedValue, $"SuccinctTrie value for '{probe}' disagreed");
+            Check(sut.ContainsKey(probe) == oracle.ContainsKey(probe), $"SuccinctTrie ContainsKey('{probe}') disagreed");
+            Check(sut.ContainsPrefix(probe) == oracle.ContainsPrefix(probe), $"SuccinctTrie ContainsPrefix('{probe}') disagreed");
+
+            // The span overloads must be indistinguishable from the string ones.
+            Check(sut.ContainsKey(probe.AsSpan()) == expectedHit, $"SuccinctTrie span ContainsKey('{probe}') disagreed");
+            Check(sut.ContainsPrefix(probe.AsSpan()) == oracle.ContainsPrefix(probe), $"SuccinctTrie span ContainsPrefix('{probe}') disagreed");
+
+            List<string> expectedMatches = oracle.GetKeysWithPrefix(probe).ToList();
+            List<string> actualMatches = sut.GetKeysWithPrefix(probe).ToList();
+            Check(actualMatches.Count == expectedMatches.Count, $"SuccinctTrie prefix match count for '{probe}' disagreed");
+            for (int i = 0; i < actualMatches.Count; i++)
+                Check(actualMatches[i] == expectedMatches[i], $"SuccinctTrie prefix match {i} for '{probe}' disagreed");
+
+            bool expectedLongest = oracle.TryGetLongestPrefix(probe, out string? expectedKey, out int expectedLongestValue);
+            bool actualLongest = sut.TryGetLongestPrefix(probe, out string? actualKey, out int actualLongestValue);
+            Check(actualLongest == expectedLongest, $"SuccinctTrie TryGetLongestPrefix('{probe}') disagreed");
+            Check(actualKey == expectedKey, $"SuccinctTrie longest-prefix key for '{probe}' disagreed");
+            Check(actualLongestValue == expectedLongestValue, $"SuccinctTrie longest-prefix value for '{probe}' disagreed");
+        }
+
+        // And the snapshot constructor must reach the same structure as the entry sequence did.
+        var snapshot = new SuccinctTrie<int>(oracle);
+        Check(snapshot.Count == sut.Count, "SuccinctTrie snapshot Count disagreed");
+        Check(snapshot.NodeCount == sut.NodeCount, "SuccinctTrie snapshot NodeCount disagreed");
+        Check(snapshot.Keys.SequenceEqual(sut.Keys), "SuccinctTrie snapshot keys disagreed");
     }
 
     // ---- sorted-span set algebra --------------------------------------------

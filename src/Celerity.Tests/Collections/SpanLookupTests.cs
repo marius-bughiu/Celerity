@@ -7,7 +7,8 @@ namespace Celerity.Tests.Collections;
 /// Cross-collection tests for the span-keyed lookup surface: the same check run across every
 /// string-keyed type that gained it — <see cref="FrozenCelerityDictionary{TValue, THasher}"/>,
 /// <see cref="FrozenCeleritySet{THasher}"/>, <see cref="CelerityDictionary{TKey, TValue, THasher}"/>,
-/// <see cref="CeleritySet{T, THasher}"/>, and <see cref="Trie{TValue}"/>.
+/// <see cref="CeleritySet{T, THasher}"/>, <see cref="Trie{TValue}"/>, and
+/// <see cref="SuccinctTrie{TValue}"/>.
 /// </summary>
 /// <remarks>
 /// The contract under test is that the span path and the string path are indistinguishable:
@@ -274,6 +275,36 @@ public class SpanLookupTests
         Assert.False(trie.ContainsPrefix("beta".AsSpan()));
     }
 
+    // ── SuccinctTrie ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TryGetValue_ShouldAgreeWithStringOverload_WhenSuccinctTrie()
+    {
+        var trie = new SuccinctTrie<int>(Pairs());
+
+        foreach (string key in Keys.Concat(Misses))
+        {
+            bool expected = trie.TryGetValue(key, out int expectedValue);
+            bool actual = trie.TryGetValue(key.AsSpan(), out int actualValue);
+
+            Assert.Equal(expected, actual);
+            Assert.Equal(expectedValue, actualValue);
+            Assert.Equal(trie.ContainsKey(key), trie.ContainsKey(key.AsSpan()));
+            Assert.Equal(trie.ContainsPrefix(key), trie.ContainsPrefix(key.AsSpan()));
+        }
+    }
+
+    [Fact]
+    public void ContainsPrefix_ShouldAgreeWithStringOverload_WhenSuccinctTriePrefixIsPartial()
+    {
+        var trie = new SuccinctTrie<int>([new KeyValuePair<string, int>("alphabet", 1)]);
+
+        Assert.True(trie.ContainsPrefix("alph".AsSpan()));
+        Assert.False(trie.ContainsKey("alph".AsSpan()));
+        Assert.True(trie.ContainsPrefix(ReadOnlySpan<char>.Empty));
+        Assert.False(trie.ContainsPrefix("beta".AsSpan()));
+    }
+
     // ── The span may be a slice of a caller-owned buffer, not a whole string ──
 
     [Fact]
@@ -297,6 +328,8 @@ public class SpanLookupTests
             trie.Add(pair.Key, pair.Value);
         }
 
+        var succinct = new SuccinctTrie<int>(Pairs());
+
         int expected = Array.IndexOf(Keys, "alphabet");
 
         Assert.True(frozenDict.TryGetValue(slice, out int a));
@@ -307,5 +340,7 @@ public class SpanLookupTests
         Assert.True(set.Contains(slice));
         Assert.True(trie.TryGetValue(slice, out int c));
         Assert.Equal(expected, c);
+        Assert.True(succinct.TryGetValue(slice, out int d));
+        Assert.Equal(expected, d);
     }
 }
