@@ -4,8 +4,8 @@ using System.Runtime.CompilerServices;
 namespace Celerity.Collections;
 
 /// <summary>
-/// An <b>immutable</b> prefix tree (trie) over <see cref="string"/> keys stored in <b>two bits per node</b>,
-/// the build-once counterpart to <see cref="Trie{TValue}"/>. It answers the same prefix questions —
+/// An <b>immutable</b> prefix tree (trie) over <see cref="string"/> keys whose <b>tree shape costs two bits
+/// per node</b>, the build-once counterpart to <see cref="Trie{TValue}"/>. It answers the same prefix questions —
 /// <see cref="GetByPrefix(string)"/>, <see cref="TryGetLongestPrefix(string, out string, out TValue)"/>,
 /// ordinal-ordered enumeration — from a succinct encoding rather than from a graph of node objects.
 /// </summary>
@@ -25,8 +25,9 @@ namespace Celerity.Collections;
 /// where a dictionary must scan every entry and run <see cref="string.StartsWith(string)"/> on it. What this
 /// type adds over <see cref="Trie{TValue}"/> is <b>footprint</b>, not speed. A pointer-based trie spends an
 /// object header, a <c>char[]</c>, a <c>Node[]</c>, a child count, a value slot and a flag on every node,
-/// which for a large fixed corpus dwarfs the keys themselves; the encoding below spends two bits of tree
-/// shape and one <see cref="char"/> of label.
+/// which for a large fixed corpus dwarfs the keys themselves. The encoding below spends two bits of tree
+/// shape and one <see cref="char"/> of label per node, plus a terminal bit and the two rank/select indexes —
+/// about 3 bytes a node all told, before the values. <see cref="IndexSizeInBytes"/> reports the exact figure.
 /// </para>
 /// <para>
 /// The trade runs the other way on query time, and is stated here rather than rounded away: a descent step
@@ -57,10 +58,11 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// The complexities stated on the members count each character step as three terms: one <c>O(log n)</c>
-/// <see cref="RankSelectBitVector.Select0(int)"/> over the node count, a scan of <c>ceil(b / 64)</c> words
+/// <see cref="RankSelectBitVector.Select0(int)"/> over the node count, a scan of <c>O(1 + b / 64)</c> words
 /// for the <c>0</c> that terminates the child block, and a binary search over that block's <c>b</c> labels,
-/// where <c>b</c> is the node's branching factor. The middle term is one word read for the ordinary bounded
-/// alphabet and only grows for a pathologically wide node. The <c>O(key length)</c> shorthand used by
+/// where <c>b</c> is the node's branching factor. The middle term is a small constant for the ordinary
+/// bounded alphabet — the block can start anywhere in a word, so even a narrow one may straddle two — and
+/// only grows with <c>b</c> on a pathologically wide node. The <c>O(key length)</c> shorthand used by
 /// <see cref="Trie{TValue}"/> does not apply here; the terms are written out where they matter.
 /// </para>
 /// </remarks>
@@ -104,7 +106,7 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
     /// <param name="source">The trie whose entries are copied.</param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     public SuccinctTrie(Trie<TValue> source)
-        : this(SortedEntriesOf(EntriesOf(source)))
+        : this(OrderedEntriesOf(source))
     {
     }
 
@@ -444,11 +446,26 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
         return (keys, values);
     }
 
-    private static IEnumerable<KeyValuePair<string, TValue>> EntriesOf(Trie<TValue> source)
+    // A Trie<TValue> already holds unique keys and already enumerates them in ascending ordinal order — the
+    // same order the level-order build reads them in — so the snapshot path fills pre-sized arrays straight
+    // from its walk. Routing it through SortedEntriesOf would build a hash table and re-sort a sequence that
+    // arrives sorted, which is O(n log n) and an extra table for nothing.
+    private static (string[] Keys, TValue[] Values) OrderedEntriesOf(Trie<TValue> source)
     {
         ArgumentNullException.ThrowIfNull(source);
+
+        string[] keys = new string[source.Count];
+        TValue[] values = new TValue[source.Count];
+
+        int i = 0;
         foreach (KeyValuePair<string, TValue?> entry in source)
-            yield return new KeyValuePair<string, TValue>(entry.Key, entry.Value!);
+        {
+            keys[i] = entry.Key;
+            values[i] = entry.Value!;
+            i++;
+        }
+
+        return (keys, values);
     }
 
     // The first bit of `node`'s child block. Node 0 starts the vector; every other node's block begins one

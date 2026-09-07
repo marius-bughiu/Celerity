@@ -104,6 +104,35 @@ public class SuccinctTrieTests
     }
 
     [Fact]
+    public void Constructor_FromTrie_ShouldProduceTheSameEncodingAsTheEntrySequence()
+    {
+        // The snapshot path skips the deduplicating sort, because a Trie already yields unique keys in
+        // ascending ordinal order. That shortcut is only sound if it reaches an identical encoding, so pin
+        // the structure itself rather than just the contents.
+        var entries = new List<KeyValuePair<string, int>>();
+        var source = new Trie<int>();
+        for (int i = 0; i < 400; i++)
+        {
+            // Deliberately inserted out of order, and with keys that are prefixes of other keys.
+            string key = $"{(char)('a' + i % 7)}{(char)('a' + i % 5)}_{i:D4}";
+            source[key] = i;
+            entries.Add(new KeyValuePair<string, int>(key, i));
+        }
+
+        source[string.Empty] = -1;
+        entries.Add(new KeyValuePair<string, int>(string.Empty, -1));
+
+        var fromTrie = new SuccinctTrie<int>(source);
+        var fromEntries = new SuccinctTrie<int>(entries);
+
+        Assert.Equal(fromEntries.Count, fromTrie.Count);
+        Assert.Equal(fromEntries.NodeCount, fromTrie.NodeCount);
+        Assert.Equal(fromEntries.IndexSizeInBytes, fromTrie.IndexSizeInBytes);
+        Assert.Equal(fromEntries.Keys, fromTrie.Keys);
+        Assert.Equal(fromEntries.Values, fromTrie.Values);
+    }
+
+    [Fact]
     public void Constructor_FromNullTrie_ShouldThrowArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() => new SuccinctTrie<int>((Trie<int>)null!));

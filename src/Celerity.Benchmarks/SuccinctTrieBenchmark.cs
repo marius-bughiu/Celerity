@@ -147,7 +147,9 @@ public class SuccinctTrieBenchmark
         return acc;
     }
 
-    // ---- PrefixMatch: sum the values of every entry under each prefix bucket (the trie's win) ---------
+    // ---- PrefixMatch: sum the values of every entry under each prefix bucket -------------------------
+    // Broad prefixes: each returns a sixteenth of the table. Both tries *lose* this arm to the dictionary —
+    // see the class comment — so the win label belongs to PrefixProbe below, not here.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("PrefixMatch")]

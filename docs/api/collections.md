@@ -3018,7 +3018,9 @@ The winning workloads are all **build-once**: dense↔sparse index remapping in 
 stores (map a dense row ordinal to its position in a sparse column and back), succinct
 and compressed tries, and wavelet trees. The library now ships both compositions —
 [`SuccinctTrie<TValue>`](#succincttrietvalue) and [`WaveletTree`](#wavelettree) — so
-they are worked examples rather than exercises left to the caller. See the
+they are worked examples rather than exercises left to the caller. The trie is what the
+clear-bit half of the surface exists for: a tree encoded as a unary degree sequence
+navigates by `Select0`, so `Rank0` alone could not support it. See the
 [rank/select benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankSelectBitVector)
 on the dashboard, whose baseline arm *is* that hand-rolled loop.
 
@@ -3073,6 +3075,9 @@ public RankSelectBitVector(int length, IEnumerable<int> positions)
 | `int Rank0(int index)` | The number of *clear* bits strictly below `index` — the complement identity `index - Rank(index)`, with the same bounds. |
 | `int Select(int rank)` | The position of the `rank`-th set bit, counting from zero, in `O(log n)`. Satisfies `Rank(Select(k)) == k`. Throws `ArgumentOutOfRangeException` if `rank` is outside `[0, Count)`. |
 | `bool TrySelect(int rank, out int position)` | The non-throwing form: returns `false` and sets `position` to `-1` when `rank` is outside `[0, Count)`. |
+| `int Count0 { get; }` | The number of *clear* bits — the complement identity `Length - Count`. |
+| `int Select0(int rank)` | The position of the `rank`-th **clear** bit, counting from zero, in `O(log n)`. Satisfies `Rank0(Select0(k)) == k`. Throws `ArgumentOutOfRangeException` if `rank` is outside `[0, Count0)`. The padding between `Length` and the end of the final word is clear, but it sits above every clear bit of the vector proper, so an in-range `rank` can never resolve to one. |
+| `bool TrySelect0(int rank, out int position)` | The non-throwing form: returns `false` and sets `position` to `-1` when `rank` is outside `[0, Count0)`. |
 | `BitSet ToBitSet()` | A new, mutable `BitSet` holding a copy of the indexed bits — the way to edit a vector and rebuild the index over the result. |
 
 The type holds no mutable state after construction, so instances are safe to share
@@ -4308,7 +4313,7 @@ if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string
 
 ## SuccinctTrie&lt;TValue&gt;
 
-An **immutable** prefix tree stored in **two bits per node**: the build-once counterpart to [`Trie<TValue>`](#trietvalue), answering the same prefix questions from a succinct encoding rather than from a graph of node objects. Implements `IReadOnlyDictionary<string, TValue?>`.
+An **immutable** prefix tree whose **tree shape costs two bits per node**: the build-once counterpart to [`Trie<TValue>`](#trietvalue), answering the same prefix questions from a succinct encoding rather than from a graph of node objects. Implements `IReadOnlyDictionary<string, TValue?>`.
 
 ```csharp
 public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
@@ -4327,9 +4332,9 @@ The tree shape is a **level-order unary degree sequence** (LOUDS). Visiting node
 - node `v`'s child block starts at `Select0(v - 1) + 1` and ends at the next `0`;
 - the first child's node number is `Rank(start) + 1`, and the rest follow consecutively.
 
-Textbook LOUDS names that second bound `Select0(v)`. Because the block is a run of `1`s starting at a position already in hand, the terminating `0` is found by scanning forward instead — a single word read for any ordinary branching factor, rather than a second binary search of the index. That change alone measured **1.78× on `PrefixMatch` and 1.74× on `SpanLookup`** at 100,000 keys, the two arms timed on both sides of it.
+Textbook LOUDS names that second bound `Select0(v)`. Because the block is a run of `1`s starting at a position already in hand, the terminating `0` is found by scanning forward instead — `O(1 + b / 64)` words for a node of branching factor `b`, rather than a second binary search of the index. (The block can start anywhere in a word, so even a narrow one may straddle two; the point is that it is a small constant, not that it is always one.) That change alone measured **1.78× on `PrefixMatch` and 1.74× on `SpanLookup`** at 100,000 keys, the two arms timed on both sides of it.
 
-Edge labels live in one `char` array indexed by node number, with a node's children contiguous and their labels ascending, so a descent step is a binary search over that slice and enumeration comes out in ascending ordinal order for free. Which nodes end a key is a *second* `RankSelectBitVector` over the node numbers, whose `Rank` indexes a compact value array — so a node that is only a waypoint costs no value slot at all, and the keys themselves are never stored: a key exists only as a path through the labels.
+So the *shape* is two bits a node. The rest of the encoding is one `char` of label per node, one terminal bit, and the 25% rank/select index over each of the two vectors — about **3 bytes a node** all told, before the values, which `IndexSizeInBytes` reports exactly. Edge labels live in one `char` array indexed by node number, with a node's children contiguous and their labels ascending, so a descent step is a binary search over that slice and enumeration comes out in ascending ordinal order for free. Which nodes end a key is a *second* `RankSelectBitVector` over the node numbers, whose `Rank` indexes a compact value array — so a node that is only a waypoint costs no value slot at all, and the keys themselves are never stored: a key exists only as a path through the labels.
 
 Keys are compared and ordered by their UTF-16 code units (ordinal), matching `Trie<TValue>`. The empty string is a valid key, terminating at the root.
 
@@ -4376,7 +4381,7 @@ public SuccinctTrie(Trie<TValue> source)
 ```
 
 - The `entries` overload takes the whole key set; a later duplicate key overwrites the value set by an earlier one, matching `Trie<TValue>`'s bulk-load constructor.
-- The `source` overload snapshots a mutable `Trie<TValue>` — the "fill it, then freeze it" flow, mirroring `RankSelectBitVector(BitSet)`. Later changes to `source` do not affect the snapshot.
+- The `source` overload snapshots a mutable `Trie<TValue>` — the "fill it, then freeze it" flow, mirroring `RankSelectBitVector(BitSet)`. Later changes to `source` do not affect the snapshot. It is also the cheaper path: a `Trie` already holds unique keys in ascending ordinal order, so its entries fill pre-sized arrays directly instead of going through the deduplicating sort the `entries` overload needs.
 
 **Throws:**
 
