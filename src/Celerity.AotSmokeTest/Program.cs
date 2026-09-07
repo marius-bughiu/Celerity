@@ -1979,9 +1979,10 @@ void Check(bool condition, string message)
 }
 
 // SuccinctTrie — the immutable LOUDS-encoded counterpart to Trie, and the composition
-// RankSelectBitVector's documentation names. It is the only collection whose navigation runs entirely
-// through another collection's rank/select, so the AOT publish has to keep both generic instantiations
-// and both traversal shapes (the struct enumerator and the compiler-generated prefix iterators). Exercise
+// RankSelectBitVector's documentation names. Its whole navigation runs through that type's rank and select
+// — as WaveletTree's does, one vector per level — so the AOT publish has to keep both collections' generic
+// instantiations alive together, plus both of this one's traversal shapes (the struct enumerator and the
+// compiler-generated prefix iterators). Exercise
 // both constructors, exact and span-keyed lookup, the prefix surface, longest-prefix match, ordered
 // enumeration, and the two properties that report what the encoding costs.
 {

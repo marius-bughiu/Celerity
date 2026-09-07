@@ -405,7 +405,7 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
     /// entry — unlike reading <see cref="Values"/> off the entry enumerator, which would build and discard
     /// a <see cref="string"/> for every terminal node.
     /// </remarks>
-    public IEnumerable<TValue?> Values => EnumerateValues(0);
+    public IEnumerable<TValue?> Values => EnumerateValues();
 
     /// <summary>
     /// Returns an allocation-free struct enumerator that yields every entry in ascending ordinal key order.
@@ -543,19 +543,18 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
             yield return walk.Current.Key;
     }
 
-    // The same ordinal-order depth-first walk the enumerator performs, with the path bookkeeping removed:
-    // a caller reading only values has no use for the key, and materializing one per terminal node would
-    // make a values-only pass allocate in proportion to the total length of every key. Frames are
-    // (next child, one past the last child) pairs, so a node is yielded before its subtree is descended.
-    private IEnumerable<TValue?> EnumerateValues(int start)
+    // The whole trie's values, in ordinal key order: the same depth-first walk the enumerator performs, with
+    // the path bookkeeping removed —
+    // a caller reading only values has no use for the key, and materializing one per terminal node would make
+    // a values-only pass allocate in proportion to the total length of every key. Frames are (next child, one
+    // past the last child) pairs, so a node is yielded before its subtree is descended. It always starts at
+    // the root: unlike the entry and key walks it serves no prefix query, so it takes no start node.
+    private IEnumerable<TValue?> EnumerateValues()
     {
-        if (start < 0)
-            yield break;
+        if (_terminal.Get(0))
+            yield return ValueOf(0);
 
-        if (_terminal.Get(start))
-            yield return ValueOf(start);
-
-        if (!TryChildRange(start, out int next, out int end))
+        if (!TryChildRange(0, out int next, out int end))
             yield break;
 
         var pending = new Stack<(int Next, int End)>();
