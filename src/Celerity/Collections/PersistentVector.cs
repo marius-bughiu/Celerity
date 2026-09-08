@@ -6,7 +6,7 @@ namespace Celerity.Collections;
 /// <summary>
 /// An <b>immutable indexed sequence</b> backed by a <b>32-way bit-partitioned trie</b> with a tail buffer:
 /// every operation returns a new vector that <b>shares</b> all but <c>O(log32 n)</c> of the old one's
-/// storage, indexing costs at most seven array hops, and appending is amortized <c>O(1)</c>.
+/// storage, and both indexing and appending cost at most seven array hops.
 /// </summary>
 /// <typeparam name="T">The type of the elements.</typeparam>
 /// <remarks>
@@ -168,9 +168,11 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
     /// The vector already holds <see cref="int.MaxValue"/> elements.
     /// </exception>
     /// <remarks>
-    /// Thirty-one appends out of thirty-two copy only the tail — at most 32 elements — and reuse the trie by
-    /// reference. The thirty-second pushes the full tail into the trie as a leaf, which path-copies
-    /// <c>O(log32 n)</c> internal nodes, so the amortized cost is a constant.
+    /// Thirty-one appends out of thirty-two are <c>O(1)</c>: they copy only the tail — at most 32 elements —
+    /// and reuse the trie by reference. The thirty-second pushes the full tail into the trie as a leaf, which
+    /// path-copies <c>O(log32 n)</c> internal nodes. Dividing that by 32 does not remove the logarithm, so the
+    /// amortized bound is <c>O(log32 n)</c> rather than <c>O(1)</c> — but the base is 32, so the term is at
+    /// most seven nodes for any vector an <c>int</c> can index, and it is paid once per 32 appends.
     /// </remarks>
     public PersistentVector<T> Add(T value)
     {

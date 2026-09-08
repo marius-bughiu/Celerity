@@ -4005,7 +4005,7 @@ int lo = work.PopBack();            // 3 — low-priority, from the back
 
 An **immutable indexed sequence** backed by a **32-way bit-partitioned trie** with a tail buffer:
 every operation returns a new vector that **shares** all but `O(log32 n)` of the old one's storage,
-indexing costs at most seven array hops, and appending is amortized `O(1)`.
+and both indexing and appending cost at most seven array hops.
 
 ```csharp
 public sealed class PersistentVector<T> : IReadOnlyList<T>
@@ -4077,7 +4077,8 @@ public static readonly PersistentVector<T> Empty
 - `bool IsEmpty` — whether the vector holds no elements.
 - `T this[int index]` — the element at `index`; throws `ArgumentOutOfRangeException` if out of range.
   There is no setter: `SetItem` returns a new vector instead.
-- `PersistentVector<T> Add(T value)` — a vector with `value` appended. Amortized `O(1)`.
+- `PersistentVector<T> Add(T value)` — a vector with `value` appended. `O(1)` while the tail has room
+  (31 appends out of 32); `O(log32 n)` on the append that pushes a full tail into the trie.
 - `PersistentVector<T> AddRange(IEnumerable<T> items)` — a vector with `items` appended in order,
   through one `Builder` rather than one intermediate vector per element. Returns the receiver
   unchanged when `items` is empty. Throws `ArgumentNullException` if `items` is `null`.
@@ -4163,11 +4164,16 @@ against `ImmutableList<int>`:
 | `Enumerate` — the whole sequence in order | ≥ 2x | **7.7x** |
 | `SetItem` — replace at a random index | ≥ 2x | **2.8x** |
 
-`ImmutableArray<int>` is the second `Add` baseline and is charted on its own `QuadraticAppend` card
-rather than alongside the `Append` sweep above. Its `Add` copies the whole array, so an uncapped
-100,000-element build is 5×10⁹ element copies — minutes per invocation — and both arms of that card are
-therefore capped at 10,000 elements. At that length it is **50x** slower to build than this type, and
-because its cost per append is `O(n)` the gap widens linearly with length.
+`ImmutableArray<int>` is the second `Add` baseline. It runs in the CI suite as the `AppendAtMost10k`
+category — both arms capped at 10,000 elements, because its `Add` copies the whole array and an uncapped
+100,000-element build is 5×10⁹ element copies, minutes per invocation. At that length it is **50x**
+slower to build than this type, and because its cost per append is `O(n)` the gap widens linearly.
+
+That category is deliberately **not** on the dashboard, for two reasons that are properties of the page
+rather than of the measurement: a card is labelled by the class's `ItemCount`, so the 100,000 bucket
+would publish a 10,000-element result under a "100,000 items" heading; and the page renders one `vs`
+baseline per collection, so the card would read "vs `ImmutableList<int>`" while plotting
+`ImmutableArray` data. It is in the joined report instead, which is where the 50x above comes from.
 
 **Retained memory**, measured with `GC.GetTotalMemory(true)` around the build with the source data
 allocated beforehand and kept alive throughout, at 100,000 `int` elements:

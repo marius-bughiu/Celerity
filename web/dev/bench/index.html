@@ -478,8 +478,11 @@ function escapeHtml(s) {
     // Deque is a sequence collection benchmarked against LinkedList (the BCL's only O(1)-both-ends type).
     { key: 'Deque',               title: 'Deque<int>',                               vs: 'LinkedList<int>',       ops: ['PushFront', 'Queue', 'Enumerate'] },
     // PersistentVector is the immutable sequence, benchmarked against ImmutableList — the BCL's only immutable
-    // sequence that appends in better than O(n), and an AVL tree with one heap node per element.
-    { key: 'PersistentVector',    title: 'PersistentVector<int>',                    vs: 'ImmutableList<int>',    ops: ['Index', 'Append', 'Enumerate', 'Update', 'QuadraticAppend'] },
+    // sequence that appends in better than O(n), and an AVL tree with one heap node per element. Its
+    // AppendAtMost10k arms are deliberately absent from `ops`: they use ImmutableArray as their baseline, and
+    // `vs` is rendered once per collection, so a card for them would be labelled with the wrong baseline.
+    // They are also capped below ItemCount, which a card labelled by ItemCount would misreport.
+    { key: 'PersistentVector',    title: 'PersistentVector<int>',                    vs: 'ImmutableList<int>',    ops: ['Index', 'Append', 'Enumerate', 'Update'] },
     // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).

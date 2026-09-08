@@ -9,11 +9,16 @@ using Celerity.Collections;
 // 32-way trie of 32-element leaf arrays with a tail buffer, so an append usually writes only the tail and a
 // read walks at most three levels at this scale.
 //
-// ImmutableArray<int> is the other half of the story and is charted too, but only on the QuadraticAppend
-// category and only up to AppendCap elements. Its Add copies the whole array, so an uncapped 100,000-element
-// build is 5e9 element copies — minutes per invocation — which is why that arm is capped rather than swept
-// with the rest. Both arms of that category append the same capped count, so the ratio is honest at each
-// point even though the work does not scale with ItemCount past the cap.
+// ImmutableArray<int> is the other half of the story and is measured here, in the AppendAtMost10k category,
+// but deliberately NOT charted. Its Add copies the whole array, so an uncapped 100,000-element build is 5e9
+// element copies — minutes per invocation — and the arm therefore appends min(ItemCount, AppendCap) rather
+// than the full sweep. That cap is exactly why it cannot go on a card: the dashboard labels a point by the
+// class's ItemCount, so the 100,000 bucket would publish a 10,000-element result under a "100,000 items"
+// label. It also has a different baseline from every other category here, and the dashboard renders one `vs`
+// label per collection, so the card would read "vs ImmutableList<int>" while plotting ImmutableArray data.
+// The category is left out of the COLLECTIONS ops array for both reasons; it still runs in the CI suite and
+// appears in the joined report, which is what makes the figure quoted in the API reference reproducible.
+// Both arms append the same capped count, so the ratio is honest at each parameter.
 //
 // The baseline arms are named ImmutableList_* so the dashboard classifies them as the BCL reference.
 [MemoryDiagnoser]
@@ -26,7 +31,7 @@ public class PersistentVectorBenchmark
     // measured is the cost of one lookup, not how many fit in an iteration.
     private const int ProbeCount = 10_000;
 
-    // Ceiling on the QuadraticAppend arms. ImmutableArray<T>.Add is O(n) per call, so this bounds that arm at
+    // Ceiling on the AppendAtMost10k arms. ImmutableArray<T>.Add is O(n) per call, so this bounds that arm at
     // ~5e7 element copies instead of the ~5e9 an uncapped 100,000-element sweep would cost.
     private const int AppendCap = 10_000;
 
@@ -36,7 +41,7 @@ public class PersistentVectorBenchmark
     private PersistentVector<int> vector = null!;
     private ImmutableList<int> list = null!;
 
-    // The capped prefix the QuadraticAppend arms build, so neither arm pays for slicing inside the timed region.
+    // The capped prefix the AppendAtMost10k arms build, so neither arm pays for slicing inside the timed region.
     private int[] cappedItems = null!;
 
     [Params(1000, 100_000)]
@@ -161,14 +166,14 @@ public class PersistentVectorBenchmark
         return updated.Count;
     }
 
-    // ---- QuadraticAppend: the same build against ImmutableArray, capped ---------------------------
-    // ImmutableArray<T> is the second Add baseline #431 registered. It is charted here rather than on the
-    // Append category above because its Add is O(n) per call: capping both arms at AppendCap keeps the arm
-    // tractable while still measuring the ratio the criterion is about.
+    // ---- AppendAtMost10k: the same build against ImmutableArray, capped ---------------------------
+    // ImmutableArray<T> is the second Add baseline #431 registered. It is its own category rather than a
+    // second arm on Append because its Add is O(n) per call and both arms must be capped to stay tractable —
+    // and the cap is carried in the method name so a report row cannot be read as a full-ItemCount result.
 
     [Benchmark(Baseline = true)]
-    [BenchmarkCategory("QuadraticAppend")]
-    public int ImmutableArray_QuadraticAppend()
+    [BenchmarkCategory("AppendAtMost10k")]
+    public int ImmutableArray_AppendAtMost10k()
     {
         ImmutableArray<int> built = ImmutableArray<int>.Empty;
         foreach (int item in cappedItems)
@@ -178,8 +183,8 @@ public class PersistentVectorBenchmark
     }
 
     [Benchmark]
-    [BenchmarkCategory("QuadraticAppend")]
-    public int PersistentVector_QuadraticAppend()
+    [BenchmarkCategory("AppendAtMost10k")]
+    public int PersistentVector_AppendAtMost10k()
     {
         PersistentVector<int> built = PersistentVector<int>.Empty;
         foreach (int item in cappedItems)
