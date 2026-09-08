@@ -4061,9 +4061,11 @@ public static readonly PersistentVector<T> Empty
 
 - `Empty` is the empty vector, and is the instance `RemoveLast` returns when the vector holds a
   single element.
-- The `items` constructor appends the source through a `Builder`, so building from a sequence of `n`
-  elements allocates the `n / 32` leaves the result keeps plus its `O(log32 n)` internal nodes — not
-  one intermediate vector per element.
+- The `items` constructor appends the source through a `Builder`, so no intermediate vector is
+  allocated per element. What is allocated is the `n / 32` leaves the result keeps, the internal nodes
+  it keeps (about `n / 1024` at the level above the leaves, plus the thinner levels above that), and
+  the root-to-leaf path the builder copies on each of its `n / 32` tail pushes — `O(log32 n)` nodes
+  *per push*, not `O(log32 n)` in total.
 
 **Throws:**
 
@@ -4090,7 +4092,9 @@ public static readonly PersistentVector<T> Empty
 - `Builder ToBuilder()` — a mutable builder seeded with this vector's elements.
 - `Enumerator GetEnumerator()` — an allocation-free struct enumerator that refreshes its leaf once per
   32 elements. Nothing can invalidate it, so it carries no version check; once `MoveNext` has returned
-  `false` it keeps returning `false`, and `Reset` replays the sequence.
+  `false` it keeps returning `false`, and `Reset` replays the sequence. `Current` is `default(T)` both
+  before the first `MoveNext` and after the last, matching the rest of the collection family and
+  `List<T>.Enumerator`'s public `Current`.
 
 #### Builder
 
@@ -4135,12 +4139,15 @@ vector cannot do it at all without rebuilding the tail of the sequence.
 
 ### Thread safety
 
-This is the one collection in the library that **is** safe for concurrent readers, and it is safe for
-the reason a value is: no instance is ever mutated after its constructor returns, so there is no state
-for two threads to race over. That does not make it a concurrency abstraction — a shared *variable*
-holding successive vectors still needs the usual publication rules — it makes each vector a snapshot
-that can be handed across a thread boundary without copying or locking. `Builder` is **not**
-thread-safe; the vectors it produces are.
+Concurrent readers need no synchronization, for the reason a value needs none: no instance is ever
+mutated after its constructor returns, so there is no state for two threads to race over. It shares
+that with the library's build-once types — `KdTree`, `SuffixArray`, `SparseTable`, `IntervalTree`,
+`RTree` and the rest all document the same guarantee — and differs from them in *how* it gets there:
+they are built once and then frozen, so a changed data set means a rebuild, while this one is never
+mutated at all and an edit simply produces another vector that the old readers cannot see. That does
+not make it a concurrency abstraction — a shared *variable* holding successive vectors still needs the
+usual publication rules — it makes each vector a snapshot that can be handed across a thread boundary
+without copying or locking. `Builder` is **not** thread-safe; the vectors it produces are.
 
 ### Measured
 
@@ -4156,11 +4163,11 @@ against `ImmutableList<int>`:
 | `Enumerate` — the whole sequence in order | ≥ 2x | **7.7x** |
 | `SetItem` — replace at a random index | ≥ 2x | **2.8x** |
 
-`ImmutableArray<int>` is not an arm of the shipped benchmark, because its `Add` copies the whole array
-and building 100,000 elements one at a time is 5×10⁹ element copies — minutes per invocation, for a
-result that is a property of the type rather than a measurement question. At 10,000 elements, where it
-is still tractable, it is **50x** slower to build than this type, and the gap widens linearly with
-length.
+`ImmutableArray<int>` is the second `Add` baseline and is charted on its own `QuadraticAppend` card
+rather than alongside the `Append` sweep above. Its `Add` copies the whole array, so an uncapped
+100,000-element build is 5×10⁹ element copies — minutes per invocation — and both arms of that card are
+therefore capped at 10,000 elements. At that length it is **50x** slower to build than this type, and
+because its cost per append is `O(n)` the gap widens linearly with length.
 
 **Retained memory**, measured with `GC.GetTotalMemory(true)` around the build with the source data
 allocated beforehand and kept alive throughout, at 100,000 `int` elements:

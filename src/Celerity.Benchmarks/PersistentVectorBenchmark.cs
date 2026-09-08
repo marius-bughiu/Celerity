@@ -9,10 +9,11 @@ using Celerity.Collections;
 // 32-way trie of 32-element leaf arrays with a tail buffer, so an append usually writes only the tail and a
 // read walks at most three levels at this scale.
 //
-// ImmutableArray<int> is deliberately NOT an arm here even though it is the other half of the story. Its Add
-// copies the whole array, so building 100,000 elements one at a time is 5e9 element copies — minutes per
-// invocation, for a result that is a property of the type rather than a measurement question. It is covered
-// in the API reference instead, where the O(n^2) argument can be made in one line.
+// ImmutableArray<int> is the other half of the story and is charted too, but only on the QuadraticAppend
+// category and only up to AppendCap elements. Its Add copies the whole array, so an uncapped 100,000-element
+// build is 5e9 element copies — minutes per invocation — which is why that arm is capped rather than swept
+// with the rest. Both arms of that category append the same capped count, so the ratio is honest at each
+// point even though the work does not scale with ItemCount past the cap.
 //
 // The baseline arms are named ImmutableList_* so the dashboard classifies them as the BCL reference.
 [MemoryDiagnoser]
@@ -25,11 +26,18 @@ public class PersistentVectorBenchmark
     // measured is the cost of one lookup, not how many fit in an iteration.
     private const int ProbeCount = 10_000;
 
+    // Ceiling on the QuadraticAppend arms. ImmutableArray<T>.Add is O(n) per call, so this bounds that arm at
+    // ~5e7 element copies instead of the ~5e9 an uncapped 100,000-element sweep would cost.
+    private const int AppendCap = 10_000;
+
     private int[] items = null!;
     private int[] probes = null!;
 
     private PersistentVector<int> vector = null!;
     private ImmutableList<int> list = null!;
+
+    // The capped prefix the QuadraticAppend arms build, so neither arm pays for slicing inside the timed region.
+    private int[] cappedItems = null!;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -46,6 +54,9 @@ public class PersistentVectorBenchmark
         probes = new int[ProbeCount];
         for (int i = 0; i < ProbeCount; i++)
             probes[i] = rand.Next(ItemCount);
+
+        cappedItems = new int[Math.Min(ItemCount, AppendCap)];
+        Array.Copy(items, cappedItems, cappedItems.Length);
 
         vector = new PersistentVector<int>(items);
         list = ImmutableList.CreateRange(items);
@@ -148,5 +159,32 @@ public class PersistentVectorBenchmark
             updated = updated.SetItem(probe, probe);
 
         return updated.Count;
+    }
+
+    // ---- QuadraticAppend: the same build against ImmutableArray, capped ---------------------------
+    // ImmutableArray<T> is the second Add baseline #431 registered. It is charted here rather than on the
+    // Append category above because its Add is O(n) per call: capping both arms at AppendCap keeps the arm
+    // tractable while still measuring the ratio the criterion is about.
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("QuadraticAppend")]
+    public int ImmutableArray_QuadraticAppend()
+    {
+        ImmutableArray<int> built = ImmutableArray<int>.Empty;
+        foreach (int item in cappedItems)
+            built = built.Add(item);
+
+        return built.Length;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("QuadraticAppend")]
+    public int PersistentVector_QuadraticAppend()
+    {
+        PersistentVector<int> built = PersistentVector<int>.Empty;
+        foreach (int item in cappedItems)
+            built = built.Add(item);
+
+        return built.Count;
     }
 }

@@ -35,11 +35,14 @@ namespace Celerity.Collections;
 /// <see href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/collections.md">the API reference</see>.
 /// </para>
 /// <para>
-/// <b>This is the one collection in the library that is safe for concurrent readers</b>, and it is safe for
-/// the reason a value is: no instance is ever mutated after its constructor returns, so there is no state for
-/// two threads to race over. That does not make it a concurrency abstraction — a shared <i>variable</i>
-/// holding successive vectors still needs the usual publication rules — it makes each vector a snapshot that
-/// can be handed across a thread boundary without copying or locking.
+/// <b>Concurrent readers need no synchronization</b>, for the reason a value needs none: no instance is ever
+/// mutated after its constructor returns, so there is no state for two threads to race over. It shares that
+/// with the library's build-once types (<see cref="KdTree{TValue}"/>, <see cref="SuffixArray"/>,
+/// <see cref="SparseTable{T, TMonoid}"/> and the rest), and differs from them in <i>how</i> it gets there: they
+/// are built once and then frozen, while this one is never mutated at all — an edit produces a new vector. That
+/// does not make it a concurrency abstraction; a shared <i>variable</i> holding successive vectors still needs
+/// the usual publication rules. It makes each vector a snapshot that can be handed across a thread boundary
+/// without copying or locking.
 /// </para>
 /// <para>
 /// Two deliberate omissions. There is no <c>Clear()</c>: everywhere else in this library <c>Clear()</c> means
@@ -99,9 +102,11 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
     /// <param name="items">The elements to copy into the vector.</param>
     /// <exception cref="ArgumentNullException"><paramref name="items"/> is <c>null</c>.</exception>
     /// <remarks>
-    /// The source is appended through a <see cref="Builder"/>, so building from a sequence of <c>n</c>
-    /// elements allocates the <c>n / 32</c> leaves the result keeps plus its <c>O(log32 n)</c> internal nodes —
-    /// not one intermediate vector per element.
+    /// The source is appended through a <see cref="Builder"/>, so no intermediate vector is allocated per
+    /// element. What is allocated is the <c>n / 32</c> leaves the result keeps, the internal nodes it keeps
+    /// (about <c>n / 1024</c> at the level above the leaves, plus the thinner levels above that), and the
+    /// root-to-leaf path the builder copies on each of its <c>n / 32</c> tail pushes — <c>O(log32 n)</c> nodes
+    /// per push, not <c>O(log32 n)</c> in total.
     /// </remarks>
     public PersistentVector(IEnumerable<T> items)
     {
@@ -406,8 +411,9 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
         return node;
     }
 
-    // Path-copies `parent` with `leaf` inserted at the position `count` (the length before the append) selects,
-    // creating any missing internal nodes on the way down.
+    // Path-copies `parent` with `leaf` inserted at the slot the last element's index selects, creating any
+    // missing internal nodes on the way down. `count` is the length before the append, so `count - 1` is that
+    // index.
     private static object?[] PushTail(int level, object?[] parent, T[] leaf, int count)
     {
         int subIndex = ((count - 1) >> level) & BranchMask;
@@ -453,7 +459,7 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
         return trimmed;
     }
 
-    // Path-copies the root-to-leaf path for `index`, replacing the element there. Returns object? because the
+    // Path-copies the root-to-leaf path for `index`, replacing the element there. Typed as object because the
     // recursion bottoms out on a T[] leaf while every level above it is an object?[].
     private static object DoAssoc(int level, object node, int index, T value)
     {
@@ -641,7 +647,9 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
     /// </summary>
     /// <remarks>
     /// The vector cannot be modified, so this enumerator carries no version check and nothing can invalidate
-    /// it. Once <see cref="MoveNext"/> has returned <c>false</c> it keeps returning <c>false</c>.
+    /// it. Once <see cref="MoveNext"/> has returned <c>false</c> it keeps returning <c>false</c>, and
+    /// <see cref="Current"/> is <c>default(T)</c> both before the first <see cref="MoveNext"/> and after the
+    /// last.
     /// </remarks>
     public struct Enumerator : IEnumerator<T>
     {
@@ -649,17 +657,26 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
         private T[]? _leaf;
         private int _index;
 
+        // Held in a field rather than recomputed from _leaf and _index on every read, which is what the rest
+        // of the collection family does and what gives Current a defined value outside the sequence: before
+        // the first MoveNext and after the last, it is default(T) rather than a dereference of a null leaf or
+        // a stale re-read of the final element.
+        private T _current;
+
         internal Enumerator(PersistentVector<T> vector)
         {
             _vector = vector;
             _leaf = null;
             _index = -1;
+            _current = default!;
         }
 
         /// <summary>
-        /// Gets the element at the enumerator's current position.
+        /// Gets the element at the enumerator's current position, or <c>default(T)</c> before the first
+        /// <see cref="MoveNext"/> and after the last — matching the rest of the collection family and
+        /// <see cref="List{T}.Enumerator"/>'s public <c>Current</c>.
         /// </summary>
-        public readonly T Current => _leaf![_index & BranchMask];
+        public readonly T Current => _current;
 
         /// <inheritdoc/>
         readonly object? IEnumerator.Current => Current;
@@ -672,13 +689,17 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
         {
             int next = _index + 1;
             if (next >= _vector._count)
+            {
+                _current = default!;
                 return false;
+            }
 
             // Leaves start at multiples of BranchFactor and the tail starts at one too, so a new leaf is needed
             // exactly when the low index bits wrap — including on the first call, which always lands on zero.
             if ((next & BranchMask) == 0)
                 _leaf = _vector.LeafFor(next);
 
+            _current = _leaf![next & BranchMask];
             _index = next;
             return true;
         }
@@ -690,6 +711,7 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
         {
             _leaf = null;
             _index = -1;
+            _current = default!;
         }
 
         /// <summary>
