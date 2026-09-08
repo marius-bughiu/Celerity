@@ -4032,8 +4032,15 @@ undo history, a versioned document model — where `ImmutableArray<T>` loses on 
 Elements live in **32-element leaf arrays**: one object header per 32 elements, rather than one AVL
 node per element. The leaves hang off a trie of 32-slot `object[]` internal nodes, and an element's
 index selects the path to its leaf five bits at a time — `(index >> shift) & 31` per level, ending
-with `index & 31` inside the leaf. Depth is therefore `ceil(log32 n)`: two levels to 1,024 elements,
-three to 32,768, and seven to `int.MaxValue`.
+with `index & 31` inside the leaf.
+
+Depth grows only when the **trie** fills, and the trie holds everything except the up-to-32 elements in
+the tail — so the thresholds are a tail block above the round powers of 32, and a formula in `n` alone
+gets them wrong. A level is added on the append that produces element **1,057**, then **32,801**, then
+**1,048,609**, and so on; a 32,769-element vector is still two levels deep, because 32,768 of its
+elements fit the trie and the remainder sits in the tail. A read costs one array load per level plus
+the read inside the leaf: two loads at a thousand elements, four at a hundred thousand, and at most
+seven for any vector an `int` can index.
 
 The last up-to-32 elements additionally live in a **tail buffer** hanging directly off the root. That
 is what makes appending cheap: 31 appends out of 32 copy only the tail — at most 32 elements — and

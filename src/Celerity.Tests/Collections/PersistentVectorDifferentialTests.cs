@@ -25,8 +25,8 @@ namespace Celerity.Tests.Collections;
 /// adds one of its own — collapsing a level when the root is left with a single child — and it is the only
 /// operation that adopts a trie leaf as the new tail by reference. The generated range spans the first two of
 /// those thresholds in both directions; the sweep at the end pins each exact boundary rather than hoping a
-/// sample lands on it, and one deterministic case runs past 32,768 so the third level is built and collapsed
-/// too.
+/// sample lands on it, and one deterministic case runs past 32,801 — the append the third level actually
+/// appears on, a tail block above the round power of 32 — so that level is built and collapsed too.
 /// </para>
 ///
 /// <para>
@@ -95,9 +95,10 @@ public class PersistentVectorDifferentialTests
     [Fact]
     public void AppendThenDrain_ShouldMatchTheListOracle_PastTheThirdTrieLevel()
     {
-        // 32,769 elements forces a third level: the trie addresses 32,768 at shift 10, so the root grows again
-        // just past it, and the drain collapses that level back. Snapshots are taken sparsely here because the
-        // point is the depth, not the density of the checks.
+        // The third internal level appears on the append producing element 32,801, not 32,769: the trie holds
+        // 32,768 at shift 10 and the vector holds a further 32 in its tail, so growth waits for the tail to
+        // fill on top of a full trie. 40,000 clears that comfortably, and the drain collapses the level back.
+        // Snapshots are sparse here because the point is the depth, not the density of the checks.
         const int Length = 40_000;
 
         PersistentVector<int> vector = PersistentVector<int>.Empty;

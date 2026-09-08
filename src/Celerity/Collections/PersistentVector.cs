@@ -5,8 +5,9 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>immutable indexed sequence</b> backed by a <b>32-way bit-partitioned trie</b> with a tail buffer:
-/// every operation returns a new vector that <b>shares</b> all but <c>O(log32 n)</c> of the old one's
-/// storage, and both indexing and appending cost at most seven array hops.
+/// every operation returns a new vector that <b>shares</b> all but one root-to-leaf path of the old one's
+/// storage, an indexed read is at most seven array loads, and 31 appends out of 32 touch nothing but the
+/// tail.
 /// </summary>
 /// <typeparam name="T">The type of the elements.</typeparam>
 /// <remarks>
@@ -23,7 +24,8 @@ namespace Celerity.Collections;
 /// trie (Clojure's <c>PersistentVector</c>, Scala's <c>Vector</c>), which .NET does not ship. Elements live in
 /// <b>32-element leaf arrays</b> — one object header per 32 elements rather than one AVL node per element —
 /// and the index of an element is read five bits at a time to walk from the root to its leaf. A vector of
-/// 100,000 elements is three levels deep, and the trie can address <c>int.MaxValue</c> elements in seven.
+/// 100,000 elements is three internal levels deep — three node hops plus the read inside the leaf — and six
+/// levels address every index an <c>int</c> can hold, so a read is never more than seven array loads.
 /// The last up-to-32 elements additionally live in a <b>tail buffer</b> hanging off the root, so 31 appends
 /// out of 32 copy only the tail and never touch the trie at all.
 /// </para>
