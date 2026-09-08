@@ -39,6 +39,10 @@ namespace Celerity.Tests.Collections;
 /// <see cref="WaveletTree"/> and <see cref="SparseTable{T, TMonoid}"/> are immutable after construction, so
 /// they expose no <c>Clear()</c> to be redundant and carry no version for one to bump; their enumerators
 /// cannot be invalidated by anything and are pinned on that basis in their own suites.
+/// <see cref="PersistentVector{T}"/> is out of scope for the same reason arrived at from the other
+/// direction: it is not built once but <i>never mutated</i> — every operation returns a new vector — so it
+/// deliberately ships no <c>Clear()</c> at all, since that name means in-place mutation everywhere else in
+/// this family. The empty vector is <c>PersistentVector&lt;T&gt;.Empty</c>.
 /// </para>
 /// </summary>
 public class ClearNoOpVersionTests

@@ -620,6 +620,37 @@ void Check(bool condition, string message)
     Check(order.Count == 3 && order[0] == 1 && order[2] == 3, "Deque front-to-back enumeration");
 }
 
+// PersistentVector - immutable indexed sequence over a 32-way bit-partitioned trie. Exercise the
+// IEnumerable constructor, the tail and trie read paths, all three persistent operations across the
+// 1,057-element root-growth boundary, the builder's owned tail, and the chunked struct enumerator.
+{
+    var pv = new PersistentVector<int>(new[] { 1, 2, 3 });
+    Check(pv.Count == 3 && pv[0] == 1 && pv[2] == 3, "PersistentVector construct + indexer");
+    Check(pv.Add(4).Count == 4 && pv.Count == 3, "PersistentVector Add leaves the receiver alone");
+    Check(pv.SetItem(1, 9)[1] == 9 && pv[1] == 2, "PersistentVector SetItem leaves the receiver alone");
+    Check(pv.RemoveLast().Count == 2, "PersistentVector RemoveLast");
+    Check(PersistentVector<int>.Empty.IsEmpty, "PersistentVector Empty");
+
+    // Past 1,057 the root grows a level, which is the branch that re-parents the old root.
+    var deep = PersistentVector<int>.Empty;
+    for (int i = 0; i < 2000; i++) deep = deep.Add(i);
+    Check(deep.Count == 2000 && deep[0] == 0 && deep[1056] == 1056 && deep[1999] == 1999,
+        "PersistentVector two-level trie reads");
+    for (int i = 0; i < 1000; i++) deep = deep.RemoveLast();
+    Check(deep.Count == 1000 && deep[999] == 999, "PersistentVector drain collapses the trie");
+
+    var builder = new PersistentVector<int>.Builder();
+    builder.AddRange(Enumerable.Range(0, 100));
+    var snapshot = builder.ToImmutable();
+    builder.Add(-1);
+    Check(snapshot.Count == 100 && builder.Count == 101, "PersistentVector builder isolates its snapshots");
+
+    int sum = 0;
+    foreach (int x in snapshot) sum += x;
+    Check(sum == 4950, "PersistentVector chunked enumeration");
+    Check(snapshot.ToArray().Length == 100, "PersistentVector ToArray");
+}
+
 // DisjointSet — union-find over arbitrary elements. Exercise add, auto-adding union, the
 // merge/no-op return, representative find, connectivity queries, component sizing, the set
 // count, growth across many singletons, grouped components, and the struct enumerator.
