@@ -193,6 +193,12 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
         object?[] newRoot;
         int newShift = _shift;
 
+        // Grow-a-level test. Reading it as k > 2^shift with k = _count >> BranchBits shows why the int shift
+        // cannot overflow: k tops out at int.MaxValue >> 5 = 67,108,863, so the last growth this can fire is
+        // shift 25 -> 30 (at 1,073,741,857 elements) and the next would need k > 2^30 = 1,073,741,824, which is
+        // sixteen times more than any int count can reach. _shift is therefore always one of 5..30 and
+        // 1 << _shift is always a positive int. Shift 30 is also where the trie stops needing to grow: it
+        // addresses 32^7 indices, well past int.MaxValue. Keep that bound in mind before widening BranchBits.
         if ((_count >> BranchBits) > (1 << _shift))
         {
             // The trie is full at this depth: grow a level, with the old root as the new root's first child.
@@ -619,6 +625,8 @@ public sealed class PersistentVector<T> : IReadOnlyList<T>
         // fresh one, so nothing that has been published can be written to again.
         private void PushOwnedTail()
         {
+            // Same predicate as Add, and safe for the same reason: _shift never exceeds 30, so the shift
+            // cannot overflow. See the comment on Add.
             if ((_count >> BranchBits) > (1 << _shift))
             {
                 var grown = new object?[BranchFactor];

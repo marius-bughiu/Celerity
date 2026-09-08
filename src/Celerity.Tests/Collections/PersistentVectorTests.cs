@@ -247,6 +247,30 @@ public class PersistentVectorTests
     }
 
     [Fact]
+    public void GrowthPredicate_ShouldNotBeAbleToOverflowItsShift_AtAnyReachableCount()
+    {
+        // The trie grows when (count >> 5) > (1 << shift). A vector of int.MaxValue elements cannot drive
+        // `shift` past 30, so `1 << shift` is always a positive int and never a masked or negative one — but
+        // that rests on arithmetic no test can reach by actually building the vector, and a reviewer reading
+        // the line in isolation will keep flagging it. So the arithmetic itself is pinned here.
+        const int BranchBits = 5;
+
+        // k is (count >> BranchBits), which is what the predicate compares against 1 << shift.
+        int maxReachableK = int.MaxValue >> BranchBits;
+
+        int shift = BranchBits;
+        while (maxReachableK > (1 << shift))
+            shift += BranchBits;
+
+        Assert.Equal(30, shift);
+        Assert.True(1 << shift > 0, "1 << shift must stay a positive int at the highest reachable shift.");
+
+        // And the shift the vector settles at addresses every index an int can hold, so it never needs a
+        // level the predicate cannot ask for: 6 node levels plus the leaf is 32^7 indices.
+        Assert.True(Math.Pow(32, (shift / BranchBits) + 1) > int.MaxValue);
+    }
+
+    [Fact]
     public void ReferenceElements_ShouldRoundTripIncludingNulls()
     {
         // The trie stores leaves as T[], so a null reference element is an ordinary value rather than the
