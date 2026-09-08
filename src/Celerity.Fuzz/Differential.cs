@@ -83,6 +83,7 @@ internal static class Differential
         ("XorFilterHash64", XorFilterHash64Case),
         ("HyperLogLogHash64", HyperLogLogHash64Case),
         ("CountMinSketchHash64", CountMinSketchHash64Case),
+        ("PersistentVector", PersistentVectorCase),
         ("RadixSort", RadixSortCase),
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
@@ -3767,5 +3768,79 @@ internal static class Differential
 
     private static bool Close(double actual, double expected, double relative)
         => Math.Abs(actual - expected) <= (Math.Abs(expected) * relative) + 1e-9;
+
+
+    // PersistentVector — the immutable indexed sequence, against a List<T> oracle. The nightly value over
+    // the in-repo suite is depth: a case here runs long enough to build the second trie level and collapse
+    // it again, and it re-checks every snapshot it took on the way, so a path copy that wrote through into
+    // storage an *earlier* vector still holds fails here rather than agreeing with the current answer.
+    private static void PersistentVectorCase(Random rng)
+    {
+        var sut = PersistentVector<int>.Empty;
+        var oracle = new List<int>();
+        var snapshots = new List<(PersistentVector<int> Vector, int[] Oracle)>();
+
+        int removeWeight = rng.Next(0, 46);
+        int updateWeight = rng.Next(0, 41);
+        int operations = rng.Next(0, 2500);
+
+        for (int op = 0; op < operations; op++)
+        {
+            int roll = rng.Next(0, 100);
+
+            if (roll < removeWeight && oracle.Count > 0)
+            {
+                sut = sut.RemoveLast();
+                oracle.RemoveAt(oracle.Count - 1);
+            }
+            else if (roll < removeWeight + updateWeight && oracle.Count > 0)
+            {
+                int index = rng.Next(0, oracle.Count);
+                int value = Value(rng);
+                sut = sut.SetItem(index, value);
+                oracle[index] = value;
+            }
+            else
+            {
+                int value = Value(rng);
+                sut = sut.Add(value);
+                oracle.Add(value);
+            }
+
+            Check(sut.Count == oracle.Count, "PersistentVector count diverged");
+            Check(sut.IsEmpty == (oracle.Count == 0), "PersistentVector IsEmpty diverged");
+
+            if (op % 64 == 0)
+                snapshots.Add((sut, oracle.ToArray()));
+        }
+
+        CheckSequence(sut, oracle.ToArray(), "PersistentVector");
+
+        foreach ((PersistentVector<int> snapshot, int[] expected) in snapshots)
+            CheckSequence(snapshot, expected, "PersistentVector snapshot");
+    }
+
+    // Reconciles all three read surfaces at once: the indexer descends the trie, the enumerator walks whole
+    // leaf arrays, and CopyTo bulk-copies them.
+    private static void CheckSequence(PersistentVector<int> actual, int[] expected, string label)
+    {
+        Check(actual.Count == expected.Length, $"{label} length diverged");
+
+        for (int i = 0; i < expected.Length; i++)
+            Check(actual[i] == expected[i], $"{label} indexer diverged at {i}");
+
+        int position = 0;
+        foreach (int value in actual)
+        {
+            Check(position < expected.Length && value == expected[position], $"{label} enumeration diverged at {position}");
+            position++;
+        }
+
+        Check(position == expected.Length, $"{label} enumeration length diverged");
+
+        int[] copied = actual.ToArray();
+        for (int i = 0; i < expected.Length; i++)
+            Check(copied[i] == expected[i], $"{label} ToArray diverged at {i}");
+    }
 
 }

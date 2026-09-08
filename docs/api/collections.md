@@ -4001,6 +4001,246 @@ int lo = work.PopBack();            // 3 — low-priority, from the back
 ```
 
 
+## PersistentVector&lt;T&gt;
+
+An **immutable indexed sequence** backed by a **32-way bit-partitioned trie** with a tail buffer:
+every operation returns a new vector that **shares** all but `O(log32 n)` of the old one's storage,
+and both indexing and appending cost at most seven array hops.
+
+```csharp
+public sealed class PersistentVector<T> : IReadOnlyList<T>
+```
+
+`System.Collections.Immutable` ships two array-shaped sequences and they sit at opposite ends of one
+trade with nothing in between:
+
+- `ImmutableArray<T>` is a `T[]` in a struct. Indexing is a single array load, but **every** `Add`
+  copies the whole array, so building `n` elements one at a time is `O(n²)`.
+- `ImmutableList<T>` is an **AVL tree with one heap node per element**. `Add` is `O(log n)`, but so
+  is `this[int]` — a pointer chase per level over nodes scattered across the heap, each carrying a
+  balance field and two child references, paid for every element.
+
+`PersistentVector<T>` is the structure that closes that gap: the 32-way bit-partitioned vector trie
+(Clojure's `PersistentVector`, Scala's `Vector`), which .NET does not ship in any form. The
+documented BCL-beating workload is any sequence that is **built by appending and then read by
+index** — an accumulated log or event list handed to readers as a snapshot, a parsed token stream, an
+undo history, a versioned document model — where `ImmutableArray<T>` loses on the build and
+`ImmutableList<T>` loses on every read.
+
+### How it works
+
+Elements live in **32-element leaf arrays**: one object header per 32 elements, rather than one AVL
+node per element. The leaves hang off a trie of 32-slot `object[]` internal nodes, and an element's
+index selects the path to its leaf five bits at a time — `(index >> shift) & 31` per level, ending
+with `index & 31` inside the leaf.
+
+Depth grows only when the **trie** fills, and the trie holds everything except the up-to-32 elements in
+the tail — so the thresholds are a tail block above the round powers of 32, and a formula in `n` alone
+gets them wrong. A level is added on the append that produces element **1,057**, then **32,801**, then
+**1,048,609**, and so on; a 32,769-element vector is still two levels deep, because 32,768 of its
+elements fit the trie and the remainder sits in the tail. A read costs one array load per level plus
+the read inside the leaf: two loads at a thousand elements, four at a hundred thousand, and at most
+seven for any vector an `int` can index.
+
+The last up-to-32 elements additionally live in a **tail buffer** hanging directly off the root. That
+is what makes appending cheap: 31 appends out of 32 copy only the tail — at most 32 elements — and
+reuse the whole trie by reference. The thirty-second hands the full tail to the trie as a leaf, which
+path-copies the `O(log32 n)` internal nodes from the root down and, when the trie is full at its
+current depth, grows a level by re-parenting the old root. `RemoveLast` runs the same boundaries
+backwards, promoting the trie's last leaf to be the new tail (by reference — it is immutable, so it
+needs no copy) and collapsing a level when that leaves the root with a single child.
+
+Every mutation is **path copying**: the returned vector allocates the nodes along one root-to-leaf
+path and points at the receiver's storage for everything else. That is the whole of the structural
+sharing, and it is why the receiver is never touched.
+
+Enumeration walks **whole leaf arrays** rather than descending the trie per element. It refreshes its
+leaf exactly when the low five bits of the index wrap, which is correct because trie leaves are 32
+wide *and* the tail always starts at a multiple of 32. `CopyTo` uses the same walk with an
+`Array.Copy` per leaf.
+
+### Constructors
+
+```csharp
+public PersistentVector(IEnumerable<T> items)
+public static readonly PersistentVector<T> Empty
+```
+
+- `Empty` is the empty vector, and is the instance `RemoveLast` returns when the vector holds a
+  single element.
+- The `items` constructor appends the source through a `Builder`, so no intermediate vector is
+  allocated per element. What is allocated is the `n / 32` leaves the result keeps, the internal nodes
+  it keeps (about `n / 1024` at the level above the leaves, plus the thinner levels above that), and
+  the root-to-leaf path the builder copies on each of its `n / 32` tail pushes — `O(log32 n)` nodes
+  *per push*, not `O(log32 n)` in total.
+
+**Throws:**
+
+- `ArgumentNullException` if `items` is `null`.
+
+### Methods and properties
+
+- `int Count` — the number of elements in the vector.
+- `bool IsEmpty` — whether the vector holds no elements.
+- `T this[int index]` — the element at `index`; throws `ArgumentOutOfRangeException` if out of range.
+  There is no setter: `SetItem` returns a new vector instead.
+- `PersistentVector<T> Add(T value)` — a vector with `value` appended. `O(1)` while the tail has room
+  (31 appends out of 32); `O(log32 n)` on the append that pushes a full tail into the trie.
+- `PersistentVector<T> AddRange(IEnumerable<T> items)` — a vector with `items` appended in order,
+  through one `Builder` rather than one intermediate vector per element. Returns the receiver
+  unchanged when `items` is empty. Throws `ArgumentNullException` if `items` is `null`.
+- `PersistentVector<T> SetItem(int index, T value)` — a vector of the same length with the element at
+  `index` replaced; throws `ArgumentOutOfRangeException` if out of range.
+- `PersistentVector<T> RemoveLast()` — a vector with the last element removed; throws
+  `InvalidOperationException` if the vector is empty.
+- `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`, one `Array.Copy` per
+  leaf. Throws `ArgumentNullException`, `ArgumentOutOfRangeException` for a negative index, or
+  `ArgumentException` if the destination is too small.
+- `T[] ToArray()` — a new array of the elements in order.
+- `Builder ToBuilder()` — a mutable builder seeded with this vector's elements.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator that refreshes its leaf once per
+  32 elements. Nothing can invalidate it, so it carries no version check; once `MoveNext` has returned
+  `false` it keeps returning `false`, and `Reset` replays the sequence. `Current` is `default(T)` both
+  before the first `MoveNext` and after the last, matching the rest of the collection family and
+  `List<T>.Enumerator`'s public `Current`.
+
+#### Builder
+
+```csharp
+public sealed class Builder
+```
+
+The builder exists to skip the vector-per-element cost of repeated `Add`, and it does that by
+**owning its tail buffer and writing into it in place** — 31 appends out of 32 are a single array
+store. The thirty-second pushes the tail into the trie exactly as `Add` does and then takes a fresh
+buffer, so no array is ever shared between the builder and a vector it has already handed out.
+
+- `Builder()` — a new, empty builder.
+- `int Count` — the number of elements the builder holds.
+- `T this[int index]` — get **and set** the element at `index`; throws `ArgumentOutOfRangeException`
+  if out of range.
+- `void Add(T value)` / `void AddRange(IEnumerable<T> items)` — append.
+- `PersistentVector<T> ToImmutable()` — a vector holding the builder's current elements. It copies the
+  live part of the tail and adopts the trie by reference, so it is `O(32)` and may be called as often
+  as you like, including between further appends; a vector it has already returned never sees a later
+  change to the builder.
+
+### Two deliberate omissions
+
+**There is no `Clear()`.** Everywhere else in this library `Clear()` means in-place mutation, so the
+empty vector is spelled `PersistentVector<T>.Empty` rather than given a method that would read like
+the family's mutating one.
+
+**`PersistentVector<T>` does not implement `IImmutableList<T>`.** That interface promises `Insert` and
+`RemoveAt` at an arbitrary index, which a vector can only answer in `O(n)`, and shipping them behind an
+interface whose other implementation answers them in `O(log n)` would invite exactly the misuse this
+type exists to avoid. Appends and updates at the end are what it is for.
+
+### When not to reach for it
+
+**If you never append, use `ImmutableArray<T>`.** It is a bare array, so its indexer is a single load
+against this type's two-to-three; measured on the same harness as the figures below, it reads about
+**5.7x faster**. `PersistentVector<T>` earns its trie only when the sequence grows.
+
+**If you insert or remove in the middle, use `ImmutableList<T>`.** It does that in `O(log n)`; a
+vector cannot do it at all without rebuilding the tail of the sequence.
+
+### Thread safety
+
+Concurrent readers need no synchronization, for the reason a value needs none: no instance is ever
+mutated after its constructor returns, so there is no state for two threads to race over. It shares
+that with the library's build-once types — `KdTree`, `SuffixArray`, `SparseTable`, `IntervalTree`,
+`RTree` and the rest all document the same guarantee — and differs from them in *how* it gets there:
+they are built once and then frozen, so a changed data set means a rebuild, while this one is never
+mutated at all and an edit simply produces another vector that the old readers cannot see. That does
+not make it a concurrency abstraction — a shared *variable* holding successive vectors still needs the
+usual publication rules — it makes each vector a snapshot that can be handed across a thread boundary
+without copying or locking. `Builder` is **not** thread-safe; the vectors it produces are.
+
+### Measured
+
+The four bars below were pre-registered in
+[#431](https://github.com/marius-bughiu/Celerity/issues/431) *before* implementation, with `Index` and
+`Append` named as the ship / no-ship pair. All four clear. The figures are `int` elements at 100,000,
+against `ImmutableList<int>`:
+
+| Operation | Bar | Measured |
+| --- | --- | --- |
+| `Index` — random indexed reads | ≥ 3x | **14.3x** |
+| `Append` — build 100,000 elements one at a time | ≥ 3x | **16.3x** |
+| `Enumerate` — the whole sequence in order | ≥ 2x | **7.7x** |
+| `SetItem` — replace at a random index | ≥ 2x | **2.8x** |
+
+`ImmutableArray<int>` is the second `Add` baseline. It runs in the CI suite as the `AppendAtMost10k`
+category — both arms capped at 10,000 elements, because its `Add` copies the whole array and an uncapped
+100,000-element build is 5×10⁹ element copies, minutes per invocation. At that length it is **50x**
+slower to build than this type, and because its cost per append is `O(n)` the gap widens linearly.
+
+That category is deliberately **not** on the dashboard, for two reasons that are properties of the page
+rather than of the measurement: a card is labelled by the class's `ItemCount`, so the 100,000 bucket
+would publish a 10,000-element result under a "100,000 items" heading; and the page renders one `vs`
+baseline per collection, so the card would read "vs `ImmutableList<int>`" while plotting
+`ImmutableArray` data. It is in the joined report instead, which is where the 50x above comes from.
+
+**Retained memory**, measured with `GC.GetTotalMemory(true)` around the build with the source data
+allocated beforehand and kept alive throughout, at 100,000 `int` elements:
+
+| | Retained |
+| --- | --- |
+| `PersistentVector<int>` | 996 KB |
+| `ImmutableList<int>` | 9,389 KB — **9.4x** |
+| `ImmutableArray<int>` | 391 KB |
+
+Two caveats on those numbers, because both matter more than the headline. First, they are **retained
+by the built structure**, not allocated during the build — a `[MemoryDiagnoser]` `Allocated` column
+answers the second question and would be the wrong one here. Second, the *absolute* figures are
+inflated by the runtime's accounting for many small objects: a control that allocates nothing but the
+3,125 `int[32]` leaf arrays measures 978 KB on the same instrument, which is 98% of the vector's whole
+footprint. The honest reading is therefore that `PersistentVector<T>`'s overhead **is** its leaf
+arrays and nothing else, and that the 9.4x against `ImmutableList<T>` — measured on the same
+instrument, byte-identical across three process runs — is the comparison that transfers.
+
+Every ratio above was measured on a development machine. The CI series that is the project's contract
+is published to the [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) and
+refreshes on merge to `main`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// An append-only event log that readers take snapshots of. Each Add returns a new vector sharing all
+// but one root-to-leaf path with the previous one, so publishing a snapshot costs nothing to copy.
+PersistentVector<string> log = PersistentVector<string>.Empty;
+
+log = log.Add("started");
+log = log.Add("connected");
+
+PersistentVector<string> snapshot = log;   // hand this to a reader on another thread
+
+log = log.Add("closed");                   // the snapshot still has two entries
+Console.WriteLine(snapshot.Count);         // 2
+Console.WriteLine(log.Count);              // 3
+
+// Indexed reads are at most a handful of array hops, whatever the length.
+Console.WriteLine(log[1]);                 // connected
+
+// Replace in place — persistently. The receiver is untouched.
+PersistentVector<string> amended = log.SetItem(0, "restarted");
+Console.WriteLine(log[0]);                 // started
+Console.WriteLine(amended[0]);             // restarted
+
+// Bulk construction goes through the builder, which writes into an owned tail buffer instead of
+// allocating a vector per element.
+var builder = new PersistentVector<int>.Builder();
+for (int i = 0; i < 100_000; i++)
+    builder.Add(i);
+
+PersistentVector<int> numbers = builder.ToImmutable();
+Console.WriteLine(numbers[99_999]);        // 99999
+```
+
+
 ## DisjointSet&lt;T&gt;
 
 A **disjoint-set** (union-find) over arbitrary elements. It partitions the elements it holds into non-overlapping sets and answers *"are these two in the same set?"* (`Connected`) and *"merge these two sets"* (`Union`) in near-constant amortized time. Implements `IReadOnlyCollection<T>`.
