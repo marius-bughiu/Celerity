@@ -477,6 +477,12 @@ function escapeHtml(s) {
     { key: 'LfuCache',            title: 'LfuCache<int, int, ...>',                  vs: 'Dictionary + SortedSet LFU', ops: ['Put', 'Get', 'GetMissing'] },
     // Deque is a sequence collection benchmarked against LinkedList (the BCL's only O(1)-both-ends type).
     { key: 'Deque',               title: 'Deque<int>',                               vs: 'LinkedList<int>',       ops: ['PushFront', 'Queue', 'Enumerate'] },
+    // PersistentVector is the immutable sequence, benchmarked against ImmutableList — the BCL's only immutable
+    // sequence that appends in better than O(n), and an AVL tree with one heap node per element. Its
+    // AppendAtMost10k arms are deliberately absent from `ops`: they use ImmutableArray as their baseline, and
+    // `vs` is rendered once per collection, so a card for them would be labelled with the wrong baseline.
+    // They are also capped below ItemCount, which a card labelled by ItemCount would misreport.
+    { key: 'PersistentVector',    title: 'PersistentVector<int>',                    vs: 'ImmutableList<int>',    ops: ['Index', 'Append', 'Enumerate', 'Update'] },
     // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
@@ -609,7 +615,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
