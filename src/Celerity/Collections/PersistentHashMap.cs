@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Celerity.Hashing;
@@ -7,9 +8,10 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>immutable hash map</b> backed by a <b>CHAMP</b> trie (Compressed Hash-Array Mapped Prefix-tree):
-/// an <b>edit</b> returns a new map that <b>shares</b> all but one root-to-leaf path of the old one's
-/// storage — while a write that changes nothing hands back the receiver — and a lookup is one
-/// popcount-indexed array read per level over a 32-way trie.
+/// a <b>single-key edit</b> returns a new map that <b>shares</b> all but one root-to-leaf path of the old
+/// one's storage — while a write that changes nothing hands back the receiver — and a lookup is one
+/// popcount-indexed array read per level over a 32-way trie. (The bulk methods reach as many branches as
+/// their keys do; they run through a <see cref="Builder"/> for that reason.)
 /// </summary>
 /// <typeparam name="TKey">The type of the keys.</typeparam>
 /// <typeparam name="TValue">The type of the values.</typeparam>
@@ -394,6 +396,19 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
 
     // ── The trie ──────────────────────────────────────────────────────────────────────────────────────
 
+    // Refuses an insert that would wrap the count negative. The test lives inside the method rather than at
+    // the call site so the hot path carries no branch of its own, and the ContainsKey probe runs only at the
+    // ceiling — an overwrite of an existing key is still allowed on a full map. Mirrors
+    // PersistentVector.ThrowIfFull.
+    [ExcludeFromCodeCoverage(Justification = "Needs int.MaxValue entries — hundreds of gigabytes of trie " +
+        "nodes for any key and value type. The check exists so the count cannot silently wrap rather than " +
+        "because a test can reach it.")]
+    private void ThrowIfFull(TKey key)
+    {
+        if (_count == int.MaxValue && !ContainsKey(key))
+            throw new InvalidOperationException("A map cannot hold more than int.MaxValue entries.");
+    }
+
     // The hasher is stateless and constrained to a struct, so `default(THasher)` is the same value a field
     // would hold and the JIT devirtualizes the call through it identically. Taken here rather than from an
     // instance field because every node operation below is static.
@@ -478,6 +493,8 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     private PersistentHashMap<TKey, TValue, THasher> Put(
         TKey key, TValue? value, bool overwrite, out bool added)
     {
+        ThrowIfFull(key);
+
         if (IsDefaultKey(key))
         {
             added = !_hasDefaultKey;
@@ -824,7 +841,10 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     /// usable afterwards and no map it has produced can be changed behind a caller's back.
     /// </para>
     /// <para>
-    /// The builder is not thread-safe; the maps it produces are.
+    /// The builder is not thread-safe. The maps it produces are, under the same callback caveat the
+    /// containing type documents: a read calls <typeparamref name="THasher"/> and
+    /// <see cref="EqualityComparer{T}"/><c>.Default.Equals</c>, so a stateful hasher, key or value is the
+    /// caller's to reason about.
     /// </para>
     /// </remarks>
     public sealed class Builder
@@ -969,12 +989,26 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
                 : new PersistentHashMap<TKey, TValue, THasher>(_root, _count, _hasDefaultKey, _defaultKeyValue);
         }
 
+        // The builder's own ceiling guard, for the reason the map's carries: an insert past int.MaxValue
+        // would wrap _count negative, and rejecting it before any node is written keeps a refused insert
+        // from leaving the builder half-changed.
+        [ExcludeFromCodeCoverage(Justification = "Needs int.MaxValue entries — hundreds of gigabytes of " +
+            "trie nodes for any key and value type. The check exists so the count cannot silently wrap " +
+            "rather than because a test can reach it.")]
+        private void ThrowIfFull(TKey key)
+        {
+            if (_count == int.MaxValue && !ContainsKey(key))
+                throw new InvalidOperationException("A map cannot hold more than int.MaxValue entries.");
+        }
+
         // Insert, reporting whether the key was new. `overwrite` false leaves an existing key untouched, so
         // Add can reject a duplicate without having changed the builder. Internal because SetItems needs the
         // nullable-tolerant form the public indexer cannot express: an indexer has one type for get and set,
         // and the get is pinned to the family's non-nullable TValue.
         internal bool Put(TKey key, TValue? value, bool overwrite)
         {
+            ThrowIfFull(key);
+
             if (IsDefaultKey(key))
             {
                 bool isNew = !_hasDefaultKey;

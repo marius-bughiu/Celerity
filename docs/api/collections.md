@@ -4245,9 +4245,10 @@ Console.WriteLine(numbers[99_999]);        // 99999
 ## PersistentHashMap&lt;TKey, TValue, THasher&gt;
 
 An **immutable hash map** backed by a **CHAMP** trie (Compressed Hash-Array Mapped Prefix-tree):
-an **edit** returns a new map that **shares** all but one root-to-leaf path of the old one's storage
-— while a write that changes nothing hands back the receiver — and a lookup is one popcount-indexed
-array read per level over a 32-way trie.
+a **single-key edit** returns a new map that **shares** all but one root-to-leaf path of the old
+one's storage — while a write that changes nothing hands back the receiver — and a lookup is one
+popcount-indexed array read per level over a 32-way trie. (The bulk methods reach as many branches as
+their keys do, which is why they run through a `Builder`.)
 
 ```csharp
 public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictionary<TKey, TValue?>
