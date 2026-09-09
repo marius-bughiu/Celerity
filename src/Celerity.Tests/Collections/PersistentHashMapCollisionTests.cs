@@ -165,6 +165,33 @@ public class PersistentHashMapCollisionTests
         Assert.Equal(
             rebuilt.OrderBy(entry => entry.Key).ToArray(),
             without.OrderBy(entry => entry.Key).ToArray());
+
+        // Behaviour alone cannot see this: a survivor stranded under the seven-node chain the collision node
+        // hung from would answer every lookup and every enumeration identically. The structural walk is what
+        // proves the entry was actually inlined back up.
+        Assert.Equal(without.Count, PersistentHashMapShape.AssertCanonical(without));
+        Assert.Equal(map.Count, PersistentHashMapShape.AssertCanonical(map));
+    }
+
+    [Fact]
+    public void DrainingACollisionHeavyMapOneKeyAtATime_ShouldKeepTheTrieCanonicalThroughout()
+    {
+        // Every removal is a chance to strand an entry, so the shape is checked after each one rather than
+        // only at the end — and half these keys collide fully, so the collision node is built, shrunk and
+        // dissolved repeatedly along the way.
+        PersistentHashMap<int, string, LowThreeBitsHasher> map = Colliding;
+        for (int key = 1; key <= 60; key++)
+            map = map.Add(key, key.ToString());
+
+        Assert.Equal(map.Count, PersistentHashMapShape.AssertCanonical(map));
+
+        for (int key = 1; key <= 60; key++)
+        {
+            map = map.Remove(key);
+            Assert.Equal(map.Count, PersistentHashMapShape.AssertCanonical(map));
+        }
+
+        Assert.Same(PersistentHashMap<int, string, LowThreeBitsHasher>.Empty, map);
     }
 
     [Fact]

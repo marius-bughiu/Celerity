@@ -4339,13 +4339,19 @@ public static readonly PersistentHashMap<TKey, TValue, THasher> Empty
 - `bool ContainsValue(TValue? value)` — whether any entry holds the value, compared with
   `EqualityComparer<TValue>.Default`. `O(n)`: the trie is indexed by key, and nothing about a value
   says where it lives.
-- `bool TryGetValue(TKey key, out TValue? value)` — lookup without throwing.
+- `bool TryGetValue(TKey key, out TValue? value)` — lookup without throwing. One popcount and one array
+  load per level: four levels at 100,000 entries and never more than eight. The exception is a key
+  whose **whole 32-bit hash** is shared, which lands in a collision node scanned linearly and not
+  bounded at 32 entries — a property of the hasher, not of the map.
 - `PersistentHashMap<...> Add(TKey key, TValue value)` — a map with the entry added; throws
   `ArgumentException` if the key is already present. This matches `Dictionary<,>.Add` and is
   deliberately stricter than `ImmutableDictionary<,>.Add`, which tolerates a duplicate key whose value
   is equal to the one already stored.
 - `PersistentHashMap<...> SetItem(TKey key, TValue value)` — a map with the entry inserted or
-  overwritten. Returns **the receiver** when the key already maps to an equal value.
+  overwritten. Returns **the receiver** when the key already maps to an equal value. Copying is
+  confined to the root-to-leaf path: at most eight nodes, seven of them holding at most 32 entries
+  each; the eighth is the optional collision node, which is unbounded, so overwriting a key that
+  shares its whole hash with `k` others rebuilds an array of `k + 1`.
 - `PersistentHashMap<...> SetItems(IEnumerable<KeyValuePair<TKey, TValue>> items)` — the same for many
   entries, through one `Builder`; later entries win over earlier ones. Returns the receiver when
   nothing changed. Throws `ArgumentNullException` if `items` is `null`.

@@ -206,6 +206,11 @@ public class PersistentHashMapDifferentialTests
     {
         Assert.Equal(expected.Count, actual.Count);
 
+        // The trie's canonical form is checked alongside its contents, because the collapse rule is the one
+        // documented invariant a behavioural assertion cannot see: a map that never dissolved a single-entry
+        // node would still answer every lookup and enumerate every entry.
+        Assert.Equal(expected.Count, PersistentHashMapShape.AssertCanonical(actual));
+
         foreach (KeyValuePair<int, string> entry in expected)
         {
             Assert.True(actual.TryGetValue(entry.Key, out string? value));

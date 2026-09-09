@@ -228,7 +228,9 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
     /// <remarks>
     /// One popcount and one array load per level, over a 32-way trie: four levels at 100,000 entries and
-    /// never more than eight.
+    /// never more than eight. The one exception is a key whose <b>whole 32-bit hash</b> is shared with
+    /// others: those live together in a collision node, which is scanned linearly and is not bounded at 32
+    /// entries. That is a property of the hash, not of the map — a hasher that spreads keys never builds one.
     /// </remarks>
     public bool TryGetValue(TKey key, out TValue? value)
     {
@@ -274,8 +276,10 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     /// <paramref name="key"/> already maps to a value equal to <paramref name="value"/>.
     /// </returns>
     /// <remarks>
-    /// Copying is confined to the root-to-leaf path: at most eight nodes, each holding up to 32 entries.
-    /// Every other node is shared with this map.
+    /// Copying is confined to the root-to-leaf path: at most eight nodes, seven of which hold at most 32
+    /// entries each. Every other node is shared with this map. The eighth is the optional collision node, and
+    /// it is the one unbounded case — overwriting a key that shares its whole 32-bit hash with <c>k</c>
+    /// others rebuilds an array of <c>k + 1</c>.
     /// </remarks>
     public PersistentHashMap<TKey, TValue, THasher> SetItem(TKey key, TValue value) =>
         Put(key, value, overwrite: true, out _);
