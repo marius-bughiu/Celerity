@@ -12,9 +12,10 @@ namespace Celerity.Tests.Collections;
 /// trie's shape changes as nodes split and collapse — lives in
 /// <see cref="PersistentHashMapDifferentialTests"/>; full-hash collisions live in
 /// <see cref="PersistentHashMapCollisionTests"/>. What is pinned here is what a caller can read from the
-/// documentation: that every operation returns a <i>new</i> map and leaves the receiver alone, that a no-op
-/// write hands back the receiver itself, that the out-of-band <c>default(TKey)</c> slot behaves like any
-/// other entry, and that the exceptions are the ones the XML docs promise.
+/// documentation: that an edit which changes something returns a <i>new</i> map, that a write which changes
+/// nothing hands back the receiver itself, that either way the receiver is left alone, that the out-of-band
+/// <c>default(TKey)</c> slot behaves like any other entry, and that the exceptions are the ones the XML docs
+/// promise.
 /// </para>
 /// </summary>
 public class PersistentHashMapTests

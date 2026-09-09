@@ -7,8 +7,9 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>immutable hash map</b> backed by a <b>CHAMP</b> trie (Compressed Hash-Array Mapped Prefix-tree):
-/// every operation returns a new map that <b>shares</b> all but one root-to-leaf path of the old one's
-/// storage, and a lookup is one popcount-indexed array read per level over a 32-way trie.
+/// an <b>edit</b> returns a new map that <b>shares</b> all but one root-to-leaf path of the old one's
+/// storage — while a write that changes nothing hands back the receiver — and a lookup is one
+/// popcount-indexed array read per level over a 32-way trie.
 /// </summary>
 /// <typeparam name="TKey">The type of the keys.</typeparam>
 /// <typeparam name="TValue">The type of the values.</typeparam>
@@ -391,8 +392,12 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int HashOf(TKey key) => default(THasher).Hash(key);
 
+    // Routed through the shared helper rather than spelled EqualityComparer<TKey>.Default.Equals(key,
+    // default) inline: under a __Canon-shared instantiation that call stays a real interface dispatch, and
+    // EmptySlot.Is compiles to a plain null test for a reference key. Same substitution the twelve
+    // open-addressed collections use, pinned by ReferenceKeyProbeTests.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsDefaultKey(TKey key) => EqualityComparer<TKey>.Default.Equals(key, default!);
+    private static bool IsDefaultKey(TKey key) => EmptySlot.Is(key);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool KeyEquals(TKey left, TKey right) => EqualityComparer<TKey>.Default.Equals(left, right);
