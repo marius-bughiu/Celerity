@@ -53,8 +53,9 @@ namespace Celerity.Collections;
 /// <see cref="CelerityDictionary{TKey, TValue, THasher}"/> and the rest of the family, the key
 /// <c>default(TKey)</c> — <c>null</c> for a reference type, <c>0</c> for an integer — lives in a dedicated
 /// slot on the map rather than in the trie, and is never handed to <typeparamref name="THasher"/>. That is
-/// what lets a <c>null</c> key work with hashers such as <see cref="DefaultHasher{T}"/>, whose inner
-/// <see cref="EqualityComparer{T}"/> would throw on one.
+/// what lets a <c>null</c> key work with a hasher that rejects one — every string hasher in
+/// <c>Celerity.Hashing</c> throws <see cref="ArgumentNullException"/> on a <c>null</c> key, since a hash of
+/// its characters has nothing to read.
 /// </para>
 /// <para>
 /// Two deliberate omissions, both mirroring <see cref="PersistentVector{T}"/>. There is no <c>Clear()</c>:
@@ -243,7 +244,7 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     /// </remarks>
     public PersistentHashMap<TKey, TValue, THasher> Add(TKey key, TValue value)
     {
-        PersistentHashMap<TKey, TValue, THasher> result = Put(key, value, out bool added);
+        PersistentHashMap<TKey, TValue, THasher> result = Put(key, value, overwrite: false, out bool added);
         if (!added)
             throw new ArgumentException($"An entry with the key '{key}' already exists.", nameof(key));
 
@@ -264,7 +265,8 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     /// Copying is confined to the root-to-leaf path: at most eight nodes, each holding up to 32 entries.
     /// Every other node is shared with this map.
     /// </remarks>
-    public PersistentHashMap<TKey, TValue, THasher> SetItem(TKey key, TValue value) => Put(key, value, out _);
+    public PersistentHashMap<TKey, TValue, THasher> SetItem(TKey key, TValue value) =>
+        Put(key, value, overwrite: true, out _);
 
     /// <summary>
     /// Returns a map with every entry of <paramref name="items"/> inserted or overwritten. This map is
@@ -286,7 +288,7 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
 
         var builder = new Builder(this);
         foreach (KeyValuePair<TKey, TValue> entry in items)
-            builder.Put(entry.Key, entry.Value);
+            builder.Put(entry.Key, entry.Value, overwrite: true);
 
         return builder.Mutated ? builder.ToImmutable() : this;
     }
@@ -449,14 +451,16 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
         return false;
     }
 
-    // Insert-or-overwrite at the map level, threading the out-of-band default-key slot. `added` reports
-    // whether the key was new, which is what Add turns into its duplicate-key exception.
-    private PersistentHashMap<TKey, TValue, THasher> Put(TKey key, TValue? value, out bool added)
+    // Insert at the map level, threading the out-of-band default-key slot. `overwrite` false makes an
+    // existing key a no-op rather than a replacement, so Add can report the duplicate without having written
+    // anything; `added` reports whether the key was new, which is what Add turns into its exception.
+    private PersistentHashMap<TKey, TValue, THasher> Put(
+        TKey key, TValue? value, bool overwrite, out bool added)
     {
         if (IsDefaultKey(key))
         {
             added = !_hasDefaultKey;
-            if (!added && EqualityComparer<TValue?>.Default.Equals(_defaultKeyValue, value))
+            if (!added && (!overwrite || EqualityComparer<TValue?>.Default.Equals(_defaultKeyValue, value)))
                 return this;
 
             return new PersistentHashMap<TKey, TValue, THasher>(
@@ -465,7 +469,7 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
 
         added = false;
         bool changed = false;
-        Node newRoot = PutInto(_root, 0, HashOf(key), key, value, owner: null, ref added, ref changed);
+        Node newRoot = PutInto(_root, 0, HashOf(key), key, value, overwrite, owner: null, ref added, ref changed);
         if (!changed)
             return this;
 
@@ -473,14 +477,16 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
             newRoot, added ? _count + 1 : _count, _hasDefaultKey, _defaultKeyValue);
     }
 
-    // Insert-or-overwrite into the trie. `owner` is the builder's ownership token, or null for a persistent
-    // write; a node the token owns is edited in place instead of copied, which is what makes a builder's
-    // insert cost one array copy rather than a root-to-leaf path copy.
+    // Insert into the trie. `owner` is the builder's ownership token, or null for a persistent write; a node
+    // the token owns is edited in place instead of copied, which is what makes a builder's insert cost one
+    // array copy rather than a root-to-leaf path copy. `overwrite` false leaves an existing key untouched,
+    // which is what makes a rejected duplicate Add change nothing at all.
     private static Node PutInto(
-        Node node, int shift, int hash, TKey key, TValue? value, object? owner, ref bool added, ref bool changed)
+        Node node, int shift, int hash, TKey key, TValue? value, bool overwrite, object? owner,
+        ref bool added, ref bool changed)
     {
         if (shift >= HashBits)
-            return PutIntoCollision(node, key, value, owner, ref added, ref changed);
+            return PutIntoCollision(node, key, value, overwrite, owner, ref added, ref changed);
 
         int bit = Bit(Mask(hash, shift));
 
@@ -491,7 +497,7 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
 
             if (KeyEquals(resident, key))
             {
-                if (EqualityComparer<TValue?>.Default.Equals(node.Values[slot], value))
+                if (!overwrite || EqualityComparer<TValue?>.Default.Equals(node.Values[slot], value))
                     return node;
 
                 changed = true;
@@ -511,7 +517,8 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
         {
             int slot = SlotOf(node.NodeMap, bit);
             Node child = node.Nodes[slot];
-            Node newChild = PutInto(child, shift + BranchBits, hash, key, value, owner, ref added, ref changed);
+            Node newChild = PutInto(
+                child, shift + BranchBits, hash, key, value, overwrite, owner, ref added, ref changed);
             return changed ? node.WithNode(slot, newChild, owner) : node;
         }
 
@@ -521,14 +528,14 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     }
 
     private static Node PutIntoCollision(
-        Node node, TKey key, TValue? value, object? owner, ref bool added, ref bool changed)
+        Node node, TKey key, TValue? value, bool overwrite, object? owner, ref bool added, ref bool changed)
     {
         for (int i = 0; i < node.Keys.Length; i++)
         {
             if (!KeyEquals(node.Keys[i], key))
                 continue;
 
-            if (EqualityComparer<TValue?>.Default.Equals(node.Values[i], value))
+            if (!overwrite || EqualityComparer<TValue?>.Default.Equals(node.Values[i], value))
                 return node;
 
             changed = true;
@@ -847,7 +854,7 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
                 return value!;
             }
 
-            set => Put(key, value);
+            set => Put(key, value, overwrite: true);
         }
 
         /// <summary>
@@ -885,7 +892,9 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
         /// <exception cref="ArgumentException"><paramref name="key"/> is already present.</exception>
         public void Add(TKey key, TValue value)
         {
-            if (!Put(key, value))
+            // overwrite: false is what makes the rejection clean — a duplicate leaves the builder exactly as
+            // it was, rather than replacing the value and then throwing.
+            if (!Put(key, value, overwrite: false))
                 throw new ArgumentException($"An entry with the key '{key}' already exists.", nameof(key));
         }
 
@@ -934,15 +943,16 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
                 : new PersistentHashMap<TKey, TValue, THasher>(_root, _count, _hasDefaultKey, _defaultKeyValue);
         }
 
-        // Insert-or-overwrite, reporting whether the key was new. Internal because SetItems needs the
+        // Insert, reporting whether the key was new. `overwrite` false leaves an existing key untouched, so
+        // Add can reject a duplicate without having changed the builder. Internal because SetItems needs the
         // nullable-tolerant form the public indexer cannot express: an indexer has one type for get and set,
         // and the get is pinned to the family's non-nullable TValue.
-        internal bool Put(TKey key, TValue? value)
+        internal bool Put(TKey key, TValue? value, bool overwrite)
         {
             if (IsDefaultKey(key))
             {
                 bool isNew = !_hasDefaultKey;
-                if (!isNew && EqualityComparer<TValue?>.Default.Equals(_defaultKeyValue, value))
+                if (!isNew && (!overwrite || EqualityComparer<TValue?>.Default.Equals(_defaultKeyValue, value)))
                     return false;
 
                 _hasDefaultKey = true;
@@ -956,7 +966,7 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
 
             bool added = false;
             bool changed = false;
-            _root = PutInto(_root, 0, HashOf(key), key, value, _owner, ref added, ref changed);
+            _root = PutInto(_root, 0, HashOf(key), key, value, overwrite, _owner, ref added, ref changed);
             if (changed)
                 Mutated = true;
 

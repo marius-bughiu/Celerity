@@ -652,8 +652,8 @@ void Check(bool condition, string message)
 }
 
 // PersistentHashMap - immutable CHAMP map. Exercise the IEnumerable constructor, the trie read paths at a
-// depth that needs several levels, all four persistent operations, the out-of-band default-key slot, the
-// builder's ownership token, and the inline-stack struct enumerator.
+// depth that needs several levels, Add / SetItem / Remove, the out-of-band default-key slot, the builder's
+// ownership token, and the inline-stack struct enumerator.
 {
     var phm = new PersistentHashMap<int, string, Int32WangNaiveHasher>(
         new[] { new KeyValuePair<int, string>(1, "one"), new KeyValuePair<int, string>(2, "two") });
@@ -676,9 +676,17 @@ void Check(bool condition, string message)
     var mapBuilder = new PersistentHashMap<int, int, Int32WangNaiveHasher>.Builder();
     for (int i = 0; i < 500; i++) mapBuilder.Add(i, i);
     var mapSnapshot = mapBuilder.ToImmutable();
+
+    // Key 317 lives in the trie, so overwriting it is what actually drives the ownership token: the builder
+    // must fork the nodes it now shares with mapSnapshot rather than write through them. Key 0 is the
+    // out-of-band slot and exercises none of that, so both are checked.
+    mapBuilder[317] = -317;
     mapBuilder[0] = -1;
-    Check(mapSnapshot.Count == 500 && mapSnapshot[0] == 0 && mapBuilder[0] == -1,
+    mapBuilder.Remove(499);
+    Check(mapSnapshot.Count == 500 && mapSnapshot[317] == 317 && mapSnapshot[0] == 0 && mapSnapshot[499] == 499,
         "PersistentHashMap builder isolates its snapshots");
+    Check(mapBuilder.Count == 499 && mapBuilder[317] == -317 && mapBuilder[0] == -1,
+        "PersistentHashMap builder keeps its own edits");
 
     long total = 0;
     foreach (var entry in mapSnapshot) total += entry.Value;

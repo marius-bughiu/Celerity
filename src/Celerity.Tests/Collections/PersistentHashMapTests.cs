@@ -377,12 +377,15 @@ public class PersistentHashMapTests
     }
 
     [Fact]
-    public void NullKey_ShouldWorkWithAHasherThatWouldThrowOnOne()
+    public void NullKey_ShouldWorkWithAHasherThatThrowsOnOne()
     {
-        // DefaultHasher<string> forwards to EqualityComparer<string>.Default.GetHashCode, which throws on a
-        // null argument. The out-of-band slot is what keeps the null key from ever reaching it.
-        PersistentHashMap<string, int, DefaultHasher<string>> map =
-            PersistentHashMap<string, int, DefaultHasher<string>>.Empty
+        // StringFnV1AHasher throws ArgumentNullException on a null key — a hash of its characters has
+        // nothing to read — and the assertion below proves it, so this test cannot quietly stop covering the
+        // thing it is named for. The out-of-band slot is what keeps the null key from ever reaching it.
+        Assert.Throws<ArgumentNullException>(() => new StringFnV1AHasher().Hash(null!));
+
+        PersistentHashMap<string, int, StringFnV1AHasher> map =
+            PersistentHashMap<string, int, StringFnV1AHasher>.Empty
                 .Add(null!, 0)
                 .Add("a", 1);
 
@@ -390,6 +393,9 @@ public class PersistentHashMapTests
         Assert.Equal(0, map[null!]);
         Assert.Equal(1, map["a"]);
         Assert.Equal(1, map.Remove(null!).Count);
+        Assert.Equal(9, map.SetItem(null!, 9)[null!]);
+        Assert.Equal(0, map[null!]);
+        Assert.False(map.ContainsKey("missing"));
     }
 
     // ── Reads ────────────────────────────────────────────────────────────────────

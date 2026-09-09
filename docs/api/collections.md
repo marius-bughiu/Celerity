@@ -4430,13 +4430,18 @@ without copying or locking. `Builder` is **not** thread-safe; the maps it produc
 | --- | --- | --- |
 | `Lookup` — `TryGetValue` at random keys | **8.3x** | **10.6x** |
 | `Insert` — build the whole map one entry at a time | **2.0x** | **2.1x** |
-| `Update` — `SetItem` over an existing key | **5.8x** | **2.3x** |
+| `Update` — `SetItem` over an existing key | **3.2x** | **2.3x** |
 | `Enumerate` — every entry | **4.3x** | **2.7x** |
 
 `Update` **allocates about 9% more** than `ImmutableDictionary` does at 100,000 entries even while
 running 2.3x faster, and that is worth stating rather than burying: a path copy here rebuilds four
 nodes of up to 32 slots, where an AVL path copy rebuilds seventeen nodes of three fields. The bytes
 come out close; the node count, and therefore the time, does not.
+
+The `Update` arms write a **distinct value per step**. Probes are drawn with replacement, and both
+structures return the receiver unchanged when `SetItem` writes a value equal to the one already
+stored — so a constant value would turn nine calls in ten at 1,000 entries into an equality check
+rather than a path copy, and the figure would be measuring the wrong thing in both arms.
 
 <a id="persistenthashmap-measured"></a>
 

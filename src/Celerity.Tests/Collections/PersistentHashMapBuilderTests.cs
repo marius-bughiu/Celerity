@@ -59,6 +59,38 @@ public class PersistentHashMapBuilderTests
     }
 
     [Fact]
+    public void Add_ShouldLeaveTheBuilderUntouched_WhenItRejectsADuplicate()
+    {
+        // Regression: Add used to route through the insert-*or-overwrite* path and throw afterwards, so a
+        // caller who caught the duplicate-key exception was left holding a builder whose value had already
+        // been replaced. Dictionary<,>.Add changes nothing when it throws, and neither does this.
+        PersistentHashMap<int, string, Int32IdentityHasher>.Builder builder = NewBuilder();
+        builder.Add(1, "one");
+        builder.Add(0, "zero");
+
+        Assert.Throws<ArgumentException>(() => builder.Add(1, "uno"));
+        Assert.Throws<ArgumentException>(() => builder.Add(0, "naught"));
+
+        Assert.Equal("one", builder[1]);
+        Assert.Equal("zero", builder[0]);
+        Assert.Equal(2, builder.Count);
+        Assert.Equal(2, builder.ToImmutable().Count);
+    }
+
+    [Fact]
+    public void Add_ShouldLeaveACollisionNodeUntouched_WhenItRejectsADuplicate()
+    {
+        var builder = new PersistentHashMap<int, string, ConstantIntHasher>.Builder();
+        for (int key = 1; key <= 20; key++)
+            builder.Add(key, key.ToString());
+
+        Assert.Throws<ArgumentException>(() => builder.Add(7, "seven!"));
+
+        Assert.Equal("7", builder[7]);
+        Assert.Equal(20, builder.Count);
+    }
+
+    [Fact]
     public void Indexer_ShouldInsertAndOverwrite()
     {
         PersistentHashMap<int, string, Int32IdentityHasher>.Builder builder = NewBuilder();

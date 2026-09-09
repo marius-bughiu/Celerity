@@ -27,6 +27,13 @@ public class PersistentHashMapBenchmark
     private int[] keys = null!;
     private int[] probes = null!;
 
+    // One distinct value per Update step. Probes are drawn with replacement, so a key recurs — and both
+    // structures return the receiver unchanged when SetItem writes a value equal to the one already stored.
+    // Assigning a constant would therefore turn every repeat into an equality check rather than a path copy,
+    // which at ItemCount = 1,000 is nine calls in ten. A per-step value keeps every operation a real update
+    // in both arms.
+    private string[] updateValues = null!;
+
     private PersistentHashMap<int, string, Int32WangNaiveHasher> map = null!;
     private ImmutableDictionary<int, string> immutable = null!;
 
@@ -50,8 +57,12 @@ public class PersistentHashMapBenchmark
         }
 
         probes = new int[ProbeCount];
+        updateValues = new string[ProbeCount];
         for (int i = 0; i < ProbeCount; i++)
+        {
             probes[i] = rand.Next(ItemCount);
+            updateValues[i] = i.ToString();
+        }
 
         var builder = new PersistentHashMap<int, string, Int32WangNaiveHasher>.Builder();
         ImmutableDictionary<int, string>.Builder bclBuilder = ImmutableDictionary.CreateBuilder<int, string>();
@@ -130,8 +141,8 @@ public class PersistentHashMapBenchmark
     public int ImmutableDictionary_Update()
     {
         ImmutableDictionary<int, string> updated = immutable;
-        foreach (int probe in probes)
-            updated = updated.SetItem(probe, "w");
+        for (int i = 0; i < probes.Length; i++)
+            updated = updated.SetItem(probes[i], updateValues[i]);
 
         return updated.Count;
     }
@@ -141,8 +152,8 @@ public class PersistentHashMapBenchmark
     public int PersistentHashMap_Update()
     {
         PersistentHashMap<int, string, Int32WangNaiveHasher> updated = map;
-        foreach (int probe in probes)
-            updated = updated.SetItem(probe, "w");
+        for (int i = 0; i < probes.Length; i++)
+            updated = updated.SetItem(probes[i], updateValues[i]);
 
         return updated.Count;
     }

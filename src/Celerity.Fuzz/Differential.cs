@@ -3870,8 +3870,17 @@ internal static class Differential
         where THasher : struct, IHashProvider<int>
     {
         var sut = PersistentHashMap<int, int, THasher>.Empty;
+
+        // The builder is driven through the *same* operation sequence, not merely handed the final state.
+        // That is what puts the ownership token on trial: each ToImmutable below publishes a map and then the
+        // run keeps writing, so a node the builder edits in place after having handed it out shows up as a
+        // corrupted earlier snapshot rather than as a wrong current answer.
+        var builder = new PersistentHashMap<int, int, THasher>.Builder();
+
         var oracle = new Dictionary<int, int>();
         var snapshots = new List<(PersistentHashMap<int, int, THasher> Map, Dictionary<int, int> Oracle)>();
+        var builderSnapshots =
+            new List<(PersistentHashMap<int, int, THasher> Map, Dictionary<int, int> Oracle)>();
 
         int removeWeight = rng.Next(0, 51);
         int keySpace = rng.Next(1, 2000);
@@ -3885,37 +3894,40 @@ internal static class Differential
             {
                 var before = sut;
                 sut = sut.Remove(key);
+                bool inOracle = oracle.Remove(key);
 
-                if (!oracle.Remove(key))
+                if (!inOracle)
                     Check(ReferenceEquals(before, sut), "PersistentHashMap Remove of an absent key allocated");
+
+                Check(builder.Remove(key) == inOracle, "PersistentHashMap builder Remove diverged");
             }
             else
             {
                 int value = Value(rng);
                 sut = sut.SetItem(key, value);
+                builder[key] = value;
                 oracle[key] = value;
             }
 
             Check(sut.Count == oracle.Count, "PersistentHashMap count diverged");
             Check(sut.IsEmpty == (oracle.Count == 0), "PersistentHashMap IsEmpty diverged");
+            Check(builder.Count == oracle.Count, "PersistentHashMap builder count diverged");
 
             if (op % 64 == 0)
+            {
                 snapshots.Add((sut, new Dictionary<int, int>(oracle)));
+                builderSnapshots.Add((builder.ToImmutable(), new Dictionary<int, int>(oracle)));
+            }
         }
 
         CheckEntries(sut, oracle, "PersistentHashMap");
+        CheckEntries(builder.ToImmutable(), oracle, "PersistentHashMap builder");
 
         foreach ((PersistentHashMap<int, int, THasher> snapshot, Dictionary<int, int> expected) in snapshots)
             CheckEntries(snapshot, expected, "PersistentHashMap snapshot");
 
-        // The builder reaches the same node operations by the transient route, writing nodes in place where
-        // the persistent path copies them. Replaying the final state through one and comparing is what puts
-        // the ownership token on trial.
-        var builder = new PersistentHashMap<int, int, THasher>.Builder();
-        foreach (KeyValuePair<int, int> entry in oracle)
-            builder[entry.Key] = entry.Value;
-
-        CheckEntries(builder.ToImmutable(), oracle, "PersistentHashMap builder");
+        foreach ((PersistentHashMap<int, int, THasher> snapshot, Dictionary<int, int> expected) in builderSnapshots)
+            CheckEntries(snapshot, expected, "PersistentHashMap builder snapshot");
     }
 
     // Reconciles both read surfaces at once: TryGetValue descends the trie, and enumeration walks it.
