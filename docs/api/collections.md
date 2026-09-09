@@ -4303,8 +4303,10 @@ exactly like the map built from those two keys, not like a skeleton of the map i
 
 The key `default(TKey)` — `null` for a reference type, `0` for an integer — is held in a **dedicated
 slot on the map** rather than in the trie, as in `CelerityDictionary` and the rest of the family, and
-is never handed to `THasher`. That is what lets a `null` key work with hashers such as
-`DefaultHasher<T>`, whose inner `EqualityComparer<T>` would throw on one.
+is never handed to `THasher`. That is what lets a `null` key work with a hasher that rejects one:
+every string hasher in `Celerity.Hashing` throws `ArgumentNullException` on a `null` key, since a
+hash of its characters has nothing to read. (`DefaultHasher<T>` is *not* an example — its inner
+`EqualityComparer<T>.GetHashCode` returns `0` for a `null` reference rather than throwing.)
 
 ### Constructors
 
@@ -4367,8 +4369,12 @@ public sealed class Builder
 
 The builder exists to skip the map-per-entry cost of repeated `SetItem`, and it does that by
 **stamping every node it creates with an ownership token** and writing such a node in place rather
-than copying it. An insert then costs the one array copy the node's own payload needs, instead of a
-fresh node per level from the root down.
+than copying it. The saving is the **ancestors**, and it is amortized rather than fixed: the first
+write down a path the builder does not yet own still forks every node on that path — cloning the
+payload arrays, so no owned node ever shares one with a map already handed out — and every write
+after that reuses them in place. The node the entry actually lands in is rebuilt either way, since
+an insert resizes both its key and its value array. What the token removes is the fresh node per
+level from the root down, not the payload copy itself.
 
 `ToImmutable()` takes a **new** token, which makes every node the builder has handed out read-only
 again in one assignment. That is why the builder stays usable afterwards and why no map it has
@@ -4419,6 +4425,13 @@ mutable dictionaries in the same way: an edit produces another map rather than c
 does not make it a concurrency abstraction — a shared *variable* holding successive maps still needs
 the usual publication rules — it makes each map a snapshot that can be handed across a thread boundary
 without copying or locking. `Builder` is **not** thread-safe; the maps it produces are.
+
+One caveat belongs to the type parameter rather than to the map, and it is the same one
+[`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) carries for its
+comparer: **every lookup calls `THasher`**, so a hasher that is not itself thread-safe makes
+concurrent reads unsafe however immutable the map is. Every hasher in `Celerity.Hashing` is a
+stateless struct, so the ordinary case is safe; a stateful one you write yourself is yours to reason
+about.
 
 ### Measured
 

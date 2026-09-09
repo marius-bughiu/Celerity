@@ -46,7 +46,12 @@ namespace Celerity.Collections;
 /// ever mutated after its constructor returns, so there is no state for two threads to race over. It shares
 /// that with <see cref="PersistentVector{T}"/> and the library's build-once types, and differs from the
 /// mutable dictionaries in the same way: an edit produces another map rather than changing this one. A shared
-/// <i>variable</i> holding successive maps still needs the usual publication rules.
+/// <i>variable</i> holding successive maps still needs the usual publication rules — and, as for
+/// <see cref="IntervalTree{TKey, TValue, TComparer}"/>'s comparer, one caveat belongs to the type parameter
+/// rather than to the map: every lookup calls <typeparamref name="THasher"/>, so a hasher that is not itself
+/// thread-safe makes concurrent reads unsafe however immutable the map is. Every hasher in
+/// <c>Celerity.Hashing</c> is a stateless struct, so the ordinary case is safe; a stateful one is yours to
+/// reason about.
 /// </para>
 /// <para>
 /// <b>The <c>default(TKey)</c> entry is held out of band.</b> As in
@@ -478,9 +483,10 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     }
 
     // Insert into the trie. `owner` is the builder's ownership token, or null for a persistent write; a node
-    // the token owns is edited in place instead of copied, which is what makes a builder's insert cost one
-    // array copy rather than a root-to-leaf path copy. `overwrite` false leaves an existing key untouched,
-    // which is what makes a rejected duplicate Add change nothing at all.
+    // the token owns is edited in place instead of copied, which is what spares a builder the root-to-leaf
+    // path copy on every write after the first down a given path. The node the entry lands in still rebuilds
+    // its own key and value arrays. `overwrite` false leaves an existing key untouched, which is what makes a
+    // rejected duplicate Add change nothing at all.
     private static Node PutInto(
         Node node, int shift, int hash, TKey key, TValue? value, bool overwrite, object? owner,
         ref bool added, ref bool changed)
@@ -792,8 +798,12 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     /// <remarks>
     /// <para>
     /// The builder stamps every node it creates with an ownership token and writes such a node in place
-    /// rather than copying it, so an insert costs the one array copy the node's own payload needs instead of
-    /// a fresh node per level from the root down. <see cref="ToImmutable"/> takes a <i>new</i> token, which
+    /// rather than copying it. The saving is the <b>ancestors</b>, and it is amortized rather than fixed: the
+    /// first write down a path it does not yet own still forks every node on that path (cloning the payload
+    /// arrays, so no owned node shares one with a published map), and every write after that reuses them in
+    /// place. The node the entry actually lands in is rebuilt either way — an insert resizes both its key and
+    /// its value array — so what the token removes is the fresh node per level from the root down, not the
+    /// payload copy itself. <see cref="ToImmutable"/> takes a <i>new</i> token, which
     /// makes every node the builder has handed out read-only again in one assignment — so the builder stays
     /// usable afterwards and no map it has produced can be changed behind a caller's back.
     /// </para>
