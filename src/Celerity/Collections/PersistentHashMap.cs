@@ -203,13 +203,12 @@ public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictiona
     /// <returns><c>true</c> if some entry holds the value; otherwise <c>false</c>.</returns>
     /// <remarks>
     /// Unlike <see cref="ContainsKey"/>, this is a full scan: <c>O(n)</c>, because the trie is indexed by key
-    /// and nothing about a value says where it lives.
+    /// and nothing about a value says where it lives. The out-of-band <c>default(TKey)</c> entry needs no
+    /// special case here — the enumerator yields it, so testing it separately would compare it twice on a
+    /// miss, and <typeparamref name="TValue"/>'s equality is the caller's code.
     /// </remarks>
     public bool ContainsValue(TValue? value)
     {
-        if (_hasDefaultKey && EqualityComparer<TValue?>.Default.Equals(_defaultKeyValue, value))
-            return true;
-
         foreach (KeyValuePair<TKey, TValue?> entry in this)
         {
             if (EqualityComparer<TValue?>.Default.Equals(entry.Value, value))

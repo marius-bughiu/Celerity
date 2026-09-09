@@ -4298,8 +4298,10 @@ holding every entry that shares a full 32-bit hash in one flat list. It needs no
 keys can only reach one by agreeing on all 32 bits, and the caller's own shift says which shape it is
 looking at.
 
-Every mutation is **path copying**: the returned map allocates the nodes along one root-to-leaf path
-and points at the receiver's storage for everything else. Removal additionally **dissolves** a node
+A single-key mutation is **path copying**: the returned map allocates the nodes along one root-to-leaf
+path and points at the receiver's storage for everything else. The bulk methods are not bounded by
+one path — `SetItems` and `RemoveRange` touch as many branches as their keys reach — which is why
+they run through a `Builder` rather than chaining single-key edits. Removal additionally **dissolves** a node
 left holding a single entry into its parent, and because that parent may then be a single-entry node
 itself, the collapse propagates upward on its own — so a map drained back to two keys is shaped
 exactly like the map built from those two keys, not like a skeleton of the map it used to be.
