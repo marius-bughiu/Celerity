@@ -651,6 +651,41 @@ void Check(bool condition, string message)
     Check(snapshot.ToArray().Length == 100, "PersistentVector ToArray");
 }
 
+// PersistentHashMap - immutable CHAMP map. Exercise the IEnumerable constructor, the trie read paths at a
+// depth that needs several levels, all four persistent operations, the out-of-band default-key slot, the
+// builder's ownership token, and the inline-stack struct enumerator.
+{
+    var phm = new PersistentHashMap<int, string, Int32WangNaiveHasher>(
+        new[] { new KeyValuePair<int, string>(1, "one"), new KeyValuePair<int, string>(2, "two") });
+    Check(phm.Count == 2 && phm[1] == "one", "PersistentHashMap construct + indexer");
+    Check(phm.Add(3, "three").Count == 3 && phm.Count == 2, "PersistentHashMap Add leaves the receiver alone");
+    Check(phm.SetItem(1, "uno")[1] == "uno" && phm[1] == "one", "PersistentHashMap SetItem leaves the receiver alone");
+    Check(phm.Remove(1).Count == 1 && phm.ContainsKey(1), "PersistentHashMap Remove leaves the receiver alone");
+    Check(PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty.IsEmpty, "PersistentHashMap Empty");
+
+    // The out-of-band default-key entry never reaches the hasher.
+    var withZero = phm.Add(0, "zero");
+    Check(withZero.Count == 3 && withZero[0] == "zero", "PersistentHashMap default-key slot");
+
+    var deepMap = PersistentHashMap<int, int, Int32WangNaiveHasher>.Empty;
+    for (int i = 0; i < 3000; i++) deepMap = deepMap.Add(i, i * 2);
+    Check(deepMap.Count == 3000 && deepMap[0] == 0 && deepMap[2999] == 5998, "PersistentHashMap multi-level reads");
+    for (int i = 0; i < 2000; i++) deepMap = deepMap.Remove(i);
+    Check(deepMap.Count == 1000 && deepMap[2000] == 4000, "PersistentHashMap removal collapses the trie");
+
+    var mapBuilder = new PersistentHashMap<int, int, Int32WangNaiveHasher>.Builder();
+    for (int i = 0; i < 500; i++) mapBuilder.Add(i, i);
+    var mapSnapshot = mapBuilder.ToImmutable();
+    mapBuilder[0] = -1;
+    Check(mapSnapshot.Count == 500 && mapSnapshot[0] == 0 && mapBuilder[0] == -1,
+        "PersistentHashMap builder isolates its snapshots");
+
+    long total = 0;
+    foreach (var entry in mapSnapshot) total += entry.Value;
+    Check(total == 124750, "PersistentHashMap struct enumeration");
+    Check(mapSnapshot.Keys.Count == 500 && mapSnapshot.Values.Count == 500, "PersistentHashMap key/value views");
+}
+
 // DisjointSet — union-find over arbitrary elements. Exercise add, auto-adding union, the
 // merge/no-op return, representative find, connectivity queries, component sizing, the set
 // count, growth across many singletons, grouped components, and the struct enumerator.

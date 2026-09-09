@@ -84,6 +84,7 @@ internal static class Differential
         ("HyperLogLogHash64", HyperLogLogHash64Case),
         ("CountMinSketchHash64", CountMinSketchHash64Case),
         ("PersistentVector", PersistentVectorCase),
+        ("PersistentHashMap", PersistentHashMapCase),
         ("RadixSort", RadixSortCase),
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
@@ -3843,4 +3844,101 @@ internal static class Differential
             Check(copied[i] == expected[i], $"{label} ToArray diverged at {i}");
     }
 
+    // PersistentHashMap — the immutable CHAMP map, against a Dictionary<int, int> oracle. Two things are
+    // worth the nightly budget over the in-repo suite. The first is depth: a case here runs long enough to
+    // build several trie levels and dissolve them again, so the inline-a-single-entry-back-up rule is
+    // exercised on shapes a bounded run never reaches. The second is that half the cases run under a hasher
+    // that keeps only a few bits, which forces collision nodes — the one shape in the structure that is not
+    // a bitmap node, and the one every operation has a separate path for.
+    //
+    // Snapshots are re-checked at the end for the reason they are in the vector case: a path copy that wrote
+    // through into storage an *earlier* map still holds agrees with the oracle on the map you are holding.
+    private struct FuzzLowBitsHasher : IHashProvider<int>
+    {
+        public int Hash(int key) => key & 31;
+    }
+
+    private static void PersistentHashMapCase(Random rng)
+    {
+        if (rng.Next(0, 2) == 0)
+            PersistentHashMapRun<Int32WangNaiveHasher>(rng);
+        else
+            PersistentHashMapRun<FuzzLowBitsHasher>(rng);
+    }
+
+    private static void PersistentHashMapRun<THasher>(Random rng)
+        where THasher : struct, IHashProvider<int>
+    {
+        var sut = PersistentHashMap<int, int, THasher>.Empty;
+        var oracle = new Dictionary<int, int>();
+        var snapshots = new List<(PersistentHashMap<int, int, THasher> Map, Dictionary<int, int> Oracle)>();
+
+        int removeWeight = rng.Next(0, 51);
+        int keySpace = rng.Next(1, 2000);
+        int operations = rng.Next(0, 2500);
+
+        for (int op = 0; op < operations; op++)
+        {
+            int key = rng.Next(0, keySpace);
+
+            if (rng.Next(0, 100) < removeWeight)
+            {
+                var before = sut;
+                sut = sut.Remove(key);
+
+                if (!oracle.Remove(key))
+                    Check(ReferenceEquals(before, sut), "PersistentHashMap Remove of an absent key allocated");
+            }
+            else
+            {
+                int value = Value(rng);
+                sut = sut.SetItem(key, value);
+                oracle[key] = value;
+            }
+
+            Check(sut.Count == oracle.Count, "PersistentHashMap count diverged");
+            Check(sut.IsEmpty == (oracle.Count == 0), "PersistentHashMap IsEmpty diverged");
+
+            if (op % 64 == 0)
+                snapshots.Add((sut, new Dictionary<int, int>(oracle)));
+        }
+
+        CheckEntries(sut, oracle, "PersistentHashMap");
+
+        foreach ((PersistentHashMap<int, int, THasher> snapshot, Dictionary<int, int> expected) in snapshots)
+            CheckEntries(snapshot, expected, "PersistentHashMap snapshot");
+
+        // The builder reaches the same node operations by the transient route, writing nodes in place where
+        // the persistent path copies them. Replaying the final state through one and comparing is what puts
+        // the ownership token on trial.
+        var builder = new PersistentHashMap<int, int, THasher>.Builder();
+        foreach (KeyValuePair<int, int> entry in oracle)
+            builder[entry.Key] = entry.Value;
+
+        CheckEntries(builder.ToImmutable(), oracle, "PersistentHashMap builder");
+    }
+
+    // Reconciles both read surfaces at once: TryGetValue descends the trie, and enumeration walks it.
+    private static void CheckEntries<THasher>(
+        PersistentHashMap<int, int, THasher> actual, Dictionary<int, int> expected, string label)
+        where THasher : struct, IHashProvider<int>
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        foreach (KeyValuePair<int, int> entry in expected)
+        {
+            Check(actual.TryGetValue(entry.Key, out int value), $"{label} lost key {entry.Key}");
+            Check(value == entry.Value, $"{label} value diverged at key {entry.Key}");
+        }
+
+        int seen = 0;
+        foreach (KeyValuePair<int, int> entry in actual)
+        {
+            Check(expected.TryGetValue(entry.Key, out int want), $"{label} enumerated an unknown key {entry.Key}");
+            Check(want == entry.Value, $"{label} enumeration value diverged at key {entry.Key}");
+            seen++;
+        }
+
+        Check(seen == expected.Count, $"{label} enumeration length diverged");
+    }
 }

@@ -991,4 +991,80 @@ public class ContainsValueTests
         var map = new BTreeDictionary<int, string?> { [1] = null, [2] = "x" };
         Assert.True(map.ContainsValue(null));
     }
+
+    // ---------------- PersistentHashMap ----------------
+    // The scan walks the trie's enumeration, so what is pinned here is that a value in a leaf several levels
+    // down, one in a collision node, and the one in the out-of-band default-key slot are all reachable.
+
+    [Fact]
+    public void PersistentHashMap_EmptyMap_ReturnsFalse()
+    {
+        PersistentHashMap<int, int, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, int, Int32WangNaiveHasher>.Empty;
+
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void PersistentHashMap_FindsValueInTheTrie()
+    {
+        PersistentHashMap<int, int, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, int, Int32WangNaiveHasher>.Empty
+                .Add(1, 100)
+                .Add(2, 200)
+                .Add(3, 300);
+
+        Assert.True(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void PersistentHashMap_FindsValueInTheDefaultKeySlot()
+    {
+        PersistentHashMap<int, int, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, int, Int32WangNaiveHasher>.Empty.Add(0, 7).Add(1, 100);
+
+        Assert.True(map.ContainsValue(7));
+    }
+
+    [Fact]
+    public void PersistentHashMap_AfterRemove_DoesNotReportRemovedValue()
+    {
+        PersistentHashMap<int, int, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, int, Int32WangNaiveHasher>.Empty
+                .Add(1, 100)
+                .Add(2, 200)
+                .Add(3, 300);
+
+        PersistentHashMap<int, int, Int32WangNaiveHasher> without = map.Remove(2);
+
+        Assert.False(without.ContainsValue(200));
+        Assert.True(without.ContainsValue(100));
+        Assert.True(without.ContainsValue(300));
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void PersistentHashMap_FindsValue_AcrossMultipleLevels()
+    {
+        PersistentHashMap<int, int, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, int, Int32WangNaiveHasher>.Empty;
+
+        for (int i = 1; i < 2_000; i++)
+            map = map.Add(i, i * 3);
+
+        Assert.True(map.ContainsValue(3));
+        Assert.True(map.ContainsValue(1_999 * 3));
+        Assert.False(map.ContainsValue(2_000 * 3));
+    }
+
+    [Fact]
+    public void PersistentHashMap_NullValue_ReturnsTrue_WhenPresent()
+    {
+        PersistentHashMap<int, string?, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, string?, Int32WangNaiveHasher>.Empty.Add(1, null).Add(2, "x");
+
+        Assert.True(map.ContainsValue(null));
+    }
 }
