@@ -4,7 +4,8 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Pins the empty-slot test on the open-addressed collections for <b>reference-type</b> keys.
+/// Pins the empty-slot test on the open-addressed collections for <b>reference-type</b> keys, and the
+/// out-of-band <c>null</c>-key contract that every keyed collection in the family shares.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -516,5 +517,64 @@ public class ReferenceKeyProbeTests
         Assert.True(set.Remove(null!));
         Assert.DoesNotContain(null!, set);
         Assert.Equal(16, set.Count);
+    }
+
+    // ---------------- PersistentHashMap ----------------
+    // The one member here that is not open-addressed: a CHAMP trie has no vacant-slot sentinel to be
+    // fooled, so only the second half of the pair applies to it. It still routes the "is this the
+    // out-of-band default key?" question through EqualityComparer<TKey>.Default.Equals(key, default),
+    // which is the same substitution resting on the same guarantee — the default comparer answers a null
+    // right-hand side structurally, before consulting the key's own Equals.
+
+    [Fact]
+    public void PersistentHashMap_ShouldDescendCorrectly_WhenKeyEqualsClaimsEqualityWithNull()
+    {
+        PersistentHashMap<NullGreedyKey, int, DefaultHasher<NullGreedyKey>> map =
+            PersistentHashMap<NullGreedyKey, int, DefaultHasher<NullGreedyKey>>.Empty;
+        NullGreedyKey[] keys = Keys();
+
+        foreach (var key in keys)
+            map = map.SetItem(key, key.Id);
+
+        Assert.Equal(keys.Length, map.Count);
+        foreach (var key in keys)
+        {
+            Assert.True(map.ContainsKey(key));
+            Assert.True(map.TryGetValue(key, out int value));
+            Assert.Equal(key.Id, value);
+        }
+
+        Assert.False(map.ContainsKey(Missing));
+        Assert.False(map.TryGetValue(Missing, out _));
+
+        for (int i = 0; i < keys.Length; i += 2)
+            map = map.Remove(keys[i]);
+
+        Assert.Equal(keys.Length / 2, map.Count);
+        for (int i = 1; i < keys.Length; i += 2)
+            Assert.True(map.ContainsKey(keys[i]));
+    }
+
+    [Fact]
+    public void PersistentHashMap_ShouldStoreNullKeyOutOfBand_WhenKeyIsAReferenceType()
+    {
+        PersistentHashMap<NullGreedyKey, int, DefaultHasher<NullGreedyKey>> map =
+            PersistentHashMap<NullGreedyKey, int, DefaultHasher<NullGreedyKey>>.Empty;
+        NullGreedyKey[] keys = Keys(16);
+
+        foreach (var key in keys)
+            map = map.SetItem(key, key.Id);
+
+        map = map.SetItem(null!, -1);
+
+        Assert.Equal(keys.Length + 1, map.Count);
+        Assert.True(map.ContainsKey(null!));
+        Assert.Equal(-1, map[null!]);
+        foreach (var key in keys)
+            Assert.Equal(key.Id, map[key]);
+
+        map = map.Remove(null!);
+        Assert.False(map.ContainsKey(null!));
+        Assert.Equal(keys.Length, map.Count);
     }
 }
