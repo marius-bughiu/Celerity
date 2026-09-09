@@ -4264,8 +4264,10 @@ child references and a height field. Its branching factor is **two**, so:
 - **every entry costs its own object header**, plus the AVL bookkeeping.
 
 `PersistentHashMap<TKey, TValue, THasher>` is the structure the functional languages reach for
-instead: the **CHAMP** trie of Steindorfer and Vinju (OOPSLA 2015), the refinement of Bagwell's HAMT
-that Clojure's `PersistentHashMap` and Scala's `HashMap` are built on. A node reads five bits of the
+instead: the **CHAMP** trie of Steindorfer and Vinju (OOPSLA 2015). It refines the hash-array mapped
+trie of Bagwell that Clojure's `PersistentHashMap` is built on — that one interleaves entries and
+sub-nodes in a single array under a single bitmap, and carries a distinct collision-node type — and
+it is the layout Scala's `HashMap` adopted in 2.13. A node reads five bits of the
 hash, so the branching factor is **32** and 100,000 entries are four levels deep rather than
 seventeen.
 
@@ -4430,10 +4432,12 @@ without copying or locking. `Builder` is **not** thread-safe; the maps it produc
 The guarantee is about the map's **own** state, and it carries the same callback caveat as
 [`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) and
 [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid): **every lookup calls `THasher`, and then
-`EqualityComparer<TKey>.Default.Equals`** — so a hasher, or a key whose own `Equals` / `GetHashCode`
-is not thread-safe, makes concurrent reads unsafe however immutable the map is. Every hasher in
-`Celerity.Hashing` is a stateless struct and an ordinary key compares without side effects, so the
-usual case is safe; a stateful hasher or key you write yourself is yours to reason about.
+`EqualityComparer<TKey>.Default.Equals`**, and `ContainsValue` calls
+`EqualityComparer<TValue>.Default.Equals` on the stored values — so a hasher, a key, or a value whose
+own `Equals` / `GetHashCode` is not thread-safe makes concurrent reads unsafe however immutable the
+map is. Every hasher in `Celerity.Hashing` is a stateless struct and ordinary keys and values compare
+without side effects, so the usual case is safe; a stateful one you write yourself is yours to reason
+about.
 
 ### Measured
 

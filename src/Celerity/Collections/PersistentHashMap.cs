@@ -26,8 +26,10 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// <see cref="PersistentHashMap{TKey, TValue, THasher}"/> is the structure the functional languages reach for
-/// instead: the <b>CHAMP</b> trie of Steindorfer and Vinju (OOPSLA 2015), the refinement of Bagwell's HAMT
-/// that Clojure's <c>PersistentHashMap</c> and Scala's <c>HashMap</c> are built on. A node reads five bits of
+/// instead: the <b>CHAMP</b> trie of Steindorfer and Vinju (OOPSLA 2015). It refines the hash-array mapped
+/// trie of Bagwell that Clojure's <c>PersistentHashMap</c> is built on — that one interleaves entries and
+/// sub-nodes in a single array under a single bitmap, and carries a distinct collision-node type — and it is
+/// the layout Scala's <c>HashMap</c> adopted in 2.13. A node reads five bits of
 /// the hash, so the branching factor is <b>32</b> and 100,000 entries are four levels deep rather than
 /// seventeen. Entries live <b>inline in flat arrays</b> inside the node rather than in a heap node of their
 /// own — a node holding <c>k</c> entries is three objects, not <c>k</c> — and the slot an entry occupies is
@@ -51,11 +53,12 @@ namespace Celerity.Collections;
 /// about the map's <i>own</i> state, with the same caveat
 /// <see cref="IntervalTree{TKey, TValue, TComparer}"/> and <see cref="SparseTable{T, TMonoid}"/> carry for
 /// their callbacks: every lookup calls <typeparamref name="THasher"/> and then
-/// <see cref="EqualityComparer{T}"/>.<c>Default.Equals</c> on <typeparamref name="TKey"/>, so a hasher — or a
-/// key whose own <c>Equals</c> / <c>GetHashCode</c> — that is not itself thread-safe makes concurrent reads
-/// unsafe however immutable the map is. Every hasher in <c>Celerity.Hashing</c> is a stateless struct and an
-/// ordinary key compares without side effects, so the usual case is safe; a stateful hasher or key is the
-/// caller's to reason about.
+/// <see cref="EqualityComparer{T}"/>.<c>Default.Equals</c> on <typeparamref name="TKey"/>, and
+/// <see cref="ContainsValue"/> calls it on <typeparamref name="TValue"/> — so a hasher, a key, or a value
+/// whose own <c>Equals</c> / <c>GetHashCode</c> is not itself thread-safe makes concurrent reads unsafe
+/// however immutable the map is. Every hasher in <c>Celerity.Hashing</c> is a stateless struct and ordinary
+/// keys and values compare without side effects, so the usual case is safe; a stateful one is the caller's to
+/// reason about.
 /// </para>
 /// <para>
 /// <b>The <c>default(TKey)</c> entry is held out of band.</b> As in
