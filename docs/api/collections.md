@@ -4426,12 +4426,13 @@ does not make it a concurrency abstraction — a shared *variable* holding succe
 the usual publication rules — it makes each map a snapshot that can be handed across a thread boundary
 without copying or locking. `Builder` is **not** thread-safe; the maps it produces are.
 
-One caveat belongs to the type parameter rather than to the map, and it is the same one
-[`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) carries for its
-comparer: **every lookup calls `THasher`**, so a hasher that is not itself thread-safe makes
-concurrent reads unsafe however immutable the map is. Every hasher in `Celerity.Hashing` is a
-stateless struct, so the ordinary case is safe; a stateful one you write yourself is yours to reason
-about.
+The guarantee is about the map's **own** state, and it carries the same callback caveat as
+[`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) and
+[`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid): **every lookup calls `THasher`, and then
+`EqualityComparer<TKey>.Default.Equals`** — so a hasher, or a key whose own `Equals` / `GetHashCode`
+is not thread-safe, makes concurrent reads unsafe however immutable the map is. Every hasher in
+`Celerity.Hashing` is a stateless struct and an ordinary key compares without side effects, so the
+usual case is safe; a stateful hasher or key you write yourself is yours to reason about.
 
 ### Measured
 

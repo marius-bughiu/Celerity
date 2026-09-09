@@ -46,12 +46,15 @@ namespace Celerity.Collections;
 /// ever mutated after its constructor returns, so there is no state for two threads to race over. It shares
 /// that with <see cref="PersistentVector{T}"/> and the library's build-once types, and differs from the
 /// mutable dictionaries in the same way: an edit produces another map rather than changing this one. A shared
-/// <i>variable</i> holding successive maps still needs the usual publication rules — and, as for
-/// <see cref="IntervalTree{TKey, TValue, TComparer}"/>'s comparer, one caveat belongs to the type parameter
-/// rather than to the map: every lookup calls <typeparamref name="THasher"/>, so a hasher that is not itself
-/// thread-safe makes concurrent reads unsafe however immutable the map is. Every hasher in
-/// <c>Celerity.Hashing</c> is a stateless struct, so the ordinary case is safe; a stateful one is yours to
-/// reason about.
+/// <i>variable</i> holding successive maps still needs the usual publication rules — and the guarantee is
+/// about the map's <i>own</i> state, with the same caveat
+/// <see cref="IntervalTree{TKey, TValue, TComparer}"/> and <see cref="SparseTable{T, TMonoid}"/> carry for
+/// their callbacks: every lookup calls <typeparamref name="THasher"/> and then
+/// <see cref="EqualityComparer{T}"/>.<c>Default.Equals</c> on <typeparamref name="TKey"/>, so a hasher — or a
+/// key whose own <c>Equals</c> / <c>GetHashCode</c> — that is not itself thread-safe makes concurrent reads
+/// unsafe however immutable the map is. Every hasher in <c>Celerity.Hashing</c> is a stateless struct and an
+/// ordinary key compares without side effects, so the usual case is safe; a stateful hasher or key is the
+/// caller's to reason about.
 /// </para>
 /// <para>
 /// <b>The <c>default(TKey)</c> entry is held out of band.</b> As in
