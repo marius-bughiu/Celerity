@@ -5,7 +5,11 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// Pins the empty-slot test on the open-addressed collections for <b>reference-type</b> keys, and the
-/// out-of-band <c>null</c>-key contract that every keyed collection in the family shares.
+/// out-of-band <c>null</c>-key contract shared by the collections exercised here — the hash-based family
+/// plus <see cref="PersistentHashMap{TKey, TValue, THasher}"/>. The ordered types are deliberately not in
+/// scope: <see cref="BTreeDictionary{TKey, TValue, TComparer}"/> and its siblings store a
+/// <c>default(TKey)</c> inline and sort it wherever the comparer puts it, so they have no out-of-band slot
+/// to pin.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -521,10 +525,10 @@ public class ReferenceKeyProbeTests
 
     // ---------------- PersistentHashMap ----------------
     // The one member here that is not open-addressed: a CHAMP trie has no vacant-slot sentinel to be
-    // fooled, so only the second half of the pair applies to it. It still routes the "is this the
-    // out-of-band default key?" question through EqualityComparer<TKey>.Default.Equals(key, default),
-    // which is the same substitution resting on the same guarantee — the default comparer answers a null
-    // right-hand side structurally, before consulting the key's own Equals.
+    // fooled, so the probe half of the pair has no counterpart. What it does share is the question
+    // "is this the out-of-band default key?", which it asks through the very same EmptySlot.Is helper —
+    // so on a reference key it is a direct null test, and the adversary below is what proves that
+    // substitution exact rather than approximate for this type too.
 
     [Fact]
     public void PersistentHashMap_ShouldDescendCorrectly_WhenKeyEqualsClaimsEqualityWithNull()

@@ -72,11 +72,13 @@ namespace Celerity.Collections;
 /// <para>
 /// Two deliberate omissions, both mirroring <see cref="PersistentVector{T}"/>. There is no <c>Clear()</c>:
 /// everywhere else in this library <c>Clear()</c> means in-place mutation, so the empty map is spelled
-/// <see cref="Empty"/>. And this type does not implement <c>IImmutableDictionary&lt;TKey, TValue&gt;</c>:
-/// that interface's <c>WithComparers</c> and <c>KeyComparer</c> members are defined in terms of an
-/// <see cref="IEqualityComparer{T}"/> the map would have to carry, which is exactly the virtual-dispatch
-/// indirection the struct-hasher design exists to delete. It implements
-/// <see cref="IReadOnlyDictionary{TKey, TValue}"/>, which costs nothing.
+/// <see cref="Empty"/>. And this type does not implement <c>IImmutableDictionary&lt;TKey, TValue&gt;</c>,
+/// because two of that interface's members contradict decisions taken above it: it requires a
+/// <c>Clear()</c>, which is the name this library reserves for in-place mutation, and its <c>Add</c> returns
+/// the receiver when the key is already present with an equal value, where this one throws as
+/// <see cref="Dictionary{TKey, TValue}.Add(TKey, TValue)"/> does. Implementing the interface would mean
+/// shipping those semantics under names this type already gives different ones. It implements
+/// <see cref="IReadOnlyDictionary{TKey, TValue}"/>, which asks for nothing it does not already do.
 /// </para>
 /// </remarks>
 public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictionary<TKey, TValue?>

@@ -4406,10 +4406,15 @@ produced can be changed behind a caller's back.
 empty map is spelled `PersistentHashMap<TKey, TValue, THasher>.Empty` rather than given a method that
 would read like the family's mutating one. This is the same call `PersistentVector<T>` made.
 
-**It does not implement `IImmutableDictionary<TKey, TValue>`.** That interface's `WithComparers` and
-`KeyComparer` members are defined in terms of an `IEqualityComparer<T>` the map would have to carry,
-which is exactly the virtual-dispatch indirection the struct-hasher design exists to delete. It
-implements `IReadOnlyDictionary<TKey, TValue?>`, which costs nothing.
+**It does not implement `IImmutableDictionary<TKey, TValue>`.** Two of that interface's members
+contradict decisions taken above it. It requires a `Clear()` returning an empty instance, and
+`Clear()` is the name this library reserves for in-place mutation — which is why the empty map is
+spelled `Empty`. And its `Add` returns the receiver when the key is already present with an *equal*
+value, throwing only on a conflicting one; this type's `Add` throws on any duplicate, matching
+`Dictionary<,>.Add`. Implementing the interface would mean shipping those semantics under names this
+type already gives different ones, which is worse than not implementing it. (`Contains(KeyValuePair)`
+and `TryGetKey` would also have to be added; neither is contentious, only unused.) It implements
+`IReadOnlyDictionary<TKey, TValue?>`, which asks for nothing it does not already do.
 
 ### When not to reach for it
 
