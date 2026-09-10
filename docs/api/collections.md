@@ -3959,7 +3959,8 @@ public Deque(IEnumerable<T> collection)
   `false` when empty.
 - `bool Contains(T item)` — linear `O(n)` membership test using `EqualityComparer<T>.Default`.
 - `T[] ToArray()` — a new array of the elements in front-to-back order.
-- `void CopyTo(T[] array, int arrayIndex)` — copies the elements, front to back, into `array`.
+- `void CopyTo(T[] array, int arrayIndex)` — copies the elements, front to back, into `array`,
+  matching `HashSet<T>.CopyTo` argument validation.
 - `int EnsureCapacity(int capacity)` — grows the backing array if needed; returns the resulting
   capacity.
 - `void TrimExcess()` — shrinks the backing array to exactly `Count`, re-linearizing so the front
@@ -4094,8 +4095,9 @@ public static readonly PersistentVector<T> Empty
 - `PersistentVector<T> RemoveLast()` — a vector with the last element removed; throws
   `InvalidOperationException` if the vector is empty.
 - `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`, one `Array.Copy` per
-  leaf. Throws `ArgumentNullException`, `ArgumentOutOfRangeException` for a negative index, or
-  `ArgumentException` if the destination is too small.
+  leaf, matching `HashSet<T>.CopyTo` argument validation: `ArgumentNullException` for a null array,
+  `ArgumentOutOfRangeException` for an index that is negative or past the end of the array, and
+  `ArgumentException` when the destination has too little room after it.
 - `T[] ToArray()` — a new array of the elements in order.
 - `Builder ToBuilder()` — a mutable builder seeded with this vector's elements.
 - `Enumerator GetEnumerator()` — an allocation-free struct enumerator that refreshes its leaf once per

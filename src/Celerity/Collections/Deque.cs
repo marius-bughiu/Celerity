@@ -346,17 +346,15 @@ public sealed class Deque<T> : IReadOnlyList<T>
     /// <param name="array">The destination array.</param>
     /// <param name="arrayIndex">The zero-based index in <paramref name="array"/> at which copying begins.</param>
     /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// The destination does not have enough room from <paramref name="arrayIndex"/> onward.
     /// </exception>
     public void CopyTo(T[] array, int arrayIndex)
     {
-        ArgumentNullException.ThrowIfNull(array);
-        if (arrayIndex < 0)
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Index was out of range.");
-        if (array.Length - arrayIndex < _count)
-            throw new ArgumentException("The destination array has insufficient space.", nameof(array));
+        CopyToGuard.Validate(array, arrayIndex, _count, CopyToGuard.ElementsMessage);
 
         CopyToLinear(array, arrayIndex);
     }

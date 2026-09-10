@@ -639,23 +639,20 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// <param name="arrayIndex">The zero-based index in <paramref name="array"/> at which copying begins.</param>
     /// <exception cref="ArgumentNullException"><paramref name="array"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is negative or past the end of <paramref name="array"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
-    /// <exception cref="OverflowException">The set holds more than <see cref="int.MaxValue"/> elements.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="array"/> has insufficient space — which is also what a set holding more than
+    /// <see cref="int.MaxValue"/> elements reports, since no <c>int[]</c> can hold it.
+    /// </exception>
     public void CopyTo(int[] array, int arrayIndex)
     {
-        // Written out rather than delegated to SetOperations.CopyTo for the same reason as the six
+        // Guarded directly rather than through SetOperations.CopyTo for the same reason as the six
         // set operations above: that helper takes an int count, so passing it Count would evaluate —
         // and throw from — the overflow guard *before* any argument was validated, turning
-        // CopyTo(null, 0) on a very large set into an OverflowException. Checking the long
-        // _cardinality keeps the argument-validation order identical to HashSet<int>.CopyTo, and a
-        // set too large for an int[] correctly reports insufficient space rather than overflowing.
-        ArgumentNullException.ThrowIfNull(array);
-        if (arrayIndex < 0)
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Array index must be non-negative.");
-        if (arrayIndex > array.Length)
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Array index is beyond the end of the destination array.");
-        if (array.Length - arrayIndex < _cardinality)
-            throw new ArgumentException("The destination array has insufficient space to copy the set's elements.", nameof(array));
+        // CopyTo(null, 0) on a very large set into an OverflowException. CopyToGuard takes a long,
+        // so passing _cardinality keeps the argument-validation order identical to
+        // HashSet<int>.CopyTo, and a set too large for an int[] correctly reports insufficient
+        // space rather than overflowing.
+        CopyToGuard.Validate(array, arrayIndex, _cardinality, CopyToGuard.SetElementsMessage);
 
         int i = arrayIndex;
         foreach (int item in this)

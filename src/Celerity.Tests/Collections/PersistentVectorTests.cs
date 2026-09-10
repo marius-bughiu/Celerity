@@ -231,6 +231,17 @@ public class PersistentVectorTests
     }
 
     [Fact]
+    public void CopyTo_ShouldThrowArgumentOutOfRangeException_WhenTheOffsetIsPastTheEndOfTheArray()
+    {
+        // Not ArgumentException: an index past the end is a bad index, and every other collection in
+        // the library says so. The vector shipped without the check and reported insufficient space
+        // instead, which only an exact-type assertion can see (#440).
+        PersistentVector<int> vector = new(new[] { 1, 2, 3 });
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => vector.CopyTo(new int[3], 4));
+    }
+
+    [Fact]
     public void CopyTo_ShouldThrowArgumentException_WhenTheDestinationIsTooSmall()
     {
         PersistentVector<int> vector = new(new[] { 1, 2, 3 });

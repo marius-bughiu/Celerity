@@ -180,16 +180,11 @@ internal static class SetOperations
     // ── ICollection<T>.CopyTo ─────────────────────────────────────────────────
 
     // Copies the `count` elements of `source` into `array` starting at
-    // `arrayIndex`, matching HashSet<T>.CopyTo's argument validation and exceptions.
+    // `arrayIndex`, matching HashSet<T>.CopyTo's argument validation and exceptions —
+    // which CopyToGuard owns for the whole library, sets and dictionaries alike.
     internal static void CopyTo<T>(IEnumerable<T> source, int count, T[] array, int arrayIndex)
     {
-        ArgumentNullException.ThrowIfNull(array);
-        if (arrayIndex < 0)
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Array index must be non-negative.");
-        if (arrayIndex > array.Length)
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex, "Array index is beyond the end of the destination array.");
-        if (array.Length - arrayIndex < count)
-            throw new ArgumentException("The destination array has insufficient space to copy the set's elements.", nameof(array));
+        CopyToGuard.Validate(array, arrayIndex, count, CopyToGuard.SetElementsMessage);
 
         int i = arrayIndex;
         foreach (T item in source)

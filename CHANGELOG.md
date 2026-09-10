@@ -16,6 +16,14 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **The `SuccinctTrie` rollout that ships with it** — dedicated, shared-suite, CsCheck-property, fuzz and AOT coverage (plus `Select0` coverage in both `RankSelectBitVector` suites), a registered benchmark with its dashboard cards, and the README / API-reference / testing-roster entries. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
 
+### Changed
+
+- **Every `CopyTo(T[] array, int arrayIndex)` overload now validates through one internal guard.** The three-check contract was written out in thirty-four places behind forty-five public overloads, which is how two of them came to be missing a check; it is now written once, and a new cross-collection test walks the shipped assembly and fails if a `CopyTo` is added without coverage. No behavioural change beyond the fix below. Closes [#440](https://github.com/marius-bughiu/Celerity/issues/440).
+
+### Fixed
+
+- **`Deque<T>.CopyTo` and `PersistentVector<T>.CopyTo` throw `ArgumentOutOfRangeException` for an `arrayIndex` past the end of the destination**, as the other forty-three overloads and `HashSet<T>` / `Dictionary<,>` do. Both were missing that check, so such an index fell through to the insufficient-space branch and surfaced as `ArgumentException` — invisible to a `catch`, but not to an exact-type test or an exception filter. Their two non-conforming messages are aligned with the family as well. Closes [#440](https://github.com/marius-bughiu/Celerity/issues/440).
+
 ## [3.1.0] - 2026-09-06
 
 ### Added
