@@ -54,6 +54,11 @@ public class DedupFilter<TKey, THasher>
     }
 
     /// <summary>Gets the number of keys currently marked in the filter.</summary>
+    /// <remarks>
+    /// Exact for keys marked through <see cref="TryMarkSeen"/>, which never stores a second copy of a key it
+    /// already reports. <see cref="UnionWith"/> is the exception: it sums both filters' counts, so afterwards this
+    /// can exceed the number of distinct keys represented.
+    /// </remarks>
     public int Count => _filter.Count;
 
     /// <summary>Gets the expected live-key count the filter was sized for.</summary>
@@ -118,6 +123,11 @@ public class DedupFilter<TKey, THasher>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="other"/> has incompatible geometry.</exception>
     /// <exception cref="InvalidOperationException">This filter becomes full before every key from <paramref name="other"/> is absorbed.</exception>
+    /// <remarks>
+    /// A fingerprint filter cannot tell an overlapping key from a new one, so a key both filters marked is stored
+    /// twice: <see cref="Count"/> becomes the sum of both counts and may then exceed the number of distinct keys,
+    /// and the extra copies consume capacity. Size for the union, not for either side.
+    /// </remarks>
     public void UnionWith(DedupFilter<TKey, THasher> other)
     {
         ArgumentNullException.ThrowIfNull(other);
