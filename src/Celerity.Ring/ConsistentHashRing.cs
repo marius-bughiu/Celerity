@@ -31,12 +31,19 @@ namespace Celerity.Ring;
 /// if you need cross-process agreement, because it delegates to the per-run-randomized BCL hash.
 /// </para>
 /// <para>
-/// Reads (<see cref="GetNode"/> / <see cref="TryGetNode"/> / <see cref="GetReplicas"/>) are lock-free: each
+/// Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / <see cref="GetReplicas"/>) is lock-free: each
 /// mutation publishes a fresh immutable snapshot with a single volatile write, and a reader takes one
-/// consistent snapshot for the duration of the call. Reads are therefore safe to run concurrently with each
-/// other and with a mutation (a reader sees either the old or the new topology, never a torn one).
-/// Mutations (<see cref="Add"/> / <see cref="Remove"/>) rebuild the snapshot and must be serialized by the
-/// caller — they are not safe to run concurrently with one another.
+/// consistent snapshot for the duration of the call. Routing is therefore safe to run concurrently with
+/// itself and with a mutation (a reader sees either the old or the new topology, never a torn one), as are
+/// <see cref="NodeCount"/>, <see cref="VirtualNodeCount"/> and <see cref="VirtualNodesPerNode"/>, which read
+/// the same snapshot. Mutations (<see cref="Add"/> / <see cref="Remove"/>) rebuild the snapshot and must be
+/// serialized by the caller — they are not safe to run concurrently with one another.
+/// </para>
+/// <para>
+/// <see cref="Contains"/> is the one exception: it queries the node registry, an ordinary
+/// <see cref="Dictionary{TKey, TValue}"/> that a mutation writes in place, so it is <strong>not</strong> safe
+/// to call while another thread is inside <see cref="Add"/> or <see cref="Remove"/>. Serialize it with the
+/// mutations, or ask the question through <see cref="TryGetNode"/> instead.
 /// </para>
 /// </remarks>
 /// <typeparam name="TNode">The node payload returned by a lookup (an endpoint, a connection, an id, …).</typeparam>
@@ -88,7 +95,11 @@ public class ConsistentHashRing<TNode, TKey, THasher>
     }
 
     /// <summary>Gets the number of physical nodes currently on the ring.</summary>
-    public int NodeCount => _registry.Count;
+    /// <remarks>
+    /// Read from the published snapshot rather than the registry, so it is lock-free and always agrees with what
+    /// routing sees. A rebuild replaces the whole snapshot, so this equals the registry count outside a mutation.
+    /// </remarks>
+    public int NodeCount => _snapshot.Nodes.Length;
 
     /// <summary>Gets the total number of virtual nodes across all physical nodes (the size of the ring array).</summary>
     public int VirtualNodeCount => _snapshot.Positions.Length;
@@ -158,6 +169,10 @@ public class ConsistentHashRing<TNode, TKey, THasher>
     /// <param name="nodeId">The identity to test.</param>
     /// <returns><c>true</c> if the ring contains that node.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="nodeId"/> is <c>null</c>.</exception>
+    /// <remarks>
+    /// Unlike routing, this reads the node registry rather than the published snapshot, so it must not run
+    /// concurrently with <see cref="Add"/> or <see cref="Remove"/>.
+    /// </remarks>
     public bool Contains(string nodeId)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
