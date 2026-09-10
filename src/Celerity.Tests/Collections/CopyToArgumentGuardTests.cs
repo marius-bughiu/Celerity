@@ -355,9 +355,18 @@ public class CopyToArgumentGuardTests
     {
         HashSet<string> declared = DeclaredCopyToOverloads();
 
-        Assert.Empty(declared.Except(Covered, StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal));
-        Assert.Empty(Covered.Except(declared, StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal));
+        string uncovered = Join(declared.Except(Covered, StringComparer.Ordinal));
+        Assert.True(uncovered.Length == 0,
+            $"These types declare CopyTo(T[], int) but are not exercised above: {uncovered}. "
+            + "Add a [Fact] calling AssertCopyToContract, then list them in Covered.");
+
+        string stale = Join(Covered.Except(declared, StringComparer.Ordinal));
+        Assert.True(stale.Length == 0,
+            $"These names are in Covered but declare no CopyTo(T[], int) any more: {stale}.");
     }
+
+    private static string Join(IEnumerable<string> names) =>
+        string.Join(", ", names.OrderBy(n => n, StringComparer.Ordinal));
 
     private static HashSet<string> DeclaredCopyToOverloads()
     {
