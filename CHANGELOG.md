@@ -22,7 +22,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
-- **`Deque<T>.CopyTo` and `PersistentVector<T>.CopyTo` throw `ArgumentOutOfRangeException` for an `arrayIndex` past the end of the destination**, as the library's other forty-three `CopyTo` overloads do. Both were missing that check, so such an index fell through to the insufficient-space branch and surfaced as `ArgumentException` — invisible to a `catch (ArgumentException)`, but not to a `catch (ArgumentOutOfRangeException)`, an exact-type test, or an exception filter. Their two non-conforming messages are aligned with the family as well. Closes [#440](https://github.com/marius-bughiu/Celerity/issues/440).
+- **`Deque<T>.CopyTo` and `PersistentVector<T>.CopyTo` throw `ArgumentOutOfRangeException` for an `arrayIndex` past the end of the destination**, as the library's other forty-three `CopyTo` overloads do. Both were missing that check, so such an index fell through to the insufficient-space branch and surfaced as `ArgumentException` — invisible to a `catch (ArgumentException)`, but not to a `catch (ArgumentOutOfRangeException)`, an exact-type test, or an exception filter. Their non-conforming messages — a negative-index and an insufficient-space literal each — are aligned with the family as well. Closes [#440](https://github.com/marius-bughiu/Celerity/issues/440).
 
 ## [3.1.0] - 2026-09-06
 

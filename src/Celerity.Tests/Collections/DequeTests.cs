@@ -265,7 +265,8 @@ public class DequeTests
         Assert.Throws<ArgumentNullException>(() => deque.CopyTo(null!, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => deque.CopyTo(new int[2], -1));
         // Past the end of the array is a bad *index*, not insufficient space — the check the deque
-        // shipped without, so an exact-type assertion is the one that catches its return (#440).
+        // shipped without. Only an exact-type assertion can tell the two apart, since
+        // ArgumentOutOfRangeException derives from ArgumentException (#440).
         Assert.Throws<ArgumentOutOfRangeException>(() => deque.CopyTo(new int[2], 3));
         Assert.Throws<ArgumentException>(() => deque.CopyTo(new int[1], 1));
     }
