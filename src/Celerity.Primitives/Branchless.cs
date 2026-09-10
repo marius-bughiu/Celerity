@@ -96,7 +96,11 @@ public static class Branchless
         return BitConverter.Int32BitsToSingle(bits);
     }
 
-    /// <inheritdoc cref="Select(bool,float,float)"/>
+    /// <inheritdoc cref="Select(bool,int,int)"/>
+    /// <remarks>
+    /// The operands are reinterpreted to their 64-bit IEEE-754 patterns, selected, and reinterpreted back, so the
+    /// chosen value is returned bit-exactly — signed zero and any <c>NaN</c> payload are preserved verbatim.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double Select(bool condition, double whenTrue, double whenFalse)
     {
