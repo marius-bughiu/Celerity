@@ -38,7 +38,8 @@ namespace Celerity.Ring;
 /// <see cref="Contains"/> is the one exception: it queries the node registry, an ordinary
 /// <see cref="Dictionary{TKey, TValue}"/> that a mutation writes in place, so it is <strong>not</strong> safe
 /// to call while another thread is inside <see cref="Add"/> or <see cref="Remove"/>. Serialize it with the
-/// mutations, or ask the question through <see cref="TryGetNode"/> instead.
+/// mutations; the snapshot carries node payloads but not the identities they were added under, so there is no
+/// lock-free membership test to reach for instead.
 /// </para>
 /// </remarks>
 /// <typeparam name="TNode">The node payload returned by a lookup.</typeparam>

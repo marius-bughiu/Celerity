@@ -35,15 +35,17 @@ namespace Celerity.Ring;
 /// mutation publishes a fresh immutable snapshot with a single volatile write, and a reader takes one
 /// consistent snapshot for the duration of the call. Routing is therefore safe to run concurrently with
 /// itself and with a mutation (a reader sees either the old or the new topology, never a torn one), as are
-/// <see cref="NodeCount"/>, <see cref="VirtualNodeCount"/> and <see cref="VirtualNodesPerNode"/>, which read
-/// the same snapshot. Mutations (<see cref="Add"/> / <see cref="Remove"/>) rebuild the snapshot and must be
-/// serialized by the caller — they are not safe to run concurrently with one another.
+/// <see cref="NodeCount"/> and <see cref="VirtualNodeCount"/>, which read the same snapshot, and
+/// <see cref="VirtualNodesPerNode"/>, which returns a field fixed at construction. Mutations
+/// (<see cref="Add"/> / <see cref="Remove"/>) rebuild the snapshot and must be serialized by the caller —
+/// they are not safe to run concurrently with one another.
 /// </para>
 /// <para>
 /// <see cref="Contains"/> is the one exception: it queries the node registry, an ordinary
 /// <see cref="Dictionary{TKey, TValue}"/> that a mutation writes in place, so it is <strong>not</strong> safe
 /// to call while another thread is inside <see cref="Add"/> or <see cref="Remove"/>. Serialize it with the
-/// mutations, or ask the question through <see cref="TryGetNode"/> instead.
+/// mutations; the snapshot carries node payloads but not the identities they were added under, so there is no
+/// lock-free membership test to reach for instead.
 /// </para>
 /// </remarks>
 /// <typeparam name="TNode">The node payload returned by a lookup (an endpoint, a connection, an id, …).</typeparam>
