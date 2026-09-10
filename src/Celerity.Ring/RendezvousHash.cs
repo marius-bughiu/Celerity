@@ -30,7 +30,16 @@ namespace Celerity.Ring;
 /// The same determinism caveat as the ring applies: hash keys with a specified deterministic
 /// <typeparamref name="THasher"/> (<see cref="StringXxHash3Hasher"/>, <see cref="GuidHasher"/>, an integer
 /// hasher, …), not <see cref="DefaultHasher{T}"/> over <see cref="string"/>, if cross-process agreement
-/// matters. Reads are lock-free over an immutable snapshot; mutations must be serialized by the caller.
+/// matters. Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / <see cref="GetReplicas"/>) is
+/// lock-free over an immutable snapshot, as is <see cref="NodeCount"/>, which reads the same snapshot;
+/// mutations must be serialized by the caller.
+/// </para>
+/// <para>
+/// <see cref="Contains"/> is the one exception: it queries the node registry, an ordinary
+/// <see cref="Dictionary{TKey, TValue}"/> that a mutation writes in place, so it is <strong>not</strong> safe
+/// to call while another thread is inside <see cref="Add"/> or <see cref="Remove"/>. Serialize it with the
+/// mutations; the snapshot carries node payloads but not the identities they were added under, so there is no
+/// lock-free membership test to reach for instead.
 /// </para>
 /// </remarks>
 /// <typeparam name="TNode">The node payload returned by a lookup.</typeparam>
@@ -58,7 +67,11 @@ public class RendezvousHash<TNode, TKey, THasher>
     }
 
     /// <summary>Gets the number of nodes currently in the pool.</summary>
-    public int NodeCount => _registry.Count;
+    /// <remarks>
+    /// Read from the published snapshot rather than the registry, so it is lock-free and always agrees with what
+    /// routing sees. A rebuild replaces the whole snapshot, so this equals the registry count outside a mutation.
+    /// </remarks>
+    public int NodeCount => _snapshot.Nodes.Length;
 
     /// <summary>
     /// Adds a node to the pool under a stable identity string.
@@ -106,6 +119,10 @@ public class RendezvousHash<TNode, TKey, THasher>
     /// <param name="nodeId">The identity to test.</param>
     /// <returns><c>true</c> if the pool contains that node.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="nodeId"/> is <c>null</c>.</exception>
+    /// <remarks>
+    /// Unlike routing, this reads the node registry rather than the published snapshot, so it must not run
+    /// concurrently with <see cref="Add"/> or <see cref="Remove"/>.
+    /// </remarks>
     public bool Contains(string nodeId)
     {
         ArgumentNullException.ThrowIfNull(nodeId);
