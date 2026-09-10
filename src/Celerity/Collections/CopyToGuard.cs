@@ -8,11 +8,14 @@ namespace Celerity.Collections;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The contract is <see cref="HashSet{T}.CopyTo(T[], int)"/>'s, which is also
-/// <c>Dictionary&lt;,&gt;</c>'s: a <see langword="null"/> array is
+/// The contract is <c>Dictionary&lt;TKey, TValue&gt;.CopyTo</c>'s: a <see langword="null"/> array is
 /// <see cref="ArgumentNullException"/>; an <c>arrayIndex</c> that is negative <i>or past the end
 /// of the array</i> is <see cref="ArgumentOutOfRangeException"/>; and only a valid index with too
-/// little room after it is <see cref="ArgumentException"/>.
+/// little room after it is <see cref="ArgumentException"/>. It is deliberately <b>stricter than
+/// <see cref="HashSet{T}.CopyTo(T[], int)"/></b>, which folds a past-the-end index into the
+/// insufficient-space case and reports it as <see cref="ArgumentException"/> — the library's thirty
+/// dictionary overloads already answered the dictionary way, so the sets follow them rather than
+/// the other way round.
 /// </para>
 /// <para>
 /// The middle check is the one worth having a shared helper for. Without it, an
@@ -21,8 +24,9 @@ namespace Celerity.Collections;
 /// <see cref="ArgumentException"/> where every other collection in the library gives an
 /// <see cref="ArgumentOutOfRangeException"/> for the same mistake. Because
 /// <see cref="ArgumentOutOfRangeException"/> derives from <see cref="ArgumentException"/> a
-/// <c>catch</c> is unaffected, but an exact-type test — xUnit's <c>Assert.Throws&lt;T&gt;</c>,
-/// an exception filter, or any code telling "bad index" from "array too small" apart — is not.
+/// <c>catch (ArgumentException)</c> is unaffected — but a <c>catch (ArgumentOutOfRangeException)</c>
+/// is, and so is an exact-type test (xUnit's <c>Assert.Throws&lt;T&gt;</c>), an exception filter, or
+/// any code telling "bad index" from "array too small" apart.
 /// <c>Deque&lt;T&gt;</c> and <c>PersistentVector&lt;T&gt;</c> both shipped without it.
 /// </para>
 /// </remarks>
@@ -48,7 +52,8 @@ internal static class CopyToGuard
     /// How many elements the copy would write. Widened to <see cref="long"/> so
     /// <c>CompressedIntSet</c> can pass its <c>long</c> cardinality without first evaluating an
     /// <c>int</c> <c>Count</c> that would throw <see cref="OverflowException"/> ahead of argument
-    /// validation. The subtraction below cannot overflow: both operands are <see cref="int"/>.
+    /// validation. The subtraction below cannot overflow either way: the two checks above leave
+    /// <paramref name="arrayIndex"/> in <c>[0, array.Length]</c>.
     /// </param>
     /// <param name="insufficientSpaceMessage">
     /// One of the message constants on this class, naming what is being copied.

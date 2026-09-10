@@ -2,6 +2,24 @@
 
 All collection types live in the `Celerity.Collections` namespace.
 
+## The `CopyTo` argument contract
+
+Every `CopyTo(T[] array, int arrayIndex)` in `Celerity.Collections` checks the same three things in
+the same order and throws the same exception for each, so swapping one collection for another cannot
+change how a caller's error handling behaves:
+
+| Condition | Exception |
+| --- | --- |
+| `array` is `null` | `ArgumentNullException` |
+| `arrayIndex` is negative, or greater than `array.Length` | `ArgumentOutOfRangeException` |
+| `arrayIndex` is in range, but fewer than `Count` slots follow it | `ArgumentException` |
+
+That is `Dictionary<TKey, TValue>.CopyTo`'s contract, and it is **stricter than
+`HashSet<T>.CopyTo`**, which folds a past-the-end index into the insufficient-space case and reports
+it as `ArgumentException`. The sets here follow the dictionary shape, so the whole library answers
+alike. `arrayIndex == array.Length` is in range under both, so on a non-empty collection it is
+insufficient space rather than a bad index.
+
 ## CelerityDictionary&lt;TKey, TValue, THasher&gt;
 
 A high-performance generic dictionary parameterized on a custom hash provider. Uses open addressing with linear probing and power-of-two sizing for fast index computation. Implements both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`.
@@ -683,7 +701,7 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 - `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring BCL `HashSet<T>`: `EnsureCapacity` pre-grows the table to hold `capacity` elements without resizing and returns the resulting capacity; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`). The out-of-band `default(T)` slot is preserved. `EnsureCapacity` throws `ArgumentOutOfRangeException` on a negative capacity; `TrimExcess(capacity)` throws if `capacity < Count`.
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty`, `null` for reference types) is yielded first when present.
-- `void CopyTo(T[] array, int arrayIndex)` — copies every element (the out-of-band `default(T)` entry first) into `array`, matching `HashSet<T>.CopyTo` argument validation.
+- `void CopyTo(T[] array, int arrayIndex)` — copies every element (the out-of-band `default(T)` entry first) into `array`, under [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
 
 ### Set operations (`ISet<T>` and `IReadOnlySet<T>`)
 
@@ -1878,8 +1896,8 @@ SmallSet(IEnumerable<T> source, int capacity = 4)
   throws if `capacity < Count`.
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — allocation-free struct enumerator.
-- `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`,
-  matching `HashSet<T>.CopyTo` argument validation.
+- `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`, under
+  [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
 
 ### Set operations (`ISet<T>` and `IReadOnlySet<T>`)
 
@@ -1992,8 +2010,8 @@ the enum (exactly the declared members, not every bit position).
 - `void Clear()`
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — allocation-free struct enumerator, ascending order.
-- `void CopyTo(TEnum[] array, int arrayIndex)` — copies in ascending order, matching
-  `HashSet<T>.CopyTo` argument validation.
+- `void CopyTo(TEnum[] array, int arrayIndex)` — copies in ascending order, under
+  [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
 
 ### Set operations (`ISet<TEnum>` and `IReadOnlySet<TEnum>`)
 
@@ -2112,7 +2130,7 @@ SparseSet(int universe, IEnumerable<int> source)
   or `capacity > Universe`. The sparse index array is unaffected.
 - `int Count { get; }`, `int Universe { get; }`
 - `Enumerator GetEnumerator()` — allocation-free struct enumerator over the dense array.
-- `void CopyTo(int[] array, int arrayIndex)` — matches `HashSet<int>.CopyTo` argument validation.
+- `void CopyTo(int[] array, int arrayIndex)` — under [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
 
 ### Set operations (`ISet<int>` and `IReadOnlySet<int>`)
 
@@ -2292,7 +2310,7 @@ CompressedIntSet(IEnumerable<int> source)
   it. Allocation-free, and it skips a whole chunk with one key comparison wherever one side is
   empty. Throws `ArgumentNullException` for a `null` argument.
 - `Enumerator GetEnumerator()` — allocation-free struct enumerator, ascending signed order.
-- `void CopyTo(int[] array, int arrayIndex)` — matches `HashSet<int>.CopyTo` argument validation.
+- `void CopyTo(int[] array, int arrayIndex)` — under [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
 
 ### Set operations (`ISet<int>` and `IReadOnlySet<int>`)
 
@@ -3959,8 +3977,8 @@ public Deque(IEnumerable<T> collection)
   `false` when empty.
 - `bool Contains(T item)` — linear `O(n)` membership test using `EqualityComparer<T>.Default`.
 - `T[] ToArray()` — a new array of the elements in front-to-back order.
-- `void CopyTo(T[] array, int arrayIndex)` — copies the elements, front to back, into `array`,
-  matching `HashSet<T>.CopyTo` argument validation.
+- `void CopyTo(T[] array, int arrayIndex)` — copies the elements, front to back, into `array`, under
+  [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
 - `int EnsureCapacity(int capacity)` — grows the backing array if needed; returns the resulting
   capacity.
 - `void TrimExcess()` — shrinks the backing array to exactly `Count`, re-linearizing so the front
@@ -4095,9 +4113,7 @@ public static readonly PersistentVector<T> Empty
 - `PersistentVector<T> RemoveLast()` — a vector with the last element removed; throws
   `InvalidOperationException` if the vector is empty.
 - `void CopyTo(T[] array, int arrayIndex)` — copies every element into `array`, one `Array.Copy` per
-  leaf, matching `HashSet<T>.CopyTo` argument validation: `ArgumentNullException` for a null array,
-  `ArgumentOutOfRangeException` for an index that is negative or past the end of the array, and
-  `ArgumentException` when the destination has too little room after it.
+  leaf, under [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
 - `T[] ToArray()` — a new array of the elements in order.
 - `Builder ToBuilder()` — a mutable builder seeded with this vector's elements.
 - `Enumerator GetEnumerator()` — an allocation-free struct enumerator that refreshes its leaf once per

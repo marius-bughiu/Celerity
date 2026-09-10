@@ -649,9 +649,8 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         // set operations above: that helper takes an int count, so passing it Count would evaluate —
         // and throw from — the overflow guard *before* any argument was validated, turning
         // CopyTo(null, 0) on a very large set into an OverflowException. CopyToGuard takes a long,
-        // so passing _cardinality keeps the argument-validation order identical to
-        // HashSet<int>.CopyTo, and a set too large for an int[] correctly reports insufficient
-        // space rather than overflowing.
+        // so passing _cardinality keeps every argument validated before the count is read, and a
+        // set too large for an int[] correctly reports insufficient space rather than overflowing.
         CopyToGuard.Validate(array, arrayIndex, _cardinality, CopyToGuard.SetElementsMessage);
 
         int i = arrayIndex;

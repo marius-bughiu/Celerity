@@ -6,19 +6,21 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// The cross-collection contract for <c>CopyTo(T[] array, int arrayIndex)</c>: every public
-/// overload in <c>Celerity.Collections</c> validates its arguments the way
-/// <see cref="HashSet{T}"/> and <c>Dictionary&lt;,&gt;</c> do, and throws the same exception
-/// <i>type</i> for the same mistake.
+/// overload in <c>Celerity.Collections</c> validates its arguments the same way and throws the
+/// same exception <i>type</i> for the same mistake. The shape is
+/// <c>Dictionary&lt;TKey, TValue&gt;.CopyTo</c>'s, not <see cref="HashSet{T}"/>'s — the two BCL
+/// types disagree on exactly the case below, and the library follows the stricter one throughout.
 ///
 /// <para>
 /// The check worth having a shared test for is the middle one, <c>arrayIndex &gt; array.Length</c>.
 /// Without it, an index past the end falls through to <c>array.Length - arrayIndex</c>, goes
 /// negative, and trips the insufficient-space branch — so the caller gets an
-/// <see cref="ArgumentException"/> where the rest of the library gives an
+/// <see cref="ArgumentException"/> (which is what <see cref="HashSet{T}"/> answers, deliberately)
+/// where the rest of the library gives an
 /// <see cref="ArgumentOutOfRangeException"/>. <c>Deque&lt;T&gt;</c> and
 /// <c>PersistentVector&lt;T&gt;</c> both shipped that way (#440). Since
 /// <see cref="ArgumentOutOfRangeException"/> derives from <see cref="ArgumentException"/> a
-/// <c>catch</c> could not see the difference, but an exact-type test can — and xUnit's
+/// <c>catch (ArgumentException)</c> could not see the difference, but an exact-type test can — and xUnit's
 /// <c>Assert.Throws&lt;T&gt;</c> is exact, which is what makes the assertions below discriminate.
 /// </para>
 ///
@@ -353,7 +355,17 @@ public class CopyToArgumentGuardTests
     [Fact]
     public void EveryPublicCopyToOverload_ShouldBeCoveredByThisFile()
     {
-        HashSet<string> declared = DeclaredCopyToOverloads();
+        List<string> all = DeclaredCopyToOverloads();
+        HashSet<string> declared = new(all, StringComparer.Ordinal);
+
+        // `Covered` is keyed by declaring type, so two matching overloads on one type would collapse
+        // to a single entry and the second could ride in untested. No type declares two today; if one
+        // ever does, this fails rather than letting the list quietly stop meaning "every overload".
+        string duplicated = Join(all.GroupBy(n => n, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1).Select(g => g.Key));
+        Assert.True(duplicated.Length == 0,
+            $"These types declare more than one CopyTo(T[], int): {duplicated}. "
+            + "Give each overload its own entry before relying on this gate.");
 
         string uncovered = Join(declared.Except(Covered, StringComparer.Ordinal));
         Assert.True(uncovered.Length == 0,
@@ -368,9 +380,9 @@ public class CopyToArgumentGuardTests
     private static string Join(IEnumerable<string> names) =>
         string.Join(", ", names.OrderBy(n => n, StringComparer.Ordinal));
 
-    private static HashSet<string> DeclaredCopyToOverloads()
+    private static List<string> DeclaredCopyToOverloads()
     {
-        HashSet<string> declared = new(StringComparer.Ordinal);
+        List<string> declared = new();
 
         foreach (Type type in typeof(CeleritySet<,>).Assembly.GetTypes())
         {

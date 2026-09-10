@@ -180,8 +180,9 @@ internal static class SetOperations
     // ── ICollection<T>.CopyTo ─────────────────────────────────────────────────
 
     // Copies the `count` elements of `source` into `array` starting at
-    // `arrayIndex`, matching HashSet<T>.CopyTo's argument validation and exceptions —
-    // which CopyToGuard owns for the whole library, sets and dictionaries alike.
+    // `arrayIndex`, under the argument contract CopyToGuard owns for the whole library,
+    // sets and dictionaries alike. Note that is Dictionary<,>.CopyTo's contract rather than
+    // HashSet<T>.CopyTo's: HashSet reports a past-the-end index as ArgumentException.
     internal static void CopyTo<T>(IEnumerable<T> source, int count, T[] array, int arrayIndex)
     {
         CopyToGuard.Validate(array, arrayIndex, count, CopyToGuard.SetElementsMessage);
