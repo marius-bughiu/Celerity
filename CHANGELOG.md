@@ -16,13 +16,13 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **The `SuccinctTrie` rollout that ships with it** — dedicated, shared-suite, CsCheck-property, fuzz and AOT coverage (plus `Select0` coverage in both `RankSelectBitVector` suites), a registered benchmark with its dashboard cards, and the README / API-reference / testing-roster entries. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
 
-- **`GetReplicas(TKey, Span<TNode>)`** on `ConsistentHashRing` and `RendezvousHash` in `Celerity.Ring` — writes a key's replica set into a caller-owned buffer and **allocates nothing**, so a replicated store can ask on every write and quorum read the way it already calls `GetNode`. Same nodes, same order as the list overload. Closes [#439](https://github.com/marius-bughiu/Celerity/issues/439).
+- **`GetReplicas(TKey, Span<TNode>)`** on `ConsistentHashRing` and `RendezvousHash` in `Celerity.Ring` — writes a key's replica set into a caller-owned buffer and **allocates nothing** up to 1,024 ring nodes or 32 rendezvous replicas (beyond that its scratch comes from `ArrayPool`), so a replicated store can ask on every write and quorum read the way it already calls `GetNode`. Same nodes, same order as the list overload. Closes [#439](https://github.com/marius-bughiu/Celerity/issues/439).
 
 - **The rollout that ships with it** — a replica suite pinning both overloads to golden sets captured before the change and to a `GetNode` removal oracle, `GetReplicas` arms in `RingBenchmark` (extended suite), an AOT smoke check, and a Ring README section. Closes [#439](https://github.com/marius-bughiu/Celerity/issues/439).
 
 ### Changed
 
-- **`GetReplicas(key, count)` allocates only its result on both Ring types**, and `RendezvousHash` no longer sorts every node to return a few. At 50 nodes and three replicas that is 48 bytes a call instead of 160 on the ring and 784 on the rendezvous hash, and the rendezvous call runs about 5.6x faster. Replica sets are unchanged. Closes [#439](https://github.com/marius-bughiu/Celerity/issues/439).
+- **`GetReplicas(key, count)` allocates only its result on both Ring types** (within the same thresholds), and `RendezvousHash` no longer sorts every node to return a few. At 50 nodes and three replicas that is 48 bytes a call instead of 160 on the ring and 784 on the rendezvous hash, and the rendezvous call runs about 5.6x faster. Replica sets are unchanged. Closes [#439](https://github.com/marius-bughiu/Celerity/issues/439).
 
 ## [3.1.0] - 2026-09-06
 

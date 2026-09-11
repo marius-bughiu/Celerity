@@ -31,8 +31,8 @@ namespace Celerity.Ring;
 /// The same determinism caveat as the ring applies: hash keys with a specified deterministic
 /// <typeparamref name="THasher"/> (<see cref="StringXxHash3Hasher"/>, <see cref="GuidHasher"/>, an integer
 /// hasher, …), not <see cref="DefaultHasher{T}"/> over <see cref="string"/>, if cross-process agreement
-/// matters. Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / both
-/// <see cref="GetReplicas(TKey, int)"/> overloads) is lock-free over an immutable snapshot, as is <see cref="NodeCount"/>, which reads the same snapshot;
+/// matters. Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / <see cref="GetReplicas(TKey, int)"/>
+/// / <see cref="GetReplicas(TKey, Span{TNode})"/>) is lock-free over an immutable snapshot, as is <see cref="NodeCount"/>, which reads the same snapshot;
 /// mutations must be serialized by the caller.
 /// </para>
 /// <para>
@@ -177,9 +177,10 @@ public class RendezvousHash<TNode, TKey, THasher>
     /// <returns>The highest-scoring nodes for the key, best first; fewer than <paramref name="count"/> when the pool is smaller.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is negative.</exception>
     /// <remarks>
-    /// Allocates the returned array and nothing else. On a per-request path, prefer
-    /// <see cref="GetReplicas(TKey, Span{TNode})"/>, which writes the same nodes into a caller-supplied buffer
-    /// and does not allocate.
+    /// Allocates the returned array, plus — for more than 32 replicas — candidate scratch rented from
+    /// <see cref="ArrayPool{T}.Shared"/>, which allocates only when the pool has no buffer to lend. On a
+    /// per-request path, prefer <see cref="GetReplicas(TKey, Span{TNode})"/>, which writes the same nodes into a
+    /// caller-supplied buffer and skips the result array.
     /// </remarks>
     public IReadOnlyList<TNode> GetReplicas(TKey key, int count)
     {

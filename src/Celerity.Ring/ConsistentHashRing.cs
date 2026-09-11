@@ -32,8 +32,8 @@ namespace Celerity.Ring;
 /// if you need cross-process agreement, because it delegates to the per-run-randomized BCL hash.
 /// </para>
 /// <para>
-/// Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / both <see cref="GetReplicas(TKey, int)"/>
-/// overloads) is lock-free: each
+/// Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / <see cref="GetReplicas(TKey, int)"/> /
+/// <see cref="GetReplicas(TKey, Span{TNode})"/>) is lock-free: each
 /// mutation publishes a fresh immutable snapshot with a single volatile write, and a reader takes one
 /// consistent snapshot for the duration of the call. Routing is therefore safe to run concurrently with
 /// itself and with a mutation (a reader sees either the old or the new topology, never a torn one), as are
@@ -243,9 +243,10 @@ public class ConsistentHashRing<TNode, TKey, THasher>
     /// </returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is negative.</exception>
     /// <remarks>
-    /// Allocates the returned array and nothing else. On a per-request path, prefer
-    /// <see cref="GetReplicas(TKey, Span{TNode})"/>, which writes the same nodes into a caller-supplied buffer
-    /// and does not allocate.
+    /// Allocates the returned array, plus — on a ring of more than 1,024 physical nodes — a seen-set rented from
+    /// <see cref="ArrayPool{T}.Shared"/>, which allocates only when the pool has no buffer to lend. On a
+    /// per-request path, prefer <see cref="GetReplicas(TKey, Span{TNode})"/>, which writes the same nodes into a
+    /// caller-supplied buffer and skips the result array.
     /// </remarks>
     public IReadOnlyList<TNode> GetReplicas(TKey key, int count)
     {

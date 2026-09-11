@@ -52,7 +52,7 @@ foreach (string node in replicaSet.AsSpan(0, written))
     Send(node);
 ```
 
-Both overloads return the same nodes in the same order. The span form allocates nothing: the ring's seen-set lives on the stack up to 1,024 physical nodes, and the rendezvous ranking up to 32 replicas; past either it rents from `ArrayPool<T>.Shared`. Rendezvous scores every node once but ranks only the replicas asked for, so a short preference list from a large pool costs little more than `GetNode`.
+Both overloads return the same nodes in the same order. The span form allocates nothing up to 1,024 physical nodes on the ring and up to 32 replicas on the rendezvous hash, where its scratch lives on the stack; past either it rents from `ArrayPool<T>.Shared`, which allocates only when the pool has no buffer to lend. Rendezvous scores every node once but ranks only the replicas asked for, so a short preference list from a large pool costs little more than `GetNode`.
 
 ## Generic over your key type
 
