@@ -281,8 +281,8 @@ public class RendezvousHash<TNode, TKey, THasher>
         }
     }
 
-    // Packs a candidate into one value whose unsigned order is its rank: the score in the high 64 bits, and the
-    // node index complemented in the low 32, so on equal scores the lower index (ordinal identity order) ranks
+    // Packs a candidate into one value whose unsigned order is its rank: the score in bits 32-95 (the top 32 are
+    // always zero), and the node index complemented in the low 32, so on equal scores the lower index (ordinal identity order) ranks
     // higher — the same tie-break BestNode applies. Indices are distinct, so no two keys are ever equal.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static UInt128 RankKey(ulong score, int nodeIndex) => ((UInt128)score << 32) | (uint)~nodeIndex;
