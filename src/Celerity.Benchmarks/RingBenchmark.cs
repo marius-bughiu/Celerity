@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Configs;
 using Celerity.Ring;
 
 /// <summary>
@@ -15,17 +16,27 @@ using Celerity.Ring;
 /// OS / architecture / runtime — a throughput benchmark can't show.) Isolated microbenchmark, so it
 /// lives in the extended suite, not the per-PR core gate.
 /// </summary>
+/// <remarks>
+/// The <c>GetReplicas</c> category measures the replica set a replicated store asks for on every write and
+/// quorum read — three distinct nodes per key — against the same MD5 hand-roll walking its continuum into a
+/// fresh <see cref="List{T}"/>. <c>RendezvousReplicas</c> measures <see cref="StringRendezvousHash{TNode}"/>'s
+/// ranked preference list over the same fifty nodes. Each category's <c>Allocated</c> column is the point.
+/// </remarks>
 [MemoryDiagnoser]
+[GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
 public class RingBenchmark
 {
     private const int Nodes = 50;
     private const int VirtualNodesPerNode = 160;
     private const int Lookups = 4096;
+    private const int Replicas = 3;
 
     private StringConsistentHashRing<string> ring = null!;
+    private StringRendezvousHash<string> pool = null!;
     private uint[] baselineHashes = null!;
     private string[] baselineNodes = null!;
     private string[] keys = null!;
+    private readonly string[] replicaBuffer = new string[Replicas];
 
     [GlobalSetup]
     public void Setup()
@@ -35,8 +46,12 @@ public class RingBenchmark
             nodeIds[i] = $"cache-node-{i:D2}.internal";
 
         ring = new StringConsistentHashRing<string>(VirtualNodesPerNode);
+        pool = new StringRendezvousHash<string>();
         foreach (var id in nodeIds)
+        {
             ring.Add(id, id);
+            pool.Add(id, id);
+        }
 
         // Baseline ring: MD5-hashed virtual nodes on a flat sorted continuum (the textbook hand-roll).
         var entries = new List<(uint Hash, string Node)>(Nodes * VirtualNodesPerNode);
@@ -60,6 +75,7 @@ public class RingBenchmark
     }
 
     [Benchmark(Baseline = true)]
+    [BenchmarkCategory("GetNode")]
     public int Md5Ring_GetNode()
     {
         int acc = 0;
@@ -69,6 +85,7 @@ public class RingBenchmark
     }
 
     [Benchmark]
+    [BenchmarkCategory("GetNode")]
     public int CelerityRing_GetNode()
     {
         int acc = 0;
@@ -77,15 +94,85 @@ public class RingBenchmark
         return acc;
     }
 
-    private string BaselineGetNode(string key)
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("GetReplicas")]
+    public int Md5Ring_GetReplicas()
     {
-        uint h = Md5ToUint(key);
+        int acc = 0;
+        foreach (var key in keys)
+            acc += BaselineGetReplicas(key).Count;
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("GetReplicas")]
+    public int CelerityRing_GetReplicas()
+    {
+        int acc = 0;
+        foreach (var key in keys)
+            acc += ring.GetReplicas(key, Replicas).Count;
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("GetReplicas")]
+    public int CelerityRing_GetReplicasSpan()
+    {
+        Span<string> replicas = replicaBuffer;
+        int acc = 0;
+        foreach (var key in keys)
+            acc += ring.GetReplicas(key, replicas);
+        return acc;
+    }
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("RendezvousReplicas")]
+    public int CelerityRendezvous_GetReplicas()
+    {
+        int acc = 0;
+        foreach (var key in keys)
+            acc += pool.GetReplicas(key, Replicas).Count;
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("RendezvousReplicas")]
+    public int CelerityRendezvous_GetReplicasSpan()
+    {
+        Span<string> replicas = replicaBuffer;
+        int acc = 0;
+        foreach (var key in keys)
+            acc += pool.GetReplicas(key, replicas);
+        return acc;
+    }
+
+    private string BaselineGetNode(string key) => baselineNodes[BaselineOwnerSlot(Md5ToUint(key))];
+
+    // The hand-rolled replica walk: step clockwise from the owner, keeping each node the first time it appears.
+    private List<string> BaselineGetReplicas(string key)
+    {
+        var replicas = new List<string>(Replicas);
+        int slot = BaselineOwnerSlot(Md5ToUint(key));
+        while (replicas.Count < Replicas)
+        {
+            string node = baselineNodes[slot];
+            if (!replicas.Contains(node))
+                replicas.Add(node);
+            if (++slot == baselineNodes.Length)
+                slot = 0; // wrap around the ring
+        }
+
+        return replicas;
+    }
+
+    private int BaselineOwnerSlot(uint h)
+    {
         int idx = Array.BinarySearch(baselineHashes, h);
         if (idx < 0)
             idx = ~idx;
         if (idx >= baselineHashes.Length)
             idx = 0; // wrap around the ring
-        return baselineNodes[idx];
+        return idx;
     }
 
     private static uint Md5ToUint(string s)

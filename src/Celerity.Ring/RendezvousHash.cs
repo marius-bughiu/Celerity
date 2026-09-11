@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace Celerity.Ring;
@@ -30,8 +31,8 @@ namespace Celerity.Ring;
 /// The same determinism caveat as the ring applies: hash keys with a specified deterministic
 /// <typeparamref name="THasher"/> (<see cref="StringXxHash3Hasher"/>, <see cref="GuidHasher"/>, an integer
 /// hasher, …), not <see cref="DefaultHasher{T}"/> over <see cref="string"/>, if cross-process agreement
-/// matters. Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / <see cref="GetReplicas"/>) is
-/// lock-free over an immutable snapshot, as is <see cref="NodeCount"/>, which reads the same snapshot;
+/// matters. Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / both
+/// <see cref="GetReplicas(TKey, int)"/> overloads) is lock-free over an immutable snapshot, as is <see cref="NodeCount"/>, which reads the same snapshot;
 /// mutations must be serialized by the caller.
 /// </para>
 /// <para>
@@ -51,6 +52,10 @@ namespace Celerity.Ring;
 public class RendezvousHash<TNode, TKey, THasher>
     where THasher : struct, IHashProvider<TKey>
 {
+    // Replica ranking keeps one 16-byte candidate per requested replica. Up to this many (512 bytes) they live
+    // on the stack; a larger request rents them from the shared array pool.
+    private const int StackRankedCandidates = 32;
+
     private readonly THasher _keyHasher;
     private readonly StringXxHash3Hasher _nodeHasher;
     private readonly Dictionary<string, Registration> _registry;
@@ -171,38 +176,138 @@ public class RendezvousHash<TNode, TKey, THasher>
     /// <param name="count">The maximum number of nodes to return. <c>0</c> returns an empty list.</param>
     /// <returns>The highest-scoring nodes for the key, best first; fewer than <paramref name="count"/> when the pool is smaller.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is negative.</exception>
+    /// <remarks>
+    /// Allocates the returned array and nothing else. On a per-request path, prefer
+    /// <see cref="GetReplicas(TKey, Span{TNode})"/>, which writes the same nodes into a caller-supplied buffer
+    /// and does not allocate.
+    /// </remarks>
     public IReadOnlyList<TNode> GetReplicas(TKey key, int count)
     {
         if (count < 0)
             throw new ArgumentOutOfRangeException(nameof(count), count, "Replica count must be non-negative.");
 
         Snapshot snapshot = _snapshot;
-        int nodeCount = snapshot.Nodes.Length;
-        int take = Math.Min(count, nodeCount);
+        int take = Math.Min(count, snapshot.Nodes.Length);
         if (take == 0)
             return Array.Empty<TNode>();
 
-        uint keyHash = (uint)_keyHasher.Hash(key);
-        var scores = new ulong[nodeCount];
-        var order = new int[nodeCount];
-        for (int i = 0; i < nodeCount; i++)
+        var replicas = new TNode[take];
+        RankReplicas(snapshot, (uint)_keyHasher.Hash(key), replicas);
+        return replicas;
+    }
+
+    /// <summary>
+    /// Writes the highest-scoring nodes for a key into <paramref name="destination"/> in descending score order —
+    /// the allocation-free form of <see cref="GetReplicas(TKey, int)"/>, with the buffer's length as the replica
+    /// count.
+    /// </summary>
+    /// <param name="key">The key to route.</param>
+    /// <param name="destination">
+    /// The buffer to fill, best first. Its length is the number of nodes asked for; an empty buffer asks for none.
+    /// </param>
+    /// <returns>
+    /// The number of nodes written: <c>destination.Length</c>, or <see cref="NodeCount"/> when the pool is
+    /// smaller; <c>0</c> when the pool is empty. Elements past the returned count are left unchanged.
+    /// </returns>
+    /// <remarks>
+    /// Writes exactly the nodes <see cref="GetReplicas(TKey, int)"/> returns for the same count, in the same
+    /// order, read from one consistent snapshot. Every node is scored once, but only the requested replicas are
+    /// ranked, so asking for a few nodes of a large pool costs little more than <see cref="GetNode"/>. Nothing is
+    /// allocated for up to 32 replicas, whose candidates live on the stack; a larger buffer rents them from
+    /// <see cref="ArrayPool{T}.Shared"/>.
+    /// </remarks>
+    public int GetReplicas(TKey key, Span<TNode> destination)
+    {
+        Snapshot snapshot = _snapshot;
+        int take = Math.Min(destination.Length, snapshot.Nodes.Length);
+        if (take == 0)
+            return 0;
+
+        RankReplicas(snapshot, (uint)_keyHasher.Hash(key), destination.Slice(0, take));
+        return take;
+    }
+
+    // Fills `replicas` with the replicas.Length highest-ranked nodes, best first. The caller guarantees
+    // 1 <= replicas.Length <= NodeCount. Each node is scored once and offered to a bounded min-heap holding the
+    // best candidates so far with the weakest at the root, so selecting k of n costs O(n log k) rather than the
+    // O(n log n) of sorting every node.
+    private static void RankReplicas(Snapshot snapshot, uint keyHash, Span<TNode> replicas)
+    {
+        TNode[] nodes = snapshot.Nodes;
+        int take = replicas.Length;
+        if (take == 1)
         {
-            scores[i] = NodeScore(snapshot, i, keyHash);
-            order[i] = i;
+            replicas[0] = nodes[BestNode(snapshot, keyHash)];
+            return;
         }
 
-        // Rank by score descending, tie-broken by ascending node index (ordinal identity order) for a
-        // deterministic ordering.
-        Array.Sort(order, (a, b) =>
-        {
-            int cmp = scores[b].CompareTo(scores[a]);
-            return cmp != 0 ? cmp : a.CompareTo(b);
-        });
+        UInt128[]? rented = null;
+        Span<UInt128> heap = take <= StackRankedCandidates
+            ? stackalloc UInt128[StackRankedCandidates]
+            : (rented = ArrayPool<UInt128>.Shared.Rent(take));
+        heap = heap.Slice(0, take);
 
-        var result = new TNode[take];
-        for (int i = 0; i < take; i++)
-            result[i] = snapshot.Nodes[order[i]];
-        return result;
+        try
+        {
+            for (int i = 0; i < take; i++)
+                heap[i] = RankKey(NodeScore(snapshot, i, keyHash), i);
+            for (int i = (take >> 1) - 1; i >= 0; i--)
+                SiftDown(heap, take, i);
+
+            for (int i = take; i < nodes.Length; i++)
+            {
+                UInt128 candidate = RankKey(NodeScore(snapshot, i, keyHash), i);
+                if (candidate > heap[0])
+                {
+                    heap[0] = candidate;
+                    SiftDown(heap, take, 0);
+                }
+            }
+
+            // Pop the weakest remaining candidate into the last unfilled slot until the heap is empty, which
+            // leaves `replicas` best first.
+            for (int size = take - 1; size >= 0; size--)
+            {
+                replicas[size] = nodes[NodeIndexOf(heap[0])];
+                heap[0] = heap[size];
+                SiftDown(heap, size, 0);
+            }
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<UInt128>.Shared.Return(rented);
+        }
+    }
+
+    // Packs a candidate into one value whose unsigned order is its rank: the score in the high 64 bits, and the
+    // node index complemented in the low 32, so on equal scores the lower index (ordinal identity order) ranks
+    // higher — the same tie-break BestNode applies. Indices are distinct, so no two keys are ever equal.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static UInt128 RankKey(ulong score, int nodeIndex) => ((UInt128)score << 32) | (uint)~nodeIndex;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int NodeIndexOf(UInt128 rankKey) => ~(int)(uint)rankKey;
+
+    // Restores the min-heap order below `parent` within heap[0..count), keeping the weakest candidate at the root.
+    private static void SiftDown(Span<UInt128> heap, int count, int parent)
+    {
+        UInt128 item = heap[parent];
+        while (true)
+        {
+            int child = (parent << 1) + 1;
+            if (child >= count)
+                break;
+            if (child + 1 < count && heap[child + 1] < heap[child])
+                child++;
+            if (item < heap[child])
+                break;
+
+            heap[parent] = heap[child];
+            parent = child;
+        }
+
+        heap[parent] = item;
     }
 
     // Returns the index of the highest-scoring node for a key hash. Iterating in ascending node-index order and

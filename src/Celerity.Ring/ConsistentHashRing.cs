@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace Celerity.Ring;
@@ -31,7 +32,8 @@ namespace Celerity.Ring;
 /// if you need cross-process agreement, because it delegates to the per-run-randomized BCL hash.
 /// </para>
 /// <para>
-/// Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / <see cref="GetReplicas"/>) is lock-free: each
+/// Routing (<see cref="GetNode"/> / <see cref="TryGetNode"/> / both <see cref="GetReplicas(TKey, int)"/>
+/// overloads) is lock-free: each
 /// mutation publishes a fresh immutable snapshot with a single volatile write, and a reader takes one
 /// consistent snapshot for the duration of the call. Routing is therefore safe to run concurrently with
 /// itself and with a mutation (a reader sees either the old or the new topology, never a torn one), as are
@@ -67,6 +69,10 @@ public class ConsistentHashRing<TNode, TKey, THasher>
     // Hard ceiling on the total virtual-node count across all nodes, guarding the rebuild against an
     // accidental (weight * virtualNodesPerNode * nodeCount) explosion that would exhaust memory.
     private const long MaxTotalVirtualNodes = 1L << 27; // ~134 million
+
+    // The replica walk's seen-set is one bit per physical node. Up to this many 64-bit words (1,024 nodes,
+    // 128 bytes) it lives on the stack; a larger ring rents it from the shared array pool.
+    private const int StackSeenWords = 16;
 
     private readonly int _virtualNodesPerNode;
     private readonly THasher _keyHasher;
@@ -236,37 +242,103 @@ public class ConsistentHashRing<TNode, TKey, THasher>
     /// has fewer nodes; an empty list when the ring is empty.
     /// </returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is negative.</exception>
+    /// <remarks>
+    /// Allocates the returned array and nothing else. On a per-request path, prefer
+    /// <see cref="GetReplicas(TKey, Span{TNode})"/>, which writes the same nodes into a caller-supplied buffer
+    /// and does not allocate.
+    /// </remarks>
     public IReadOnlyList<TNode> GetReplicas(TKey key, int count)
     {
         if (count < 0)
             throw new ArgumentOutOfRangeException(nameof(count), count, "Replica count must be non-negative.");
 
         Snapshot snapshot = _snapshot;
-        uint[] positions = snapshot.Positions;
-        int nodeCount = snapshot.Nodes.Length;
-        int take = Math.Min(count, nodeCount);
+        int take = Math.Min(count, snapshot.Nodes.Length);
         if (take == 0)
             return Array.Empty<TNode>();
 
-        var result = new List<TNode>(take);
-        var seen = new bool[nodeCount];
-        int start = OwnerSlot(positions, (uint)_keyHasher.Hash(key));
+        var replicas = new TNode[take];
+        WalkReplicas(snapshot, (uint)_keyHasher.Hash(key), replicas);
+        return replicas;
+    }
 
-        for (int step = 0; step < positions.Length && result.Count < take; step++)
+    /// <summary>
+    /// Writes the <em>distinct</em> nodes for a key into <paramref name="destination"/>, walking clockwise from
+    /// the key's owner — the allocation-free form of <see cref="GetReplicas(TKey, int)"/>, with the buffer's
+    /// length as the replica count.
+    /// </summary>
+    /// <param name="key">The key to route.</param>
+    /// <param name="destination">
+    /// The buffer to fill, primary first. Its length is the number of distinct nodes asked for; an empty buffer
+    /// asks for none.
+    /// </param>
+    /// <returns>
+    /// The number of nodes written: <c>destination.Length</c>, or <see cref="NodeCount"/> when the ring has fewer
+    /// nodes; <c>0</c> when the ring is empty. Elements past the returned count are left unchanged.
+    /// </returns>
+    /// <remarks>
+    /// Writes exactly the nodes <see cref="GetReplicas(TKey, int)"/> returns for the same count, in the same
+    /// order, read from one consistent snapshot. Nothing is allocated on a ring of up to 1,024 physical nodes,
+    /// where the walk's seen-set lives on the stack; a larger ring rents it from <see cref="ArrayPool{T}.Shared"/>.
+    /// </remarks>
+    public int GetReplicas(TKey key, Span<TNode> destination)
+    {
+        Snapshot snapshot = _snapshot;
+        int take = Math.Min(destination.Length, snapshot.Nodes.Length);
+        if (take == 0)
+            return 0;
+
+        WalkReplicas(snapshot, (uint)_keyHasher.Hash(key), destination.Slice(0, take));
+        return take;
+    }
+
+    // Fills `replicas` with the first replicas.Length distinct owners met walking clockwise from the key's owner
+    // slot. The caller guarantees 1 <= replicas.Length <= NodeCount, and every node owns at least one slot, so the
+    // walk always completes within one lap of the ring.
+    private static void WalkReplicas(Snapshot snapshot, uint keyHash, Span<TNode> replicas)
+    {
+        uint[] positions = snapshot.Positions;
+        int[] ownerIndex = snapshot.OwnerIndex;
+        TNode[] nodes = snapshot.Nodes;
+
+        int slot = OwnerSlot(positions, keyHash);
+        int owner = ownerIndex[slot];
+        replicas[0] = nodes[owner];
+        if (replicas.Length == 1)
+            return;
+
+        // One bit per physical node, set once that node has been written.
+        int words = (nodes.Length + 63) >> 6;
+        ulong[]? rented = null;
+        Span<ulong> seen = words <= StackSeenWords
+            ? stackalloc ulong[StackSeenWords]
+            : (rented = ArrayPool<ulong>.Shared.Rent(words));
+        seen = seen.Slice(0, words);
+        seen.Clear();
+
+        try
         {
-            int slot = start + step;
-            if (slot >= positions.Length)
-                slot -= positions.Length;
-
-            int ownerIndex = snapshot.OwnerIndex[slot];
-            if (!seen[ownerIndex])
+            seen[owner >> 6] |= 1UL << (owner & 63);
+            for (int written = 1; written < replicas.Length;)
             {
-                seen[ownerIndex] = true;
-                result.Add(snapshot.Nodes[ownerIndex]);
+                if (++slot == positions.Length)
+                    slot = 0;
+
+                owner = ownerIndex[slot];
+                ref ulong word = ref seen[owner >> 6];
+                ulong bit = 1UL << (owner & 63);
+                if ((word & bit) == 0)
+                {
+                    word |= bit;
+                    replicas[written++] = nodes[owner];
+                }
             }
         }
-
-        return result;
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<ulong>.Shared.Return(rented);
+        }
     }
 
     // Finds the ring slot that owns a key hash: the first virtual node at or clockwise of `keyPosition`,

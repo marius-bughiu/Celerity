@@ -2959,6 +2959,10 @@ void Check(bool condition, string message)
     IReadOnlyList<int> replicas = ring.GetReplicas("user-42", 3);
     Check(replicas.Count == 3 && replicas[0] == owner, "ConsistentHashRing replica walk starts at the owner");
     Check(ring.GetReplicas("user-42", 9).Count == 3, "ConsistentHashRing replicas cap at the node count");
+    Span<int> replicaBuffer = stackalloc int[4];
+    Check(ring.GetReplicas("user-42", replicaBuffer) == 3 && replicaBuffer[0] == replicas[0]
+        && replicaBuffer[1] == replicas[1] && replicaBuffer[2] == replicas[2],
+        "ConsistentHashRing span replica walk matches the list");
 
     // The property the type exists for: removing a node moves only the keys it owned.
     var keys = new string[256];
@@ -2991,6 +2995,9 @@ void Check(bool condition, string message)
     IReadOnlyList<string> hrwReplicas = hrw.GetReplicas(99L, 2);
     Check(hrwReplicas.Count == 2 && hrwReplicas[0] == hrwOwner,
         "RendezvousHash replica order starts at the owner");
+    var hrwBuffer = new string[3];
+    Check(hrw.GetReplicas(99L, hrwBuffer) == 2 && hrwBuffer[0] == hrwReplicas[0] && hrwBuffer[1] == hrwReplicas[1]
+        && hrwBuffer[2] is null, "RendezvousHash span ranking matches the list and leaves the tail untouched");
     Check(hrw.Remove("beta") && hrw.NodeCount == 1, "RendezvousHash.Remove");
 
     // The String* subclasses close the generic for the caller: two more instantiations, fixed by the package.
