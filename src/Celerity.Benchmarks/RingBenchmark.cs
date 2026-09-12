@@ -24,6 +24,7 @@ using Celerity.Ring;
 /// </remarks>
 [MemoryDiagnoser]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
+[CategoriesColumn]
 public class RingBenchmark
 {
     private const int Nodes = 50;
