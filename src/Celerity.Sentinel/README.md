@@ -82,6 +82,8 @@ AbuseReport<string> report = striped.Snapshot(topN: 20);
 
 Merges are **exact** for rate / distinct / first-seen and use the standard Space-Saving approximation for offenders. The same `Merge` primitive rolls up per-shard trackers across a fleet.
 
+A rollup merges the lanes into one extra tracker that `Snapshot` keeps and reuses, so frequent rollups allocate only the report: the striped tracker costs `laneCount + 1` trackers of memory, not a fresh couple of megabytes per call.
+
 ## Windowing
 
 Rate and offender counts are cumulative. For a time-windowed rate, reset on a tumbling interval with `Clear()` (or swap in a fresh instance).

@@ -16,6 +16,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **The `SuccinctTrie` rollout that ships with it** — dedicated, shared-suite, CsCheck-property, fuzz and AOT coverage (plus `Select0` coverage in both `RankSelectBitVector` suites), a registered benchmark with its dashboard cards, and the README / API-reference / testing-roster entries. Closes [#429](https://github.com/marius-bughiu/Celerity/issues/429).
 
+### Changed
+
+- **`StripedAbuseTracker.Snapshot` no longer allocates a whole tracker per rollup.** It reuses one merge target across calls, so a rollup at the default options drops from about 2.3 MB of garbage to a few KB, and a coordinator reporting every second no longer churns megabytes per second. The striped tracker now retains one extra tracker's footprint after its first snapshot. Concurrent `Snapshot` calls stay safe with each other. Pinned by an allocation test and measured by a new extended-suite `StripedSentinelBenchmark`. Closes [#438](https://github.com/marius-bughiu/Celerity/issues/438).
+
 ## [3.1.0] - 2026-09-06
 
 ### Added

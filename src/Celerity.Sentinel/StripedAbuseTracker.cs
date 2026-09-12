@@ -33,6 +33,10 @@ public class StripedAbuseTracker<TKey, THasher>
     private readonly AbuseTrackerOptions _options;
     private readonly AbuseTracker<TKey, THasher>[] _lanes;
 
+    // The tracker Snapshot merges the lanes into, parked empty between rollups so the next one reuses it rather
+    // than allocating a whole tracker. Null before the first rollup and while one holds it.
+    private AbuseTracker<TKey, THasher>? _mergeTarget;
+
     /// <summary>
     /// Initializes a new <see cref="StripedAbuseTracker{TKey, THasher}"/> with the given number of lanes.
     /// </summary>
@@ -93,16 +97,33 @@ public class StripedAbuseTracker<TKey, THasher>
     /// <param name="topN">The maximum number of offenders to include.</param>
     /// <returns>The combined abuse report across all lanes.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="topN"/> is negative.</exception>
+    /// <remarks>
+    /// The lanes are merged into a separate tracker, since merging into a lane would corrupt it. The first call
+    /// builds that tracker and every later call clears and reuses it, so a coordinator rolling up on a short
+    /// interval allocates only the report rather than a whole tracker (about 2.3&#160;MB at the default options)
+    /// per call. The price is that the striped tracker holds <see cref="LaneCount"/> + 1 trackers' worth of
+    /// memory once a snapshot has been taken. Concurrent <see cref="Snapshot"/> calls remain safe with each
+    /// other: a call that finds the merge tracker already in use by another builds its own.
+    /// </remarks>
     public AbuseReport<TKey> Snapshot(int topN)
     {
         if (topN < 0)
             throw new ArgumentOutOfRangeException(nameof(topN), topN, "topN must be non-negative.");
 
-        var merged = new AbuseTracker<TKey, THasher>(_options);
+        // Take the parked merge target, leaving null behind, so a rollup racing this one builds its own rather
+        // than merging into the same tracker.
+        AbuseTracker<TKey, THasher> merged = Interlocked.Exchange(ref _mergeTarget, null)
+            ?? new AbuseTracker<TKey, THasher>(_options);
+
         for (int i = 0; i < _lanes.Length; i++)
             merged.Merge(_lanes[i]);
 
-        return merged.Snapshot(topN);
+        AbuseReport<TKey> report = merged.Snapshot(topN);
+
+        // Park it empty, so the next rollup starts from zero and no key stays referenced between rollups.
+        merged.Clear();
+        Volatile.Write(ref _mergeTarget, merged);
+        return report;
     }
 
     /// <summary>Resets every lane to empty. Must not run concurrently with observations.</summary>
