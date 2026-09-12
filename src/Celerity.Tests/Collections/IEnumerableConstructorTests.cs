@@ -2029,4 +2029,93 @@ public class IEnumerableConstructorTests
         Assert.Equal(2, map.Count);
         Assert.Equal(10, map[1]);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  PersistentHashMap — the immutable member of the family
+    // ──────────────────────────────────────────────────────────────
+    // No capacity or load-factor parameters here: the map sizes itself as a trie, so the "collection source
+    // sizes the backing storage" row above has no counterpart. What does carry over is the argument contract
+    // — null source, duplicate keys, and the out-of-band zero-key slot.
+
+    [Fact]
+    public void PersistentHashMap_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => new PersistentHashMap<int, string, Int32WangNaiveHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void PersistentHashMap_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(1, "one"),
+            new KeyValuePair<int, string>(1, "uno"),
+        };
+
+        Assert.Throws<ArgumentException>(
+            () => new PersistentHashMap<int, string, Int32WangNaiveHasher>(source));
+    }
+
+    [Fact]
+    public void PersistentHashMap_ShouldThrow_OnDuplicateZeroKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(0, "zero"),
+            new KeyValuePair<int, string>(0, "nil"),
+        };
+
+        Assert.Throws<ArgumentException>(
+            () => new PersistentHashMap<int, string, Int32WangNaiveHasher>(source));
+    }
+
+    [Fact]
+    public void PersistentHashMap_ShouldCopyAllEntries_FromArraySource_IncludingTheZeroKey()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, int>(2, 20),
+            new KeyValuePair<int, int>(1, 10),
+            new KeyValuePair<int, int>(0, 99),
+        };
+
+        var map = new PersistentHashMap<int, int, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(99, map[0]);
+        Assert.Equal(10, map[1]);
+        Assert.Equal(20, map[2]);
+    }
+
+    [Fact]
+    public void PersistentHashMap_ShouldCopyAllEntries_FromNonCollectionEnumerableSource()
+    {
+        var map = new PersistentHashMap<int, int, Int32WangNaiveHasher>(
+            Enumerable.Range(0, 500).Reverse().Select(i => new KeyValuePair<int, int>(i, i * 2)));
+
+        Assert.Equal(500, map.Count);
+        Assert.Equal(Enumerable.Range(0, 500), map.Select(e => e.Key).OrderBy(key => key));
+        Assert.Equal(998, map[499]);
+    }
+
+    [Fact]
+    public void PersistentHashMap_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<KeyValuePair<int, int>>
+        {
+            new KeyValuePair<int, int>(1, 10),
+            new KeyValuePair<int, int>(2, 20),
+        };
+
+        var map = new PersistentHashMap<int, int, Int32WangNaiveHasher>(source);
+        source.Clear();
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(10, map[1]);
+    }
 }

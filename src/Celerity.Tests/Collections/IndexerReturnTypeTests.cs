@@ -234,4 +234,36 @@ public class IndexerReturnTypeTests
 
         Assert.Equal("hello", value);
     }
+
+    [Fact]
+    public void PersistentHashMap_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(
+            typeof(PersistentHashMap<string, int, StringFnV1AHasher>),
+            keyType: typeof(string),
+            valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void PersistentHashMap_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        PersistentHashMap<int, string, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty.Add(1, "hello");
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
+    public void PersistentHashMapBuilder_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        // The builder's indexer is the writable one, and an indexer has a single type for get and set — so
+        // pinning the get here is what keeps the builder from drifting to TValue? and taking the map's own
+        // surface with it through ToImmutable.
+        AssertPrimaryIndexerReturnsTValue(
+            typeof(PersistentHashMap<string, int, StringFnV1AHasher>.Builder),
+            keyType: typeof(string),
+            valueGenericIndex: 1);
+    }
 }

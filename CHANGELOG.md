@@ -6,6 +6,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
+- **`PersistentHashMap<TKey, TValue, THasher>`** in `Celerity.Collections` — an **immutable hash map** over a CHAMP trie: a single-key edit returns a new map sharing all but one root-to-leaf path with its receiver, and a write that changes nothing hands back the receiver. It is the associative half of the lane `PersistentVector<T>` opened. At 100,000 `int` → `string` entries it looks up **10.6x** `ImmutableDictionary<int, string>` and inserts **2.1x**; ⚠️ retained memory is only **1.24x** better and `SetItem` allocates ~9% *more* while running faster, so the read is what earns the type. Ships a `Builder`. Full figures and tradeoffs in [the API reference](docs/api/collections.md#persistenthashmaptkey-tvalue-thasher). Closes [#433](https://github.com/marius-bughiu/Celerity/issues/433).
+
+- **The `PersistentHashMap` rollout that ships with it** — dedicated, shared-suite, CsCheck-property, fuzz and AOT coverage, a registered benchmark with its dashboard cards, and the README / API-reference / docs-index entries. Closes [#433](https://github.com/marius-bughiu/Celerity/issues/433).
+
 - **`PersistentVector<T>`** in `Celerity.Collections` — an **immutable indexed sequence** over a 32-way bit-partitioned trie, where every operation returns a new vector sharing all but one root-to-leaf path with its receiver. It sits between the two sequences `System.Collections.Immutable` ships: `ImmutableArray<T>` indexes like an array but copies the whole array per append, and `ImmutableList<T>` appends in `O(log n)` but chases a pointer per level on every read too. At 100,000 `int` elements it indexes **14.3x** `ImmutableList<T>`, appends **16.3x** and retains **9.4x** less memory. Ships a mutable `Builder` for bulk construction. ⚠️ `ImmutableArray<T>` still indexes faster if the sequence never grows, and inserting in the middle is `O(n)` here against its `O(log n)` — which is why `IImmutableList<T>` is deliberately not implemented. Closes [#431](https://github.com/marius-bughiu/Celerity/issues/431).
 
 - **The `PersistentVector` rollout that ships with it** — dedicated, CsCheck-property, fuzz and AOT coverage, a registered benchmark with its dashboard cards, and the README / API-reference / testing-roster entries. Closes [#431](https://github.com/marius-bughiu/Celerity/issues/431).
@@ -23,6 +27,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Changed
 
 - **`GetReplicas(key, count)` allocates only its result on both Ring types** (within the same thresholds), and `RendezvousHash` no longer sorts every node to return a few. At 50 nodes and three replicas that is 48 bytes a call instead of 160 on the ring and 784 on the rendezvous hash, and the rendezvous call runs about 5.6x faster. Replica sets are unchanged. Closes [#439](https://github.com/marius-bughiu/Celerity/issues/439).
+
+- **Every `CopyTo(T[] array, int arrayIndex)` now answers alike**, so swapping one collection for another cannot change how a caller's error handling behaves, and a collection added later cannot ship without the contract. The rules are written down in [the API reference](docs/api/collections.md#the-copyto-argument-contract). No behavioural change beyond the fix below. Closes [#440](https://github.com/marius-bughiu/Celerity/issues/440).
+
+### Fixed
+
+- **`Deque<T>.CopyTo` and `PersistentVector<T>.CopyTo` throw `ArgumentOutOfRangeException` for an `arrayIndex` past the end of the destination**, as the library's other forty-three `CopyTo` overloads do. Both were missing that check, so such an index fell through to the insufficient-space branch and surfaced as `ArgumentException` — invisible to a `catch (ArgumentException)`, but not to a `catch (ArgumentOutOfRangeException)`, an exact-type test, or an exception filter. Their non-conforming messages — a negative-index and an insufficient-space literal each — are aligned with the family as well. Closes [#440](https://github.com/marius-bughiu/Celerity/issues/440).
 
 ## [3.1.0] - 2026-09-06
 
