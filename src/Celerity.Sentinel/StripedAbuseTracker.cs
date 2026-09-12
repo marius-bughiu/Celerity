@@ -33,8 +33,9 @@ public class StripedAbuseTracker<TKey, THasher>
     private readonly AbuseTrackerOptions _options;
     private readonly AbuseTracker<TKey, THasher>[] _lanes;
 
-    // The tracker Snapshot merges the lanes into, parked empty between rollups so the next one reuses it rather
-    // than allocating a whole tracker. Null before the first rollup and while one holds it.
+    // Snapshot's merge target: a separate tracker that the lanes are merged into, parked empty between rollups so
+    // the next one reuses it rather than allocating a whole tracker. Null before the first rollup and while a
+    // rollup holds it.
     private AbuseTracker<TKey, THasher>? _mergeTarget;
 
     /// <summary>

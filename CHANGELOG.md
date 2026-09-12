@@ -18,7 +18,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- **`StripedAbuseTracker.Snapshot` no longer allocates a whole tracker per rollup.** It reuses one merge target across calls, so a rollup at the default options drops from about 2.3 MB of garbage to 17 KB at 4 lanes (53 KB at 16), and a coordinator reporting every second no longer churns megabytes per second. The striped tracker now retains one extra tracker's footprint after its first snapshot. Concurrent `Snapshot` calls stay safe with each other. Pinned by an allocation test and measured by a new extended-suite `StripedSentinelBenchmark`. Closes [#438](https://github.com/marius-bughiu/Celerity/issues/438).
+- **`StripedAbuseTracker.Snapshot` no longer allocates a whole tracker per rollup** — at the default options a rollup drops from about 2.3 MB of garbage to tens of KB. In exchange, the striped tracker keeps one extra tracker's worth of memory after its first snapshot. Closes [#438](https://github.com/marius-bughiu/Celerity/issues/438).
 
 ## [3.1.0] - 2026-09-06
 
