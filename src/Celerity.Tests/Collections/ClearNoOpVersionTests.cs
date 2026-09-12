@@ -42,7 +42,9 @@ namespace Celerity.Tests.Collections;
 /// <see cref="PersistentVector{T}"/> is out of scope for the same reason arrived at from the other
 /// direction: it is not built once but <i>never mutated</i> — every operation returns a new vector — so it
 /// deliberately ships no <c>Clear()</c> at all, since that name means in-place mutation everywhere else in
-/// this family. The empty vector is <c>PersistentVector&lt;T&gt;.Empty</c>.
+/// this family. The empty vector is <c>PersistentVector&lt;T&gt;.Empty</c>, and
+/// <see cref="PersistentHashMap{TKey, TValue, THasher}"/> is out of scope on exactly that reasoning —
+/// its empty map is <c>PersistentHashMap&lt;TKey, TValue, THasher&gt;.Empty</c>.
 /// </para>
 /// </summary>
 public class ClearNoOpVersionTests

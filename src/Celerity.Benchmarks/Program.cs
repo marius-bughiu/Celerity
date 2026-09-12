@@ -48,6 +48,7 @@ internal class Program
         typeof(LfuCacheBenchmark),
         typeof(DequeBenchmark),
         typeof(PersistentVectorBenchmark),
+        typeof(PersistentHashMapBenchmark),
         typeof(DisjointSetBenchmark),
         typeof(IndexedPriorityQueueBenchmark),
         typeof(TimerWheelBenchmark),

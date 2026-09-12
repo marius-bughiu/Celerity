@@ -1555,4 +1555,133 @@ public class ReadOnlyDictionaryInterfaceTests
         Assert.Equal(new[] { 0, 10, 20, 30, 40, 50 }, ro.Values);
         Assert.Equal(150, SumValues(map));
     }
+
+    // -------- PersistentHashMap --------
+    // The immutable member of the family. Every mutable dictionary above is exercised through the interface
+    // *and* through a concurrent-modification check; this one has no mutation to invalidate an enumerator
+    // with, so that row is absent by construction and the rest of the surface is the same.
+
+    [Fact]
+    public void PersistentHashMap_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        PersistentHashMap<int, string, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty.Add(1, "one");
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1));
+        Assert.Equal("one", ro[1]);
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty;
+
+        Assert.Throws<KeyNotFoundException>(() => ro[42]);
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty;
+
+        bool found = ro.TryGetValue(42, out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        IReadOnlyDictionary<int, string?> ro =
+            PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty.Add(7, "seven");
+
+        bool found = ro.TryGetValue(7, out string? value);
+
+        Assert.True(found);
+        Assert.Equal("seven", value);
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceKeys_ShouldYieldEveryKey_IncludingDefault()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty
+            .Add(0, "zero")
+            .Add(1, "one")
+            .Add(2, "two");
+
+        Assert.Equal(new[] { 0, 1, 2 }, ro.Keys.OrderBy(key => key).ToArray());
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceValues_ShouldYieldEveryValue_IncludingDefault()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty
+            .Add(0, "zero")
+            .Add(1, "one")
+            .Add(2, "two");
+
+        Assert.Equal(
+            new[] { "one", "two", "zero" },
+            ro.Values.OrderBy(value => value, StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceEnumeration_ShouldYieldEveryPair_IncludingDefault()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty
+            .Add(0, "zero")
+            .Add(5, "five");
+
+        var pairs = new List<KeyValuePair<int, string?>>();
+        foreach (KeyValuePair<int, string?> pair in ro)
+            pairs.Add(pair);
+
+        Assert.Equal(2, pairs.Count);
+        Assert.Contains(new KeyValuePair<int, string?>(0, "zero"), pairs);
+        Assert.Contains(new KeyValuePair<int, string?>(5, "five"), pairs);
+    }
+
+    [Fact]
+    public void PersistentHashMap_NonGenericEnumeration_ShouldYieldEveryPair()
+    {
+        IEnumerable ro = PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty
+            .Add(0, "zero")
+            .Add(5, "five");
+
+        var keys = new List<int>();
+        foreach (object? entry in ro)
+            keys.Add(((KeyValuePair<int, string?>)entry!).Key);
+
+        Assert.Equal(new[] { 0, 5 }, keys.OrderBy(key => key).ToArray());
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceKeys_ShouldIncludeNullReferenceKey()
+    {
+        IReadOnlyDictionary<string, int?> ro = PersistentHashMap<string, int?, StringFnV1AHasher>.Empty
+            .Add(null!, 0)
+            .Add("a", 1);
+
+        Assert.Equal(2, ro.Keys.Count());
+        Assert.Contains(null, ro.Keys);
+        Assert.Contains("a", ro.Keys);
+    }
+
+    [Fact]
+    public void PersistentHashMap_InterfaceLinqCount_ShouldMatchMapCount()
+    {
+        PersistentHashMap<int, string, Int32WangNaiveHasher> map =
+            PersistentHashMap<int, string, Int32WangNaiveHasher>.Empty;
+
+        for (int key = 0; key < 100; key++)
+            map = map.Add(key, key.ToString());
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Equal(map.Count, ro.Count());
+    }
 }

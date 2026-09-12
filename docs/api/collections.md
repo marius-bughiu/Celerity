@@ -4241,6 +4241,304 @@ Console.WriteLine(numbers[99_999]);        // 99999
 ```
 
 
+
+## PersistentHashMap&lt;TKey, TValue, THasher&gt;
+
+An **immutable hash map** backed by a **CHAMP** trie (Compressed Hash-Array Mapped Prefix-tree):
+a **single-key edit** returns a new map that **shares** all but one root-to-leaf path of the old
+one's storage — while a write that changes nothing hands back the receiver — and a lookup is one
+popcount-indexed array read per level over a 32-way trie. (The bulk methods reach as many branches as
+their keys do, which is why they run through a `Builder`.)
+
+```csharp
+public sealed class PersistentHashMap<TKey, TValue, THasher> : IReadOnlyDictionary<TKey, TValue?>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+`System.Collections.Immutable.ImmutableDictionary<TKey, TValue>` is the BCL's only immutable map, and
+it is an **AVL tree keyed by hash code** — one heap node per entry carrying key, value, hash, two
+child references and a height field. Its branching factor is **two**, so:
+
+- **every lookup is a pointer chase per level** — about seventeen node dereferences at 100,000
+  entries, each one a likely cache miss, before the key comparison even happens;
+- **every `SetItem` path-copies and rebalances that same depth**;
+- **every entry costs its own object header**, plus the AVL bookkeeping.
+
+`PersistentHashMap<TKey, TValue, THasher>` is the structure the functional languages reach for
+instead: the **CHAMP** trie of Steindorfer and Vinju (OOPSLA 2015). It refines the hash-array mapped
+trie of Bagwell that Clojure's `PersistentHashMap` is built on — that one interleaves entries and
+sub-nodes in a single array under a single bitmap, and carries a distinct collision-node type — and
+it is the layout Scala's `HashMap` adopted in 2.13. A node reads five bits of the
+hash, so the branching factor is **32** and 100,000 entries are four levels deep rather than
+seventeen.
+
+The documented BCL-beating workload is the one `ImmutableDictionary` is reached for and loses at: a
+map **read far more often than it is written, that must still be updatable without copying** — a
+configuration or feature-flag snapshot swapped atomically and read on every request, a symbol table
+threaded through a compiler pass, an interpreter environment, or any per-version state handed to
+readers on another thread.
+
+### How it works
+
+A node carries **two 32-bit occupancy maps** and three flat arrays. `_dataMap` says which of its 32
+slots hold an entry inline; `_nodeMap` says which hold a sub-node; a slot in neither is empty. The
+arrays are exactly as long as the number of slots of each kind, and the position of a slot's payload
+is the **popcount of the occupancy bits below it** — so finding an entry is `PopCount(map & (bit - 1))`
+plus one array load, and a node holding `k` entries is three objects rather than `k`.
+
+That two-map split is what makes it CHAMP rather than a plain HAMT. A HAMT node interleaves entries
+and sub-nodes in one array and has to test what it found; separating them means a lookup knows from
+the bitmaps alone whether the slot holds an entry (compare the key and stop, either way — no other
+slot can hold it) or a sub-node (descend), and it means enumeration walks a node's entries
+contiguously.
+
+Descent reads the hash five bits at a time — `(hash >>> shift) & 31` — at shifts 0, 5, 10, 15, 20, 25
+and 30, the last of which reads only the top two bits. A shift past 32 has consumed the whole hash, so
+the node it names is a **collision node**: the one shape in the structure that is not a bitmap node,
+holding every entry that shares a full 32-bit hash in one flat list. It needs no marker, because two
+keys can only reach one by agreeing on all 32 bits, and the caller's own shift says which shape it is
+looking at.
+
+A single-key mutation is **path copying**: the returned map allocates the nodes along one root-to-leaf
+path and points at the receiver's storage for everything else. The bulk methods are not bounded by
+one path — `SetItems` and `RemoveRange` touch as many branches as their keys reach — which is why
+they run through a `Builder` rather than chaining single-key edits. Removal additionally **dissolves** a node
+left holding a single entry into its parent, and because that parent may then be a single-entry node
+itself, the collapse propagates upward on its own — so a map drained back to two keys is shaped
+exactly like the map built from those two keys, not like a skeleton of the map it used to be.
+
+The key `default(TKey)` — `null` for a reference type, `0` for an integer — is held in a **dedicated
+slot on the map** rather than in the trie, as in `CelerityDictionary` and the rest of the family, and
+is never handed to `THasher`. That is what lets a `null` key work with a hasher that rejects one:
+every string hasher in `Celerity.Hashing` throws `ArgumentNullException` on a `null` key, since a
+hash of its characters has nothing to read. (`DefaultHasher<T>` is *not* an example — its inner
+`EqualityComparer<T>.GetHashCode` returns `0` for a `null` reference rather than throwing.)
+
+### Constructors
+
+```csharp
+public PersistentHashMap(IEnumerable<KeyValuePair<TKey, TValue>> source)
+public static readonly PersistentHashMap<TKey, TValue, THasher> Empty
+```
+
+- `Empty` is the empty map, and is the instance `Remove` returns when it takes the last entry.
+- The `source` constructor inserts through a `Builder`, so no intermediate map is allocated per entry
+  and no root-to-leaf path is copied per entry either.
+
+**Throws:**
+
+- `ArgumentNullException` if `source` is `null`.
+- `ArgumentException` if `source` contains duplicate keys.
+
+### Methods and properties
+
+- `int Count` — the number of entries in the map.
+- `bool IsEmpty` — whether the map holds no entries.
+- `TValue this[TKey key]` — the value stored under `key`; throws `KeyNotFoundException` if absent.
+  There is no setter: `SetItem` returns a new map instead.
+- `KeyCollection Keys` / `ValueCollection Values` — allocation-free struct views over the keys and
+  values, each with a `Count` and a struct enumerator.
+- `bool ContainsKey(TKey key)` — whether the key is present.
+- `bool ContainsValue(TValue? value)` — whether any entry holds the value, compared with
+  `EqualityComparer<TValue>.Default`. `O(n)`: the trie is indexed by key, and nothing about a value
+  says where it lives.
+- `bool TryGetValue(TKey key, out TValue? value)` — lookup without throwing. One popcount and one array
+  load per level: four levels at 100,000 entries and never more than eight. The exception is a key
+  whose **whole 32-bit hash** is shared, which lands in a collision node scanned linearly and not
+  bounded at 32 entries — a property of the hasher, not of the map.
+- `PersistentHashMap<...> Add(TKey key, TValue value)` — a map with the entry added; throws
+  `ArgumentException` if the key is already present. This matches `Dictionary<,>.Add` and is
+  deliberately stricter than `ImmutableDictionary<,>.Add`, which tolerates a duplicate key whose value
+  is equal to the one already stored.
+- `PersistentHashMap<...> SetItem(TKey key, TValue value)` — a map with the entry inserted or
+  overwritten. Returns **the receiver** when the key already maps to an equal value. Copying is
+  confined to the root-to-leaf path: at most eight nodes, seven of them holding at most 32 entries
+  each; the eighth is the optional collision node, which is unbounded, so overwriting a key that
+  shares its whole hash with `k` others rebuilds an array of `k + 1`.
+- `PersistentHashMap<...> SetItems(IEnumerable<KeyValuePair<TKey, TValue>> items)` — the same for many
+  entries, through one `Builder`; later entries win over earlier ones. Returns the receiver when
+  nothing changed. Throws `ArgumentNullException` if `items` is `null`.
+- `PersistentHashMap<...> Remove(TKey key)` — a map without that key. Returns **the receiver** when the
+  key was absent, and `Empty` when it was the last entry.
+- `PersistentHashMap<...> RemoveRange(IEnumerable<TKey> keys)` — the same for many keys, ignoring those
+  that are absent. Returns the receiver when none was present. Throws `ArgumentNullException` if
+  `keys` is `null`.
+- `Builder ToBuilder()` — a mutable builder seeded with this map's entries.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator. Nothing can invalidate it, so it
+  carries no version check; once `MoveNext` has returned `false` it keeps returning `false`, and
+  `Reset` replays the sequence. The out-of-band `default(TKey)` entry is yielded first; the order
+  beyond that is unspecified and may change across versions.
+
+The descent stack the enumerator walks is held **inline in the struct** — the trie is at most eight
+levels deep, which is a structural bound rather than a guess — which is what makes enumeration
+allocation-free.
+
+#### Builder
+
+```csharp
+public sealed class Builder
+```
+
+The builder exists to skip the map-per-entry cost of repeated `SetItem`, and it does that by
+**stamping every node it creates with an ownership token** and writing such a node in place rather
+than copying it. The saving is the **ancestors**, and it is amortized rather than fixed: the first
+write down a path the builder does not yet own still forks every node on that path — cloning the
+payload arrays, so no owned node ever shares one with a map already handed out — and every write
+after that reuses them in place. The node the entry actually lands in is rebuilt either way, since
+an insert resizes both its key and its value array. What the token removes is the fresh node per
+level from the root down, not the payload copy itself.
+
+`ToImmutable()` takes a **new** token, which makes every node the builder has handed out read-only
+again in one assignment. That is why the builder stays usable afterwards and why no map it has
+produced can be changed behind a caller's back.
+
+- `Builder()` — a new, empty builder.
+- `int Count` — the number of entries the builder holds.
+- `TValue this[TKey key]` — get **and set**; the setter inserts when the key is absent. The getter
+  throws `KeyNotFoundException` if absent.
+- `bool ContainsKey(TKey key)` / `bool TryGetValue(TKey key, out TValue? value)` — the read surface.
+- `void Add(TKey key, TValue value)` — insert; throws `ArgumentException` if the key is present.
+- `bool Remove(TKey key)` — remove, reporting whether the key was there.
+- `PersistentHashMap<...> ToImmutable()` — a map holding the builder's current entries. It adopts the
+  trie by reference, so it is `O(1)` and may be called as often as you like, including between further
+  writes; a map it has already returned never sees a later change to the builder.
+
+### Two deliberate omissions
+
+**There is no `Clear()`.** Everywhere else in this library `Clear()` means in-place mutation, so the
+empty map is spelled `PersistentHashMap<TKey, TValue, THasher>.Empty` rather than given a method that
+would read like the family's mutating one. This is the same call `PersistentVector<T>` made.
+
+**It does not implement `IImmutableDictionary<TKey, TValue>`.** Two of that interface's members
+contradict decisions taken above it. It requires a `Clear()` returning an empty instance, and
+`Clear()` is the name this library reserves for in-place mutation — which is why the empty map is
+spelled `Empty`. And its `Add` returns the receiver when the key is already present with an *equal*
+value, throwing only on a conflicting one; this type's `Add` throws on any duplicate, matching
+`Dictionary<,>.Add`. Implementing the interface would mean shipping those semantics under names this
+type already gives different ones, which is worse than not implementing it. (`Contains(KeyValuePair)`
+and `TryGetKey` would also have to be added; neither is contentious, only unused.) It implements
+`IReadOnlyDictionary<TKey, TValue?>`, which asks for nothing it does not already do.
+
+### When not to reach for it
+
+**If the map never changes after it is built, use `FrozenCelerityDictionary` or `Dictionary<,>`.** A
+build-once perfect-hash table answers a lookup in one probe and a `Dictionary<,>` in about one; this
+type pays a few array hops for the ability to produce an edited copy cheaply. It earns the trie only
+when the map is written to as well as read.
+
+**If nobody holds an old version, use a mutable dictionary.** Structural sharing buys nothing when
+there is nothing to share with, and every write here allocates a root-to-leaf path where
+`CelerityDictionary` writes one slot.
+
+**If you need ordered iteration or range queries, use `BTreeDictionary`.** A hash trie's enumeration
+order is unspecified.
+
+### Thread safety
+
+Concurrent readers need no synchronization, for the reason a value needs none: no published map is
+ever mutated after its constructor returns, so there is no state for two threads to race over. It
+shares that with `PersistentVector<T>` and the library's build-once types, and differs from the
+mutable dictionaries in the same way: an edit produces another map rather than changing this one. That
+does not make it a concurrency abstraction — a shared *variable* holding successive maps still needs
+the usual publication rules — it makes each map a snapshot that can be handed across a thread boundary
+without copying or locking. `Builder` is **not** thread-safe; the maps it produces are.
+
+The guarantee is about the map's **own** state, and it carries the same callback caveat as
+[`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) and
+[`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid): **every lookup calls `THasher`, and then
+`EqualityComparer<TKey>.Default.Equals`**, and `ContainsValue` calls
+`EqualityComparer<TValue>.Default.Equals` on the stored values — so a hasher, a key, or a value whose
+own `Equals` / `GetHashCode` is not thread-safe makes concurrent reads unsafe however immutable the
+map is. Every hasher in `Celerity.Hashing` is a stateless struct and ordinary keys and values compare
+without side effects, so the usual case is safe; a stateful one you write yourself is yours to reason
+about.
+
+### Measured
+
+`int` keys and `string` values, against `ImmutableDictionary<int, string>`. The type's case rests on
+`Lookup` — it is the operation the documented workload is dominated by, and the one
+`ImmutableDictionary`'s branching factor of two costs the most:
+
+| Operation | 1,000 entries | 100,000 entries |
+| --- | --- | --- |
+| `Lookup` — `TryGetValue` at random keys | **8.3x** | **10.6x** |
+| `Insert` — build the whole map one entry at a time | **2.0x** | **2.1x** |
+| `Update` — `SetItem` over an existing key | **3.2x** | **2.3x** |
+| `Enumerate` — every entry | **4.3x** | **2.7x** |
+
+`Update` **allocates about 9% more** than `ImmutableDictionary` does at 100,000 entries even while
+running 2.3x faster, and that is worth stating rather than burying: a path copy here rebuilds four
+nodes of up to 32 slots, where an AVL path copy rebuilds seventeen nodes of three fields. The bytes
+come out close; the node count, and therefore the time, does not.
+
+The `Update` arms write a **distinct value per step**. Probes are drawn with replacement, and both
+structures return the receiver unchanged when `SetItem` writes a value equal to the one already
+stored — so a constant value would turn nine calls in ten at 1,000 entries into an equality check
+rather than a path copy, and the figure would be measuring the wrong thing in both arms.
+
+<a id="persistenthashmap-measured"></a>
+
+**Retained memory**, measured with `GC.GetTotalMemory(true)` around the build with the source data
+allocated beforehand and kept alive throughout, at 100,000 `int` → `string` entries (one shared string
+instance, so the values themselves are charged to neither):
+
+| | Retained |
+| --- | --- |
+| `PersistentHashMap<int, string, ...>` | 10,090 KB |
+| `ImmutableDictionary<int, string>` | 12,518 KB — **1.24x** |
+| `Dictionary<int, string>` (mutable, presized) | 2,971 KB |
+
+That margin is the **smallest** figure on this page, and the reason is structural on both sides.
+`ImmutableDictionary` pays an object header per entry; this type pays three array headers per node,
+and at 100,000 random hashes the trie's bottom level averages about three entries a node — so the
+per-node overhead is amortized over few entries and most of the saving is given back. The mutable
+`Dictionary<,>` row is there to size the whole thing honestly: persistence is not free, and it costs
+about **3.4x** what a plain hash table does. **The reason to reach for this type is the read**, not
+the footprint.
+
+Every ratio above was measured on a development machine. The CI series that is the project's contract
+is published to the [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) and
+refreshes on merge to `main`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A feature-flag snapshot: read on every request, rewritten occasionally, and handed to readers on
+// other threads without a lock. Each SetItem returns a new map sharing all but one root-to-leaf path
+// with the previous one.
+PersistentHashMap<string, bool, StringXxHash3Hasher> flags =
+    PersistentHashMap<string, bool, StringXxHash3Hasher>.Empty
+        .Add("new-checkout", false)
+        .Add("dark-mode", true);
+
+PersistentHashMap<string, bool, StringXxHash3Hasher> snapshot = flags;  // hand to another thread
+
+flags = flags.SetItem("new-checkout", true);   // the snapshot still reads false
+Console.WriteLine(snapshot["new-checkout"]);   // False
+Console.WriteLine(flags["new-checkout"]);      // True
+
+// A no-op write hands back the receiver rather than an equal copy.
+Console.WriteLine(ReferenceEquals(flags, flags.SetItem("dark-mode", true)));  // True
+
+// Removal returns a map without the key, and the receiver is untouched.
+PersistentHashMap<string, bool, StringXxHash3Hasher> trimmed = flags.Remove("dark-mode");
+Console.WriteLine(flags.ContainsKey("dark-mode"));     // True
+Console.WriteLine(trimmed.ContainsKey("dark-mode"));   // False
+
+// Bulk construction goes through the builder, which writes nodes it owns in place instead of
+// allocating a map per entry.
+var builder = new PersistentHashMap<int, string, Int32WangNaiveHasher>.Builder();
+for (int i = 0; i < 100_000; i++)
+    builder.Add(i, i.ToString());
+
+PersistentHashMap<int, string, Int32WangNaiveHasher> numbers = builder.ToImmutable();
+Console.WriteLine(numbers[99_999]);            // 99999
+```
+
+
 ## DisjointSet&lt;T&gt;
 
 A **disjoint-set** (union-find) over arbitrary elements. It partitions the elements it holds into non-overlapping sets and answers *"are these two in the same set?"* (`Connected`) and *"merge these two sets"* (`Union`) in near-constant amortized time. Implements `IReadOnlyCollection<T>`.
