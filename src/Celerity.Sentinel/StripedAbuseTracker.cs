@@ -100,8 +100,8 @@ public class StripedAbuseTracker<TKey, THasher>
     /// <remarks>
     /// The lanes are merged into a separate tracker, since merging into a lane would corrupt it. The first call
     /// builds that tracker and every later call clears and reuses it, so a coordinator rolling up on a short
-    /// interval allocates only the report rather than a whole tracker (about 2.3&#160;MB at the default options)
-    /// per call. The price is that the striped tracker holds <see cref="LaneCount"/> + 1 trackers' worth of
+    /// interval allocates only the report and the offender list the merge reads from each lane, rather than a
+    /// whole tracker (about 2.3&#160;MB at the default options) per call. The price is that the striped tracker holds <see cref="LaneCount"/> + 1 trackers' worth of
     /// memory once a snapshot has been taken. Concurrent <see cref="Snapshot"/> calls remain safe with each
     /// other: a call that finds the merge tracker already in use by another builds its own.
     /// </remarks>
