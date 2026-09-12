@@ -41,6 +41,19 @@ var ranked = pool.GetReplicas("tenant:7", 2);        // ranked preference list
 
 Scoring is pure-integer `max` (weights are realized as integer sub-labels), so HRW stays deterministic across platforms with no floating-point `log`. A lookup is `O(NodeCount)` scaled by total weight.
 
+## Replica sets without allocating
+
+`GetReplicas(key, count)` returns a fresh array. A replicated store asks for a replica set on every write and every quorum read, so both types also take a caller-owned buffer — its length is the replica count, and the return value is how many nodes were written (fewer when the cluster is smaller):
+
+```csharp
+var replicaSet = new string[3];                      // owned by the caller, reused across requests
+int written = ring.GetReplicas("user:42", replicaSet);
+foreach (string node in replicaSet.AsSpan(0, written))
+    Send(node);
+```
+
+Both overloads return the same nodes in the same order. The span form allocates nothing up to 1,024 physical nodes on the ring and up to 32 replicas on the rendezvous hash, where its scratch lives on the stack; past either it rents from `ArrayPool<T>.Shared`, which allocates only when the pool has no buffer to lend. Rendezvous scores every node once but ranks only the replicas asked for, so a short preference list from a large pool costs little more than `GetNode`.
+
 ## Generic over your key type
 
 Both types are generic over `TKey` and a struct `IHashProvider<TKey>` the JIT inlines on the routing hot path:
