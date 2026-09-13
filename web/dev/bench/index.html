@@ -483,6 +483,10 @@ function escapeHtml(s) {
     // `vs` is rendered once per collection, so a card for them would be labelled with the wrong baseline.
     // They are also capped below ItemCount, which a card labelled by ItemCount would misreport.
     { key: 'PersistentVector',    title: 'PersistentVector<int>',                    vs: 'ImmutableList<int>',    ops: ['Index', 'Append', 'Enumerate', 'Update'] },
+    // PersistentHashMap is the immutable map, benchmarked against ImmutableDictionary — the BCL's only one,
+    // and an AVL tree keyed by hash with one heap node per entry, so its branching factor is two where this
+    // one's is 32.
+    { key: 'PersistentHashMap',   title: 'PersistentHashMap<int, string, ...>',      vs: 'ImmutableDictionary<int, string>', ops: ['Lookup', 'Insert', 'Update', 'Enumerate'] },
     // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
@@ -615,7 +619,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

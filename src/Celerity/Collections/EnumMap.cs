@@ -366,16 +366,7 @@ public class EnumMap<TEnum, TValue>
     /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
     public void CopyTo(KeyValuePair<TEnum, TValue?>[] array, int arrayIndex)
     {
-        ArgumentNullException.ThrowIfNull(array);
-        if (arrayIndex < 0)
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
-                "Array index must be non-negative.");
-        if (arrayIndex > array.Length)
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
-                "Array index is beyond the end of the destination array.");
-        if (array.Length - arrayIndex < _count)
-            throw new ArgumentException(
-                "The destination array has insufficient space for the entries.", nameof(array));
+        CopyToGuard.Validate(array, arrayIndex, _count, CopyToGuard.EntriesMessage);
 
         int i = arrayIndex;
         foreach (KeyValuePair<TEnum, TValue?> entry in this)
@@ -632,16 +623,7 @@ public class EnumMap<TEnum, TValue>
         /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
         public void CopyTo(TEnum[] array, int arrayIndex)
         {
-            ArgumentNullException.ThrowIfNull(array);
-            if (arrayIndex < 0)
-                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
-                    "Array index must be non-negative.");
-            if (arrayIndex > array.Length)
-                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
-                    "Array index is beyond the end of the destination array.");
-            if (array.Length - arrayIndex < _map._count)
-                throw new ArgumentException(
-                    "The destination array has insufficient space for the keys.", nameof(array));
+            CopyToGuard.Validate(array, arrayIndex, _map._count, CopyToGuard.KeysMessage);
 
             int i = arrayIndex;
             foreach (KeyValuePair<TEnum, TValue?> entry in _map)
@@ -729,16 +711,7 @@ public class EnumMap<TEnum, TValue>
         /// <exception cref="ArgumentException"><paramref name="array"/> has insufficient space.</exception>
         public void CopyTo(TValue?[] array, int arrayIndex)
         {
-            ArgumentNullException.ThrowIfNull(array);
-            if (arrayIndex < 0)
-                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
-                    "Array index must be non-negative.");
-            if (arrayIndex > array.Length)
-                throw new ArgumentOutOfRangeException(nameof(arrayIndex), arrayIndex,
-                    "Array index is beyond the end of the destination array.");
-            if (array.Length - arrayIndex < _map._count)
-                throw new ArgumentException(
-                    "The destination array has insufficient space for the values.", nameof(array));
+            CopyToGuard.Validate(array, arrayIndex, _map._count, CopyToGuard.ValuesMessage);
 
             int i = arrayIndex;
             foreach (KeyValuePair<TEnum, TValue?> entry in _map)
