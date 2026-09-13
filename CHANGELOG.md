@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-13
+
 ### Added
 
 - **`PersistentHashMap<TKey, TValue, THasher>`** in `Celerity.Collections` — an **immutable hash map** over a CHAMP trie: a single-key edit returns a new map sharing all but one root-to-leaf path with its receiver, and a write that changes nothing hands back the receiver. It is the associative half of the lane `PersistentVector<T>` opened. At 100,000 `int` → `string` entries it looks up **10.6x** `ImmutableDictionary<int, string>` and inserts **2.1x**; ⚠️ retained memory is only **1.24x** better and `SetItem` allocates ~9% *more* while running faster, so the read is what earns the type. Ships a `Builder`. Full figures and tradeoffs in [the API reference](docs/api/collections.md#persistenthashmaptkey-tvalue-thasher). Closes [#433](https://github.com/marius-bughiu/Celerity/issues/433).
@@ -743,7 +745,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.2.0
 [3.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.1.0
 [3.0.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.0.1
 [3.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.0.0
