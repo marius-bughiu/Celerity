@@ -236,8 +236,11 @@ public class ReservoirSamplerTests
     [Fact]
     public void GetEnumerator_ShouldThrow_EvenWhenTheAddedItemIsDiscarded()
     {
-        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 21UL);
-        for (int i = 0; i < 1_000; i++)
+        // An all-zero script draws the smallest unit value, 2^-53, so the first skip after the
+        // reservoir fills is some 358,000 items and the next Add is discarded on any runtime — no
+        // ulp of Math.Log can close that gap, where a seed's outcome is not portable.
+        var sampler = new ReservoirSampler<int, ScriptedRandom>(capacity: 4, new ScriptedRandom([0UL]));
+        for (int i = 0; i < 4; i++)
         {
             sampler.Add(i);
         }
