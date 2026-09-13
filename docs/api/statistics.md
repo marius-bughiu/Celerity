@@ -211,7 +211,9 @@ fed one item at a time and the caller does not have to be able to seek forward i
 | `Clear()` | Discards the sample and the stream position, leaving the generator where it is. |
 
 The retained items are in arbitrary order, not stream order. The `Sample` span is invalidated by any
-subsequent `Add` or `Clear`.
+subsequent `Add` or `Clear`, and so is an enumerator — which enforces it: its next `MoveNext` throws
+`InvalidOperationException`, as every mutable Celerity collection's does. That includes an `Add` that
+discards its item, so whether a loop that adds while it reads fails does not depend on the draw.
 
 Sampling is seeded: the same seed and the same stream produce the same sample on the same runtime
 and platform. It is deliberately **not** promised byte-identical *across* platforms the way
