@@ -121,6 +121,7 @@ internal class Program
         // isolated perf demos, so they ride the extended suite alongside the primitive benchmarks.
         typeof(RingBenchmark),
         typeof(SentinelBenchmark),
+        typeof(StripedSentinelBenchmark),
         typeof(CardinalityBenchmark),
     };
 

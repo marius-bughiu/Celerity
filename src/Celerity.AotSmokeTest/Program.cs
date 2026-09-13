@@ -3124,6 +3124,12 @@ void Check(bool condition, string message)
     striped.Clear();
     Check(striped.Lane(0).TotalObservations == 0, "StripedAbuseTracker clear");
 
+    // A second rollup reuses the merge target the first one parked, which must start it from empty.
+    striped.Observe(1, 7);
+    AbuseReport<int> reusedReport = striped.Snapshot(3);
+    Check(reusedReport.TotalObservations == 1 && reusedReport.Offenders.Count == 1 && reusedReport.Offenders[0].Key == 7,
+        "StripedAbuseTracker reused merge target");
+
     // The String* subclasses, a further pair of closed generics fixed by the package.
     var stringTracker = new StringAbuseTracker();
     Check(stringTracker.Observe("token-1").IsFirstSeen, "StringAbuseTracker observe");

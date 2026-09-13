@@ -28,6 +28,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
+- **`StripedAbuseTracker.Snapshot` no longer allocates a whole tracker per rollup** — at the default options a rollup drops from about 2.3 MB of garbage to tens of KB. In exchange, the striped tracker keeps one extra tracker's worth of memory after its first snapshot. Closes [#438](https://github.com/marius-bughiu/Celerity/issues/438).
+
 - **`GetReplicas(key, count)` allocates only its result on both Ring types** (within the same thresholds), and `RendezvousHash` no longer sorts every node to return a few. At 50 nodes and three replicas that is 48 bytes a call instead of 160 on the ring and 784 on the rendezvous hash, and the rendezvous call runs about 5.6x faster. Replica sets are unchanged. Closes [#439](https://github.com/marius-bughiu/Celerity/issues/439).
 
 - **Every `CopyTo(T[] array, int arrayIndex)` now answers alike**, so swapping one collection for another cannot change how a caller's error handling behaves, and a collection added later cannot ship without the contract. The rules are written down in [the API reference](docs/api/collections.md#the-copyto-argument-contract). No behavioural change beyond the fix below. Closes [#440](https://github.com/marius-bughiu/Celerity/issues/440).
