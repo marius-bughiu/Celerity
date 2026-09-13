@@ -117,6 +117,9 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     private double _logWeight;
     private int _filled;
 
+    // Bumped by every Add and Clear, so an enumerator can tell the sampler moved under it.
+    private int _version;
+
     /// <summary>
     /// Initializes a sampler retaining up to <paramref name="capacity"/> items, driven by the
     /// specified random source.
@@ -197,6 +200,7 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     {
         long position = _seen;
         _seen = position + 1;
+        _version++;
 
         if (_filled < _items.Length)
         {
@@ -247,20 +251,45 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
         Array.Clear(_items, 0, _filled);
         _filled = 0;
         _seen = 0;
+        _version++;
         ResetSkipState();
     }
 
     /// <summary>Returns an enumerator over the retained sample.</summary>
     /// <returns>An enumerator over the retained items, in arbitrary order.</returns>
-    public IEnumerator<T> GetEnumerator()
+    /// <remarks>
+    /// The enumerator fails fast, as the BCL's collections and Celerity's mutable collections do:
+    /// after any <see cref="Add(T)"/> or <see cref="Clear"/>, its next
+    /// <see cref="IEnumerator.MoveNext"/> throws <see cref="InvalidOperationException"/>. That
+    /// includes an <see cref="Add(T)"/> that discards its item, so the failure does not depend on
+    /// what the sampling decision happened to be.
+    /// </remarks>
+    public IEnumerator<T> GetEnumerator() => Enumerate(_version);
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    // A separate iterator so the version is captured when GetEnumerator is called, not at the
+    // first MoveNext, and checked on every MoveNext including the one that would end the walk.
+    private IEnumerator<T> Enumerate(int version)
     {
-        for (int i = 0; i < _filled; i++)
+        for (int i = 0; ; i++)
         {
+            if (version != _version)
+            {
+                ThrowModified();
+            }
+
+            if (i >= _filled)
+            {
+                yield break;
+            }
+
             yield return _items[i];
         }
     }
 
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    private static void ThrowModified() =>
+        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
     private void ResetSkipState()
     {

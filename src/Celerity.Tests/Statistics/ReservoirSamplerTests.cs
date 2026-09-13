@@ -218,6 +218,85 @@ public class ReservoirSamplerTests
     }
 
     [Fact]
+    public void GetEnumerator_ShouldThrow_WhenAnItemIsAddedMidEnumeration()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 8UL);
+        sampler.Add(1);
+        sampler.Add(2);
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        // Still filling, so this appends — before the fix the walk went on to yield it.
+        Assert.True(sampler.Add(3));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void GetEnumerator_ShouldThrow_EvenWhenTheAddedItemIsDiscarded()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 21UL);
+        for (int i = 0; i < 1_000; i++)
+        {
+            sampler.Add(i);
+        }
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        int[] before = sampler.Sample.ToArray();
+        Assert.False(sampler.Add(-1));
+        Assert.Equal(before, sampler.Sample.ToArray());
+
+        // The sample did not change, but whether it would was a random draw; failing either way
+        // keeps a loop that adds while it reads from passing only on the runs that got lucky.
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void GetEnumerator_ShouldThrow_WhenTheSamplerIsClearedMidEnumeration()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 8UL);
+        sampler.Add(1);
+        sampler.Add(2);
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        sampler.Clear();
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void GetEnumerator_ShouldThrow_WhenModifiedBeforeTheFirstMoveNext()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 8UL);
+        sampler.Add(1);
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        sampler.Add(2);
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void GetEnumerator_ShouldThrow_WhenModifiedAfterTheLastItem()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 8UL);
+        sampler.Add(1);
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+        sampler.Add(2);
+
+        // The walk had one item left to report — none — and must not report "done" over a
+        // sample that grew under it.
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
     public void Clear_ShouldDiscardTheSampleAndTheStreamPosition()
     {
         var sampler = new ReservoirSampler<int>(capacity: 3, seed: 11UL);
