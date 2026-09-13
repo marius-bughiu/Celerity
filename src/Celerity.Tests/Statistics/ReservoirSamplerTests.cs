@@ -297,6 +297,71 @@ public class ReservoirSamplerTests
     }
 
     [Fact]
+    public void GetEnumerator_ShouldThrow_WhenModifiedAfterTheWalkHasFinished()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 8UL);
+        sampler.Add(1);
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+        Assert.False(enumerator.MoveNext());
+        Assert.False(enumerator.MoveNext());
+
+        sampler.Add(2);
+
+        // A compiler-generated iterator goes terminal after its first false and would keep
+        // returning false here; List<T>'s enumerator throws, and so must this one.
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void Enumerator_ShouldExposeTheCurrentItem_AndDefaultOutsideTheWalk()
+    {
+        var sampler = new ReservoirSampler<string>(capacity: 4, seed: 8UL);
+        sampler.Add("a");
+
+        using IEnumerator<string> enumerator = sampler.GetEnumerator();
+        Assert.Null(enumerator.Current);
+
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("a", enumerator.Current);
+        Assert.Equal("a", ((IEnumerator)enumerator).Current);
+
+        Assert.False(enumerator.MoveNext());
+        Assert.Null(enumerator.Current);
+    }
+
+    [Fact]
+    public void Enumerator_Reset_ShouldRestartTheWalk()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 8UL);
+        sampler.Add(1);
+        sampler.Add(2);
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+        Assert.True(enumerator.MoveNext());
+        Assert.False(enumerator.MoveNext());
+
+        enumerator.Reset();
+
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal(1, enumerator.Current);
+    }
+
+    [Fact]
+    public void Enumerator_Reset_ShouldThrow_WhenTheSamplerWasModified()
+    {
+        var sampler = new ReservoirSampler<int>(capacity: 4, seed: 8UL);
+        sampler.Add(1);
+
+        using IEnumerator<int> enumerator = sampler.GetEnumerator();
+        sampler.Clear();
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+    }
+
+    [Fact]
     public void Clear_ShouldDiscardTheSampleAndTheStreamPosition()
     {
         var sampler = new ReservoirSampler<int>(capacity: 3, seed: 11UL);

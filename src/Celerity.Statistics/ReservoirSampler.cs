@@ -262,34 +262,71 @@ public class ReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// after any <see cref="Add(T)"/> or <see cref="Clear"/>, its next
     /// <see cref="IEnumerator.MoveNext"/> throws <see cref="InvalidOperationException"/>. That
     /// includes an <see cref="Add(T)"/> that discards its item, so the failure does not depend on
-    /// what the sampling decision happened to be.
+    /// what the sampling decision happened to be — and it holds after the walk has finished, as
+    /// it does for <see cref="List{T}"/>. <see cref="IEnumerator.Reset"/> is supported and
+    /// checked the same way.
     /// </remarks>
-    public IEnumerator<T> GetEnumerator() => Enumerate(_version);
+    public IEnumerator<T> GetEnumerator() => new Enumerator(this);
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    // A separate iterator so the version is captured when GetEnumerator is called, not at the
-    // first MoveNext, and checked on every MoveNext including the one that would end the walk.
-    private IEnumerator<T> Enumerate(int version)
+    private static void ThrowModified() =>
+        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+    // Hand-written rather than an iterator block: a compiler-generated iterator goes terminal after
+    // its first false and never re-enters its body, so it could not report a modification made
+    // after the walk ended. The version is captured at GetEnumerator and checked before anything
+    // else on every MoveNext and Reset.
+    private sealed class Enumerator : IEnumerator<T>
     {
-        for (int i = 0; ; i++)
+        private readonly ReservoirSampler<T, TRng> _sampler;
+        private readonly int _version;
+        private int _index;
+        private T _current;
+
+        internal Enumerator(ReservoirSampler<T, TRng> sampler)
         {
-            if (version != _version)
+            _sampler = sampler;
+            _version = sampler._version;
+            _current = default!;
+        }
+
+        public T Current => _current;
+
+        object? IEnumerator.Current => _current;
+
+        public bool MoveNext()
+        {
+            if (_version != _sampler._version)
             {
                 ThrowModified();
             }
 
-            if (i >= _filled)
+            if (_index < _sampler._filled)
             {
-                yield break;
+                _current = _sampler._items[_index++];
+                return true;
             }
 
-            yield return _items[i];
+            _current = default!;
+            return false;
+        }
+
+        public void Reset()
+        {
+            if (_version != _sampler._version)
+            {
+                ThrowModified();
+            }
+
+            _index = 0;
+            _current = default!;
+        }
+
+        public void Dispose()
+        {
         }
     }
-
-    private static void ThrowModified() =>
-        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
     private void ResetSkipState()
     {
