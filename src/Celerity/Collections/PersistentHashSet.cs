@@ -170,9 +170,11 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     /// </param>
     /// <returns><c>true</c> if an equal element is present; otherwise <c>false</c>.</returns>
     /// <remarks>
-    /// Matches <see cref="HashSet{T}.TryGetValue(T, out T)"/>: the point is to recover the <i>stored</i>
-    /// instance — to canonicalize an equal-but-distinct reference, say — so on a miss the argument comes back
-    /// unchanged rather than as <c>default</c>.
+    /// The point is to recover the <i>stored</i> instance — to canonicalize an equal-but-distinct reference,
+    /// say. On a miss the argument comes back unchanged, as <c>ImmutableHashSet&lt;T&gt;.TryGetValue</c> — the
+    /// type this one replaces — hands it back. <see cref="HashSet{T}.TryGetValue(T, out T)"/> writes
+    /// <c>default</c> instead; returning the argument keeps a non-nullable <typeparamref name="T"/> non-null on
+    /// both paths, and the return value is what says whether the element was found.
     /// </remarks>
     public bool TryGetValue(T equalValue, out T actualValue)
     {
@@ -277,8 +279,10 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     public PersistentHashSet<T, THasher> Except(IEnumerable<T> other)
     {
         ArgumentNullException.ThrowIfNull(other);
+        // Everything goes, unless there was nothing to begin with: the sequence constructor can build an empty
+        // set that is not the Empty singleton, and removing nothing from it must still hand back the receiver.
         if (ReferenceEquals(this, other))
-            return Empty;
+            return _count == 0 ? this : Empty;
 
         var builder = new Builder(this);
         foreach (T item in other)
@@ -327,8 +331,10 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     public PersistentHashSet<T, THasher> SymmetricExcept(IEnumerable<T> other)
     {
         ArgumentNullException.ThrowIfNull(other);
+        // Every element is in both, so none survives — and, as in Except, an empty receiver is already the
+        // answer and is handed back rather than swapped for the singleton.
         if (ReferenceEquals(this, other))
-            return Empty;
+            return _count == 0 ? this : Empty;
 
         // Materialized to its distinct elements first, so a repeated element toggles once — the same rule
         // HashSet<T>.SymmetricExceptWith follows.

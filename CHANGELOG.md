@@ -6,9 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`PersistentHashSet<T, THasher>`** in `Celerity.Collections` — an **immutable hash set** over the same CHAMP trie as `PersistentHashMap`, without the values: a single-element edit returns a new set sharing all but one root-to-leaf path with its receiver, and an edit that changes nothing hands back the receiver. At 100,000 `int` elements it answers `Contains` **5.2x** faster than `ImmutableHashSet<int>`, adds **2.4x** faster and retains **1.71x** less memory; ⚠️ `Remove` allocates ~16% *more* while running 2.1x faster. Ships `Union` / `Except` / `Intersect` / `SymmetricExcept`, the `IReadOnlySet<T>` queries and a `Builder`. Details in [the API reference](docs/api/collections.md#persistenthashsett-thasher). Closes [#446](https://github.com/marius-bughiu/Celerity/issues/446).
-
-- **The `PersistentHashSet` rollout that ships with it** — dedicated, shared-suite, CsCheck-property, fuzz and AOT coverage, a registered benchmark with its dashboard cards, and the README / API-reference / docs-index entries. Closes [#446](https://github.com/marius-bughiu/Celerity/issues/446).
+- **`PersistentHashSet<T, THasher>`** in `Celerity.Collections` — an **immutable hash set**, the set half of `PersistentHashMap`: every edit returns a new set that shares nearly all of its receiver's storage, and an edit that changes nothing returns the receiver. Answers `Contains` about **5x** faster than `ImmutableHashSet<T>` and retains about **1.7x** less memory; ⚠️ `Remove` allocates ~16% more. See [the API reference](docs/api/collections.md#persistenthashsett-thasher). Closes [#446](https://github.com/marius-bughiu/Celerity/issues/446).
 
 ## [3.2.0] - 2026-09-13
 

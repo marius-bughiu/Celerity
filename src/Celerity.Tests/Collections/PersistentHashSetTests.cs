@@ -379,6 +379,19 @@ public class PersistentHashSetTests
     }
 
     [Fact]
+    public void SelfDifference_OnADistinctEmptySet_ShouldReturnTheReceiver()
+    {
+        // Regression: the self-aliasing fast paths returned Empty unconditionally. The sequence constructor
+        // builds an empty set that is not the Empty singleton, and its difference with itself removes nothing —
+        // so the no-op contract hands back the receiver, not a different empty instance.
+        var empty = new PersistentHashSet<int, Int32IdentityHasher>([]);
+        Assert.NotSame(EmptySet, empty);
+
+        Assert.Same(empty, empty.Except(empty));
+        Assert.Same(empty, empty.SymmetricExcept(empty));
+    }
+
+    [Fact]
     public void Except_ShouldThrow_WhenOtherIsNull()
     {
         var ex = Assert.Throws<ArgumentNullException>(() => EmptySet.Except(null!));

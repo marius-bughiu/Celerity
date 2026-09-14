@@ -4623,7 +4623,9 @@ public static readonly PersistentHashSet<T, THasher> Empty
   set.
 - `bool TryGetValue(T equalValue, out T actualValue)` — the **stored** element equal to
   `equalValue`, for canonicalizing an equal-but-distinct reference. On a miss `actualValue` is
-  `equalValue` itself, matching `HashSet<T>.TryGetValue`.
+  `equalValue` itself — what `ImmutableHashSet<T>.TryGetValue` does, and not what
+  `HashSet<T>.TryGetValue` does (it writes `default`). Handing back the argument keeps a non-nullable
+  `T` non-null on both paths; the return value is what says whether the element was found.
 - `PersistentHashSet<...> Add(T item)` — a set with the element added. Returns **the receiver** when
   the element is already present, as `ImmutableHashSet<T>.Add` does. Copying is confined to the
   root-to-leaf path: at most eight nodes, seven of them holding at most 32 elements each; the eighth
