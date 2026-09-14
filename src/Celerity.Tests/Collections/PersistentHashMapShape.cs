@@ -4,8 +4,10 @@ using System.Reflection;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Walks a <c>PersistentHashMap</c>'s trie by reflection and asserts the shape invariants the type
-/// documents but that no black-box assertion can see.
+/// Walks a <c>PersistentHashMap</c>'s — or a <c>PersistentHashSet</c>'s — trie by reflection and asserts
+/// the shape invariants the two types document but that no black-box assertion can see. The set's node is
+/// the map's with the value array taken out, so one walker serves both: it reads the payload from
+/// <c>Keys</c> or <c>Items</c>, whichever the node declares, and checks <c>Values</c> only where it exists.
 ///
 /// <para>
 /// This exists because of one specific blind spot. The collapse rule — a node left holding a single entry
@@ -43,13 +45,15 @@ internal static class PersistentHashMapShape
         Type type = map.GetType();
 
         FieldInfo rootField = type.GetField("_root", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("PersistentHashMap no longer has a _root field.");
+            ?? throw new InvalidOperationException($"{type.Name} no longer has a _root field.");
 
+        // The map names its out-of-band flag for the key, the set for the element.
         FieldInfo defaultKeyField = type.GetField("_hasDefaultKey", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("PersistentHashMap no longer has a _hasDefaultKey field.");
+            ?? type.GetField("_hasDefault", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"{type.Name} no longer has an out-of-band default flag.");
 
         object root = rootField.GetValue(map)
-            ?? throw new InvalidOperationException("PersistentHashMap._root was null.");
+            ?? throw new InvalidOperationException($"{type.Name}._root was null.");
 
         int outOfBand = (bool)defaultKeyField.GetValue(map)! ? 1 : 0;
         return AssertNode(root, depth: 0, isRoot: true) + outOfBand;
@@ -61,11 +65,12 @@ internal static class PersistentHashMapShape
 
         int dataMap = Get<int>(node, "DataMap");
         int nodeMap = Get<int>(node, "NodeMap");
-        Array keys = Get<Array>(node, "Keys");
-        Array values = Get<Array>(node, "Values");
+        Array keys = TryGet<Array>(node, "Keys") ?? Get<Array>(node, "Items");
         Array nodes = Get<Array>(node, "Nodes");
 
-        Assert.Equal(keys.Length, values.Length);
+        // Only the map's node carries a parallel value array; the set's has nothing to keep in step.
+        if (TryGet<Array>(node, "Values") is { } values)
+            Assert.Equal(keys.Length, values.Length);
 
         bool isCollision = dataMap == 0 && nodeMap == 0 && keys.Length > 0;
 
@@ -111,8 +116,13 @@ internal static class PersistentHashMapShape
     private static T Get<T>(object node, string field)
     {
         FieldInfo info = node.GetType().GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException($"PersistentHashMap.Node no longer has a {field} field.");
+            ?? throw new InvalidOperationException($"{node.GetType().FullName} no longer has a {field} field.");
 
         return (T)info.GetValue(node)!;
     }
+
+    // For the fields only one of the two node shapes declares: null when this node has no such field.
+    private static T? TryGet<T>(object node, string field)
+        where T : class =>
+        node.GetType().GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(node) as T;
 }

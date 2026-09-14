@@ -85,6 +85,7 @@ internal static class Differential
         ("CountMinSketchHash64", CountMinSketchHash64Case),
         ("PersistentVector", PersistentVectorCase),
         ("PersistentHashMap", PersistentHashMapCase),
+        ("PersistentHashSet", PersistentHashSetCase),
         ("RadixSort", RadixSortCase),
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
@@ -3948,6 +3949,133 @@ internal static class Differential
         {
             Check(expected.TryGetValue(entry.Key, out int want), $"{label} enumerated an unknown key {entry.Key}");
             Check(want == entry.Value, $"{label} enumeration value diverged at key {entry.Key}");
+            seen++;
+        }
+
+        Check(seen == expected.Count, $"{label} enumeration length diverged");
+    }
+
+    // PersistentHashSet — the set half of the same trie, against a HashSet<int> oracle. The nightly value is
+    // the same as the map's: persistence is on trial rather than the last answer, so both the persistent
+    // results and the builder's ToImmutable snapshots are re-checked at the end. It adds a third route into
+    // the trie the map does not have — the set-algebra methods, which seed a builder from the receiver — and
+    // interleaves them with single-element edits so their results are edited further before being checked.
+    private static void PersistentHashSetCase(Random rng)
+    {
+        if (rng.Next(0, 2) == 0)
+            PersistentHashSetRun<Int32WangNaiveHasher>(rng);
+        else
+            PersistentHashSetRun<FuzzLowBitsHasher>(rng);
+    }
+
+    private static void PersistentHashSetRun<THasher>(Random rng)
+        where THasher : struct, IHashProvider<int>
+    {
+        var sut = PersistentHashSet<int, THasher>.Empty;
+        var builder = new PersistentHashSet<int, THasher>.Builder();
+
+        var oracle = new HashSet<int>();
+        var snapshots = new List<(PersistentHashSet<int, THasher> Set, HashSet<int> Oracle)>();
+        var builderSnapshots = new List<(PersistentHashSet<int, THasher> Set, HashSet<int> Oracle)>();
+
+        int removeWeight = rng.Next(0, 51);
+        int keySpace = rng.Next(1, 2000);
+        int operations = rng.Next(0, 2500);
+
+        for (int op = 0; op < operations; op++)
+        {
+            int key = rng.Next(0, keySpace);
+            int roll = rng.Next(0, 100);
+            var before = sut;
+
+            if (roll < 4)
+            {
+                // A set-algebra step with a small operand that may repeat itself. The builder is brought along
+                // by replaying the oracle's own difference, so it stays an independent route to the same state.
+                int[] other = new int[rng.Next(0, 24)];
+                for (int i = 0; i < other.Length; i++)
+                    other[i] = rng.Next(0, keySpace);
+
+                var previous = new HashSet<int>(oracle);
+                switch (rng.Next(0, 4))
+                {
+                    case 0: sut = sut.Union(other); oracle.UnionWith(other); break;
+                    case 1: sut = sut.Except(other); oracle.ExceptWith(other); break;
+                    case 2: sut = sut.Intersect(other); oracle.IntersectWith(other); break;
+                    default: sut = sut.SymmetricExcept(other); oracle.SymmetricExceptWith(other); break;
+                }
+
+                if (oracle.SetEquals(previous))
+                    Check(ReferenceEquals(before, sut), "PersistentHashSet set-algebra no-op allocated");
+
+                foreach (int gone in previous)
+                {
+                    if (!oracle.Contains(gone))
+                        Check(builder.Remove(gone), "PersistentHashSet builder lost track of a removal");
+                }
+
+                foreach (int added in oracle)
+                {
+                    if (!previous.Contains(added))
+                        Check(builder.Add(added), "PersistentHashSet builder lost track of an addition");
+                }
+            }
+            else if (roll < 4 + removeWeight)
+            {
+                sut = sut.Remove(key);
+                bool inOracle = oracle.Remove(key);
+
+                if (!inOracle)
+                    Check(ReferenceEquals(before, sut), "PersistentHashSet Remove of an absent element allocated");
+
+                Check(builder.Remove(key) == inOracle, "PersistentHashSet builder Remove diverged");
+            }
+            else
+            {
+                sut = sut.Add(key);
+                bool added = oracle.Add(key);
+
+                if (!added)
+                    Check(ReferenceEquals(before, sut), "PersistentHashSet Add of a present element allocated");
+
+                Check(builder.Add(key) == added, "PersistentHashSet builder Add diverged");
+            }
+
+            Check(sut.Count == oracle.Count, "PersistentHashSet count diverged");
+            Check(sut.IsEmpty == (oracle.Count == 0), "PersistentHashSet IsEmpty diverged");
+            Check(builder.Count == oracle.Count, "PersistentHashSet builder count diverged");
+
+            if (op % 64 == 0)
+            {
+                snapshots.Add((sut, new HashSet<int>(oracle)));
+                builderSnapshots.Add((builder.ToImmutable(), new HashSet<int>(oracle)));
+            }
+        }
+
+        CheckElements(sut, oracle, "PersistentHashSet");
+        CheckElements(builder.ToImmutable(), oracle, "PersistentHashSet builder");
+
+        foreach ((PersistentHashSet<int, THasher> snapshot, HashSet<int> expected) in snapshots)
+            CheckElements(snapshot, expected, "PersistentHashSet snapshot");
+
+        foreach ((PersistentHashSet<int, THasher> snapshot, HashSet<int> expected) in builderSnapshots)
+            CheckElements(snapshot, expected, "PersistentHashSet builder snapshot");
+    }
+
+    // Reconciles both read surfaces at once: Contains descends the trie, and enumeration walks it.
+    private static void CheckElements<THasher>(
+        PersistentHashSet<int, THasher> actual, HashSet<int> expected, string label)
+        where THasher : struct, IHashProvider<int>
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        foreach (int item in expected)
+            Check(actual.Contains(item), $"{label} lost element {item}");
+
+        int seen = 0;
+        foreach (int item in actual)
+        {
+            Check(expected.Contains(item), $"{label} enumerated an unknown element {item}");
             seen++;
         }
 

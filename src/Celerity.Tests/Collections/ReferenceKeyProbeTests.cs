@@ -6,7 +6,8 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Pins the empty-slot test on the open-addressed collections for <b>reference-type</b> keys, and the
 /// out-of-band <c>null</c>-key contract shared by the collections exercised here — the hash-based family
-/// plus <see cref="PersistentHashMap{TKey, TValue, THasher}"/>. The ordered types are deliberately not in
+/// plus <see cref="PersistentHashMap{TKey, TValue, THasher}"/> and <see cref="PersistentHashSet{T, THasher}"/>.
+/// The ordered types are deliberately not in
 /// scope: <see cref="BTreeDictionary{TKey, TValue, TComparer}"/> and its siblings store a
 /// <c>default(TKey)</c> inline and sort it wherever the comparer puts it, so they have no out-of-band slot
 /// to pin.
@@ -580,5 +581,59 @@ public class ReferenceKeyProbeTests
         map = map.Remove(null!);
         Assert.False(map.ContainsKey(null!));
         Assert.Equal(keys.Length, map.Count);
+    }
+
+    // ---------------- PersistentHashSet ----------------
+    // The set half of the same trie, asking the same out-of-band question through the same EmptySlot.Is
+    // helper — so it gets the same adversary.
+
+    [Fact]
+    public void PersistentHashSet_ShouldDescendCorrectly_WhenKeyEqualsClaimsEqualityWithNull()
+    {
+        PersistentHashSet<NullGreedyKey, DefaultHasher<NullGreedyKey>> set =
+            PersistentHashSet<NullGreedyKey, DefaultHasher<NullGreedyKey>>.Empty;
+        NullGreedyKey[] keys = Keys();
+
+        foreach (var key in keys)
+            set = set.Add(key);
+
+        Assert.Equal(keys.Length, set.Count);
+        foreach (var key in keys)
+        {
+            Assert.True(set.Contains(key));
+            Assert.True(set.TryGetValue(key, out NullGreedyKey stored));
+            Assert.Same(key, stored);
+        }
+
+        Assert.False(set.Contains(Missing));
+
+        for (int i = 0; i < keys.Length; i += 2)
+            set = set.Remove(keys[i]);
+
+        Assert.Equal(keys.Length / 2, set.Count);
+        for (int i = 1; i < keys.Length; i += 2)
+            Assert.True(set.Contains(keys[i]));
+    }
+
+    [Fact]
+    public void PersistentHashSet_ShouldStoreNullElementOutOfBand_WhenElementIsAReferenceType()
+    {
+        PersistentHashSet<NullGreedyKey, DefaultHasher<NullGreedyKey>> set =
+            PersistentHashSet<NullGreedyKey, DefaultHasher<NullGreedyKey>>.Empty;
+        NullGreedyKey[] keys = Keys(16);
+
+        foreach (var key in keys)
+            set = set.Add(key);
+
+        set = set.Add(null!);
+
+        Assert.Equal(keys.Length + 1, set.Count);
+        Assert.True(set.Contains(null!));
+        foreach (var key in keys)
+            Assert.True(set.Contains(key));
+
+        set = set.Remove(null!);
+        Assert.False(set.Contains(null!));
+        Assert.Equal(keys.Length, set.Count);
     }
 }

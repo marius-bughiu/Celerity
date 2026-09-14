@@ -694,6 +694,54 @@ void Check(bool condition, string message)
     Check(mapSnapshot.Keys.Count == 500 && mapSnapshot.Values.Count == 500, "PersistentHashMap key/value views");
 }
 
+// PersistentHashSet - immutable CHAMP set, the map's trie without the value array. Exercise the deduping
+// IEnumerable constructor, the trie read paths at a depth that needs several levels, Add / Remove and their
+// no-op receivers, the out-of-band default and null elements, the builder-driven set algebra, the
+// IReadOnlySet<T> queries, the builder's ownership token, and the inline-stack struct enumerator.
+{
+    var phs = new PersistentHashSet<int, Int32WangNaiveHasher>(new[] { 1, 2, 2 });
+    Check(phs.Count == 2 && phs.Contains(1) && phs.Contains(2), "PersistentHashSet construct dedupes");
+    Check(phs.Add(3).Count == 3 && phs.Count == 2, "PersistentHashSet Add leaves the receiver alone");
+    Check(ReferenceEquals(phs, phs.Add(1)), "PersistentHashSet Add of a present element returns the receiver");
+    Check(phs.Remove(1).Count == 1 && phs.Contains(1), "PersistentHashSet Remove leaves the receiver alone");
+    Check(PersistentHashSet<int, Int32WangNaiveHasher>.Empty.IsEmpty, "PersistentHashSet Empty");
+    Check(phs.Add(0).Contains(0) && phs.Add(0).Count == 3, "PersistentHashSet default-element slot");
+
+    // StringFnV1AHasher throws on null; the out-of-band flag keeps the null element away from it.
+    var names = PersistentHashSet<string, StringFnV1AHasher>.Empty.Add("alpha").Add(null!);
+    Check(names.Count == 2 && names.Contains(null!) && names.TryGetValue("alpha", out string? alpha) && alpha == "alpha",
+        "PersistentHashSet null element + TryGetValue");
+
+    var deepSet = PersistentHashSet<int, Int32WangNaiveHasher>.Empty;
+    for (int i = 0; i < 3000; i++) deepSet = deepSet.Add(i);
+    Check(deepSet.Count == 3000 && deepSet.Contains(0) && deepSet.Contains(2999), "PersistentHashSet multi-level reads");
+    for (int i = 0; i < 2000; i++) deepSet = deepSet.Remove(i);
+    Check(deepSet.Count == 1000 && deepSet.Contains(2000) && !deepSet.Contains(1999), "PersistentHashSet removal collapses the trie");
+
+    Check(phs.Union(new[] { 2, 3 }).Count == 3 && phs.Except(new[] { 1 }).Count == 1, "PersistentHashSet Union / Except");
+    Check(phs.Intersect(new[] { 2, 9 }).Count == 1 && phs.SymmetricExcept(new[] { 2, 9 }).Count == 2,
+        "PersistentHashSet Intersect / SymmetricExcept");
+    Check(phs.IsSubsetOf(new[] { 1, 2, 3 }) && phs.IsProperSupersetOf(new[] { 1 }) && phs.SetEquals(new[] { 2, 1 })
+        && phs.Overlaps(new[] { 2 }), "PersistentHashSet IReadOnlySet queries");
+
+    var setBuilder = new PersistentHashSet<int, Int32WangNaiveHasher>.Builder();
+    for (int i = 0; i < 500; i++) setBuilder.Add(i);
+    var setSnapshot = setBuilder.ToImmutable();
+
+    // Element 317 lives in the trie, so removing it is what actually drives the ownership token: the builder
+    // must fork the nodes it now shares with setSnapshot rather than write through them.
+    setBuilder.Remove(317);
+    setBuilder.Add(9999);
+    Check(setSnapshot.Count == 500 && setSnapshot.Contains(317) && !setSnapshot.Contains(9999),
+        "PersistentHashSet builder isolates its snapshots");
+    Check(setBuilder.Count == 500 && !setBuilder.Contains(317) && setBuilder.Contains(9999),
+        "PersistentHashSet builder keeps its own edits");
+
+    long setTotal = 0;
+    foreach (int item in setSnapshot) setTotal += item;
+    Check(setTotal == 124750, "PersistentHashSet struct enumeration");
+}
+
 // DisjointSet — union-find over arbitrary elements. Exercise add, auto-adding union, the
 // merge/no-op return, representative find, connectivity queries, component sizing, the set
 // count, growth across many singletons, grouped components, and the struct enumerator.

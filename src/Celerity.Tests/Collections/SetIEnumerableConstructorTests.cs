@@ -8,7 +8,8 @@ namespace Celerity.Tests.Collections;
 /// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>,
 /// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
-/// <see cref="CompressedIntSet"/>, and the build-once <see cref="FrozenCeleritySet{THasher}"/>.
+/// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/>, and the
+/// immutable <see cref="PersistentHashSet{T, THasher}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
 /// equivalents, but follows BCL <see cref="HashSet{T}"/> semantics rather than
@@ -1805,6 +1806,74 @@ public class SetIEnumerableConstructorTests
         var source = new List<int> { 1, 2, 3 };
 
         var set = new CompressedIntSet(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        foreach (int item in new[] { 1, 2, 3 })
+            Assert.True(set.Contains(item));
+    }
+
+    // --------------------------------------------------------------
+    //  PersistentHashSet - the immutable set has neither a capacity nor a
+    //  loadFactor parameter (a trie grows a node at a time, and never in place),
+    //  so those rows do not apply. The IEnumerable-source contract does: null
+    //  rejection, HashSet-style dedupe including the out-of-band default and
+    //  null element, large-source fidelity and independence from the source.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void PersistentHashSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => new PersistentHashSet<int, Int32WangNaiveHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void PersistentHashSet_ShouldSupportEmptySource()
+    {
+        var set = new PersistentHashSet<int, Int32WangNaiveHasher>(Array.Empty<int>());
+
+        Assert.Equal(0, set.Count);
+        Assert.True(set.IsEmpty);
+        Assert.False(set.Contains(0));
+    }
+
+    [Fact]
+    public void PersistentHashSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Range is not an ICollection<int>, and 5000 elements put the trie three levels deep
+        // while the constructor's builder is filling it.
+        var set = new PersistentHashSet<int, Int32WangNaiveHasher>(Enumerable.Range(0, 5000).Reverse());
+
+        Assert.Equal(5000, set.Count);
+        Assert.Equal(Enumerable.Range(0, 5000), set.OrderBy(item => item));
+    }
+
+    [Fact]
+    public void PersistentHashSet_ShouldDedupeSource_IncludingDefaultAndNullElements()
+    {
+        var ints = new PersistentHashSet<int, Int32WangNaiveHasher>(new[] { 0, 1, 0, 1, 2 });
+
+        Assert.Equal(new[] { 0, 1, 2 }, ints.OrderBy(item => item));
+
+        // StringFnV1AHasher throws on null, so a null that reached it would fail the constructor.
+        var strings = new PersistentHashSet<string, StringFnV1AHasher>(CreateSourceWithRuntimeNulls("a", null, "a", null));
+
+        Assert.Equal(2, strings.Count);
+        Assert.True(strings.Contains(null!));
+        Assert.True(strings.Contains("a"));
+    }
+
+    [Fact]
+    public void PersistentHashSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 3 };
+
+        var set = new PersistentHashSet<int, Int32WangNaiveHasher>(source);
         source.Clear();
 
         Assert.Equal(3, set.Count);
