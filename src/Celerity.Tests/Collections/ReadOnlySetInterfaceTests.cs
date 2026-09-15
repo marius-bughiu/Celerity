@@ -11,7 +11,9 @@ namespace Celerity.Tests.Collections;
 /// <see cref="PooledCeleritySet{T, THasher}"/>, <see cref="SmallSet{T}"/>,
 /// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>, <see cref="SparseSet"/> and
 /// <see cref="EnumSet{TEnum}"/>), the read-only mirror of the <see cref="ISet{T}"/> conformance
-/// covered by <see cref="SetAlgebraTests"/>.
+/// covered by <see cref="SetAlgebraTests"/> — and of the immutable
+/// <see cref="PersistentHashSet{T, THasher}"/>, which declares <see cref="IReadOnlySet{T}"/> alone,
+/// since it has no in-place mutation for <see cref="ISet{T}"/> to describe.
 ///
 /// <para>
 /// <see cref="ISet{T}"/> does not derive from <see cref="IReadOnlySet{T}"/>, so declaring the
@@ -211,6 +213,31 @@ public class ReadOnlySetInterfaceTests
         Assert.IsAssignableFrom<IReadOnlySet<EnumSetColor>>(set);
         AssertMatchesOracle(set, members, EnumSetColor.Magenta);
         AssertEmptyContract<EnumSetColor>(new EnumSet<EnumSetColor>(), members);
+    }
+
+    // ── PersistentHashSet ─────────────────────────────────────────────────────
+    // The immutable member: it has no TryAdd to fill it through, so it is built from the fixture by its
+    // sequence constructor, and the empty contract runs against the shared Empty instance. The string row
+    // uses a hasher that throws on null, so the fixture's null element proves it never reaches the hasher.
+
+    [Fact]
+    public void PersistentHashSet_ShouldSatisfyTheReadOnlySetContract_WhenReachedThroughTheInterface()
+    {
+        var set = new PersistentHashSet<int, Int32WangNaiveHasher>(IntMembers);
+
+        Assert.IsAssignableFrom<IReadOnlySet<int>>(set);
+        AssertMatchesOracle(set, IntMembers, IntAbsent);
+        AssertEmptyContract<int>(PersistentHashSet<int, Int32WangNaiveHasher>.Empty, IntMembers);
+    }
+
+    [Fact]
+    public void PersistentHashSet_ShouldSatisfyTheReadOnlySetContract_WhenElementsAreStrings()
+    {
+        var set = new PersistentHashSet<string, StringFnV1AHasher>(StringMembers);
+
+        Assert.IsAssignableFrom<IReadOnlySet<string>>(set);
+        AssertMatchesOracle(set, StringMembers, StringAbsent);
+        AssertEmptyContract<string>(PersistentHashSet<string, StringFnV1AHasher>.Empty, StringMembers);
     }
 
     // ── Shared fixtures and drivers ───────────────────────────────────────────

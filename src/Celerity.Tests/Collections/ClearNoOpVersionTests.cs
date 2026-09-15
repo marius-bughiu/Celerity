@@ -44,7 +44,8 @@ namespace Celerity.Tests.Collections;
 /// deliberately ships no <c>Clear()</c> at all, since that name means in-place mutation everywhere else in
 /// this family. The empty vector is <c>PersistentVector&lt;T&gt;.Empty</c>, and
 /// <see cref="PersistentHashMap{TKey, TValue, THasher}"/> is out of scope on exactly that reasoning —
-/// its empty map is <c>PersistentHashMap&lt;TKey, TValue, THasher&gt;.Empty</c>.
+/// its empty map is <c>PersistentHashMap&lt;TKey, TValue, THasher&gt;.Empty</c> — as is
+/// <see cref="PersistentHashSet{T, THasher}"/>, whose empty set is <c>PersistentHashSet&lt;T, THasher&gt;.Empty</c>.
 /// </para>
 /// </summary>
 public class ClearNoOpVersionTests

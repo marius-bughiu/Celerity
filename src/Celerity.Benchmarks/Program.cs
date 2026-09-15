@@ -49,6 +49,7 @@ internal class Program
         typeof(DequeBenchmark),
         typeof(PersistentVectorBenchmark),
         typeof(PersistentHashMapBenchmark),
+        typeof(PersistentHashSetBenchmark),
         typeof(DisjointSetBenchmark),
         typeof(IndexedPriorityQueueBenchmark),
         typeof(TimerWheelBenchmark),

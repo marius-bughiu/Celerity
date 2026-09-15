@@ -4557,6 +4557,231 @@ Console.WriteLine(numbers[99_999]);            // 99999
 ```
 
 
+## PersistentHashSet&lt;T, THasher&gt;
+
+An **immutable hash set** backed by the same **CHAMP** trie as
+[`PersistentHashMap<TKey, TValue, THasher>`](#persistenthashmaptkey-tvalue-thasher), with the value
+array taken out: a **single-element edit** returns a new set that **shares** all but one root-to-leaf
+path of the old one's storage — while an edit that changes nothing hands back the receiver — and a
+membership test is one popcount-indexed array read per level over a 32-way trie. (The set-algebra
+methods reach as many branches as their operands do, which is why they run through a `Builder`.)
+
+```csharp
+public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+`System.Collections.Immutable.ImmutableHashSet<T>` is the BCL's only immutable hash set, and it is an
+**AVL tree keyed by hash code** — one heap node per distinct hash carrying the hash, a bucket, two
+child references and a height field. Its branching factor is **two**, so a membership test is a
+pointer chase per level (about seventeen at 100,000 elements) and every `Add` or `Remove` path-copies
+and rebalances that same depth. This type is the map's 32-way trie: 100,000 elements are four levels
+deep, elements sit inline in one flat array per node, and a node holding `k` elements is three
+objects — the node, its element array and its child array — rather than `k`.
+
+The documented BCL-beating workload is the one `ImmutableHashSet` is reached for and loses at: a set
+**tested far more often than it is written, that must still be updatable without copying** — an
+allow- or deny-list swapped atomically and consulted on every request, the visited set threaded
+through a backtracking search, the set of names in scope in a compiler pass, or any per-version
+membership state handed to readers on another thread.
+
+### How it works
+
+Everything [`PersistentHashMap`'s "How it works"](#persistenthashmaptkey-tvalue-thasher) describes
+applies unchanged — the two occupancy maps and popcount-indexed slots, the five-bits-per-level
+descent, the collision node below a full 32-bit match, path copying, and removal **dissolving** a
+node left holding one element into its parent so the trie stays canonical. The one difference is the
+payload: a node carries an element array where the map carries a key array and a parallel value
+array.
+
+The element `default(T)` — `null` for a reference type, `0` for an integer — is a **flag on the set**
+rather than an entry in the trie, as in `CeleritySet` and the rest of the family, and is never handed
+to `THasher`. That is what lets a `null` element work with a hasher that rejects one: every string
+hasher in `Celerity.Hashing` throws `ArgumentNullException` on a `null` key.
+
+### Constructors
+
+```csharp
+public PersistentHashSet(IEnumerable<T> source)
+public static readonly PersistentHashSet<T, THasher> Empty
+```
+
+- `Empty` is the empty set, and is the instance `Remove` returns when it takes the last element.
+- The `source` constructor inserts through a `Builder`. **Duplicates are ignored**, as `HashSet<T>`'s
+  sequence constructor ignores them — unlike `PersistentHashMap`'s, which rejects a duplicate key,
+  because a duplicate element carries no conflicting value to lose.
+
+**Throws:** `ArgumentNullException` if `source` is `null`.
+
+### Methods and properties
+
+- `int Count` — the number of elements in the set.
+- `bool IsEmpty` — whether the set holds no elements.
+- `bool Contains(T item)` — membership. One popcount and one array load per level: four levels at
+  100,000 elements and never more than eight. The exception is an element whose **whole 32-bit hash**
+  is shared, which lands in a collision node scanned linearly — a property of the hasher, not of the
+  set.
+- `bool TryGetValue(T equalValue, out T actualValue)` — the **stored** element equal to
+  `equalValue`, for canonicalizing an equal-but-distinct reference. On a miss `actualValue` is
+  `equalValue` itself — what `ImmutableHashSet<T>.TryGetValue` does, and not what
+  `HashSet<T>.TryGetValue` does (it writes `default`). Handing back the argument keeps a non-nullable
+  `T` non-null on both paths; the return value is what says whether the element was found.
+- `PersistentHashSet<...> Add(T item)` — a set with the element added. Returns **the receiver** when
+  the element is already present, as `ImmutableHashSet<T>.Add` does. Copying is confined to the
+  root-to-leaf path: at most eight nodes, seven of them holding at most 32 elements each; the eighth
+  is the optional collision node, which is unbounded.
+- `PersistentHashSet<...> Remove(T item)` — a set without the element. Returns **the receiver** when
+  it was absent, and `Empty` when it was the last element.
+- `PersistentHashSet<...> Union(IEnumerable<T> other)` — every element of both. Returns the receiver
+  when `other` adds nothing.
+- `PersistentHashSet<...> Except(IEnumerable<T> other)` — the elements not in `other`. Returns the
+  receiver when none of `other` was present.
+- `PersistentHashSet<...> Intersect(IEnumerable<T> other)` — the elements also in `other`. Built up
+  from the members of `other` this set contains rather than by removing the rest from a copy, so a
+  small intersection of a large set costs a small set's allocation; the **stored** instances are the
+  ones kept. Returns the receiver when every element is in `other`.
+- `PersistentHashSet<...> SymmetricExcept(IEnumerable<T> other)` — the elements in exactly one of the
+  two. A duplicate in `other` toggles once, as in `HashSet<T>.SymmetricExceptWith`. Returns the
+  receiver when `other` is empty.
+- `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` /
+  `SetEquals` — the `IReadOnlySet<T>` queries, with `HashSet<T>` semantics: duplicates in `other` are
+  ignored, and the superset and overlap shapes stream `other` against `Contains` rather than
+  materializing it.
+- `Builder ToBuilder()` — a mutable builder seeded with this set's elements.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator over an inline descent stack.
+  Nothing can invalidate it; once `MoveNext` has returned `false` it keeps returning `false`, and
+  `Reset` replays the sequence. The out-of-band `default(T)` element is yielded first; the order
+  beyond that is unspecified.
+
+Every set-algebra method throws `ArgumentNullException` if `other` is `null`, and passing the set
+itself as `other` is answered without enumerating it.
+
+#### Builder
+
+```csharp
+public sealed class Builder
+```
+
+The same ownership-token builder as `PersistentHashMap.Builder`: nodes it creates carry its token and
+are written in place, the first write down a path it does not yet own forks that path (cloning the
+payload arrays), and `ToImmutable()` takes a fresh token so every node it has handed out becomes
+read-only again.
+
+- `Builder()` — a new, empty builder.
+- `int Count` — the number of elements the builder holds.
+- `bool Contains(T item)` — membership.
+- `bool Add(T item)` — add, reporting whether the element was new.
+- `bool Remove(T item)` — remove, reporting whether the element was there.
+- `PersistentHashSet<...> ToImmutable()` — a set holding the builder's current elements, in `O(1)`;
+  the builder stays usable and a set it has already returned never sees a later change.
+
+### Two deliberate omissions
+
+**There is no `Clear()`** and **it does not implement `IImmutableSet<T>`**, for the reason
+`PersistentHashMap` and `PersistentVector<T>` give: `Clear()` is the name this library reserves for
+in-place mutation, and `IImmutableSet<T>` requires one returning an empty instance. The empty set is
+spelled `PersistentHashSet<T, THasher>.Empty`. It implements `IReadOnlySet<T>`, which asks for
+nothing it does not already do.
+
+### When not to reach for it
+
+**If the set never changes after it is built, use `FrozenCeleritySet` (for strings) or `HashSet<T>`.**
+A perfect-hash table answers membership in one probe; this type pays a few array hops for the ability
+to produce an edited copy cheaply.
+
+**If nobody holds an old version, use a mutable set.** Structural sharing buys nothing when there is
+nothing to share with, and every edit here allocates a root-to-leaf path where `CeleritySet` writes
+one slot.
+
+**If you need ordered iteration or range queries, use `BTreeSet`.** A hash trie's enumeration order
+is unspecified.
+
+### Thread safety
+
+Concurrent readers need no synchronization: no published set is ever mutated after its constructor
+returns. It shares that with `PersistentHashMap` and `PersistentVector<T>`, and with the same caveat
+— **every membership test calls `THasher` and then `EqualityComparer<T>.Default.Equals`**, so a hasher
+or an element whose own `Equals` / `GetHashCode` is not thread-safe makes concurrent reads unsafe
+however immutable the set is. A shared *variable* holding successive sets still needs the usual
+publication rules. `Builder` is **not** thread-safe; the sets it produces are.
+
+### Measured
+
+<a id="persistenthashset-measured"></a>
+
+`int` elements against `ImmutableHashSet<int>`. `Contains` is the ship / no-ship figure, and was
+pre-registered in [#446](https://github.com/marius-bughiu/Celerity/issues/446) at ≥3x, with `Add`
+at ≥1.5x:
+
+| Operation | 1,000 elements | 100,000 elements |
+| --- | --- | --- |
+| `Contains` — half the probes present, half absent | **6.1x** | **5.2x** |
+| `Insert` — build the whole set one `Add` at a time | **2.4x** | **2.4x** |
+| `Remove` — take out 500 / 10,000 elements one at a time | **2.5x** | **2.1x** |
+| `Enumerate` — every element | **5.0x** | **3.5x** |
+
+`Remove` **allocates about 16% more** than `ImmutableHashSet` at 100,000 elements while running 2.1x
+faster, for the reason the map's `SetItem` does: a path copy here rebuilds four nodes of up to 32
+slots where an AVL path copy rebuilds seventeen small ones, so the bytes come out close and the node
+count does not. `Insert`'s allocation is a wash at 100,000 (about 1% less) and 19% less at 1,000.
+
+**Retained memory**, measured with `GC.GetTotalMemory(true)` around the build with the source array
+allocated beforehand and kept alive throughout, at 100,000 `int` elements:
+
+| | Retained |
+| --- | --- |
+| `PersistentHashSet<int, ...>` | 6,429 KB |
+| `ImmutableHashSet<int>` | 10,962 KB — **1.71x** |
+| `HashSet<int>` (mutable) | 1,706 KB |
+
+That is a wider margin than the map's 1.24x, as expected from dropping one array header per node, and
+still the weakest figure on this page. The `HashSet<int>` row sizes persistence honestly: it costs
+about **3.8x** what a plain hash set does. `ImmutableHashSet` and `HashSet` reproduced to the byte
+across three runs; this type's two later runs agreed to within 48 bytes and the first read about 1%
+lower. At 1,000 elements the same measurement was dominated by noise and is not quoted.
+
+Every figure above is a local short-job run on a development machine. The CI series that is the
+project's contract is published to the
+[benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) and refreshes on merge to
+`main`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A deny-list consulted on every request and edited occasionally, handed to request threads without a
+// lock. Each Add returns a new set sharing all but one root-to-leaf path with the previous one.
+PersistentHashSet<string, StringXxHash3Hasher> blocked =
+    PersistentHashSet<string, StringXxHash3Hasher>.Empty
+        .Add("203.0.113.7")
+        .Add("198.51.100.23");
+
+PersistentHashSet<string, StringXxHash3Hasher> snapshot = blocked;  // hand to another thread
+
+blocked = blocked.Add("192.0.2.99");               // the snapshot is untouched
+Console.WriteLine(snapshot.Contains("192.0.2.99")); // False
+Console.WriteLine(blocked.Contains("192.0.2.99"));  // True
+
+// An edit that changes nothing hands back the receiver rather than an equal copy.
+Console.WriteLine(ReferenceEquals(blocked, blocked.Add("203.0.113.7")));  // True
+
+// Set algebra returns a new set and leaves both operands alone.
+PersistentHashSet<string, StringXxHash3Hasher> expired = blocked.Except(["198.51.100.23"]);
+Console.WriteLine(expired.Count);                   // 2
+Console.WriteLine(blocked.IsSupersetOf(expired));   // True
+
+// Bulk construction goes through the builder, which writes nodes it owns in place.
+var builder = new PersistentHashSet<int, Int32WangNaiveHasher>.Builder();
+for (int i = 0; i < 100_000; i++)
+    builder.Add(i);
+
+PersistentHashSet<int, Int32WangNaiveHasher> numbers = builder.ToImmutable();
+Console.WriteLine(numbers.Contains(99_999));        // True
+```
+
+
 ## DisjointSet&lt;T&gt;
 
 A **disjoint-set** (union-find) over arbitrary elements. It partitions the elements it holds into non-overlapping sets and answers *"are these two in the same set?"* (`Connected`) and *"merge these two sets"* (`Union`) in near-constant amortized time. Implements `IReadOnlyCollection<T>`.
