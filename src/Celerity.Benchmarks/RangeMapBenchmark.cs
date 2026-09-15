@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Collections;
@@ -207,20 +208,22 @@ public class RangeMapBenchmark
         if (first < last && ranges[last - 1].End > end)
             replacement[count++] = new Interval<int, int>(end, ranges[last - 1].End, ranges[last - 1].Value);
 
-        // Overwrite what fits in place, then shift the tail once for the difference.
+        // Shift the tail exactly once for the difference, then write the replacement over [first, first + count).
+        // Growing goes through SetCount and one span copy rather than an Insert per extra piece — a split that
+        // turns one range into three would otherwise memmove the whole tail twice.
         int removed = last - first;
-        int overlap = Math.Min(removed, count);
-        for (int i = 0; i < overlap; i++)
-            ranges[first + i] = replacement[i];
-
         if (removed > count)
         {
             ranges.RemoveRange(first + count, removed - count);
         }
-        else
+        else if (removed < count)
         {
-            for (int i = removed; i < count; i++)
-                ranges.Insert(first + i, replacement[i]);
+            int oldCount = ranges.Count;
+            CollectionsMarshal.SetCount(ranges, oldCount + count - removed);
+            Span<Interval<int, int>> all = CollectionsMarshal.AsSpan(ranges);
+            all.Slice(first + removed, oldCount - first - removed).CopyTo(all.Slice(first + count));
         }
+
+        replacement.Slice(0, count).CopyTo(CollectionsMarshal.AsSpan(ranges).Slice(first, count));
     }
 }

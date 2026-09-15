@@ -81,7 +81,7 @@ public sealed class RangeMap<TKey, TValue> : RangeMap<TKey, TValue, DefaultCompa
 /// </para>
 /// <para>
 /// <b>What it wins and what it does not.</b> The write is the reason to use it: at 100,000 ranges an assignment
-/// measures 8.8x a sorted <see cref="List{T}"/> patched in place, and the gap grows with the map, since the
+/// measures 7.5x a sorted <see cref="List{T}"/> patched in place, and the gap grows with the map, since the
 /// list's assignment is an <c>O(n)</c> memmove. Every read loses to that list's binary search — a lookup by
 /// 1.5x, a window walk by about 3x — and at 1,000 ranges the list wins the write too. A map built once and then
 /// only read belongs in a sorted array.

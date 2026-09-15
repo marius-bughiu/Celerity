@@ -6125,7 +6125,7 @@ Measured against the hand-roll — a `List<Interval<int, int>>` kept sorted by s
 
 | | 1,000 ranges | 100,000 ranges |
 | --- | --- | --- |
-| `Set` — a short random assignment | 3.8–6.1x **slower** | **8.8x faster** |
+| `Set` — a short random assignment | 3.9–6.7x **slower** | **7.5x faster** |
 | `TryGetValue` | 1.5x slower | 1.5x slower |
 | `EnumerateOverlapping` — a window touching about five ranges | 3.7x slower | 3.1x slower |
 
