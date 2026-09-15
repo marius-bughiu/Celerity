@@ -1235,6 +1235,37 @@ void Check(bool condition, string message)
     Check(path.GetBreadthFirstOrder(0).Length == 200, "CompressedGraph traversal crosses bitmap words");
 }
 
+// RangeMap — the mutable coalescing interval map. It closes BTreeDictionary over a private struct value it
+// defines itself, so the tree instantiation it roots is one no other section reaches; exercise the split at
+// both edges, the equal-neighbour merge, the no-op write, both enumerators and a custom comparer.
+{
+    var owners = new RangeMap<int, string>();
+    owners.Set(0, 100, "shard-a");
+    owners.Set(40, 60, "shard-b");
+    Check(owners.Count == 3 && owners[39] == "shard-a" && owners[40] == "shard-b" && owners[60] == "shard-a",
+        "RangeMap assignment splits the straddled range");
+
+    owners.Set(60, 80, "shard-b");
+    Check(owners.Count == 3 && owners.TryGetRange(70, out var run) && run.Start == 40 && run.End == 80,
+        "RangeMap merges equal neighbours");
+
+    var live = owners.GetEnumerator();
+    owners.Set(45, 50, "shard-b");
+    Check(live.MoveNext() && live.Current.Start == 0, "RangeMap no-op write keeps enumerators valid");
+
+    Check(owners.Remove(90, 200) && !owners.ContainsKey(95) && !owners.Overlaps(100, 200),
+        "RangeMap removal trims the straddler");
+
+    int overlapping = 0;
+    foreach (var range in owners.EnumerateOverlapping(30, 85)) overlapping += range.End - range.Start;
+    Check(overlapping == 90, "RangeMap overlap walk reports ranges whole");
+
+    var calendar = new RangeMap<string, int, DescendingStrings>(
+        new[] { new Interval<string, int>("z", "m", 1), new Interval<string, int>("m", "a", 2) }, default);
+    Check(calendar.Count == 2 && calendar["q"] == 1 && calendar["c"] == 2 && !calendar.ContainsKey("a"),
+        "RangeMap custom comparer instantiation");
+}
+
 // SuffixArray — the build-once text index. What is ILC-specific here is the memory shape rather than any
 // generic: the build rents five int[] scratch buffers from ArrayPool<T>.Shared and returns them, ranks the
 // opening symbols through MemoryExtensions.Sort(Span<int>, Span<int>), and every query is a binary search

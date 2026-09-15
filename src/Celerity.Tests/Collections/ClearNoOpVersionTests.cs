@@ -164,6 +164,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void RangeMapClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var map = new RangeMap<int, int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => map.GetEnumerator(), map.Clear, () => map.Count, () => map.Set(1, 10, 10));
+    }
+
+    [Fact]
     public void EnumMapClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var map = new EnumMap<EnumSetColor, int>();

@@ -66,6 +66,7 @@ internal class Program
         typeof(SpatialGridBenchmark),
         typeof(RTreeBenchmark),
         typeof(IntervalTreeBenchmark),
+        typeof(RangeMapBenchmark),
         typeof(CompressedGraphBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
