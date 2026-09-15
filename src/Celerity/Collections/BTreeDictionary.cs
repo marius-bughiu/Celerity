@@ -494,6 +494,12 @@ public class BTreeDictionary<TKey, TValue, TComparer>
         return new RangeEnumerable(this, fromInclusive, toExclusive);
     }
 
+    // The open-ended form of EnumerateRange: every entry from the lower bound of fromInclusive to the end of the
+    // tree. Internal because RangeMap is its only caller — it walks until a condition on the *values* fails,
+    // a bound it cannot name as a key, and a second descent to find that bound would double its seek cost.
+    internal RangeEnumerator EnumerateFrom(TKey fromInclusive) =>
+        new RangeEnumerator(this, fromInclusive, default!, unbounded: true);
+
     /// <summary>
     /// Returns a struct enumerator over the entries in ascending key order. Because it is a struct, iterating
     /// it via <c>foreach</c> allocates nothing — the traversal path is held in an inline buffer.
@@ -1110,16 +1116,19 @@ public class BTreeDictionary<TKey, TValue, TComparer>
         private readonly BTreeDictionary<TKey, TValue, TComparer> _dict;
         private readonly TKey _from;
         private readonly TKey _toExclusive;
+        private readonly bool _unbounded;
         private readonly int _version;
         private Cursor _cursor;
         private KeyValuePair<TKey, TValue?> _current;
         private bool _finished;
 
-        internal RangeEnumerator(BTreeDictionary<TKey, TValue, TComparer> dict, TKey from, TKey toExclusive)
+        internal RangeEnumerator(
+            BTreeDictionary<TKey, TValue, TComparer> dict, TKey from, TKey toExclusive, bool unbounded = false)
         {
             _dict = dict;
             _from = from;
             _toExclusive = toExclusive;
+            _unbounded = unbounded;
             _version = dict._version;
             _cursor = default;
             _current = default;
@@ -1147,7 +1156,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
             }
 
             // The walk is ascending, so the first key at or past the upper bound ends the scan for good.
-            if (_dict._comparer.Compare(key, _toExclusive) >= 0)
+            if (!_unbounded && _dict._comparer.Compare(key, _toExclusive) >= 0)
             {
                 _finished = true;
                 _current = default;

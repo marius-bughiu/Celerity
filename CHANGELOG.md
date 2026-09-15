@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`RangeMap<TKey, TValue>`** in `Celerity.Collections` — a mutable map from **disjoint half-open ranges** to values: assigning `[start, end)` overwrites what was there, splitting straddling ranges and merging equal neighbours, so the map always holds the maximal runs. It is the coalescing interval map `IntervalTree` is not, and .NET ships none. At 100,000 ranges an assignment is **8.8x** faster than a sorted `List<T>` patched in place; ⚠️ every read loses to that list's binary search (lookup 1.5x, window walk 3x slower), and at 1,000 ranges so does the write — it is for maps you keep editing. Ships with its tests, CsCheck property, fuzz and AOT coverage, benchmark and dashboard cards, and docs. Closes [#448](https://github.com/marius-bughiu/Celerity/issues/448).
+
 ## [3.2.0] - 2026-09-13
 
 ### Added
