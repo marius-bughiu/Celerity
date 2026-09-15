@@ -113,7 +113,8 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 /// </para>
 /// <para>
 /// Intervals are kept distinct: two overlapping ranges stay two entries and a query reports both. This is not
-/// a coalescing interval map, and duplicates are preserved. Entries are exposed in ascending start order
+/// a coalescing interval map — that is <see cref="RangeMap{TKey, TValue, TComparer}"/> — and duplicates are
+/// preserved. Entries are exposed in ascending start order
 /// through <see cref="IReadOnlyList{T}"/>; two entries with the same start and end have an unspecified
 /// relative order.
 /// </para>

@@ -6060,7 +6060,7 @@ Queries come in two tiers. The **allocation-free** tier allocates nothing at all
 
 Both `Copy` methods stop when the buffer fills, so a return value equal to the remaining room may mean the matches were truncated; size the buffer with the matching `Count` method when every match is needed. The window members throw `ArgumentException` when `end` precedes `start`; an **empty** window (`start` equal to `end`) is well defined and matches nothing.
 
-Intervals are kept distinct: two overlapping ranges stay two entries and a query reports both. This is **not a coalescing interval map**, and duplicates are preserved. Two entries with the same start and end have an unspecified relative order.
+Intervals are kept distinct: two overlapping ranges stay two entries and a query reports both. This is **not a coalescing interval map**, and duplicates are preserved; for that, see [`RangeMap<TKey, TValue, TComparer>`](#rangemaptkey-tvalue-tcomparer). Two entries with the same start and end have an unspecified relative order.
 
 ### Caveats
 
@@ -6094,6 +6094,93 @@ foreach (Interval<DateTime, string> meeting in bookings.GetContaining(day.AddHou
 var matches = new Interval<DateTime, string>[8];
 int found = bookings.CopyOverlapping(day.AddHours(9), day.AddHours(12), matches);
 Console.WriteLine(found);                                             // 2
+```
+
+## RangeMap&lt;TKey, TValue, TComparer&gt;
+
+```csharp
+public class RangeMap<TKey, TValue, TComparer> : IReadOnlyCollection<Interval<TKey, TValue>>
+    where TComparer : struct, IComparer<TKey>
+
+public sealed class RangeMap<TKey, TValue> : RangeMap<TKey, TValue, DefaultComparer<TKey>>
+```
+
+A **range map** is a mutable map from **disjoint half-open ranges** `[start, end)` of keys to values. Assigning a value to a range overwrites whatever that range held — splitting any stored range that straddles either edge — and ranges left adjacent with equal values merge into one. A point lookup is one `O(log n)` descent, and an assignment costs `O((k + 1) log n)` for the `k` stored ranges it overwrites.
+
+It is the structure [`IntervalTree<TKey, TValue, TComparer>`](#intervaltreetkey-tvalue-tcomparer) says it is not. That type is build-once and keeps overlapping ranges as distinct entries, answering *which ranges cover this point*; this one is mutable and never holds two ranges over the same key, so a point maps to at most one value. It is Guava's `TreeRangeMap`, boost's `interval_map`, and the Rust `rangemap` crate.
+
+.NET ships nothing for this. The idiomatic hand-roll is a `List<T>` of ranges kept sorted by start: binary search answers a lookup well, but every assignment in the middle memmoves the tail, so an edit is `O(n)`. `SortedDictionary<TKey, TValue>` cannot even answer the lookup, because it has no floor query. The workloads are an IP-range or keyspace ownership table edited as shards move, an allocator's used-versus-free map, effective-dated configuration edited in place, a text editor's style runs, and a calendar's availability.
+
+### How it works
+
+The ranges live in a [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictionarytkey-tvalue-tcomparer) keyed by each range's **end**. Because the ranges are disjoint, ordering them by end is ordering them by start, and the range covering a key `x`, if any, is simply the first one ending after `x` — one upper-bound descent through nodes of up to 31 keys. An assignment trims or removes each stored range it touches, one tree operation apiece, then checks the two neighbours for an equal value to merge with. The map allocates only as that tree grows; lookups, both enumerators and `EnumerateOverlapping` allocate nothing.
+
+**Canonical form.** Stored ranges are non-empty, pairwise disjoint and in ascending order, and no two adjacent ranges — one ending exactly where the next begins — carry equal values; those are always merged. So the same set of point-to-value facts produces the same ranges whatever order it was assigned in, and `Count` is the number of maximal runs rather than the number of assignments made. Equality is the value comparer's, `EqualityComparer<TValue>.Default` unless one is supplied, and a merged range carries the value most recently stored in it.
+
+**A write that changes nothing is a no-op.** Assigning a value to a range that one stored range already covers with an equal value, removing a range that holds nothing, assigning or removing an empty range, and clearing an empty map all leave the map untouched — including which of two equal values it holds — and do not invalidate active enumerators.
+
+### What it wins, and what it does not
+
+Measured against the hand-roll — a `List<Interval<int, int>>` kept sorted by start, binary-searched for reads and patched in place with at most one shift per assignment, and *not* merging neighbours, so it does strictly less work — with BenchmarkDotNet's default job over 1,000 operations:
+
+| | 1,000 ranges | 100,000 ranges |
+| --- | --- | --- |
+| `Set` — a short random assignment | 3.9–6.7x **slower** | **7.5x faster** |
+| `TryGetValue` | 1.5x slower | 1.5x slower |
+| `EnumerateOverlapping` — a window touching about five ranges | 3.7x slower | 3.1x slower |
+
+The write is the reason to use it, and the gap grows with the map: the list's assignment is an `O(n)` memmove, this one's `O((k + 1) log n)`. Every read loses, because a binary search over one flat array is the best a lookup can be and a B-tree descent is several dependent node visits; the window walk pays that plus setting up a struct enumerator. A map built once and then only read belongs in a sorted array. The benchmark dashboard carries the same three cards.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `RangeMap()` / `RangeMap(TComparer comparer)` | An empty map ordered by `default(TComparer)` or by the supplied comparer. |
+| `RangeMap(TComparer comparer, IEqualityComparer<TValue>? valueComparer)` | The same, with the equality that decides when neighbours merge and when an assignment is a no-op; `null` for `EqualityComparer<TValue>.Default`. |
+| `RangeMap(IEnumerable<Interval<TKey, TValue>> source)` / `(source, TComparer comparer)` | Assign each interval in turn, so a later one overwrites an earlier one where they overlap. `ArgumentNullException` on `null`, `ArgumentException` when an interval's end orders before its start. |
+| `int Count { get; }` | The number of stored ranges — maximal runs, not assignments. |
+| `TValue this[TKey key] { get; }` | The value at `key`. `KeyNotFoundException` when no range contains it. |
+| `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | Point lookup, `O(log n)`. |
+| `bool TryGetRange(TKey key, out Interval<TKey, TValue> range)` | The whole stored range containing `key` — its bounds and its value. |
+| `void Set(TKey start, TKey end, TValue? value)` | Map `[start, end)` to `value`, splitting straddlers and merging equal neighbours. `O((k + 1) log n)`. |
+| `bool Remove(TKey start, TKey end)` | Unmap `[start, end)`, splitting straddlers. Returns whether any key there was mapped. |
+| `bool Overlaps(TKey start, TKey end)` | Is any key in `[start, end)` mapped? `O(log n)`. |
+| `OverlapEnumerable EnumerateOverlapping(TKey start, TKey end)` | Every stored range overlapping the window, ascending, reported **whole** rather than clipped. `O(log n + k)`, allocation-free. |
+| `void Clear()` | Remove every range. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator over the stored ranges, ascending. |
+
+Every member taking a range throws `ArgumentException` when `end` orders before `start`. An **empty** range (`start` equal to `end`) covers no key: assigning or removing it changes nothing, and it overlaps nothing.
+
+### Caveats
+
+- **Not thread-safe.** Concurrent callers must synchronize externally. Both enumerators fail fast on any write that changes the map — including one made after the walk has finished — and survive every write that does not.
+- **Adjacency is exact.** Two ranges merge only when one ends exactly where the next begins under `TComparer`. Over `int` keys, `[0, 5)` and `[5, 8)` merge but `[0, 5)` and `[6, 8)` do not, since key `5` is unmapped between them.
+- **The comparer defines everything.** `TComparer` orders the keys, decides which ranges are empty, and therefore decides what overlaps what — over a descending comparer, `[10, 0)` holds `10` down to `1`. A `null` key is legal wherever the comparer orders it. Use the two-parameter `RangeMap<TKey, TValue>` alias for the natural order.
+- **Merging needs a meaningful equality.** A reference-typed value without an `Equals` override merges only with the *same instance*, which is usually what you want for shared configuration objects and never what you want for freshly allocated ones; pass a value comparer when it is not.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Who owns each slice of a 0..1,024 keyspace, edited as shards move.
+var owners = new RangeMap<int, string>();
+owners.Set(0, 1024, "node-a");
+owners.Set(256, 512, "node-b");           // splits node-a's range in two
+owners.Set(512, 768, "node-b");           // merges with node-b's adjacent range
+
+Console.WriteLine(owners[300]);           // node-b
+Console.WriteLine(owners.Count);          // 3 — [0, 256) a, [256, 768) b, [768, 1024) a
+
+owners.TryGetRange(300, out Interval<int, string> run);
+Console.WriteLine(run);                   // [256, 768) = node-b
+
+// Decommission a slice: the straddled ranges are trimmed, not dropped.
+owners.Remove(700, 800);
+
+// Everything touching a window, reported whole, without scanning the map.
+foreach (Interval<int, string> range in owners.EnumerateOverlapping(200, 300))
+    Console.WriteLine(range);             // [0, 256) = node-a, then [256, 700) = node-b
 ```
 
 ## BTreeDictionary&lt;TKey, TValue, TComparer&gt;

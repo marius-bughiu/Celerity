@@ -2030,6 +2030,61 @@ public class IEnumerableConstructorTests
         Assert.Equal(10, map[1]);
     }
 
+    // --------------------------------------------------------------
+    //  RangeMap - the IEnumerable<Interval<,>> constructor.
+    //  Shares the null-source and source-independence invariants. The
+    //  duplicate-key rule does not carry over: the source is a sequence of
+    //  assignments, so a later interval overwriting an earlier one is the
+    //  documented meaning rather than an error.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void RangeMap_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<Interval<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new RangeMap<int, string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void RangeMap_ShouldSupportEmptySource()
+    {
+        var map = new RangeMap<int, string>(Array.Empty<Interval<int, string>>());
+
+        Assert.Equal(0, map.Count);
+        Assert.False(map.ContainsKey(0));
+    }
+
+    [Fact]
+    public void RangeMap_ShouldLetALaterIntervalOverwriteAnEarlierOne()
+    {
+        var source = new[]
+        {
+            new Interval<int, string>(0, 10, "first"),
+            new Interval<int, string>(5, 15, "second"),
+        };
+
+        var map = new RangeMap<int, string>(source);
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal("first", map[4]);
+        Assert.Equal("second", map[5]);
+    }
+
+    [Fact]
+    public void RangeMap_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<Interval<int, int>> { new(0, 10, 1), new(20, 30, 2) };
+
+        var map = new RangeMap<int, int>(source);
+        source.Clear();
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(1, map[5]);
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  PersistentHashMap — the immutable member of the family
     // ──────────────────────────────────────────────────────────────

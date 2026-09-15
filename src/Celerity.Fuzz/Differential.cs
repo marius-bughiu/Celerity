@@ -66,6 +66,7 @@ internal static class Differential
         ("TimerWheel", TimerWheelCase),
         ("RTree", RTreeCase),
         ("IntervalTree", IntervalTreeCase),
+        ("RangeMap", RangeMapCase),
         ("CompressedGraph", CompressedGraphCase),
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
@@ -2646,6 +2647,106 @@ internal static class Differential
         Check(actual.Length == expected.Count, $"interval match count disagreed for [{start}, {end})");
         foreach (var match in actual)
             Check(expected.Contains(match.Value), $"unexpected match {match.Value} for [{start}, {end})");
+    }
+
+    // ---- range map ----------------------------------------------------------
+
+    // RangeMap against a dense array holding the value at every key — the one model that makes none of the
+    // decisions under test. An assignment writes each covered cell and a removal clears it, and the maximal runs
+    // of equal values are read off the array afterwards; the map's stored ranges must be exactly those runs,
+    // which checks the straddler splits, the equal-neighbour merges and the canonical form in one comparison.
+    // The domain is wide enough, and the run long enough, to grow the backing B-tree past a single node.
+    private static void RangeMapCase(Random rng)
+    {
+        int domain = rng.Next(1, 600);
+        int values = rng.Next(1, 6);
+        var sut = new RangeMap<int, int>();
+        var model = new int?[domain];
+
+        int ops = rng.Next(1, 400);
+        for (int op = 0; op < ops; op++)
+        {
+            int start = rng.Next(0, domain);
+            int width = rng.Next(0, 8) == 0 ? rng.Next(0, domain + 1) : rng.Next(0, 10);
+            int end = Math.Min(start + width, domain);
+
+            switch (rng.Next(0, 20))
+            {
+                case < 12:
+                    int value = rng.Next(0, values);
+                    sut.Set(start, end, value);
+                    for (int k = start; k < end; k++)
+                        model[k] = value;
+
+                    break;
+                case < 19:
+                    bool anyMapped = false;
+                    for (int k = start; k < end; k++)
+                    {
+                        anyMapped |= model[k].HasValue;
+                        model[k] = null;
+                    }
+
+                    Check(sut.Remove(start, end) == anyMapped, $"RangeMap Remove({start}, {end}) disagreed");
+                    break;
+                default:
+                    sut.Clear();
+                    Array.Clear(model);
+                    break;
+            }
+        }
+
+        var runs = new List<Interval<int, int>>();
+        for (int i = 0; i < domain;)
+        {
+            if (!model[i].HasValue)
+            {
+                i++;
+                continue;
+            }
+
+            int j = i + 1;
+            while (j < domain && model[j] == model[i])
+                j++;
+
+            runs.Add(new Interval<int, int>(i, j, model[i]!.Value));
+            i = j;
+        }
+
+        Check(sut.Count == runs.Count, $"RangeMap Count {sut.Count} != {runs.Count} runs");
+        int index = 0;
+        foreach (Interval<int, int> range in sut)
+        {
+            Check(range.Start == runs[index].Start && range.End == runs[index].End && range.Value == runs[index].Value,
+                $"RangeMap range {index} was {range}, expected {runs[index]}");
+            index++;
+        }
+
+        for (int k = -1; k <= domain; k++)
+        {
+            int? expected = k >= 0 && k < domain ? model[k] : null;
+            bool found = sut.TryGetValue(k, out int actual);
+            Check(found == expected.HasValue && (!found || actual == expected), $"RangeMap lookup({k}) disagreed");
+        }
+
+        for (int q = 0; q < 20; q++)
+        {
+            int start = rng.Next(-1, domain + 1);
+            int end = Math.Min(start + rng.Next(0, 30), domain + 1);
+            int expectedCount = 0;
+            foreach (Interval<int, int> run in runs)
+            {
+                if (start < end && run.Start < end && start < run.End)
+                    expectedCount++;
+            }
+
+            int actualCount = 0;
+            foreach (Interval<int, int> _ in sut.EnumerateOverlapping(start, end))
+                actualCount++;
+
+            Check(actualCount == expectedCount, $"RangeMap EnumerateOverlapping({start}, {end}) disagreed");
+            Check(sut.Overlaps(start, end) == (expectedCount > 0), $"RangeMap Overlaps({start}, {end}) disagreed");
+        }
     }
 
     // ---- succinct trie ------------------------------------------------------
