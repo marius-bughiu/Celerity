@@ -258,9 +258,12 @@ public class BTreeSetBenchmark
     }
 
     // The set-algebra members that need the *distinct* elements of `other` collapse it with the set's own
-    // TComparer — a sort plus a duplicate pass, then a binary search per probe — rather than materializing a
-    // HashSet<int>, which is what makes their answers match SortedSet<T> under a comparer that calls two
-    // values equal when EqualityComparer<int>.Default does not. That trade is the thing to watch here, and
+    // TComparer — a sort plus a duplicate pass — rather than materializing a HashSet<int>, which is what
+    // makes their answers match SortedSet<T> under a comparer that calls two values equal when
+    // EqualityComparer<int>.Default does not. The two groups price the two shapes that takes on top of the
+    // shared sort: SetEquals walks both sorted sides in a single linear merge, while IsProperSupersetOf has
+    // no sorted side to merge against and asks the tree about each element of `other`, O(m log n). That
+    // trade is the thing to watch here, and
     // measuring it on one of the two ordered sets is enough: BTreeSet and RankedSet share the helper, and
     // what differs between them is only the enumeration and membership either side of it.
 
