@@ -615,8 +615,13 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     // ── ISet<T> / ICollection<T> set-algebra surface ──────────────────────────
-    // Shared across the mutable set family via SetOperations, written once against the ISet<T> primitives
-    // every set exposes; the semantics match BCL HashSet<T>.
+    // Two shared helpers, split by what each member needs of `other`, and the split is deliberate — a new
+    // member added here must pick the right one. The four that stream `other` against this set's own
+    // Add / Remove / Contains go through SetOperations, written once against the ISet<T> primitives the
+    // whole mutable set family exposes. The six that need the *distinct* elements of `other` go through
+    // OrderedSetOperations, which collapses it with TComparer instead of into a HashSet<T> keyed by
+    // EqualityComparer<T>.Default — that is what keeps membership the comparer's throughout and makes the
+    // surface answer as SortedSet<T> does, rather than as HashSet<T> does.
 
     /// <summary>
     /// Modifies the set to contain all elements that are present in itself, in <paramref name="other"/>, or
