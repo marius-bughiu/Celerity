@@ -50,11 +50,27 @@ internal static class OrderedSetOperations
         if (self.Count == 0 || ReferenceEquals(self, other))
             return;
 
+        // An empty right-hand side intersects to nothing, and Clear() is not merely a shorter way to reach
+        // that: the merge below would remove the elements one at a time, which is n operations instead of
+        // one and leaves RankedSet holding the high-water slot arrays its Clear() releases. Both shapes of
+        // empty are worth catching — a known-empty collection before materializing, and a streamed sequence
+        // that turns out to be empty after.
+        if (other is ICollection<T> collection && collection.Count == 0)
+        {
+            self.Clear();
+            return;
+        }
+
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
+        if (o.Length == 0)
+        {
+            self.Clear();
+            return;
+        }
 
         // Snapshot the current elements before mutating: removing while enumerating the live set would
-        // invalidate the enumerator. An empty `other` leaves nothing for the merge to match, which clears
-        // the set. The snapshot ascends, and so does `o`, so one linear merge decides every element.
+        // invalidate the enumerator. The snapshot ascends, and so does `o`, so one linear merge decides
+        // every element.
         List<T> snapshot = new(self);
         int j = 0;
         foreach (T item in snapshot)
@@ -123,8 +139,13 @@ internal static class OrderedSetOperations
     {
         ArgumentNullException.ThrowIfNull(other);
 
-        // An empty right-hand side needs no special case: its distinct count is zero, so a non-empty set
-        // falls through to a vacuously true containment loop and an empty one fails `self.Count <= 0`.
+        // An empty right-hand side: a proper superset iff the set is non-empty. The answer does not depend
+        // on the comparer, so it is worth having before anything is copied or sorted. A streamed empty
+        // sequence falls through instead and reaches the same answer — its distinct count is zero, so a
+        // non-empty set runs a vacuously true containment loop and an empty one fails `self.Count <= 0`.
+        if (other is ICollection<T> collection && collection.Count == 0)
+            return self.Count > 0;
+
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
         if (self.Count <= o.Length)
             return false;

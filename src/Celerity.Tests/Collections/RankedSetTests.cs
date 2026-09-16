@@ -708,6 +708,28 @@ public class RankedSetTests
         Assert.False(live.MoveNext());
     }
 
+    [Fact]
+    public void IntersectWithAnEmptyOtherSide_ShouldReleaseTheSlotArrays_LikeClearDoes()
+    {
+        // Intersecting with nothing empties the set, and it must empty it the way Clear() does rather than
+        // by removing every element in turn: removal drops buckets but never narrows the three arrays behind
+        // them, so a per-element drain would leave the high-water storage behind.
+        var set = new RankedSet<int>(Enumerable.Range(0, 5000));
+        Assert.True(SlotCount(set) > 0);
+
+        set.IntersectWith(Array.Empty<int>());
+
+        Assert.Empty(set);
+        Assert.Equal(0, SlotCount(set));
+
+        // And the same for a right-hand side with no ICollection<T> count to read up front.
+        var streamed = new RankedSet<int>(Enumerable.Range(0, 5000));
+        streamed.IntersectWith(Enumerable.Range(0, 5000).Where(_ => false));
+
+        Assert.Empty(streamed);
+        Assert.Equal(0, SlotCount(streamed));
+    }
+
     private static int SlotCount<T>(RankedSet<T> set) => Field<T, T[][]>(set, "_buckets").Length;
 
     private static int TreeLength<T>(RankedSet<T> set) => Field<T, int[]>(set, "_tree").Length;
