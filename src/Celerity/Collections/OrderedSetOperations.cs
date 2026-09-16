@@ -25,9 +25,16 @@ namespace Celerity.Collections;
 /// delegating to <see cref="SetOperations"/> unchanged.
 /// </para>
 /// <para>
-/// The comparer arrives as a <c>struct, IComparer&lt;T&gt;</c> type argument, so the sort, the duplicate
-/// collapse and every comparison in the merge devirtualize and inline exactly as they do inside the tree
-/// itself.
+/// The comparer arrives as a <c>struct, IComparer&lt;T&gt;</c> type argument, so the duplicate collapse and
+/// every comparison in the merge are constrained calls the JIT devirtualizes and inlines, exactly as it does
+/// inside the tree itself. The sort is the one exception:
+/// <see cref="MemoryExtensions.Sort{T, TComparer}(Span{T}, TComparer)"/> reaches the BCL's introsort through
+/// an <see cref="IComparer{T}"/>-typed helper and so <b>boxes the comparer</b> — the reason
+/// <c>Celerity.Sorting</c>'s <c>PartialSort</c> hand-rolls its own ordering rather than call it. That is
+/// accepted here and not there: the box is one ~88-byte allocation per call, not one per comparison, and it
+/// is dwarfed by the copy of <c>other</c> this method has already made. <c>Celerity.Collections</c> does not
+/// reference <c>Celerity.Sorting</c>, so reusing that ordering would mean a new package dependency to save
+/// 88 bytes.
 /// </para>
 /// <para>
 /// <b>Precondition.</b> <c>self</c> must enumerate in ascending <c>TComparer</c> order. That is part of both
