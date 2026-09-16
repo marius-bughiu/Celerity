@@ -5,8 +5,10 @@ using Celerity.Collections;
 /// <summary>
 /// <see cref="BTreeSet{T}"/> against the BCL's ordered set, <see cref="SortedSet{T}"/> (a red-black tree:
 /// one heap node per element, ~log2(n) dependent pointer chases per lookup). The range group compares
-/// against <see cref="SortedSet{T}.GetViewBetween"/>, the BCL's own range view, and the last group is the
-/// documented win workload — an interleaved insert + membership + in-order range scan.
+/// against <see cref="SortedSet{T}.GetViewBetween"/>, the BCL's own range view, and the mixed group is the
+/// documented win workload — an interleaved insert + membership + in-order range scan. The two set-algebra
+/// groups price the comparer-keyed materialization of <c>other</c> that makes this type's algebra answer as
+/// <see cref="SortedSet{T}"/> does.
 /// </summary>
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
@@ -19,6 +21,8 @@ public class BTreeSetBenchmark
 
     private int rangeFrom;
     private int rangeTo;
+
+    private int[] algebraOther = null!;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -51,6 +55,15 @@ public class BTreeSetBenchmark
 
         rangeFrom = ItemCount / 2;
         rangeTo = rangeFrom + Math.Max(1, ItemCount / 100);
+
+        // A right-hand side a tenth the set's size, held as a plain array so neither side can shortcut it
+        // by recognising a set type. It is a strict subset, so the containment loops run to completion
+        // rather than bailing on the first miss.
+        algebraOther = new int[Math.Max(1, ItemCount / 10)];
+        for (int i = 0; i < algebraOther.Length; i++)
+        {
+            algebraOther[i] = keys[i];
+        }
     }
 
     [Benchmark(Baseline = true)]
@@ -243,4 +256,27 @@ public class BTreeSetBenchmark
 
         return result;
     }
+
+    // The set-algebra members that need the *distinct* elements of `other` collapse it with the set's own
+    // TComparer — a sort plus a duplicate pass, then a binary search per probe — rather than materializing a
+    // HashSet<int>, which is what makes their answers match SortedSet<T> under a comparer that calls two
+    // values equal when EqualityComparer<int>.Default does not. That trade is the thing to watch here, and
+    // measuring it on one of the two ordered sets is enough: BTreeSet and RankedSet share the helper, and
+    // what differs between them is only the enumeration and membership either side of it.
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("SetAlgebra")]
+    public bool SortedSet_IsProperSupersetOf() => sortedSet.IsProperSupersetOf(algebraOther);
+
+    [Benchmark]
+    [BenchmarkCategory("SetAlgebra")]
+    public bool BTreeSet_IsProperSupersetOf() => bTree.IsProperSupersetOf(algebraOther);
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("SetEquals")]
+    public bool SortedSet_SetEquals() => sortedSet.SetEquals(keys);
+
+    [Benchmark]
+    [BenchmarkCategory("SetEquals")]
+    public bool BTreeSet_SetEquals() => bTree.SetEquals(keys);
 }

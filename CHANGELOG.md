@@ -9,6 +9,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - **`PersistentHashSet<T, THasher>`** in `Celerity.Collections` — an **immutable hash set**, the set half of `PersistentHashMap`: every edit returns a new set that shares nearly all of its receiver's storage, and an edit that changes nothing returns the receiver. Answers `Contains` about **5x** faster than `ImmutableHashSet<T>` and retains about **1.7x** less memory; ⚠️ `Remove` allocates ~16% more. See [the API reference](docs/api/collections.md#persistenthashsett-thasher). Closes [#446](https://github.com/marius-bughiu/Celerity/issues/446).
 - **`RangeMap<TKey, TValue>`** in `Celerity.Collections` — a mutable map from **disjoint half-open ranges** to values: assigning `[start, end)` overwrites what was there, splitting straddling ranges and merging equal neighbours, so the map always holds the maximal runs. It is the coalescing interval map `IntervalTree` is not, and .NET ships none. At 100,000 ranges an assignment is **7.5x** faster than a sorted `List<T>` patched in place; ⚠️ every read loses to that list's binary search (lookup 1.5x, window walk 3x slower), and at 1,000 ranges so does the write — it is for maps you keep editing. Closes [#448](https://github.com/marius-bughiu/Celerity/issues/448).
 
+### Fixed
+
+- **`BTreeSet` and `RankedSet` now answer the whole `ISet<T>` algebra with their own comparer**, matching `SortedSet<T>` with the equivalent `IComparer<T>`. The members that need the distinct elements of `other` used to collapse it with `EqualityComparer<T>.Default`, so under a comparer that orders two values equal when the default equality comparer does not — a case-insensitive order, say — `SymmetricExceptWith(["a", "A"])` toggled one element twice instead of once and `IsProperSupersetOf` counted it as two. ⚠️ Collapsing with the comparer costs a sort rather than a hash pass: `SetEquals` at 100,000 elements measures 5.7 ms against the previous 0.73 ms, still ahead of `SortedSet<T>`'s 8.8 ms. Closes [#450](https://github.com/marius-bughiu/Celerity/issues/450).
+
+- **The rollout that ships with it** — a cross-collection algebra suite over both ordered sets oracled against `SortedSet<T>` (including a CsCheck differential under a collapsing comparer), a `SetAlgebra` group in `BTreeSetBenchmark`, and the corrected member split in both types' XML docs and [the API reference](docs/api/collections.md#btreesett-tcomparer). Closes [#450](https://github.com/marius-bughiu/Celerity/issues/450).
+
 ## [3.2.0] - 2026-09-13
 
 ### Added

@@ -124,18 +124,16 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// </para>
 /// <para>
 /// Membership is defined by <typeparamref name="TComparer"/> — two elements are the same element when the
-/// comparer orders them equal. The <see cref="ISet{T}"/> algebra members materialize the right-hand side into
-/// a <see cref="HashSet{T}"/>, so they compare <i>that</i> side with
-/// <see cref="EqualityComparer{T}.Default"/>, matching the rest of the family. That matters only for a
-/// comparer that orders two elements equal when <see cref="EqualityComparer{T}.Default"/> does not — a
-/// case-insensitive order, say — and then it matters for exactly the four members that ask whether an
-/// element of <i>this</i> set is in the right-hand side: <see cref="IntersectWith"/>,
-/// <see cref="SetEquals"/>, <see cref="IsSubsetOf"/> and <see cref="IsProperSubsetOf"/>. Under such an order
-/// a set holding <c>"a"</c> answers <c>true</c> to <c>Contains("A")</c> and still empties under
-/// <c>IntersectWith(["A"])</c>, which is where this differs from <see cref="SortedSet{T}"/>. The members that
-/// only ever probe this set — <see cref="UnionWith"/>, <see cref="ExceptWith"/>,
-/// <see cref="SymmetricExceptWith"/>, <see cref="Overlaps"/>, <see cref="IsSupersetOf"/> and
-/// <see cref="IsProperSupersetOf"/> — follow the comparer throughout. Like the rest of the family,
+/// comparer orders them equal — and that holds throughout, including the <see cref="ISet{T}"/> algebra and
+/// the positional surface. <see cref="UnionWith"/>, <see cref="ExceptWith"/>, <see cref="Overlaps"/> and
+/// <see cref="IsSupersetOf"/> stream the right-hand side against this set's own comparer-driven
+/// <c>Add</c> / <c>Remove</c> / <c>Contains</c>; the six that need the <i>distinct</i> elements of that side
+/// — <see cref="IntersectWith"/>, <see cref="SymmetricExceptWith"/>, <see cref="SetEquals"/>,
+/// <see cref="IsSubsetOf"/>, <see cref="IsProperSubsetOf"/> and <see cref="IsProperSupersetOf"/> — collapse
+/// it with the same comparer rather than with <see cref="EqualityComparer{T}.Default"/>. So under a
+/// case-insensitive order a set holding <c>"a"</c> answers <c>true</c> to <c>Contains("A")</c>, reports
+/// <c>IndexOf("A")</c> as <c>0</c>, and <i>keeps</i> that member under <c>IntersectWith(["A"])</c> —
+/// the answers <see cref="SortedSet{T}"/> gives with the equivalent <see cref="IComparer{T}"/>. Like the rest of the family,
 /// <see cref="Add"/> throws on a duplicate — use <see cref="TryAdd"/> when the element may already be
 /// present. Whether a <c>null</c> element is legal is <typeparamref name="TComparer"/>'s decision, not this
 /// type's: under <see cref="DefaultComparer{T}"/> — and so under the <see cref="RankedSet{T}"/> alias —
@@ -631,7 +629,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     /// <summary>Modifies the set to contain only elements that are also present in <paramref name="other"/>.</summary>
     /// <param name="other">The collection to intersect with this set.</param>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public void IntersectWith(IEnumerable<T> other) => SetOperations.IntersectWith(this, other);
+    public void IntersectWith(IEnumerable<T> other) => OrderedSetOperations.IntersectWith(this, _comparer, other);
 
     /// <summary>Removes every element in <paramref name="other"/> from the set.</summary>
     /// <param name="other">The collection of elements to remove.</param>
@@ -644,13 +642,13 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     /// </summary>
     /// <param name="other">The collection to apply the symmetric difference with.</param>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public void SymmetricExceptWith(IEnumerable<T> other) => SetOperations.SymmetricExceptWith(this, other);
+    public void SymmetricExceptWith(IEnumerable<T> other) => OrderedSetOperations.SymmetricExceptWith(this, _comparer, other);
 
     /// <summary>Determines whether the set is a subset of <paramref name="other"/>.</summary>
     /// <param name="other">The collection to compare against.</param>
     /// <returns><c>true</c> if every element of this set is in <paramref name="other"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool IsSubsetOf(IEnumerable<T> other) => SetOperations.IsSubsetOf(this, other);
+    public bool IsSubsetOf(IEnumerable<T> other) => OrderedSetOperations.IsSubsetOf(this, _comparer, other);
 
     /// <summary>Determines whether the set is a proper (strict) subset of <paramref name="other"/>.</summary>
     /// <param name="other">The collection to compare against.</param>
@@ -659,7 +657,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     /// has at least one element this set does not.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool IsProperSubsetOf(IEnumerable<T> other) => SetOperations.IsProperSubsetOf(this, other);
+    public bool IsProperSubsetOf(IEnumerable<T> other) => OrderedSetOperations.IsProperSubsetOf(this, _comparer, other);
 
     /// <summary>Determines whether the set is a superset of <paramref name="other"/>.</summary>
     /// <param name="other">The collection to compare against.</param>
@@ -674,7 +672,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     /// element <paramref name="other"/> does not.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool IsProperSupersetOf(IEnumerable<T> other) => SetOperations.IsProperSupersetOf(this, other);
+    public bool IsProperSupersetOf(IEnumerable<T> other) => OrderedSetOperations.IsProperSupersetOf(this, _comparer, other);
 
     /// <summary>Determines whether the set and <paramref name="other"/> share at least one element.</summary>
     /// <param name="other">The collection to compare against.</param>
@@ -686,7 +684,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
     /// <param name="other">The collection to compare against.</param>
     /// <returns><c>true</c> if the two contain exactly the same elements.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool SetEquals(IEnumerable<T> other) => SetOperations.SetEquals(this, other);
+    public bool SetEquals(IEnumerable<T> other) => OrderedSetOperations.SetEquals(this, _comparer, other);
 
     /// <summary>
     /// Copies the elements of the set, in ascending order, to <paramref name="array"/> starting at
