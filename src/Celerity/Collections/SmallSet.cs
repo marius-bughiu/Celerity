@@ -101,6 +101,9 @@ public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative.
+    /// </exception>
     public SmallSet(IEnumerable<T> source, int capacity = DefaultCapacity)
         : this(InitialCapacityForSource(source, capacity))
     {
@@ -117,7 +120,9 @@ public class SmallSet<T> : ISet<T>, IReadOnlySet<T>
     private static int InitialCapacityForSource(IEnumerable<T> source, int capacity)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return Math.Max(capacity, (source as ICollection<T>)?.Count ?? 0);
+        // A negative capacity passes through untouched so the primary ctor rejects it,
+        // exactly as the capacity-only overload does (issue #460).
+        return capacity < 0 ? capacity : Math.Max(capacity, (source as ICollection<T>)?.Count ?? 0);
     }
 
     /// <summary>
