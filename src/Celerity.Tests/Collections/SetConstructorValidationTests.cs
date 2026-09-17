@@ -298,4 +298,99 @@ public class SetConstructorValidationTests
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new SmallSet<int>(-1));
     }
+
+    // ---------------------------------------------------------------
+    //  Source constructors reject a negative capacity too (issue #460).
+    //  Same source shapes and assertion as the dictionary block in
+    //  ConstructorValidationTests.
+    // ---------------------------------------------------------------
+
+    public static TheoryData<string, int> NegativeCapacityWithSource =>
+        ConstructorValidationTests.NegativeCapacityWithSource;
+
+    private static IEnumerable<int> Ints(string shape) =>
+        ConstructorValidationTests.SourceOf(shape, i => i);
+
+    private static IEnumerable<long> Longs(string shape) =>
+        ConstructorValidationTests.SourceOf(shape, i => (long)i);
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void CeleritySet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new CeleritySet<int, Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void SwissSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new SwissSet<int, Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void RobinHoodSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new RobinHoodSet<int, Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void HashCachingSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new HashCachingSet<int, Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void PooledCeleritySet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new PooledCeleritySet<int, Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void IntSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new IntSet<Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void IntSet_ConvenienceSubclass_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new IntSet(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void LongSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new LongSet<Int64WangNaiveHasher>(Longs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void LongSet_ConvenienceSubclass_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new LongSet(Longs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void SmallSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new SmallSet<int>(Ints(shape), capacity: capacity));
+    }
 }

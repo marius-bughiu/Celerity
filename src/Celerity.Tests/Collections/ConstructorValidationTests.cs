@@ -544,4 +544,147 @@ public class ConstructorValidationTests
         map[42] = 100;
         Assert.Equal(100, map[42]);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  Source constructors reject a negative capacity too (issue #460)
+    //
+    //  Each source overload sizes its table as max(capacity, source count)
+    //  before chaining to the primary ctor, which used to replace a negative
+    //  capacity before the primary ctor's guard could see it — so the overload
+    //  documented to throw built a collection instead. Every source shape is
+    //  covered: an empty collection (count 0), a non-empty one (count > 0), and
+    //  a lazy sequence that is not an ICollection<T> (count unknown).
+    // ──────────────────────────────────────────────────────────────
+
+    public static TheoryData<string, int> NegativeCapacityWithSource => new()
+    {
+        { "empty", -1 },
+        { "collection", -1 },
+        { "lazy", -1 },
+        { "collection", int.MinValue },
+    };
+
+    internal static IEnumerable<T> SourceOf<T>(string shape, Func<int, T> element) => shape switch
+    {
+        "empty" => Array.Empty<T>(),
+        "collection" => Enumerable.Range(1, 4).Select(element).ToArray(),
+        _ => Lazy(element),
+    };
+
+    // A compiler-generated iterator, so it is never an ICollection<T> — unlike
+    // some LINQ iterators, which on newer runtimes expose a count.
+    private static IEnumerable<T> Lazy<T>(Func<int, T> element)
+    {
+        for (int i = 1; i <= 4; i++)
+            yield return element(i);
+    }
+
+    internal static void AssertRejectsCapacity(int capacity, Func<object> construct)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(construct);
+        Assert.Equal("capacity", ex.ParamName);
+        Assert.Equal(capacity, ex.ActualValue);
+    }
+
+    private static IEnumerable<KeyValuePair<int, int>> IntPairs(string shape) =>
+        SourceOf(shape, i => new KeyValuePair<int, int>(i, i));
+
+    private static IEnumerable<KeyValuePair<long, int>> LongPairs(string shape) =>
+        SourceOf(shape, i => new KeyValuePair<long, int>(i, i));
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void IntDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new IntDictionary<int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void IntDictionary_ConvenienceSubclass_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new IntDictionary<int>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void LongDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new LongDictionary<int, Int64WangNaiveHasher>(LongPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void LongDictionary_ConvenienceSubclass_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new LongDictionary<int>(LongPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void CelerityDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new CelerityDictionary<int, int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void RobinHoodDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void PooledCelerityDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void SwissDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new SwissDictionary<int, int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void HashCachingDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new HashCachingDictionary<int, int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void CelerityMultiMap_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new CelerityMultiMap<int, int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void CelerityMultiSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new CelerityMultiSet<int, Int32WangNaiveHasher>(SourceOf(shape, i => i), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void SmallDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new SmallDictionary<int, int>(IntPairs(shape), capacity: capacity));
+    }
 }
