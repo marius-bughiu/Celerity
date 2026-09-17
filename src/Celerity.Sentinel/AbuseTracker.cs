@@ -186,8 +186,10 @@ public class AbuseTracker<TKey, THasher>
     /// <remarks>
     /// The rate, distinct, and first-seen structures merge <em>exactly</em> (as if both streams had been fed to
     /// one tracker). The offenders merge with the standard Space-Saving approximation: each of
-    /// <paramref name="other"/>'s monitored offenders is re-observed here with its estimated count, which
-    /// combines the heavy hitters well but is not guaranteed to reproduce the exact top-k of the union.
+    /// <paramref name="other"/>'s monitored offenders is re-observed here with its guaranteed count (its estimate
+    /// less its error), which combines the heavy hitters well but is not guaranteed to reproduce the exact top-k of
+    /// the union. Re-observing the lower bound is what keeps every reported <see cref="Offender{TKey}.Error"/>
+    /// honest afterwards; <see cref="Snapshot"/> restores the upper bound from the exactly merged rate sketch.
     /// </remarks>
     public void Merge(AbuseTracker<TKey, THasher> other)
     {
@@ -199,9 +201,11 @@ public class AbuseTracker<TKey, THasher>
         _distinct.UnionWith(other._distinct);
         _firstSeen?.UnionWith(other._firstSeen!);
 
-        // Space-Saving has no exact merge: re-observe the other tracker's monitored offenders with their counts.
+        // Space-Saving has no exact merge: re-observe the other tracker's monitored offenders. Only the lower bound
+        // (Count - Error, always at least 1) is known to have occurred; re-observing the upper bound would record the
+        // other side's overestimate as fact, and Snapshot's [count - error, count] range would then exclude the truth.
         foreach (TopKEntry<TKey> entry in other._offenders.GetTopK())
-            _offenders.Add(entry.Element, entry.Count);
+            _offenders.Add(entry.Element, entry.Count - entry.Error);
 
         _totalObservations += other._totalObservations;
     }
