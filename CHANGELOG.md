@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- **`AbuseTracker.Merge` no longer overstates how many times a merged offender was seen**, so every reported `Offender` range again contains its true count — including after `StripedAbuseTracker.Snapshot`, which merges its stripes. Closes [#454](https://github.com/marius-bughiu/Celerity/issues/454).
+
 ## [3.3.1] - 2026-09-27
 
 ### Fixed
