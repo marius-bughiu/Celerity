@@ -136,6 +136,26 @@ public class AbuseTrackerTests
     }
 
     [Fact]
+    public void Merge_ShouldStillMerge_AnOffenderWhoseSaturatedCountEqualsItsError()
+    {
+        // Doubling "a" by self-merge saturates its count at long.MaxValue; "b" then evicts it and inherits that count
+        // as its error, so b's Count - Error is 0. Re-observing a weight of 0 would throw from TopKSketch.Add.
+        var options = new AbuseTrackerOptions { OffenderCapacity = 1, TrackFirstSeen = false };
+        var saturated = new StringAbuseTracker(options);
+        saturated.Observe("a");
+        for (int i = 0; i < 64; i++)
+            saturated.Merge(saturated);
+        saturated.Observe("b");
+        var merged = new StringAbuseTracker(options);
+
+        merged.Merge(saturated);
+
+        Offender<string> b = Assert.Single(merged.Snapshot(1).Offenders);
+        Assert.Equal("b", b.Key);
+        Assert.InRange(1, b.EstimatedCount - b.Error, b.EstimatedCount);
+    }
+
+    [Fact]
     public void Merge_ShouldReportRangesThatContainEveryOffendersTrueCount()
     {
         var options = new AbuseTrackerOptions { OffenderCapacity = 64, TrackFirstSeen = false };

@@ -202,10 +202,12 @@ public class AbuseTracker<TKey, THasher>
         _firstSeen?.UnionWith(other._firstSeen!);
 
         // Space-Saving has no exact merge: re-observe the other tracker's monitored offenders. Only the lower bound
-        // (Count - Error, always at least 1) is known to have occurred; re-observing the upper bound would record the
-        // other side's overestimate as fact, and Snapshot's [count - error, count] range would then exclude the truth.
+        // (Count - Error) is known to have occurred; re-observing the upper bound would record the other side's
+        // overestimate as fact, and Snapshot's [count - error, count] range would then exclude the truth. A monitored
+        // key occurred at least once, so the floor of 1 is still a lower bound — and it is needed, because a count
+        // saturated at long.MaxValue can hand its evictee Count == Error, which would otherwise be a rejected 0.
         foreach (TopKEntry<TKey> entry in other._offenders.GetTopK())
-            _offenders.Add(entry.Element, entry.Count - entry.Error);
+            _offenders.Add(entry.Element, Math.Max(1, entry.Count - entry.Error));
 
         _totalObservations += other._totalObservations;
     }
