@@ -528,6 +528,25 @@ public class PersistentHashSetTests
     }
 
     [Fact]
+    public void Queries_ShouldNotMaterializeTheSetItself()
+    {
+        // Regression: only SetEquals short-circuited on `other` being the set itself; the subset and proper-superset
+        // shapes copied all 10,000 elements into a HashSet<T> (~200 KB each) to answer a question with a fixed answer.
+        PersistentHashSet<int, Int32IdentityHasher> set = BuildRange(10_000);
+        bool[] answers = AskEveryQueryOfItself(set);   // warm up
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        answers = AskEveryQueryOfItself(set);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal([true, true, false, true, false, true], answers);
+        Assert.InRange(allocated, 0, 1_024);
+
+        static bool[] AskEveryQueryOfItself(PersistentHashSet<int, Int32IdentityHasher> s) =>
+            [s.SetEquals(s), s.IsSubsetOf(s), s.IsProperSubsetOf(s), s.IsSupersetOf(s), s.IsProperSupersetOf(s), s.Overlaps(s)];
+    }
+
+    [Fact]
     public void SetEquals_ShouldIgnoreDuplicatesInOther_AndSeeTheDefaultElement()
     {
         PersistentHashSet<int, Int32IdentityHasher> set = EmptySet.Add(0).Add(1).Add(2);
