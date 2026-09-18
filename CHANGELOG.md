@@ -11,7 +11,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
-- **`ConsistentHashRing` and weighted `RendezvousHash` nodes no longer lose most of their keys to a node with a nearby hash.** Virtual nodes and weight sub-labels are now placed by a two-input 64-bit mix. Previously, two nodes whose hashes sat a few golden-ratio steps apart shared nearly all their positions, and one of them kept as little as 2% of its fair share. ⚠️ **This changes routing:** the ring moves nearly every key, and the rendezvous hash moves keys for nodes with weight above 1. Do not let processes on both versions route for the same fleet. Closes [#459](https://github.com/marius-bughiu/Celerity/issues/459).
+- **`ConsistentHashRing` and weighted `RendezvousHash` nodes no longer lose most of their keys to a node with a nearby hash.** Virtual nodes and weight sub-labels are now placed by a two-input 64-bit mix. Previously, two nodes whose hashes sat a few golden-ratio steps apart shared nearly all their positions, and one of them kept as little as 2% of its fair share. ⚠️ **This changes routing:** the ring moves nearly every key, and a rendezvous pool containing any node with weight above 1 can move keys between any of its nodes (a pool of weight-1 nodes routes as before). Do not let processes on both versions route for the same fleet. Closes [#459](https://github.com/marius-bughiu/Celerity/issues/459).
 
 ## [3.2.0] - 2026-09-13
 
