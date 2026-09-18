@@ -120,7 +120,7 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
-        if (self.Count == 0)
+        if (self.Count == 0 || ReferenceEquals(self, other))
             return true; // the empty set is a subset of everything
 
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
@@ -134,6 +134,8 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(self, other))
+            return false;
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
         if (self.Count >= o.Length)
             return false;
@@ -145,6 +147,8 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(self, other))
+            return false;
 
         // An empty right-hand side: a proper superset iff the set is non-empty. The answer does not depend
         // on the comparer, so it is worth having before anything is copied or sorted. A streamed empty
@@ -170,6 +174,8 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(self, other))
+            return true;
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
         if (o.Length != self.Count)
             return false;

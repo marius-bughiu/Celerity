@@ -216,6 +216,11 @@ public class OrderedSetComparerAlgebraTests
     {
         foreach (ISet<string> set in CaseInsensitiveSets("a", "b"))
         {
+            Assert.True(set.IsSubsetOf(set));
+            Assert.False(set.IsProperSubsetOf(set));
+            Assert.False(set.IsProperSupersetOf(set));
+            Assert.True(set.SetEquals(set));
+
             set.IntersectWith(set);
             Assert.Equal(2, set.Count);
 
