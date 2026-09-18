@@ -27,9 +27,9 @@ namespace Celerity.Collections;
 /// <para>
 /// The comparer arrives as a <c>struct, IComparer&lt;T&gt;</c> type argument, so the duplicate collapse and
 /// every comparison in the merge are constrained calls the JIT devirtualizes and inlines, exactly as it does
-/// inside the tree itself. The sort is the one exception:
-/// <see cref="MemoryExtensions.Sort{T, TComparer}(Span{T}, TComparer)"/> reaches the BCL's introsort through
-/// an <see cref="IComparer{T}"/>-typed helper and so <b>boxes the comparer</b> — the reason
+/// inside the tree itself. The sort is the one exception: the <c>span.Sort(comparer)</c> call reaches
+/// <see cref="MemoryExtensions.Sort{T, TComparer}(Span{T}, TComparer)"/>, which in turn reaches the BCL's
+/// introsort through an <see cref="IComparer{T}"/>-typed helper and so <b>boxes the comparer</b> — the reason
 /// <c>Celerity.Sorting</c>'s <c>PartialSort</c> hand-rolls its own ordering rather than call it. That is
 /// accepted here and not there: the box is one ~88-byte allocation per call, not one per comparison, and it
 /// is dwarfed by the copy of <c>other</c> this method has already made. <c>Celerity.Collections</c> does not
@@ -120,7 +120,7 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
-        if (self.Count == 0)
+        if (self.Count == 0 || ReferenceEquals(self, other))
             return true; // the empty set is a subset of everything
 
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
@@ -134,6 +134,8 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(self, other))
+            return false;
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
         if (self.Count >= o.Length)
             return false;
@@ -145,6 +147,8 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(self, other))
+            return false;
 
         // An empty right-hand side: a proper superset iff the set is non-empty. The answer does not depend
         // on the comparer, so it is worth having before anything is copied or sorted. A streamed empty
@@ -170,6 +174,8 @@ internal static class OrderedSetOperations
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(self, other))
+            return true;
         ReadOnlySpan<T> o = MaterializeDistinct(other, comparer);
         if (o.Length != self.Count)
             return false;

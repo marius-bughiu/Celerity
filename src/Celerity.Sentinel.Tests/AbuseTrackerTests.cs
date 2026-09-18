@@ -117,6 +117,70 @@ public class AbuseTrackerTests
     }
 
     [Fact]
+    public void Merge_ShouldKeepTheOffenderErrorBound_WhenTheOtherSideOverestimates()
+    {
+        // With one monitor, "b" evicts "a" and inherits its count as error: b is reported as (2, err 1), true count 1.
+        // Merge used to re-observe b's upper bound of 2 as if it had happened, reporting (2, err 0) — a range of
+        // exactly [2, 2] that excludes the truth.
+        var options = new AbuseTrackerOptions { OffenderCapacity = 1, TrackFirstSeen = false };
+        var source = new StringAbuseTracker(options);
+        source.Observe("a");
+        source.Observe("b");
+        var merged = new StringAbuseTracker(options);
+
+        merged.Merge(source);
+
+        Offender<string> b = Assert.Single(merged.Snapshot(1).Offenders);
+        Assert.Equal("b", b.Key);
+        Assert.InRange(1, b.EstimatedCount - b.Error, b.EstimatedCount);
+    }
+
+    [Fact]
+    public void Merge_ShouldStillMerge_AnOffenderWhoseSaturatedCountEqualsItsError()
+    {
+        // Doubling "a" by self-merge saturates its count at long.MaxValue; "b" then evicts it and inherits that count
+        // as its error, so b's Count - Error is 0. Re-observing a weight of 0 would throw from TopKSketch.Add.
+        var options = new AbuseTrackerOptions { OffenderCapacity = 1, TrackFirstSeen = false };
+        var saturated = new StringAbuseTracker(options);
+        saturated.Observe("a");
+        for (int i = 0; i < 64; i++)
+            saturated.Merge(saturated);
+        saturated.Observe("b");
+        var merged = new StringAbuseTracker(options);
+
+        merged.Merge(saturated);
+
+        Offender<string> b = Assert.Single(merged.Snapshot(1).Offenders);
+        Assert.Equal("b", b.Key);
+        Assert.InRange(1, b.EstimatedCount - b.Error, b.EstimatedCount);
+    }
+
+    [Fact]
+    public void Merge_ShouldReportRangesThatContainEveryOffendersTrueCount()
+    {
+        var options = new AbuseTrackerOptions { OffenderCapacity = 64, TrackFirstSeen = false };
+        var a = new StringAbuseTracker(options);
+        var b = new StringAbuseTracker(options);
+        var truth = new Dictionary<string, long>();
+        var random = new Random(1);
+        for (int i = 0; i < 20_000; i++)
+        {
+            string key = random.Next(4) == 0 ? $"hot-{random.Next(8)}" : $"cold-{random.Next(2_000)}";
+            truth[key] = truth.GetValueOrDefault(key) + 1;
+            ((i & 1) == 0 ? a : b).Observe(key);
+        }
+
+        a.Merge(b);
+
+        AbuseReport<string> report = a.Snapshot(64);
+        foreach (Offender<string> offender in report.Offenders)
+            Assert.InRange(truth[offender.Key], offender.EstimatedCount - offender.Error, offender.EstimatedCount);
+
+        // Merging the lower bound must not cost detection: the eight hot keys still lead the report.
+        Assert.All(report.Offenders.Take(8), offender => Assert.StartsWith("hot-", offender.Key));
+    }
+
+    [Fact]
     public void Merge_MismatchedFirstSeenSetting_Throws()
     {
         var withBloom = new StringAbuseTracker(new AbuseTrackerOptions { TrackFirstSeen = true });

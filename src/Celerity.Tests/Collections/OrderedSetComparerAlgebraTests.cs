@@ -216,6 +216,11 @@ public class OrderedSetComparerAlgebraTests
     {
         foreach (ISet<string> set in CaseInsensitiveSets("a", "b"))
         {
+            Assert.True(set.IsSubsetOf(set));
+            Assert.False(set.IsProperSubsetOf(set));
+            Assert.False(set.IsProperSupersetOf(set));
+            Assert.True(set.SetEquals(set));
+
             set.IntersectWith(set);
             Assert.Equal(2, set.Count);
 
@@ -244,7 +249,11 @@ public class OrderedSetComparerAlgebraTests
         // MaterializeDistinct sorts in place, so it must copy first — a caller's List<T> is not scratch space.
         List<string> other = ["c", "a", "b"];
         foreach (ISet<string> set in CaseInsensitiveSets("a"))
+        {
             Assert.True(set.IsSubsetOf(other));
+            set.IntersectWith(other);
+            Assert.Equal<string[]>(["a"], [.. set]);
+        }
 
         Assert.Equal<string[]>(["c", "a", "b"], [.. other]);
     }
