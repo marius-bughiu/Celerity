@@ -117,12 +117,16 @@ public class DedupFilter<TKey, THasher>
 
     /// <summary>
     /// Merges another dedup filter into this one, so this filter afterwards reports every key either filter had.
-    /// Both must have been constructed with identical geometry (same expected item count and false-positive rate).
+    /// Both must have identical geometry (the same bucket count and fingerprint width), which constructing them with
+    /// the same expected item count and false-positive rate guarantees.
     /// </summary>
     /// <param name="other">The filter to merge in. Left unmodified.</param>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="other"/> has incompatible geometry.</exception>
-    /// <exception cref="InvalidOperationException">This filter becomes full before every key from <paramref name="other"/> is absorbed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// This filter becomes full before every key from <paramref name="other"/> is absorbed. Some of
+    /// <paramref name="other"/>'s keys may already have been merged in; no previously marked key is lost.
+    /// </exception>
     /// <remarks>
     /// A fingerprint filter cannot tell an overlapping key from a new one, so a key both filters marked is stored
     /// twice: <see cref="Count"/> becomes the sum of both counts and may then exceed the number of distinct keys,

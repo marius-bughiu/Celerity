@@ -229,6 +229,10 @@ The suite covers **100% of lines and 100% of branches** across all eight. A smal
 | `CuckooFilter.AtLeastOne`, `XorFilter.AtLeastOne` | Dead by construction: the constructors' own argument validation already forces both sizing expressions above the floor. |
 | `XorFilter.BuildOrThrow`, `XorFilter.TryBuild` | The peel retry schedule is independent of the element set, so no hasher can stall all `MaxConstructionAttempts` seeds. Individual attempts *do* stall and retry — that path lives in `TryPeel`, which stays measured. |
 | `Hash64Source.CreateNative` | Its `null` arm is unobservable. `Native` is read only by `Hash64`, and every caller guards that on `IsNative64` being true, so the class is never initialized for a 32-bit-only `THasher` — the arm is evaluated only if the runtime runs the `beforefieldinit` initializer eagerly, which is its option and not a contract. |
+| `TimerWheel.ClampGrowth`, `SpatialGrid.ClampGrowth` | Need 2³⁰ live entries of 24 and 32 bytes respectively, past the 2 GiB single-object limit regardless of available memory. |
+| `PersistentVector.ThrowIfFull`, `PersistentHashMap.ThrowIfFull`, `PersistentHashSet.ThrowIfFull` (each type and its `Builder`) | Need `int.MaxValue` elements — 8 GiB of leaf arrays for the vector, tens to hundreds of gigabytes of trie nodes for the map and set. The checks exist so the count cannot silently wrap, not because a test can reach them. |
+| `Rope.ThrowIfTooLong` | Needs a rope within characters of `int.MaxValue` — four GiB of text in the leaves alone. |
+| `SortedSpan.AssertNoOverlap`, `SortedSpan.AssertSorted` | Debug-only preconditions whose failing path calls `Debug.Assert`, which no test can drive without tearing down the test host. |
 
 That table is the complete set; `grep -rn "ExcludeFromCodeCoverage" src/Celerity*/` should return nothing beyond it.
 
