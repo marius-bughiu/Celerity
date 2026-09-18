@@ -3,8 +3,8 @@ namespace Celerity.Ring.Tests;
 /// <summary>
 /// Pins the replica reads of <see cref="ConsistentHashRing{TNode, TKey, THasher}"/> and
 /// <see cref="RendezvousHash{TNode, TKey, THasher}"/>: that the span-destination overload writes exactly what the
-/// list overload returns, that both still produce the replica sets the original implementation produced, and that
-/// the span form does not allocate.
+/// list overload returns, that both produce the pinned golden replica sets, and that the span form does not
+/// allocate.
 /// </summary>
 /// <remarks>
 /// <para>

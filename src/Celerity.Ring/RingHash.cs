@@ -19,7 +19,8 @@ internal static class RingHash
     /// virtual node at a time. Finalizing an arithmetic progression of the node hash instead (the placement
     /// before #459) made two nodes whose hashes sat <c>j</c> golden-ratio steps apart share all but <c>j</c> of
     /// their positions, and the node that loses ties kept a few percent of its keys. Two node ids whose 32-bit
-    /// hashes collide outright still share every position; that is inherent to a 32-bit node hash.
+    /// hashes collide outright still share the position of every replica index both have; that is inherent to a
+    /// 32-bit node hash.
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static uint VirtualNodePosition(uint nodeHash, int replicaIndex) =>
