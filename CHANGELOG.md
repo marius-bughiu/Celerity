@@ -9,6 +9,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - **`PersistentHashSet<T, THasher>`** in `Celerity.Collections` — an **immutable hash set**, the set half of `PersistentHashMap`: every edit returns a new set that shares nearly all of its receiver's storage, and an edit that changes nothing returns the receiver. Answers `Contains` about **5x** faster than `ImmutableHashSet<T>` and retains about **1.7x** less memory; ⚠️ `Remove` allocates ~16% more. See [the API reference](docs/api/collections.md#persistenthashsett-thasher). Closes [#446](https://github.com/marius-bughiu/Celerity/issues/446).
 - **`RangeMap<TKey, TValue>`** in `Celerity.Collections` — a mutable map from **disjoint half-open ranges** to values: assigning `[start, end)` overwrites what was there, splitting straddling ranges and merging equal neighbours, so the map always holds the maximal runs. It is the coalescing interval map `IntervalTree` is not, and .NET ships none. At 100,000 ranges an assignment is **7.5x** faster than a sorted `List<T>` patched in place; ⚠️ every read loses to that list's binary search (lookup 1.5x, window walk 3x slower), and at 1,000 ranges so does the write — it is for maps you keep editing. Closes [#448](https://github.com/marius-bughiu/Celerity/issues/448).
 
+### Fixed
+
+- **`ConsistentHashRing` and weighted `RendezvousHash` nodes no longer lose most of their keys to a node with a nearby hash** — one such node could keep as little as 2% of its fair share. ⚠️ **Routing changes:** a ring re-homes about `(N − 1)/N` of its keys, and a rendezvous pool with any node above weight 1 can move keys between any of its nodes. Do not mix versions within one fleet. Closes [#459](https://github.com/marius-bughiu/Celerity/issues/459).
+
 ## [3.2.0] - 2026-09-13
 
 ### Added
