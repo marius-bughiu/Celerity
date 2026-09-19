@@ -11,6 +11,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- **`BloomFilter.Count` now saturates at `int.MaxValue` instead of wrapping**, in both `Add` and `UnionWith`. A wrapped count could land on zero and make `Clear()` return without clearing a single bit, so a long-lived `AbuseTracker`, which adds to its first-seen filter on every observation, stopped resetting first-seen state on `Clear()` after about 2³² observations. Closes [#462](https://github.com/marius-bughiu/Celerity/issues/462).
+
 - **`BTreeSet` and `RankedSet` now answer the whole `ISet<T>` algebra with their own comparer**, matching `SortedSet<T>` with the equivalent `IComparer<T>`. The members that need the distinct elements of `other` used to collapse it with `EqualityComparer<T>.Default`, so under a comparer that orders two values equal when the default equality comparer does not — a case-insensitive order, say — `SymmetricExceptWith(["a", "A"])` toggled one element twice instead of once and `IsProperSupersetOf` counted it as two. ⚠️ Collapsing with the comparer costs a sort rather than a hash pass: `SetEquals` at 100,000 elements measures 5.7 ms against the previous 0.73 ms, still ahead of `SortedSet<T>`'s 8.8 ms. Closes [#450](https://github.com/marius-bughiu/Celerity/issues/450).
 
 - **The rollout that ships with it** — a cross-collection algebra suite over both ordered sets oracled against `SortedSet<T>` (including a CsCheck differential under a collapsing comparer), a `SetAlgebra` group in `BTreeSetBenchmark`, and the corrected member split in both types' XML docs and [the API reference](docs/api/collections.md#btreesett-tcomparer). Closes [#450](https://github.com/marius-bughiu/Celerity/issues/450).
