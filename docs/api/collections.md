@@ -2567,7 +2567,8 @@ counting pass — so the realized false-positive rate honors `falsePositiveRate`
 - `void Clear()` — resets every bit; preserves the bit-array size and hash count.
 - `int Count { get; }` — the number of `Add` calls since construction or the last `Clear`.
   This is an **insertion counter, not a distinct-element count** — a Bloom filter cannot
-  tell whether an element was already present.
+  tell whether an element was already present. It saturates at `int.MaxValue` rather than
+  wrapping, including across `UnionWith`.
 - `int Capacity { get; }` — the expected element count the filter was sized for.
 - `int BitCount { get; }` — the number of bits in the backing array (`m`), a power of two.
 - `int HashCount { get; }` — the number of hash functions applied per element (`k`).
