@@ -64,7 +64,9 @@ var sentinel = new StringAbuseTracker(new AbuseTrackerOptions
 ```
 
 Those are the defaults, so `new StringAbuseTracker()` is the block above. Two trackers must be built with
-equal options to `Merge`, since a merge combines the underlying sketches and needs identical geometry.
+equal options to `Merge`, since a merge combines the underlying sketches and needs identical geometry. A
+mismatch throws `ArgumentException` before anything is written, so the tracker you merged into is left exactly
+as it was.
 
 ## Concurrency: per-core striping + merge
 

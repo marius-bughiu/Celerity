@@ -181,7 +181,8 @@ public class AbuseTracker<TKey, THasher>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="other"/> was built with incompatible options (different sketch geometry, or a different
-    /// first-seen setting), so the underlying structures cannot be combined.
+    /// first-seen setting), so the underlying structures cannot be combined. Every component's compatibility is
+    /// checked before any of them is written to, so a rejected merge leaves this tracker exactly as it was.
     /// </exception>
     /// <remarks>
     /// The rate, distinct, and first-seen structures merge <em>exactly</em> (as if both streams had been fed to
@@ -194,6 +195,23 @@ public class AbuseTracker<TKey, THasher>
         ArgumentNullException.ThrowIfNull(other);
         if ((_firstSeen is null) != (other._firstSeen is null))
             throw new ArgumentException("Both trackers must have the same first-seen setting to be merged.", nameof(other));
+
+        // Check every component's geometry before writing to any of them. Each sketch's UnionWith rejects a
+        // mismatch of its own, but only once the components ahead of it in the sequence have already been summed
+        // in, leaving a tracker whose rate estimates no longer match its own TotalObservations and Clear() the
+        // only way back. Merge is all-or-nothing, as DDSketch.Merge and RunningStatistics.Merge are.
+        if (_rate.Width != other._rate.Width || _rate.Depth != other._rate.Depth)
+            throw new ArgumentException("Both trackers must have the same rate sketch geometry (RateEpsilon and RateConfidence) to be merged.", nameof(other));
+
+        if (_distinct.Precision != other._distinct.Precision)
+            throw new ArgumentException("Both trackers must have the same DistinctPrecision to be merged.", nameof(other));
+
+        // Both filters are non-null here, or both are null: the setting check above has already run.
+        if (_firstSeen is not null &&
+            (_firstSeen.BitCount != other._firstSeen!.BitCount || _firstSeen.HashCount != other._firstSeen.HashCount))
+        {
+            throw new ArgumentException("Both trackers must have the same first-seen filter geometry (ExpectedDistinctKeys and FirstSeenFalsePositiveRate) to be merged.", nameof(other));
+        }
 
         _rate.UnionWith(other._rate);
         _distinct.UnionWith(other._distinct);
