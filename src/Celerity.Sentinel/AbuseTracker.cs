@@ -29,7 +29,8 @@ namespace Celerity.Sentinel;
 /// hot path (edge QPS), give each core/thread its own tracker and merge them periodically — see
 /// <see cref="StripedAbuseTracker{TKey, THasher}"/>, which ships that pattern — using <see cref="Merge"/>, which
 /// combines two trackers exactly (rate / distinct / first-seen) or with the standard Space-Saving approximation
-/// (offenders). Two trackers must be built with equal <see cref="AbuseTrackerOptions"/> to merge.
+/// (offenders). Two trackers merge when their sketch geometry and first-seen setting match; building both from
+/// equal <see cref="AbuseTrackerOptions"/> is the simple way to guarantee that.
 /// </para>
 /// <para>
 /// The rate and offender counts are cumulative since construction or the last <see cref="Clear"/>. For a
