@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-09-20
+
 ### Added
 
 - **`PersistentHashSet<T, THasher>`** in `Celerity.Collections` — an **immutable hash set**, the set half of `PersistentHashMap`: every edit returns a new set that shares nearly all of its receiver's storage, and an edit that changes nothing returns the receiver. Answers `Contains` about **5x** faster than `ImmutableHashSet<T>` and retains about **1.7x** less memory; ⚠️ `Remove` allocates ~16% more. See [the API reference](docs/api/collections.md#persistenthashsett-thasher). Closes [#446](https://github.com/marius-bughiu/Celerity/issues/446).
@@ -760,7 +762,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.0
 [3.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.2.0
 [3.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.1.0
 [3.0.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.0.1
