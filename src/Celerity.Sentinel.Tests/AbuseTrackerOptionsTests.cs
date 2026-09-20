@@ -304,6 +304,63 @@ public class AbuseTrackerOptionsTests
         }
     }
 
+    [Fact]
+    public void Merge_ShouldLeaveThisTrackerUntouched_WhenItRejectsTheOtherSide()
+    {
+        // Regression for #458: every incompatibility used to be found by the sketch being merged at that moment,
+        // after the sketches ahead of it had already been summed in. A caller who caught the ArgumentException —
+        // rolling an options change across a fleet, say — was left with a tracker whose rate estimates no longer
+        // matched its own TotalObservations, with no signal and Clear() the only way back.
+        AssertMergeChangesNothing(new AbuseTrackerOptions { RateEpsilon = 0.01 });             // rate width
+        AssertMergeChangesNothing(new AbuseTrackerOptions { RateConfidence = 0.5 });           // rate depth only
+        AssertMergeChangesNothing(new AbuseTrackerOptions { DistinctPrecision = 10 });
+        AssertMergeChangesNothing(new AbuseTrackerOptions { ExpectedDistinctKeys = 4_096 });   // first-seen bits
+        AssertMergeChangesNothing(new AbuseTrackerOptions { FirstSeenFalsePositiveRate = 0.2 });
+        AssertMergeChangesNothing(new AbuseTrackerOptions { TrackFirstSeen = false });         // the setting check
+
+        static void AssertMergeChangesNothing(AbuseTrackerOptions other)
+        {
+            var baseline = new StringAbuseTracker();
+            baseline.Observe("a");
+
+            var incompatible = new StringAbuseTracker(other);
+            incompatible.Observe("a");
+            incompatible.Observe("a");
+            incompatible.Observe("b");
+
+            Assert.Throws<ArgumentException>(() => baseline.Merge(incompatible));
+
+            Assert.Equal(1, baseline.TotalObservations);
+            Assert.Equal(1, baseline.EstimateCount("a"));
+            Assert.Equal(0, baseline.EstimateCount("b"));
+            Assert.Equal(1, baseline.EstimateDistinctKeys());
+            Assert.False(baseline.HasProbablySeen("b"));
+
+            Offender<string> only = Assert.Single(baseline.Snapshot(10).Offenders);
+            Assert.Equal("a", only.Key);
+            Assert.Equal(1, only.EstimatedCount);
+        }
+    }
+
+    [Fact]
+    public void Merge_ShouldReject_WhenOnlyTheFirstSeenHashCountDiffers()
+    {
+        // The Bloom filter rounds its bit count up to a power of two, so two nearby ExpectedDistinctKeys share a
+        // BitCount and still disagree on HashCount = round((m / n)·ln 2): at the default 1% rate both 1,000 and
+        // 1,200 size to 16,384 bits, with 11 hash functions against 9. Bit count alone cannot see that mismatch,
+        // and merging under it would read every element back through the wrong number of probes.
+        var baseline = new StringAbuseTracker(new AbuseTrackerOptions { ExpectedDistinctKeys = 1_000 });
+        baseline.Observe("a");
+        var incompatible = new StringAbuseTracker(new AbuseTrackerOptions { ExpectedDistinctKeys = 1_200 });
+        incompatible.Observe("b");
+
+        Assert.Throws<ArgumentException>(() => baseline.Merge(incompatible));
+
+        Assert.Equal(1, baseline.TotalObservations);
+        Assert.Equal(0, baseline.EstimateCount("b"));
+        Assert.False(baseline.HasProbablySeen("b"));
+    }
+
     // ---------------------------------------------------------------------------------------------------
     // Helpers.
     // ---------------------------------------------------------------------------------------------------

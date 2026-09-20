@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- **A rejected `AbuseTracker.Merge` no longer half-merges the other tracker.** An incompatible `other` used to be caught partway through, leaving rate and distinct estimates that no longer matched the tracker's own `TotalObservations`, with `Clear()` the only way back. Compatibility is now checked before anything is written, so catching the `ArgumentException` leaves the tracker exactly as it was. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
+
 ## [3.3.1] - 2026-09-27
 
 ### Fixed
