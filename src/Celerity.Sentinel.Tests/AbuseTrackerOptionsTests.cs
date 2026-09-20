@@ -307,10 +307,12 @@ public class AbuseTrackerOptionsTests
     [Fact]
     public void Merge_ShouldLeaveThisTrackerUntouched_WhenItRejectsTheOtherSide()
     {
-        // Regression for #458: every incompatibility used to be found by the sketch being merged at that moment,
-        // after the sketches ahead of it had already been summed in. A caller who caught the ArgumentException —
-        // rolling an options change across a fleet, say — was left with a tracker whose rate estimates no longer
-        // matched its own TotalObservations, with no signal and Clear() the only way back.
+        // Regression for #458: every sketch-geometry incompatibility used to be found by the sketch being merged at
+        // that moment, after the sketches ahead of it had already been summed in. A caller who caught the
+        // ArgumentException — rolling an options change across a fleet, say — was left with a tracker whose rate
+        // estimates no longer matched its own TotalObservations, with no signal and Clear() the only way back.
+        // The TrackFirstSeen row is the exception and is here as a guard, not a regression: that mismatch was
+        // always rejected up front, and this asserts it stays that way now the geometry checks sit beside it.
         AssertMergeChangesNothing(new AbuseTrackerOptions { RateEpsilon = 0.01 });             // rate width
         AssertMergeChangesNothing(new AbuseTrackerOptions { RateConfidence = 0.5 });           // rate depth only
         AssertMergeChangesNothing(new AbuseTrackerOptions { DistinctPrecision = 10 });
