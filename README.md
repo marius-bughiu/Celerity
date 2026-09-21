@@ -282,7 +282,7 @@ distance.Clear();                                // key + sparse arrays untouche
 distance[start] = 0;
 if (distance.TryAdd(neighbour, 1)) { /* first time this node was reached */ }
 
-foreach (var (node, hops) in distance.Select(e => (e.Key, e.Value)))
+foreach (var (node, hops) in distance)   // struct enumerator, no allocation
 {
     // a contiguous scan over exactly the reached nodes
 }

@@ -394,6 +394,53 @@ public class SparseMapTests
     }
 
     [Fact]
+    public void Remove_ShouldReleaseTheVacatedTailSlot_ForAReferenceHoldingTValue()
+    {
+        // The swap-remove moves the last entry down into the vacated slot; the tail it leaves
+        // behind must not go on holding the reference it just handed over. Nothing in the public
+        // surface can see that slot — `Count` has already moved past it — so without this
+        // assertion the store could be deleted and the whole suite would still pass.
+        var map = new SparseMap<string>(64);
+        for (int i = 0; i < 5; i++)
+            map[i] = $"v{i}";
+
+        // Middle slot: removing key 1 moves "v4" down into slot 1 and vacates slot 4.
+        Assert.True(map.Remove(1));
+
+        string?[] values = ReadValues<string>(map);
+        Assert.Equal("v4", values[1]);
+        Assert.Null(values[4]);
+
+        // Tail slot: key 3 now sits in the last occupied slot, so the entry vacates its own slot
+        // rather than receiving a moved one — the index == last case.
+        Assert.True(map.Remove(3));
+
+        values = ReadValues<string>(map);
+        Assert.Null(values[3]);
+        Assert.Equal(3, map.Count);
+    }
+
+    [Fact]
+    public void Remove_ShouldLeaveTheVacatedTailSlot_ForAReferenceFreeTValue()
+    {
+        // The other arm of the same guard: with no reference to release there is nothing to
+        // clear, so the tail keeps its stale copy — unreachable, because the round-trip check
+        // rejects every slot at or past the count.
+        var map = new SparseMap<int>(64);
+        for (int i = 0; i < 5; i++)
+            map[i] = i + 1;
+
+        Assert.True(map.Remove(1));
+
+        int[] values = ReadValues<int>(map);
+        Assert.Equal(5, values[1]); // the moved value
+        Assert.Equal(5, values[4]); // the stale copy the guard skips clearing
+
+        Assert.Equal(4, map.Count);
+        Assert.Equal(5, map[4]);    // still reachable under its own key, via slot 1
+    }
+
+    [Fact]
     public void Constructor_ShouldExposeUniverse()
     {
         Assert.Equal(128, new SparseMap<int>(128).Universe);
