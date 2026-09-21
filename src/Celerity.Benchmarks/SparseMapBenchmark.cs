@@ -58,10 +58,11 @@ public class SparseMapBenchmark
         }
     }
 
-    // Pre-sized to keep the per-add comparison fair: SparseMap's universe is mandatory, so
-    // `new SparseMap<int>(universe)` inherently pre-allocates its sparse array. The baseline is
-    // given the matching capacity hint so this measures per-add cost rather than Dictionary's
-    // incremental-rehash overhead.
+    // Both arms are pre-sized, and both pay for it inside the measured region. The universe
+    // constructor sizes only the *sparse* index array; the dense key and value arrays still start
+    // empty, so without the EnsureCapacity below this arm would pay every geometric resize while
+    // the baseline paid none — an asymmetry that would be charged to SparseMap in both the time
+    // and the allocation column.
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Add")]
     public void Dictionary_Add()
@@ -76,6 +77,7 @@ public class SparseMapBenchmark
     public void SparseMap_Add()
     {
         var map = new SparseMap<int>(universe);
+        map.EnsureCapacity(ItemCount);
         foreach (int key in keys)
             map.Add(key, key);
     }

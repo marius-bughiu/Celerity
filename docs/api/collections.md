@@ -2519,14 +2519,14 @@ Against `Dictionary<int, TValue>` at **100,000 entries** over a 400,000-key univ
 
 | Arm | `Dictionary<int, V>` | `SparseMap<V>` | |
 |---|---|---|---|
-| `TryGetValue` over every key | 409.3 µs | 132.8 µs | **3.1x** |
-| `Remove` every key | 768.2 µs | 228.0 µs | **3.4x** |
+| `TryGetValue` over every key | 413.7 µs | 133.2 µs | **3.1x** |
+| `Remove` every key | 805.3 µs | 220.9 µs | **3.6x** |
 | `Clear` alone, `int` values | 10.27 µs | 0.02 µs | **~500x** |
 | `Clear` alone, `string` values | 49.90 µs | 17.81 µs | **2.8x** |
-| `Clear` + refill, `int` values | 579.2 µs | 241.9 µs | **2.4x** |
-| `Clear` + refill, `string` values | 703.5 µs | 290.7 µs | **2.4x** |
-| Fill a fresh map | 735.9 µs | 414.7 µs | **1.8x**, ⚠️ **1.70x the allocation** |
-| Enumerate every entry | 57.3 µs | 50.7 µs | ⚠️ 1.13x — a near-wash |
+| `Clear` + refill, `int` values | 591.6 µs | 243.1 µs | **2.4x** |
+| `Clear` + refill, `string` values | 698.5 µs | 291.1 µs | **2.4x** |
+| Fill a pre-sized map | 735.3 µs | 377.0 µs | **2.0x**, ⚠️ 1.10x the allocation |
+| Enumerate every entry | 57.3 µs | 50.6 µs | ⚠️ 1.13x — a near-wash |
 
 Read those two `Clear` pairs together, because the gap between them is the point:
 
@@ -2548,10 +2548,17 @@ Two figures are warnings rather than wins:
   compact entry table, and both sides are already memory-bound; the dense layout buys
   ~13%, not the multiple the mechanism suggests. If iteration is the whole workload, this
   is not the reason to switch.
-- **Allocation is worse, by construction.** The `O(Universe)` sparse array is paid up
-  front: 1.70x `Dictionary`'s bytes at 100,000 entries over a 4x universe, and 1.48x at
-  1,000. At **1,000 entries the fill is also 13% *slower*** — the fixed sparse-array cost
-  has not been amortized yet. This type is for larger, hotter, repeatedly-rebuilt maps.
+- **Allocation is worse, and the fill loses at small sizes.** The `O(Universe)` sparse
+  array is paid up front — at 100,000 entries over a 4x universe that is 1.6 MB of index
+  for 0.8 MB of data, which is why the total is 1.10x `Dictionary`'s bytes (1.09x at
+  1,000). At **1,000 entries the fill is 17% *slower***: the fixed sparse-array cost has
+  not been amortized yet. This type is for larger, hotter, repeatedly-rebuilt maps.
+
+  Both arms above are pre-sized — `Dictionary` through its capacity constructor and
+  `SparseMap` through `EnsureCapacity`, since the universe constructor sizes only the
+  *sparse* index array and leaves the dense key and value arrays empty. Pre-size before a
+  bulk fill; an unsized fill pays the geometric resizes and measures ~1.7x the allocation
+  rather than 1.10x.
 
 ### The split `Clear` contract
 

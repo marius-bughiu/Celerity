@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`SparseMap<TValue>`** in `Celerity.Collections` — a **bounded-universe integer-keyed dictionary**, the dictionary half of `SparseSet`. For side tables a traversal rebuilds every pass: at 100,000 entries over a 4x universe, lookup is **3.1x** `Dictionary<int, V>`, remove **3.4x**, and clear-and-rebuild **2.4x** (`Clear` alone is ~500x — it touches nothing for a `TValue` holding no references, and clears only the entries present otherwise). ⚠️ Enumeration is only **1.13x**, the `O(Universe)` sparse array costs **1.70x** the allocation, and at 1,000 entries filling the map is **13% slower**. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+- **`SparseMap<TValue>`** in `Celerity.Collections` — a **bounded-universe integer-keyed dictionary**, the dictionary half of `SparseSet`. For side tables a traversal rebuilds every pass: at 100,000 entries over a 4x universe, lookup is **3.1x** `Dictionary<int, V>`, remove **3.6x**, and clear-and-rebuild **2.4x** (`Clear` alone is ~500x — it touches nothing for a `TValue` holding no references, and clears only the entries present otherwise). ⚠️ Enumeration is only **1.13x**, the `O(Universe)` sparse array costs 1.10x the allocation, and at 1,000 entries filling the map is **17% slower**. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
 
 ## [3.3.0] - 2026-09-20
 

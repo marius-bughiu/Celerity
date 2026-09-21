@@ -364,9 +364,12 @@ public class SparseMap<TValue> : IDictionary<int, TValue?>, IReadOnlyDictionary<
         _values[index] = _values[last];
         _sparse[lastKey] = index;
 
-        // Release the vacated tail slot's reference so it can be collected. The key array needs no
-        // such clearing — an int holds nothing.
-        _values[last] = default;
+        // Release the vacated tail slot's reference so it can be collected. Guarded by the same
+        // intrinsic Clear uses — it is constant-folded per closed generic type, so a TValue that
+        // holds no reference skips the store entirely on this hot path. The key array needs no
+        // such clearing either: an int holds nothing.
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<TValue>())
+            _values[last] = default;
 
         _count = last;
         _version++;
