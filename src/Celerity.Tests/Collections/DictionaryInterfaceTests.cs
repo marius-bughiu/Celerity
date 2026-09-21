@@ -317,6 +317,16 @@ public class DictionaryInterfaceTests
             absentValue: "omega");
     }
 
+    [Fact]
+    public void SparseMap_ShouldHonourIDictionary()
+    {
+        // The universe covers the three keys and the absent one, so the bounded-universe
+        // contract never fires inside the shared script.
+        IDictionary<int, string?> subject = new SparseMap<string>(128);
+
+        AssertIDictionaryContract(subject, IntKeys, Values, absentKey: 99, absentValue: "omega");
+    }
+
     // BTreeDictionary has declared IDictionary<,> since it shipped; it joins the suite so the
     // family contract is asserted in one place rather than drifting per type.
     [Fact]

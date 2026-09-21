@@ -44,6 +44,7 @@ internal static class Differential
         ("LongSet", LongSetCase),
         ("SmallSet", SmallSetCase),
         ("SparseSet", SparseSetCase),
+        ("SparseMap", SparseMapCase),
         ("CompressedIntSet", CompressedIntSetCase),
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
@@ -701,6 +702,66 @@ internal static class Differential
             Check(oracle.Contains(item), $"enumeration yielded absent {item}");
             enumerated++;
         }
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // SparseMap is SparseSet's dictionary half: the same dense/sparse pair with a parallel
+    // value array. It draws from the same [0, SparseUniverse) domain for the same reason, and
+    // adds the two things a map has that a set does not — a value that has to survive the
+    // swap-remove that moves its entry, and an indexer overwrite that must not change the
+    // count. Reconciled against a Dictionary<int, int> oracle.
+    private static void SparseMapCase(Random rng)
+    {
+        var sut = new SparseMap<int>(SparseUniverse);
+        var oracle = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = rng.Next(0, SparseUniverse);
+            int value = rng.Next(-1000, 1000);
+            switch (rng.Next(0, 10))
+            {
+                case < 4:
+                    Check(sut.TryAdd(key, value) == oracle.TryAdd(key, value), $"TryAdd({key})");
+                    break;
+                case < 6:
+                    sut[key] = value;
+                    oracle[key] = value;
+                    break;
+                case < 9:
+                {
+                    bool expected = oracle.Remove(key, out int expectedValue);
+                    bool actual = sut.Remove(key, out int actualValue);
+                    Check(actual == expected, $"Remove({key})");
+                    Check(actualValue == expectedValue, $"Remove({key}) out value");
+                    break;
+                }
+
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        for (int k = 0; k < SparseUniverse; k++)
+        {
+            bool expected = oracle.TryGetValue(k, out int expectedValue);
+            Check(sut.TryGetValue(k, out int actualValue) == expected, $"TryGetValue({k})");
+            if (expected)
+                Check(actualValue == expectedValue, $"value at {k}: {actualValue} != {expectedValue}");
+        }
+
+        int enumerated = 0;
+        foreach (KeyValuePair<int, int> entry in sut)
+        {
+            Check(oracle.TryGetValue(entry.Key, out int expectedValue) && expectedValue == entry.Value,
+                $"enumeration yielded unexpected entry {entry.Key}");
+            enumerated++;
+        }
+
         Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
     }
 

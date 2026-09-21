@@ -4,6 +4,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`SparseMap<TValue>`** in `Celerity.Collections` — a **bounded-universe integer-keyed dictionary**, the Briggs–Torczon sparse map and the dictionary half of `SparseSet`: a dense key array, a parallel dense value array, and a sparse index array over a universe fixed at construction, so a lookup is an array index and `Clear` leaves the key and sparse arrays untouched. For side tables a traversal rebuilds every pass — BFS distance / parent / colour, ECS components, sweep-line state. At 100,000 entries over a 4x universe: lookup **3.1x** `Dictionary<int, V>`, remove **3.4x**, clear-and-rebuild **2.4x**. ⚠️ Enumeration is only **1.13x**, the `O(Universe)` sparse array costs **1.70x** the allocation, and at 1,000 entries filling the map is **13% slower**. For a `TValue` holding a reference, `Clear` also clears the dense value prefix so nothing is retained. See [the API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+
+- **The `SparseMap` rollout that ships with it** — dedicated, shared-suite, CsCheck-differential, fuzz and AOT coverage; a registered benchmark with its six dashboard cards; and the README / API-reference / docs-index / AOT-roster entries. Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+
 ## [3.3.0] - 2026-09-20
 
 ### Added
