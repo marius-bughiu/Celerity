@@ -2521,21 +2521,33 @@ Against `Dictionary<int, TValue>` at **100,000 entries** over a 400,000-key univ
 |---|---|---|---|
 | `TryGetValue` over every key | 409.3 µs | 132.8 µs | **3.1x** |
 | `Remove` every key | 768.2 µs | 228.0 µs | **3.4x** |
+| `Clear` alone, `int` values | 10.27 µs | 0.02 µs | **~500x** |
+| `Clear` alone, `string` values | 49.90 µs | 17.81 µs | **2.8x** |
 | `Clear` + refill, `int` values | 579.2 µs | 241.9 µs | **2.4x** |
 | `Clear` + refill, `string` values | 703.5 µs | 290.7 µs | **2.4x** |
 | Fill a fresh map | 735.9 µs | 414.7 µs | **1.8x**, ⚠️ **1.70x the allocation** |
 | Enumerate every entry | 57.3 µs | 50.7 µs | ⚠️ 1.13x — a near-wash |
 
-Three of those deserve to be read as warnings rather than wins:
+Read those two `Clear` pairs together, because the gap between them is the point:
+
+- **`Clear` itself is the asymptotic win the representation promises** — 10.27 µs against
+  0.02 µs for a reference-free `TValue`, and the fast side is sitting on the measurement
+  floor, so the real margin is wider still. That row is *not* on the dashboard: an arm
+  whose median is 0 ns publishes a chart nobody should read. It is measured here and
+  quoted here instead.
+- **The workload it sits in wins 2.4x, not 500x**, because clearing is followed by a
+  refill and the refill dominates. If you are choosing this type for the clear, choose it
+  on the 2.4x — that is what a caller actually experiences.
+- The `string` rows are the `O(Count)` half of the split contract doing its work: still
+  2.8x on the clear, because `Dictionary` zeroes its whole bucket array on top of its used
+  entry prefix.
+
+Two figures are warnings rather than wins:
 
 - **Enumeration is barely ahead.** A dictionary only 25% dense still walks a reasonably
   compact entry table, and both sides are already memory-bound; the dense layout buys
   ~13%, not the multiple the mechanism suggests. If iteration is the whole workload, this
   is not the reason to switch.
-- **The clear-and-rebuild win is 2.4x, not the order of magnitude `Clear` alone implies.**
-  The benchmark measures a clear *and a full refill*, which is the real workload — and the
-  refill dominates it. `Clear` in isolation is the asymptotic win; the workload it sits in
-  is not.
 - **Allocation is worse, by construction.** The `O(Universe)` sparse array is paid up
   front: 1.70x `Dictionary`'s bytes at 100,000 entries over a 4x universe, and 1.48x at
   1,000. At **1,000 entries the fill is also 13% *slower*** — the fixed sparse-array cost
