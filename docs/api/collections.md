@@ -5060,10 +5060,10 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
 | `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
 | `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
-| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. Live views: the modification check starts when a view is enumerated, not when the property is read. |
 | `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small stack only when the trie has children to walk). |
 
-Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream); a pure lookup does not.
+Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter when it adds a new key, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream). A pure lookup does not, and neither does the setter overwriting an existing key's value — matching `Dictionary<TKey, TValue>`, so `foreach (var kv in trie) trie[kv.Key] = …` is legal. `GetByPrefix` and `GetKeysWithPrefix` take their modification snapshot when called; `Keys`, `Values` and `GetEnumerator` take it when enumeration starts.
 
 ### Empty-string and default handling
 
