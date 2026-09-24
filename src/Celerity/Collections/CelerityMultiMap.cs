@@ -207,7 +207,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         get
         {
             List<TValue?>? group = FindGroup(key);
-            return new ValueGroup(group);
+            return new ValueGroup(this, group);
         }
     }
 
@@ -287,7 +287,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     public bool TryGetValues(TKey key, out ValueGroup values)
     {
         List<TValue?>? group = FindGroup(key);
-        values = new ValueGroup(group);
+        values = new ValueGroup(this, group);
         return group is not null;
     }
 
@@ -704,13 +704,23 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// single key. Iterating it does not allocate; passing it through
     /// <see cref="IEnumerable{T}"/> will box the enumerator and is therefore not
     /// zero-allocation. The view reflects the live backing group: mutating the
-    /// map afterwards may change what a previously-obtained view yields.
+    /// map afterwards may change what a previously-obtained view yields. An
+    /// enumerator obtained from the view, however, fails fast: if the map is
+    /// modified in any way after the enumerator was created — under this key or
+    /// any other — its <see cref="Enumerator.MoveNext"/> and
+    /// <see cref="Enumerator.Reset"/> throw <see cref="InvalidOperationException"/>,
+    /// matching the map's own enumerator and the BCL dictionary views.
     /// </summary>
     public readonly struct ValueGroup : IReadOnlyList<TValue?>
     {
+        private readonly CelerityMultiMap<TKey, TValue, THasher>? _map;
         private readonly List<TValue?>? _group;
 
-        internal ValueGroup(List<TValue?>? group) => _group = group;
+        internal ValueGroup(CelerityMultiMap<TKey, TValue, THasher>? map, List<TValue?>? group)
+        {
+            _map = map;
+            _group = group;
+        }
 
         /// <summary>
         /// Gets the number of values in the group (<c>0</c> for an empty/absent group).
@@ -737,24 +747,32 @@ public class CelerityMultiMap<TKey, TValue, THasher>
 
         /// <summary>
         /// Returns an allocation-free struct enumerator over the values in the group.
+        /// The enumerator captures the map's version here, so any later mutation of
+        /// the map invalidates it.
         /// </summary>
-        public Enumerator GetEnumerator() => new Enumerator(_group);
+        public Enumerator GetEnumerator() => new Enumerator(_map, _group);
 
-        IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => new Enumerator(_group);
-        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_group);
+        IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => new Enumerator(_map, _group);
+        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_map, _group);
 
         /// <summary>
         /// A struct enumerator over the values of a <see cref="ValueGroup"/>.
         /// </summary>
         public struct Enumerator : IEnumerator<TValue?>
         {
+            // Null only for an enumerator over default(ValueGroup), which has no
+            // map to be modified and so never invalidates.
+            private readonly CelerityMultiMap<TKey, TValue, THasher>? _map;
             private readonly List<TValue?>? _group;
+            private readonly int _version;
             private int _index;
             private TValue? _current;
 
-            internal Enumerator(List<TValue?>? group)
+            internal Enumerator(CelerityMultiMap<TKey, TValue, THasher>? map, List<TValue?>? group)
             {
+                _map = map;
                 _group = group;
+                _version = map?._version ?? 0;
                 _index = -1;
                 _current = default;
             }
@@ -766,8 +784,13 @@ public class CelerityMultiMap<TKey, TValue, THasher>
 
             /// <summary>Advances to the next value in the group.</summary>
             /// <returns><c>true</c> if there was a next value; otherwise <c>false</c>.</returns>
+            /// <exception cref="InvalidOperationException">
+            /// Thrown if the map was modified since the enumerator was created.
+            /// </exception>
             public bool MoveNext()
             {
+                ThrowIfModified();
+
                 List<TValue?>? group = _group;
                 if (group is not null && ++_index < group.Count)
                 {
@@ -779,14 +802,28 @@ public class CelerityMultiMap<TKey, TValue, THasher>
             }
 
             /// <summary>Resets the enumerator to its initial position.</summary>
+            /// <exception cref="InvalidOperationException">
+            /// Thrown if the map was modified since the enumerator was created.
+            /// </exception>
             public void Reset()
             {
+                ThrowIfModified();
+
                 _index = -1;
                 _current = default;
             }
 
             /// <summary>No-op.</summary>
             public void Dispose() { }
+
+            // A map-wide version rather than a per-group one: RemoveAll detaches the
+            // group's list without touching it, so only the map can tell that an
+            // enumerator is now walking a list the map no longer owns.
+            private readonly void ThrowIfModified()
+            {
+                if (_map is not null && _version != _map._version)
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+            }
         }
     }
 
@@ -794,14 +831,18 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// A key together with its group of values, yielded by the map's enumerator.
     /// Implements <see cref="IGrouping{TKey, TValue}"/> so the map's enumeration
     /// satisfies <see cref="ILookup{TKey, TValue}"/> and flows through LINQ.
+    /// Enumerating its values fails fast on a map modification exactly as
+    /// <see cref="ValueGroup"/> does.
     /// </summary>
     public readonly struct Grouping : IGrouping<TKey, TValue?>
     {
+        private readonly CelerityMultiMap<TKey, TValue, THasher>? _map;
         private readonly TKey _key;
         private readonly List<TValue?>? _group;
 
-        internal Grouping(TKey key, List<TValue?>? group)
+        internal Grouping(CelerityMultiMap<TKey, TValue, THasher> map, TKey key, List<TValue?>? group)
         {
+            _map = map;
             _key = key;
             _group = group;
         }
@@ -810,18 +851,18 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         public TKey Key => _key;
 
         /// <summary>Gets the group of values for this key as a struct view.</summary>
-        public ValueGroup Values => new ValueGroup(_group);
+        public ValueGroup Values => new ValueGroup(_map, _group);
 
         /// <summary>
         /// Returns an allocation-free struct enumerator over the values of this key.
         /// </summary>
-        public ValueGroup.Enumerator GetEnumerator() => new ValueGroup.Enumerator(_group);
+        public ValueGroup.Enumerator GetEnumerator() => new ValueGroup.Enumerator(_map, _group);
 
         IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator()
-            => new ValueGroup.Enumerator(_group);
+            => new ValueGroup.Enumerator(_map, _group);
 
         IEnumerator IEnumerable.GetEnumerator()
-            => new ValueGroup.Enumerator(_group);
+            => new ValueGroup.Enumerator(_map, _group);
     }
 
     /// <summary>
@@ -880,7 +921,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
                 _state = State.InArray;
                 if (_map._hasDefaultKey)
                 {
-                    _current = new Grouping(default(TKey)!, _map._defaultKeyGroup);
+                    _current = new Grouping(_map, default(TKey)!, _map._defaultKeyGroup);
                     return true;
                 }
             }
@@ -896,7 +937,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
                     TKey? key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
                     if (!EmptySlot.Is(key))
                     {
-                        _current = new Grouping(key!, groups[_index]);
+                        _current = new Grouping(_map, key!, groups[_index]);
                         return true;
                     }
                 }

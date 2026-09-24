@@ -1560,10 +1560,15 @@ enumeration as `IGrouping<TKey, TValue?>`.
 - **`ValueGroup`** — a read-only struct view over one key's values. Implements
   `IReadOnlyList<TValue?>` (so `Count`, `this[int]`, and allocation-free `foreach`).
   It reflects the live backing group: mutating the map afterwards may change what a
-  previously-obtained view yields.
+  previously-obtained view yields. Its enumerator, though, fails fast: any
+  modification of the map after the enumerator was created — under this key or any
+  other, including `RemoveAll` and `Clear` — makes `MoveNext` / `Reset` throw
+  `InvalidOperationException`, as `Dictionary`'s `Keys` / `Values` views do. The check
+  starts when the view is enumerated, not when it is obtained.
 - **`Grouping`** — a key together with its `ValueGroup`, yielded by the map's
   enumerator. Implements `IGrouping<TKey, TValue?>`, so `foreach (var g in map)`
-  gives `g.Key` and `foreach (var v in g)` over the values.
+  gives `g.Key` and `foreach (var v in g)` over the values. Enumerating its values
+  fails fast on a map modification exactly as `ValueGroup` does.
 
 ### Default-key handling
 
