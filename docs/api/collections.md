@@ -5400,7 +5400,7 @@ public FenwickTree(IEnumerable<T> values)      // O(n) build seeded with values,
 | `void Clear()` | Reset every logical element to zero (`O(n)`); the length is unchanged. |
 | `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order (`O(n log n)` total). |
 
-Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator; `Add`, the indexer setter, and `Clear` do — except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. Not thread-safe.
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator. `Add` and the indexer setter do, except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. `Clear` always does, even on a tree whose values are already all zero. Not thread-safe.
 
 ### Choosing it
 
