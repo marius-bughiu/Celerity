@@ -519,6 +519,19 @@ public class CelerityMultiMapEnumerationTests
     }
 
     [Fact]
+    public void AddRange_FromAnEmptyViewOfTheSameMap_ShouldAddNothing_AndNotThrow()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        map.AddRange(1, map[2]); // key 2 is absent, so the view is empty
+
+        Assert.Equal(new[] { 10 }, map[1].ToArray());
+        Assert.False(map.ContainsKey(2));
+        Assert.Equal(1, map.ValueCount);
+    }
+
+    [Fact]
     public void AddRange_WhenSourceThrowsPartWay_ShouldKeepValueCountConsistent()
     {
         var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();

@@ -316,8 +316,9 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// <paramref name="values"/> is <c>null</c>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// <paramref name="values"/> enumerates this map (for example
-    /// <c>map[key]</c>), which the first append modifies. Values appended before
+    /// <paramref name="values"/> is a non-empty live view of this map (for
+    /// example <c>map[key]</c> for a present key), which the first append
+    /// modifies; an empty view appends nothing and does not throw. Values appended before
     /// the exception remain in the map, as they do when <paramref name="values"/>
     /// itself throws.
     /// </exception>

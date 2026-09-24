@@ -1537,7 +1537,7 @@ insertion order; returns an **empty group** if the key is absent (no throw).
 | Member | Description |
 |---|---|
 | `void Add(TKey key, TValue value)` | Append a value to the key's group, creating the group if absent. Always succeeds. |
-| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`, and `InvalidOperationException` if `values` enumerates this map (e.g. `map[key]`); values appended before a throw stay in the map. |
+| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`, and `InvalidOperationException` if `values` is a non-empty live view of this map (e.g. `map[key]` for a present key; an empty view adds nothing and does not throw); values appended before a throw stay in the map. |
 | `bool Remove(TKey key, TValue? value)` | Remove a single occurrence of `value` (first match, by `EqualityComparer<T>.Default`) from the key's group. If that empties the group, the key is removed. Returns `false` if the key or value is absent. |
 | `bool RemoveAll(TKey key)` | Remove the key and **all** of its values. Returns `false` if the key is absent. |
 | `bool ContainsKey(TKey key)` | Whether the key has at least one value. |
