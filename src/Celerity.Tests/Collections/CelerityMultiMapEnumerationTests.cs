@@ -543,6 +543,30 @@ public class CelerityMultiMapEnumerationTests
         Assert.Equal(3, map.ValueCount);
     }
 
+    [Fact]
+    public void AddRange_WhenFirstCurrentThrows_ShouldNotRegisterAnEmptyKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+
+        Assert.Throws<InvalidOperationException>(() => map.AddRange(1, new ThrowingCurrentSource()));
+
+        Assert.False(map.ContainsKey(1));
+        Assert.Equal(0, map.Count);
+        Assert.Equal(0, map.ValueCount);
+    }
+
+    // One element whose Current getter throws, after MoveNext has returned true.
+    private sealed class ThrowingCurrentSource : IEnumerable<int>, IEnumerator<int>
+    {
+        public int Current => throw new InvalidOperationException("Current failed");
+        object IEnumerator.Current => Current;
+        public bool MoveNext() => true;
+        public void Reset() { }
+        public void Dispose() { }
+        public IEnumerator<int> GetEnumerator() => this;
+        IEnumerator IEnumerable.GetEnumerator() => this;
+    }
+
     private static IEnumerable<int> ThrowAfter(int count)
     {
         for (int i = 0; i < count; i++)

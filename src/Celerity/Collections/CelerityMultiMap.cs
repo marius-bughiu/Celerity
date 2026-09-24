@@ -340,15 +340,20 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         // end: the map then stays consistent if the source throws part-way, and a
         // source that enumerates this map (AddRange(key, map[key])) sees the
         // modification on its next MoveNext and throws instead of chasing its own
-        // appends forever.
+        // appends forever. The first value is read before GroupForAdd so that a
+        // throwing Current getter cannot leave a registered key with no values.
+        TValue first = enumerator.Current;
         List<TValue?> group = GroupForAdd(key);
-        do
+        group.Add(first);
+        _valueCount++;
+        _version++;
+
+        while (enumerator.MoveNext())
         {
             group.Add(enumerator.Current);
             _valueCount++;
             _version++;
         }
-        while (enumerator.MoveNext());
     }
 
     /// <summary>
