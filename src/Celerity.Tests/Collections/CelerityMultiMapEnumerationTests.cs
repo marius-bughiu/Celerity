@@ -502,6 +502,42 @@ public class CelerityMultiMapEnumerationTests
     }
 
     [Fact]
+    public void AddRange_FromItsOwnGroup_ShouldThrow_InsteadOfLoopingForever()
+    {
+        // Review of #482: AddRange bumped the version only after draining its
+        // source, so a source enumerating the same group never saw the appends as a
+        // modification and kept yielding them.
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        Assert.Throws<InvalidOperationException>(() => map.AddRange(1, map[1]));
+
+        // The one value appended before the throw is committed, and the counts agree.
+        Assert.Equal(new[] { 10, 20, 10 }, map[1].ToArray());
+        Assert.Equal(3, map.ValueCount);
+    }
+
+    [Fact]
+    public void AddRange_WhenSourceThrowsPartWay_ShouldKeepValueCountConsistent()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        Assert.Throws<InvalidOperationException>(() => map.AddRange(2, ThrowAfter(2)));
+
+        Assert.Equal(new[] { 0, 1 }, map[2].ToArray());
+        Assert.Equal(3, map.ValueCount);
+    }
+
+    private static IEnumerable<int> ThrowAfter(int count)
+    {
+        for (int i = 0; i < count; i++)
+            yield return i;
+        throw new InvalidOperationException("source failed");
+    }
+
+    [Fact]
     public void DefaultValueGroupAndGrouping_ShouldEnumerateEmpty_WithoutThrowing()
     {
         // default(...) has no owning map, so there is nothing to be modified.

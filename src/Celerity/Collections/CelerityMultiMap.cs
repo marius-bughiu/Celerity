@@ -315,6 +315,12 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="values"/> is <c>null</c>.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="values"/> enumerates this map (for example
+    /// <c>map[key]</c>), which the first append modifies. Values appended before
+    /// the exception remain in the map, as they do when <paramref name="values"/>
+    /// itself throws.
+    /// </exception>
     public void AddRange(TKey key, IEnumerable<TValue> values)
     {
         ArgumentNullException.ThrowIfNull(values);
@@ -329,17 +335,19 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         if (!enumerator.MoveNext())
             return;
 
+        // Commit the count and version with each append rather than once at the
+        // end: the map then stays consistent if the source throws part-way, and a
+        // source that enumerates this map (AddRange(key, map[key])) sees the
+        // modification on its next MoveNext and throws instead of chasing its own
+        // appends forever.
         List<TValue?> group = GroupForAdd(key);
-        int added = 0;
         do
         {
             group.Add(enumerator.Current);
-            added++;
+            _valueCount++;
+            _version++;
         }
         while (enumerator.MoveNext());
-
-        _valueCount += added;
-        _version++;
     }
 
     /// <summary>
