@@ -496,6 +496,54 @@ public class CuckooFilterTests
     }
 
     [Fact]
+    public void UnionWith_Self_DoublesCountWithoutFillingTheFilter()
+    {
+        // Regression: the merge read this filter's live bucket array while writing into it, so a self-union
+        // re-absorbed its own copies — one element ended at Count 5, or filled all eight of its candidate slots
+        // and left the filter permanently full.
+        for (int key = 0; key < 1000; key++)
+        {
+            var filter = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+            filter.Add(key);
+
+            filter.UnionWith(filter);
+
+            Assert.Equal(2, filter.Count);
+            Assert.False(filter.IsFull);
+            Assert.True(filter.Contains(key));
+        }
+    }
+
+    [Fact]
+    public void UnionWith_Self_MatchesMergingAnIdenticalCopy()
+    {
+        var self = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+        var copy = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+        var target = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+        for (int i = 0; i < 300; i++)
+        {
+            self.Add(i);
+            copy.Add(i);
+            target.Add(i);
+        }
+
+        self.UnionWith(self);
+        target.UnionWith(copy);
+
+        Assert.Equal(target.Count, self.Count);
+        Assert.Equal(600, self.Count);
+        Assert.False(self.IsFull);
+
+        // Each element is now stored twice, so one Remove leaves it present and a second takes it out.
+        for (int i = 0; i < 300; i++)
+        {
+            Assert.True(self.Remove(i));
+            Assert.True(self.Contains(i), $"false negative for {i} after one remove");
+        }
+        Assert.Equal(300, self.Count);
+    }
+
+    [Fact]
     public void UnionWith_Null_Throws()
     {
         var a = new CuckooFilter<int, Int32Murmur3Hasher>(100);

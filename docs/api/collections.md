@@ -1537,7 +1537,7 @@ insertion order; returns an **empty group** if the key is absent (no throw).
 | Member | Description |
 |---|---|
 | `void Add(TKey key, TValue value)` | Append a value to the key's group, creating the group if absent. Always succeeds. |
-| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`. |
+| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`, and `InvalidOperationException` if `values` is a non-empty live view of this map (e.g. `map[key]` for a present key; an empty view adds nothing and does not throw); values appended before a throw stay in the map. |
 | `bool Remove(TKey key, TValue? value)` | Remove a single occurrence of `value` (first match, by `EqualityComparer<T>.Default`) from the key's group. If that empties the group, the key is removed. Returns `false` if the key or value is absent. |
 | `bool RemoveAll(TKey key)` | Remove the key and **all** of its values. Returns `false` if the key is absent. |
 | `bool ContainsKey(TKey key)` | Whether the key has at least one value. |
@@ -1560,10 +1560,16 @@ enumeration as `IGrouping<TKey, TValue?>`.
 - **`ValueGroup`** — a read-only struct view over one key's values. Implements
   `IReadOnlyList<TValue?>` (so `Count`, `this[int]`, and allocation-free `foreach`).
   It reflects the live backing group: mutating the map afterwards may change what a
-  previously-obtained view yields.
+  previously-obtained view yields. Its enumerator, though, fails fast: any
+  modification of the map after the enumerator was created — under this key or any
+  other, including `RemoveAll` and `Clear` — makes `MoveNext` / `Reset` throw
+  `InvalidOperationException`, exactly as it does for the map's own enumerator. This is
+  stricter than `Dictionary`'s views, which survive `Remove` and `Clear`. The check
+  starts when the view is enumerated, not when it is obtained.
 - **`Grouping`** — a key together with its `ValueGroup`, yielded by the map's
   enumerator. Implements `IGrouping<TKey, TValue?>`, so `foreach (var g in map)`
-  gives `g.Key` and `foreach (var v in g)` over the values.
+  gives `g.Key` and `foreach (var v in g)` over the values. Enumerating its values
+  fails fast on a map modification exactly as `ValueGroup` does.
 
 ### Default-key handling
 
@@ -2567,7 +2573,8 @@ counting pass — so the realized false-positive rate honors `falsePositiveRate`
 - `void Clear()` — resets every bit; preserves the bit-array size and hash count.
 - `int Count { get; }` — the number of `Add` calls since construction or the last `Clear`.
   This is an **insertion counter, not a distinct-element count** — a Bloom filter cannot
-  tell whether an element was already present.
+  tell whether an element was already present. It saturates at `int.MaxValue` rather than
+  wrapping, including across `UnionWith`.
 - `int Capacity { get; }` — the expected element count the filter was sized for.
 - `int BitCount { get; }` — the number of bits in the backing array (`m`), a power of two.
 - `int HashCount { get; }` — the number of hash functions applied per element (`k`).
@@ -5059,10 +5066,10 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
 | `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
 | `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
-| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. Live views: the modification check starts when a view is enumerated, not when the property is read. |
 | `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small stack only when the trie has children to walk). |
 
-Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream); a pure lookup does not.
+Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter when it adds a new key, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream). A pure lookup does not, and neither does the setter overwriting an existing key's value — matching `Dictionary<TKey, TValue>`, so `foreach (var kv in trie) trie[kv.Key] = …` is legal. `GetByPrefix` and `GetKeysWithPrefix` take their modification snapshot when called; `Keys`, `Values` and `GetEnumerator` take it when enumeration starts.
 
 ### Empty-string and default handling
 
@@ -5399,7 +5406,7 @@ public FenwickTree(IEnumerable<T> values)      // O(n) build seeded with values,
 | `void Clear()` | Reset every logical element to zero (`O(n)`); the length is unchanged. |
 | `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order (`O(n log n)` total). |
 
-Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator; `Add`, the indexer setter, and `Clear` do — except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. Not thread-safe.
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator. `Add` and the indexer setter do, except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. `Clear` always does, even on a tree whose values are already all zero. Not thread-safe.
 
 ### Choosing it
 

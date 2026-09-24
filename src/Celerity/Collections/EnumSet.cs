@@ -256,10 +256,14 @@ public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
         if (other is EnumSet<TEnum> es)
         {
             ulong[] a = _words, b = es._words;
+            ulong changed = 0;
             for (int i = 0; i < a.Length; i++)
-                a[i] |= b[i];
-            Recount();
-            _version++;
+            {
+                ulong word = a[i] | b[i];
+                changed |= word ^ a[i];
+                a[i] = word;
+            }
+            OnBulkChange(changed);
             return;
         }
 
@@ -278,10 +282,14 @@ public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
         if (other is EnumSet<TEnum> es)
         {
             ulong[] a = _words, b = es._words;
+            ulong changed = 0;
             for (int i = 0; i < a.Length; i++)
-                a[i] &= b[i];
-            Recount();
-            _version++;
+            {
+                ulong word = a[i] & b[i];
+                changed |= word ^ a[i];
+                a[i] = word;
+            }
+            OnBulkChange(changed);
             return;
         }
 
@@ -299,10 +307,14 @@ public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
         if (other is EnumSet<TEnum> es)
         {
             ulong[] a = _words, b = es._words;
+            ulong changed = 0;
             for (int i = 0; i < a.Length; i++)
-                a[i] &= ~b[i];
-            Recount();
-            _version++;
+            {
+                ulong word = a[i] & ~b[i];
+                changed |= word ^ a[i];
+                a[i] = word;
+            }
+            OnBulkChange(changed);
             return;
         }
 
@@ -321,10 +333,14 @@ public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
         if (other is EnumSet<TEnum> es)
         {
             ulong[] a = _words, b = es._words;
+            ulong changed = 0;
             for (int i = 0; i < a.Length; i++)
-                a[i] ^= b[i];
-            Recount();
-            _version++;
+            {
+                ulong word = a[i] ^ b[i];
+                changed |= word ^ a[i];
+                a[i] = word;
+            }
+            OnBulkChange(changed);
             return;
         }
 
@@ -469,6 +485,18 @@ public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
             if ((a[i] & ~b[i]) != 0)
                 return false;
         return true;
+    }
+
+    // Ends a word-wise bulk operation. `changed` is the OR of every word's old ^ new, so it is zero exactly when
+    // no bit moved — then, as for a no-op Add / Remove / Clear, the count stands and active enumerators stay
+    // valid. The count alone would not do: a symmetric difference can swap members and keep the same count.
+    private void OnBulkChange(ulong changed)
+    {
+        if (changed == 0)
+            return;
+
+        Recount();
+        _version++;
     }
 
     // Recomputes _count from the bit vector after a bulk word operation.

@@ -529,7 +529,18 @@ public static class FastUtils
         return (value & (alignment - 1)) == 0;
     }
 
-    /// <inheritdoc cref="AlignUp(int, int)"/>
+    /// <summary>
+    /// Rounds <paramref name="value"/> up to the nearest multiple of <paramref name="alignment"/>
+    /// (a power of two), returning <paramref name="value"/> unchanged when it is already aligned.
+    /// </summary>
+    /// <param name="value">The non-negative value to align. Typically a byte size or an offset.</param>
+    /// <param name="alignment">The alignment boundary. Must be a power of two (<c>1, 2, 4, 8, …</c>).</param>
+    /// <returns>The smallest multiple of <paramref name="alignment"/> that is <c>&gt;= value</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alignment"/> is not a power of two (including <c>0</c>).</exception>
+    /// <remarks>
+    /// Overflows (wrapping to a value below <paramref name="value"/>) when <paramref name="value"/> is within
+    /// <c>alignment - 1</c> of <see cref="long.MaxValue"/> — guard at the call site if that is reachable.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long AlignUp(long value, long alignment)
     {
