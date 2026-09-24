@@ -1537,7 +1537,7 @@ insertion order; returns an **empty group** if the key is absent (no throw).
 | Member | Description |
 |---|---|
 | `void Add(TKey key, TValue value)` | Append a value to the key's group, creating the group if absent. Always succeeds. |
-| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`. |
+| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`, and `InvalidOperationException` if `values` is a non-empty live view of this map (e.g. `map[key]` for a present key; an empty view adds nothing and does not throw); values appended before a throw stay in the map. |
 | `bool Remove(TKey key, TValue? value)` | Remove a single occurrence of `value` (first match, by `EqualityComparer<T>.Default`) from the key's group. If that empties the group, the key is removed. Returns `false` if the key or value is absent. |
 | `bool RemoveAll(TKey key)` | Remove the key and **all** of its values. Returns `false` if the key is absent. |
 | `bool ContainsKey(TKey key)` | Whether the key has at least one value. |
@@ -1560,10 +1560,16 @@ enumeration as `IGrouping<TKey, TValue?>`.
 - **`ValueGroup`** — a read-only struct view over one key's values. Implements
   `IReadOnlyList<TValue?>` (so `Count`, `this[int]`, and allocation-free `foreach`).
   It reflects the live backing group: mutating the map afterwards may change what a
-  previously-obtained view yields.
+  previously-obtained view yields. Its enumerator, though, fails fast: any
+  modification of the map after the enumerator was created — under this key or any
+  other, including `RemoveAll` and `Clear` — makes `MoveNext` / `Reset` throw
+  `InvalidOperationException`, exactly as it does for the map's own enumerator. This is
+  stricter than `Dictionary`'s views, which survive `Remove` and `Clear`. The check
+  starts when the view is enumerated, not when it is obtained.
 - **`Grouping`** — a key together with its `ValueGroup`, yielded by the map's
   enumerator. Implements `IGrouping<TKey, TValue?>`, so `foreach (var g in map)`
-  gives `g.Key` and `foreach (var v in g)` over the values.
+  gives `g.Key` and `foreach (var v in g)` over the values. Enumerating its values
+  fails fast on a map modification exactly as `ValueGroup` does.
 
 ### Default-key handling
 
