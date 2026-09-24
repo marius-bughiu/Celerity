@@ -5,19 +5,18 @@ namespace Celerity.Tests.Utils;
 
 /// <summary>
 /// Pins the two <see cref="VarInt"/> failure arms that the main <c>VarIntTests</c> suite only reaches from the
-/// outside: the <em>mid-encode</em> destination-exhaustion check inside the <c>TryWriteVarInt</c> continuation
-/// loop, and the failure arm of the zig-zag <c>TryReadVarInt</c> wrappers.
+/// outside: a <c>TryWriteVarInt</c> destination that runs out <em>mid-encode</em>, and the failure arm of the
+/// zig-zag <c>TryReadVarInt</c> wrappers.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Both <c>TryWriteVarInt</c> overloads guard the destination twice: once per continuation byte inside the
-/// <c>while (value &gt;= 0x80)</c> loop, and once more for the final terminating byte. The existing suite only
-/// trips the <em>terminating</em> guard (a buffer that is one byte short of a complete encoding), so the
-/// in-loop guard — the one that actually protects against a write past the end of a caller-owned span while
-/// bytes are still pending — was never exercised. These tests reach it by supplying a destination that runs
-/// out while continuation bytes are still being emitted (an empty span, or a buffer shorter than the value's
-/// continuation prefix). The contract they pin is the one the type documents: return <see langword="false"/>,
-/// report <c>0</c> bytes written, and never write outside the span.
+/// Both <c>TryWriteVarInt</c> overloads size the encoding with <see cref="VarInt.VarIntLength(uint)"/> before
+/// writing, so a short destination fails before a single byte is stored. The existing suite only uses buffers
+/// one byte short of a complete encoding; these tests also supply destinations that would run out while
+/// continuation bytes are still pending (an empty span, or a buffer shorter than the value's continuation
+/// prefix). The contract they pin is the one the type documents: return <see langword="false"/>, report
+/// <c>0</c> bytes written, and write nothing — the destination is left exactly as the caller passed it, so a
+/// caller that retries into a larger buffer never sees a stale partial prefix.
 /// </para>
 /// <para>
 /// Symmetrically, the signed <c>TryReadVarInt</c> overloads are thin zig-zag wrappers over the unsigned
@@ -30,13 +29,12 @@ namespace Celerity.Tests.Utils;
 /// </remarks>
 public class VarIntBoundaryCoverageTests
 {
-    // ── TryWriteVarInt: destination exhausted mid-encode (inside the continuation loop) ──────────────────
+    // ── TryWriteVarInt: destination too short to hold the continuation prefix ────────────────────────────
 
     [Fact]
     public void TryWriteVarInt_ShouldReturnFalseAndReportZeroBytes_WhenTheUInt32DestinationIsEmpty()
     {
-        // 300u needs two bytes, so the very first continuation byte has nowhere to go: the in-loop guard
-        // fires before a single byte is emitted.
+        // 300u needs two bytes, so the very first continuation byte has nowhere to go.
         Assert.False(VarInt.TryWriteVarInt(Span<byte>.Empty, 300u, out int written));
         Assert.Equal(0, written);
     }
@@ -44,8 +42,8 @@ public class VarIntBoundaryCoverageTests
     [Fact]
     public void TryWriteVarInt_ShouldReturnFalseAndReportZeroBytes_WhenTheUInt32DestinationRunsOutMidEncode()
     {
-        // 0x4000u encodes as three bytes (0x80 0x80 0x01). A one-byte destination accepts the first
-        // continuation byte, then the loop's guard rejects the second.
+        // 0x4000u encodes as three bytes (0x80 0x80 0x01), so a one-byte destination cannot even hold the
+        // continuation prefix.
         var destination = new byte[1];
         Assert.False(VarInt.TryWriteVarInt(destination, 0x4000u, out int written));
         Assert.Equal(0, written);
@@ -89,7 +87,7 @@ public class VarIntBoundaryCoverageTests
     public void TryWriteVarInt_ShouldReturnFalseAndReportZeroBytes_WhenTheZigZagDestinationRunsOutMidEncode()
     {
         // The signed overloads delegate to the unsigned ones after zig-zagging, so they inherit the same
-        // in-loop guard. -100_000 zig-zags to 199_999, which needs three bytes.
+        // length check. -100_000 zig-zags to 199_999, which needs three bytes.
         Assert.Equal(3, VarInt.VarIntLength(-100_000));
         var oneByte = new byte[1];
         Assert.False(VarInt.TryWriteVarInt(oneByte, -100_000, out int written));
@@ -100,6 +98,32 @@ public class VarIntBoundaryCoverageTests
         var twoBytes = new byte[2];
         Assert.False(VarInt.TryWriteVarInt(twoBytes, long.MinValue, out written));
         Assert.Equal(0, written);
+    }
+
+    [Fact]
+    public void TryWriteVarInt_ShouldLeaveTheDestinationUntouched_WhenItIsTooShort()
+    {
+        // Regression: the write loop used to store each byte before it knew the whole encoding fit, so a
+        // failed write left a partial prefix behind despite the documented "nothing is written".
+        byte[] uint32 = { 0xEE, 0xEE, 0xEE };
+        Assert.False(VarInt.TryWriteVarInt(uint32, uint.MaxValue, out int written));
+        Assert.Equal(0, written);
+        Assert.Equal(new byte[] { 0xEE, 0xEE, 0xEE }, uint32);
+
+        byte[] uint64 = { 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE };
+        Assert.False(VarInt.TryWriteVarInt(uint64, ulong.MaxValue, out written));
+        Assert.Equal(0, written);
+        Assert.All(uint64, b => Assert.Equal(0xEE, b));
+
+        byte[] int32 = { 0xEE, 0xEE };
+        Assert.False(VarInt.TryWriteVarInt(int32, int.MinValue, out written));
+        Assert.Equal(0, written);
+        Assert.Equal(new byte[] { 0xEE, 0xEE }, int32);
+
+        byte[] int64 = { 0xEE, 0xEE, 0xEE, 0xEE };
+        Assert.False(VarInt.TryWriteVarInt(int64, long.MinValue, out written));
+        Assert.Equal(0, written);
+        Assert.All(int64, b => Assert.Equal(0xEE, b));
     }
 
     // ── TryReadVarInt: the zig-zag wrappers' failure arm clears `value` ──────────────────────────────────

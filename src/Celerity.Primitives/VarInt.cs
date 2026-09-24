@@ -126,16 +126,19 @@ public static class VarInt
     /// <returns><see langword="true"/> if the value fit; <see langword="false"/> if <paramref name="destination"/> was too small (nothing is written).</returns>
     public static bool TryWriteVarInt(Span<byte> destination, uint value, out int bytesWritten)
     {
+        // Size the encoding before touching the span, so a destination that is too small is left exactly as
+        // the caller passed it rather than holding a partial prefix.
+        int length = VarIntLength(value);
+        if (length > destination.Length) { bytesWritten = 0; return false; }
+
         int i = 0;
         while (value >= 0x80)
         {
-            if (i >= destination.Length) { bytesWritten = 0; return false; }
             destination[i++] = (byte)(value | 0x80);
             value >>= 7;
         }
-        if (i >= destination.Length) { bytesWritten = 0; return false; }
-        destination[i++] = (byte)value;
-        bytesWritten = i;
+        destination[i] = (byte)value;
+        bytesWritten = length;
         return true;
     }
 
@@ -148,16 +151,17 @@ public static class VarInt
     /// <returns><see langword="true"/> if the value fit; <see langword="false"/> if <paramref name="destination"/> was too small (nothing is written).</returns>
     public static bool TryWriteVarInt(Span<byte> destination, ulong value, out int bytesWritten)
     {
+        int length = VarIntLength(value);
+        if (length > destination.Length) { bytesWritten = 0; return false; }
+
         int i = 0;
         while (value >= 0x80)
         {
-            if (i >= destination.Length) { bytesWritten = 0; return false; }
             destination[i++] = (byte)(value | 0x80);
             value >>= 7;
         }
-        if (i >= destination.Length) { bytesWritten = 0; return false; }
-        destination[i++] = (byte)value;
-        bytesWritten = i;
+        destination[i] = (byte)value;
+        bytesWritten = length;
         return true;
     }
 
