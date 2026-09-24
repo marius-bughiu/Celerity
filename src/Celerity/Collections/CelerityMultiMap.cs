@@ -717,7 +717,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// modified in any way after the enumerator was created — under this key or
     /// any other — its <see cref="Enumerator.MoveNext"/> and
     /// <see cref="Enumerator.Reset"/> throw <see cref="InvalidOperationException"/>,
-    /// matching the map's own enumerator and the BCL dictionary views.
+    /// matching the map's own enumerator.
     /// </summary>
     public readonly struct ValueGroup : IReadOnlyList<TValue?>
     {

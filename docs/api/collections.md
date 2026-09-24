@@ -1563,7 +1563,8 @@ enumeration as `IGrouping<TKey, TValue?>`.
   previously-obtained view yields. Its enumerator, though, fails fast: any
   modification of the map after the enumerator was created — under this key or any
   other, including `RemoveAll` and `Clear` — makes `MoveNext` / `Reset` throw
-  `InvalidOperationException`, as `Dictionary`'s `Keys` / `Values` views do. The check
+  `InvalidOperationException`, exactly as it does for the map's own enumerator. This is
+  stricter than `Dictionary`'s views, which survive `Remove` and `Clear`. The check
   starts when the view is enumerated, not when it is obtained.
 - **`Grouping`** — a key together with its `ValueGroup`, yielded by the map's
   enumerator. Implements `IGrouping<TKey, TValue?>`, so `foreach (var g in map)`

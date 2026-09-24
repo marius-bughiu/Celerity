@@ -374,7 +374,7 @@ public class CelerityMultiMapEnumerationTests
     [Fact]
     public void ValueGroupEnumerator_ShouldThrow_WhenAnotherKeyIsMutated()
     {
-        // The contract is map-wide, like Dictionary's Keys/Values views.
+        // The contract is map-wide: any mutation, under any key, invalidates it.
         var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
         map.Add(1, 10);
         map.Add(1, 20);

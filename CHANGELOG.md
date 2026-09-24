@@ -7,7 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Fixed
 
 - **`Trie<TValue>` no longer invalidates enumerators when the indexer overwrites an existing key's value**, matching `Dictionary<TKey, TValue>` and the rest of the dictionary family (#233), so updating values while iterating the trie works. Its `Keys` and `Values` views now start their modification check when enumerated rather than when the property is read, and detect a change made after they finish. Closes [#461](https://github.com/marius-bughiu/Celerity/issues/461).
-- **`CelerityMultiMap`'s per-key value enumerators now fail fast when the map is modified**, like the map's own enumerator. Enumerating a `ValueGroup` (or a `Grouping`'s values) while adding under that key no longer loops forever, removing no longer silently skips values, and a group detached by `RemoveAll` no longer keeps yielding. As with `Dictionary`'s views, any change to the map invalidates the enumerator, and the check starts when the view is enumerated. `AddRange(key, map[key])` now throws instead of looping forever. Closes [#482](https://github.com/marius-bughiu/Celerity/issues/482).
+- **`CelerityMultiMap`'s per-key value enumerators now fail fast when the map is modified**, like the map's own enumerator. Enumerating a `ValueGroup` (or a `Grouping`'s values) while adding under that key no longer loops forever, removing no longer silently skips values, and a group detached by `RemoveAll` no longer keeps yielding. Any change to the map, under any key, invalidates the enumerator; the check starts when the view is enumerated. `AddRange(key, map[key])` now throws instead of looping forever. Closes [#482](https://github.com/marius-bughiu/Celerity/issues/482).
 
 ## [3.3.0] - 2026-09-20
 
