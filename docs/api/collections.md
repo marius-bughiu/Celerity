@@ -1537,7 +1537,7 @@ insertion order; returns an **empty group** if the key is absent (no throw).
 | Member | Description |
 |---|---|
 | `void Add(TKey key, TValue value)` | Append a value to the key's group, creating the group if absent. Always succeeds. |
-| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`. |
+| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`, and `InvalidOperationException` if `values` is a non-empty live view of this map (e.g. `map[key]` for a present key; an empty view adds nothing and does not throw); values appended before a throw stay in the map. |
 | `bool Remove(TKey key, TValue? value)` | Remove a single occurrence of `value` (first match, by `EqualityComparer<T>.Default`) from the key's group. If that empties the group, the key is removed. Returns `false` if the key or value is absent. |
 | `bool RemoveAll(TKey key)` | Remove the key and **all** of its values. Returns `false` if the key is absent. |
 | `bool ContainsKey(TKey key)` | Whether the key has at least one value. |
@@ -1560,10 +1560,16 @@ enumeration as `IGrouping<TKey, TValue?>`.
 - **`ValueGroup`** — a read-only struct view over one key's values. Implements
   `IReadOnlyList<TValue?>` (so `Count`, `this[int]`, and allocation-free `foreach`).
   It reflects the live backing group: mutating the map afterwards may change what a
-  previously-obtained view yields.
+  previously-obtained view yields. Its enumerator, though, fails fast: any
+  modification of the map after the enumerator was created — under this key or any
+  other, including `RemoveAll` and `Clear` — makes `MoveNext` / `Reset` throw
+  `InvalidOperationException`, exactly as it does for the map's own enumerator. This is
+  stricter than `Dictionary`'s views, which survive `Remove` and `Clear`. The check
+  starts when the view is enumerated, not when it is obtained.
 - **`Grouping`** — a key together with its `ValueGroup`, yielded by the map's
   enumerator. Implements `IGrouping<TKey, TValue?>`, so `foreach (var g in map)`
-  gives `g.Key` and `foreach (var v in g)` over the values.
+  gives `g.Key` and `foreach (var v in g)` over the values. Enumerating its values
+  fails fast on a map modification exactly as `ValueGroup` does.
 
 ### Default-key handling
 
@@ -2567,7 +2573,8 @@ counting pass — so the realized false-positive rate honors `falsePositiveRate`
 - `void Clear()` — resets every bit; preserves the bit-array size and hash count.
 - `int Count { get; }` — the number of `Add` calls since construction or the last `Clear`.
   This is an **insertion counter, not a distinct-element count** — a Bloom filter cannot
-  tell whether an element was already present.
+  tell whether an element was already present. It saturates at `int.MaxValue` rather than
+  wrapping, including across `UnionWith`.
 - `int Capacity { get; }` — the expected element count the filter was sized for.
 - `int BitCount { get; }` — the number of bits in the backing array (`m`), a power of two.
 - `int HashCount { get; }` — the number of hash functions applied per element (`k`).
@@ -5059,10 +5066,10 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
 | `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
 | `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
-| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. Live views: the modification check starts when a view is enumerated, not when the property is read. |
 | `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small stack only when the trie has children to walk). |
 
-Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream); a pure lookup does not.
+Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter when it adds a new key, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream). A pure lookup does not, and neither does the setter overwriting an existing key's value — matching `Dictionary<TKey, TValue>`, so `foreach (var kv in trie) trie[kv.Key] = …` is legal. `GetByPrefix` and `GetKeysWithPrefix` take their modification snapshot when called; `Keys`, `Values` and `GetEnumerator` take it when enumeration starts.
 
 ### Empty-string and default handling
 
@@ -5399,7 +5406,7 @@ public FenwickTree(IEnumerable<T> values)      // O(n) build seeded with values,
 | `void Clear()` | Reset every logical element to zero (`O(n)`); the length is unchanged. |
 | `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order (`O(n log n)` total). |
 
-Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator; `Add`, the indexer setter, and `Clear` do — except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. Not thread-safe.
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator. `Add` and the indexer setter do, except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. `Clear` always does, even on a tree whose values are already all zero. Not thread-safe.
 
 ### Choosing it
 
@@ -6546,7 +6553,7 @@ As with the dictionary, there is no capacity or load factor. The `IEnumerable` o
 | `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
 
-Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). A custom comparer that treats two values as equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — can therefore disagree with `SortedSet<T>` on those members alone. A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal — and that holds throughout, including the set algebra. The members that need the *distinct* elements of their right-hand side collapse it with the set's own comparer rather than with `EqualityComparer<T>.Default`, so a comparer that calls two values equal when the default equality comparer does not answers exactly as `SortedSet<T>` with the equivalent `IComparer<T>` would: under a case-insensitive order a set holding `"a"` answers `true` to `Contains("A")` and *keeps* that member under `IntersectWith(["A"])`. Collapsing `other` with the comparer costs a sort where a `HashSet<T>` would have cost a hash pass, and that is not free: on `BTreeSet<int>` at 100,000 elements `SetEquals` measures **5.7 ms** against the **0.73 ms** the default-equality materialization took, and `IsProperSupersetOf` **0.89 ms** against **0.60 ms**. Against `SortedSet<T>` — the type this one replaces, and the only fair baseline now that the answers agree — that buys a win on the large `SetEquals` (**8.8 ms** there) and ⚠️ **a loss everywhere else measured**: `IsProperSupersetOf` at 100,000 is **0.89 ms against its 0.62 ms**, and at 1,000 elements both members lose (`SetEquals` **22.1 µs** against **15.7 µs**, `IsProperSupersetOf` **2.7 µs** against **1.2 µs**). Allocation goes the other way throughout — a `List<T>` copy instead of a `HashSet<T>` is about **4x less** than the path this replaces. `Add`, `Contains`, `Remove` and the range scans are untouched — set algebra is not this type's hot path, and the numbers above are a local short-job run; the CI series on the dashboard is the contract. A `null` element is legal and `Comparer<T>.Default` orders it before every non-`null` one; a value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
 
 ### Usage example
 
@@ -6715,13 +6722,13 @@ There is no capacity and no load factor. The `IEnumerable` overloads throw `Argu
 | `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
 
-Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal. The set-algebra members materialize the right-hand side into a `HashSet<T>`, so they compare *that* side with `EqualityComparer<T>.Default` (matching the rest of the family). That only matters for a comparer that orders two elements equal when `EqualityComparer<T>.Default` does not — a case-insensitive order, say — and then it matters for exactly the four members that ask whether an element of *this* set is in `other`:
+Membership is defined by `TComparer` — two elements are the same element when the comparer orders them equal — and that holds throughout, including the set algebra and the positional surface. The ten algebra members split only by *how* they reach the right-hand side, not by what keys it:
 
-| Follow `TComparer` throughout | Compare `other` with `EqualityComparer<T>.Default` |
+| Stream `other` against this set | Collapse `other` with `TComparer` first |
 | --- | --- |
-| `UnionWith`, `ExceptWith`, `SymmetricExceptWith`, `Overlaps`, `IsSupersetOf`, `IsProperSupersetOf` | `IntersectWith`, `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf` |
+| `UnionWith`, `ExceptWith`, `Overlaps`, `IsSupersetOf` | `IntersectWith`, `SymmetricExceptWith`, `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf`, `IsProperSupersetOf` |
 
-So under a case-insensitive order a set holding `"a"` answers `true` to `Contains("A")` and still empties under `IntersectWith(["A"])` — which is where the right-hand column differs from `SortedSet<T>`. Whether a `null` element is legal is `TComparer`'s decision, not this type's: under `DefaultComparer<T>` — and so under the `RankedSet<T>` alias — `Comparer<T>.Default` orders `null` before every non-`null` element and it is an ordinary member, while a hand-written comparer that dereferences its arguments will throw on one. A value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
+The right-hand column needs the *distinct* elements of `other` — for a membership probe, a toggle, or a cardinality test — and collapses runs the comparer orders equal, so `["a", "A"]` is one element under a case-insensitive order just as it is to the set itself. So a set holding `"a"` answers `true` to `Contains("A")`, reports `IndexOf("A")` as `0`, and *keeps* that member under `IntersectWith(["A"])` — the answers `SortedSet<T>` gives with the equivalent `IComparer<T>`. Collapsing `other` with the comparer costs a sort where a `HashSet<T>` would have cost a hash pass, and that is not free: on `BTreeSet<int>` at 100,000 elements `SetEquals` measures **5.7 ms** against the **0.73 ms** the default-equality materialization took, and `IsProperSupersetOf` **0.89 ms** against **0.60 ms**. Against `SortedSet<T>` — the type this one replaces, and the only fair baseline now that the answers agree — that buys a win on the large `SetEquals` (**8.8 ms** there) and ⚠️ **a loss everywhere else measured**: `IsProperSupersetOf` at 100,000 is **0.89 ms against its 0.62 ms**, and at 1,000 elements both members lose (`SetEquals` **22.1 µs** against **15.7 µs**, `IsProperSupersetOf` **2.7 µs** against **1.2 µs**). Allocation goes the other way throughout — a `List<T>` copy instead of a `HashSet<T>` is about **4x less** than the path this replaces. `Add`, `Contains`, `Remove` and the range scans are untouched — set algebra is not this type's hot path, and the numbers above are a local short-job run; the CI series on the dashboard is the contract. Whether a `null` element is legal is `TComparer`'s decision, not this type's: under `DefaultComparer<T>` — and so under the `RankedSet<T>` alias — `Comparer<T>.Default` orders `null` before every non-`null` element and it is an ordinary member, while a hand-written comparer that dereferences its arguments will throw on one. A value-type `default(T)` is just an ordinary element, sorted wherever the comparer puts it. Not thread-safe.
 
 ### Usage example
 
@@ -7234,9 +7241,9 @@ The four decomposition groups each run **one invocation per iteration**, because
 - **A batch of fired timers comes back in no particular order.** Only *due-ness* is promised: every payload `Advance` appends has a deadline at or before the tick advanced to. That holds even when the clock is stepped one tick at a time — a zero-delay schedule, or a timer an earlier advance could not deliver, waits on the already-due list and comes back alongside the next tick's own — so a batch can span deadlines however finely the clock is driven. A caller who needs the earliest deadline first wants a priority queue and pays `O(log n)` for it.
 - **Capacity only grows.** There is no `TrimExcess`: a handle *is* a position in the entry array, so compacting it would invalidate every handle a caller is holding, which is the one thing this type promises not to do. `Clear` returns the storage to the free list but keeps it. This is the same trade [`SpatialGrid<TValue>`](#spatialgridtvalue) makes and for the same reason.
 - **A destination whose `Add` throws cannot damage the wheel**, which is why `Advance` hands the payloads over as its last step rather than interleaving delivery with the slot walk. A timer that could not be delivered is still pending, still counted, still addressable by its handle, and delivered by the next advance — though not necessarily *before* the timers that advance makes due, since a batch has no promised order. The clock has still moved, because that part succeeded. A read-only destination is rejected before the clock moves at all. The guarantee is not free — see the `Drain` row above — but it is paid per *fired* timer, so the workload the type exists for barely feels it.
-- **The wheel may not be modified from the destination it is delivering into.** `Advance` is the one place this type runs code it does not own, and a destination whose `Add` calls back into `Schedule`, `Cancel` or `Clear` would mutate the buckets and the free list under the loop walking both. Such a call throws `InvalidOperationException`. Reschedule after the advance returns, which is what a `foreach` over the destination does anyway.
+- **The wheel may not be modified from the destination it is delivering into.** `Advance` is the one place this type runs code it does not own, and a destination whose `Add` calls back into `Schedule`, `ScheduleAt`, `Cancel`, `Clear` or `Advance` would mutate the buckets and the free list under the loop walking both. Such a call throws `InvalidOperationException` — unless it is an `Advance` whose own arguments are invalid (a `null` or read-only destination, or a tick behind the clock), which is rejected by that argument validation first. Reschedule after the advance returns, which is what a `foreach` over the destination does anyway.
 - **Not thread-safe**, like every collection here. One clock, one driver.
-- **Enumeration is invalidated** by `Schedule`, a successful `Cancel`, an `Advance` that fired something, and a `Clear` that removed something. An `Advance` that fires nothing deliberately does *not* invalidate it, even when it cascaded timers between levels: cascading changes neither the set of pending timers nor the slot each occupies, so the sequence an enumerator is walking is unaffected. That is the family's own rule, the one `SpatialGrid<TValue>.Move` is held to.
+- **Enumeration is invalidated** by `Schedule` or `ScheduleAt`, a successful `Cancel`, an `Advance` that fired something, and a `Clear` that removed something. An `Advance` that fires nothing deliberately does *not* invalidate it, even when it cascaded timers between levels: cascading changes neither the set of pending timers nor the slot each occupies, so the sequence an enumerator is walking is unaffected. That is the family's own rule, the one `SpatialGrid<TValue>.Move` is held to.
 - **Handle versions cycle** through `[1, uint.MaxValue]`, so they repeat after 4,294,967,295 vacations of the *same* slot. Every generational slot map has this ceiling.
 
 ### Usage example

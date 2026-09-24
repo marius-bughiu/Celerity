@@ -375,7 +375,9 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// </exception>
     /// <remarks>
     /// Because a cuckoo filter cannot distinguish overlapping elements, the merged <see cref="Count"/> is the sum
-    /// of both counts and so may exceed the number of distinct elements represented.
+    /// of both counts and so may exceed the number of distinct elements represented. Merging a filter into itself
+    /// follows the same rule, as if <paramref name="other"/> were an identical copy: every fingerprint is stored
+    /// twice and <see cref="Count"/> doubles.
     /// </remarks>
     public void UnionWith(CuckooFilter<T, THasher> other)
     {
@@ -383,7 +385,13 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
         if (other._bucketCount != _bucketCount || other._fingerprintBits != _fingerprintBits)
             throw new ArgumentException("The two filters must have the same bucket count and fingerprint width to be merged.", nameof(other));
 
-        ushort[] otherData = other._data;
+        // A self-union reads a snapshot. Absorbing a fingerprint writes into this filter's own buckets (and can
+        // park a victim), so reading the live array would find each copy later in the scan and absorb it again,
+        // until every candidate slot of that fingerprint was full.
+        ushort[] otherData = ReferenceEquals(other, this) ? (ushort[])_data.Clone() : other._data;
+        bool otherHasVictim = other._hasVictim;
+        int otherVictimIndex = other._victimIndex;
+        ushort otherVictimFingerprint = other._victimFingerprint;
         for (int bucket = 0; bucket < other._bucketCount; bucket++)
         {
             int baseSlot = bucket * BucketSize;
@@ -395,7 +403,7 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
             }
         }
 
-        if (other._hasVictim && !AddFingerprint(other._victimIndex, other._victimFingerprint))
+        if (otherHasVictim && !AddFingerprint(otherVictimIndex, otherVictimFingerprint))
             throw new InvalidOperationException("The cuckoo filter became full while merging; the destination has no room for every fingerprint.");
     }
 

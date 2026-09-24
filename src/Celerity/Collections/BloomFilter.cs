@@ -174,6 +174,10 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// same element twice increments <see cref="Count"/> twice. For an estimate of
     /// the realized false-positive probability at the current fill level, use
     /// <see cref="CurrentFalsePositiveProbability"/>.
+    /// <para>
+    /// The counter saturates at <see cref="int.MaxValue"/> rather than wrapping, both in
+    /// <see cref="Add"/> and in <see cref="UnionWith"/>.
+    /// </para>
     /// </remarks>
     public int Count => _count;
 
@@ -244,7 +248,9 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
             combined += h2;
         }
 
-        _count++;
+        // Saturate rather than wrap: a wrapped count of zero would make Clear skip clearing.
+        if (_count != int.MaxValue)
+            _count++;
     }
 
     /// <summary>
@@ -280,6 +286,8 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// </summary>
     public void Clear()
     {
+        // Every Add sets at least one bit and the counter never wraps back to zero, so a
+        // zero count means no bit is set.
         if (_count == 0)
             return;
 
@@ -302,7 +310,8 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// <remarks>
     /// Because a Bloom filter cannot distinguish overlapping elements, the merged
     /// <see cref="Count"/> is the sum of both insertion counters and so may exceed the
-    /// number of distinct elements represented.
+    /// number of distinct elements represented. The sum saturates at
+    /// <see cref="int.MaxValue"/>.
     /// </remarks>
     public void UnionWith(BloomFilter<T, THasher> other)
     {
@@ -315,7 +324,7 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
         for (int i = 0; i < bits.Length; i++)
             bits[i] |= otherBits[i];
 
-        _count += other._count;
+        _count = (int)Math.Min((long)_count + other._count, int.MaxValue);
     }
 
     // Derives two independent 32-bit hash lanes from a single hasher call by splitting a
