@@ -336,12 +336,15 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         if (!enumerator.MoveNext())
             return;
 
-        // Commit the count and version with each append rather than once at the
-        // end: the map then stays consistent if the source throws part-way, and a
+        // Commit the first append immediately rather than waiting until the end:
+        // the map then stays consistent if the source throws part-way, and a
         // source that enumerates this map (AddRange(key, map[key])) sees the
         // modification on its next MoveNext and throws instead of chasing its own
-        // appends forever. The first value is read before GroupForAdd so that a
-        // throwing Current getter cannot leave a registered key with no values.
+        // appends forever. One version bump is enough: any structural change
+        // invalidates existing enumerators, and the first append is the moment
+        // this call becomes such a change. The first value is read before
+        // GroupForAdd so that a throwing Current getter cannot leave a
+        // registered key with no values.
         TValue first = enumerator.Current;
         List<TValue?> group = GroupForAdd(key);
         group.Add(first);
@@ -352,7 +355,6 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         {
             group.Add(enumerator.Current);
             _valueCount++;
-            _version++;
         }
     }
 
