@@ -460,6 +460,42 @@ public class CuckooFilterTests
             () => new CuckooFilter<int, Int32Murmur3Hasher>(100, double.NaN));
     }
 
+    // Regression for #481: sizing in int wrapped the slot count. 1.5e9 needs 2^29 buckets (2^31 slots, a
+    // negative length → OverflowException); int.MaxValue needs 2^30 buckets (2^32 slots, wrapped to zero → a
+    // filter that constructed and then indexed out of bounds). Both must be rejected before allocating.
+    [Theory]
+    [InlineData(1_009_317_315)]   // the smallest count that needs 2^29 buckets
+    [InlineData(1_500_000_000)]
+    [InlineData(int.MaxValue)]
+    public void Constructor_Throws_WhenExpectedItemsNeedsMoreThanMaxSlots(int expectedItems)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CuckooFilter<int, Int32Murmur3Hasher>(expectedItems));
+        Assert.Equal("expectedItems", ex.ParamName);
+    }
+
+    [Fact]
+    public void SourceConstructor_Throws_WhenSourceCountNeedsMoreThanMaxSlots()
+    {
+        // The source overload sizes through the primary constructor, so an oversized ICollection<T>.Count is
+        // rejected before a single element is enumerated.
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CuckooFilter<int, Int32Murmur3Hasher>(new HugeCountCollection()));
+    }
+
+    private sealed class HugeCountCollection : ICollection<int>
+    {
+        public int Count => int.MaxValue;
+        public bool IsReadOnly => true;
+        public void Add(int item) => throw new NotSupportedException();
+        public void Clear() => throw new NotSupportedException();
+        public bool Contains(int item) => throw new NotSupportedException();
+        public void CopyTo(int[] array, int arrayIndex) => throw new NotSupportedException();
+        public bool Remove(int item) => throw new NotSupportedException();
+        public IEnumerator<int> GetEnumerator() => throw new NotSupportedException();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     // ---------------------------------------------------------------
     //  UnionWith
     // ---------------------------------------------------------------

@@ -2708,7 +2708,9 @@ pass.
 
 **Throws:**
 
-- `ArgumentOutOfRangeException` if `expectedItems <= 0`.
+- `ArgumentOutOfRangeException` if `expectedItems <= 0`, or if it needs more than `2^30`
+  fingerprint slots — any `expectedItems` above 1,009,317,314 (and, for the enumerable
+  overload, a source that large). It throws before allocating.
 - `ArgumentOutOfRangeException` if `falsePositiveRate <= 0`, `>= 1`, or `NaN`.
 - `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats the
   rate validation, so a `null` source with a bad rate surfaces as `ArgumentNullException`.
