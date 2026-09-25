@@ -3,8 +3,8 @@ namespace Celerity.Ring.Tests;
 /// <summary>
 /// Pins the replica reads of <see cref="ConsistentHashRing{TNode, TKey, THasher}"/> and
 /// <see cref="RendezvousHash{TNode, TKey, THasher}"/>: that the span-destination overload writes exactly what the
-/// list overload returns, that both still produce the replica sets the original implementation produced, and that
-/// the span form does not allocate.
+/// list overload returns, that both produce the pinned golden replica sets, and that the span form does not
+/// allocate.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,7 +18,9 @@ namespace Celerity.Ring.Tests;
 /// <para>
 /// The golden sets were captured from the implementation before the span overload existed, so a change to
 /// either selection algorithm that reorders a replica set fails here rather than silently re-homing data in a
-/// fleet that computes replicas on two different versions.
+/// fleet that computes replicas on two different versions. They were recaptured once, deliberately, when #459
+/// replaced the correlated virtual-node placement: every ring set moved, while the pool moved only weighted
+/// <c>n3</c>, since a weight-1 node's score never used the placement function.
 /// </para>
 /// </remarks>
 public class ReplicaSpanTests
@@ -53,14 +55,14 @@ public class ReplicaSpanTests
     // Golden replica sets
     // ---------------------------------------------------------------------------------------------------
 
-    /// <summary>The ring's replica sets are unchanged from the original implementation, through both overloads.</summary>
+    /// <summary>The ring's replica sets match the pinned placement, through both overloads.</summary>
     [Theory]
-    [InlineData("user:42", "n3", "n5", "n8", "n9")]
-    [InlineData("tenant:7", "n9", "n3", "n2", "n4")]
-    [InlineData("session:0", "n3", "n5", "n2", "n1")]
-    [InlineData("a", "n9", "n3", "n7", "n8")]
-    [InlineData("", "n3", "n2", "n5", "n0")]
-    [InlineData("user:42", "n3", "n5", "n8", "n9", "n6", "n4", "n7", "n1", "n0", "n2")]
+    [InlineData("user:42", "n2", "n4", "n9", "n8")]
+    [InlineData("tenant:7", "n2", "n9", "n3", "n8")]
+    [InlineData("session:0", "n8", "n5", "n2", "n3")]
+    [InlineData("a", "n9", "n7", "n3", "n6")]
+    [InlineData("", "n4", "n5", "n1", "n3")]
+    [InlineData("user:42", "n2", "n4", "n9", "n8", "n1", "n3", "n5", "n0", "n7", "n6")]
     public void Ring_ShouldReturnTheGoldenReplicaSet_ThroughBothOverloads(string key, params string[] expected)
     {
         var ring = WeightedRing();
@@ -69,14 +71,14 @@ public class ReplicaSpanTests
         Assert.Equal(expected, SpanReplicas(buffer => ring.GetReplicas(key, buffer), expected.Length));
     }
 
-    /// <summary>The pool's ranked preference lists are unchanged from the original full-sort implementation.</summary>
+    /// <summary>The pool's ranked preference lists match the pinned placement, through both overloads.</summary>
     [Theory]
-    [InlineData("user:42", "n9", "n0", "n7", "n4")]
-    [InlineData("tenant:7", "n5", "n4", "n3", "n1")]
-    [InlineData("session:0", "n8", "n9", "n4", "n1")]
-    [InlineData("a", "n1", "n8", "n3", "n2")]
-    [InlineData("", "n6", "n4", "n2", "n7")]
-    [InlineData("user:42", "n9", "n0", "n7", "n4", "n5", "n2", "n3", "n8", "n1", "n6")]
+    [InlineData("user:42", "n3", "n9", "n0", "n7")]
+    [InlineData("tenant:7", "n5", "n3", "n4", "n1")]
+    [InlineData("session:0", "n8", "n9", "n4", "n3")]
+    [InlineData("a", "n3", "n1", "n8", "n2")]
+    [InlineData("", "n3", "n6", "n4", "n2")]
+    [InlineData("user:42", "n3", "n9", "n0", "n7", "n4", "n5", "n2", "n8", "n1", "n6")]
     public void Pool_ShouldReturnTheGoldenReplicaSet_ThroughBothOverloads(string key, params string[] expected)
     {
         var pool = WeightedPool();
