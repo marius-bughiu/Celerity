@@ -519,6 +519,19 @@ public class CelerityMultiMapEnumerationTests
     }
 
     [Fact]
+    public void AddRange_FromAProjectionOfItsOwnGroup_ShouldThrow_InsteadOfLoopingForever()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        Assert.Throws<InvalidOperationException>(() => map.AddRange(1, map[1].Select(static x => x)));
+
+        Assert.Equal(new[] { 10, 20, 10 }, map[1].ToArray());
+        Assert.Equal(3, map.ValueCount);
+    }
+
+    [Fact]
     public void AddRange_FromAnEmptyViewOfTheSameMap_ShouldAddNothing_AndNotThrow()
     {
         var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
