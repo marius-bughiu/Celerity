@@ -108,6 +108,8 @@ public class DedupFilterTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new StringDedupFilter(0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new StringDedupFilter(1000, 0d));
         Assert.Throws<ArgumentOutOfRangeException>(() => new StringDedupFilter(1000, 1d));
+        // #481: above the backing filter's 2^30-slot ceiling, rejected instead of built empty.
+        Assert.Throws<ArgumentOutOfRangeException>(() => new StringDedupFilter(int.MaxValue));
     }
 
     [Fact]
