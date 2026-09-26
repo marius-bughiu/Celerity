@@ -431,17 +431,16 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     /// prefix is included), in ascending ordinal key order. The empty prefix enumerates the whole trie.
     /// </summary>
     /// <param name="prefix">The prefix to match.</param>
-    /// <returns>A lazily evaluated sequence of the matching entries in ascending key order.</returns>
+    /// <returns>
+    /// A lazily evaluated sequence of the matching entries in ascending key order. Like <see cref="Keys"/>, the
+    /// sequence is live: the prefix is looked up and the modification check starts when it is enumerated, not
+    /// when this method is called.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="prefix"/> is <c>null</c>.</exception>
     public IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)
     {
         ArgumentNullException.ThrowIfNull(prefix);
-        Node? node = FindNode(prefix);
-        // Snapshot the version now (at enumerable creation), matching the BCL contract where a modification
-        // between handing out the enumerable and iterating it is detected on the first MoveNext. A missing
-        // prefix (node is null) still flows through the version-checked walk, so the empty result honours the
-        // same invalidation contract as a matching one.
-        return Enumerate(node, prefix, _version);
+        return new PrefixView(this, prefix);
     }
 
     /// <summary>
@@ -449,13 +448,15 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     /// in ascending ordinal order. The empty prefix enumerates every key.
     /// </summary>
     /// <param name="prefix">The prefix to match.</param>
-    /// <returns>A lazily evaluated sequence of the matching keys in ascending order.</returns>
+    /// <returns>
+    /// A lazily evaluated sequence of the matching keys in ascending order. Like <see cref="Keys"/>, the
+    /// sequence is live: the prefix is looked up and the modification check starts when it is enumerated.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="prefix"/> is <c>null</c>.</exception>
     public IEnumerable<string> GetKeysWithPrefix(string prefix)
     {
         ArgumentNullException.ThrowIfNull(prefix);
-        Node? node = FindNode(prefix);
-        return EnumerateKeys(node, prefix, _version);
+        return new KeyView(this, prefix);
     }
 
     /// <summary>
@@ -521,7 +522,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     /// enumerated, not when the property is read, so a view obtained before a change enumerates the trie as it
     /// stands afterwards.
     /// </summary>
-    public IEnumerable<string> Keys => new KeyView(this);
+    public IEnumerable<string> Keys => new KeyView(this, string.Empty);
 
     /// <summary>
     /// Gets the values ordered by their keys' ascending ordinal order. Like <see cref="Keys"/>, the view is live
@@ -599,45 +600,50 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         return true;
     }
 
-    // Pre-order DFS from `start` (whose accumulated key is `startKey`) as an IEnumerable, for the lazy
-    // prefix / keys streams. It drives the same struct Enumerator that GetEnumerator exposes, so the pre-order
-    // traversal and modification-detection live in one place. A null `start` (a missing prefix) yields nothing
-    // but still runs the version check, so an empty result honours the same invalidation contract as a
-    // non-empty one.
-    private IEnumerable<KeyValuePair<string, TValue?>> Enumerate(Node? start, string startKey, int expectedVersion)
+    // Starts a walk of the subtree under `prefix`, reading the version now. The views call this from their
+    // GetEnumerator, so the prefix is resolved and the modification check starts when enumeration does,
+    // matching List<T> and the ordered collections' range enumerables. A missing prefix walks the shared empty
+    // node: it yields nothing but keeps the version check, so an empty result honours the same invalidation
+    // contract as a matching one.
+    private Enumerator StartWalk(string prefix, bool buildKeys) =>
+        new Enumerator(this, FindNode(prefix) ?? EmptyNode, prefix, _version, buildKeys);
+
+    // The subtree a missing prefix walks. Never linked into a trie and never written, so one instance serves
+    // every trie of this TValue.
+    private static readonly Node EmptyNode = new();
+
+    // The prefix, Keys and Values views. Each resolves its start node and reads the version in GetEnumerator —
+    // when enumeration starts — rather than when the view is created, matching the dictionaries' key/value
+    // collections, and drives the struct Enumerator by hand rather than through an iterator block, so a
+    // modification after exhaustion is still detected on the next MoveNext and Reset works.
+    private sealed class PrefixView : IEnumerable<KeyValuePair<string, TValue?>>
     {
-        if (expectedVersion != _version)
-            ThrowModified();
+        private readonly Trie<TValue> _trie;
+        private readonly string _prefix;
 
-        if (start is null)
-            yield break;
+        internal PrefixView(Trie<TValue> trie, string prefix)
+        {
+            _trie = trie;
+            _prefix = prefix;
+        }
 
-        var e = new Enumerator(this, start, startKey, expectedVersion);
-        while (e.MoveNext())
-            yield return e.Current;
+        public IEnumerator<KeyValuePair<string, TValue?>> GetEnumerator() => _trie.StartWalk(_prefix, buildKeys: true);
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
-    // Key-only projection of the pair walk (a plain iterator block, not LINQ): the key string is genuinely
-    // needed here, and the discarded KeyValuePair wrapper is a stack struct, so there is nothing to save by
-    // duplicating the traversal.
-    private IEnumerable<string> EnumerateKeys(Node? start, string startKey, int expectedVersion)
-    {
-        foreach (KeyValuePair<string, TValue?> pair in Enumerate(start, startKey, expectedVersion))
-            yield return pair.Key;
-    }
-
-    // The Keys and Values views. Each reads the version in GetEnumerator — when enumeration starts — rather than
-    // when the property is read, matching the dictionaries' key/value collections, and drives the struct
-    // Enumerator by hand rather than through an iterator block, so a modification after exhaustion is still
-    // detected on the next MoveNext and Reset works.
     private sealed class KeyView : IEnumerable<string>
     {
         private readonly Trie<TValue> _trie;
+        private readonly string _prefix;
 
-        internal KeyView(Trie<TValue> trie) => _trie = trie;
+        internal KeyView(Trie<TValue> trie, string prefix)
+        {
+            _trie = trie;
+            _prefix = prefix;
+        }
 
-        public IEnumerator<string> GetEnumerator() =>
-            new KeyEnumerator(new Enumerator(_trie, _trie._root, string.Empty, _trie._version, buildKeys: true));
+        public IEnumerator<string> GetEnumerator() => new KeyEnumerator(_trie.StartWalk(_prefix, buildKeys: true));
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
@@ -668,7 +674,7 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         // buildKeys: false skips the StringBuilder and the per-entry key string, so the walk allocates only its
         // traversal stack.
         public IEnumerator<TValue?> GetEnumerator() =>
-            new ValueEnumerator(new Enumerator(_trie, _trie._root, string.Empty, _trie._version, buildKeys: false));
+            new ValueEnumerator(_trie.StartWalk(string.Empty, buildKeys: false));
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
