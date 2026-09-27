@@ -38,8 +38,9 @@ public sealed class RangeMap<TKey, TValue> : RangeMap<TKey, TValue, DefaultCompa
     /// assignment is a no-op; <c>null</c> for <see cref="EqualityComparer{T}.Default"/>.
     /// </param>
     /// <remarks>
-    /// As with <see cref="Dictionary{TKey, TValue}"/>'s comparer and source constructors, a bare <c>null</c>
-    /// argument matches this overload and the <c>source</c> one alike; cast it to the parameter type you mean.
+    /// As with <see cref="Dictionary{TKey, TValue}"/>'s comparer and source constructors, an untyped
+    /// <c>null</c> or <c>default</c> argument matches this overload and the <c>source</c> one alike; cast it to
+    /// the parameter type you mean.
     /// </remarks>
     public RangeMap(IEqualityComparer<TValue>? valueComparer)
         : base(default(DefaultComparer<TKey>), valueComparer)
