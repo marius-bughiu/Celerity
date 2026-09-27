@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-09-27
+
 ### Fixed
 
 - **`Trie<TValue>` no longer invalidates enumerators when the indexer overwrites an existing key's value**, matching `Dictionary<TKey, TValue>` and the rest of the dictionary family (#233), so updating values while iterating the trie works. Its `Keys` and `Values` views now start their modification check when enumerated rather than when the property is read, and detect a change made after they finish. Closes [#461](https://github.com/marius-bughiu/Celerity/issues/461).
@@ -771,7 +773,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.1
 [3.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.0
 [3.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.2.0
 [3.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.1.0
