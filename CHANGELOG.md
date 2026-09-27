@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`RangeMap<TKey, TValue>` now takes a value comparer**, empty (`new RangeMap<int, Config>(comparer)`) or seeded from a source, and the three-parameter form gains a `(source, comparer, valueComparer)` constructor. The value comparer decides which neighbours merge; before, the convenience type could only merge by `EqualityComparer<TValue>.Default`, and no seeded map could use anything else. ⚠️ A bare `new RangeMap<TKey, TValue>(null)` is now ambiguous, as it is for `Dictionary<TKey, TValue>`; cast the `null`. Closes [#465](https://github.com/marius-bughiu/Celerity/issues/465).
+
 ### Fixed
 
 - **`Trie<TValue>` no longer invalidates enumerators when the indexer overwrites an existing key's value**, matching `Dictionary<TKey, TValue>` and the rest of the dictionary family (#233), so updating values while iterating the trie works. Its `Keys` and `Values` views now start their modification check when enumerated rather than when the property is read, and detect a change made after they finish. Closes [#461](https://github.com/marius-bughiu/Celerity/issues/461).
