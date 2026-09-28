@@ -186,9 +186,9 @@ public class AbuseTracker<TKey, THasher>
     /// <remarks>
     /// The rate, distinct, and first-seen structures merge <em>exactly</em> (as if both streams had been fed to
     /// one tracker). The offenders merge with the standard Space-Saving approximation: each of
-    /// <paramref name="other"/>'s monitored offenders is re-observed here with its guaranteed count (its estimate
-    /// less its error), which combines the heavy hitters well but is not guaranteed to reproduce the exact top-k of
-    /// the union. Re-observing the lower bound is what keeps every reported <see cref="Offender{TKey}.Error"/>
+    /// <paramref name="other"/>'s monitored offenders is re-observed here with a guaranteed positive lower bound on
+    /// its count — normally its estimate less its error, floored at one when a saturated count makes the two equal
+    /// — which combines the heavy hitters well but is not guaranteed to reproduce the exact top-k of the union. Re-observing the lower bound is what keeps every reported <see cref="Offender{TKey}.Error"/>
     /// honest afterwards; <see cref="Snapshot"/> restores the upper bound from the exactly merged rate sketch.
     /// </remarks>
     public void Merge(AbuseTracker<TKey, THasher> other)
