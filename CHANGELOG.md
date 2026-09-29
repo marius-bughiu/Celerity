@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- `LruCache` and `LfuCache`'s source constructors now report a `null` source as `ArgumentNullException` even when `capacity` is also invalid, matching every other collection's `IEnumerable` constructor. Previously the invalid capacity won and surfaced as `ArgumentOutOfRangeException`. Closes #463.
+
 ## [3.3.1] - 2026-09-27
 
 ### Fixed

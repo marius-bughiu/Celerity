@@ -105,11 +105,19 @@ public class LruCache<TKey, TValue, THasher>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is less than 1.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     public LruCache(int capacity, IEnumerable<KeyValuePair<TKey, TValue?>> source)
-        : this(capacity)
+        : this(NullChecked(source, capacity))
     {
-        ArgumentNullException.ThrowIfNull(source);
         foreach (KeyValuePair<TKey, TValue?> pair in source)
             AddOrUpdate(pair.Key, pair.Value);
+    }
+
+    // Runs as part of the chained-ctor argument expression so the null check beats the primary
+    // ctor's capacity validation: a null source must surface as ArgumentNullException, not
+    // ArgumentOutOfRangeException, even when the caller also passed an invalid capacity.
+    private static int NullChecked(IEnumerable<KeyValuePair<TKey, TValue?>> source, int capacity)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return capacity;
     }
 
     /// <summary>

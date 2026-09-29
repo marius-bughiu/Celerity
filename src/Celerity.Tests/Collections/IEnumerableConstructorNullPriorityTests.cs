@@ -288,4 +288,32 @@ public class IEnumerableConstructorNullPriorityTests
 
         Assert.Equal("source", ex.ParamName);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LruCache / LfuCache — capacity comes first and must be at least 1,
+    //  so the analogous check is that a null source beats a zero capacity
+    //  (issue #463).
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LruCache_NullSourceWithZeroCapacity_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<KeyValuePair<int, string?>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LruCache<int, string?, Int32WangNaiveHasher>(0, source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void LfuCache_NullSourceWithZeroCapacity_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<KeyValuePair<int, string?>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LfuCache<int, string?, Int32WangNaiveHasher>(0, source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
 }
