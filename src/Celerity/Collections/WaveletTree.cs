@@ -117,7 +117,7 @@ public sealed class WaveletTree : IReadOnlyList<int>
 
         int[] current = ArrayPool<int>.Shared.Rent(values.Length);
         int[] scratch = ArrayPool<int>.Shared.Rent(values.Length);
-        ulong[] words = ArrayPool<ulong>.Shared.Rent(WordCount(values.Length));
+        ulong[] words = ArrayPool<ulong>.Shared.Rent(SpanBits.WordCount(values.Length));
 
         try
         {
@@ -190,7 +190,7 @@ public sealed class WaveletTree : IReadOnlyList<int>
             if (_levels.Length == 0)
                 return total;
 
-            long bytesPerLevel = (long)WordCount(_length) * sizeof(ulong);
+            long bytesPerLevel = (long)SpanBits.WordCount(_length) * sizeof(ulong);
             for (int level = 0; level < _levels.Length; level++)
                 total += bytesPerLevel + _levels[level].IndexSizeInBytes;
 
@@ -527,7 +527,7 @@ public sealed class WaveletTree : IReadOnlyList<int>
     // is the arrangement the level below is built over.
     private void BuildLevel(int[] current, int[] next, ulong[] words, int count, int bit, int level)
     {
-        int wordCount = WordCount(count);
+        int wordCount = SpanBits.WordCount(count);
         Array.Clear(words, 0, wordCount);
 
         int ones = 0;
@@ -617,10 +617,6 @@ public sealed class WaveletTree : IReadOnlyList<int>
     // position carries the same code, so there is nothing for a level to distinguish.
     private static int BitsForAlphabet(int alphabet) =>
         alphabet <= 1 ? 0 : 32 - BitOperations.LeadingZeroCount((uint)(alphabet - 1));
-
-    // Only called where at least one level exists, which needs two distinct values and so `bits >= 2`. Widened
-    // through uint, as BitSet's word count is: near int.MaxValue the signed sum would wrap negative.
-    private static int WordCount(int bits) => (int)(((uint)bits + 63) >> 6);
 
     /// <summary>
     /// Enumerates the indexed values in their original order without allocating.

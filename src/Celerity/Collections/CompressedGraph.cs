@@ -302,8 +302,8 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
             return 1;
         }
 
-        // Widened through uint, as BitSet's word count is: near int.MaxValue the signed sum would wrap negative.
-        int wordCount = (int)(((uint)VertexCount + 63) >> 6);
+        // SpanBits.WordCount rounds up through uint, so a vertex count near int.MaxValue cannot wrap negative.
+        int wordCount = SpanBits.WordCount(VertexCount);
         ulong[] rented = ArrayPool<ulong>.Shared.Rent(wordCount);
         Span<ulong> visited = rented.AsSpan(0, wordCount);
         try
