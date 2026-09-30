@@ -618,8 +618,9 @@ public sealed class WaveletTree : IReadOnlyList<int>
     private static int BitsForAlphabet(int alphabet) =>
         alphabet <= 1 ? 0 : 32 - BitOperations.LeadingZeroCount((uint)(alphabet - 1));
 
-    // Only called where at least one level exists, which needs two distinct values and so `bits >= 2`.
-    private static int WordCount(int bits) => (bits + 63) / 64;
+    // Only called where at least one level exists, which needs two distinct values and so `bits >= 2`. Widened
+    // through uint, as BitSet's word count is: near int.MaxValue the signed sum would wrap negative.
+    private static int WordCount(int bits) => (int)(((uint)bits + 63) >> 6);
 
     /// <summary>
     /// Enumerates the indexed values in their original order without allocating.

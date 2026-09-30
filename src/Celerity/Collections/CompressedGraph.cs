@@ -97,11 +97,21 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
     private readonly int[] _offsets;
     private readonly int[] _targets;
 
+    /// <summary>
+    /// The largest vertex count a graph can hold. The offsets array carries one more entry than there are
+    /// vertices, so the ceiling is one below <see cref="Array.MaxLength"/> — the same bound
+    /// <see cref="FenwickTree{T}"/> applies to its one-longer layout.
+    /// </summary>
+    private static readonly int MaxVertexCount = Array.MaxLength - 1;
+
     /// <summary>Builds a graph on <paramref name="vertexCount"/> vertices over <paramref name="edges"/>.</summary>
     /// <param name="vertexCount">The number of vertices. Ids run over <c>[0, vertexCount)</c>.</param>
     /// <param name="edges">The directed edges. The sequence is read once; duplicates collapse.</param>
     /// <exception cref="ArgumentNullException"><paramref name="edges"/> is <c>null</c>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="vertexCount"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="vertexCount"/> is negative, or exceeds <see cref="Array.MaxLength"/> minus one (the
+    /// offsets array holds one entry more than there are vertices).
+    /// </exception>
     /// <exception cref="ArgumentException">An edge has an endpoint outside <c>[0, vertexCount)</c>.</exception>
     /// <remarks>
     /// Building is <c>O(V + E log d)</c> for maximum out-degree <c>d</c> — a counting scatter, then one sort
@@ -113,6 +123,9 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
         ArgumentNullException.ThrowIfNull(edges);
         if (vertexCount < 0)
             throw new ArgumentOutOfRangeException(nameof(vertexCount), vertexCount, "Vertex count must be non-negative.");
+        if (vertexCount > MaxVertexCount)
+            throw new ArgumentOutOfRangeException(nameof(vertexCount), vertexCount,
+                $"Vertex count must be at most {MaxVertexCount} (Array.MaxLength minus the offsets array's extra entry).");
 
         // A counted source is sized and copied once, as the sibling build-once types' constructors do; going
         // through a List<T> unconditionally would allocate and copy a second backing array for the commonest
@@ -289,7 +302,8 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
             return 1;
         }
 
-        int wordCount = (VertexCount + 63) >> 6;
+        // Widened through uint, as BitSet's word count is: near int.MaxValue the signed sum would wrap negative.
+        int wordCount = (int)(((uint)VertexCount + 63) >> 6);
         ulong[] rented = ArrayPool<ulong>.Shared.Rent(wordCount);
         Span<ulong> visited = rented.AsSpan(0, wordCount);
         try

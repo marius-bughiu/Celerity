@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- `CompressedGraph`'s constructor now throws the documented `ArgumentOutOfRangeException` for a `vertexCount` above `Array.MaxLength - 1`, instead of an `OverflowException` or `OutOfMemoryException` from the allocation — the same bound `FenwickTree` applies to its one-longer layout. `CompressedGraph.CopyBreadthFirstOrder` and `WaveletTree` also no longer overflow their bitmap sizing for inputs within 63 of `int.MaxValue`. Closes #490.
+
 ## [3.3.1] - 2026-09-27
 
 ### Fixed

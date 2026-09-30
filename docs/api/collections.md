@@ -6841,7 +6841,7 @@ If those are not what you want, an `int[][]` you fill yourself is a perfectly go
 
 | Member | Behaviour |
 | --- | --- |
-| `CompressedGraph(int vertexCount, IEnumerable<GraphEdge> edges)` | Build. `ArgumentNullException` on a `null` sequence, `ArgumentOutOfRangeException` on a negative vertex count, `ArgumentException` when an edge has an endpoint outside `[0, vertexCount)`. |
+| `CompressedGraph(int vertexCount, IEnumerable<GraphEdge> edges)` | Build. `ArgumentNullException` on a `null` sequence, `ArgumentOutOfRangeException` on a negative vertex count or one above `Array.MaxLength - 1` (the offsets array holds one entry more than there are vertices), `ArgumentException` when an edge has an endpoint outside `[0, vertexCount)`. |
 | `int VertexCount { get; }` | Number of vertices. Ids run over `[0, VertexCount)`. |
 | `int EdgeCount { get; }` | Number of distinct directed edges, after duplicates collapsed. |
 | `GraphEdge this[int index] { get; }` | The edge at that position in source-major, then ascending-target, order. `O(log V)` — the `IReadOnlyList<T>` contract, not the member to loop over. |
