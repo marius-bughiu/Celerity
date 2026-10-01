@@ -459,6 +459,134 @@ public class CelerityMultiMapEnumerationTests
         Assert.Equal(new[] { 10, 20 }, seen);
     }
 
+    // Issue #492: a view obtained before RemoveAll / Clear kept the detached backing
+    // list, so it went on reporting values the map no longer held — with no exception,
+    // because a fresh enumeration captures the current version.
+    [Fact]
+    public void ValueGroupView_ObtainedBeforeRemoveAll_ShouldBeEmpty()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        var view = map[1];
+        Assert.True(map.RemoveAll(1));
+
+        Assert.Equal(0, view.Count);
+        Assert.Empty(view);
+        Assert.Throws<ArgumentOutOfRangeException>(() => view[0]);
+    }
+
+    [Fact]
+    public void ValueGroupView_ObtainedBeforeClear_ShouldBeEmpty()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(2, 20);
+
+        var view = map[1];
+        map.Clear();
+
+        Assert.Equal(0, view.Count);
+        Assert.Empty(view);
+    }
+
+    [Fact]
+    public void ValueGroupView_ObtainedBeforeRemoveAll_ShouldSeeValuesReAddedUnderTheKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var view = map[1];
+        map.RemoveAll(1);
+        map.Add(1, 30);
+
+        Assert.Equal(1, view.Count);
+        Assert.Equal(30, view[0]);
+        Assert.Equal(new[] { 30 }, view.ToArray());
+    }
+
+    [Fact]
+    public void ValueGroupView_WhoseGroupWasEmptiedByRemove_ShouldSeeValuesReAddedUnderTheKey()
+    {
+        // Remove(key, value) that empties a group drops the key; the next Add makes a new list.
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var view = map[1];
+        Assert.True(map.Remove(1, 10));
+        map.Add(1, 40);
+
+        Assert.Equal(new[] { 40 }, view.ToArray());
+    }
+
+    [Fact]
+    public void ValueGroupView_OfAnAbsentKey_ShouldSeeValuesAddedLater()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+
+        var view = map[7];
+        Assert.False(map.TryGetValues(8, out var tried));
+        map.Add(7, 70);
+        map.Add(8, 80);
+
+        Assert.Equal(new[] { 70 }, view.ToArray());
+        Assert.Equal(new[] { 80 }, tried.ToArray());
+    }
+
+    [Fact]
+    public void ValueGroupView_OfTheDefaultKey_ShouldFollowRemoveAllAndReAdd()
+    {
+        // Key 0 lives in the out-of-band default-key group rather than the table.
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(0, 1);
+
+        var view = map[0];
+        map.RemoveAll(0);
+        Assert.Empty(view);
+
+        map.Add(0, 2);
+        Assert.Equal(new[] { 2 }, view.ToArray());
+    }
+
+    [Fact]
+    public void Grouping_HeldAcrossRemoveAll_ShouldReadTheKeysCurrentGroup()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var e = map.GetEnumerator();
+        Assert.True(e.MoveNext());
+        var grouping = e.Current;
+
+        map.RemoveAll(1);
+        Assert.Equal(1, grouping.Key);
+        Assert.Empty(grouping.Values);
+        Assert.Empty(grouping);
+
+        map.Add(1, 50);
+        Assert.Equal(new[] { 50 }, grouping.ToArray());
+    }
+
+    [Fact]
+    public void ValueGroupView_ReadAfterMutation_ShouldStillFailFastOnLaterMutation()
+    {
+        // Re-resolving the group must not weaken #482: an enumerator taken from a view
+        // that was re-resolved still throws on the next modification.
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var view = map[1];
+        map.RemoveAll(1);
+        map.Add(1, 20);
+
+        var e = view.GetEnumerator();
+        Assert.True(e.MoveNext());
+        Assert.Equal(20, e.Current);
+        map.Add(1, 30);
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
     [Fact]
     public void GroupingEnumerator_ShouldThrow_WhenAddingUnderItsKey()
     {

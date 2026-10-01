@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- A `CelerityMultiMap` `ValueGroup` (or `Grouping`) held across `RemoveAll`, `Clear`, or a group-emptying `Remove` no longer goes on reporting the removed values, and a view of an absent or removed key now sees values added under it later — the live view its docs promise. Closes [#492](https://github.com/marius-bughiu/Celerity/issues/492).
+
 ## [3.3.1] - 2026-09-27
 
 ### Fixed
