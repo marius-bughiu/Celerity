@@ -12,6 +12,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- `CelerityMultiMap.ValueGroup` and `Grouping` now remain live after a group is removed, cleared, or recreated, including views obtained before a key exists. Fresh enumerations see current values and still fail fast on later mutations. Closes #492.
+
 - `CompressedGraph` now rejects a vertex count above `Array.MaxLength - 1` with `ArgumentOutOfRangeException` before allocating its offsets array. Graph traversal and `WaveletTree` bitmap sizing use the shared overflow-safe word-count helper. Closes #490.
 - `LruCache` and `LfuCache`'s source constructors now report a `null` source as `ArgumentNullException` even when `capacity` is also invalid, matching every other collection's `IEnumerable` constructor. Previously the invalid capacity won and surfaced as `ArgumentOutOfRangeException`. Closes #463.
 

@@ -1559,8 +1559,11 @@ enumeration as `IGrouping<TKey, TValue?>`.
 
 - **`ValueGroup`** — a read-only struct view over one key's values. Implements
   `IReadOnlyList<TValue?>` (so `Count`, `this[int]`, and allocation-free `foreach`).
-  It reflects the live backing group: mutating the map afterwards may change what a
-  previously-obtained view yields. Its enumerator, though, fails fast: any
+  It is live: it always reads the key's current values, so a view held across
+  `RemoveAll`, `Clear`, or a `Remove` that empties the group is empty, and it picks up
+  values added under the key later — including a key that was absent when the view was
+  obtained. A view read after any map mutation re-probes the key on each access, so
+  take a fresh one on a hot path. Its enumerator, though, fails fast: any
   modification of the map after the enumerator was created — under this key or any
   other, including `RemoveAll` and `Clear` — makes `MoveNext` / `Reset` throw
   `InvalidOperationException`, exactly as it does for the map's own enumerator. This is

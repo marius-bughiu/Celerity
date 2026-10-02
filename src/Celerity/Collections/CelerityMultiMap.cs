@@ -209,7 +209,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         get
         {
             List<TValue?>? group = FindGroup(key);
-            return new ValueGroup(this, group);
+            return new ValueGroup(this, key, group);
         }
     }
 
@@ -289,7 +289,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     public bool TryGetValues(TKey key, out ValueGroup values)
     {
         List<TValue?>? group = FindGroup(key);
-        values = new ValueGroup(this, group);
+        values = new ValueGroup(this, key, group);
         return group is not null;
     }
 
@@ -719,9 +719,13 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// A lightweight, read-only struct view over the values associated with a
     /// single key. Iterating it does not allocate; passing it through
     /// <see cref="IEnumerable{T}"/> will box the enumerator and is therefore not
-    /// zero-allocation. The view reflects the live backing group: mutating the
-    /// map afterwards may change what a previously-obtained view yields. An
-    /// enumerator obtained from the view, however, fails fast: if the map is
+    /// zero-allocation. The view is live: it always reads the key's current group,
+    /// so after <see cref="RemoveAll"/>, <see cref="Clear"/>, or a
+    /// <see cref="Remove"/> that empties the group it is empty, and once values are
+    /// added under the key again — including a key that was absent when the view
+    /// was obtained — it yields them. A view read after any map mutation re-probes
+    /// the key on each access, so hold a fresh view rather than a stale one on a
+    /// hot path. An enumerator obtained from the view, however, fails fast: if the map is
     /// modified in any way after the enumerator was created — under this key or
     /// any other — its <see cref="Enumerator.MoveNext"/> and
     /// <see cref="Enumerator.Reset"/> throw <see cref="InvalidOperationException"/>,
@@ -730,18 +734,33 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     public readonly struct ValueGroup : IReadOnlyList<TValue?>
     {
         private readonly CelerityMultiMap<TKey, TValue, THasher>? _map;
+        private readonly TKey _key;
         private readonly List<TValue?>? _group;
+        private readonly int _version;
 
-        internal ValueGroup(CelerityMultiMap<TKey, TValue, THasher>? map, List<TValue?>? group)
+        internal ValueGroup(CelerityMultiMap<TKey, TValue, THasher> map, TKey key, List<TValue?>? group)
         {
             _map = map;
+            _key = key;
             _group = group;
+            _version = map._version;
+        }
+
+        internal TKey Key => _key;
+
+        // The list captured when the view was made is only the key's group while the
+        // map is unchanged: RemoveAll and Clear detach it, and a key that is absent or
+        // later re-added gets a new list. Once the map has moved, look the key up again.
+        private List<TValue?>? Group
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _map is null || _map._version == _version ? _group : _map.FindGroup(_key);
         }
 
         /// <summary>
         /// Gets the number of values in the group (<c>0</c> for an empty/absent group).
         /// </summary>
-        public int Count => _group?.Count ?? 0;
+        public int Count => Group?.Count ?? 0;
 
         /// <summary>
         /// Gets the value at the specified index within the group, in insertion order.
@@ -755,9 +774,10 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         {
             get
             {
-                if (_group is null || (uint)index >= (uint)_group.Count)
+                List<TValue?>? group = Group;
+                if (group is null || (uint)index >= (uint)group.Count)
                     throw new ArgumentOutOfRangeException(nameof(index));
-                return _group[index];
+                return group[index];
             }
         }
 
@@ -766,10 +786,10 @@ public class CelerityMultiMap<TKey, TValue, THasher>
         /// The enumerator captures the map's version here, so any later mutation of
         /// the map invalidates it.
         /// </summary>
-        public Enumerator GetEnumerator() => new Enumerator(_map, _group);
+        public Enumerator GetEnumerator() => new Enumerator(_map, Group);
 
-        IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => new Enumerator(_map, _group);
-        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_map, _group);
+        IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => new Enumerator(_map, Group);
+        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(_map, Group);
 
         /// <summary>
         /// A struct enumerator over the values of a <see cref="ValueGroup"/>.
@@ -852,33 +872,30 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// </summary>
     public readonly struct Grouping : IGrouping<TKey, TValue?>
     {
-        private readonly CelerityMultiMap<TKey, TValue, THasher>? _map;
-        private readonly TKey _key;
-        private readonly List<TValue?>? _group;
+        private readonly ValueGroup _values;
 
         internal Grouping(CelerityMultiMap<TKey, TValue, THasher> map, TKey key, List<TValue?>? group)
         {
-            _map = map;
-            _key = key;
-            _group = group;
+            _values = new ValueGroup(map, key, group);
         }
 
         /// <summary>Gets the key of this grouping.</summary>
-        public TKey Key => _key;
+        public TKey Key => _values.Key;
 
-        /// <summary>Gets the group of values for this key as a struct view.</summary>
-        public ValueGroup Values => new ValueGroup(_map, _group);
+        /// <summary>
+        /// Gets the group of values for this key as a struct view, live in the same way as
+        /// the map's indexer.
+        /// </summary>
+        public ValueGroup Values => _values;
 
         /// <summary>
         /// Returns an allocation-free struct enumerator over the values of this key.
         /// </summary>
-        public ValueGroup.Enumerator GetEnumerator() => new ValueGroup.Enumerator(_map, _group);
+        public ValueGroup.Enumerator GetEnumerator() => _values.GetEnumerator();
 
-        IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator()
-            => new ValueGroup.Enumerator(_map, _group);
+        IEnumerator<TValue?> IEnumerable<TValue?>.GetEnumerator() => _values.GetEnumerator();
 
-        IEnumerator IEnumerable.GetEnumerator()
-            => new ValueGroup.Enumerator(_map, _group);
+        IEnumerator IEnumerable.GetEnumerator() => _values.GetEnumerator();
     }
 
     /// <summary>
