@@ -313,6 +313,100 @@ public class TrieEnumerationTests
         Assert.Equal(4, CountNonGeneric(trie.Values));
     }
 
+    [Fact]
+    public void PrefixStreams_CreatedBeforeAChange_EnumerateTheTrieAsItStandsAfterIt()
+    {
+        // Regression for #483: the prefix streams captured the version (and looked the prefix up) when the method
+        // was called, so a stream taken before a change threw on its first MoveNext even though enumeration only
+        // started afterwards.
+        var trie = Build("aa", "ab", "b");
+        IEnumerable<KeyValuePair<string, int>> byPrefix = trie.GetByPrefix("a");
+        IEnumerable<string> keysWithPrefix = trie.GetKeysWithPrefix("a");
+        IEnumerable<string> notYetPresent = trie.GetKeysWithPrefix("c");
+
+        trie["ac"] = 3;
+        trie["cat"] = 4;
+
+        Assert.Equal(new[] { "aa", "ab", "ac" }, byPrefix.Select(kv => kv.Key));
+        Assert.Equal(new[] { 0, 1, 3 }, byPrefix.Select(kv => kv.Value));
+        Assert.Equal(new[] { "aa", "ab", "ac" }, keysWithPrefix);
+        Assert.Equal(new[] { "cat" }, notYetPresent);
+    }
+
+    [Fact]
+    public void PrefixStreams_CreatedBeforeTheirSubtreeIsPruned_YieldNothing()
+    {
+        // The start node is resolved at enumeration, so a stream over a prefix whose every key has since been
+        // removed walks nothing rather than a detached subtree.
+        var trie = Build("dog", "dot", "cat");
+        IEnumerable<KeyValuePair<string, int>> byPrefix = trie.GetByPrefix("do");
+        IEnumerable<string> keysWithPrefix = trie.GetKeysWithPrefix("do");
+
+        trie.Remove("dog");
+        trie.Remove("dot");
+
+        Assert.Empty(byPrefix);
+        Assert.Empty(keysWithPrefix);
+    }
+
+    [Theory]
+    [InlineData("a")]      // a matching prefix
+    [InlineData("zz")]     // a missing prefix still honours the invalidation contract
+    [InlineData("")]       // the whole trie
+    public void PrefixStreams_FailFast_WhenModifiedAfterExhaustion(string prefix)
+    {
+        // A yield iterator is terminal after its first false and missed this; the views drive the struct
+        // enumerator by hand, which re-checks the version on every MoveNext.
+        var trie = Build("a", "ab");
+
+        using IEnumerator<KeyValuePair<string, int>> pairs = trie.GetByPrefix(prefix).GetEnumerator();
+        using IEnumerator<string> keys = trie.GetKeysWithPrefix(prefix).GetEnumerator();
+        while (pairs.MoveNext()) { }
+        while (keys.MoveNext()) { }
+
+        trie.Add("b", 9);
+
+        Assert.Throws<InvalidOperationException>(() => pairs.MoveNext());
+        Assert.Throws<InvalidOperationException>(() => keys.MoveNext());
+        Assert.Throws<InvalidOperationException>(() => pairs.Reset());
+        Assert.Throws<InvalidOperationException>(() => keys.Reset());
+    }
+
+    [Fact]
+    public void PrefixStreams_Enumerators_ResetAndNonGenericCurrent()
+    {
+        var trie = Build("go", "gopher", "gore", "x");
+
+        IEnumerator<KeyValuePair<string, int>> pairs = trie.GetByPrefix("go").GetEnumerator();
+        Assert.True(pairs.MoveNext());
+        Assert.Equal(new KeyValuePair<string, int>("go", 0), ((IEnumerator)pairs).Current);
+        Assert.True(pairs.MoveNext());
+        pairs.Reset();
+        var pairsAfterReset = new List<string>();
+        while (pairs.MoveNext())
+            pairsAfterReset.Add(pairs.Current.Key);
+        Assert.Equal(new[] { "go", "gopher", "gore" }, pairsAfterReset);
+        pairs.Dispose();
+
+        IEnumerator<string> keys = trie.GetKeysWithPrefix("gop").GetEnumerator();
+        Assert.True(keys.MoveNext());
+        Assert.Equal("gopher", ((IEnumerator)keys).Current);
+        Assert.False(keys.MoveNext());
+        keys.Reset();
+        Assert.True(keys.MoveNext());
+        Assert.Equal("gopher", keys.Current);
+        keys.Dispose();
+
+        // A missing prefix resets too, and stays empty.
+        using IEnumerator<string> missing = trie.GetKeysWithPrefix("zz").GetEnumerator();
+        Assert.False(missing.MoveNext());
+        missing.Reset();
+        Assert.False(missing.MoveNext());
+
+        Assert.Equal(3, CountNonGeneric(trie.GetByPrefix("go")));
+        Assert.Equal(1, CountNonGeneric(trie.GetKeysWithPrefix("x")));
+    }
+
     private static int CountNonGeneric(IEnumerable source)
     {
         int count = 0;

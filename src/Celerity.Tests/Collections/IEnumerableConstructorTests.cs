@@ -2049,6 +2049,20 @@ public class IEnumerableConstructorTests
     }
 
     [Fact]
+    public void RangeMap_ShouldThrow_WhenSourceIsNull_WithAValueComparer()
+    {
+        IEnumerable<Interval<int, string>>? source = null;
+
+        var alias = Assert.Throws<ArgumentNullException>(
+            () => new RangeMap<int, string>(source!, StringComparer.Ordinal));
+        var full = Assert.Throws<ArgumentNullException>(
+            () => new RangeMap<int, string, DefaultComparer<int>>(source!, default, StringComparer.Ordinal));
+
+        Assert.Equal("source", alias.ParamName);
+        Assert.Equal("source", full.ParamName);
+    }
+
+    [Fact]
     public void RangeMap_ShouldSupportEmptySource()
     {
         var map = new RangeMap<int, string>(Array.Empty<Interval<int, string>>());

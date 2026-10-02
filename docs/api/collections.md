@@ -2492,6 +2492,209 @@ foreach (var (p, count) in queued.Select(kvp => (kvp.Key, kvp.Value)))
 
 ---
 
+## SparseMap&lt;TValue&gt;
+
+```csharp
+public class SparseMap<TValue> : IDictionary<int, TValue?>, IReadOnlyDictionary<int, TValue?>
+```
+
+A dictionary keyed by **non-negative integers over a bounded universe** `[0, Universe)` —
+the dictionary half of the **Briggs–Torczon sparse representation** that
+[`SparseSet`](#sparseset) is the set half of. A *dense* array holds the present keys
+contiguously, a **parallel dense array** holds their values at the same offsets, and a
+*sparse* array — indexed by key — points each present key back at its dense slot.
+Membership is the round-trip `sparse[k] < Count && dense[sparse[k]] == k`, which is correct
+even for a *stale* sparse entry (one left over from before a `Clear`, or the zero a
+never-written slot still holds). The two wins over `Dictionary<int, TValue>` follow from
+that:
+
+- **`Clear()` never touches the key or sparse arrays** — it resets the count.
+  `Dictionary<int, TValue>.Clear()` zeroes its whole bucket array plus the used entry
+  prefix. This is what the type is for: the clear-and-rebuild side tables a traversal
+  keeps — distance / parent / colour maps in graph BFS/DFS, ECS component storage,
+  register-allocation state, sweep-line bookkeeping.
+- **Dense iteration** — present entries live contiguously in `[0, Count)`, so enumeration
+  is a linear scan over exactly `Count` key/value pairs with no empty-slot skipping.
+
+Lookup, insert and removal are each `O(1)` with **no hashing**, no probe chain, and no
+per-entry allocation — a direct array index and the round-trip check. There is **no hasher**
+(and so no `THasher` type parameter).
+
+### Measured, with the losses
+
+Against `Dictionary<int, TValue>` at **100,000 entries** over a 400,000-key universe
+(~25% dense), on a development machine — the CI series on
+[the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) is the contract:
+
+| Arm | `Dictionary<int, V>` | `SparseMap<V>` | |
+|---|---|---|---|
+| `TryGetValue` over every key | 413.7 µs | 133.2 µs | **3.1x** |
+| `Remove` every key | 805.3 µs | 220.9 µs | **3.6x** |
+| `Clear` alone, `int` values | 10.27 µs | 0.02 µs | **~500x** |
+| `Clear` alone, `string` values | 49.90 µs | 17.81 µs | **2.8x** |
+| `Clear` + refill, `int` values | 591.6 µs | 243.1 µs | **2.4x** |
+| `Clear` + refill, `string` values | 698.5 µs | 291.1 µs | **2.4x** |
+| Fill a pre-sized map | 735.3 µs | 377.0 µs | **2.0x**, ⚠️ 1.10x the allocation |
+| Enumerate every entry | 57.3 µs | 50.6 µs | ⚠️ 1.13x — a near-wash |
+
+Read those two `Clear` pairs together, because the gap between them is the point:
+
+- **`Clear` itself is the asymptotic win the representation promises** — 10.27 µs against
+  0.02 µs for a reference-free `TValue`, and the fast side is sitting on the measurement
+  floor, so treat the ~500x ratio as approximate. That row is *not* on the dashboard: an arm
+  whose median is 0 ns publishes a chart nobody should read. It is measured here and
+  quoted here instead.
+- **The workload it sits in wins 2.4x, not 500x**, because clearing is followed by a
+  refill and the refill dominates. If you are choosing this type for the clear, choose it
+  on the 2.4x — that is what a caller actually experiences.
+- The `string` rows are the `O(Count)` half of the split contract doing its work: still
+  2.8x on the clear, because `Dictionary` zeroes its whole bucket array on top of its used
+  entry prefix.
+
+Two figures are warnings rather than wins:
+
+- **Enumeration is barely ahead.** The pre-sized dictionary has no removed entries
+  and already walks a compact entry table; the dense layout buys ~13%, not the multiple
+  the mechanism suggests. If iteration is the whole workload, this
+  is not the reason to switch.
+- **Allocation is worse, and the fill loses at small sizes.** The `O(Universe)` sparse
+  array is paid up front — at 100,000 entries over a 4x universe that is 1.6 MB of index
+  for 0.8 MB of data, which is why the total is 1.10x `Dictionary`'s bytes (1.09x at
+  1,000). At **1,000 entries the fill is 17% *slower***: the fixed sparse-array cost has
+  not been amortized yet. This type is for larger, hotter, repeatedly-rebuilt maps.
+
+  Both arms above are pre-sized — `Dictionary` through its capacity constructor and
+  `SparseMap` through `EnsureCapacity`, since the universe constructor sizes only the
+  *sparse* index array and leaves the dense key and value arrays empty. Pre-size before a
+  bulk fill; an unsized fill pays the geometric resizes and measures ~1.7x the allocation
+  rather than 1.10x.
+
+### The split `Clear` contract
+
+`SparseSet.Clear()` is unconditionally `O(1)` because the round-trip check tolerates
+whatever the arrays still hold. A map cannot leave *values* behind without retaining them,
+so the contract has two halves and both are documented rather than hidden behind an
+int-valued measurement:
+
+| `TValue` | What `Clear()` does | Cost |
+|---|---|---|
+| holds no references (`int`, `double`, a struct of blittables) | resets the count; nothing is cleared | `O(1)` |
+| holds a reference (`string`, any class, a struct containing one) | additionally clears the dense value prefix `[0, Count)` so no value survives the call | `O(Count)` |
+
+Either way, the key and sparse arrays are untouched, and the `O(Count)` half is still the
+number of entries *actually present* where `Dictionary<,>` pays for its whole capacity.
+
+The trade-offs, stated honestly:
+
+- The sparse index array is **`O(Universe)` memory**, sized once at construction. The type
+  is worth it when the universe is bounded and the map is cleared / rebuilt / iterated
+  often — not as a general `Dictionary<int, TValue>` replacement. For an unbounded or
+  huge-and-sparse key space, use [`IntDictionary`](#intdictionarytvalue) /
+  `Dictionary<int, TValue>`.
+- It stores **only non-negative keys below `Universe`**. A key outside `[0, Universe)` is
+  rejected by the write surface (`Add` / `TryAdd` / the indexer's set) with
+  `ArgumentOutOfRangeException`, and reported as absent by the read surface (`ContainsKey` /
+  `TryGetValue` / `Remove`; the indexer's get throws `KeyNotFoundException`) — the
+  bounded-universe analogue of [`EnumMap`](#enummaptenum-tvalue).
+- `Remove` moves the last dense entry — **key and value together** — into the vacated slot
+  (an `O(1)` swap), so the relative order of the surviving entries is not preserved.
+  Enumeration order is unspecified in general.
+
+It implements `IDictionary<int, TValue?>` and `IReadOnlyDictionary<int, TValue?>`, ships an
+allocation-free struct enumerator plus struct `Keys` / `Values` views, and accepts an
+`IEnumerable<KeyValuePair<int, TValue>>` source at construction.
+
+### Constructors
+
+```csharp
+SparseMap(int universe)
+SparseMap(int universe, IEnumerable<KeyValuePair<int, TValue>> source)
+```
+
+- `universe` is the **exclusive upper bound** of storable keys; the map can hold any
+  non-negative integer key strictly less than it. It sizes the sparse index array once, so
+  it is the dominant memory cost — choose it to match the actual key range. `0` creates a
+  map that can store nothing.
+- Throws `ArgumentOutOfRangeException` for a negative `universe`. There is **no
+  `loadFactor`** parameter.
+- The `source` constructor pre-sizes the dense arrays from an `ICollection<...>` source
+  (clamped to `universe`), throws `ArgumentNullException` if `source` is `null` (the null
+  check beats the universe validation), `ArgumentException` on a duplicate key (matching
+  BCL `Dictionary<,>`, and unlike `SparseSet`'s source constructor, which deduplicates
+  because a duplicate element carries no conflicting value to lose), and
+  `ArgumentOutOfRangeException` if any source key is outside `[0, universe)`.
+
+### Methods and properties
+
+- `TValue this[int key] { get; set; }` — get throws `KeyNotFoundException` for an absent or
+  out-of-range key; set inserts or overwrites, and throws `ArgumentOutOfRangeException` out
+  of range. A pure overwrite is **not** a structural change, so it does not invalidate an
+  active enumerator (matching `Dictionary<,>`).
+- `void Add(int key, TValue value)` — throws `ArgumentException` on a duplicate key,
+  `ArgumentOutOfRangeException` out of range.
+- `bool TryAdd(int key, TValue value)` — `true` on success, `false` if the key already
+  exists; throws out of range.
+- `bool ContainsKey(int key)` — `O(1)`; `false` for an out-of-range key.
+- `bool ContainsValue(TValue? value)` — `O(n)` scan of the dense value prefix, using
+  `EqualityComparer<TValue?>.Default`.
+- `bool TryGetValue(int key, out TValue? value)` — `O(1)`; `false` for an out-of-range key.
+- `bool Remove(int key)` / `bool Remove(int key, out TValue? value)` — `O(1)` swap-removal;
+  `false` for an absent or out-of-range key.
+- `void Clear()` — see [the split `Clear` contract](#the-split-clear-contract) above; the
+  map stays reusable.
+- `int EnsureCapacity(int capacity)` — grow the dense arrays to hold at least `capacity`
+  entries (clamped to `Universe`), returning the resulting dense-array length. Throws
+  `ArgumentOutOfRangeException` on a negative capacity.
+- `void TrimExcess()` / `void TrimExcess(int capacity)` — shrink the dense arrays to exactly
+  the current `Count` (or `capacity`). `TrimExcess(capacity)` throws if `capacity < Count`
+  or `capacity > Universe`. The sparse index array is unaffected.
+- `int Count { get; }`, `int Universe { get; }`
+- `KeyCollection Keys { get; }` / `ValueCollection Values { get; }` — allocation-free struct
+  views over the dense prefix, in the map's enumeration order. Read-only: the
+  `ICollection<T>` mutators throw `NotSupportedException`, exactly as
+  `Dictionary<,>.KeyCollection` does.
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator over the dense arrays.
+- `void CopyTo(KeyValuePair<int, TValue?>[] array, int arrayIndex)` — under
+  [the library's `CopyTo` argument contract](#the-copyto-argument-contract); `Keys.CopyTo`
+  and `Values.CopyTo` follow the same contract.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// BFS distances over a graph whose nodes are ids in [0, nodeCount) — a side table that is
+// rebuilt on every traversal, which is exactly the shape this type is for.
+var distance = new SparseMap<int>(nodeCount);
+
+for (int start = 0; start < nodeCount; start++)
+{
+    distance.Clear();            // the key and sparse arrays are left as they are
+    distance[start] = 0;
+
+    var queue = new Queue<int>();
+    queue.Enqueue(start);
+
+    while (queue.Count > 0)
+    {
+        int node = queue.Dequeue();
+        int next = distance[node] + 1;
+
+        foreach (int neighbour in Neighbors(node))
+        {
+            if (distance.TryAdd(neighbour, next))  // false if already reached
+                queue.Enqueue(neighbour);
+        }
+    }
+
+    // Iterate exactly the reached nodes and their distances — a contiguous scan.
+    foreach (KeyValuePair<int, int> entry in distance)
+        Record(start, entry.Key, entry.Value);
+}
+```
+
+---
+
 ## BloomFilter&lt;T, THasher&gt;
 
 A space-efficient **probabilistic** set membership filter parameterized on a custom
@@ -5074,7 +5277,7 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. Live views: the modification check starts when a view is enumerated, not when the property is read. |
 | `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small stack only when the trie has children to walk). |
 
-Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter when it adds a new key, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream). A pure lookup does not, and neither does the setter overwriting an existing key's value — matching `Dictionary<TKey, TValue>`, so `foreach (var kv in trie) trie[kv.Key] = …` is legal. `GetByPrefix` and `GetKeysWithPrefix` take their modification snapshot when called; `Keys`, `Values` and `GetEnumerator` take it when enumeration starts.
+Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter when it adds a new key, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream). A pure lookup does not, and neither does the setter overwriting an existing key's value — matching `Dictionary<TKey, TValue>`, so `foreach (var kv in trie) trie[kv.Key] = …` is legal. `GetByPrefix`, `GetKeysWithPrefix`, `Keys`, `Values` and `GetEnumerator` all take their modification snapshot when enumeration starts, not when called — a prefix stream looks its prefix up then too — and every one of them keeps failing fast after it is exhausted and supports `Reset`.
 
 ### Empty-string and default handling
 
@@ -6374,7 +6577,8 @@ The write is the reason to use it, and the gap grows with the map: the list's as
 | --- | --- |
 | `RangeMap()` / `RangeMap(TComparer comparer)` | An empty map ordered by `default(TComparer)` or by the supplied comparer. |
 | `RangeMap(TComparer comparer, IEqualityComparer<TValue>? valueComparer)` | The same, with the equality that decides when neighbours merge and when an assignment is a no-op; `null` for `EqualityComparer<TValue>.Default`. |
-| `RangeMap(IEnumerable<Interval<TKey, TValue>> source)` / `(source, TComparer comparer)` | Assign each interval in turn, so a later one overwrites an earlier one where they overlap. `ArgumentNullException` on `null`, `ArgumentException` when an interval's end orders before its start. |
+| `RangeMap(IEnumerable<Interval<TKey, TValue>> source)` / `(source, TComparer comparer)` / `(source, TComparer comparer, IEqualityComparer<TValue>? valueComparer)` | Assign each interval in turn, so a later one overwrites an earlier one where they overlap; seeded neighbours merge by the value comparer when one is given. `ArgumentNullException` on `null`, `ArgumentException` when an interval's end orders before its start. |
+| `RangeMap<TKey, TValue>(IEqualityComparer<TValue>? valueComparer)` / `(source, IEqualityComparer<TValue>? valueComparer)` | The two-parameter alias's value-comparer forms, empty or seeded, ordered by `Comparer<TKey>.Default`. An untyped `null` or `default`, or an argument whose static type implements both source and comparer interfaces, matches both one-argument overloads; cast it to the intended parameter type. |
 | `int Count { get; }` | The number of stored ranges — maximal runs, not assignments. |
 | `TValue this[TKey key] { get; }` | The value at `key`. `KeyNotFoundException` when no range contains it. |
 | `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | Point lookup, `O(log n)`. |
@@ -6393,7 +6597,7 @@ Every member taking a range throws `ArgumentException` when `end` orders before 
 - **Not thread-safe.** Concurrent callers must synchronize externally. Both enumerators fail fast on any write that changes the map — including one made after the walk has finished — and survive every write that does not.
 - **Adjacency is exact.** Two ranges merge only when one ends exactly where the next begins under `TComparer`. Over `int` keys, `[0, 5)` and `[5, 8)` merge but `[0, 5)` and `[6, 8)` do not, since key `5` is unmapped between them.
 - **The comparer defines everything.** `TComparer` orders the keys, decides which ranges are empty, and therefore decides what overlaps what — over a descending comparer, `[10, 0)` holds `10` down to `1`. A `null` key is legal wherever the comparer orders it. Use the two-parameter `RangeMap<TKey, TValue>` alias for the natural order.
-- **Merging needs a meaningful equality.** A reference-typed value without an `Equals` override merges only with the *same instance*, which is usually what you want for shared configuration objects and never what you want for freshly allocated ones; pass a value comparer when it is not.
+- **Merging needs a meaningful equality.** A reference-typed value without an `Equals` override merges only with the *same instance*, which is usually what you want for shared configuration objects and never what you want for freshly allocated ones; pass a value comparer when it is not — `new RangeMap<int, Config>(configComparer)`, or `new RangeMap<int, Config>(source, configComparer)` to seed it.
 
 ### Usage example
 
@@ -6844,7 +7048,7 @@ If those are not what you want, an `int[][]` you fill yourself is a perfectly go
 
 | Member | Behaviour |
 | --- | --- |
-| `CompressedGraph(int vertexCount, IEnumerable<GraphEdge> edges)` | Build. `ArgumentNullException` on a `null` sequence, `ArgumentOutOfRangeException` on a negative vertex count, `ArgumentException` when an edge has an endpoint outside `[0, vertexCount)`. |
+| `CompressedGraph(int vertexCount, IEnumerable<GraphEdge> edges)` | Build. `ArgumentNullException` on a `null` sequence, `ArgumentOutOfRangeException` on a negative vertex count or one above `Array.MaxLength - 1` (the offsets array holds one entry more than there are vertices), `ArgumentException` when an edge has an endpoint outside `[0, vertexCount)`. |
 | `int VertexCount { get; }` | Number of vertices. Ids run over `[0, VertexCount)`. |
 | `int EdgeCount { get; }` | Number of distinct directed edges, after duplicates collapsed. |
 | `GraphEdge this[int index] { get; }` | The edge at that position in source-major, then ascending-target, order. `O(log V)` — the `IReadOnlyList<T>` contract, not the member to loop over. |
