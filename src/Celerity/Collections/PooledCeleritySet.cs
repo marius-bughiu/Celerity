@@ -186,7 +186,9 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
                 count = withHeadroom;
         }
 
-        return Math.Max(capacity, count);
+        // A negative capacity passes through untouched so the primary ctor rejects it,
+        // exactly as the capacity-only overload does (issue #460).
+        return capacity < 0 ? capacity : Math.Max(capacity, count);
     }
 
     /// <summary>

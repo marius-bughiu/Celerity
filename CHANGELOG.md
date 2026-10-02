@@ -4,9 +4,28 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`RangeMap<TKey, TValue>` now takes a value comparer**, empty or seeded from a source (and the three-parameter form gains `(source, comparer, valueComparer)`), so merging by a custom equality no longer needs the full generic type or gives up seeding. ⚠️ Source-breaking, binary-compatible: an untyped `null`/`default` argument is now ambiguous — see [the migration guide](docs/migration.md#new-rangemaptkey-tvaluenull--a-typed-argument). Closes [#465](https://github.com/marius-bughiu/Celerity/issues/465).
+
+- **`SparseMap<TValue>`** is a bounded-universe integer dictionary for frequently cleared and rebuilt side tables. At 100,000 entries over a 4x universe, lookup is 3.1x and clear-and-rebuild 2.4x faster than `Dictionary<int, V>`; enumeration gains only 1.13x, allocation costs 1.10x, and filling 1,000 entries is 17% slower. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+
 ### Fixed
 
-- **The 17 open-addressed hash collections now reject a `NaN` load factor with `ArgumentOutOfRangeException`**, as their docs promise for any value outside (0, 1). `NaN` used to be accepted and made every insert double the table, so a few dozen adds exhausted memory or hit the 2³⁰-slot ceiling. `FastUtils.MinTableSizeFor` now clamps `NaN` like a non-positive load factor instead of returning 2³⁰. Closes [#493](https://github.com/marius-bughiu/Celerity/issues/493).
+- Hash-collection constructors now reject `float.NaN` load factors with `ArgumentOutOfRangeException`, preventing runaway table growth. `FastUtils.MinTableSizeFor` clamps NaN to its documented low-end load factor. Closes #493.
+
+- `CelerityMultiMap.ValueGroup` and `Grouping` now remain live after a group is removed, cleared, or recreated, including views obtained before a key exists. Fresh enumerations see current values and still fail fast on later mutations. Closes #492.
+
+- `CompressedGraph` now rejects a vertex count above `Array.MaxLength - 1` with `ArgumentOutOfRangeException` before allocating its offsets array. Graph traversal and `WaveletTree` bitmap sizing use the shared overflow-safe word-count helper. Closes #490.
+- `LruCache` and `LfuCache`'s source constructors now report a `null` source as `ArgumentNullException` even when `capacity` is also invalid, matching every other collection's `IEnumerable` constructor. Previously the invalid capacity won and surfaced as `ArgumentOutOfRangeException`. Closes #463.
+
+- **`Trie<TValue>.GetByPrefix` and `GetKeysWithPrefix` now behave like `Keys` and `Values`:** they look the prefix up and start the modification check when enumerated rather than when called, keep failing fast after they are exhausted, and support `Reset` instead of throwing `NotSupportedException`. A change made between the call and the `foreach` no longer throws. Closes #483.
+
+- **A rejected `AbuseTracker.Merge` now leaves the destination tracker unchanged.** Incompatible sketch geometry throws `ArgumentException` before any observations are merged. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
+
+- **Hash-family source constructors now reject a negative `capacity` with `ArgumentOutOfRangeException`**, matching their capacity-only overloads. A `null` source still throws `ArgumentNullException` first. Closes [#460](https://github.com/marius-bughiu/Celerity/issues/460).
+
+- **`AbuseTracker.Merge` no longer overstates how many times a merged offender was seen**, so every reported `Offender` range again contains its true count — including after `StripedAbuseTracker.Snapshot`, which merges its stripes. Closes [#454](https://github.com/marius-bughiu/Celerity/issues/454).
 
 ## [3.3.1] - 2026-09-27
 

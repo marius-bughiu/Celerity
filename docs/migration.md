@@ -286,6 +286,23 @@ This one **is** a binary break, unlike the constants above: an assembly compiled
 
 `CuckooFilter.FingerprintBits` is untouched — its width really is chosen per filter, so it stays an instance property.
 
+## `new RangeMap<TKey, TValue>(null)` → a typed argument
+
+`RangeMap<TKey, TValue>` gained a `(IEqualityComparer<TValue>? valueComparer)` constructor beside its `(IEnumerable<Interval<TKey, TValue>> source)` one, so an untyped `null` or `default` argument now matches both and is a `CS0121` compile error. `Dictionary<TKey, TValue>` has the same trade-off between its comparer and source constructors. This is a **source** break only, and it is binary-compatible. It reaches two kinds of call:
+
+- **An untyped `null` or `default`.** As a source, it always threw `ArgumentNullException`, so these calls could never succeed.
+- **An argument whose static type implements both `IEnumerable<Interval<TKey, TValue>>` and `IEqualityComparer<TValue>`.** That used to select the source constructor and build a valid map, and it now matches both overloads. Cast it to `IEnumerable<Interval<TKey, TValue>>` to keep the old meaning.
+
+Cast the argument to the overload you meant:
+
+```csharp
+// Before — compiled, then always threw ArgumentNullException
+var map = new RangeMap<int, string>(null);
+
+// After — an empty map merging by EqualityComparer<string>.Default
+var map = new RangeMap<int, string>((IEqualityComparer<string>?)null);
+```
+
 ## See also
 
 - [Choosing a collection](../README.md#choosing-a-collection)

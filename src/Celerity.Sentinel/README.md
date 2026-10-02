@@ -63,8 +63,12 @@ var sentinel = new StringAbuseTracker(new AbuseTrackerOptions
 });
 ```
 
-Those are the defaults, so `new StringAbuseTracker()` is the block above. Two trackers must be built with
-equal options to `Merge`, since a merge combines the underlying sketches and needs identical geometry.
+Those are the defaults, so `new StringAbuseTracker()` is the block above. To `Merge`, two trackers need the
+same first-seen setting and identical sketch geometry — the shape the options size, not the option values
+themselves, so nearby `RateEpsilon` values that round to the same width still merge, and `OffenderCapacity`
+may differ freely (Space-Saving has no exact merge, so `Merge` re-observes the other side's offenders). Building
+both from equal options is the simple way to guarantee it. A mismatch throws `ArgumentException` before
+anything is written, so the tracker you merged into is left exactly as it was.
 
 ## Concurrency: per-core striping + merge
 

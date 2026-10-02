@@ -137,6 +137,29 @@ public class CompressedGraphTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new CompressedGraph(-1, Array.Empty<GraphEdge>()));
     }
 
+    // Regression for #490: the offsets array is one longer than the vertex count, so a count at or above
+    // Array.MaxLength used to fail the allocation — OverflowException at int.MaxValue, where the +1 wraps, and
+    // OutOfMemoryException below it — instead of the documented argument exception.
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(int.MaxValue - 1)]
+    public void Constructor_ShouldThrow_WhenTheVertexCountExceedsTheOffsetsArrayCeiling(int vertexCount)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new CompressedGraph(vertexCount, Array.Empty<GraphEdge>()));
+
+        Assert.Equal("vertexCount", ex.ParamName);
+        Assert.Equal(vertexCount, (int)ex.ActualValue!);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_AtTheFirstVertexCountTheOffsetsArrayCannotHold()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new CompressedGraph(Array.MaxLength, Array.Empty<GraphEdge>()));
+
+        Assert.Equal("vertexCount", ex.ParamName);
+        Assert.Contains((Array.MaxLength - 1).ToString(), ex.Message);
+    }
+
     [Theory]
     [InlineData(3, 0)]
     [InlineData(-1, 0)]

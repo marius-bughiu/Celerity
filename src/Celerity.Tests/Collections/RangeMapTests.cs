@@ -496,6 +496,84 @@ public class RangeMapTests
     }
 
     [Fact]
+    public void AliasValueComparerConstructor_ShouldMergeByTheSuppliedEquality()
+    {
+        // Regression for #465: the two-parameter alias had no way to take a value comparer at all.
+        var map = new RangeMap<int, string>(StringComparer.OrdinalIgnoreCase);
+        map.Set(0, 10, "abc");
+        map.Set(10, 20, "ABC");
+
+        Assert.Equal(new[] { (0, 20, (string?)"ABC") }, Ranges(map));
+        Assert.IsType<DefaultComparer<int>>(map.Comparer);
+    }
+
+    [Fact]
+    public void AliasValueComparerConstructor_ShouldDefaultToEqualityComparerDefault_WhenNull()
+    {
+        var map = new RangeMap<int, string>((IEqualityComparer<string>?)null);
+        map.Set(0, 10, "a");
+        map.Set(10, 20, "A");
+
+        Assert.Equal(2, map.Count);
+    }
+
+    [Fact]
+    public void AliasSourceAndValueComparerConstructor_ShouldMergeSeededNeighboursByTheSuppliedEquality()
+    {
+        // Regression for #465: a seeded map always merged by EqualityComparer<TValue>.Default.
+        var source = new[]
+        {
+            new Interval<int, string>(0, 10, "abc"),
+            new Interval<int, string>(10, 20, "ABC"),
+            new Interval<int, string>(30, 40, "abc"),
+        };
+
+        var map = new RangeMap<int, string>(source, StringComparer.OrdinalIgnoreCase);
+
+        Assert.Equal(new[] { (0, 20, (string?)"ABC"), (30, 40, "abc") }, Ranges(map));
+
+        // The comparer outlives the seeding: a later write merges by it too, and the merged run takes its value.
+        map.Set(20, 30, "Abc");
+        Assert.Equal(new[] { (0, 40, (string?)"Abc") }, Ranges(map));
+    }
+
+    [Fact]
+    public void AliasSourceAndValueComparerConstructor_ShouldDefaultToEqualityComparerDefault_WhenNull()
+    {
+        var source = new[] { new Interval<int, string>(0, 10, "a"), new Interval<int, string>(10, 20, "A") };
+
+        var map = new RangeMap<int, string>(source, null);
+
+        Assert.Equal(2, map.Count);
+    }
+
+    [Fact]
+    public void AliasSourceAndValueComparerConstructor_ShouldThrow_WhenAnIntervalIsInverted()
+    {
+        var source = new[] { new Interval<int, string>(0, 5, "a"), new Interval<int, string>(9, 3, "b") };
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => new RangeMap<int, string>(source, StringComparer.OrdinalIgnoreCase));
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void SourceComparerAndValueComparerConstructor_ShouldUseBoth()
+    {
+        // Descending keys, case-insensitive values: [20, 10) and [10, 0) are adjacent and merge.
+        var source = new[]
+        {
+            new Interval<int, string>(20, 10, "abc"),
+            new Interval<int, string>(10, 0, "ABC"),
+        };
+
+        var map = new RangeMap<int, string, DescendingInt>(source, default(DescendingInt), StringComparer.OrdinalIgnoreCase);
+
+        Assert.Equal(new[] { (20, 0, (string?)"ABC") }, Ranges(map));
+        Assert.IsType<DescendingInt>(map.Comparer);
+    }
+
+    [Fact]
     public void Constructor_ShouldUseTheParameterlessComparer()
     {
         var map = new RangeMap<int, string, DefaultComparer<int>>();
