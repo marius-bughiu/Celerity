@@ -10,6 +10,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- **`Trie<TValue>.GetByPrefix` and `GetKeysWithPrefix` now behave like `Keys` and `Values`:** they look the prefix up and start the modification check when enumerated rather than when called, keep failing fast after they are exhausted, and support `Reset` instead of throwing `NotSupportedException`. A change made between the call and the `foreach` no longer throws. Closes #483.
+
 - **A rejected `AbuseTracker.Merge` now leaves the destination tracker unchanged.** Incompatible sketch geometry throws `ArgumentException` before any observations are merged. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
 
 - **Hash-family source constructors now reject a negative `capacity` with `ArgumentOutOfRangeException`**, matching their capacity-only overloads. A `null` source still throws `ArgumentNullException` first. Closes [#460](https://github.com/marius-bughiu/Celerity/issues/460).
