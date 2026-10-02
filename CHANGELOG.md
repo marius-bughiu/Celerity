@@ -6,7 +6,23 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`SparseMap<TValue>`** in `Celerity.Collections` — a **bounded-universe integer-keyed dictionary**, the dictionary half of `SparseSet`. For side tables a traversal rebuilds every pass: at 100,000 entries over a 4x universe, lookup is **3.1x** `Dictionary<int, V>`, remove **3.6x**, and clear-and-rebuild **2.4x** (`Clear` alone is ~500x — it touches nothing for a `TValue` holding no references, and clears only the entries present otherwise). ⚠️ Enumeration is only **1.13x**, the `O(Universe)` sparse array costs 1.10x the allocation, and at 1,000 entries filling the map is **17% slower**. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+- **`SparseMap<TValue>`** is a bounded-universe integer dictionary for frequently cleared and rebuilt side tables. At 100,000 entries over a 4x universe, lookup is 3.1x and clear-and-rebuild 2.4x faster than `Dictionary<int, V>`; enumeration gains only 1.13x, allocation costs 1.10x, and filling 1,000 entries is 17% slower. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+
+### Fixed
+
+- **A rejected `AbuseTracker.Merge` now leaves the destination tracker unchanged.** Incompatible sketch geometry throws `ArgumentException` before any observations are merged. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
+
+- **Hash-family source constructors now reject a negative `capacity` with `ArgumentOutOfRangeException`**, matching their capacity-only overloads. A `null` source still throws `ArgumentNullException` first. Closes [#460](https://github.com/marius-bughiu/Celerity/issues/460).
+
+- **`AbuseTracker.Merge` no longer overstates how many times a merged offender was seen**, so every reported `Offender` range again contains its true count — including after `StripedAbuseTracker.Snapshot`, which merges its stripes. Closes [#454](https://github.com/marius-bughiu/Celerity/issues/454).
+
+## [3.3.1] - 2026-09-27
+
+### Fixed
+
+- **`Trie<TValue>` no longer invalidates enumerators when the indexer overwrites an existing key's value**, matching `Dictionary<TKey, TValue>` and the rest of the dictionary family (#233), so updating values while iterating the trie works. Its `Keys` and `Values` views now start their modification check when enumerated rather than when the property is read, and detect a change made after they finish. Closes [#461](https://github.com/marius-bughiu/Celerity/issues/461).
+- **`CelerityMultiMap`'s per-key value enumerators (`ValueGroup`, `Grouping`) now throw when the map is modified**, like the map's own enumerator, instead of looping forever, skipping values, or yielding a group `RemoveAll` detached. `AddRange(key, map[key])` now throws instead of looping forever. Closes [#482](https://github.com/marius-bughiu/Celerity/issues/482).
+- **`CuckooFilter` (and `DedupFilter`, which wraps it) now reject an `expectedItems` above 1,009,317,314 with `ArgumentOutOfRangeException`.** Such a count needs more than 2³⁰ fingerprint slots; the constructor used to throw an undocumented `OverflowException`, or — at `int.MaxValue` — succeed with an empty table that threw `IndexOutOfRangeException` from every operation. Closes [#481](https://github.com/marius-bughiu/Celerity/issues/481).
 
 ## [3.3.0] - 2026-09-20
 
@@ -17,6 +33,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- **`ConsistentHashRing` and weighted `RendezvousHash` nodes no longer lose most of their keys to a node with a nearby hash** — one such node could keep as little as 2% of its fair share. ⚠️ **Routing changes:** a ring re-homes about `(N − 1)/N` of its keys, and a rendezvous pool with any node above weight 1 can move keys between any of its nodes. Do not mix versions within one fleet. Closes [#459](https://github.com/marius-bughiu/Celerity/issues/459).
 - **`BloomFilter.Count` now saturates at `int.MaxValue` instead of wrapping**, in both `Add` and `UnionWith`. A wrapped count could land on zero and make `Clear()` return without clearing a single bit, so a long-lived `AbuseTracker`, which adds to its first-seen filter on every observation, stopped resetting first-seen state on `Clear()` after about 2³² observations. Closes [#462](https://github.com/marius-bughiu/Celerity/issues/462).
 
 - **`BTreeSet` and `RankedSet` now answer the whole `ISet<T>` algebra with their own comparer**, matching `SortedSet<T>` with the equivalent `IComparer<T>`. The members that need the distinct elements of `other` used to collapse it with `EqualityComparer<T>.Default`, so under a comparer that orders two values equal when the default equality comparer does not — a case-insensitive order, say — `SymmetricExceptWith(["a", "A"])` toggled one element twice instead of once and `IsProperSupersetOf` counted it as two. ⚠️ Collapsing with the comparer costs a sort rather than a hash pass: `SetEquals` at 100,000 elements measures 5.7 ms against the previous 0.73 ms, still ahead of `SortedSet<T>`'s 8.8 ms. Closes [#450](https://github.com/marius-bughiu/Celerity/issues/450).
@@ -768,7 +785,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.1
 [3.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.0
 [3.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.2.0
 [3.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.1.0

@@ -120,6 +120,99 @@ public class EnumSetEnumerationTests
         });
     }
 
+    // The EnumSet-to-EnumSet fast path of the four bulk operations bumped the version unconditionally, so a
+    // bulk operation that changed nothing broke a running enumeration — unlike the type's own no-op Add /
+    // Remove / Clear, its IEnumerable fallback path, and HashSet<T>.
+    public static TheoryData<string> BulkOperations => new() { "Union", "Intersect", "Except", "SymmetricExcept" };
+
+    private static void ApplyBulk(EnumSet<EnumSetWide> set, string operation, EnumSet<EnumSetWide> other)
+    {
+        switch (operation)
+        {
+            case "Union": set.UnionWith(other); break;
+            case "Intersect": set.IntersectWith(other); break;
+            case "Except": set.ExceptWith(other); break;
+            default: set.SymmetricExceptWith(other); break;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(BulkOperations))]
+    public void Enumerator_ShouldSurvive_WhenABulkOperationWithAnotherEnumSetChangesNothing(string operation)
+    {
+        var set = new EnumSet<EnumSetWide> { EnumSetWide.One, EnumSetWide.NextWord, EnumSetWide.Top };
+        // Union with a subset, intersect with a superset, and except / symmetric-except with a disjoint-and-
+        // empty set each leave every bit where it was.
+        EnumSet<EnumSetWide> other = operation switch
+        {
+            "Union" => new EnumSet<EnumSetWide> { EnumSetWide.NextWord },
+            "Intersect" => new EnumSet<EnumSetWide>
+            {
+                EnumSetWide.One, EnumSetWide.WordEdge, EnumSetWide.NextWord, EnumSetWide.Top,
+            },
+            _ => new EnumSet<EnumSetWide>(),
+        };
+
+        var seen = new List<EnumSetWide>();
+        foreach (EnumSetWide item in set)
+        {
+            ApplyBulk(set, operation, other);
+            seen.Add(item);
+        }
+
+        Assert.Equal(new[] { EnumSetWide.One, EnumSetWide.NextWord, EnumSetWide.Top }, seen);
+        Assert.Equal(3, set.Count);
+    }
+
+    [Fact]
+    public void Enumerator_ShouldSurvive_WhenASetIsUnionedOrIntersectedWithItself()
+    {
+        var set = new EnumSet<EnumSetColor> { EnumSetColor.Red, EnumSetColor.Blue };
+
+        int visited = 0;
+        foreach (EnumSetColor item in set)
+        {
+            set.UnionWith(set);
+            set.IntersectWith(set);
+            visited++;
+        }
+
+        Assert.Equal(2, visited);
+    }
+
+    [Theory]
+    [MemberData(nameof(BulkOperations))]
+    public void Enumerator_ShouldThrow_WhenABulkOperationWithAnotherEnumSetChangesTheSet(string operation)
+    {
+        var set = new EnumSet<EnumSetWide> { EnumSetWide.One, EnumSetWide.NextWord };
+        EnumSet<EnumSetWide> other = operation switch
+        {
+            "Union" => new EnumSet<EnumSetWide> { EnumSetWide.Top },
+            _ => new EnumSet<EnumSetWide> { EnumSetWide.NextWord },
+        };
+
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            foreach (EnumSetWide item in set)
+                ApplyBulk(set, operation, other);
+        });
+    }
+
+    [Fact]
+    public void Enumerator_ShouldThrow_WhenASymmetricDifferenceSwapsMembersWithoutChangingTheCount()
+    {
+        // {One} ^ {One, Top} == {Top}: the count stays 1, but the membership changed, so this is a real mutation.
+        var set = new EnumSet<EnumSetWide> { EnumSetWide.One };
+        var other = new EnumSet<EnumSetWide> { EnumSetWide.One, EnumSetWide.Top };
+
+        EnumSet<EnumSetWide>.Enumerator e = set.GetEnumerator();
+        set.SymmetricExceptWith(other);
+
+        Assert.Equal(1, set.Count);
+        Assert.True(set.Contains(EnumSetWide.Top));
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
     [Fact]
     public void Enumerator_Reset_RestartsEnumeration()
     {

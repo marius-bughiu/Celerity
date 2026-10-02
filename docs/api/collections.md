@@ -1537,7 +1537,7 @@ insertion order; returns an **empty group** if the key is absent (no throw).
 | Member | Description |
 |---|---|
 | `void Add(TKey key, TValue value)` | Append a value to the key's group, creating the group if absent. Always succeeds. |
-| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`. |
+| `void AddRange(TKey key, IEnumerable<TValue> values)` | Append all `values` to the key's group. Throws `ArgumentNullException` if `values` is `null`, and `InvalidOperationException` if `values` is a non-empty live view of this map (e.g. `map[key]` for a present key; an empty view adds nothing and does not throw); values appended before a throw stay in the map. |
 | `bool Remove(TKey key, TValue? value)` | Remove a single occurrence of `value` (first match, by `EqualityComparer<T>.Default`) from the key's group. If that empties the group, the key is removed. Returns `false` if the key or value is absent. |
 | `bool RemoveAll(TKey key)` | Remove the key and **all** of its values. Returns `false` if the key is absent. |
 | `bool ContainsKey(TKey key)` | Whether the key has at least one value. |
@@ -1560,10 +1560,16 @@ enumeration as `IGrouping<TKey, TValue?>`.
 - **`ValueGroup`** — a read-only struct view over one key's values. Implements
   `IReadOnlyList<TValue?>` (so `Count`, `this[int]`, and allocation-free `foreach`).
   It reflects the live backing group: mutating the map afterwards may change what a
-  previously-obtained view yields.
+  previously-obtained view yields. Its enumerator, though, fails fast: any
+  modification of the map after the enumerator was created — under this key or any
+  other, including `RemoveAll` and `Clear` — makes `MoveNext` / `Reset` throw
+  `InvalidOperationException`, exactly as it does for the map's own enumerator. This is
+  stricter than `Dictionary`'s views, which survive `Remove` and `Clear`. The check
+  starts when the view is enumerated, not when it is obtained.
 - **`Grouping`** — a key together with its `ValueGroup`, yielded by the map's
   enumerator. Implements `IGrouping<TKey, TValue?>`, so `foreach (var g in map)`
-  gives `g.Key` and `foreach (var v in g)` over the values.
+  gives `g.Key` and `foreach (var v in g)` over the values. Enumerating its values
+  fails fast on a map modification exactly as `ValueGroup` does.
 
 ### Default-key handling
 
@@ -2532,7 +2538,7 @@ Read those two `Clear` pairs together, because the gap between them is the point
 
 - **`Clear` itself is the asymptotic win the representation promises** — 10.27 µs against
   0.02 µs for a reference-free `TValue`, and the fast side is sitting on the measurement
-  floor, so the real margin is wider still. That row is *not* on the dashboard: an arm
+  floor, so treat the ~500x ratio as approximate. That row is *not* on the dashboard: an arm
   whose median is 0 ns publishes a chart nobody should read. It is measured here and
   quoted here instead.
 - **The workload it sits in wins 2.4x, not 500x**, because clearing is followed by a
@@ -2544,9 +2550,9 @@ Read those two `Clear` pairs together, because the gap between them is the point
 
 Two figures are warnings rather than wins:
 
-- **Enumeration is barely ahead.** A dictionary only 25% dense still walks a reasonably
-  compact entry table, and both sides are already memory-bound; the dense layout buys
-  ~13%, not the multiple the mechanism suggests. If iteration is the whole workload, this
+- **Enumeration is barely ahead.** The pre-sized dictionary has no removed entries
+  and already walks a compact entry table; the dense layout buys ~13%, not the multiple
+  the mechanism suggests. If iteration is the whole workload, this
   is not the reason to switch.
 - **Allocation is worse, and the fill loses at small sizes.** The `O(Universe)` sparse
   array is paid up front — at 100,000 entries over a 4x universe that is 1.6 MB of index
@@ -2905,7 +2911,9 @@ pass.
 
 **Throws:**
 
-- `ArgumentOutOfRangeException` if `expectedItems <= 0`.
+- `ArgumentOutOfRangeException` if `expectedItems <= 0`, or if it needs more than `2^30`
+  fingerprint slots — any `expectedItems` above 1,009,317,314 (and, for the enumerable
+  overload, a source that large). It throws before allocating.
 - `ArgumentOutOfRangeException` if `falsePositiveRate <= 0`, `>= 1`, or `NaN`.
 - `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats the
   rate validation, so a `null` source with a bad rate surfaces as `ArgumentNullException`.
@@ -5263,10 +5271,10 @@ The getter throws `KeyNotFoundException` if `key` is absent (an interior prefix 
 | `IEnumerable<KeyValuePair<string, TValue?>> GetByPrefix(string prefix)` | Every entry whose key starts with `prefix`, in ascending key order (lazy). |
 | `IEnumerable<string> GetKeysWithPrefix(string prefix)` | The keys of `GetByPrefix`, in ascending order (lazy). |
 | `bool TryGetLongestPrefix(string query, out string? key, out TValue? value)` | The longest stored key that is a prefix of `query` (an exact match qualifies and is longest). On a miss (`false`), `key` is `null` and `value` is `default`. |
-| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. |
+| `IEnumerable<string> Keys` / `IEnumerable<TValue?> Values` | Keys in ascending order and their aligned values. Live views: the modification check starts when a view is enumerated, not when the property is read. |
 | `Enumerator GetEnumerator()` | An allocation-free struct enumerator over the entries in ascending key order (the traversal lazily allocates a small stack only when the trie has children to walk). |
 
-Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream); a pure lookup does not.
+Every key-taking member throws `ArgumentNullException` on a `null` argument. `Add`, `TryAdd` (when it adds), the setter when it adds a new key, `Remove` (when it removes), and `Clear` are structural changes that invalidate an in-flight enumerator (including a `GetByPrefix` stream). A pure lookup does not, and neither does the setter overwriting an existing key's value — matching `Dictionary<TKey, TValue>`, so `foreach (var kv in trie) trie[kv.Key] = …` is legal. `GetByPrefix` and `GetKeysWithPrefix` take their modification snapshot when called; `Keys`, `Values` and `GetEnumerator` take it when enumeration starts.
 
 ### Empty-string and default handling
 
@@ -5603,7 +5611,7 @@ public FenwickTree(IEnumerable<T> values)      // O(n) build seeded with values,
 | `void Clear()` | Reset every logical element to zero (`O(n)`); the length is unchanged. |
 | `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order (`O(n log n)` total). |
 
-Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator; `Add`, the indexer setter, and `Clear` do — except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. Not thread-safe.
+Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `index` must be in `[0, Count)`, a prefix bound in `[0, Count]`, and a range must satisfy `0 ≤ start ≤ endExclusive ≤ Count`. Reads never mutate, so they never invalidate an enumerator. `Add` and the indexer setter do, except when they are no-ops (a zero delta, or assigning the value already stored), which leave both the state and any active enumerator untouched. `Clear` always does, even on a tree whose values are already all zero. Not thread-safe.
 
 ### Choosing it
 

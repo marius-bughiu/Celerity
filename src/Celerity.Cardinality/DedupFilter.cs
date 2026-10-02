@@ -45,8 +45,8 @@ public class DedupFilter<TKey, THasher>
     /// Default <see cref="DefaultFalsePositiveRate"/>.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="expectedItems"/> is not positive, or <paramref name="falsePositiveRate"/> is not strictly
-    /// between 0 and 1.
+    /// <paramref name="expectedItems"/> is not positive or is above 1,009,317,314 (the backing filter's
+    /// <c>2^30</c>-slot ceiling), or <paramref name="falsePositiveRate"/> is not strictly between 0 and 1.
     /// </exception>
     public DedupFilter(int expectedItems, double falsePositiveRate = DefaultFalsePositiveRate)
     {

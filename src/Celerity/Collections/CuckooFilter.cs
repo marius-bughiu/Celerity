@@ -81,6 +81,11 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
     // the realized table has headroom and insertions rarely reach the eviction bound.
     private const double TargetLoad = 0.94;
 
+    // Upper bound on the fingerprint slot count (bucketCount · BucketSize). Mirrors the 2^30 element ceiling the
+    // open-addressed collections and CountMinSketch cap their backing arrays at. It is reached at 2^28 buckets,
+    // i.e. an expectedItems of 1,009,317,314; the next power of two would need 2^31 slots, past Array.MaxLength.
+    private const int MaxSlots = 1 << 30;
+
     private readonly ushort[] _data;          // bucketCount · BucketSize fingerprint slots; 0 == empty
     private readonly int _bucketCount;        // a power of two
     private readonly int _bucketMask;         // bucketCount - 1
@@ -113,8 +118,9 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// that floor.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="expectedItems"/> is not positive, or <paramref name="falsePositiveRate"/> is not strictly
-    /// between 0 and 1.
+    /// <paramref name="expectedItems"/> is not positive, or needs a table of more than <c>2^30</c> fingerprint
+    /// slots (an <paramref name="expectedItems"/> above 1,009,317,314); or <paramref name="falsePositiveRate"/> is
+    /// not strictly between 0 and 1.
     /// </exception>
     public CuckooFilter(int expectedItems, double falsePositiveRate = DefaultFalsePositiveRate)
     {
@@ -139,10 +145,19 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
         // Bucket count, rounded up to a power of two so the alternate-bucket XOR stays in range.
         int desired = (int)Math.Ceiling(expectedItems / (BucketSize * TargetLoad));
         int buckets = FastUtils.NextPowerOfTwo(AtLeastOne(desired));
+
+        // Guard the slot count before allocating. Computed in int, 2^29 buckets wrap to a negative length (an
+        // undocumented OverflowException) and 2^30 wrap to zero — a filter that constructs but indexes out of
+        // bounds on every operation.
+        long slots = (long)buckets * BucketSize;
+        if (slots > MaxSlots)
+            throw new ArgumentOutOfRangeException(nameof(expectedItems), expectedItems,
+                $"Expected item count needs {buckets} buckets ({slots} fingerprint slots), which exceeds the maximum of {MaxSlots} slots.");
+
         _bucketCount = buckets;
         _bucketMask = buckets - 1;
 
-        _data = new ushort[buckets * BucketSize];
+        _data = new ushort[(int)slots];
         _hasher = default;
         // Fixed seed: eviction is internal bookkeeping, so a deterministic stream keeps behaviour reproducible
         // without affecting correctness.
@@ -175,7 +190,8 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// <param name="falsePositiveRate">The target false-positive probability; see the primary constructor.</param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1.
+    /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1, or <paramref name="source"/> holds
+    /// more elements than the primary constructor's <c>expectedItems</c> ceiling allows.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The filter becomes full before every element is added (see <see cref="Add"/>).
@@ -375,7 +391,9 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// </exception>
     /// <remarks>
     /// Because a cuckoo filter cannot distinguish overlapping elements, the merged <see cref="Count"/> is the sum
-    /// of both counts and so may exceed the number of distinct elements represented.
+    /// of both counts and so may exceed the number of distinct elements represented. Merging a filter into itself
+    /// follows the same rule, as if <paramref name="other"/> were an identical copy: every fingerprint is stored
+    /// twice and <see cref="Count"/> doubles.
     /// </remarks>
     public void UnionWith(CuckooFilter<T, THasher> other)
     {
@@ -383,7 +401,13 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
         if (other._bucketCount != _bucketCount || other._fingerprintBits != _fingerprintBits)
             throw new ArgumentException("The two filters must have the same bucket count and fingerprint width to be merged.", nameof(other));
 
-        ushort[] otherData = other._data;
+        // A self-union reads a snapshot. Absorbing a fingerprint writes into this filter's own buckets (and can
+        // park a victim), so reading the live array would find each copy later in the scan and absorb it again,
+        // until every candidate slot of that fingerprint was full.
+        ushort[] otherData = ReferenceEquals(other, this) ? (ushort[])_data.Clone() : other._data;
+        bool otherHasVictim = other._hasVictim;
+        int otherVictimIndex = other._victimIndex;
+        ushort otherVictimFingerprint = other._victimFingerprint;
         for (int bucket = 0; bucket < other._bucketCount; bucket++)
         {
             int baseSlot = bucket * BucketSize;
@@ -395,7 +419,7 @@ public class CuckooFilter<T, THasher> where THasher : struct, IHashProvider<T>
             }
         }
 
-        if (other._hasVictim && !AddFingerprint(other._victimIndex, other._victimFingerprint))
+        if (otherHasVictim && !AddFingerprint(otherVictimIndex, otherVictimFingerprint))
             throw new InvalidOperationException("The cuckoo filter became full while merging; the destination has no room for every fingerprint.");
     }
 

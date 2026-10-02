@@ -460,6 +460,42 @@ public class CuckooFilterTests
             () => new CuckooFilter<int, Int32Murmur3Hasher>(100, double.NaN));
     }
 
+    // Regression for #481: sizing in int wrapped the slot count. 1.5e9 needs 2^29 buckets (2^31 slots, a
+    // negative length → OverflowException); int.MaxValue needs 2^30 buckets (2^32 slots, wrapped to zero → a
+    // filter that constructed and then indexed out of bounds). Both must be rejected before allocating.
+    [Theory]
+    [InlineData(1_009_317_315)]   // the smallest count that needs 2^29 buckets
+    [InlineData(1_500_000_000)]
+    [InlineData(int.MaxValue)]
+    public void Constructor_Throws_WhenExpectedItemsNeedsMoreThanMaxSlots(int expectedItems)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CuckooFilter<int, Int32Murmur3Hasher>(expectedItems));
+        Assert.Equal("expectedItems", ex.ParamName);
+    }
+
+    [Fact]
+    public void SourceConstructor_Throws_WhenSourceCountNeedsMoreThanMaxSlots()
+    {
+        // The source overload sizes through the primary constructor, so an oversized ICollection<T>.Count is
+        // rejected before a single element is enumerated.
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CuckooFilter<int, Int32Murmur3Hasher>(new HugeCountCollection()));
+    }
+
+    private sealed class HugeCountCollection : ICollection<int>
+    {
+        public int Count => int.MaxValue;
+        public bool IsReadOnly => true;
+        public void Add(int item) => throw new NotSupportedException();
+        public void Clear() => throw new NotSupportedException();
+        public bool Contains(int item) => throw new NotSupportedException();
+        public void CopyTo(int[] array, int arrayIndex) => throw new NotSupportedException();
+        public bool Remove(int item) => throw new NotSupportedException();
+        public IEnumerator<int> GetEnumerator() => throw new NotSupportedException();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     // ---------------------------------------------------------------
     //  UnionWith
     // ---------------------------------------------------------------
@@ -493,6 +529,54 @@ public class CuckooFilterTests
         Assert.Equal(1, b.Count);
         Assert.False(b.Contains(1));
         Assert.True(b.Contains(2));
+    }
+
+    [Fact]
+    public void UnionWith_Self_DoublesCountWithoutFillingTheFilter()
+    {
+        // Regression: the merge read this filter's live bucket array while writing into it, so a self-union
+        // re-absorbed its own copies — one element ended at Count 5, or filled all eight of its candidate slots
+        // and left the filter permanently full.
+        for (int key = 0; key < 1000; key++)
+        {
+            var filter = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+            filter.Add(key);
+
+            filter.UnionWith(filter);
+
+            Assert.Equal(2, filter.Count);
+            Assert.False(filter.IsFull);
+            Assert.True(filter.Contains(key));
+        }
+    }
+
+    [Fact]
+    public void UnionWith_Self_MatchesMergingAnIdenticalCopy()
+    {
+        var self = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+        var copy = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+        var target = new CuckooFilter<int, Int32Murmur3Hasher>(1000);
+        for (int i = 0; i < 300; i++)
+        {
+            self.Add(i);
+            copy.Add(i);
+            target.Add(i);
+        }
+
+        self.UnionWith(self);
+        target.UnionWith(copy);
+
+        Assert.Equal(target.Count, self.Count);
+        Assert.Equal(600, self.Count);
+        Assert.False(self.IsFull);
+
+        // Each element is now stored twice, so one Remove leaves it present and a second takes it out.
+        for (int i = 0; i < 300; i++)
+        {
+            Assert.True(self.Remove(i));
+            Assert.True(self.Contains(i), $"false negative for {i} after one remove");
+        }
+        Assert.Equal(300, self.Count);
     }
 
     [Fact]

@@ -206,4 +206,119 @@ public class TrieEnumerationTests
         trie.Remove("gopher");
         Assert.Throws<InvalidOperationException>(() => e.MoveNext());
     }
+
+    [Fact]
+    public void KeysAndValues_ReadBeforeAChange_EnumerateTheTrieAsItStandsAfterIt()
+    {
+        // Regression for #461: the views captured the version when the property was read, so a view taken before
+        // a change threw on its first MoveNext even though enumeration only started afterwards.
+        var trie = Build("a", "b");
+        IEnumerable<string> keys = trie.Keys;
+        IEnumerable<int> values = trie.Values;
+
+        trie["c"] = 2;
+
+        Assert.Equal(new[] { "a", "b", "c" }, keys);
+        Assert.Equal(new[] { 0, 1, 2 }, values);
+    }
+
+    [Fact]
+    public void KeysAndValues_Throw_WhenModifiedAfterEnumerationStarts()
+    {
+        var trie = Build("a", "ab", "b");
+
+        using IEnumerator<string> keys = trie.Keys.GetEnumerator();
+        using IEnumerator<int> values = trie.Values.GetEnumerator();
+        Assert.True(keys.MoveNext());
+        Assert.True(values.MoveNext());
+
+        trie.Remove("b");
+
+        Assert.Throws<InvalidOperationException>(() => keys.MoveNext());
+        Assert.Throws<InvalidOperationException>(() => values.MoveNext());
+    }
+
+    [Fact]
+    public void KeysAndValues_FailFast_WhenModifiedAfterExhaustion()
+    {
+        // A yield iterator is terminal after its first false and would miss this; the views drive the struct
+        // enumerator by hand, which re-checks the version on every MoveNext.
+        var trie = Build("a", "ab");
+
+        using IEnumerator<string> keys = trie.Keys.GetEnumerator();
+        using IEnumerator<int> values = trie.Values.GetEnumerator();
+        while (keys.MoveNext()) { }
+        while (values.MoveNext()) { }
+
+        trie.Add("b", 9);
+
+        Assert.Throws<InvalidOperationException>(() => keys.MoveNext());
+        Assert.Throws<InvalidOperationException>(() => values.MoveNext());
+    }
+
+    [Fact]
+    public void KeysAndValues_OverwriteDuringEnumeration_DoesNotThrow()
+    {
+        var trie = Build("a", "ab", "b");
+
+        var seen = new List<int>();
+        foreach (int value in trie.Values)
+        {
+            seen.Add(value);
+            trie["ab"] = 50; // a value write, not a structural change
+        }
+
+        var keys = new List<string>();
+        foreach (string key in trie.Keys)
+        {
+            keys.Add(key);
+            trie[key] = -1;
+        }
+
+        Assert.Equal(new[] { 0, 50, 2 }, seen);
+        Assert.Equal(new[] { "a", "ab", "b" }, keys);
+        Assert.Equal(new[] { -1, -1, -1 }, trie.Values);
+    }
+
+    [Fact]
+    public void KeysAndValues_Enumerators_ResetAndNonGenericCurrent()
+    {
+        var trie = Build("x", "xy", "y");
+        trie[string.Empty] = 7; // the root key: yielded before any descent
+
+        IEnumerator<string> keys = trie.Keys.GetEnumerator();
+        Assert.True(keys.MoveNext());
+        Assert.Equal(string.Empty, ((IEnumerator)keys).Current);
+        Assert.True(keys.MoveNext());
+        keys.Reset();
+        var afterReset = new List<string>();
+        while (keys.MoveNext())
+            afterReset.Add(keys.Current);
+        Assert.Equal(new[] { "", "x", "xy", "y" }, afterReset);
+        keys.Dispose();
+
+        IEnumerator<int> values = trie.Values.GetEnumerator();
+        Assert.True(values.MoveNext());
+        Assert.Equal(7, ((IEnumerator)values).Current);
+        Assert.True(values.MoveNext());
+        values.Reset();
+        var valuesAfterReset = new List<int>();
+        while (values.MoveNext())
+            valuesAfterReset.Add(values.Current);
+        Assert.Equal(new[] { 7, 0, 1, 2 }, valuesAfterReset);
+        values.Dispose();
+
+        // The non-generic view paths (Cast<T> would short-circuit to the generic enumerator, so drive them by hand).
+        Assert.Equal(4, CountNonGeneric(trie.Keys));
+        Assert.Equal(4, CountNonGeneric(trie.Values));
+    }
+
+    private static int CountNonGeneric(IEnumerable source)
+    {
+        int count = 0;
+        IEnumerator e = source.GetEnumerator();
+        while (e.MoveNext())
+            count++;
+        return count;
+    }
 }
