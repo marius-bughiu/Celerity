@@ -93,6 +93,9 @@ public class SmallDictionary<TKey, TValue>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> is <c>null</c>.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="source"/> contains one or more duplicate keys.
     /// </exception>
@@ -116,7 +119,9 @@ public class SmallDictionary<TKey, TValue>
         int capacity)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return Math.Max(capacity, (source as ICollection<KeyValuePair<TKey, TValue>>)?.Count ?? 0);
+        // A negative capacity passes through untouched so the primary ctor rejects it,
+        // exactly as the capacity-only overload does (issue #460).
+        return capacity < 0 ? capacity : Math.Max(capacity, (source as ICollection<KeyValuePair<TKey, TValue>>)?.Count ?? 0);
     }
 
     /// <summary>

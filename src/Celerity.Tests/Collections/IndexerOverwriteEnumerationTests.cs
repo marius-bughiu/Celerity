@@ -269,4 +269,22 @@ public class IndexerOverwriteEnumerationTests
 
         Assert.Equal(new[] { 11, 12, 13 }, trie.Values);
     }
+
+    [Fact]
+    public void SparseMap_OverwriteDuringEnumeration_DoesNotThrow()
+    {
+        var map = new SparseMap<int>(128);
+        map[0] = 100; // key 0 - an ordinary key here, not an out-of-band slot
+        map[1] = 10;
+        map[2] = 20;
+
+        AssertOverwriteAllowedAddRejected(
+            getEnumerator: () => map.GetEnumerator(),
+            overwriteExisting: () => map[1] = 11,
+            overwriteDefault: () => map[0] = 101,
+            addNewKey: () => map[99] = 990);
+
+        Assert.Equal(11, map[1]);
+        Assert.Equal(101, map[0]);
+    }
 }

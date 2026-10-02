@@ -28,6 +28,42 @@ public sealed class RangeMap<TKey, TValue> : RangeMap<TKey, TValue, DefaultCompa
         : base(source)
     {
     }
+
+    /// <summary>
+    /// Initializes a new, empty map ordered by <see cref="Comparer{T}.Default"/> that decides which adjacent
+    /// ranges merge by <paramref name="valueComparer"/>.
+    /// </summary>
+    /// <param name="valueComparer">
+    /// The equality that decides when two adjacent ranges carry the same value and merge, and when an
+    /// assignment is a no-op; <c>null</c> for <see cref="EqualityComparer{T}.Default"/>.
+    /// </param>
+    /// <remarks>
+    /// As with <see cref="Dictionary{TKey, TValue}"/>'s comparer and source constructors, an untyped
+    /// <c>null</c> or <c>default</c> argument matches this overload and the <c>source</c> one alike; cast it to
+    /// the parameter type you mean. An argument whose static type implements both interfaces is ambiguous too;
+    /// cast it to <c>IEnumerable&lt;Interval&lt;TKey, TValue&gt;&gt;</c> to preserve the source-constructor meaning.
+    /// </remarks>
+    public RangeMap(IEqualityComparer<TValue>? valueComparer)
+        : base(default(DefaultComparer<TKey>), valueComparer)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new map ordered by <see cref="Comparer{T}.Default"/> that decides which adjacent ranges
+    /// merge by <paramref name="valueComparer"/>, and fills it by assigning each of <paramref name="source"/>'s
+    /// intervals in turn, so a later interval overwrites an earlier one where they overlap.
+    /// </summary>
+    /// <param name="source">The assignments to apply, in order.</param>
+    /// <param name="valueComparer">
+    /// The equality that decides when two adjacent ranges carry the same value and merge, and when an
+    /// assignment is a no-op; <c>null</c> for <see cref="EqualityComparer{T}.Default"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">An interval's end orders before its start.</exception>
+    public RangeMap(IEnumerable<Interval<TKey, TValue>> source, IEqualityComparer<TValue>? valueComparer)
+        : base(source, default(DefaultComparer<TKey>), valueComparer)
+    {
+    }
 }
 
 /// <summary>
@@ -174,7 +210,28 @@ public class RangeMap<TKey, TValue, TComparer> : IReadOnlyCollection<Interval<TK
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">An interval's end orders before its start.</exception>
     public RangeMap(IEnumerable<Interval<TKey, TValue>> source, TComparer comparer)
-        : this(comparer, null)
+        : this(source, comparer, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new map ordered by <paramref name="comparer"/> that decides which adjacent ranges merge
+    /// by <paramref name="valueComparer"/>, and fills it by assigning each of <paramref name="source"/>'s
+    /// intervals in turn, so a later interval overwrites an earlier one where they overlap. Seeding goes
+    /// through the value comparer too, so equal neighbours in <paramref name="source"/> merge as they would
+    /// under <see cref="Set"/>.
+    /// </summary>
+    /// <param name="source">The assignments to apply, in order.</param>
+    /// <param name="comparer">The comparer instance defining the key order.</param>
+    /// <param name="valueComparer">
+    /// The equality that decides when two adjacent ranges carry the same value and merge, and when an
+    /// assignment is a no-op; <c>null</c> for <see cref="EqualityComparer{T}.Default"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">An interval's end orders before its start.</exception>
+    public RangeMap(
+        IEnumerable<Interval<TKey, TValue>> source, TComparer comparer, IEqualityComparer<TValue>? valueComparer)
+        : this(comparer, valueComparer)
     {
         ArgumentNullException.ThrowIfNull(source);
 
