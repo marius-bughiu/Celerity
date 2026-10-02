@@ -311,6 +311,19 @@ public class CopyToArgumentGuardTests
         AssertCopyToContract<string?>(3, map.Values.CopyTo);
     }
 
+    [Fact]
+    public void SparseMap_ShouldValidateCopyToArguments()
+    {
+        SparseMap<string> map = new(16);
+        map.Add(1, "one");
+        map.Add(2, "two");
+        map.Add(3, "three");
+
+        AssertCopyToContract<KeyValuePair<int, string?>>(3, map.CopyTo);
+        AssertCopyToContract<int>(3, map.Keys.CopyTo);
+        AssertCopyToContract<string?>(3, map.Values.CopyTo);
+    }
+
     // ── The two sequences #440 was filed for ──────────────────────────────────
 
     [Fact]
@@ -349,6 +362,7 @@ public class CopyToArgumentGuardTests
         "PooledCelerityDictionary", "PooledCelerityDictionary.KeyCollection", "PooledCelerityDictionary.ValueCollection",
         "RobinHoodDictionary", "RobinHoodDictionary.KeyCollection", "RobinHoodDictionary.ValueCollection",
         "SmallDictionary", "SmallDictionary.KeyCollection", "SmallDictionary.ValueCollection",
+        "SparseMap", "SparseMap.KeyCollection", "SparseMap.ValueCollection",
         "SwissDictionary", "SwissDictionary.KeyCollection", "SwissDictionary.ValueCollection",
     };
 
