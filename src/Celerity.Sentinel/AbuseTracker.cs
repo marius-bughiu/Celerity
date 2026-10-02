@@ -29,7 +29,8 @@ namespace Celerity.Sentinel;
 /// hot path (edge QPS), give each core/thread its own tracker and merge them periodically — see
 /// <see cref="StripedAbuseTracker{TKey, THasher}"/>, which ships that pattern — using <see cref="Merge"/>, which
 /// combines two trackers exactly (rate / distinct / first-seen) or with the standard Space-Saving approximation
-/// (offenders). Two trackers must be built with equal <see cref="AbuseTrackerOptions"/> to merge.
+/// (offenders). Two trackers merge when their sketch geometry and first-seen setting match; building both from
+/// equal <see cref="AbuseTrackerOptions"/> is the simple way to guarantee that.
 /// </para>
 /// <para>
 /// The rate and offender counts are cumulative since construction or the last <see cref="Clear"/>. For a
@@ -181,13 +182,16 @@ public class AbuseTracker<TKey, THasher>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="other"/> was built with incompatible options (different sketch geometry, or a different
-    /// first-seen setting), so the underlying structures cannot be combined.
+    /// first-seen setting), so the underlying structures cannot be combined. Every component's compatibility is
+    /// checked before any of them is written to, so a rejected merge leaves this tracker exactly as it was.
     /// </exception>
     /// <remarks>
     /// The rate, distinct, and first-seen structures merge <em>exactly</em> (as if both streams had been fed to
     /// one tracker). The offenders merge with the standard Space-Saving approximation: each of
-    /// <paramref name="other"/>'s monitored offenders is re-observed here with its estimated count, which
-    /// combines the heavy hitters well but is not guaranteed to reproduce the exact top-k of the union.
+    /// <paramref name="other"/>'s monitored offenders is re-observed here with a guaranteed positive lower bound on
+    /// its count — normally its estimate less its error, floored at one when a saturated count makes the two equal
+    /// — which combines the heavy hitters well but is not guaranteed to reproduce the exact top-k of the union. Re-observing the lower bound is what keeps every reported <see cref="Offender{TKey}.Error"/>
+    /// honest afterwards; <see cref="Snapshot"/> restores the upper bound from the exactly merged rate sketch.
     /// </remarks>
     public void Merge(AbuseTracker<TKey, THasher> other)
     {
@@ -195,13 +199,34 @@ public class AbuseTracker<TKey, THasher>
         if ((_firstSeen is null) != (other._firstSeen is null))
             throw new ArgumentException("Both trackers must have the same first-seen setting to be merged.", nameof(other));
 
+        // Check every component's geometry before writing to any of them. Each sketch's UnionWith rejects a
+        // mismatch of its own, but only once the components ahead of it in the sequence have already been summed
+        // in, leaving a tracker whose rate estimates no longer match its own TotalObservations and Clear() the
+        // only way back. Merge is all-or-nothing, as DDSketch.Merge and RunningStatistics.Merge are.
+        if (_rate.Width != other._rate.Width || _rate.Depth != other._rate.Depth)
+            throw new ArgumentException("Both trackers must have the same rate sketch geometry (RateEpsilon and RateConfidence) to be merged.", nameof(other));
+
+        if (_distinct.Precision != other._distinct.Precision)
+            throw new ArgumentException("Both trackers must have the same DistinctPrecision to be merged.", nameof(other));
+
+        // Both filters are non-null here, or both are null: the setting check above has already run.
+        if (_firstSeen is not null &&
+            (_firstSeen.BitCount != other._firstSeen!.BitCount || _firstSeen.HashCount != other._firstSeen.HashCount))
+        {
+            throw new ArgumentException("Both trackers must have the same first-seen filter geometry (ExpectedDistinctKeys and FirstSeenFalsePositiveRate) to be merged.", nameof(other));
+        }
+
         _rate.UnionWith(other._rate);
         _distinct.UnionWith(other._distinct);
         _firstSeen?.UnionWith(other._firstSeen!);
 
-        // Space-Saving has no exact merge: re-observe the other tracker's monitored offenders with their counts.
+        // Space-Saving has no exact merge: re-observe the other tracker's monitored offenders. Only the lower bound
+        // (Count - Error) is known to have occurred; re-observing the upper bound would record the other side's
+        // overestimate as fact, and Snapshot's [count - error, count] range would then exclude the truth. A monitored
+        // key occurred at least once, so the floor of 1 is still a lower bound — and it is needed, because a count
+        // saturated at long.MaxValue can hand its evictee Count == Error, which would otherwise be a rejected 0.
         foreach (TopKEntry<TKey> entry in other._offenders.GetTopK())
-            _offenders.Add(entry.Element, entry.Count);
+            _offenders.Add(entry.Element, Math.Max(1, entry.Count - entry.Error));
 
         _totalObservations += other._totalObservations;
     }

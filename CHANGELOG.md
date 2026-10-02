@@ -4,12 +4,27 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`SparseMap<TValue>`** is a bounded-universe integer dictionary for frequently cleared and rebuilt side tables. At 100,000 entries over a 4x universe, lookup is 3.1x and clear-and-rebuild 2.4x faster than `Dictionary<int, V>`; enumeration gains only 1.13x, allocation costs 1.10x, and filling 1,000 entries is 17% slower. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+
+### Fixed
+
+- **`Trie<TValue>.GetByPrefix` and `GetKeysWithPrefix` now behave like `Keys` and `Values`:** they look the prefix up and start the modification check when enumerated rather than when called, keep failing fast after they are exhausted, and support `Reset` instead of throwing `NotSupportedException`. A change made between the call and the `foreach` no longer throws. Closes #483.
+
+- **A rejected `AbuseTracker.Merge` now leaves the destination tracker unchanged.** Incompatible sketch geometry throws `ArgumentException` before any observations are merged. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
+
+- **Hash-family source constructors now reject a negative `capacity` with `ArgumentOutOfRangeException`**, matching their capacity-only overloads. A `null` source still throws `ArgumentNullException` first. Closes [#460](https://github.com/marius-bughiu/Celerity/issues/460).
+
+- **`AbuseTracker.Merge` no longer overstates how many times a merged offender was seen**, so every reported `Offender` range again contains its true count — including after `StripedAbuseTracker.Snapshot`, which merges its stripes. Closes [#454](https://github.com/marius-bughiu/Celerity/issues/454).
+
+## [3.3.1] - 2026-09-27
+
 ### Fixed
 
 - **`Trie<TValue>` no longer invalidates enumerators when the indexer overwrites an existing key's value**, matching `Dictionary<TKey, TValue>` and the rest of the dictionary family (#233), so updating values while iterating the trie works. Its `Keys` and `Values` views now start their modification check when enumerated rather than when the property is read, and detect a change made after they finish. Closes [#461](https://github.com/marius-bughiu/Celerity/issues/461).
 - **`CelerityMultiMap`'s per-key value enumerators (`ValueGroup`, `Grouping`) now throw when the map is modified**, like the map's own enumerator, instead of looping forever, skipping values, or yielding a group `RemoveAll` detached. `AddRange(key, map[key])` now throws instead of looping forever. Closes [#482](https://github.com/marius-bughiu/Celerity/issues/482).
 - **`CuckooFilter` (and `DedupFilter`, which wraps it) now reject an `expectedItems` above 1,009,317,314 with `ArgumentOutOfRangeException`.** Such a count needs more than 2³⁰ fingerprint slots; the constructor used to throw an undocumented `OverflowException`, or — at `int.MaxValue` — succeed with an empty table that threw `IndexOutOfRangeException` from every operation. Closes [#481](https://github.com/marius-bughiu/Celerity/issues/481).
-- **`Trie<TValue>.GetByPrefix` and `GetKeysWithPrefix` now behave like `Keys` and `Values`:** they look the prefix up and start the modification check when enumerated rather than when called, keep failing fast after they are exhausted, and support `Reset` instead of throwing `NotSupportedException`. A change made between the call and the `foreach` no longer throws. Closes #483.
 
 ## [3.3.0] - 2026-09-20
 
@@ -772,7 +787,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.1
 [3.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.0
 [3.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.2.0
 [3.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.1.0

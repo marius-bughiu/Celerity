@@ -1067,4 +1067,65 @@ public class ContainsValueTests
 
         Assert.True(map.ContainsValue(null));
     }
+    // ---------------- SparseMap ----------------
+    // The scan walks the dense value prefix, which holds exactly the present entries — so what is
+    // pinned here is that a swap-removed entry's value does not linger behind the count, and that
+    // key 0 is an ordinary key rather than an out-of-band slot.
+
+    [Fact]
+    public void SparseMap_EmptyMap_ReturnsFalse()
+    {
+        var map = new SparseMap<int>(64);
+
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void SparseMap_FindsValueInTheDenseArray()
+    {
+        var map = new SparseMap<int>(64) { [1] = 100, [2] = 200, [3] = 300 };
+
+        Assert.True(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void SparseMap_FindsValueUnderTheZeroKey()
+    {
+        var map = new SparseMap<int>(64) { [0] = 7, [1] = 100 };
+
+        Assert.True(map.ContainsValue(7));
+    }
+
+    [Fact]
+    public void SparseMap_AfterRemove_DoesNotReportRemovedValue()
+    {
+        var map = new SparseMap<int>(64) { [1] = 100, [2] = 200, [3] = 300 };
+
+        Assert.True(map.Remove(2));
+
+        Assert.False(map.ContainsValue(200));
+        Assert.True(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(300));
+    }
+
+    [Fact]
+    public void SparseMap_AfterClear_ReportsNothing()
+    {
+        var map = new SparseMap<int>(64) { [1] = 100, [2] = 200 };
+
+        map.Clear();
+
+        Assert.False(map.ContainsValue(100));
+        Assert.False(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void SparseMap_NullValue_ReturnsTrue_WhenPresent()
+    {
+        var map = new SparseMap<string?>(64) { [1] = null, [2] = "x" };
+
+        Assert.True(map.ContainsValue(null));
+    }
 }
