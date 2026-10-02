@@ -1365,8 +1365,6 @@ public sealed class Rope : IReadOnlyList<char>
         }
 
         /// <inheritdoc />
-        [ExcludeFromCodeCoverage(Justification = "The interface requires it; a struct enumerator holds no " +
-            "disposable state.")]
         public readonly void Dispose()
         {
         }

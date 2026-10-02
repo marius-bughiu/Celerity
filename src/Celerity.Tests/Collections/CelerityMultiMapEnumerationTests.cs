@@ -302,6 +302,294 @@ public class CelerityMultiMapEnumerationTests
         Assert.Equal(first, second);
     }
 
+    // Issue #482: the per-group enumerator walked the backing list by index with no
+    // version check, so adding under the key being iterated never terminated,
+    // removing silently skipped values, and a group detached by RemoveAll kept
+    // yielding. Each of these must now fail fast like the map's own enumerator.
+
+    [Fact]
+    public void ValueGroupEnumerator_ShouldThrow_WhenValueAddedUnderSameKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        var e = map[1].GetEnumerator();
+        Assert.True(e.MoveNext());
+        map.Add(1, 30);
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void ValueGroupForeach_ShouldThrow_InsteadOfLoopingForever_WhenAddingUnderSameKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        int iterations = 0;
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            foreach (int v in map[1])
+            {
+                // Guard so a regression fails the assertion instead of hanging the run.
+                if (++iterations > 100)
+                    return;
+                map.Add(1, v + 1);
+            }
+        });
+        Assert.Equal(1, iterations);
+    }
+
+    [Fact]
+    public void ValueGroupEnumerator_ShouldThrow_WhenValueRemovedUnderSameKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+        map.Add(1, 30);
+
+        var e = map[1].GetEnumerator();
+        Assert.True(e.MoveNext());
+        Assert.True(map.Remove(1, 10));
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void ValueGroupEnumerator_ShouldThrow_WhenGroupDetachedByRemoveAllAndKeyReAdded()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        var e = map[1].GetEnumerator();
+        Assert.True(e.MoveNext());
+        Assert.True(map.RemoveAll(1));
+        map.Add(1, 99);
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void ValueGroupEnumerator_ShouldThrow_WhenAnotherKeyIsMutated()
+    {
+        // The contract is map-wide: any mutation, under any key, invalidates it.
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        var e = map[1].GetEnumerator();
+        Assert.True(e.MoveNext());
+        map.Add(2, 20);
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void ValueGroupEnumerator_ShouldThrow_WhenMapCleared()
+    {
+        var map = new CelerityMultiMap<string, int, StringFnV1AHasher>();
+        map.Add(null!, 10); // the out-of-band default-key group
+        map.Add(null!, 20);
+
+        var e = map[null!].GetEnumerator();
+        Assert.True(e.MoveNext());
+        map.Clear();
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void ValueGroupEnumerator_ForAbsentKey_ShouldThrow_WhenMapMutated()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+
+        var e = map[7].GetEnumerator();
+        map.Add(7, 70);
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    [Fact]
+    public void ValueGroupEnumeratorReset_ShouldThrow_WhenMapMutated()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var e = map[1].GetEnumerator();
+        Assert.True(e.MoveNext());
+        map.Add(1, 20);
+
+        Assert.Throws<InvalidOperationException>(() => e.Reset());
+    }
+
+    [Fact]
+    public void ValueGroupBoxedEnumerator_ShouldThrow_WhenMapMutated()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        IEnumerator<int> generic = ((IEnumerable<int>)map[1]).GetEnumerator();
+        IEnumerator nonGeneric = ((IEnumerable)map[1]).GetEnumerator();
+        Assert.True(generic.MoveNext());
+        Assert.True(nonGeneric.MoveNext());
+        map.Add(1, 30);
+
+        Assert.Throws<InvalidOperationException>(() => generic.MoveNext());
+        Assert.Throws<InvalidOperationException>(() => nonGeneric.MoveNext());
+    }
+
+    [Fact]
+    public void ValueGroupView_ObtainedBeforeMutation_ShouldStillEnumerateLiveGroup()
+    {
+        // The modification check starts when the view is enumerated, not when it is
+        // obtained, so a view held across a mutation still reads the live group.
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var view = map[1];
+        map.Add(1, 20);
+
+        var seen = new List<int>();
+        foreach (int v in view)
+            seen.Add(v);
+
+        Assert.Equal(new[] { 10, 20 }, seen);
+    }
+
+    [Fact]
+    public void GroupingEnumerator_ShouldThrow_WhenAddingUnderItsKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        int iterations = 0;
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            foreach (var g in map)
+            {
+                foreach (int v in g)
+                {
+                    if (++iterations > 100)
+                        return;
+                    map.Add(g.Key, v + 1);
+                }
+            }
+        });
+        Assert.Equal(1, iterations);
+    }
+
+    [Fact]
+    public void GroupingBoxedAndValuesEnumerators_ShouldThrow_WhenMapMutated()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        var outer = map.GetEnumerator();
+        Assert.True(outer.MoveNext());
+        var grouping = outer.Current;
+
+        IEnumerator<int> generic = ((IEnumerable<int>)grouping).GetEnumerator();
+        IEnumerator nonGeneric = ((IEnumerable)grouping).GetEnumerator();
+        var values = grouping.Values.GetEnumerator();
+        map.Add(1, 20);
+
+        Assert.Throws<InvalidOperationException>(() => generic.MoveNext());
+        Assert.Throws<InvalidOperationException>(() => nonGeneric.MoveNext());
+        Assert.Throws<InvalidOperationException>(() => values.MoveNext());
+    }
+
+    [Fact]
+    public void AddRange_FromItsOwnGroup_ShouldThrow_InsteadOfLoopingForever()
+    {
+        // Review of #482: AddRange bumped the version only after draining its
+        // source, so a source enumerating the same group never saw the appends as a
+        // modification and kept yielding them.
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+        map.Add(1, 20);
+
+        Assert.Throws<InvalidOperationException>(() => map.AddRange(1, map[1]));
+
+        // The one value appended before the throw is committed, and the counts agree.
+        Assert.Equal(new[] { 10, 20, 10 }, map[1].ToArray());
+        Assert.Equal(3, map.ValueCount);
+    }
+
+    [Fact]
+    public void AddRange_FromAnEmptyViewOfTheSameMap_ShouldAddNothing_AndNotThrow()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        map.AddRange(1, map[2]); // key 2 is absent, so the view is empty
+
+        Assert.Equal(new[] { 10 }, map[1].ToArray());
+        Assert.False(map.ContainsKey(2));
+        Assert.Equal(1, map.ValueCount);
+    }
+
+    [Fact]
+    public void AddRange_WhenSourceThrowsPartWay_ShouldKeepValueCountConsistent()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+        map.Add(1, 10);
+
+        Assert.Throws<InvalidOperationException>(() => map.AddRange(2, ThrowAfter(2)));
+
+        Assert.Equal(new[] { 0, 1 }, map[2].ToArray());
+        Assert.Equal(3, map.ValueCount);
+    }
+
+    [Fact]
+    public void AddRange_WhenFirstCurrentThrows_ShouldNotRegisterAnEmptyKey()
+    {
+        var map = new CelerityMultiMap<int, int, Int32WangNaiveHasher>();
+
+        Assert.Throws<InvalidOperationException>(() => map.AddRange(1, new ThrowingCurrentSource()));
+
+        Assert.False(map.ContainsKey(1));
+        Assert.Equal(0, map.Count);
+        Assert.Equal(0, map.ValueCount);
+    }
+
+    // One element whose Current getter throws, after MoveNext has returned true.
+    private sealed class ThrowingCurrentSource : IEnumerable<int>, IEnumerator<int>
+    {
+        public int Current => throw new InvalidOperationException("Current failed");
+        object IEnumerator.Current => Current;
+        public bool MoveNext() => true;
+        public void Reset() { }
+        public void Dispose() { }
+        public IEnumerator<int> GetEnumerator() => this;
+        IEnumerator IEnumerable.GetEnumerator() => this;
+    }
+
+    private static IEnumerable<int> ThrowAfter(int count)
+    {
+        for (int i = 0; i < count; i++)
+            yield return i;
+        throw new InvalidOperationException("source failed");
+    }
+
+    [Fact]
+    public void DefaultValueGroupAndGrouping_ShouldEnumerateEmpty_WithoutThrowing()
+    {
+        // default(...) has no owning map, so there is nothing to be modified.
+        var group = default(CelerityMultiMap<int, int, Int32WangNaiveHasher>.ValueGroup);
+        var e = group.GetEnumerator();
+        Assert.False(e.MoveNext());
+        e.Reset();
+        Assert.False(e.MoveNext());
+
+        var grouping = default(CelerityMultiMap<int, int, Int32WangNaiveHasher>.Grouping);
+        Assert.Empty(grouping.Values);
+        var ge = grouping.GetEnumerator();
+        Assert.False(ge.MoveNext());
+    }
+
     // Drives a struct view through its boxed non-generic IEnumerable/IEnumerator
     // surface (GetEnumerator -> object Current), then Reset()s and drains again.
     private static (List<T> first, List<T> second) DrainNonGenericTwice<T>(IEnumerable view)

@@ -34,10 +34,11 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// The length is fixed at construction (like <see cref="BitSet"/>); the tree does not grow. Reads never
-/// mutate, so they never invalidate an enumerator; <see cref="Add(int, T)"/>, the indexer setter, and
-/// <see cref="Clear"/> do — except when they are no-ops (a zero delta, or assigning the value already
-/// stored), which leave the observable state and any active enumerator untouched. This type is not
-/// thread-safe; concurrent callers must synchronize externally.
+/// mutate, so they never invalidate an enumerator. <see cref="Add(int, T)"/> and the indexer setter do,
+/// except when they are no-ops (a zero delta, or assigning the value already stored), which leave the
+/// observable state and any active enumerator untouched. <see cref="Clear"/> always does, even on a tree
+/// whose values are already all zero. This type is not thread-safe; concurrent callers must synchronize
+/// externally.
 /// </para>
 /// </remarks>
 public sealed class FenwickTree<T> : IReadOnlyCollection<T>
@@ -221,6 +222,7 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
     }
 
     /// <summary>Resets every logical element to zero. Runs in <c>O(n)</c>.</summary>
+    /// <remarks>Always invalidates active enumerators, even when every element is already zero.</remarks>
     public void Clear()
     {
         Array.Clear(_tree, 0, _tree.Length);

@@ -1,3 +1,4 @@
+using System.Reflection;
 using Celerity.Collections;
 using Celerity.Hashing;
 
@@ -336,5 +337,71 @@ public class BloomFilterTests
         var a = new BloomFilter<int, Int32WangNaiveHasher>(100);
         var b = new BloomFilter<int, Int32WangNaiveHasher>(100_000);
         Assert.Throws<ArgumentException>(() => a.UnionWith(b));
+    }
+
+    // ---------------------------------------------------------------
+    //  Count saturation (regression for #462)
+    // ---------------------------------------------------------------
+
+    private static void SetCount<T, THasher>(BloomFilter<T, THasher> filter, int count)
+        where THasher : struct, IHashProvider<T>
+    {
+        FieldInfo field = typeof(BloomFilter<T, THasher>).GetField("_count", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("BloomFilter no longer has a _count field.");
+        field.SetValue(filter, count);
+    }
+
+    [Fact]
+    public void Add_AtIntMaxValue_SaturatesInsteadOfWrappingNegative()
+    {
+        var filter = new BloomFilter<int, Int32WangNaiveHasher>(100);
+        filter.Add(1);
+        SetCount(filter, int.MaxValue - 1);
+
+        filter.Add(2);
+        Assert.Equal(int.MaxValue, filter.Count);
+
+        filter.Add(3); // would wrap to int.MinValue
+        Assert.Equal(int.MaxValue, filter.Count);
+    }
+
+    [Fact]
+    public void Clear_AfterTheCountWouldHaveWrappedToZero_StillClearsEveryBit()
+    {
+        // Unsaturated, MaxValue + MaxValue wraps to -2 and two more adds land on 0, so
+        // Clear returned early and every key stayed "present" — the first-seen reset
+        // AbuseTracker.Clear relies on.
+        var a = new BloomFilter<int, Int32WangNaiveHasher>(100);
+        var b = new BloomFilter<int, Int32WangNaiveHasher>(100);
+        a.Add(1);
+        b.Add(2);
+        SetCount(a, int.MaxValue);
+        SetCount(b, int.MaxValue);
+
+        a.UnionWith(b);
+        a.Add(3);
+        a.Add(4);
+        a.Clear();
+
+        Assert.Equal(0, a.Count);
+        for (int i = 1; i <= 4; i++)
+            Assert.False(a.Contains(i));
+    }
+
+    [Fact]
+    public void UnionWith_CountOverflow_SaturatesInsteadOfWrappingNegative()
+    {
+        var a = new BloomFilter<int, Int32WangNaiveHasher>(100);
+        var b = new BloomFilter<int, Int32WangNaiveHasher>(100);
+        a.Add(1);
+        b.Add(2);
+        SetCount(a, int.MaxValue - 1);
+        SetCount(b, int.MaxValue - 1);
+
+        a.UnionWith(b);
+
+        Assert.Equal(int.MaxValue, a.Count);
+        Assert.True(a.Contains(1));
+        Assert.True(a.Contains(2));
     }
 }

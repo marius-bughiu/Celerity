@@ -381,7 +381,7 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     public bool IsSubsetOf(IEnumerable<T> other)
     {
         ArgumentNullException.ThrowIfNull(other);
-        if (_count == 0)
+        if (_count == 0 || ReferenceEquals(this, other))
             return true;
 
         HashSet<T> distinct = MaterializeDistinct(other);
@@ -400,6 +400,8 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     public bool IsProperSubsetOf(IEnumerable<T> other)
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(this, other))
+            return false;
 
         HashSet<T> distinct = MaterializeDistinct(other);
         return _count < distinct.Count && AllElementsIn(distinct);
@@ -414,6 +416,8 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     public bool IsSupersetOf(IEnumerable<T> other)
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(this, other))
+            return true;
 
         foreach (T item in other)
         {
@@ -436,6 +440,8 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     public bool IsProperSupersetOf(IEnumerable<T> other)
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(this, other))
+            return false;
 
         HashSet<T> distinct = MaterializeDistinct(other);
         if (_count <= distinct.Count)
@@ -461,6 +467,8 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
         ArgumentNullException.ThrowIfNull(other);
         if (_count == 0)
             return false;
+        if (ReferenceEquals(this, other))
+            return true;
 
         foreach (T item in other)
         {

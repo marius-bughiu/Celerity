@@ -585,7 +585,7 @@ function escapeHtml(s) {
     // Mixed (interleaved insert + lookup + in-order range scan) is the documented win workload; RangeScan is
     // the operation SortedDictionary cannot express at all.
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',                vs: 'SortedDictionary<int, int>', ops: ['Add', 'Lookup', 'Remove', 'RangeScan', 'Mixed'] },
-    { key: 'BTreeSet',            title: 'BTreeSet<int>',                            vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Mixed'] },
+    { key: 'BTreeSet',            title: 'BTreeSet<int>',                            vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Mixed', 'SetEquals', 'IsProperSupersetOf'] },
     // RankedSet is the ordered set that also ranks and selects. The cards pair it against SortedSet<int>,
     // which has no rank and no positional accessor at all; the hand-rolled sorted List<int> arms in the
     // same benchmark carry their own op names (SelectByIndex, RankBinarySearch, ...) so they stay out of

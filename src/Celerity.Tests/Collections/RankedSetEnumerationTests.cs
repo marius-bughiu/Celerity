@@ -264,29 +264,25 @@ public class RankedSetEnumerationTests
     }
 
     [Fact]
-    public void SetAlgebra_ShouldCompareTheOtherSideWithDefaultEquality_EvenWhenTheOrderDisagrees()
+    public void RankQueries_ShouldFollowTheComparer_WhenItDisagreesWithDefaultEquality()
     {
-        // Family behaviour, pinned here rather than left to be discovered. Membership is the comparer's, but
-        // the ISet<T> algebra materializes the right-hand side into a HashSet<T>, so the four members that ask
-        // whether an element of *this* set is in `other` go through default equality — and the six that only
-        // ever probe this set do not. A comparer that orders two values equal when the default equality
-        // comparer does not is the only way to tell, and this is where the split becomes observable.
-        var set = new RankedSet<string, CaseInsensitiveOrdinal>(["a"], default);
+        // Membership — and therefore rank — is the comparer's, all the way through. The set-algebra half of
+        // this is covered across both ordered sets in OrderedSetComparerAlgebraTests; what is RankedSet's
+        // alone is that the positional surface agrees with it, so a value the comparer calls a member has a
+        // rank even when EqualityComparer<string>.Default would not recognise it.
+        var set = new RankedSet<string, CaseInsensitiveOrdinal>(["a", "b"], default);
 
         Assert.True(set.Contains("A"));
         Assert.Equal(0, set.IndexOf("A"));
+        Assert.Equal(1, set.IndexOf("B"));
+        Assert.True(set.IndexOf("c") < 0);
 
-        // Probe this set, so they follow the comparer.
-        Assert.True(set.Overlaps(["A"]));
-        Assert.True(set.IsSupersetOf(["A"]));
-        Assert.False(set.IsProperSupersetOf(["A"]));
-
-        // Probe `other` through the HashSet, so they follow default equality.
-        Assert.False(set.SetEquals(["A"]));
-        Assert.False(set.IsSubsetOf(["A"]));
+        // The stored instance is the one the set was seeded with, not the probe.
+        Assert.Equal("a", set[0]);
 
         set.IntersectWith(["A"]);
-        Assert.Equal(0, set.Count);
+        Assert.Equal<string[]>(["a"], [.. set]);
+        Assert.Equal(0, set.IndexOf("A"));
     }
 
     /// <summary>Orders strings case-insensitively, so the order disagrees with default equality.</summary>

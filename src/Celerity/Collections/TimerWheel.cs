@@ -74,9 +74,9 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// <b>What the bound really is.</b> <see cref="Cancel"/> and <see cref="TryGetDeadline"/> are <c>O(1)</c>
-/// outright. <see cref="Schedule"/> is <c>O(1)</c> amortized: the one call in a growth cycle that finds the
-/// free list empty and the entry array full resizes and copies the backing arrays, which is <c>O(n)</c> for
-/// that call. The level search inside <see cref="Schedule"/> is a loop of at most <see cref="Levels"/>
+/// outright. <see cref="Schedule"/> and <see cref="ScheduleAt"/> are <c>O(1)</c> amortized: the one call in a
+/// growth cycle that finds the free list empty and the entry array full resizes and copies the backing arrays,
+/// which is <c>O(n)</c> for that call. The level search inside either is a loop of at most <see cref="Levels"/>
 /// comparisons — four at the default geometry, and 62 at the narrowest legal wheel, which is the ceiling the
 /// constructor allows — and in a workload with one characteristic timeout it is the same count every time.
 /// </para>
@@ -97,9 +97,9 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// Enumeration yields every pending timer in an unspecified order — slot order, which is neither deadline nor
-/// insertion order — and is invalidated by <see cref="Schedule"/>, a successful <see cref="Cancel"/>, an
-/// <see cref="Advance(long, ICollection{TValue})"/> that fired something, and a <see cref="Clear"/> that
-/// removed something. An <see cref="Advance(long, ICollection{TValue})"/> that fires nothing deliberately does
+/// insertion order — and is invalidated by <see cref="Schedule"/> or <see cref="ScheduleAt"/>, a successful
+/// <see cref="Cancel"/>, an <see cref="Advance(long, ICollection{TValue})"/> that fired something, and a
+/// <see cref="Clear"/> that removed something. An <see cref="Advance(long, ICollection{TValue})"/> that fires nothing deliberately does
 /// <i>not</i> invalidate it, even when it cascaded timers between levels: cascading changes neither the set of
 /// pending timers nor the slot each occupies, so the sequence an enumerator is walking is unaffected.
 /// </para>

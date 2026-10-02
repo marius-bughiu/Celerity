@@ -26,6 +26,10 @@ ring.Remove("cache-b");                              // only cache-b's ~1/N keys
 
 Each node is placed at `VirtualNodesPerNode` (default 160) positions on a `[0, 2^32)` ring, so load is even and a departing node hands its keys to many successors instead of one. Adding/removing a node remaps only about `1/NodeCount` of keys — versus the near-total reshuffle of `hash % nodeCount`.
 
+Each position is a 64-bit mix of the node's hash and the virtual-node index, so two nodes' positions are independent. The one exception is two node ids whose 32-bit hashes collide outright. They share the position of every virtual-node index both have, and the ordinally smaller id wins each one, so at equal weights the later id gets no keys.
+
+> **Placement changed after v3.2.0** ([#459](https://github.com/marius-bughiu/Celerity/issues/459)). A ring's layout is redrawn, so about `(N − 1)/N` of its keys change owner — most of them in any real fleet. A rendezvous pool whose nodes all have weight 1 routes as before, but once any node has a higher weight, keys can move to or from any node, weight-1 nodes included, because their scores are compared with the weighted node's changed ones. Processes on either side of that change route differently, so do not let them share a fleet's routing during a rolling upgrade.
+
 ## Rendezvous (HRW) hash
 
 No ring array, nothing to rebuild on membership change — ideal for small, churning clusters:

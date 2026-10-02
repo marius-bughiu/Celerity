@@ -139,8 +139,10 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
     private readonly Node _root = new();
     private int _count;
 
-    // Bumped on every post-construction mutation (add, overwrite, remove, clear) so active enumerators detect
-    // concurrent modification and throw, matching the BCL collection contract. The bulk-load constructor
+    // Bumped on every post-construction structural mutation (add, remove, clear) so active enumerators detect
+    // concurrent modification and throw, matching the BCL collection contract. Overwriting an existing key's
+    // value is not structural and leaves it alone, as Dictionary<TKey, TValue> does (#233, #461), so the
+    // "iterate and update values in place" idiom is legal. The bulk-load constructor
     // resets it to 0 after populating, so a freshly built trie always starts at version 0 (no enumerator can
     // exist during construction).
     private int _version;
@@ -514,11 +516,18 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         return true;
     }
 
-    /// <summary>Gets the keys in ascending ordinal order.</summary>
-    public IEnumerable<string> Keys => GetKeysWithPrefix(string.Empty);
+    /// <summary>
+    /// Gets the keys in ascending ordinal order. The view is live: the modification check starts when it is
+    /// enumerated, not when the property is read, so a view obtained before a change enumerates the trie as it
+    /// stands afterwards.
+    /// </summary>
+    public IEnumerable<string> Keys => new KeyView(this);
 
-    /// <summary>Gets the values ordered by their keys' ascending ordinal order.</summary>
-    public IEnumerable<TValue?> Values => EnumerateValues(_root, _version);
+    /// <summary>
+    /// Gets the values ordered by their keys' ascending ordinal order. Like <see cref="Keys"/>, the view is live
+    /// and its modification check starts when it is enumerated. No key string is built for a value.
+    /// </summary>
+    public IEnumerable<TValue?> Values => new ValueView(this);
 
     /// <summary>
     /// Returns an allocation-free struct enumerator that yields every entry in ascending ordinal key order.
@@ -578,8 +587,8 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         {
             if (!overwrite)
                 return false;
+            // A pure value write: no enumerator can observe a torn walk, so the version is left alone.
             node.Value = value;
-            _version++;
             return true;
         }
 
@@ -617,48 +626,68 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
             yield return pair.Key;
     }
 
-    // Value-only DFS. Unlike Enumerate it never builds the key string (no StringBuilder, no
-    // sb.ToString(), no KeyValuePair), so the Values view does zero per-item allocation. It mirrors
-    // Enumerate's version-check and stack traversal, minus the key bookkeeping (there is no edge char to
-    // append or backtrack when the key is not produced).
-    private IEnumerable<TValue?> EnumerateValues(Node? start, int expectedVersion)
+    // The Keys and Values views. Each reads the version in GetEnumerator — when enumeration starts — rather than
+    // when the property is read, matching the dictionaries' key/value collections, and drives the struct
+    // Enumerator by hand rather than through an iterator block, so a modification after exhaustion is still
+    // detected on the next MoveNext and Reset works.
+    private sealed class KeyView : IEnumerable<string>
     {
-        if (expectedVersion != _version)
-            ThrowModified();
+        private readonly Trie<TValue> _trie;
 
-        if (start is null)
-            yield break;
+        internal KeyView(Trie<TValue> trie) => _trie = trie;
 
-        if (start.HasValue)
-        {
-            yield return start.Value;
-            if (expectedVersion != _version)
-                ThrowModified();
-        }
+        public IEnumerator<string> GetEnumerator() =>
+            new KeyEnumerator(new Enumerator(_trie, _trie._root, string.Empty, _trie._version, buildKeys: true));
 
-        if (start.ChildCount == 0)
-            yield break;
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 
-        var stack = new Stack<(Node Node, int ChildIndex)>();
-        stack.Push((start, 0));
+    private sealed class KeyEnumerator : IEnumerator<string>
+    {
+        private Enumerator _inner;
 
-        while (stack.Count > 0)
-        {
-            (Node node, int ci) = stack.Pop();
-            if (ci < node.ChildCount)
-            {
-                stack.Push((node, ci + 1));
+        internal KeyEnumerator(Enumerator inner) => _inner = inner;
 
-                Node child = node.Children[ci];
-                if (child.HasValue)
-                {
-                    yield return child.Value;
-                    if (expectedVersion != _version)
-                        ThrowModified();
-                }
-                stack.Push((child, 0));
-            }
-        }
+        public string Current => _inner.Current.Key;
+
+        object IEnumerator.Current => Current;
+
+        public bool MoveNext() => _inner.MoveNext();
+
+        public void Reset() => _inner.Reset();
+
+        public void Dispose() { }
+    }
+
+    private sealed class ValueView : IEnumerable<TValue?>
+    {
+        private readonly Trie<TValue> _trie;
+
+        internal ValueView(Trie<TValue> trie) => _trie = trie;
+
+        // buildKeys: false skips the StringBuilder and the per-entry key string, so the walk allocates only its
+        // traversal stack.
+        public IEnumerator<TValue?> GetEnumerator() =>
+            new ValueEnumerator(new Enumerator(_trie, _trie._root, string.Empty, _trie._version, buildKeys: false));
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class ValueEnumerator : IEnumerator<TValue?>
+    {
+        private Enumerator _inner;
+
+        internal ValueEnumerator(Enumerator inner) => _inner = inner;
+
+        public TValue? Current => _inner.Current.Value;
+
+        object? IEnumerator.Current => Current;
+
+        public bool MoveNext() => _inner.MoveNext();
+
+        public void Reset() => _inner.Reset();
+
+        public void Dispose() { }
     }
 
     private static void ThrowModified() =>
@@ -676,18 +705,20 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
         private readonly Node _start;      // subtree root; its accumulated key is _startKey
         private readonly string _startKey;
         private readonly int _version;
+        private readonly bool _buildKeys;  // false for the Values view, which never reads a key
 
         private Stack<(Node Node, int ChildIndex)>? _stack; // allocated on first descent
-        private StringBuilder? _sb;                          // holds the path to the pending node
+        private StringBuilder? _sb;                          // the path to the pending node; null if !_buildKeys
         private KeyValuePair<string, TValue?> _current;
         private int _phase;                                  // 0 = not started, 1 = walking, 2 = done
 
-        internal Enumerator(Trie<TValue> trie, Node start, string startKey, int version)
+        internal Enumerator(Trie<TValue> trie, Node start, string startKey, int version, bool buildKeys = true)
         {
             _trie = trie;
             _start = start;
             _startKey = startKey;
             _version = version;
+            _buildKeys = buildKeys;
             _stack = null;
             _sb = null;
             _current = default;
@@ -718,7 +749,8 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
                 // neither), so single-node results allocate nothing.
                 if (_start.ChildCount != 0)
                 {
-                    _sb = new StringBuilder(_startKey);
+                    if (_buildKeys)
+                        _sb = new StringBuilder(_startKey);
                     _stack = new Stack<(Node, int)>();
                     _stack.Push((_start, 0));
                 }
@@ -745,18 +777,20 @@ public sealed class Trie<TValue> : IReadOnlyDictionary<string, TValue?>
                     _stack.Push((node, ci + 1));
 
                     Node child = node.Children[ci];
-                    _sb!.Append(node.ChildChars[ci]); // _sb now holds the path to `child`
+                    _sb?.Append(node.ChildChars[ci]); // _sb now holds the path to `child`
                     _stack.Push((child, 0));
                     if (child.HasValue)
                     {
-                        _current = new KeyValuePair<string, TValue?>(_sb.ToString(), child.Value);
+                        // Without keys the entry's key is null; only the Values view runs that way, and it
+                        // reads Value alone.
+                        _current = new KeyValuePair<string, TValue?>(_sb?.ToString()!, child.Value);
                         return true;
                     }
                 }
-                else if (node != _start)
+                else if (node != _start && _sb is not null)
                 {
                     // Children exhausted: drop the edge char that led into `node`, restoring the parent path.
-                    _sb!.Length--;
+                    _sb.Length--;
                 }
             }
 

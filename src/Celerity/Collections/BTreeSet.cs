@@ -62,11 +62,12 @@ public class BTreeSet<T> : BTreeSet<T, DefaultComparer<T>>
 /// </para>
 /// <para>
 /// Membership is defined by <typeparamref name="TComparer"/> — two elements are the same element when the
-/// comparer orders them equal. The <see cref="ISet{T}"/> algebra members materialize the right-hand side into
-/// a <see cref="HashSet{T}"/>, so they compare <i>that</i> side with
-/// <see cref="EqualityComparer{T}.Default"/>, matching the rest of the family. A custom comparer that treats
-/// two values as equal when <see cref="EqualityComparer{T}.Default"/> does not — a case-insensitive order,
-/// say — can therefore disagree with <see cref="SortedSet{T}"/> on those members alone. Like the rest of the family, <see cref="Add"/> throws
+/// comparer orders them equal — and that holds throughout, including the <see cref="ISet{T}"/> algebra. The
+/// members that need the distinct elements of their right-hand side key it by the set's own comparer rather
+/// than by <see cref="EqualityComparer{T}.Default"/>, so a comparer that calls two values equal when the
+/// default equality comparer does not answers exactly as <see cref="SortedSet{T}"/> with the equivalent
+/// <see cref="IComparer{T}"/> would: under a case-insensitive order a set holding <c>"a"</c> answers
+/// <c>true</c> to <c>Contains("A")</c> and <i>keeps</i> that member under <c>IntersectWith(["A"])</c>. Like the rest of the family, <see cref="Add"/> throws
 /// on a duplicate — use <see cref="TryAdd"/> when the element may already be present. A <c>null</c> element is
 /// legal and <see cref="Comparer{T}.Default"/> orders it before every non-<c>null</c> one; there is no
 /// out-of-band <c>default(T)</c> slot as in the hash-based family, so a value-type <c>default(T)</c> is an
@@ -406,8 +407,13 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     // ── ISet<T> / ICollection<T> set-algebra surface ──────────────────────────
-    // Shared across the mutable set family via SetOperations, written once against the ISet<T> primitives
-    // every set exposes; the semantics match BCL HashSet<T>.
+    // Two shared helpers, split by what each member needs of `other`, and the split is deliberate — a new
+    // member added here must pick the right one. The four that stream `other` against this set's own
+    // Add / Remove / Contains go through SetOperations, written once against the ISet<T> primitives the
+    // whole mutable set family exposes. The six that need the *distinct* elements of `other` go through
+    // OrderedSetOperations, which collapses it with TComparer instead of into a HashSet<T> keyed by
+    // EqualityComparer<T>.Default — that is what keeps membership the comparer's throughout and makes the
+    // surface answer as SortedSet<T> does, rather than as HashSet<T> does.
 
     /// <summary>
     /// Modifies the set to contain all elements that are present in itself, in <paramref name="other"/>, or
@@ -420,7 +426,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     /// <summary>Modifies the set to contain only elements that are also present in <paramref name="other"/>.</summary>
     /// <param name="other">The collection to intersect with this set.</param>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public void IntersectWith(IEnumerable<T> other) => SetOperations.IntersectWith(this, other);
+    public void IntersectWith(IEnumerable<T> other) => OrderedSetOperations.IntersectWith(this, _comparer, other);
 
     /// <summary>Removes every element in <paramref name="other"/> from the set.</summary>
     /// <param name="other">The collection of elements to remove.</param>
@@ -433,13 +439,13 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     /// </summary>
     /// <param name="other">The collection to apply the symmetric difference with.</param>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public void SymmetricExceptWith(IEnumerable<T> other) => SetOperations.SymmetricExceptWith(this, other);
+    public void SymmetricExceptWith(IEnumerable<T> other) => OrderedSetOperations.SymmetricExceptWith(this, _comparer, other);
 
     /// <summary>Determines whether the set is a subset of <paramref name="other"/>.</summary>
     /// <param name="other">The collection to compare against.</param>
     /// <returns><c>true</c> if every element of this set is in <paramref name="other"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool IsSubsetOf(IEnumerable<T> other) => SetOperations.IsSubsetOf(this, other);
+    public bool IsSubsetOf(IEnumerable<T> other) => OrderedSetOperations.IsSubsetOf(this, _comparer, other);
 
     /// <summary>Determines whether the set is a proper (strict) subset of <paramref name="other"/>.</summary>
     /// <param name="other">The collection to compare against.</param>
@@ -448,7 +454,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     /// has at least one element this set does not.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool IsProperSubsetOf(IEnumerable<T> other) => SetOperations.IsProperSubsetOf(this, other);
+    public bool IsProperSubsetOf(IEnumerable<T> other) => OrderedSetOperations.IsProperSubsetOf(this, _comparer, other);
 
     /// <summary>Determines whether the set is a superset of <paramref name="other"/>.</summary>
     /// <param name="other">The collection to compare against.</param>
@@ -463,7 +469,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     /// element <paramref name="other"/> does not.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool IsProperSupersetOf(IEnumerable<T> other) => SetOperations.IsProperSupersetOf(this, other);
+    public bool IsProperSupersetOf(IEnumerable<T> other) => OrderedSetOperations.IsProperSupersetOf(this, _comparer, other);
 
     /// <summary>Determines whether the set and <paramref name="other"/> share at least one element.</summary>
     /// <param name="other">The collection to compare against.</param>
@@ -475,7 +481,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     /// <param name="other">The collection to compare against.</param>
     /// <returns><c>true</c> if the two contain exactly the same elements.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
-    public bool SetEquals(IEnumerable<T> other) => SetOperations.SetEquals(this, other);
+    public bool SetEquals(IEnumerable<T> other) => OrderedSetOperations.SetEquals(this, _comparer, other);
 
     /// <summary>
     /// Copies the elements of the set, in ascending order, to <paramref name="array"/> starting at

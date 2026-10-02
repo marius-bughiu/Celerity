@@ -236,4 +236,37 @@ public class IndexerOverwriteEnumerationTests
         Assert.Equal(11, map[1]);
         Assert.Equal(101, map[0]);
     }
+
+    [Fact]
+    public void Trie_OverwriteDuringEnumeration_DoesNotThrow()
+    {
+        // Regression for #461: Trie bumped its version on a pure value overwrite, so the in-place update idiom
+        // threw on the next MoveNext. Trie has no out-of-band default key; the empty string is its nearest
+        // analogue, stored on the root node rather than below it.
+        var map = new Trie<int>();
+        map[string.Empty] = 100;
+        map["a"] = 10;
+        map["b"] = 20;
+
+        AssertOverwriteAllowedAddRejected(
+            getEnumerator: () => map.GetEnumerator(),
+            overwriteExisting: () => map["a"] = 11,
+            overwriteDefault: () => map[string.Empty] = 101,
+            addNewKey: () => map["zz"] = 990);
+
+        Assert.Equal(11, map["a"]);
+        Assert.Equal(101, map[string.Empty]);
+    }
+
+    [Fact]
+    public void Trie_UpdateEveryValueInForeach_DoesNotThrow()
+    {
+        // The exact idiom #461 reported: rewrite each value while iterating the trie itself.
+        var trie = new Trie<int> { ["a"] = 1, ["ab"] = 2, ["b"] = 3 };
+
+        foreach (KeyValuePair<string, int> kv in trie)
+            trie[kv.Key] = kv.Value + 10;
+
+        Assert.Equal(new[] { 11, 12, 13 }, trie.Values);
+    }
 }

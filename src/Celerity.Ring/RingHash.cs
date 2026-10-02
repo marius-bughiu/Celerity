@@ -10,28 +10,21 @@ namespace Celerity.Ring;
 /// </summary>
 internal static class RingHash
 {
-    // "lowbias32" integer finalizer (the same well-distributed mix Celerity's frozen collections use to place
-    // elements). A single hardware-independent multiply/xor/shift chain, so it avalanches a raw node hash into a
-    // uniformly spread ring position without any platform-varying operation.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static uint Finalize(uint h)
-    {
-        h ^= h >> 16;
-        h *= 0x7FEB352Du;
-        h ^= h >> 15;
-        h *= 0x846CA68Bu;
-        h ^= h >> 16;
-        return h;
-    }
-
     /// <summary>
     /// Computes the ring position of a node's <paramref name="replicaIndex"/>-th virtual node from the node's
-    /// base hash. Folding the replica index in with the golden-ratio increment before the finalizer spreads a
-    /// single node's virtual nodes uniformly around the ring, and does so identically on every process.
+    /// base hash: the high half of <see cref="Mix64"/> over the (node hash, replica index) pair.
     /// </summary>
+    /// <remarks>
+    /// Both inputs go through a real 64-bit mix, so two nodes share a position only by independent chance, one
+    /// virtual node at a time. Finalizing an arithmetic progression of the node hash instead (the placement
+    /// before #459) made two nodes whose hashes sat <c>j</c> golden-ratio steps apart share all but <c>j</c> of
+    /// their positions, and the node that loses ties kept a few percent of its keys. Two node ids whose 32-bit
+    /// hashes collide outright still share the position of every replica index both have; that is inherent to a
+    /// 32-bit node hash.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static uint VirtualNodePosition(uint nodeHash, int replicaIndex) =>
-        Finalize(nodeHash + unchecked((uint)replicaIndex * 0x9E3779B9u));
+        (uint)(Mix64(nodeHash, (uint)replicaIndex) >> 32);
 
     /// <summary>
     /// Combines a node hash and a key hash into a 64-bit avalanche used as a rendezvous (highest-random-weight)
