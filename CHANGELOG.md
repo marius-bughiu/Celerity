@@ -6,6 +6,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- **A rejected `AbuseTracker.Merge` now leaves the destination tracker unchanged.** Incompatible sketch geometry throws `ArgumentException` before any observations are merged. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
+
 - **Hash-family source constructors now reject a negative `capacity` with `ArgumentOutOfRangeException`**, matching their capacity-only overloads. A `null` source still throws `ArgumentNullException` first. Closes [#460](https://github.com/marius-bughiu/Celerity/issues/460).
 
 - **`AbuseTracker.Merge` no longer overstates how many times a merged offender was seen**, so every reported `Offender` range again contains its true count — including after `StripedAbuseTracker.Snapshot`, which merges its stripes. Closes [#454](https://github.com/marius-bughiu/Celerity/issues/454).
