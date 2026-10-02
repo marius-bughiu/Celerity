@@ -12,6 +12,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- `LruCache` and `LfuCache`'s source constructors now report a `null` source as `ArgumentNullException` even when `capacity` is also invalid, matching every other collection's `IEnumerable` constructor. Previously the invalid capacity won and surfaced as `ArgumentOutOfRangeException`. Closes #463.
+
 - **`Trie<TValue>.GetByPrefix` and `GetKeysWithPrefix` now behave like `Keys` and `Values`:** they look the prefix up and start the modification check when enumerated rather than when called, keep failing fast after they are exhausted, and support `Reset` instead of throwing `NotSupportedException`. A change made between the call and the `foreach` no longer throws. Closes #483.
 
 - **A rejected `AbuseTracker.Merge` now leaves the destination tracker unchanged.** Incompatible sketch geometry throws `ArgumentException` before any observations are merged. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
