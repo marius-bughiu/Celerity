@@ -21,6 +21,11 @@ public class SpanBitsTests
     [InlineData(65, 2)]
     [InlineData(128, 2)]
     [InlineData(129, 3)]
+    // Within 63 of int.MaxValue a signed `(bitCount + 63) / 64` wraps negative; CompressedGraph and
+    // WaveletTree size their bitmaps through this helper so they share the widened round-up (#490).
+    [InlineData(int.MaxValue - 63, 33_554_431)]
+    [InlineData(int.MaxValue - 62, 33_554_432)]
+    [InlineData(int.MaxValue, 33_554_432)]
     public void WordCount_RoundsUpToWholeWords(int bitCount, int expected)
     {
         Assert.Equal(expected, SpanBits.WordCount(bitCount));
