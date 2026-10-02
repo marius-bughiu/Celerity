@@ -8,9 +8,9 @@ namespace Celerity.Sentinel;
 /// would grow unbounded and OOM.
 /// </summary>
 /// <remarks>
-/// Two trackers must be constructed with equal options to be merged (see
-/// <see cref="AbuseTracker{TKey, THasher}.Merge"/>), because a merge combines the underlying sketches, which
-/// requires identical geometry.
+/// A merge combines the underlying sketches, so it needs identical geometry plus a matching first-seen setting
+/// (see <see cref="AbuseTracker{TKey, THasher}.Merge"/>) — the shape these options size, not the option values
+/// themselves. Constructing both trackers with equal options is the simple way to guarantee that.
 /// </remarks>
 public sealed class AbuseTrackerOptions
 {
