@@ -71,6 +71,16 @@ public class MinTableSizeForTests
     }
 
     [Fact]
+    public void NaNLoadFactor_IsClampedToTheLowEnd_LikeANonPositiveOne()
+    {
+        // NaN fails every comparison, so a `<= 0f` clamp let it through and the helper returned the
+        // 2^30 ceiling for a single entry (issue #493). It must clamp like a non-positive factor.
+        Assert.Equal(FastUtils.MinTableSizeFor(1, 0f), FastUtils.MinTableSizeFor(1, float.NaN));
+        Assert.Equal(FastUtils.MinTableSizeFor(100, 0f), FastUtils.MinTableSizeFor(100, float.NaN));
+        Assert.True(FastUtils.MinTableSizeFor(1, float.NaN) < FastUtils.MaxPowerOfTwoCapacity);
+    }
+
+    [Fact]
     public void HugeCount_CapsAtMaxPowerOfTwoCapacity()
     {
         // No power-of-two table can hold int.MaxValue entries; the helper saturates at the ceiling

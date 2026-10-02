@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- **The 17 open-addressed hash collections now reject a `NaN` load factor with `ArgumentOutOfRangeException`**, as their docs promise for any value outside (0, 1). `NaN` used to be accepted and made every insert double the table, so a few dozen adds exhausted memory or hit the 2³⁰-slot ceiling. `FastUtils.MinTableSizeFor` now clamps `NaN` like a non-positive load factor instead of returning 2³⁰. Closes [#493](https://github.com/marius-bughiu/Celerity/issues/493).
+
 ## [3.3.1] - 2026-09-27
 
 ### Fixed

@@ -134,7 +134,7 @@ public class LongDictionary<TValue, THasher>
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
-        if (loadFactor <= 0f || loadFactor >= 1f)
+        if (!(loadFactor > 0f && loadFactor < 1f))
             throw new ArgumentOutOfRangeException(nameof(loadFactor), loadFactor, "Load factor must be between 0 (exclusive) and 1 (exclusive).");
 
         int size = FastUtils.NextPowerOfTwo(capacity);
