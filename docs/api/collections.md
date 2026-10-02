@@ -6574,7 +6574,8 @@ The write is the reason to use it, and the gap grows with the map: the list's as
 | --- | --- |
 | `RangeMap()` / `RangeMap(TComparer comparer)` | An empty map ordered by `default(TComparer)` or by the supplied comparer. |
 | `RangeMap(TComparer comparer, IEqualityComparer<TValue>? valueComparer)` | The same, with the equality that decides when neighbours merge and when an assignment is a no-op; `null` for `EqualityComparer<TValue>.Default`. |
-| `RangeMap(IEnumerable<Interval<TKey, TValue>> source)` / `(source, TComparer comparer)` | Assign each interval in turn, so a later one overwrites an earlier one where they overlap. `ArgumentNullException` on `null`, `ArgumentException` when an interval's end orders before its start. |
+| `RangeMap(IEnumerable<Interval<TKey, TValue>> source)` / `(source, TComparer comparer)` / `(source, TComparer comparer, IEqualityComparer<TValue>? valueComparer)` | Assign each interval in turn, so a later one overwrites an earlier one where they overlap; seeded neighbours merge by the value comparer when one is given. `ArgumentNullException` on `null`, `ArgumentException` when an interval's end orders before its start. |
+| `RangeMap<TKey, TValue>(IEqualityComparer<TValue>? valueComparer)` / `(source, IEqualityComparer<TValue>? valueComparer)` | The two-parameter alias's value-comparer forms, empty or seeded, ordered by `Comparer<TKey>.Default`. An untyped `null` or `default`, or an argument whose static type implements both source and comparer interfaces, matches both one-argument overloads; cast it to the intended parameter type. |
 | `int Count { get; }` | The number of stored ranges — maximal runs, not assignments. |
 | `TValue this[TKey key] { get; }` | The value at `key`. `KeyNotFoundException` when no range contains it. |
 | `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | Point lookup, `O(log n)`. |
@@ -6593,7 +6594,7 @@ Every member taking a range throws `ArgumentException` when `end` orders before 
 - **Not thread-safe.** Concurrent callers must synchronize externally. Both enumerators fail fast on any write that changes the map — including one made after the walk has finished — and survive every write that does not.
 - **Adjacency is exact.** Two ranges merge only when one ends exactly where the next begins under `TComparer`. Over `int` keys, `[0, 5)` and `[5, 8)` merge but `[0, 5)` and `[6, 8)` do not, since key `5` is unmapped between them.
 - **The comparer defines everything.** `TComparer` orders the keys, decides which ranges are empty, and therefore decides what overlaps what — over a descending comparer, `[10, 0)` holds `10` down to `1`. A `null` key is legal wherever the comparer orders it. Use the two-parameter `RangeMap<TKey, TValue>` alias for the natural order.
-- **Merging needs a meaningful equality.** A reference-typed value without an `Equals` override merges only with the *same instance*, which is usually what you want for shared configuration objects and never what you want for freshly allocated ones; pass a value comparer when it is not.
+- **Merging needs a meaningful equality.** A reference-typed value without an `Equals` override merges only with the *same instance*, which is usually what you want for shared configuration objects and never what you want for freshly allocated ones; pass a value comparer when it is not — `new RangeMap<int, Config>(configComparer)`, or `new RangeMap<int, Config>(source, configComparer)` to seed it.
 
 ### Usage example
 

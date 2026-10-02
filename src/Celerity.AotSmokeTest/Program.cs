@@ -1296,6 +1296,11 @@ void Check(bool condition, string message)
         new[] { new Interval<string, int>("z", "m", 1), new Interval<string, int>("m", "a", 2) }, default);
     Check(calendar.Count == 2 && calendar["q"] == 1 && calendar["c"] == 2 && !calendar.ContainsKey("a"),
         "RangeMap custom comparer instantiation");
+
+    var seeded = new RangeMap<int, string>(
+        new[] { new Interval<int, string>(0, 10, "hot"), new Interval<int, string>(10, 20, "HOT") },
+        StringComparer.OrdinalIgnoreCase);
+    Check(seeded.Count == 1 && seeded[15] == "HOT", "RangeMap seeded value comparer merges equal neighbours");
 }
 
 // SuffixArray — the build-once text index. What is ILC-specific here is the memory shape rather than any
