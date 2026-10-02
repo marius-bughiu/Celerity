@@ -827,6 +827,38 @@ void Check(bool condition, string message)
     Check(reached.Count == 4 && reached.Contains(2), "SparseSet ISet<int> union within universe");
 }
 
+// SparseMap — the dictionary half of the sparse tier. Exercise the indexer's insert and
+// overwrite paths, the swap-remove that has to carry the moved entry's value with it, the
+// split Clear contract on a reference-holding TValue, and the Keys / Values struct views.
+{
+    var sm = new SparseMap<string>(64);
+    for (int i = 0; i < 10; i++) sm[i] = $"v{i}";
+    Check(sm.Count == 10 && sm.Universe == 64 && sm[0] == "v0" && sm[9] == "v9", "SparseMap indexer insert");
+    sm[3] = "changed";
+    Check(sm.Count == 10 && sm[3] == "changed", "SparseMap indexer overwrite keeps the count");
+    Check(!sm.TryAdd(5, "dup"), "SparseMap.TryAdd duplicate");
+    Check(!sm.ContainsKey(64) && !sm.ContainsKey(-1), "SparseMap out-of-range reads absent");
+    Check(sm.Remove(2, out string? gone) && gone == "v2" && sm[9] == "v9", "SparseMap swap-remove carries values");
+    Check(sm.ContainsValue("v9") && !sm.ContainsValue("v2"), "SparseMap ContainsValue scans the dense prefix");
+
+    sm.Clear();
+    Check(sm.Count == 0 && !sm.ContainsKey(0) && !sm.ContainsKey(9), "SparseMap clear rejects stale entries");
+    sm[9] = "again"; // 9 was present before Clear — must not false-positive until re-added
+    Check(sm.Count == 1 && sm[9] == "again" && !sm.ContainsKey(0), "SparseMap reusable after clear");
+
+    var built = new SparseMap<int>(128, new[]
+    {
+        new KeyValuePair<int, int>(3, 30),
+        new KeyValuePair<int, int>(7, 70),
+        new KeyValuePair<int, int>(1, 10),
+    });
+    var keys = new List<int>();
+    foreach (KeyValuePair<int, int> entry in built) keys.Add(entry.Key);
+    Check(built.Count == 3 && keys.Count == 3, "SparseMap source ctor + enumeration");
+    Check(built.Keys.Count == 3 && built.Values.Contains(70), "SparseMap Keys / Values views");
+    Check(((IReadOnlyDictionary<int, int>)built)[7] == 70, "SparseMap IReadOnlyDictionary indexer");
+}
+
 // CompressedIntSet — chunk-compressed 32-bit integer set. Drive every one of the three
 // container forms (sorted array, bitmap, run-length) through the AOT compiler, plus the
 // chunk-wise set algebra, the range add that produces runs, and Optimize.

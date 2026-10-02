@@ -40,7 +40,8 @@ public sealed class RangeMap<TKey, TValue> : RangeMap<TKey, TValue, DefaultCompa
     /// <remarks>
     /// As with <see cref="Dictionary{TKey, TValue}"/>'s comparer and source constructors, an untyped
     /// <c>null</c> or <c>default</c> argument matches this overload and the <c>source</c> one alike; cast it to
-    /// the parameter type you mean.
+    /// the parameter type you mean. An argument whose static type implements both interfaces is ambiguous too;
+    /// cast it to <c>IEnumerable&lt;Interval&lt;TKey, TValue&gt;&gt;</c> to preserve the source-constructor meaning.
     /// </remarks>
     public RangeMap(IEqualityComparer<TValue>? valueComparer)
         : base(default(DefaultComparer<TKey>), valueComparer)

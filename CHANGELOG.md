@@ -8,6 +8,20 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **`RangeMap<TKey, TValue>` now takes a value comparer**, empty or seeded from a source (and the three-parameter form gains `(source, comparer, valueComparer)`), so merging by a custom equality no longer needs the full generic type or gives up seeding. ⚠️ Source-breaking, binary-compatible: an untyped `null`/`default` argument is now ambiguous — see [the migration guide](docs/migration.md#new-rangemaptkey-tvaluenull--a-typed-argument). Closes [#465](https://github.com/marius-bughiu/Celerity/issues/465).
 
+- **`SparseMap<TValue>`** is a bounded-universe integer dictionary for frequently cleared and rebuilt side tables. At 100,000 entries over a 4x universe, lookup is 3.1x and clear-and-rebuild 2.4x faster than `Dictionary<int, V>`; enumeration gains only 1.13x, allocation costs 1.10x, and filling 1,000 entries is 17% slower. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
+
+### Fixed
+
+- **`Trie<TValue>.GetByPrefix` and `GetKeysWithPrefix` now behave like `Keys` and `Values`:** they look the prefix up and start the modification check when enumerated rather than when called, keep failing fast after they are exhausted, and support `Reset` instead of throwing `NotSupportedException`. A change made between the call and the `foreach` no longer throws. Closes #483.
+
+- **A rejected `AbuseTracker.Merge` now leaves the destination tracker unchanged.** Incompatible sketch geometry throws `ArgumentException` before any observations are merged. Closes [#458](https://github.com/marius-bughiu/Celerity/issues/458).
+
+- **Hash-family source constructors now reject a negative `capacity` with `ArgumentOutOfRangeException`**, matching their capacity-only overloads. A `null` source still throws `ArgumentNullException` first. Closes [#460](https://github.com/marius-bughiu/Celerity/issues/460).
+
+- **`AbuseTracker.Merge` no longer overstates how many times a merged offender was seen**, so every reported `Offender` range again contains its true count — including after `StripedAbuseTracker.Snapshot`, which merges its stripes. Closes [#454](https://github.com/marius-bughiu/Celerity/issues/454).
+
+## [3.3.1] - 2026-09-27
+
 ### Fixed
 
 - **`Trie<TValue>` no longer invalidates enumerators when the indexer overwrites an existing key's value**, matching `Dictionary<TKey, TValue>` and the rest of the dictionary family (#233), so updating values while iterating the trie works. Its `Keys` and `Values` views now start their modification check when enumerated rather than when the property is read, and detect a change made after they finish. Closes [#461](https://github.com/marius-bughiu/Celerity/issues/461).
@@ -775,7 +789,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.1
 [3.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.0
 [3.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.2.0
 [3.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.1.0

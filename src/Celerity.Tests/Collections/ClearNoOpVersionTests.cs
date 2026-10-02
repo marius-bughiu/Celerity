@@ -180,6 +180,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void SparseMapClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var map = new SparseMap<int>(universe: 16);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => map.GetEnumerator(), map.Clear, () => map.Count, () => map.Add(1, 10));
+    }
+
+    [Fact]
     public void TrieClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var trie = new Trie<int>();
