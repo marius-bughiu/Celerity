@@ -89,7 +89,8 @@ public static class FastUtils
     /// </param>
     /// <param name="loadFactor">
     /// The table's load factor, strictly between 0 and 1. Values outside that range are clamped
-    /// into it so the helper never divides by a non-positive or &gt;= 1 factor.
+    /// into it so the helper never divides by a non-positive or &gt;= 1 factor; <see cref="float.NaN"/>
+    /// is clamped to the low end, like a non-positive value.
     /// </param>
     /// <returns>
     /// The smallest power-of-two size satisfying the threshold, never exceeding
@@ -100,7 +101,7 @@ public static class FastUtils
     {
         if (entryCount <= 0)
             return 1;
-        if (loadFactor <= 0f)
+        if (!(loadFactor > 0f)) // also catches NaN, which fails every comparison
             loadFactor = 0.0001f;
         else if (loadFactor >= 1f)
             loadFactor = 0.9999f;

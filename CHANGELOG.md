@@ -12,6 +12,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- Hash-collection constructors now reject `float.NaN` load factors with `ArgumentOutOfRangeException`, preventing runaway table growth. `FastUtils.MinTableSizeFor` clamps NaN to its documented low-end load factor. Closes #493.
+
 - `CelerityMultiMap.ValueGroup` and `Grouping` now remain live after a group is removed, cleared, or recreated, including views obtained before a key exists. Fresh enumerations see current values and still fail fast on later mutations. Closes #492.
 
 - `CompressedGraph` now rejects a vertex count above `Array.MaxLength - 1` with `ArgumentOutOfRangeException` before allocating its offsets array. Graph traversal and `WaveletTree` bitmap sizing use the shared overflow-safe word-count helper. Closes #490.
