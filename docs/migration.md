@@ -234,7 +234,7 @@ Everything else — the hashers, `VarInt`, `FastGuid`, the PRNGs — keeps its n
 
 ## `UInt32Hasher` / `UInt64Hasher` → the algorithm-named types
 
-The two bare-named unsigned hashers were renamed so every integer hasher says which tier of the escalation ladder it is, the way the signed families always have. The old names shipped as `[Obsolete]` aliases from v2.6.0 through v3.0.0 and **no longer exist**, so a call site that still names one is now a compile error rather than a warning. The replacement is a find-and-replace with **no change to any hash value**:
+The two bare-named unsigned hashers were renamed so every integer hasher says which tier of the escalation ladder it is, the way the signed families always have. The old names shipped as `[Obsolete]` aliases from v2.7.0 through v3.0.0 and **no longer exist**, so a call site that still names one is now a compile error rather than a warning. The replacement is a find-and-replace with **no change to any hash value**:
 
 | Old name | New name | What it always was |
 |---|---|---|
