@@ -10,6 +10,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **`SparseMap<TValue>`** is a bounded-universe integer dictionary for frequently cleared and rebuilt side tables. At 100,000 entries over a 4x universe, lookup is 3.1x and clear-and-rebuild 2.4x faster than `Dictionary<int, V>`; enumeration gains only 1.13x, allocation costs 1.10x, and filling 1,000 entries is 17% slower. [API reference](docs/api/collections.md#sparsemaptvalue). Closes [#473](https://github.com/marius-bughiu/Celerity/issues/473).
 
+### Changed
+
+- Benchmarks with per-iteration setup now use longer warmup in local and CI runs. `RangeMap`'s assignment figures have been refreshed from warmed measurements. Closes #464.
+
 ### Fixed
 
 - `CountingSort.SortWithScratch` now rejects counters that overlap the payload or its scratch buffer before modifying any buffers, preventing silent sort corruption. Closes #495.
@@ -42,7 +46,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Added
 
 - **`PersistentHashSet<T, THasher>`** in `Celerity.Collections` — an **immutable hash set**, the set half of `PersistentHashMap`: every edit returns a new set that shares nearly all of its receiver's storage, and an edit that changes nothing returns the receiver. Answers `Contains` about **5x** faster than `ImmutableHashSet<T>` and retains about **1.7x** less memory; ⚠️ `Remove` allocates ~16% more. See [the API reference](docs/api/collections.md#persistenthashsett-thasher). Closes [#446](https://github.com/marius-bughiu/Celerity/issues/446).
-- **`RangeMap<TKey, TValue>`** in `Celerity.Collections` — a mutable map from **disjoint half-open ranges** to values: assigning `[start, end)` overwrites what was there, splitting straddling ranges and merging equal neighbours, so the map always holds the maximal runs. It is the coalescing interval map `IntervalTree` is not, and .NET ships none. At 100,000 ranges an assignment is **7.5x** faster than a sorted `List<T>` patched in place; ⚠️ every read loses to that list's binary search (lookup 1.5x, window walk 3x slower), and at 1,000 ranges so does the write — it is for maps you keep editing. Closes [#448](https://github.com/marius-bughiu/Celerity/issues/448).
+- **`RangeMap<TKey, TValue>`** in `Celerity.Collections` — a mutable map from **disjoint half-open ranges** to values: assigning `[start, end)` overwrites what was there, splitting straddling ranges and merging equal neighbours, so the map always holds the maximal runs. It is the coalescing interval map `IntervalTree` is not, and .NET ships none. Warmed Apple M4 / .NET 10 runs measure an assignment **8.6–8.8x** faster than a sorted `List<T>` patched in place at 100,000 ranges; ⚠️ every read loses to that list's binary search (lookup 1.5x, window walk 3x slower), and at 1,000 ranges so does the write — it is for maps you keep editing. Closes [#448](https://github.com/marius-bughiu/Celerity/issues/448).
 
 ### Fixed
 

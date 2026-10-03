@@ -22,6 +22,7 @@ public class ExtendedCiConfig : ManualConfig
     public ExtendedCiConfig()
     {
         AddJob(Job.Default
+            .WithEngineFactory(new TieredPgoWarmupFactory())
             .WithLaunchCount(1));
 
         AddExporter(JsonExporter.Full);

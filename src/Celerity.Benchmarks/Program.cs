@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
 
 internal class Program
@@ -130,6 +131,12 @@ internal class Program
 
     static void Main(string[] args)
     {
+        if (args.Contains("--warmup-self-test"))
+        {
+            WarmupSelfTest.Run();
+            return;
+        }
+
         if (args.Contains("--hash-quality"))
         {
             // Offline distribution-quality report (deterministic; no BenchmarkDotNet run).
@@ -196,7 +203,11 @@ internal class Program
             // Local mode: expose every benchmark (core + extended) to the switcher,
             // forwarding args (interactive prompt if none given).
             var all = CoreBenchmarks.Concat(ExtendedBenchmarks).ToArray();
-            new BenchmarkSwitcher(all).Run(args);
+            // A mutator preserves CLI-selected jobs/runtimes while giving local
+            // iteration-setup benchmarks the same warmup policy as both CI suites.
+            var localConfig = ManualConfig.Create(DefaultConfig.Instance)
+                .AddJob(Job.Default.WithEngineFactory(new TieredPgoWarmupFactory()).AsMutator());
+            new BenchmarkSwitcher(all).Run(args, localConfig);
         }
     }
 

@@ -17,9 +17,11 @@ public class CiConfig : ManualConfig
         // every PR (#217). Rather than trade away accuracy, benchmarks.yml now shards the
         // core suite across a parallel matrix (see Program.cs `--shard`), so each runner
         // measures only a fraction of the suite (head + base) and the wall time drops to
-        // ~3h / shardCount — at full accuracy. Keep this job schedule as-is; scale the
-        // matrix in benchmarks.yml if the suite grows.
+        // ~3h / shardCount — at full accuracy. The shared factory extends warmup only
+        // for single-invocation jobs, whose tiny iterations can otherwise finish before
+        // tier-up; preserve the launch count and scale the matrix if the suite grows.
         AddJob(Job.Default
+            .WithEngineFactory(new TieredPgoWarmupFactory())
             .WithLaunchCount(2));
 
         AddExporter(JsonExporter.Full);
