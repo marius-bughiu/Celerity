@@ -7,7 +7,7 @@ namespace Celerity.Primitives;
 /// PCG32 (PCG-XSH-RR, O'Neill 2014) — the statistical-reputation pick: a 64-bit LCG whose output is
 /// permuted by an xorshift-then-random-rotation step, giving 32-bit outputs that pass the standard test
 /// batteries from a small, simple core. It additionally supports <strong>independent streams</strong>: two
-/// instances with the same seed but different sequence selectors produce uncorrelated sequences.
+/// instances with the same seed and sequence selectors differing in their low 63 bits select distinct streams.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,7 +19,8 @@ namespace Celerity.Primitives;
 /// and for the general-purpose 64-bit default use <see cref="Xoshiro256StarStar"/>.
 /// </para>
 /// <para>
-/// It is a mutable <see langword="struct"/>: copying it forks the stream.
+/// It is a mutable <see langword="struct"/>: copying it forks the stream. Use a seed-taking constructor;
+/// <c>default(Pcg32)</c> and <c>new Pcg32()</c> leave a zero increment and return zero forever.
 /// </para>
 /// </remarks>
 public struct Pcg32 : IRandomSource
@@ -41,12 +42,11 @@ public struct Pcg32 : IRandomSource
 
     /// <summary>
     /// Creates a generator seeded with <paramref name="seed"/> on the independent stream selected by
-    /// <paramref name="sequence"/>. Two generators sharing a seed but differing in <paramref name="sequence"/>
-    /// produce uncorrelated sequences, which is the standard way to give each worker / shard its own
-    /// reproducible stream.
+    /// <paramref name="sequence"/>. Selectors differing in their low 63 bits select distinct streams,
+    /// which is the standard way to give each worker / shard its own reproducible stream.
     /// </summary>
     /// <param name="seed">The 64-bit seed.</param>
-    /// <param name="sequence">The stream selector; any value distinguishes one stream from another.</param>
+    /// <param name="sequence">The stream selector; its low 63 bits select the stream and its high bit is ignored.</param>
     public Pcg32(ulong seed, ulong sequence)
     {
         // Standard PCG seeding: the increment must be odd, so it is (sequence << 1) | 1.

@@ -44,7 +44,7 @@ public sealed class Deque<T> : IReadOnlyList<T>
 
     // Incremented on every structural mutation (push/pop/clear/grow/trim) so active enumerators can detect
     // concurrent modification and throw. Operations that change nothing observable do not bump it: an indexer
-    // set is an in-place element change, not structural (matching List<T>), and a Clear() or TrimExcess() with
+    // set is an in-place element change, not structural, and a Clear() or TrimExcess() with
     // nothing to do returns early.
     private int _version;
 

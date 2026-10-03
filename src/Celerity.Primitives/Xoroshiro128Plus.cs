@@ -19,9 +19,11 @@ namespace Celerity.Primitives;
 /// the high bits, so they are safe on this generator.)
 /// </para>
 /// <para>
-/// The constructor seeds both state words through <see cref="SplitMix64"/>, so any single
+/// The seed-taking constructor seeds both state words through <see cref="SplitMix64"/>, so any single
 /// <see cref="ulong"/> seed (including <c>0</c>) produces a valid state — the degenerate all-zero state is
-/// never reachable. It is a mutable <see langword="struct"/>: copying it forks the stream.
+/// unreachable from that expansion. It is a mutable <see langword="struct"/>: copying it forks the stream.
+/// Always supply a seed; <c>default(Xoroshiro128Plus)</c> and <c>new Xoroshiro128Plus()</c> leave the
+/// all-zero state and return zero forever.
 /// </para>
 /// </remarks>
 public struct Xoroshiro128Plus : IRandomSource

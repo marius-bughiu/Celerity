@@ -15,14 +15,14 @@ namespace Celerity.Primitives;
 /// <para>
 /// <strong>Every input span must be sorted ascending. Sorted by construction, or this is worthless:</strong>
 /// the merge exploits ordering to touch each element once, so unsorted input silently produces a wrong
-/// answer rather than an error. Debug builds assert the precondition (an <c>O(n)</c> scan per call);
-/// Release builds do not check it at all, which is the whole point.
+/// answer rather than an error. Debug builds of Celerity itself assert the precondition (an <c>O(n)</c> scan
+/// per call). The published NuGet package is built in Release and never checks it, even in a Debug consumer.
 /// </para>
 /// <para>
 /// <strong>The destination must not overlap either input.</strong> The merge writes its result while it
 /// is still reading both sources, so an aliasing buffer can overwrite elements that have not been
-/// consumed yet — silently, in the same way unsorted input does. This is asserted in Debug builds and
-/// unchecked in Release, exactly as the ordering precondition is.
+/// consumed yet — silently, in the same way unsorted input does. Only Debug builds of Celerity itself assert
+/// this precondition; the published NuGet package does not check it, exactly as with the ordering precondition.
 /// </para>
 /// <para>
 /// The BCL has no set algebra over spans. <see cref="MemoryExtensions"/> gained <c>CommonPrefixLength</c>,
@@ -572,9 +572,9 @@ public static class SortedSpan
         => throw new ArgumentException("Destination is too short to hold the result.", paramName);
 
     /// <summary>
-    /// Debug-build verification that the result buffer does not alias either input. The merge writes to
-    /// <paramref name="destination"/> while it is still reading both sources, so an overlapping buffer
-    /// can overwrite elements that have not been consumed yet and silently produce a wrong answer.
+    /// Verification in Debug builds of this library that the result buffer does not alias either input.
+    /// The merge writes to <paramref name="destination"/> while it is still reading both sources, so an
+    /// overlapping buffer can overwrite elements not yet consumed and silently produce a wrong answer.
     /// Elided from Release builds along with the rest of the precondition checking.
     /// </summary>
     [Conditional("DEBUG")]
@@ -590,9 +590,9 @@ public static class SortedSpan
     }
 
     /// <summary>
-    /// Debug-build verification of the ascending-order precondition. Elided entirely from Release builds
-    /// — including the scan, since <see cref="ConditionalAttribute"/> removes the call site and with it
-    /// the argument evaluation — so the shipped code pays nothing for it.
+    /// Verification of the ascending-order precondition in Debug builds of this library. Elided entirely
+    /// from Release builds — including the scan, since <see cref="ConditionalAttribute"/> removes the call
+    /// site and with it the argument evaluation — so the shipped code pays nothing for it.
     /// </summary>
     [Conditional("DEBUG")]
     [ExcludeFromCodeCoverage(Justification = "Debug-only precondition check whose failing path calls Debug.Assert, which no test can drive without tearing down the test host.")]
