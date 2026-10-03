@@ -4864,8 +4864,8 @@ public static readonly PersistentHashSet<T, THasher> Empty
   `IsSubsetOf`, `IsProperSubsetOf`, `IsProperSupersetOf`, and `SetEquals` materialize its distinct
   elements once into a `HashSet<T>` using `EqualityComparer<T>.Default`, unless a fast path answers
   first. All six answer same-instance inputs without enumeration; `IsSubsetOf` and `Overlaps`
-  also skip an empty receiver. Streaming does not copy `other`, but obtaining its enumerator can
-  still allocate.
+  also return immediately when the receiver is empty. Streaming does not copy `other`, but obtaining
+  its enumerator can still allocate.
 - `Builder ToBuilder()` — a mutable builder seeded with this set's elements.
 - `Enumerator GetEnumerator()` — an allocation-free struct enumerator over an inline descent stack.
   Nothing can invalidate it; once `MoveNext` has returned `false` it keeps returning `false`, and

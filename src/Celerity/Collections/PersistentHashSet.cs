@@ -355,7 +355,7 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     // stream `other` against Contains (a short trie descent) and may stop early. IsSubsetOf,
     // IsProperSubsetOf, IsProperSupersetOf and SetEquals materialize `other` once into a distinct HashSet
     // using EqualityComparer<T>.Default, unless a fast path answers first. All six queries answer
-    // same-instance inputs without enumeration; IsSubsetOf and Overlaps also skip an empty receiver.
+    // same-instance inputs without enumeration; IsSubsetOf and Overlaps also return immediately when empty.
     // Streaming does not copy `other`, but obtaining its enumerator can still allocate.
 
     /// <summary>
