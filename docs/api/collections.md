@@ -710,7 +710,7 @@ The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<
 - **Mutating:** `void UnionWith(IEnumerable<T> other)`, `void IntersectWith(IEnumerable<T> other)`, `void ExceptWith(IEnumerable<T> other)`, `void SymmetricExceptWith(IEnumerable<T> other)`.
 - **Query:** `bool IsSubsetOf(...)`, `bool IsProperSubsetOf(...)`, `bool IsSupersetOf(...)`, `bool IsProperSupersetOf(...)`, `bool Overlaps(...)`, `bool SetEquals(...)`.
 
-Each throws `ArgumentNullException` when `other` is `null`. The subset / equality shapes materialize `other` once into a distinct `HashSet<T>` keyed by `EqualityComparer<T>.Default` (the same equality the set itself uses); the superset / overlap shapes stream `other` directly against the set's O(1) membership test.
+Each throws `ArgumentNullException` when `other` is `null`. `IsSupersetOf` and `Overlaps` stream `other` directly against `Contains` and may stop early. `IsSubsetOf`, `IsProperSubsetOf`, `IsProperSupersetOf`, and `SetEquals` materialize `other` once into a distinct `HashSet<T>` keyed by `EqualityComparer<T>.Default`, the equality this set uses. `IsSubsetOf` skips that copy when the receiver is empty; `IsProperSupersetOf` skips it when `other` is an empty `ICollection<T>`. Streaming does not copy `other`, but obtaining its enumerator can still allocate.
 
 > **`Add` note.** `ISet<T>.Add(T)` returns `bool` (the non-throwing add, equivalent to `TryAdd`). The concrete `public void Add(T)` keeps its throw-on-duplicate behaviour — cast to `ISet<T>`, or use `TryAdd`, when you want the boolean result. `ICollection<T>.Add(T)` ignores duplicates (never throws).
 
@@ -1404,9 +1404,10 @@ out-of-band; the empty string `""` is an ordinary element.
 Implements `IReadOnlySet<string>`, so the set-algebra members
 `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`,
 and `Overlaps` are all available (each throws `ArgumentNullException` on a `null`
-`other`). The superset / overlap shapes stream `other` directly against the `O(1)`
-membership test; the subset / equality shapes materialize `other`'s distinct elements
-once into an ordinal set, exactly as the BCL set types do internally.
+`other`). `IsSupersetOf` and `Overlaps` stream `other` against `Contains` and may stop early.
+`IsSubsetOf`, `IsProperSubsetOf`, `IsProperSupersetOf`, and `SetEquals` materialize its distinct
+elements once into an ordinal `HashSet<string>`, including for empty and same-instance inputs.
+Streaming does not copy `other`, but obtaining its enumerator can still allocate.
 
 ### The perfect-hash fast path and the fallback
 
@@ -4859,8 +4860,12 @@ public static readonly PersistentHashSet<T, THasher> Empty
   receiver when `other` is empty.
 - `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` /
   `SetEquals` — the `IReadOnlySet<T>` queries, with `HashSet<T>` semantics: duplicates in `other` are
-  ignored, and the superset and overlap shapes stream `other` against `Contains` rather than
-  materializing it.
+  ignored. `IsSupersetOf` and `Overlaps` stream `other` against `Contains` and may stop early;
+  `IsSubsetOf`, `IsProperSubsetOf`, `IsProperSupersetOf`, and `SetEquals` materialize its distinct
+  elements once into a `HashSet<T>` using `EqualityComparer<T>.Default`, unless a fast path answers
+  first. All six answer same-instance inputs without enumeration; `IsSubsetOf` and `Overlaps`
+  also skip an empty receiver. Streaming does not copy `other`, but obtaining its enumerator can
+  still allocate.
 - `Builder ToBuilder()` — a mutable builder seeded with this set's elements.
 - `Enumerator GetEnumerator()` — an allocation-free struct enumerator over an inline descent stack.
   Nothing can invalidate it; once `MoveNext` has returned `false` it keeps returning `false`, and
