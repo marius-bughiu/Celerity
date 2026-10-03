@@ -581,7 +581,7 @@ public sealed class Rope : IReadOnlyList<char>
     /// honestly <c>O(n)</c>.
     /// </para>
     /// <para>
-    /// <b>This is the one mutation that does not run the defragmenting rebuild</b>, which is what makes the
+    /// <b>This operation does not run the defragmenting rebuild</b>, which is what makes the
     /// <c>O(log n)</c> unconditional rather than amortized. A join still adopts <paramref name="source"/>'s
     /// leaves in whatever <i>fill</i> that rope left them — a heavily edited source brings in more leaves than
     /// this rope's length warrants — and rebuilding for that here would turn a node relink into an

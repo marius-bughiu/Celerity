@@ -72,9 +72,9 @@ namespace Celerity.Collections;
 /// <b>Reads are mutating.</b> LFU semantics require a lookup to count as a use, so the indexer getter
 /// and <see cref="TryGet(TKey, out TValue)"/> increment the entry's frequency and therefore invalidate
 /// any in-progress enumerator. Unlike <see cref="LruCache{TKey, TValue, THasher}"/>, there is no
-/// exemption for an entry that is already at the front: raising a frequency from <c>f</c> to
-/// <c>f + 1</c> always moves the entry to a different bucket, so <i>every</i> hit is a structural
-/// change. Use <see cref="TryPeek(TKey, out TValue)"/>, <see cref="ContainsKey(TKey)"/> or
+/// exemption for an entry that is already at the front: <i>every</i> hit changes its frequency and
+/// invalidates enumerators, even when its existing bucket can be relabelled in place.
+/// Use <see cref="TryPeek(TKey, out TValue)"/>, <see cref="ContainsKey(TKey)"/> or
 /// <see cref="TryGetFrequency(TKey, out long)"/> to inspect the cache without counting a use.
 /// </para>
 /// <para>
@@ -254,8 +254,8 @@ public class LfuCache<TKey, TValue, THasher>
     /// </param>
     /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
     /// <remarks>
-    /// A hit always moves the entry to a different frequency bucket and therefore always invalidates
-    /// active enumerators. A miss changes nothing and leaves them valid.
+    /// A hit increments the entry's frequency and always invalidates active enumerators, even when its
+    /// existing bucket can be relabelled in place. A miss changes nothing and leaves them valid.
     /// </remarks>
     public bool TryGet(TKey key, out TValue? value)
     {
@@ -481,12 +481,11 @@ public class LfuCache<TKey, TValue, THasher>
     /// <b>most-frequently-used to least-frequently-used</b> order, and within one frequency in
     /// most-recently-used to least-recently-used order. Enumeration is a peek: it does not count as a
     /// use. <see cref="Enumerator.MoveNext"/> throws <see cref="InvalidOperationException"/> when the
-    /// entry set or the frequency order changed since the enumerator was taken: an insert, an eviction,
+    /// cache was modified since the enumerator was taken: an insert, an eviction,
     /// a <see cref="Remove(TKey)"/>, a <see cref="Clear"/>, or any read or write that counted as a use.
-    /// Because raising a frequency always moves the entry to a different bucket, there is no
-    /// already-at-the-front exemption of the kind <see cref="LruCache{TKey, TValue, THasher}"/> has —
-    /// every hit invalidates. Overwriting the value of an entry is a use and therefore also invalidates,
-    /// which is the one place this type is stricter than the rest of the library.
+    /// There is no already-at-the-front exemption of the kind <see cref="LruCache{TKey, TValue, THasher}"/>
+    /// has: every hit increments the frequency and invalidates, even when its bucket is relabelled in
+    /// place. Overwriting an entry's value also counts as a use and always invalidates.
     /// </summary>
     /// <returns>A struct enumerator over this cache.</returns>
     public Enumerator GetEnumerator() => new Enumerator(this);

@@ -358,8 +358,8 @@ public class EnumeratorInvalidationAndClearCoverageTests
         var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
         Assert.Contains("Collection was modified", ex.Message);
 
-        // Unlike LruCache, a plain read is enough to invalidate: raising a frequency always moves the
-        // entry to a different bucket, so there is no already-at-the-front exemption.
+        // Unlike LruCache, every successful read increments the frequency and invalidates, even when
+        // its bucket is relabelled in place. There is no already-at-the-front exemption.
         var second = cache.GetEnumerator();
         Assert.True(cache.TryGet(1, out _));
         Assert.Throws<InvalidOperationException>(() => second.MoveNext());

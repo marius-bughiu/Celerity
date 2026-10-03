@@ -7,8 +7,9 @@ namespace Celerity.Ring;
 /// A rendezvous (highest-random-weight, "HRW") hash that maps keys to nodes by scoring every node against the
 /// key and picking the highest — parameterized on the caller's key type and a zero-cost inlined
 /// <see cref="IHashProvider{T}"/>. Like <see cref="ConsistentHashRing{TNode, TKey, THasher}"/> it moves only a
-/// key's share of traffic when a node joins or leaves, but it keeps <strong>no ring array</strong>: there is
-/// nothing to rebuild on a membership change, which suits small, churning clusters. Scoring is pure integer
+/// key's share of traffic when a node joins or leaves, but it keeps <strong>no ring array</strong>.
+/// A membership change re-sorts the node identities and rebuilds the lookup snapshot in
+/// <c>O(NodeCount log NodeCount)</c>, which suits small, churning clusters. Scoring is pure integer
 /// arithmetic, so (given a deterministic key hasher) the key→node mapping is byte-identical on every process,
 /// runtime, and architecture.
 /// </summary>

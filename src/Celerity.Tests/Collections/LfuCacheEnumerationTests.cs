@@ -136,7 +136,7 @@ public class LfuCacheEnumerationTests
     public void MoveNext_ShouldThrowInvalidOperationException_WhenTheMostFrequentEntryIsRead()
     {
         // The point of departure from LruCache: promoting the front entry is a no-op there, but here
-        // it always moves the entry to a different frequency bucket, so it always invalidates.
+        // it increments the frequency and invalidates even when the bucket is relabelled in place.
         var cache = Cache();
         cache.Add(1, 10);
         cache.Add(2, 20);
