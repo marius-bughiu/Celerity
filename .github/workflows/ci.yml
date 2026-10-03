@@ -43,6 +43,9 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
+      - name: Verify benchmark warmup lifecycle
+        run: dotnet run --no-build --configuration Release --project Celerity.Benchmarks -- --warmup-self-test
+
       # The test project multi-targets net8.0;net9.0;net10.0, so a single
       # `dotnet test` run executes the full suite once per TFM on its own runtime.
       - name: Test

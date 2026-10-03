@@ -6561,11 +6561,11 @@ The ranges live in a [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictiona
 
 ### What it wins, and what it does not
 
-Measured against the hand-roll — a `List<Interval<int, int>>` kept sorted by start, binary-searched for reads and patched in place with at most one shift per assignment, and *not* merging neighbours, so it does strictly less work — with BenchmarkDotNet's default job over 1,000 operations:
+Measured against the hand-roll — a `List<Interval<int, int>>` kept sorted by start, binary-searched for reads and patched in place with at most one shift per assignment, and *not* merging neighbours, so it does strictly less work — over 1,000 operations on Apple M4 / .NET 10.0.10, with the shared warmup policy and two process launches. Assignment figures span two separate runs; read figures come from the full-class run:
 
 | | 1,000 ranges | 100,000 ranges |
 | --- | --- | --- |
-| `Set` — a short random assignment | 3.9–6.7x **slower** | **7.5x faster** |
+| `Set` — a short random assignment | 3.4–3.6x **slower** | **8.6–8.8x faster** |
 | `TryGetValue` | 1.5x slower | 1.5x slower |
 | `EnumerateOverlapping` — a window touching about five ranges | 3.7x slower | 3.1x slower |
 
