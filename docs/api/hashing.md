@@ -666,7 +666,7 @@ Wang/Jenkins-style bit-mixer for `uint` keys — the cheap-default tier of the `
 
 **Note:** the XOR-fold maps `0 → 0`. The dictionaries store the out-of-band zero-key entry without calling the hasher, so this does not collide with the empty-slot sentinel.
 
-> **Renamed.** This type shipped as `UInt32Hasher` through v2.5.0. See [removed hasher aliases](#removed-hasher-aliases).
+> **Renamed.** This type shipped as `UInt32Hasher` through v2.6.0. See [removed hasher aliases](#removed-hasher-aliases).
 
 ### UInt32WangHasher
 
@@ -720,7 +720,7 @@ MurmurHash3 64-bit finalizer (`fmix64`) for `ulong` keys — the strongest tier 
 
 > Also implements [`IHashProvider64<ulong>`](#ihashprovider64t) — `Hash64` returns the full 64-bit mix, of which `Hash` is the low half. Use it for the probabilistic sketches past ~10<sup>8</sup> elements.
 
-> **Renamed.** This type shipped as `UInt64Hasher` through v2.5.0. See [removed hasher aliases](#removed-hasher-aliases).
+> **Renamed.** This type shipped as `UInt64Hasher` through v2.6.0. See [removed hasher aliases](#removed-hasher-aliases).
 
 ### UInt64WangHasher
 
