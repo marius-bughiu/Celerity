@@ -675,7 +675,7 @@ public class RopeTests
     }
 
     /// <summary>
-    /// <see cref="Rope.AppendAndClear"/> is the one mutation that does not run the defragmenting rebuild, and
+    /// <see cref="Rope.AppendAndClear"/> does not run the defragmenting rebuild, and
     /// that is what makes its documented <c>O(log n)</c> unconditional rather than amortized: rebuilding for a
     /// join would turn a node relink into a copy of the whole document. Fifty single-character ropes joined
     /// one at a time drive the leaf count far past the gate — fifty leaves for fifty characters — and it stays

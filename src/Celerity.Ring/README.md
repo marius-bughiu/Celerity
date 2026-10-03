@@ -32,7 +32,8 @@ Each position is a 64-bit mix of the node's hash and the virtual-node index, so 
 
 ## Rendezvous (HRW) hash
 
-No ring array, nothing to rebuild on membership change — ideal for small, churning clusters:
+No ring array: a membership change re-sorts the node identities and rebuilds the lookup snapshot
+in `O(NodeCount log NodeCount)`, which suits small, churning clusters:
 
 ```csharp
 var pool = new StringRendezvousHash<string>();

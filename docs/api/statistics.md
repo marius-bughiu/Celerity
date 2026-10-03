@@ -274,9 +274,10 @@ forms a large intermediate to subtract away.
 | `Merge(in RunningStatistics)` / `Combine(in, in)` | Chan's parallel formulas. |
 | `Clear()` | Back to the empty state. |
 
-Every statistic that is undefined for the number of values seen returns `NaN` rather than throwing:
-`Mean` / `Min` / `Max` on an empty accumulator, `Variance` below two values, `Skewness` below three,
-`Kurtosis` below four, and both shape statistics when every value was identical.
+Undefined statistics return `NaN` rather than throwing: `Mean` / `Min` / `Max` /
+`PopulationVariance` / `PopulationStandardDeviation` on an empty accumulator, `Variance` /
+`StandardDeviation` below two values, `Skewness` below three, `Kurtosis` below four, and both shape
+statistics when the stream has zero variance.
 
 **The domain is the finite doubles.** `Add` rejects `NaN` and the infinities with an
 `ArgumentOutOfRangeException`, as `DDSketch.Add` does. A recurrence over deltas has no good answer

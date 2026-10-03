@@ -44,10 +44,12 @@ namespace Celerity.Statistics;
 /// value that caused it.
 /// </para>
 /// <para>
-/// Every statistic that is undefined for the number of values seen returns
-/// <see cref="double.NaN"/> rather than throwing: <see cref="Mean"/>, <see cref="Min"/> and
-/// <see cref="Max"/> on an empty accumulator, <see cref="Variance"/> below two values,
-/// <see cref="Skewness"/> below three and <see cref="Kurtosis"/> below four.
+/// Undefined statistics return <see cref="double.NaN"/> rather than throwing:
+/// <see cref="Mean"/>, <see cref="Min"/>, <see cref="Max"/>, <see cref="PopulationVariance"/> and
+/// <see cref="PopulationStandardDeviation"/> on an empty accumulator; <see cref="Variance"/> and
+/// <see cref="StandardDeviation"/> below two values; <see cref="Skewness"/> below three; and
+/// <see cref="Kurtosis"/> below four. Both shape statistics also return <see cref="double.NaN"/>
+/// when the stream has zero variance.
 /// </para>
 /// <para>
 /// <strong>Magnitudes are bounded by what the moments can represent, not by what a
