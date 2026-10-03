@@ -772,7 +772,7 @@ It is a struct, so the JIT devirtualizes the outer call on the probe path. The i
 
 ### Removed hasher aliases
 
-Two unsigned hashers were renamed so that every integer hasher names its algorithm, the way the signed families always have (`Int32WangNaiveHasher` / `Int32WangHasher` / `Int32Murmur3Hasher`). The old names shipped as `[Obsolete]` aliases from v2.6.0 through v3.0.0 and **no longer exist** — the hash values never changed, so the replacement is a rename at the call site and nothing more.
+Two unsigned hashers were renamed so that every integer hasher names its algorithm, the way the signed families always have (`Int32WangNaiveHasher` / `Int32WangHasher` / `Int32Murmur3Hasher`). The old names shipped as `[Obsolete]` aliases from v2.7.0 through v3.0.0 and **no longer exist** — the hash values never changed, so the replacement is a rename at the call site and nothing more.
 
 | Old name | New name | What it actually is |
 |---|---|---|
