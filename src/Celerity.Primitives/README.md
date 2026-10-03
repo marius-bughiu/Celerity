@@ -36,7 +36,8 @@ workload — Celerity deliberately does **not** reimplement what
   table and hash every element; a two-cursor merge is **4.2× faster at 1M × 1M
   with zero allocation**, and **257× faster** on the asymmetric 1k × 10M shape
   where it gallops. Inputs **must** be sorted ascending — unsorted input
-  silently returns a wrong answer (asserted in Debug builds only).
+  silently returns a wrong answer. Only Debug builds of Celerity itself assert
+  the precondition; the published NuGet package never checks it, even in a Debug consumer.
 - **`MortonCurve` / `HilbertCurve`** — space-filling curves: map a 2-D or 3-D
   integer coordinate to one `ulong` whose ordering keeps nearby points nearby,
   and back. `BitOperations` has no bit-interleave and the BCL has no Hilbert

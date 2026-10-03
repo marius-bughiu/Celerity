@@ -89,7 +89,7 @@ The BCL has the same technique internally (`System.Collections.HashHelpers.GetFa
 **Usage** — compute the multiplier once, reuse it per operation:
 
 ```csharp
-using Celerity;
+using Celerity.Primitives;
 
 uint slots = ReadShardCountFromConfig();      // divisor known only at run time
 ulong multiplier = FastUtils.GetFastModMultiplier(slots);
@@ -147,7 +147,7 @@ A curated suite of **value-type, allocation-free, seedable-deterministic** pseud
 | `Xoroshiro128Plus` | 128-bit | 2¹²⁸ − 1 | Fastest **doubles**. The `+` scrambler has weak *low* bits — use only via the high-bit helpers (`NextDouble`/`NextSingle`/`NextInt`), not raw low bits. |
 | `WyRand` | 64-bit | 2⁶⁴ | **Raw throughput** — a flood of decent numbers (procedural gen, sampling, jitter) where a 2⁶⁴ period suffices. |
 | `SplitMix64` | 64-bit | 2⁶⁴ | The **seed expander** for the others; usable standalone for non-critical randomness. |
-| `Pcg32` | 64-bit | 2⁶⁴ | **Statistical reputation** + independent **streams** (same seed, different `sequence` ⇒ uncorrelated). 32-bit native output. |
+| `Pcg32` | 64-bit | 2⁶⁴ | **Statistical reputation** + independent **streams** (`sequence` selectors differing in their low 63 bits select distinct streams). 32-bit native output. |
 
 **Workloads:** bounded RNG in tight inner loops (Monte-Carlo, shuffles, fuzzers, procedural generation) and fast, reproducible **seeded** runs.
 
@@ -176,10 +176,10 @@ static void Shuffle<TRng>(int[] a, ref TRng rng) where TRng : struct, IRandomSou
 
 **Contract and special cases:**
 
-- **Deterministic by construction.** Every constructor takes an explicit `ulong` seed (there is no entropy-seeded overload); the same seed always yields the same sequence. Multi-word generators (`Xoshiro256StarStar`, `Xoroshiro128Plus`) expand the seed through `SplitMix64`, so **every** seed is valid — the degenerate all-zero state that would lock those generators is unreachable, including from `seed: 0`.
+- **Deterministic from an explicit seed.** The seed-taking constructors have no entropy-seeded overload; the same constructor arguments reproduce the same sequence. Multi-word generators (`Xoshiro256StarStar`, `Xoroshiro128Plus`) expand the seed through `SplitMix64`, so **every** seed is valid, including `seed: 0`. Default initialization and parameterless `new` bypass these constructors: `Xoshiro256StarStar`, `Xoroshiro128Plus`, and `Pcg32` then return zero forever. Always supply a seed for those generators.
 - **Half-open ranges.** `NextDouble` / `NextSingle` return `[0, 1)` using the full mantissa (top 53 / 24 bits). The bounded `NextInt` / `NextInt64` return `[min, max)` and are **unbiased** (Lemire's nearly-divisionless rejection); they throw `ArgumentOutOfRangeException` for a non-positive `maxExclusive` (single-arg overload) or `maxExclusive < minInclusive` (two-arg overloads), and return `min` when `min == max`.
 - **Mutable struct, by-ref helpers.** The generator mutates in place, so the extension helpers take it `ref this` — call them on a variable or field, not a temporary or readonly value. Copying a generator **forks** the stream (both copies then produce the same sequence).
-- **`Pcg32` specifics.** Its native output is 32-bit (`NextUInt32`); `NextUInt64` concatenates two successive 32-bit draws. The `(seed, sequence)` constructor selects an independent stream. (Through the generic `RandomSourceExtensions.NextUInt32`, the high 32 bits of `NextUInt64` are returned; call `Pcg32.NextUInt32` directly for the efficient native path.)
+- **`Pcg32` specifics.** Its native output is 32-bit (`NextUInt32`); `NextUInt64` concatenates two successive 32-bit draws. The `(seed, sequence)` constructor selects a stream using the low 63 bits of `sequence`; the high bit is ignored. (Through the generic `RandomSourceExtensions.NextUInt32`, the high 32 bits of `NextUInt64` are returned; call `Pcg32.NextUInt32` directly for the efficient native path.)
 - **Not thread-safe and not cryptographic.** Share one generator per thread; for security-sensitive randomness use `System.Security.Cryptography.RandomNumberGenerator`.
 
 All generators are AOT-safe (no reflection); `NextUInt64` and the derived helpers are `[MethodImpl(AggressiveInlining)]` and allocation-free.
@@ -282,7 +282,7 @@ The 32-bit path is Lemire's [digit-count algorithm](https://lemire.me/blog/2021/
 **Usage** — size a span, then format into it:
 
 ```csharp
-using Celerity;
+using Celerity.Primitives;
 
 int width = FastUtils.CountDigits(value);             // e.g. 4 for 1234
 Span<char> buffer = stackalloc char[width];
@@ -314,7 +314,7 @@ public static class FastGuid
     public static Guid CreateVersion7<TRng>(ref TRng rng, long unixTimeMilliseconds)   where TRng : struct, IRandomSource;
 }
 
-// Strictly monotonic version 7 — each call > the last, even within one millisecond.
+// Strictly monotonic version 7 while supplied and borrowed timestamps stay in [0, 2^48).
 public struct GuidV7Generator<TRng> where TRng : struct, IRandomSource
 {
     public GuidV7Generator(TRng rng);
@@ -346,19 +346,20 @@ Guid key   = FastGuid.CreateVersion7(ref rng, DateTimeOffset.UtcNow.ToUnixTimeMi
 
 ### Strict monotonicity within a millisecond
 
-The stateless `CreateVersion7` orders by timestamp **across** milliseconds, but within a single millisecond it orders only by random bits — so a rapid burst is sortable but not strictly increasing. `GuidV7Generator<TRng>` closes that gap with RFC 9562's monotonic-counter method: it keeps the last timestamp and a 12-bit counter in the `rand_a` field, advancing the counter when the clock has not moved so every GUID in a same-millisecond run is **strictly greater** than the previous one. If the counter is exhausted inside one millisecond (more than ~4096 IDs) it borrows from the next millisecond, preserving monotonicity at the cost of letting the embedded timestamp run a hair ahead of the wall clock. The 62-bit `rand_b` tail stays random on every draw, so independent generators do not collide.
+The stateless `CreateVersion7` orders by timestamp **across** milliseconds, but within a single millisecond it orders only by random bits — so a rapid burst is sortable but not strictly increasing. `GuidV7Generator<TRng>` closes that gap with RFC 9562's monotonic-counter method: it keeps the last timestamp and a 12-bit counter in the `rand_a` field, advancing the counter when the clock has not moved so every GUID in a same-millisecond run is **strictly greater** than the previous one. A freshly seeded counter permits **2,049–4,096 IDs** at that timestamp before borrowing from the next millisecond, letting the embedded timestamp run slightly ahead of the wall clock. This monotonicity guarantee requires supplied and internally borrowed timestamps to remain in **`[0, 2^48)`**; the range is not validated. The 62-bit `rand_b` tail draws from the supplied PRNG on every ID, reducing collision probability between independently seeded generators.
 
 ```csharp
 var gen = new GuidV7Generator<Xoshiro256StarStar>(new Xoshiro256StarStar(seed: 1));
 
-Guid a = gen.Next();   // ↘ strictly increasing
-Guid b = gen.Next();   //   even if a and b land in the same millisecond,
-Guid c = gen.Next();   //   string.CompareOrdinal(a, b) < 0 < c
+Guid a = gen.Next();   // All three calls may land in the same millisecond.
+Guid b = gen.Next();   // string.CompareOrdinal(a.ToString(), b.ToString()) < 0
+Guid c = gen.Next();   // string.CompareOrdinal(b.ToString(), c.ToString()) < 0
 ```
 
 **Contract and special cases:**
 
 - **Not cryptographically secure; not thread-safe.** Like the [struct PRNGs](#struct-prngs), `GuidV7Generator` is a mutable `struct` — call `Next` on a variable or field, use one generator per thread, and do not copy it (a copy forks both the PRNG stream and the monotonic counter).
+- **Initialize the PRNG.** Supply an initialized, seeded `TRng` to the generator and to `FastGuid`. Default initialization bypasses the seed-taking constructors; for example, `default(GuidV7Generator<Xoshiro256StarStar>)` has an all-zero PRNG and a random tail that is always zero.
 - **Version / variant bits are always correct.** Version 4 sets the version nibble to `4`; version 7 to `7`; both set the RFC 4122 variant (`10xx`) in the high bits of byte 8.
 - **The version 7 timestamp uses the low 48 bits** of the supplied `unixTimeMilliseconds` (valid through year 10889). The big-endian placement is what makes the canonical string sortable.
 - **Deterministic from the seed.** A seeded PRNG makes `CreateVersion4` / `CreateVersion7` (and the generator, for a fixed timestamp stream) reproduce the same GUID sequence — useful for tests and golden fixtures.
@@ -368,7 +369,7 @@ All methods are allocation-free and AOT-safe (no reflection); `CreateVersion4` /
 ## Alignment helpers (AlignUp / AlignDown / IsAligned)
 
 ```csharp
-namespace Celerity;
+namespace Celerity.Primitives;
 
 public static class FastUtils
 {
@@ -637,7 +638,7 @@ public static class SortedSpan
 }
 ```
 
-> **Every input span must be sorted in ascending order. Sorted by construction, or this is worthless.** The whole point is that ordering lets each element be touched once; unsorted input silently produces a **wrong answer**, not an error. Debug builds assert the precondition (an `O(n)` scan per call); Release builds do not check it at all, deliberately — a Release-mode check would cost exactly what the algorithm saves.
+> **Every input span must be sorted in ascending order. Sorted by construction, or this is worthless.** The whole point is that ordering lets each element be touched once; unsorted input silently produces a **wrong answer**, not an error. Debug builds of **Celerity itself** assert the precondition (an `O(n)` scan per call). The published NuGet package is built in Release and never checks it, even when the consuming project builds in Debug — a Release-mode check would cost exactly what the algorithm saves.
 
 **The BCL has no set algebra over spans.** `MemoryExtensions` gained `CommonPrefixLength`, `Split` and `SearchValues`, but nothing that intersects two ranges; `TensorPrimitives` has none either, and .NET 10 added none. The two things a developer writes today are `HashSet<T>.IntersectWith` (allocate a table, then hash and probe every element of one side) and LINQ `Intersect` (a `Set<T>` plus an iterator chain) — **neither exploits sortedness at all**. `SortedSpan` walks both sides in order instead: sequential, prefetch-friendly reads, and results written straight into caller-owned memory.
 
@@ -678,7 +679,7 @@ bool any = SortedSpan.Overlaps(current, incoming);
 
 - **Set semantics.** Repeated equal values in an input are treated as one element, so every result is **strictly** ascending — the same answer the equivalent `HashSet<T>` operation gives. This is what makes the differential test against a `HashSet<T>` oracle meaningful.
 - **Destination sizing.** `min(a.Length, b.Length)` always suffices for `Intersect`, `a.Length` for `Except`, and `a.Length + b.Length` for `Union`. A destination that is too short raises `ArgumentException`; because the shortfall is discovered while writing rather than up front, the destination's contents are then undefined. `IntersectCount` and `Overlaps` take no destination.
-- **The destination must not overlap either input.** The merge writes its result while it is still reading both sources, so an aliasing buffer can overwrite elements that have not been consumed yet — silently, the same way unsorted input does. There is no in-place mode. Like the ordering precondition, this is asserted in Debug builds (via `MemoryExtensions.Overlaps`) and unchecked in Release.
+- **The destination must not overlap either input.** The merge writes its result while it is still reading both sources, so an aliasing buffer can overwrite elements that have not been consumed yet — silently, the same way unsorted input does. There is no in-place mode. Like the ordering precondition, this is asserted only in Debug builds of **Celerity itself** (via `MemoryExtensions.Overlaps`); the published NuGet package never checks it, even in a Debug consumer.
 - **Empty inputs** are valid: an intersection with an empty side is empty, a union with one is the other side (de-duplicated), and `a \ {}` is `a` de-duplicated.
 - **Element type.** The constraint is `IComparisonOperators<T, T, bool>`, so the merge compares with the type's own `<` and `==`. For the primitive integer types the JIT specializes the generic per value type and each comparison becomes a single instruction — which is why there are no hand-written `int` / `long` / `uint` / `ulong` overloads. Floating-point types compile but are not the intended use: `NaN` compares `false` against everything, so a span containing one is not ordered under `<` and violates the precondition.
 - **No vectorized path ships.** A `Vector256` merge was scoped as opt-in only if it beat the scalar merge by >=25% on the 1M x 1M case; the scalar merge already runs at ~6 ms there (memory-bound, one sequential pass over both inputs), and merge is branch-heavy enough that vectorizing it is frequently a wash. The scalar path is the whole implementation.

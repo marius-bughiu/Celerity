@@ -18,10 +18,12 @@ namespace Celerity.Primitives;
 /// faster.
 /// </para>
 /// <para>
-/// The constructor seeds all four state words through <see cref="SplitMix64"/>, so any single
+/// The seed-taking constructor seeds all four state words through <see cref="SplitMix64"/>, so any single
 /// <see cref="ulong"/> seed (including <c>0</c>) produces a valid, well-distributed state — the all-zero
 /// state, which would lock the generator at zero, is never reachable from a SplitMix64 expansion. It is a
-/// mutable <see langword="struct"/>: copying it forks the stream.
+/// mutable <see langword="struct"/>: copying it forks the stream. Always supply a seed;
+/// <c>default(Xoshiro256StarStar)</c> and <c>new Xoshiro256StarStar()</c> leave the all-zero state and return
+/// zero forever.
 /// </para>
 /// </remarks>
 public struct Xoshiro256StarStar : IRandomSource

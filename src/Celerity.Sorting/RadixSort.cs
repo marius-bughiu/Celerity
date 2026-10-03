@@ -26,10 +26,11 @@ namespace Celerity.Sorting;
 /// <para>
 /// <b>Why the BCL cannot close this gap:</b> <see cref="Array.Sort(Array)"/> is contractually
 /// in-place, and radix needs <c>O(n)</c> scratch. That is the flexibility-for-speed trade this
-/// library exists to make — and it is why every entry point here has a caller-supplied-scratch
-/// overload, so a hot loop rents its buffers once instead of per call. The parameterless overloads
-/// rent from <see cref="ArrayPool{T}"/>. Both forms use roughly 4 KB (32-bit keys) or 8 KB (64-bit
-/// keys) of stack for the digit histograms.
+/// library exists to make — and it is why every in-place <c>Sort</c> entry point has a
+/// <c>SortWithScratch</c> form, so a hot loop rents its buffers once instead of per call. The convenience
+/// <c>Sort</c> overloads rent from <see cref="ArrayPool{T}"/>. Both forms use roughly 4 KB (32-bit keys) or
+/// 8 KB (64-bit keys) of stack for the digit histograms. <c>ArgSort</c> has no caller-supplied-scratch
+/// overload; for two or more keys it rents three buffers.
 /// </para>
 /// <para>
 /// <b>Naming:</b> <c>Sort</c> is the convenience form and rents its scratch;
