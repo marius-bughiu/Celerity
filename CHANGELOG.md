@@ -12,6 +12,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- `CountingSort.SortWithScratch` now rejects counters that overlap the payload or its scratch buffer before modifying any buffers, preventing silent sort corruption. Closes #495.
+
 - Hash-collection constructors now reject `float.NaN` load factors with `ArgumentOutOfRangeException`, preventing runaway table growth. `FastUtils.MinTableSizeFor` clamps NaN to its documented low-end load factor. Closes #493.
 
 - `CelerityMultiMap.ValueGroup` and `Grouping` now remain live after a group is removed, cleared, or recreated, including views obtained before a key exists. Fresh enumerations see current values and still fail fast on later mutations. Closes #492.
