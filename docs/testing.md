@@ -9,7 +9,7 @@ Celerity's first guiding principle is *correctness first* — "a fast collection
 | Behavioural unit tests | `Celerity.Tests` | Each public method does the right thing on hand-picked inputs, including collisions, resizes, and the out-of-band default/zero/null key. | `dotnet test` |
 | Edge-case coverage | alongside each type's tests (`*Tests.cs`, `*EnumerationTests.cs`, `*CollisionTests.cs`) | The corners example tests skip: non-generic `IEnumerable`/`IEnumerator` paths, `Reset()`, indexer misses, `Clear()` on empty, wrap-around backward-shift. | `dotnet test` |
 | Property-based tests (CsCheck) | **two homes** — `Celerity.Tests/Properties/CollectionModelPropertyTests.cs` and most of `Celerity.Tests/Collections/*DifferentialTests.cs` | Over CsCheck-generated operation sequences or inputs, a collection keeps the relationship it promises to an independent oracle — observable equality for an exact type, the advertised bound for an approximate one. A failure replays from a seed; how much of it *shrinks* depends on the shape (see below). | `dotnet test` |
-| Non-generated oracle tests | the four `Celerity.Tests/Collections/*DifferentialTests.cs` that drive a bare `Random` (`LfuCache`, and the three operation-family suites), and the three `*AccuracyTests.cs` | The same oracle idea without CsCheck, over seeded streams or fixed datasets (`HyperLogLog`'s are fixed, with no `Random` at all): exact equality for the exact types (`Deque` against a `List`-backed reference deque, `Trie` against a `SortedDictionary`), the advertised guarantee for the approximate ones. Randomized but not generated, so **no shrinking**, and these do not satisfy the parity rule's property-test requirement. | `dotnet test` |
+| Non-generated oracle tests | `LfuCacheDifferentialTests`, `SetAlgebraDifferentialTests`, `EnumSetAlgebraDifferentialTests`, and `SketchMergeDifferentialTests` in `Celerity.Tests/Collections/`, plus the three `*AccuracyTests.cs` | Compare against an independent oracle without CsCheck, using seeded streams or fixed datasets: exact equality for exact types (`LfuCache` against a reference LFU model, set algebra against `HashSet<T>`), and the advertised guarantee for approximate types. These cases do not shrink and do not satisfy the parity rule's property-test requirement. | `dotnet test` |
 | Differential fuzzer | `Celerity.Fuzz` | A long random walk finds no divergence from the BCL; failures replay deterministically from a seed. | `dotnet run -c Release` |
 | Native AOT smoke test | `Celerity.AotSmokeTest` | Every collection/hasher works in a trimmed, AOT-compiled native binary. | see [aot.md](aot.md) |
 | Release gates | `.github/scripts/`, the `release-gates` CI job | The pre-publish guards hold: every package packs with its symbols and metadata intact, and a missing or over-cap `CHANGELOG` section fails before anything reaches NuGet.org. | `dotnet pack -c Release`; `./.github/scripts/test-extract-release-notes.sh` |
@@ -93,17 +93,15 @@ The generated domains are deliberately narrow — small key ranges that include 
 
 ### What a failure gives you
 
-Five shapes are in use and they differ in exactly the way that matters when one goes red. **Identify the shape from the file in front of you** — the middle column is the tell — rather than looking your type up in a roster that will drift as suites are added.
+The shape of a test determines what happens when it fails. **Identify the shape from the file in front of you** — the middle column is the tell — rather than looking your type up in a roster that will drift as suites are added.
 
 | Shape | How to recognize it | On failure |
 |---|---|---|
 | **Directly generated** | CsCheck generates the operations or the input itself: `GenOp.List[0, 2500].Sample(...)` | Shrinks to a minimal counterexample and prints a seed. The best case. |
 | **Seed-driven, generated size** | `Gen.Select(Gen.Int[...], …, Gen.UInt)`, then `new Random(seed)` fills in the dimensions CsCheck chose | The seed replays exactly and the **size axes shrink**, so CsCheck finds the smallest text or point count that still fails. The *content* at that size cannot shrink — a neighbouring seed is an unrelated draw. |
-| **Seed-driven, fixed length** | `Gen.UInt` for the seed, but the loop bound is a literal in the body | Replays exactly, geometry shrinks, **the trace does not get shorter**. Expect to read the whole run. |
+| **Seed-driven, fixed length** | CsCheck generates a seed and other parameters (such as chunk size or wheel geometry), while the operation-loop bound is fixed | The seed replays exactly and other generated parameters can shrink; **the trace does not get shorter**. Expect to read the whole run. |
 | **Seed as a theory argument** | `[Theory]` + `[InlineData(1)] [InlineData(2)]…` bound to an `int seed` parameter | xUnit names the failing seed, so you rerun that one case. No reduction. |
-| **Seed looped inside** | `[Theory]` over something else (a capacity), with `for (int seed = …)` in the body | The failing *parameter* is named; the failing **seed is not**. Add a print or a breakpoint. |
-
-At the time of writing that is four suites in the first shape, fifteen in the second and third together, seven in the fourth and six in the fifth — but check the file rather than the count, which is what the middle column is for.
+| **Seed looped inside** | `[Fact]` or `[Theory]` with `for (int seed = …)` in the body | The seed is identified only if the assertion message includes it. No reduction. |
 
 For the first three shapes, replay by setting the seed and filtering to the class the failure names:
 
@@ -117,7 +115,7 @@ $env:CsCheck_Seed = '0000LASTpRINTED'; dotnet test --filter RankedSetDifferentia
 CsCheck_Seed='0000LASTpRINTED' dotnet test --filter RankedSetDifferentialTests
 ```
 
-What separates these is how much of the case CsCheck is handed *as data*. Hand it the operations and it reduces them to a minimal counterexample. Hand it the dimensions plus a seed and it reduces the dimensions but not the content, because a neighbouring seed is an unrelated draw. Hand it only a seed and a fixed loop count and it can reduce nothing about the trace. Directly generated is the better shape where it is practical, since a reduced counterexample beats a long reproducible one — but a generated size axis recovers most of the benefit for a fraction of the effort, which is why every remaining seed-driven suite has one. The nine suites that had neither — `Trie`, `LruCache`, `Deque`, `DisjointSet`, `IndexedPriorityQueue`, `FenwickTree`, `SegmentTree`, `SparseSet` and `StringInternTable` — were converted to generated operation scripts under [#418](https://github.com/marius-bughiu/Celerity/issues/418), so the third shape now applies only to the four suites named in the TL;DR above.
+What separates these is how much of the case CsCheck is handed *as data*. Hand it the operations and it reduces them to a minimal counterexample. Hand it the dimensions plus a seed and it reduces the dimensions but not the content, because a neighbouring seed is an unrelated draw. Hand it only a seed and a fixed loop count and it can reduce nothing about the trace. Directly generated is the better shape where it is practical, since a reduced counterexample beats a long reproducible one — but a generated size or geometry axis recovers some of that benefit for a fraction of the effort. The nine suites that had neither — `Trie`, `LruCache`, `Deque`, `DisjointSet`, `IndexedPriorityQueue`, `FenwickTree`, `SegmentTree`, `SparseSet` and `StringInternTable` — were converted to generated operation scripts under [#418](https://github.com/marius-bughiu/Celerity/issues/418).
 
 ## Differential fuzzing (`Celerity.Fuzz`)
 
