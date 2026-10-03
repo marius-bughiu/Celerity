@@ -12,18 +12,19 @@ namespace Celerity.Collections;
 /// <remarks>
 /// <para>
 /// The semantics match BCL <see cref="HashSet{T}"/> exactly, including
-/// duplicate-tolerant <c>other</c> sequences (materialized to a distinct
-/// <see cref="HashSet{T}"/> once, so a repeated element is processed at most once),
+/// duplicate-tolerant <c>other</c> sequences,
 /// self-aliasing (<c>other</c> being the same instance as the set), and the
 /// out-of-band <c>default(T)</c>/zero element each set handles specially — all of
 /// which are covered by the concrete set's own <c>Contains</c>/<c>Add</c>/<c>Remove</c>.
 /// </para>
 /// <para>
-/// The subset / equality shapes need the distinct count of <c>other</c>,
-/// so they materialize it once into an ordinal <see cref="HashSet{T}"/> keyed by
-/// <see cref="EqualityComparer{T}.Default"/> — the same equality every Celerity set
-/// uses — exactly what BCL set types do internally. The superset / overlap shapes
-/// stream <c>other</c> directly against the set's O(1) membership test.
+/// <c>IsSupersetOf</c> and <c>Overlaps</c> stream <c>other</c> directly against the concrete set's
+/// <c>Contains</c> and may stop early. <c>IsSubsetOf</c>, <c>IsProperSubsetOf</c>,
+/// <c>IsProperSupersetOf</c> and <c>SetEquals</c> materialize <c>other</c> once into a distinct
+/// <see cref="HashSet{T}"/> keyed by <see cref="EqualityComparer{T}.Default"/>, the equality this
+/// mutable set family uses. <c>IsSubsetOf</c> skips that copy when the receiver is empty;
+/// <c>IsProperSupersetOf</c> skips it when <c>other</c> is an empty <see cref="ICollection{T}"/>.
+/// Streaming does not copy <c>other</c>, but obtaining its enumerator can still allocate.
 /// </para>
 /// </remarks>
 internal static class SetOperations

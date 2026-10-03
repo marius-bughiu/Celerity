@@ -351,10 +351,12 @@ public sealed class PersistentHashSet<T, THasher> : IReadOnlySet<T>
     }
 
     // ── IReadOnlySet<T> queries ───────────────────────────────────────────────────────────────────────
-    // The whole set is the left-hand operand; `other` is the right-hand one. Membership against `this` is a
-    // short trie descent, so the superset / overlap shapes stream `other` directly. The subset / equality
-    // shapes need the distinct count of `other`, so they materialize it once — exactly what the BCL set
-    // types, and FrozenCeleritySet, do.
+    // The whole set is the left-hand operand; `other` is the right-hand one. IsSupersetOf and Overlaps
+    // stream `other` against Contains (a short trie descent) and may stop early. IsSubsetOf,
+    // IsProperSubsetOf, IsProperSupersetOf and SetEquals materialize `other` once into a distinct HashSet
+    // using EqualityComparer<T>.Default, unless a fast path answers first. All six queries answer
+    // same-instance inputs without enumeration; IsSubsetOf and Overlaps also return immediately when empty.
+    // Streaming does not copy `other`, but obtaining its enumerator can still allocate.
 
     /// <summary>
     /// Determines whether the set and <paramref name="other"/> contain the same distinct elements.

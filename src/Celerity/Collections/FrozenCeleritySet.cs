@@ -216,11 +216,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     // ── IReadOnlySet<string> set-algebra members ──────────────────────────────
-    // The whole frozen set is the left-hand operand; `other` is the right-hand
-    // operand. Membership tests against `this` are O(1) (or a short probe), so the
-    // superset / overlap shapes stream `other` directly. The subset / equality
-    // shapes need the distinct count of `other`, so they materialize it once into an
-    // ordinal HashSet — exactly what BCL set types do internally.
+    // The whole frozen set is the left-hand operand; `other` is the right-hand operand.
+    // IsSupersetOf and Overlaps stream `other` against Contains and may stop early.
+    // IsSubsetOf, IsProperSubsetOf, IsProperSupersetOf and SetEquals materialize `other`
+    // once into an ordinal HashSet, including for empty and same-instance inputs.
+    // Streaming does not copy `other`, but obtaining its enumerator can still allocate.
 
     /// <summary>
     /// Determines whether the set and <paramref name="other"/> contain the same
