@@ -199,6 +199,78 @@ public class SortingArgumentValidationTests
         Assert.Equal("valueScratch", scratchAliasesKeys.ParamName);
     }
 
+    [Theory]
+    [InlineData(false, false, 0)]
+    [InlineData(false, false, 2)]
+    [InlineData(false, true, 0)]
+    [InlineData(false, true, 2)]
+    [InlineData(true, false, 0)]
+    [InlineData(true, false, 2)]
+    [InlineData(true, true, 0)]
+    [InlineData(true, true, 2)]
+    public void CountingSort_ShouldRejectCountersOverlappingPayloadBuffersBeforeWriting(
+        bool useUInt16Keys, bool overlapScratch, int offset)
+    {
+        int[] keys = [3, 1, 2, 0, 3, 1, 2, 0];
+        ushort[] shortKeys = [3, 1, 2, 0, 3, 1, 2, 0];
+        int[] values = [0, 1, 2, 3, 4, 5, 6, 7];
+        int[] scratch = Enumerable.Repeat(-1, keys.Length).ToArray();
+        int range = useUInt16Keys ? CountingSort.UInt16Range : 4;
+        int[] shared = Enumerable.Range(10, range + keys.Length).ToArray();
+        int[] originalShared = (int[])shared.Clone();
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+        {
+            Span<int> payload = overlapScratch ? values.AsSpan() : shared.AsSpan(offset, keys.Length);
+            Span<int> valueScratch = overlapScratch ? shared.AsSpan(offset, keys.Length) : scratch.AsSpan();
+            if (useUInt16Keys)
+            {
+                CountingSort.SortWithScratch(shortKeys.AsSpan(), payload, valueScratch, shared.AsSpan(0, range));
+            }
+            else
+            {
+                CountingSort.SortWithScratch(keys.AsSpan(), payload, 0, 3, valueScratch, shared.AsSpan(0, range));
+            }
+        });
+
+        Assert.Equal("counts", ex.ParamName);
+        Assert.Equal([3, 1, 2, 0, 3, 1, 2, 0], keys);
+        Assert.Equal<ushort>([3, 1, 2, 0, 3, 1, 2, 0], shortKeys);
+        Assert.Equal([0, 1, 2, 3, 4, 5, 6, 7], values);
+        Assert.All(scratch, value => Assert.Equal(-1, value));
+        Assert.Equal(originalShared, shared);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CountingSort_ShouldAllowDisjointPayloadAndCounterSlices(bool useUInt16Keys)
+    {
+        int[] keys = [3, 1, 2, 0, 3, 1, 2, 0];
+        ushort[] shortKeys = [3, 1, 2, 0, 3, 1, 2, 0];
+        int range = useUInt16Keys ? CountingSort.UInt16Range : 4;
+        int[] shared = new int[range + 2 * keys.Length];
+        for (int i = 0; i < keys.Length; i++)
+        {
+            shared[range + i] = i;
+        }
+
+        if (useUInt16Keys)
+        {
+            CountingSort.SortWithScratch(shortKeys.AsSpan(), shared.AsSpan(range, keys.Length),
+                shared.AsSpan(range + keys.Length, keys.Length), shared.AsSpan(0, range));
+            Assert.Equal<ushort>([0, 0, 1, 1, 2, 2, 3, 3], shortKeys);
+        }
+        else
+        {
+            CountingSort.SortWithScratch(keys.AsSpan(), shared.AsSpan(range, keys.Length), 0, 3,
+                shared.AsSpan(range + keys.Length, keys.Length), shared.AsSpan(0, range));
+            Assert.Equal([0, 0, 1, 1, 2, 2, 3, 3], keys);
+        }
+
+        Assert.Equal([3, 7, 1, 5, 2, 6, 0, 4], shared.AsSpan(range, keys.Length).ToArray());
+    }
+
     [Fact]
     public void ArgSort_ShouldThrow_WhenTheIndexBufferIsShorterThanTheKeys()
     {

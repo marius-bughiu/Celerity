@@ -226,6 +226,8 @@ public static class CountingSort
         SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         SortingGuard.RequireDistinctStorage(keys, valueScratch, nameof(valueScratch));
+        SortingGuard.RequireDistinctStorage(values, counts, nameof(counts));
+        SortingGuard.RequireDistinctStorage(valueScratch, counts, nameof(counts));
         if (keys.Length < 2)
         {
             return;
@@ -359,6 +361,8 @@ public static class CountingSort
         SortingGuard.RequireDistinctStorage(keys, counts, nameof(counts));
         SortingGuard.RequireNoOverlap(values.Overlaps(valueScratch), nameof(valueScratch));
         SortingGuard.RequireDistinctStorage(keys, valueScratch, nameof(valueScratch));
+        SortingGuard.RequireDistinctStorage(values, counts, nameof(counts));
+        SortingGuard.RequireDistinctStorage(valueScratch, counts, nameof(counts));
         if (IsAlreadySorted(keys, min, max))
         {
             return;
