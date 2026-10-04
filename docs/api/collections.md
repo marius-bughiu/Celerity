@@ -6681,7 +6681,7 @@ There is no capacity or load-factor parameter — a B-tree grows one node at a t
 | `bool TryAdd(TKey key, TValue? value)` | Non-throwing insert. A rejected duplicate is a true no-op — it does not restructure the tree or invalidate enumerators. |
 | `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | `O(log n)` lookup. |
 | `bool ContainsValue(TValue? value)` | `O(n)` scan — the tree is indexed by key, not by value. |
-| `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` | `O(log n)` removal, rebalancing by borrowing from a sibling or merging two nodes. |
+| `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` | `O(log n)` removal, rebalancing by borrowing from a sibling or merging two nodes. Removing an absent key is a true no-op: it does not restructure the tree or invalidate enumerators. |
 | `void Clear()` | Drop every entry; the tree releases all of its nodes. |
 | `KeyValuePair<TKey, TValue?> Min { get; }` / `Max { get; }` | First / last entry in key order, `O(log n)`. Throws `InvalidOperationException` when empty. |
 | `bool TryGetMin(out KeyValuePair<TKey, TValue?> entry)` / `TryGetMax(...)` | The non-throwing forms. |
@@ -6758,7 +6758,7 @@ As with the dictionary, there is no capacity or load factor. The `IEnumerable` o
 | `int Count { get; }` / `TComparer Comparer { get; }` | Element count; the comparer defining the order. |
 | `void Add(T item)` | Insert; throws `ArgumentException` when the element is already present (the family-wide set convention). |
 | `bool TryAdd(T item)` | Non-throwing insert. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
-| `bool Contains(T item)` / `bool Remove(T item)` | `O(log n)`. |
+| `bool Contains(T item)` / `bool Remove(T item)` | `O(log n)`. Removing an absent element is a true no-op: it does not restructure the tree or invalidate enumerators. |
 | `void Clear()` | Drop every element; the tree releases all of its nodes. |
 | `T Min { get; }` / `T Max { get; }` | Smallest / largest element, `O(log n)`. Throws `InvalidOperationException` when empty. |
 | `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
