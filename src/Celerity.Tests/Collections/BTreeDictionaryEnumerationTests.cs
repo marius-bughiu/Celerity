@@ -123,6 +123,93 @@ public class BTreeDictionaryEnumerationTests
     }
 
     [Fact]
+    public void MoveNext_ShouldYieldEveryEntryOnce_WhenAMissedRemoveWouldHaveRebalanced()
+    {
+        // Thinning the tree leaves children at MinKeys, so a removal descending through them has to top one up
+        // before it can tell whether the key exists. A miss must not get that far: it does not bump the version,
+        // so a rebalance would leave the live enumerator walking a stale path (issue #505 — key 50 came out twice).
+        var dict = new BTreeDictionary<int, int>();
+        for (int i = 0; i < 50; i++)
+            dict.Add(i * 2, i);
+        for (int i = 0; i < 50; i += 3)
+            dict.Remove(i * 2);
+
+        int[] expected = dict.Keys.ToArray();
+        var enumerator = dict.Keys.GetEnumerator();
+        var seen = new List<int>();
+        for (int i = 0; i < 17; i++)
+        {
+            Assert.True(enumerator.MoveNext());
+            seen.Add(enumerator.Current);
+        }
+
+        Assert.False(dict.Remove(53, out int removed));
+        Assert.Equal(0, removed);
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(expected, seen);
+        Assert.Equal(expected.Length, dict.Count);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Enumeration_ShouldStayIntact_WhenMissedRemovesLandAnywhereInAThinnedTree(int seed)
+    {
+        // Even keys only, then a random third removed so minimal nodes are scattered through every level; every
+        // odd key is then a miss whose descent can cross a minimal child. Both the full and the range
+        // enumerator must come through a burst of such misses unchanged and without throwing.
+        var rand = new Random(seed);
+        var dict = new BTreeDictionary<int, int>();
+        for (int i = 0; i < 2000; i++)
+            dict.Add(i * 2, i);
+        for (int i = 0; i < 700; i++)
+            dict.Remove(rand.Next(2000) * 2);
+
+        int[] expected = dict.Keys.ToArray();
+        for (int trial = 0; trial < 50; trial++)
+        {
+            int skip = rand.Next(expected.Length);
+            var full = dict.GetEnumerator();
+            var seen = new List<int>();
+            for (int i = 0; i < skip; i++)
+            {
+                Assert.True(full.MoveNext());
+                seen.Add(full.Current.Key);
+            }
+
+            int from = rand.Next(4000);
+            int to = from + rand.Next(4000 - from + 1);
+            int[] expectedRange = expected.Where(k => k >= from && k < to).ToArray();
+            var range = dict.EnumerateRange(from, to).GetEnumerator();
+            var seenRange = new List<int>();
+            int rangeSkip = rand.Next(expectedRange.Length + 1);
+            for (int i = 0; i < rangeSkip; i++)
+            {
+                Assert.True(range.MoveNext());
+                seenRange.Add(range.Current.Key);
+            }
+
+            for (int miss = 0; miss < 20; miss++)
+                Assert.False(dict.Remove(rand.Next(-1, 4000) | 1));
+
+            while (full.MoveNext())
+                seen.Add(full.Current.Key);
+            while (range.MoveNext())
+                seenRange.Add(range.Current.Key);
+
+            Assert.Equal(expected, seen);
+            Assert.Equal(expectedRange, seenRange);
+        }
+
+        Assert.Equal(expected.Length, dict.Count);
+    }
+
+    [Fact]
     public void NonGenericEnumeration_ShouldYieldTheSameEntries()
     {
         var dict = new BTreeDictionary<int, int>();
