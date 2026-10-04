@@ -218,9 +218,11 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     /// <summary>Determines whether <paramref name="item"/> is present, in <c>O(log n)</c>.</summary>
     /// <param name="item">The element to look for.</param>
     /// <returns><c>true</c> if the element is present.</returns>
-    public bool Contains(T item)
+    public bool Contains(T item) => SubtreeContains(_root, item);
+
+    // Whether `item` is anywhere in the subtree rooted at `node`.
+    private bool SubtreeContains(Node? node, T item)
     {
-        Node? node = _root;
         while (node is not null)
         {
             int index = Find(node, item, out bool found);
@@ -236,9 +238,10 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
     /// <summary>Removes <paramref name="item"/>, in <c>O(log n)</c>.</summary>
     /// <param name="item">The element to remove.</param>
     /// <returns><c>true</c> if an element was removed; <c>false</c> if it was absent.</returns>
+    /// <remarks>Removing an absent element is a true no-op: the tree is not restructured and active enumerators stay valid.</remarks>
     public bool Remove(T item)
     {
-        if (_root is null || !RemoveFrom(_root, item))
+        if (_root is null || !RemoveFrom(_root, item, knownPresent: false))
             return false;
 
         // The root is the one node allowed to fall below MinKeys. When it empties it is either dropped (the
@@ -657,7 +660,9 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
 
     // Removes `item` from the subtree rooted at `node`, which the caller guarantees is either the root or
     // holds more than MinKeys elements — the invariant that lets a deletion never back up the tree.
-    private bool RemoveFrom(Node node, T item)
+    // `knownPresent` records that the target has already been confirmed to be in this subtree, so a rebalance
+    // below it cannot be wasted on a miss.
+    private bool RemoveFrom(Node node, T item, bool knownPresent)
     {
         int index = Find(node, item, out bool found);
 
@@ -678,6 +683,20 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
         // rebalance upwards.
         if (node.Children![index]!.Count == MinKeys)
         {
+            // Fill restructures the tree, and a live enumerator holds a cursor path through it. A removal that
+            // misses changes nothing observable, so it does not bump the version — which means it must not
+            // restructure anything either. Confirm the item is in the child's subtree before the first
+            // rebalance; once it is known present, deeper levels skip the search.
+            if (!knownPresent)
+            {
+                if (!SubtreeContains(node.Children[index], item))
+                {
+                    return false;
+                }
+
+                knownPresent = true;
+            }
+
             Fill(node, index);
 
             // A merge with the left sibling folds the target child into index - 1 and shortens the parent, so
@@ -686,7 +705,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
                 index--;
         }
 
-        return RemoveFrom(node.Children![index]!, item);
+        return RemoveFrom(node.Children![index]!, item, knownPresent);
     }
 
     private static void RemoveFromLeaf(Node node, int index)
@@ -712,7 +731,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
 
             T predecessor = cursor.Keys[cursor.Count - 1];
             node.Keys[index] = predecessor;
-            RemoveFrom(left, predecessor);
+            RemoveFrom(left, predecessor, knownPresent: true);
         }
         else if (right.Count > MinKeys)
         {
@@ -722,7 +741,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
 
             T successor = cursor.Keys[0];
             node.Keys[index] = successor;
-            RemoveFrom(right, successor);
+            RemoveFrom(right, successor, knownPresent: true);
         }
         else
         {
@@ -730,7 +749,7 @@ public class BTreeSet<T, TComparer> : ISet<T>, IReadOnlySet<T>
             // MaxKeys elements, so it still fits) and delete from there.
             T item = node.Keys[index];
             Merge(node, index);
-            RemoveFrom(left, item);
+            RemoveFrom(left, item, knownPresent: true);
         }
     }
 

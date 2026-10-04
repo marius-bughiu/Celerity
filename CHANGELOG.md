@@ -16,6 +16,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
+- `BTreeDictionary` and `BTreeSet` no longer rebalance the tree when `Remove` misses, so a live enumerator now continues correctly instead of repeating or skipping keys. This also applies to `ExceptWith` and other operations that remove nothing. Closes #505.
+
 - `CountingSort.SortWithScratch` now rejects counters that overlap the payload or its scratch buffer before modifying any buffers, preventing silent sort corruption. Closes #495.
 
 - Hash-collection constructors now reject `float.NaN` load factors with `ArgumentOutOfRangeException`, preventing runaway table growth. `FastUtils.MinTableSizeFor` clamps NaN to its documented low-end load factor. Closes #493.

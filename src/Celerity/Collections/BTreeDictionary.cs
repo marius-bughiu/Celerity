@@ -298,6 +298,21 @@ public class BTreeDictionary<TKey, TValue, TComparer>
     /// <returns><c>true</c> if the key is present.</returns>
     public bool ContainsKey(TKey key) => TryGetValue(key, out _);
 
+    // Whether `key` is anywhere in the subtree rooted at `node`.
+    private bool SubtreeContains(Node? node, TKey key)
+    {
+        while (node is not null)
+        {
+            int index = Find(node, key, out bool found);
+            if (found)
+                return true;
+
+            node = node.IsLeaf ? null : node.Children![index];
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Determines whether any entry holds <paramref name="value"/>, comparing with
     /// <see cref="EqualityComparer{T}.Default"/>. This is an <c>O(n)</c> scan — the tree is indexed by key,
@@ -320,6 +335,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
     /// <summary>Removes the entry with <paramref name="key"/>, in <c>O(log n)</c>.</summary>
     /// <param name="key">The key to remove.</param>
     /// <returns><c>true</c> if an entry was removed; <c>false</c> if the key was absent.</returns>
+    /// <remarks>Removing an absent key is a true no-op: the tree is not restructured and active enumerators stay valid.</remarks>
     public bool Remove(TKey key) => Remove(key, out _);
 
     /// <summary>
@@ -328,6 +344,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
     /// <param name="key">The key to remove.</param>
     /// <param name="value">The removed value, or <c>default</c> when the key was absent.</param>
     /// <returns><c>true</c> if an entry was removed; <c>false</c> if the key was absent.</returns>
+    /// <remarks>Removing an absent key is a true no-op: the tree is not restructured and active enumerators stay valid.</remarks>
     public bool Remove(TKey key, out TValue? value)
     {
         if (_root is null)
@@ -336,7 +353,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
             return false;
         }
 
-        if (!RemoveFrom(_root, key, out value))
+        if (!RemoveFrom(_root, key, out value, knownPresent: false))
             return false;
 
         // The root is the one node allowed to fall below MinKeys. When it empties it is either dropped
@@ -752,7 +769,9 @@ public class BTreeDictionary<TKey, TValue, TComparer>
 
     // Removes `key` from the subtree rooted at `node`, which the caller guarantees is either the root or holds
     // more than MinKeys keys — the invariant that lets a deletion never have to back up the tree.
-    private bool RemoveFrom(Node node, TKey key, out TValue? value)
+    // `knownPresent` records that the target has already been confirmed to be in this subtree, so a rebalance
+    // below it cannot be wasted on a miss.
+    private bool RemoveFrom(Node node, TKey key, out TValue? value, bool knownPresent)
     {
         int index = Find(node, key, out bool found);
 
@@ -778,6 +797,21 @@ public class BTreeDictionary<TKey, TValue, TComparer>
         // rebalance upwards.
         if (node.Children![index]!.Count == MinKeys)
         {
+            // Fill restructures the tree, and a live enumerator holds a cursor path through it. A removal that
+            // misses changes nothing observable, so it does not bump the version — which means it must not
+            // restructure anything either. Confirm the key is in the child's subtree before the first
+            // rebalance; once it is known present, deeper levels skip the search.
+            if (!knownPresent)
+            {
+                if (!SubtreeContains(node.Children[index], key))
+                {
+                    value = default;
+                    return false;
+                }
+
+                knownPresent = true;
+            }
+
             Fill(node, index);
 
             // A merge with the left sibling folds the target child into index - 1 and shortens the parent, so
@@ -786,7 +820,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
                 index--;
         }
 
-        return RemoveFrom(node.Children![index]!, key, out value);
+        return RemoveFrom(node.Children![index]!, key, out value, knownPresent);
     }
 
     private static void RemoveFromLeaf(Node node, int index)
@@ -815,7 +849,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
             TKey predecessor = cursor.Keys[cursor.Count - 1];
             node.Keys[index] = predecessor;
             node.Values[index] = cursor.Values[cursor.Count - 1];
-            RemoveFrom(left, predecessor, out _);
+            RemoveFrom(left, predecessor, out _, knownPresent: true);
         }
         else if (right.Count > MinKeys)
         {
@@ -826,7 +860,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
             TKey successor = cursor.Keys[0];
             node.Keys[index] = successor;
             node.Values[index] = cursor.Values[0];
-            RemoveFrom(right, successor, out _);
+            RemoveFrom(right, successor, out _, knownPresent: true);
         }
         else
         {
@@ -834,7 +868,7 @@ public class BTreeDictionary<TKey, TValue, TComparer>
             // and delete from there.
             TKey key = node.Keys[index];
             Merge(node, index);
-            RemoveFrom(left, key, out _);
+            RemoveFrom(left, key, out _, knownPresent: true);
         }
     }
 

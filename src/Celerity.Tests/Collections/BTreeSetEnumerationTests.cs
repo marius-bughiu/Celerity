@@ -109,6 +109,120 @@ public class BTreeSetEnumerationTests
     }
 
     [Fact]
+    public void MoveNext_ShouldYieldEveryElementOnce_WhenAMissedRemoveWouldHaveRebalanced()
+    {
+        // Thinning the tree leaves children at MinKeys, so a removal descending through them has to top one up
+        // before it can tell whether the element exists. A miss must not get that far: it does not bump the
+        // version, so a rebalance would leave the live enumerator walking a stale path (issue #505).
+        var set = new BTreeSet<int>();
+        for (int i = 0; i < 50; i++)
+            set.Add(i * 2);
+        for (int i = 0; i < 50; i += 3)
+            set.Remove(i * 2);
+
+        int[] expected = set.ToArray();
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        for (int i = 0; i < 17; i++)
+        {
+            Assert.True(enumerator.MoveNext());
+            seen.Add(enumerator.Current);
+        }
+
+        Assert.False(set.Remove(53));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(expected, seen);
+        Assert.Equal(expected.Length, set.Count);
+    }
+
+    [Fact]
+    public void MoveNext_ShouldNotThrow_WhenExceptWithRemovesNothing()
+    {
+        // ExceptWith routes every element of `other` through Remove; when all of them miss, the set is unchanged
+        // and a live enumerator must neither throw nor see a rebalanced tree.
+        var set = new BTreeSet<int>();
+        for (int i = 0; i < 50; i++)
+            set.Add(i * 2);
+        for (int i = 0; i < 50; i += 3)
+            set.Remove(i * 2);
+
+        int[] expected = set.ToArray();
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        for (int i = 0; i < 17; i++)
+        {
+            Assert.True(enumerator.MoveNext());
+            seen.Add(enumerator.Current);
+        }
+
+        set.ExceptWith(Enumerable.Range(0, 50).Select(i => i * 2 + 1));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        Assert.Equal(expected, seen);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Enumeration_ShouldStayIntact_WhenMissedRemovesLandAnywhereInAThinnedTree(int seed)
+    {
+        // Even elements only, then a random third removed so minimal nodes are scattered through every level;
+        // every odd element is then a miss whose descent can cross a minimal child. Both the full and the range
+        // enumerator must come through a burst of such misses unchanged and without throwing.
+        var rand = new Random(seed);
+        var set = new BTreeSet<int>();
+        for (int i = 0; i < 2000; i++)
+            set.Add(i * 2);
+        for (int i = 0; i < 700; i++)
+            set.Remove(rand.Next(2000) * 2);
+
+        int[] expected = set.ToArray();
+        for (int trial = 0; trial < 50; trial++)
+        {
+            int skip = rand.Next(expected.Length);
+            var full = set.GetEnumerator();
+            var seen = new List<int>();
+            for (int i = 0; i < skip; i++)
+            {
+                Assert.True(full.MoveNext());
+                seen.Add(full.Current);
+            }
+
+            int from = rand.Next(4000);
+            int to = from + rand.Next(4000 - from + 1);
+            int[] expectedRange = expected.Where(k => k >= from && k < to).ToArray();
+            var range = set.EnumerateRange(from, to).GetEnumerator();
+            var seenRange = new List<int>();
+            int rangeSkip = rand.Next(expectedRange.Length + 1);
+            for (int i = 0; i < rangeSkip; i++)
+            {
+                Assert.True(range.MoveNext());
+                seenRange.Add(range.Current);
+            }
+
+            for (int miss = 0; miss < 20; miss++)
+                Assert.False(set.Remove(rand.Next(-1, 4000) | 1));
+
+            while (full.MoveNext())
+                seen.Add(full.Current);
+            while (range.MoveNext())
+                seenRange.Add(range.Current);
+
+            Assert.Equal(expected, seen);
+            Assert.Equal(expectedRange, seenRange);
+        }
+
+        Assert.Equal(expected.Length, set.Count);
+    }
+
+    [Fact]
     public void NonGenericEnumeration_ShouldYieldTheSameElements()
     {
         var set = new BTreeSet<int>(Enumerable.Range(0, 50));
