@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-10-04
+
 ### Added
 
 - **`RangeMap<TKey, TValue>` now takes a value comparer**, empty or seeded from a source (and the three-parameter form gains `(source, comparer, valueComparer)`), so merging by a custom equality no longer needs the full generic type or gives up seeding. ⚠️ Source-breaking, binary-compatible: an untyped `null`/`default` argument is now ambiguous — see [the migration guide](docs/migration.md#new-rangemaptkey-tvaluenull--a-typed-argument). Closes [#465](https://github.com/marius-bughiu/Celerity/issues/465).
@@ -802,7 +804,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.3.1...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.4.0
 [3.3.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.1
 [3.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.0
 [3.2.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.2.0
