@@ -338,15 +338,28 @@ public class CountMinSketchTests
     //  Grid-overflow guard (regression for the depth*width int overflow)
     // ---------------------------------------------------------------
 
-    // A tiny epsilon clamps the width to 2^30; combined with an ordinary delta the row count
-    // is >= 2, so depth * width overflows a 32-bit array length. Before the guard this threw a
-    // confusing OverflowException (or allocated a wrong-sized grid); now it is a clear
-    // ArgumentOutOfRangeException raised before any allocation.
+    // A small epsilon gives a 2^29-wide row (e / 1e-8 ≈ 2.7e8); combined with an ordinary
+    // delta the row count is 5, so depth * width overflows a 32-bit array length. Before the
+    // guard this threw a confusing OverflowException (or allocated a wrong-sized grid); now it
+    // is a clear ArgumentOutOfRangeException raised before any allocation.
     [Fact]
     public void Constructor_Throws_WhenTinyEpsilonAndDeltaOverflowTheGrid()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-9, 0.01));
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-8, 0.01));
+    }
+
+    // Regression for #507: a single row wider than 2^30 used to be clamped to 2^30 before the
+    // grid check, so with one row (delta > 1/e) the clamped grid passed and the sketch was
+    // built with a weaker epsilon than requested. It is now rejected, blaming epsilon.
+    [Theory]
+    [InlineData(1e-12, 0.5)] // depth 1: the clamped grid used to pass
+    [InlineData(1e-9, 0.01)] // depth 5: used to be rejected by the grid check as "delta"
+    public void Constructor_RowWiderThanTheCeiling_ThrowsNamingEpsilon(double epsilon, double delta)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(epsilon, delta));
+        Assert.Equal("epsilon", ex.ParamName);
     }
 
     // A delta small enough that 1/delta overflows to +Infinity pushes the depth formula to an
@@ -375,13 +388,13 @@ public class CountMinSketchTests
         Assert.True(sketch.EstimateCount(11) >= 4);
     }
 
-    // The overflow guard blames the delta parameter (depth is the unbounded dimension; width
-    // is already individually capped at 2^30).
+    // The overflow guard blames the delta parameter (depth is the unbounded dimension; a row
+    // wider than 2^30 is rejected separately, naming epsilon).
     [Fact]
     public void Constructor_GridOverflow_NamesDeltaParameter()
     {
         var ex = Assert.Throws<ArgumentOutOfRangeException>(
-            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-9, 0.01));
+            () => new CountMinSketch<int, Int32Murmur3Hasher>(1e-8, 0.01));
         Assert.Equal("delta", ex.ParamName);
     }
 

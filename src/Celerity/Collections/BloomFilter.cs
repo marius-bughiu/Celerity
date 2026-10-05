@@ -61,6 +61,10 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     private const double Ln2 = 0.6931471805599453;       // ln(2)
     private const double Ln2Squared = 0.4804530139182014; // (ln 2)²
 
+    // Upper bound on the bit array (m). Mirrors the 2^30 element ceiling of the
+    // open-addressed collections and CountMinSketch's counter grid.
+    private const int MaxBitCount = 1 << 30;
+
     private readonly ulong[] _bits;
     private readonly int _bitCount;            // m, a power of two
     private readonly int _mask;                // m - 1
@@ -88,7 +92,10 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="expectedItems"/> is not positive, or
-    /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1.
+    /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1; or the
+    /// two together need more than the maximum of <c>2^30</c> bits (about 112 million
+    /// items at a 1% rate) — pass a smaller <paramref name="expectedItems"/> or a
+    /// larger <paramref name="falsePositiveRate"/>.
     /// </exception>
     public BloomFilter(int expectedItems, double falsePositiveRate = DefaultFalsePositiveRate)
     {
@@ -100,11 +107,16 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
         _capacity = expectedItems;
         _falsePositiveRate = falsePositiveRate;
 
-        // Optimal bit count m = -n·ln(p) / (ln 2)². Round up to a power of two so a
-        // bit index is computed with a mask rather than a modulo; the extra bits
-        // only lower the realized false-positive rate, never raise it.
-        double mOptimal = -(expectedItems * Math.Log(falsePositiveRate)) / Ln2Squared;
-        int m = FastUtils.NextPowerOfTwo((int)Math.Min(Math.Ceiling(mOptimal), 1 << 30));
+        // Optimal bit count, rounded up to a power of two so a bit index is computed
+        // with a mask rather than a modulo; the extra bits only lower the realized
+        // false-positive rate, never raise it. A filter that needs more than
+        // MaxBitCount bits is rejected rather than built smaller, since a smaller
+        // filter would silently exceed the requested rate.
+        double mOptimal = RequiredBits(expectedItems, falsePositiveRate);
+        if (mOptimal > MaxBitCount)
+            throw new ArgumentOutOfRangeException(nameof(expectedItems), expectedItems,
+                $"{expectedItems} items at a false-positive rate of {falsePositiveRate} need {mOptimal} bits, which exceeds the maximum of {MaxBitCount}. Reduce expectedItems or increase falsePositiveRate.");
+        int m = FastUtils.NextPowerOfTwo((int)mOptimal);
         if (m < 64)
             m = 64; // one ulong word minimum
 
@@ -135,10 +147,12 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1.
+    /// <paramref name="falsePositiveRate"/> is not strictly between 0 and 1; or
+    /// <paramref name="source"/> holds more elements than a filter of at most
+    /// <c>2^30</c> bits can hold at <paramref name="falsePositiveRate"/>.
     /// </exception>
     public BloomFilter(IEnumerable<T> source, double falsePositiveRate = DefaultFalsePositiveRate)
-        : this(ExpectedItemsForSource(source), falsePositiveRate)
+        : this(ExpectedItemsForSource(source, falsePositiveRate), falsePositiveRate)
     {
         foreach (T item in source)
             Add(item);
@@ -148,21 +162,43 @@ public class BloomFilter<T, THasher> where THasher : struct, IHashProvider<T>
     // the primary ctor's falsePositiveRate validation: a null source must surface as
     // ArgumentNullException, not ArgumentOutOfRangeException, even when the caller
     // also passed an out-of-range rate.
-    private static int ExpectedItemsForSource(IEnumerable<T> source)
+    //
+    // An oversized source is reported against `source` here, because the primary
+    // ctor would name its own `expectedItems` parameter, which this overload lacks.
+    // An out-of-range rate is left for the primary ctor to report.
+    private static int ExpectedItemsForSource(IEnumerable<T> source, double falsePositiveRate)
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        int count;
         if (source is ICollection<T> collection)
-            return collection.Count > 0 ? collection.Count : 1;
+        {
+            count = collection.Count;
+        }
+        else
+        {
+            // Unknown size: count in one pass. IEnumerable<T> is conventionally
+            // re-enumerable, so the constructor's add pass walks it again.
+            count = 0;
+            foreach (T _ in source)
+                count++;
+        }
 
-        // Unknown size: count in one pass. IEnumerable<T> is conventionally
-        // re-enumerable, so the constructor's add pass walks it again. A minimum of
-        // one keeps the primary ctor's positive-count contract.
-        int count = 0;
-        foreach (T _ in source)
-            count++;
-        return count > 0 ? count : 1;
+        // A minimum of one keeps the primary ctor's positive-count contract.
+        if (count < 1)
+            count = 1;
+
+        if (falsePositiveRate > 0d && falsePositiveRate < 1d && RequiredBits(count, falsePositiveRate) > MaxBitCount)
+            throw new ArgumentOutOfRangeException(nameof(source), count,
+                $"A source of {count} items at a false-positive rate of {falsePositiveRate} needs more than the maximum of {MaxBitCount} bits. Use a smaller source or a larger falsePositiveRate.");
+
+        return count;
     }
+
+    // Optimal bit count m = ceil(-n·ln(p) / (ln 2)²), as a double so a huge n or a tiny
+    // p cannot overflow before the caller compares it against MaxBitCount.
+    private static double RequiredBits(int expectedItems, double falsePositiveRate)
+        => Math.Ceiling(-(expectedItems * Math.Log(falsePositiveRate)) / Ln2Squared);
 
     /// <summary>
     /// Gets the number of times <see cref="Add"/> has been called since construction

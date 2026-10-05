@@ -66,9 +66,12 @@ public class AbuseTracker<TKey, THasher>
     /// <see cref="AbuseTrackerOptions.DistinctPrecision"/> outside the supported range; a non-positive
     /// <see cref="AbuseTrackerOptions.ExpectedDistinctKeys"/> or a
     /// <see cref="AbuseTrackerOptions.FirstSeenFalsePositiveRate"/> outside <c>(0, 1)</c> while
-    /// <see cref="AbuseTrackerOptions.TrackFirstSeen"/> is set (both are ignored when it is not); or a
+    /// <see cref="AbuseTrackerOptions.TrackFirstSeen"/> is set (both are ignored when it is not); a
     /// <see cref="AbuseTrackerOptions.RateEpsilon"/> so small that the rate sketch would need more counters
-    /// than it will allocate.
+    /// than it will allocate; or, while <see cref="AbuseTrackerOptions.TrackFirstSeen"/> is set, an
+    /// <see cref="AbuseTrackerOptions.ExpectedDistinctKeys"/> and
+    /// <see cref="AbuseTrackerOptions.FirstSeenFalsePositiveRate"/> that together need more than the
+    /// first-seen Bloom filter's maximum of <c>2^30</c> bits.
     /// </exception>
     public AbuseTracker(AbuseTrackerOptions? options = null)
     {
