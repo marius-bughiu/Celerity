@@ -2760,10 +2760,16 @@ The `IEnumerable<T>` overload pre-populates the filter and sizes it from the sou
 element count — taken from `ICollection<T>.Count` when available, otherwise from a single
 counting pass — so the realized false-positive rate honors `falsePositiveRate`.
 
+The bit array is capped at `2^30` bits (128 MB). A size and rate that need more — about
+112 million items at 1%, or 37 million at `1e-6` — are rejected rather than built with a
+smaller array that would miss the requested rate.
+
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `expectedItems <= 0`.
 - `ArgumentOutOfRangeException` if `falsePositiveRate <= 0`, `>= 1`, or `NaN`.
+- `ArgumentOutOfRangeException` if the filter would need more than `2^30` bits. The
+  exception names `expectedItems`, or `source` for the enumerable overload.
 - `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats
   the rate validation, so a `null` source with a bad rate surfaces as
   `ArgumentNullException`.
@@ -3568,17 +3574,18 @@ The first overload creates an empty sketch sized for the given error parameters.
 source raise the estimated count).
 
 `epsilon` and `delta` must each be strictly between 0 and 1. Smaller `epsilon` widens each
-row (lowering the error); smaller `delta` adds rows (raising the confidence). The width is
-capped at `2^30` counters per row, and the **total** grid (`depth × width`) is capped at
-`2^30` counters — a combination of `epsilon` and `delta` that would need a larger grid (for
-example `epsilon = 1e-9` with `delta = 0.01`, which clamps the width to `2^30` and still asks
-for several rows) is rejected rather than silently overflowing the allocation. Realistic
-parameters stay far below this ceiling; if you hit it, relax `epsilon` and/or `delta`.
+row (lowering the error); smaller `delta` adds rows (raising the confidence). The **total**
+grid (`depth × width`) is capped at `2^30` counters. An `epsilon` below about `2.5e-9` needs
+a single row wider than that and is rejected; a combination that fits one row but not all of
+them (for example `epsilon = 1e-8` with `delta = 0.01`, five rows of `2^29`) is rejected too.
+Neither is built smaller than requested. Realistic parameters stay far below this ceiling; if
+you hit it, relax `epsilon` and/or `delta`.
 
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `epsilon` or `delta` is not strictly between 0 and 1, or if
-  the two together demand a counter grid larger than `2^30` counters.
+  the two together demand a counter grid larger than `2^30` counters. The exception names
+  `epsilon` when one row is already too wide, and `delta` otherwise.
 - `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats the
   error-parameter validation, so a `null` source with a bad `epsilon` surfaces as
   `ArgumentNullException`.

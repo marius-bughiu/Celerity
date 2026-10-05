@@ -291,6 +291,74 @@ public class BloomFilterTests
     }
 
     // ---------------------------------------------------------------
+    //  Bit-array ceiling (regression for #507)
+    // ---------------------------------------------------------------
+
+    // A filter needing more than 2^30 bits used to be silently clamped to 2^30, with k
+    // recomputed from the clamped size, so it overshot the requested rate (36x at the issue's
+    // 50M / 1e-6 repro, ~86% at int.MaxValue / 1%) while FalsePositiveRate still reported p.
+    [Theory]
+    [InlineData(50_000_000, 1e-6)]
+    [InlineData(int.MaxValue, 0.01)]
+    [InlineData(int.MaxValue, 0.5)]
+    public void Constructor_Throws_WhenRequiredBitsExceedTheCeiling(int expectedItems, double falsePositiveRate)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new BloomFilter<int, Int32WangNaiveHasher>(expectedItems, falsePositiveRate));
+        Assert.Equal("expectedItems", ex.ParamName);
+    }
+
+    // The rejection is tight: one item past the largest count that fits in 2^30 bits throws.
+    [Theory]
+    [InlineData(0.01)]
+    [InlineData(0.5)]
+    public void Constructor_Throws_OneItemPastTheCeiling(double falsePositiveRate)
+    {
+        double bitsPerItem = -Math.Log(falsePositiveRate) / (Math.Log(2) * Math.Log(2));
+        int firstRejected = (int)Math.Floor((1 << 30) / bitsPerItem) + 1;
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new BloomFilter<int, Int32WangNaiveHasher>(firstRejected, falsePositiveRate));
+    }
+
+    // The source overload has no expectedItems parameter, so an oversized source is blamed
+    // on source. The fake collection reports a huge Count without holding any elements; the
+    // ctor must reject it before enumerating.
+    [Fact]
+    public void IEnumerableConstructor_Throws_WhenSourceExceedsTheCeiling()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new BloomFilter<int, Int32WangNaiveHasher>(new HugeCountCollection(int.MaxValue), 0.01));
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    // An out-of-range rate still names falsePositiveRate, even when the source is also huge.
+    [Theory]
+    [InlineData(0d)]
+    [InlineData(1d)]
+    [InlineData(double.NaN)]
+    public void IEnumerableConstructor_BadRate_BeatsOversizedSource(double falsePositiveRate)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new BloomFilter<int, Int32WangNaiveHasher>(new HugeCountCollection(int.MaxValue), falsePositiveRate));
+        Assert.Equal("falsePositiveRate", ex.ParamName);
+    }
+
+    // An ICollection<T> that reports an arbitrary Count and holds nothing.
+    private sealed class HugeCountCollection(int count) : ICollection<int>
+    {
+        public int Count => count;
+        public bool IsReadOnly => true;
+        public void Add(int item) => throw new NotSupportedException();
+        public void Clear() => throw new NotSupportedException();
+        public bool Contains(int item) => false;
+        public void CopyTo(int[] array, int arrayIndex) => throw new NotSupportedException();
+        public bool Remove(int item) => throw new NotSupportedException();
+        public IEnumerator<int> GetEnumerator() => throw new NotSupportedException();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    // ---------------------------------------------------------------
     //  UnionWith
     // ---------------------------------------------------------------
 

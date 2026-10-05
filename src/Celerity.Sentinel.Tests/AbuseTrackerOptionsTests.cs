@@ -39,6 +39,20 @@ public class AbuseTrackerOptionsTests
             () => new StringAbuseTracker(new AbuseTrackerOptions { RateEpsilon = epsilon }));
 
     [Fact]
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenFirstSeenFilterWouldExceedItsBitCeiling()
+    {
+        // Regression for #507: ExpectedDistinctKeys is passed straight to the Bloom filter, which used to
+        // clamp its bit array silently and overshoot FirstSeenFalsePositiveRate. It is now rejected.
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new StringAbuseTracker(new AbuseTrackerOptions
+            {
+                TrackFirstSeen = true,
+                ExpectedDistinctKeys = 50_000_000,
+                FirstSeenFalsePositiveRate = 1e-6,
+            }));
+    }
+
+    [Fact]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateEpsilonDemandsAnOversizedCounterGrid()
     {
         // 1e-9 is inside (0, 1), so the range check passes — but a relative error that small asks for more

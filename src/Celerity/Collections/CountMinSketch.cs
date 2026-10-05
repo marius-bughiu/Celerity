@@ -122,10 +122,16 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         _delta = delta;
 
         // Width w = ceil(e / epsilon), rounded up to a power of two so a column index is a
-        // mask rather than a modulo (the extra columns only lower the realized error). The
-        // cap mirrors the Bloom filter: clamp before the int cast so a tiny epsilon cannot
-        // overflow. Because epsilon < 1, e / epsilon > e, so w is always at least 4.
-        _width = FastUtils.NextPowerOfTwo((int)Math.Min(Math.Ceiling(Math.E / epsilon), 1 << 30));
+        // mask rather than a modulo (the extra columns only lower the realized error). A
+        // width above the grid ceiling is rejected here, before the int cast, rather than
+        // clamped: a narrower row would silently weaken the requested epsilon, and with a
+        // single row the clamped grid would still pass the check below. Because
+        // epsilon < 1, e / epsilon > e, so w is always at least 4.
+        double optimalWidth = Math.Ceiling(Math.E / epsilon);
+        if (optimalWidth > MaxGrid)
+            throw new ArgumentOutOfRangeException(nameof(epsilon), epsilon,
+                $"Epsilon {epsilon} needs a row of {optimalWidth} counters, which exceeds the maximum of {MaxGrid}. Increase epsilon.");
+        _width = FastUtils.NextPowerOfTwo((int)optimalWidth);
         _widthMask = _width - 1;
 
         // Depth d = ceil(ln(1 / delta)), at least one row. Math.Max keeps it >= 1 even when
@@ -135,7 +141,7 @@ public class CountMinSketch<T, THasher> where THasher : struct, IHashProvider<T>
         // cast to int.MaxValue on .NET Core 3.0+.
         _depth = Math.Max(1, (int)Math.Ceiling(Math.Log(1.0 / delta)));
 
-        // Guard the counter grid against integer overflow. _width is clamped to <= 2^30, but
+        // Guard the counter grid against integer overflow. _width is at most 2^30, but
         // an unbounded _depth means _depth * _width can overflow a 32-bit array length and
         // silently allocate a wrong-sized grid (a negative length throws, a wrap to zero or a
         // small positive value yields a too-small grid that then indexes out of bounds on the
