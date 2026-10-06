@@ -722,8 +722,15 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         /// <exception cref="InvalidOperationException">
         /// Thrown if the dictionary was modified since the enumerator was created.
         /// </exception>
+        /// <exception cref="ObjectDisposedException">
+        /// Thrown if the dictionary has been disposed.
+        /// </exception>
         public bool MoveNext()
         {
+            // Dispose() empties the table without bumping _version, so check it
+            // first: otherwise a live enumerator would just see an empty dictionary
+            // and stop early instead of failing.
+            _dict.ThrowIfDisposed();
             if (_version != _dict._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
@@ -767,8 +774,15 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         /// <exception cref="InvalidOperationException">
         /// Thrown if the dictionary was modified since the enumerator was created.
         /// </exception>
+        /// <exception cref="ObjectDisposedException">
+        /// Thrown if the dictionary has been disposed.
+        /// </exception>
         public void Reset()
         {
+            // Dispose() empties the table without bumping _version, so check it
+            // first: otherwise a live enumerator would just see an empty dictionary
+            // and stop early instead of failing.
+            _dict.ThrowIfDisposed();
             if (_version != _dict._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 

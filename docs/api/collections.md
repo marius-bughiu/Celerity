@@ -313,7 +313,7 @@ Reach for the pooled variant when the dictionary is **short-lived and rebuilt fr
 
 ### Lifecycle and pooling contract
 
-- **Dispose returns the buffers.** Call `Dispose` (ideally via `using`) when finished so the arrays return to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException`.
+- **Dispose returns the buffers.** Call `Dispose` (ideally via `using`) when finished so the arrays return to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException` — including `MoveNext` / `Reset` on an enumerator obtained before the `Dispose` call.
 - **Not disposing is not a leak.** If you forget to dispose, the rented arrays are simply garbage-collected like any other managed array — you just forfeit the pooling benefit.
 - **Pool exhaustion is handled for you.** `ArrayPool<T>.Shared` allocates a fresh buffer when it has none to hand out, so a "pool empty" condition never surfaces to the caller.
 - **Reference types are cleared on return** so the pool does not keep your keys / values reachable after disposal (memory-leak prevention); value-type buffers skip the clear for speed.
@@ -997,7 +997,7 @@ Reach for the pooled variant when the set is **short-lived and rebuilt frequentl
 
 ### Lifecycle and pooling contract
 
-- **Dispose returns the buffer.** Call `Dispose` (ideally via `using`) when finished so the array returns to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException`.
+- **Dispose returns the buffer.** Call `Dispose` (ideally via `using`) when finished so the array returns to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException` — including `MoveNext` / `Reset` on an enumerator obtained before the `Dispose` call.
 - **Not disposing is not a leak.** If you forget to dispose, the rented array is simply garbage-collected like any other managed array — you just forfeit the pooling benefit.
 - **Pool exhaustion is handled for you.** `ArrayPool<T>.Shared` allocates a fresh buffer when it has none to hand out, so a "pool empty" condition never surfaces to the caller.
 - **Reference types are cleared on return** so the pool does not keep your elements reachable after disposal (memory-leak prevention); value-type buffers skip the clear for speed.
