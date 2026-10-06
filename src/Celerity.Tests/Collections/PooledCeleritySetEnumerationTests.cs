@@ -392,4 +392,70 @@ public class PooledCeleritySetEnumerationTests
         Assert.True(linqHasFive);
         Assert.False(linqHas99);
     }
+
+    // Regression for #508: Dispose() empties the table without bumping the
+    // version, so a live enumerator used to see an empty set and stop after
+    // one element instead of throwing.
+    [Fact]
+    public void MoveNext_ShouldThrowObjectDisposed_AfterDisposeDuringEnumeration()
+    {
+        var set = new PooledCeleritySet<int, Int32WangNaiveHasher>();
+        for (int i = 1; i <= 10; i++)
+            set.Add(i);
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        set.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void Foreach_ShouldThrowObjectDisposed_WhenDisposedInsideTheLoop()
+    {
+        var set = new PooledCeleritySet<int, Int32WangNaiveHasher>();
+        set.Add(0);
+        for (int i = 1; i <= 10; i++)
+            set.Add(i);
+
+        int seen = 0;
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            foreach (int _ in set)
+            {
+                seen++;
+                set.Dispose();
+            }
+        });
+        Assert.Equal(1, seen);
+    }
+
+    [Fact]
+    public void MoveNext_ShouldThrowObjectDisposed_WhenEnumerationHadAlreadyFinished()
+    {
+        var set = new PooledCeleritySet<int, Int32WangNaiveHasher>();
+        set.Add(1);
+
+        var enumerator = set.GetEnumerator();
+        while (enumerator.MoveNext()) { }
+
+        set.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void Reset_ShouldThrowObjectDisposed_AfterDispose()
+    {
+        var set = new PooledCeleritySet<int, Int32WangNaiveHasher>();
+        set.Add(1);
+
+        var enumerator = set.GetEnumerator();
+        enumerator.MoveNext();
+
+        set.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => enumerator.Reset());
+    }
 }

@@ -246,6 +246,92 @@ public class PooledCelerityDictionaryEnumerationTests
         Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
     }
 
+    // Regression for #508: Dispose() empties the table without bumping the
+    // version, so a live enumerator used to see an empty dictionary and stop
+    // after one entry instead of throwing.
+    [Fact]
+    public void MoveNext_ShouldThrowObjectDisposed_AfterDisposeDuringEnumeration()
+    {
+        var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        for (int i = 1; i <= 10; i++)
+            map[i] = i;
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        map.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void Foreach_ShouldThrowObjectDisposed_WhenDisposedInsideTheLoop()
+    {
+        var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 0;
+        for (int i = 1; i <= 10; i++)
+            map[i] = i;
+
+        int seen = 0;
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            foreach (var _ in map)
+            {
+                seen++;
+                map.Dispose();
+            }
+        });
+        Assert.Equal(1, seen);
+    }
+
+    [Fact]
+    public void MoveNext_ShouldThrowObjectDisposed_WhenEnumerationHadAlreadyFinished()
+    {
+        var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        map[1] = 10;
+
+        var enumerator = map.GetEnumerator();
+        while (enumerator.MoveNext()) { }
+
+        map.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void Reset_ShouldThrowObjectDisposed_AfterDispose()
+    {
+        var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        map[1] = 10;
+
+        var enumerator = map.GetEnumerator();
+        enumerator.MoveNext();
+
+        map.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => enumerator.Reset());
+    }
+
+    [Fact]
+    public void KeysAndValuesEnumerators_ShouldThrowObjectDisposed_AfterDisposeDuringEnumeration()
+    {
+        var map = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>();
+        for (int i = 1; i <= 10; i++)
+            map[i] = i * 10;
+
+        var keys = map.Keys.GetEnumerator();
+        var values = map.Values.GetEnumerator();
+        Assert.True(keys.MoveNext());
+        Assert.True(values.MoveNext());
+
+        map.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => keys.MoveNext());
+        Assert.Throws<ObjectDisposedException>(() => values.MoveNext());
+        Assert.Throws<ObjectDisposedException>(() => keys.Reset());
+        Assert.Throws<ObjectDisposedException>(() => values.Reset());
+    }
+
     [Fact]
     public void Keys_ShouldYieldEveryKeyExactlyOnce_IncludingDefaultKey()
     {

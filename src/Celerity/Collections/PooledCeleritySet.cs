@@ -624,8 +624,15 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
         /// <exception cref="InvalidOperationException">
         /// Thrown if the set was modified since the enumerator was created.
         /// </exception>
+        /// <exception cref="ObjectDisposedException">
+        /// Thrown if the set has been disposed.
+        /// </exception>
         public bool MoveNext()
         {
+            // Dispose() empties the table without bumping _version, so check it
+            // first: otherwise a live enumerator would just see an empty set
+            // and stop early instead of failing.
+            _set.ThrowIfDisposed();
             if (_version != _set._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
@@ -667,8 +674,15 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
         /// <exception cref="InvalidOperationException">
         /// Thrown if the set was modified since the enumerator was created.
         /// </exception>
+        /// <exception cref="ObjectDisposedException">
+        /// Thrown if the set has been disposed.
+        /// </exception>
         public void Reset()
         {
+            // Dispose() empties the table without bumping _version, so check it
+            // first: otherwise a live enumerator would just see an empty set
+            // and stop early instead of failing.
+            _set.ThrowIfDisposed();
             if (_version != _set._version)
                 throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 
