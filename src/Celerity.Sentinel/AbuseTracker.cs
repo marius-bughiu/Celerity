@@ -87,7 +87,10 @@ public class AbuseTracker<TKey, THasher>
             : null;
     }
 
-    /// <summary>Gets the total number of observations recorded since construction or the last <see cref="Clear"/>.</summary>
+    /// <summary>
+    /// Gets the total number of observations recorded since construction or the last <see cref="Clear"/>. Saturates
+    /// at <see cref="long.MaxValue"/> rather than wrapping negative, as the underlying sketches' counts do.
+    /// </summary>
     public long TotalObservations => _totalObservations;
 
     /// <summary>Gets a value indicating whether the first-seen (new-key) signal is enabled.</summary>
@@ -110,7 +113,8 @@ public class AbuseTracker<TKey, THasher>
         _rate.Add(key);
         _offenders.Add(key);
         _distinct.Add(key);
-        _totalObservations++;
+        if (_totalObservations != long.MaxValue)
+            _totalObservations++;
 
         return new ObservationResult(isFirstSeen, _rate.EstimateCount(key));
     }
@@ -231,7 +235,11 @@ public class AbuseTracker<TKey, THasher>
         foreach (TopKEntry<TKey> entry in other._offenders.GetTopK())
             _offenders.Add(entry.Element, Math.Max(1, entry.Count - entry.Error));
 
-        _totalObservations += other._totalObservations;
+        // Saturate rather than wrap, as the rate and offender sketches do: a negative total would turn the
+        // documented epsilon × TotalObservations overestimate bound negative. Both totals are non-negative, so a
+        // negative sum can only be an overflow.
+        long total = unchecked(_totalObservations + other._totalObservations);
+        _totalObservations = total < 0 ? long.MaxValue : total;
     }
 
     /// <summary>Resets the tracker to empty, clearing every structure. Use on a tumbling window boundary.</summary>

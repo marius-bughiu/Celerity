@@ -156,6 +156,38 @@ public class AbuseTrackerTests
     }
 
     [Fact]
+    public void Merge_ShouldSaturateTotalObservations_InsteadOfWrappingNegative()
+    {
+        // 63 self-merges double one observation to 2^63, one past long.MaxValue: an unchecked sum wraps the total
+        // to long.MinValue while the rate sketch it bounds sits saturated at long.MaxValue.
+        var tracker = new StringAbuseTracker(new AbuseTrackerOptions { TrackFirstSeen = false });
+        tracker.Observe("a");
+        for (int i = 0; i < 63; i++)
+            tracker.Merge(tracker);
+
+        Assert.Equal(long.MaxValue, tracker.TotalObservations);
+        Assert.Equal(long.MaxValue, tracker.EstimateCount("a"));
+
+        tracker.Merge(tracker);
+
+        Assert.Equal(long.MaxValue, tracker.TotalObservations);
+        Assert.Equal(long.MaxValue, tracker.Snapshot(1).TotalObservations);
+    }
+
+    [Fact]
+    public void Observe_ShouldSaturateTotalObservations_OnceTheTotalReachesLongMaxValue()
+    {
+        var tracker = new StringAbuseTracker(new AbuseTrackerOptions { TrackFirstSeen = false });
+        tracker.Observe("a");
+        for (int i = 0; i < 63; i++)
+            tracker.Merge(tracker);
+
+        tracker.Observe("b");
+
+        Assert.Equal(long.MaxValue, tracker.TotalObservations);
+    }
+
+    [Fact]
     public void Merge_ShouldReportRangesThatContainEveryOffendersTrueCount()
     {
         var options = new AbuseTrackerOptions { OffenderCapacity = 64, TrackFirstSeen = false };
