@@ -91,6 +91,9 @@ public sealed class AbuseReport<TKey>
     /// <summary>Gets the estimated number of distinct keys observed (from HyperLogLog).</summary>
     public long DistinctKeys { get; }
 
-    /// <summary>Gets the total number of observations recorded since construction or the last reset.</summary>
+    /// <summary>
+    /// Gets the total number of observations recorded since construction or the last reset, saturated at
+    /// <see cref="long.MaxValue"/>.
+    /// </summary>
     public long TotalObservations { get; }
 }
