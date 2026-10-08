@@ -151,7 +151,8 @@ public static class CountingSort
 
     // ---- ushort keys --------------------------------------------------------------------------
 
-    /// <inheritdoc cref="Sort(Span{byte})"/>
+    /// <summary>Sorts <paramref name="keys"/> in ascending order.</summary>
+    /// <param name="keys">The keys to sort in place.</param>
     /// <remarks>Rents a <see cref="UInt16Range"/>-element counter array; use <see cref="SortWithScratch(Span{ushort}, Span{int})"/> to avoid it.</remarks>
     public static void Sort(Span<ushort> keys)
     {
