@@ -54,7 +54,7 @@ The `IEnumerable<KeyValuePair<TKey, TValue>>` overload copies entries from `sour
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 - `ArgumentException` if `source` contains duplicate keys (enumerable overload).
 
@@ -688,7 +688,7 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
@@ -790,7 +790,7 @@ Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-he
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
@@ -865,7 +865,7 @@ Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-he
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
@@ -940,7 +940,7 @@ Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-he
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
@@ -1021,7 +1021,7 @@ Same semantics, sizing (including the `ICollection<T>` count-with-load-factor-he
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Default-element handling
@@ -1103,7 +1103,7 @@ The `IEnumerable<int>` overload copies elements from `source`, following the sam
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
@@ -1189,7 +1189,7 @@ The `IEnumerable<long>` overload copies elements from `source`, following the sa
 **Throws:**
 
 - `ArgumentOutOfRangeException` if `capacity < 0`.
-- `ArgumentOutOfRangeException` if `loadFactor <= 0` or `loadFactor >= 1`.
+- `ArgumentOutOfRangeException` if `loadFactor` is not in the open interval (0, 1) — NaN included.
 - `ArgumentNullException` if `source` is `null` (enumerable overload).
 
 ### Methods
