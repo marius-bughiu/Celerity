@@ -59,8 +59,10 @@ sorting `int` ids alongside `int` indices would quietly overwrite the payload.
 
 Scratch buffers must be **at least as long as the keys**, and **no two of the buffers a call writes
 may share storage** — not the keys and the payload, not a scratch buffer and the span it serves, and
-not a key-side buffer and a payload-side one. All of it is checked, and a violation throws
-`ArgumentException` before anything is written. The reason it is an exception rather than a
+not a key-side buffer and a payload-side one. Every overlap between buffers of the same element
+type is checked, and a violation throws `ArgumentException` before anything is written; buffers of
+different element types can only overlap through a deliberate reinterpretation such as
+`MemoryMarshal.Cast`, which is out of contract and not detected. The reason it is an exception rather than a
 documented caveat: the radix passes ping-pong between the two buffer pairs, writing a key and a
 payload element to the same index of whichever pair is the destination, so aliased buffers produce a
 silently wrong answer rather than a failure. Disjoint slices of one array are fine — only genuine
@@ -82,7 +84,8 @@ histograms, in both forms.
 | `ArgSort(ReadOnlySpan<TKey> keys, Span<int> indices)` | Writes into `indices` the permutation that sorts `keys` ascending. `keys` is not modified. |
 
 **Exceptions.** `ArgumentException` when `values` / `indices` / a scratch buffer is shorter than
-`keys`, or when a scratch buffer overlaps the span it serves.
+`keys`, or when two of the call's buffers share storage — `values` or `indices` with
+`keys`, a scratch buffer with the span it serves, or a key-side buffer with a payload-side one.
 
 **Properties worth relying on.**
 
@@ -145,7 +148,8 @@ foreach (int i in byTime)
 
 **Exceptions.** `ArgumentOutOfRangeException` when `max < min`, when the range needs more counters
 than an array can hold, or when a key falls outside the declared `[min, max]`. `ArgumentException`
-when a buffer is too short or a scratch buffer overlaps the payload.
+when a buffer is too short or two of the buffers a call writes share storage — `values` with
+`keys`, `valueScratch` with either, or `counts` with `keys`, `values` or `valueScratch`.
 
 ```csharp
 using Celerity.Sorting;
