@@ -141,7 +141,7 @@ var routes = new FrozenCelerityDictionary<int>(pairs);
 Console.WriteLine(routes.IsPerfectlyHashed);   // True → single-probe lookups
 ```
 
-No `Add` / `Remove` (same as `FrozenDictionary`). For non-ASCII keys or to restore a perfect layout when the default collides, use `FrozenCelerityDictionary<V, StringFnV1AFullHasher>`. See the [performance guide](performance.md#6-build-once-read-many--freeze-it).
+No `Add` / `Remove` (same as `FrozenDictionary`). Duplicate keys in the source throw `ArgumentException`, where `ToFrozenDictionary` silently keeps the last value — de-duplicate first if your source can repeat a key. For non-ASCII keys or to restore a perfect layout when the default collides, use `FrozenCelerityDictionary<V, StringFnV1AFullHasher>`. See the [performance guide](performance.md#6-build-once-read-many--freeze-it).
 
 ## `HashSet<T>` → `IntSet` / `LongSet` / `CeleritySet<T, THasher>`
 
