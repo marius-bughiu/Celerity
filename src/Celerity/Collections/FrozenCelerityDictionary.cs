@@ -113,7 +113,9 @@ public class FrozenCelerityDictionary<TValue, THasher>
     /// The key/value pairs to freeze. A single <c>null</c> key is allowed and stored
     /// out-of-band. Duplicate keys (including a duplicate <c>null</c> key) are
     /// rejected, matching the construction contract of the mutable Celerity
-    /// dictionaries and BCL <see cref="System.Collections.Frozen.FrozenDictionary{TKey, TValue}"/>.
+    /// dictionaries. This differs from BCL
+    /// <see cref="System.Collections.Frozen.FrozenDictionary"/>.<c>ToFrozenDictionary</c>,
+    /// which keeps the last value for a duplicate key instead of throwing.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">

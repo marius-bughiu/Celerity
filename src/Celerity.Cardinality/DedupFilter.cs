@@ -108,6 +108,11 @@ public class DedupFilter<TKey, THasher>
     /// <summary>
     /// Removes one marking of a key so it can be seen fresh again — use as keys age out of a sliding window.
     /// </summary>
+    /// <remarks>
+    /// A key marked by both sides of a <see cref="UnionWith"/> is stored once per side, and each call removes only
+    /// one copy: <see cref="TryMarkSeen"/> keeps returning <c>false</c> for that key until it has been removed once
+    /// per copy.
+    /// </remarks>
     /// <param name="key">The key to remove. Only remove keys you previously marked.</param>
     /// <returns><c>true</c> if a marking was found and removed; <c>false</c> if the key was definitely never marked.</returns>
     public bool Remove(TKey key) => _filter.Remove(key);
@@ -130,7 +135,8 @@ public class DedupFilter<TKey, THasher>
     /// <remarks>
     /// A fingerprint filter cannot tell an overlapping key from a new one, so a key both filters marked is stored
     /// twice: <see cref="Count"/> becomes the sum of both counts and may then exceed the number of distinct keys,
-    /// and the extra copies consume capacity. Size for the union, not for either side.
+    /// and the extra copies consume capacity. Size for the union, not for either side. Such a key also needs one
+    /// <see cref="Remove"/> per copy before <see cref="TryMarkSeen"/> reports it fresh again.
     /// </remarks>
     public void UnionWith(DedupFilter<TKey, THasher> other)
     {

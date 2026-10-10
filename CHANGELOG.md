@@ -10,6 +10,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - `PooledCelerityDictionary` and `PooledCeleritySet` enumerators (including the dictionary's `Keys` / `Values` enumerators) now throw `ObjectDisposedException` when the collection is disposed mid-enumeration, instead of silently ending the loop early as if the collection were empty. Closes #508.
 - `AbuseTracker.TotalObservations` now saturates at `long.MaxValue` under `Merge` and `Observe`, as the rate and offender sketches already do, instead of wrapping negative and making the documented rate-error bound meaningless. Closes #509.
 - `CompressedIntSet.IsSubsetOf` now returns `true` for an empty set without enumerating `other`, matching the rest of the set family, so a lazy or throwing sequence no longer runs. `IsProperSupersetOf` likewise answers from an empty `ICollection<int>`'s `Count`. The API reference now says that `ExceptWith` over a lazy view of the same set throws on every Celerity set (unlike `HashSet<T>`), and that `Dispose`, `IsReadOnly` and an enumerator's `Current` stay usable on a disposed `Pooled*` collection. Closes #521.
+- Docs: `FrozenCelerityDictionary` no longer claims its duplicate-key throw matches BCL `ToFrozenDictionary`, which keeps the last value instead; the migration guide now flags the difference. `DedupFilter.Remove` and `UnionWith` now say that a key marked on both sides of a union needs one `Remove` per copy before it reads as fresh. Closes #510.
 
 ## [3.4.0] - 2026-10-04
 

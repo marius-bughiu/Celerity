@@ -1253,7 +1253,8 @@ empty string `""` is an ordinary key.
 
 - Throws `ArgumentNullException` if `source` is `null`.
 - Throws `ArgumentException` on a duplicate key (including a duplicate `null` key),
-  matching BCL `FrozenDictionary` and the mutable Celerity dictionaries.
+  matching the mutable Celerity dictionaries. BCL `ToFrozenDictionary` differs: it
+  keeps the last value for a duplicate key instead of throwing.
 - Throws `ArgumentException` if `source` holds `2^30` or more distinct non-`null` keys —
   the frozen table is a power-of-two array and a fallback build needs at least one empty
   slot, so the non-`null` key count must stay below the `2^30` ceiling (`NextPowerOfTwo`

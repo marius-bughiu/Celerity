@@ -44,6 +44,22 @@ public class DedupFilterTests
     }
 
     [Fact]
+    public void Remove_AfterUnionWith_NeedsOneRemovePerCopy()
+    {
+        var dedup = new StringDedupFilter(1000);
+        var other = new StringDedupFilter(1000);
+        dedup.TryMarkSeen("k");
+        other.TryMarkSeen("k");
+        dedup.UnionWith(other); // "k" is now stored once per side
+
+        Assert.True(dedup.Remove("k"));
+        Assert.False(dedup.TryMarkSeen("k")); // the second copy still reports it seen
+
+        Assert.True(dedup.Remove("k"));
+        Assert.True(dedup.TryMarkSeen("k"));
+    }
+
+    [Fact]
     public void Count_TracksMarkedKeys()
     {
         var dedup = new StringDedupFilter(1000);
