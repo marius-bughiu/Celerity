@@ -68,9 +68,14 @@ public class AbuseTrackerOptionsTests
     [InlineData(-0.5d)]
     [InlineData(2d)]
     [InlineData(double.NaN)]
-    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateConfidenceIsOutsideTheUnitInterval(double confidence) =>
-        Assert.Throws<ArgumentOutOfRangeException>(
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateConfidenceIsOutsideTheUnitInterval(double confidence)
+    {
+        // The tracker validates RateConfidence itself, so every rejected value — NaN included — must be reported
+        // against `options`, not against the Count-Min `delta` it would otherwise reach.
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
             () => new StringAbuseTracker(new AbuseTrackerOptions { RateConfidence = confidence }));
+        Assert.Equal("options", ex.ParamName);
+    }
 
     [Theory]
     [InlineData(0)]
