@@ -68,6 +68,7 @@ internal static class Differential
         ("RTree", RTreeCase),
         ("IntervalTree", IntervalTreeCase),
         ("RangeMap", RangeMapCase),
+        ("MinMaxHeap", MinMaxHeapCase),
         ("CompressedGraph", CompressedGraphCase),
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
@@ -2709,6 +2710,87 @@ internal static class Differential
         Check(actual.Length == expected.Count, $"interval match count disagreed for [{start}, {end})");
         foreach (var match in actual)
             Check(expected.Contains(match.Value), $"unexpected match {match.Value} for [{start}, {end})");
+    }
+
+    // ---- min-max heap -------------------------------------------------------
+
+    // MinMaxHeap — double-ended priority queue. The oracle is a sorted list of the live priorities (each
+    // element is its own priority, so a returned element is checked directly). Both ends are drained and
+    // the fused push-pops are interleaved over a narrow priority range, so ties are constant; occasionally
+    // the heap is rebuilt through the O(n) heapify constructor from the oracle's contents.
+    private static void MinMaxHeapCase(Random rng)
+    {
+        int range = rng.Next(1, 64);
+        var sut = new MinMaxHeap<int, int>(rng.Next(0, 4));
+        var model = new List<int>();
+
+        int ops = OrderedOpCount(rng);
+        for (int op = 0; op < ops; op++)
+        {
+            int p = rng.Next(0, range);
+            switch (rng.Next(0, 20))
+            {
+                case < 8:
+                    sut.Enqueue(p, p);
+                    Insert(model, p);
+                    break;
+                case < 11:
+                    if (sut.TryDequeueMin(out int lo, out int loPriority))
+                    {
+                        Check(model.Count > 0 && lo == model[0] && loPriority == lo, "MinMaxHeap DequeueMin disagreed");
+                        model.RemoveAt(0);
+                    }
+                    else
+                    {
+                        Check(model.Count == 0, "MinMaxHeap TryDequeueMin failed on a non-empty heap");
+                    }
+
+                    break;
+                case < 14:
+                    if (sut.TryDequeueMax(out int hi, out int hiPriority))
+                    {
+                        Check(model.Count > 0 && hi == model[^1] && hiPriority == hi, "MinMaxHeap DequeueMax disagreed");
+                        model.RemoveAt(model.Count - 1);
+                    }
+                    else
+                    {
+                        Check(model.Count == 0, "MinMaxHeap TryDequeueMax failed on a non-empty heap");
+                    }
+
+                    break;
+                case < 16:
+                    Insert(model, p);
+                    Check(sut.EnqueueDequeueMin(p, p) == model[0], "MinMaxHeap EnqueueDequeueMin disagreed");
+                    model.RemoveAt(0);
+                    break;
+                case < 18:
+                    Insert(model, p);
+                    Check(sut.EnqueueDequeueMax(p, p) == model[^1], "MinMaxHeap EnqueueDequeueMax disagreed");
+                    model.RemoveAt(model.Count - 1);
+                    break;
+                case < 19:
+                    var entries = new (int, int)[model.Count];
+                    for (int k = 0; k < model.Count; k++)
+                        entries[k] = (model[k], model[k]);
+                    rng.Shuffle(entries);
+                    sut = new MinMaxHeap<int, int>(entries);
+                    break;
+                default:
+                    sut.Clear();
+                    model.Clear();
+                    break;
+            }
+
+            Check(sut.Count == model.Count, "MinMaxHeap Count disagreed");
+            if (model.Count > 0)
+                Check(sut.PeekMin() == model[0] && sut.PeekMax() == model[^1], "MinMaxHeap Peek disagreed");
+        }
+
+        static void Insert(List<int> sorted, int value)
+        {
+            int at = sorted.BinarySearch(value);
+            sorted.Insert(at < 0 ? ~at : at, value);
+        }
     }
 
     // ---- range map ----------------------------------------------------------

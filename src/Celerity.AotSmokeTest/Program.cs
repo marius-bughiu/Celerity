@@ -803,6 +803,35 @@ void Check(bool condition, string message)
     Check(maxHeap.Dequeue() == "b", "IndexedPriorityQueue custom comparer (max-heap)");
 }
 
+// MinMaxHeap — double-ended priority queue. Exercise both ends, the fused push-pops,
+// duplicates, the O(n) heapify constructor, and a custom struct comparer.
+{
+    var heap = new MinMaxHeap<string, int>();
+    heap.Enqueue("mid", 5);
+    heap.Enqueue("low", 1);
+    heap.Enqueue("high", 9);
+    heap.Enqueue("mid", 5);
+    Check(heap.Count == 4 && heap.PeekMin() == "low" && heap.PeekMax() == "high", "MinMaxHeap both ends");
+    Check(heap.DequeueMax() == "high" && heap.DequeueMin() == "low", "MinMaxHeap dequeue both ends");
+    Check(heap.EnqueueDequeueMax("cap", 7) == "cap" && heap.EnqueueDequeueMax("floor", 0) == "mid", "MinMaxHeap EnqueueDequeueMax");
+    Check(heap.EnqueueDequeueMin("top", 8) == "floor" && heap.PeekMax() == "top", "MinMaxHeap EnqueueDequeueMin");
+
+    var built = new MinMaxHeap<int, int>(Enumerable.Range(0, 500).Select(i => (i, (i * 7919) % 500)));
+    var lows = true;
+    for (int expected = 0; expected < 250; expected++)
+    {
+        if (!built.TryDequeueMin(out _, out int lo) || lo != expected) lows = false;
+        if (!built.TryDequeueMax(out _, out int hi) || hi != 499 - expected) lows = false;
+    }
+    Check(lows && built.Count == 0, "MinMaxHeap heapify constructor drains in order from both ends");
+
+    var inverted = new MinMaxHeap<int, int, DescendingIntComparer>(new DescendingIntComparer());
+    inverted.Enqueue(1, 1);
+    inverted.Enqueue(3, 3);
+    inverted.Enqueue(2, 2);
+    Check(inverted.PeekMin() == 3 && inverted.PeekMax() == 1, "MinMaxHeap custom struct comparer");
+}
+
 // SparseSet — bounded-universe sparse integer set (Briggs–Torczon). Exercise add /
 // contains / swap-remove, the out-of-range rejection, the O(1) clear-then-reuse path
 // (which must reject stale sparse entries), and the dense-array enumerator.

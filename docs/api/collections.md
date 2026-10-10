@@ -5226,6 +5226,131 @@ Console.WriteLine(string.Join(", ", final.OrderBy(kv => kv.Key).Select(kv => $"{
 // 0:0, 1:3, 2:1, 3:4, 4:7
 ```
 
+## MinMaxHeap&lt;TElement, TPriority, TComparer&gt;
+
+A **double-ended priority queue**: a min-max heap that hands out both its **minimum** and its **maximum**. `PeekMin` / `PeekMax` are `O(1)`, and `Enqueue` / `DequeueMin` / `DequeueMax` are `O(log n)`, all from one flat array with no object per entry. The BCL `PriorityQueue<TElement, TPriority>` serves only its minimum. Implements `IReadOnlyCollection<(TElement Element, TPriority Priority)>`.
+
+```csharp
+public class MinMaxHeap<TElement, TPriority, TComparer>
+    : IReadOnlyCollection<(TElement Element, TPriority Priority)>
+    where TComparer : struct, IComparer<TPriority>
+
+public class MinMaxHeap<TElement, TPriority>
+    : MinMaxHeap<TElement, TPriority, DefaultComparer<TPriority>>
+```
+
+Elements are **payload, not keys**. The same element may be queued any number of times, and so may the same priority. The heap never hashes or compares an element. `TComparer` is a struct, so the JIT inlines the comparisons on the sift paths, the same arrangement as [`BTreeSet`](#btreesett-tcomparer) and `RankedSet`. The two-parameter alias closes over `DefaultComparer<TPriority>` for the natural order.
+
+### How it works
+
+This is the min-max heap of Atkinson, Sack, Santoro and Strothotte (1986): an implicit binary heap whose levels alternate between **min levels** (the root's level, and every second level below it) and **max levels**. An entry on a min level is no greater than anything beneath it, and an entry on a max level is no smaller. So the minimum is the root and the maximum is the larger of the root's two children.
+
+- **`Enqueue`** places the new leaf by comparing it with its parent, which sits on the opposite kind of level. That settles which ordering it belongs to, and it then climbs that ordering's chain of grandparents.
+- **`DequeueMin` / `DequeueMax`** move the last leaf into the vacated slot and trickle it down through grandchildren. When all four grandchildren exist, the extreme is among them alone, because a child on the opposite level already bounds its own children. So most steps cost three comparisons rather than five.
+- **The source constructor** builds bottom-up in `O(n)` (Floyd's construction carries over to this layout) rather than by `n` insertions.
+
+Both sifts move a hole rather than swapping entries.
+
+### The documented BCL-beating workload
+
+A **bounded priority buffer that is served from one end and evicted from the other**:
+
+- a work queue with a memory cap, which dequeues the most urgent item and, when full, drops the least urgent;
+- a fixed-width beam or branch-and-bound frontier;
+- a "best K so far" that is consumed while it fills.
+
+`EnqueueDequeueMax` performs the admission step, offering the newcomer and keeping the better of it and the incumbent maximum, in one sift. Without this type, the usual BCL substitute is `SortedSet<T>` (`SortedList<,>` also reaches both ends, but inserts in `O(n)`). That is a red-black tree with a heap node per entry, and it **rejects duplicates**, so repeating priorities have to be packed into the key with a tie-breaking sequence number, e.g. `SortedSet<(TPriority, long Seq)>`. The other workaround is two one-ended heaps kept in step by lazy deletion, which doubles the memory and needs a tombstone probe per pop.
+
+Measured against `SortedSet<(int Priority, int Seq)>` with `int` priorities drawn from `[0, ItemCount)`, so they repeat (Apple M-series, .NET 10, default BenchmarkDotNet job). The CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=MinMaxHeap) is the contract:
+
+| Workload | n | `SortedSet` | `MinMaxHeap` | Speed-up | Allocated |
+|---|---|---|---|---|---|
+| Double-ended drain: fill, then alternate `DequeueMin` / `DequeueMax` | 1,000 | 64.0 µs | 24.8 µs | **2.58x** | 48 KB → 8 KB |
+| | 100,000 | 26.3 ms | 10.1 ms | **2.60x** | 4.8 MB → 0.8 MB |
+| Bounded queue: a tenth of `n` capacity, serve the minimum every second step, evict the maximum when full | 1,000 | 37.9 µs | 12.9 µs | **2.94x** | 43 KB → 0.9 KB |
+| | 100,000 | 12.9 ms | 5.3 ms | **2.45x** | 4.4 MB → 80 KB |
+
+Both pre-registered bars from [#524](https://github.com/marius-bughiu/Celerity/issues/524) (at least 2x on each workload at 100,000) clear. The heap's allocation in those rows is its one pre-sized array, which a `SortedSet` cannot have.
+
+**Where it loses:** a queue served from one end only. Being double-ended costs comparisons, and the BCL `PriorityQueue` is a 4-ary heap tuned for exactly that case. Filling and then draining with `DequeueMin` alone measures **1.30x slower** than `PriorityQueue<int, int>` at 1,000 entries and **1.07x slower** at 100,000. If you never need the maximum, use the BCL type.
+
+### Constructors
+
+```csharp
+public MinMaxHeap()
+public MinMaxHeap(int capacity)
+public MinMaxHeap(TComparer comparer)
+public MinMaxHeap(int capacity, TComparer comparer)
+public MinMaxHeap(IEnumerable<(TElement Element, TPriority Priority)> items)
+public MinMaxHeap(IEnumerable<(TElement Element, TPriority Priority)> items, TComparer comparer)
+```
+
+- The `capacity` overloads size the backing array to exactly `capacity` entries before the first growth.
+- The overloads without a `comparer` use `default(TComparer)`. The two-parameter alias has the `()`, `(int capacity)` and `(items)` forms only.
+- The `items` overloads keep every pair, duplicates included, and build the heap in `O(n)`.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity < 0`.
+- `ArgumentNullException` if `items` is `null`.
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of entries in the heap. |
+| `int Capacity` | Entries the backing array can hold before it must grow. |
+| `TComparer Comparer` | The comparer that orders priorities. |
+| `void Enqueue(TElement element, TPriority priority)` | Adds an entry. `O(log n)`. |
+| `TElement PeekMin()` / `TElement PeekMax()` | The minimum- / maximum-priority element. `O(1)`. Throws `InvalidOperationException` if empty. |
+| `bool TryPeekMin(out TElement, out TPriority)` / `bool TryPeekMax(out TElement, out TPriority)` | Non-throwing peeks. |
+| `TElement DequeueMin()` / `TElement DequeueMax()` | Removes and returns the minimum- / maximum-priority element. `O(log n)`. Throws `InvalidOperationException` if empty. |
+| `bool TryDequeueMin(out TElement, out TPriority)` / `bool TryDequeueMax(out TElement, out TPriority)` | Non-throwing dequeues. |
+| `TElement EnqueueDequeueMin(TElement element, TPriority priority)` | Adds the entry, then removes and returns the minimum, in one sift. This is the BCL `PriorityQueue.EnqueueDequeue` with the same tie rule: when the heap is empty, or `priority` is no greater than the minimum, it returns `element` and leaves the heap unchanged. |
+| `TElement EnqueueDequeueMax(TElement element, TPriority priority)` | The max-end mirror: when the heap is empty, or `priority` is no smaller than the maximum, it returns `element` and leaves the heap unchanged. Otherwise it evicts and returns the maximum. |
+| `void Clear()` | Removes every entry. The backing array is retained. |
+| `int EnsureCapacity(int capacity)` | Grows the backing array to hold at least `capacity` entries, and returns the resulting capacity. |
+| `void TrimExcess()` | Shrinks the backing array to the current count. |
+| `Enumerator GetEnumerator()` | A struct enumerator over the entries in **heap order**. |
+
+Ties are broken arbitrarily, as in any binary heap: two entries with equal priority come out in no guaranteed order, from either end. Enumeration walks the backing array, which is neither priority nor insertion order. Reads, `Clear` on an empty heap, `EnsureCapacity` that does not grow, `TrimExcess` on an exact-sized array, and a fused push-pop that returns its own argument do not invalidate an in-flight enumerator. Every other call does. A `null` priority is ordered wherever the comparer puts it, and `DefaultComparer<T>` puts it first. This type is not thread-safe; concurrent callers must synchronize externally.
+
+### Choosing it
+
+Reach for `MinMaxHeap` when you need **both ends of a priority order**, and the order changes too often for a sorted container to pay off: a capped queue that evicts its worst entry, a frontier trimmed from the bottom while it is expanded from the top, or a running window of the best and worst seen. If you only need one end, use `PriorityQueue<TElement, TPriority>`. If a queued element's priority must change, or a specific element must be removed, use [`IndexedPriorityQueue`](#indexedpriorityqueuetelement-tpriority-thasher). If you need ordered iteration or range queries rather than only the extremes, use [`BTreeSet`](#btreesett-tcomparer).
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A capped work queue: serve the most urgent job (lowest number first), and when the queue is
+// full, admit a newcomer only if it is more urgent than the least urgent job, which it evicts.
+const int Capacity = 3;
+var queue = new MinMaxHeap<string, int>(Capacity);
+
+void Submit(string job, int urgency)
+{
+    if (queue.Count < Capacity)
+    {
+        queue.Enqueue(job, urgency);
+        return;
+    }
+
+    string dropped = queue.EnqueueDequeueMax(job, urgency);
+    Console.WriteLine($"dropped {dropped}");
+}
+
+Submit("reindex", 5);
+Submit("page-oncall", 1);
+Submit("rotate-logs", 9);
+Submit("renew-cert", 2);         // dropped rotate-logs
+Submit("defrag", 7);             // dropped defrag (no more urgent than the worst queued job)
+
+Console.WriteLine(queue.DequeueMin());   // page-oncall
+Console.WriteLine(queue.PeekMax());      // reindex
+```
+
 ## Trie&lt;TValue&gt;
 
 An ordered **prefix tree** (trie) mapping `string` keys to values. Every key is stored as a path of characters from a shared root, so keys sharing a prefix share that prefix's nodes. Implements `IReadOnlyDictionary<string, TValue?>`.
