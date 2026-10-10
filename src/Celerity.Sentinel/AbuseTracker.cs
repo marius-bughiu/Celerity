@@ -76,7 +76,7 @@ public class AbuseTracker<TKey, THasher>
     public AbuseTracker(AbuseTrackerOptions? options = null)
     {
         _options = options ?? new AbuseTrackerOptions();
-        if (_options.RateConfidence <= 0d || _options.RateConfidence >= 1d)
+        if (!(_options.RateConfidence > 0d && _options.RateConfidence < 1d))
             throw new ArgumentOutOfRangeException(nameof(options), _options.RateConfidence, "RateConfidence must be between 0 and 1 (exclusive).");
 
         _rate = new CountMinSketch<TKey, THasher>(_options.RateEpsilon, 1d - _options.RateConfidence);
