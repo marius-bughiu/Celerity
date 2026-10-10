@@ -498,6 +498,9 @@ function escapeHtml(s) {
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
     { key: 'IndexedPriorityQueue', title: 'IndexedPriorityQueue<int, int, ...>',     vs: 'PriorityQueue<int, int>', ops: ['Enqueue', 'DecreaseKey'] },
+    // MinMaxHeap is the double-ended heap. DoubleEnded and BoundedQueue run against SortedSet<(priority, seq)>, the BCL's
+    // usual double-ended substitute; DrainMin runs against PriorityQueue, the one-ended case it loses, so the loss is charted too.
+    { key: 'MinMaxHeap',          title: 'MinMaxHeap<int, int>',                     vs: 'SortedSet<(int, int)> / PriorityQueue<int, int>', ops: ['DoubleEnded', 'BoundedQueue', 'DrainMin'] },
     // TimerWheel is the deadline container, benchmarked against the BCL PriorityQueue with the lazy-deletion
     // workaround its missing Remove forces. Round is the whole workload — schedule, cancel nine in ten, run
     // the clock out — and Schedule, Cancel, Drain and Tick take it apart. Tick drives the clock one tick at a
