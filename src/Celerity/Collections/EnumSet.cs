@@ -242,7 +242,7 @@ public class EnumSet<TEnum> : ISet<TEnum>, IReadOnlySet<TEnum>
     // ── ISet<TEnum> / ICollection<TEnum> set-algebra surface ──────────────────
     // Against another EnumSet<TEnum> the whole surface is word-wise bitwise work
     // (the point of the type); for a general IEnumerable<TEnum> it falls back to the
-    // shared SetOperations helper, which matches BCL HashSet<T> semantics exactly.
+    // shared SetOperations helper, which matches BCL HashSet<T> semantics (bar ExceptWith over a lazy self-view).
 
     /// <summary>
     /// Modifies the set to contain all elements that are present in itself, in

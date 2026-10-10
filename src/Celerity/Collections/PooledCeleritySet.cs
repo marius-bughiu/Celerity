@@ -43,7 +43,9 @@ namespace Celerity.Collections;
 /// <para>
 /// This type is not thread-safe. Like every Celerity collection, concurrent
 /// mutation must be synchronized by the caller. After <see cref="Dispose"/> every
-/// member throws <see cref="ObjectDisposedException"/>.
+/// member that reads or writes the contents throws <see cref="ObjectDisposedException"/>;
+/// <see cref="Dispose"/> itself, <c>IsReadOnly</c>, and an enumerator's <c>Current</c> and
+/// <c>Dispose</c> do not.
 /// </para>
 /// </remarks>
 public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposable
@@ -408,9 +410,9 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
 
     /// <summary>
     /// Returns the rented backing array to <see cref="ArrayPool{T}.Shared"/> and
-    /// marks the set as disposed. After disposal every member throws
-    /// <see cref="ObjectDisposedException"/>. Calling <see cref="Dispose"/> more
-    /// than once is safe and is a no-op after the first call.
+    /// marks the set as disposed. After disposal every member that reads or writes
+    /// the contents throws <see cref="ObjectDisposedException"/>. Calling
+    /// <see cref="Dispose"/> more than once is safe and is a no-op after the first call.
     /// </summary>
     public void Dispose()
     {

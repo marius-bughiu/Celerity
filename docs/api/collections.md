@@ -313,7 +313,7 @@ Reach for the pooled variant when the dictionary is **short-lived and rebuilt fr
 
 ### Lifecycle and pooling contract
 
-- **Dispose returns the buffers.** Call `Dispose` (ideally via `using`) when finished so the arrays return to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException` — including `MoveNext` / `Reset` on an enumerator obtained before the `Dispose` call.
+- **Dispose returns the buffers.** Call `Dispose` (ideally via `using`) when finished so the arrays return to the pool for reuse. Disposal is idempotent, and after it every member that reads or writes the contents throws `ObjectDisposedException` — including `MoveNext` / `Reset` on an enumerator obtained before the `Dispose` call. `Dispose` itself, `IsReadOnly`, and an enumerator's `Current` / `Dispose` do not throw.
 - **Not disposing is not a leak.** If you forget to dispose, the rented arrays are simply garbage-collected like any other managed array — you just forfeit the pooling benefit.
 - **Pool exhaustion is handled for you.** `ArrayPool<T>.Shared` allocates a fresh buffer when it has none to hand out, so a "pool empty" condition never surfaces to the caller.
 - **Reference types are cleared on return** so the pool does not keep your keys / values reachable after disposal (memory-leak prevention); value-type buffers skip the clear for speed.
@@ -705,12 +705,14 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 
 ### Set operations (`ISet<T>` and `IReadOnlySet<T>`)
 
-The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>` semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`, and the out-of-band `default(T)`/zero element all handled):
+The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>` semantics (duplicate-tolerant `other`, self-aliasing `other == this`, and the out-of-band `default(T)`/zero element all handled), with the one `ExceptWith` exception noted below:
 
 - **Mutating:** `void UnionWith(IEnumerable<T> other)`, `void IntersectWith(IEnumerable<T> other)`, `void ExceptWith(IEnumerable<T> other)`, `void SymmetricExceptWith(IEnumerable<T> other)`.
 - **Query:** `bool IsSubsetOf(...)`, `bool IsProperSubsetOf(...)`, `bool IsSupersetOf(...)`, `bool IsProperSupersetOf(...)`, `bool Overlaps(...)`, `bool SetEquals(...)`.
 
 Each throws `ArgumentNullException` when `other` is `null`. `IsSupersetOf` and `Overlaps` stream `other` directly against `Contains` and may stop early. `IsSubsetOf`, `IsProperSubsetOf`, `IsProperSupersetOf`, and `SetEquals` materialize `other` once into a distinct `HashSet<T>` keyed by `EqualityComparer<T>.Default`, the equality this set uses. `IsSubsetOf` skips that copy when the receiver is empty; `IsProperSupersetOf` skips it when `other` is an empty `ICollection<T>`. Streaming does not copy `other`, but obtaining its enumerator can still allocate.
+
+> **`ExceptWith` over a lazy view of the same set.** This is the one place the family departs from `HashSet<T>`. `s.ExceptWith(s.Where(...))` throws `InvalidOperationException`, because `Remove` invalidates the live enumerator the view is reading, whereas `HashSet<T>` completes. Materialize the view first (`s.ExceptWith(s.Where(...).ToList())`). Every mutable Celerity set behaves this way.
 
 > **`Add` note.** `ISet<T>.Add(T)` returns `bool` (the non-throwing add, equivalent to `TryAdd`). The concrete `public void Add(T)` keeps its throw-on-duplicate behaviour — cast to `ISet<T>`, or use `TryAdd`, when you want the boolean result. `ICollection<T>.Add(T)` ignores duplicates (never throws).
 
@@ -997,7 +999,7 @@ Reach for the pooled variant when the set is **short-lived and rebuilt frequentl
 
 ### Lifecycle and pooling contract
 
-- **Dispose returns the buffer.** Call `Dispose` (ideally via `using`) when finished so the array returns to the pool for reuse. Disposal is idempotent, and after it every member throws `ObjectDisposedException` — including `MoveNext` / `Reset` on an enumerator obtained before the `Dispose` call.
+- **Dispose returns the buffer.** Call `Dispose` (ideally via `using`) when finished so the array returns to the pool for reuse. Disposal is idempotent, and after it every member that reads or writes the contents throws `ObjectDisposedException` — including `MoveNext` / `Reset` on an enumerator obtained before the `Dispose` call. `Dispose` itself, `IsReadOnly`, and an enumerator's `Current` / `Dispose` do not throw.
 - **Not disposing is not a leak.** If you forget to dispose, the rented array is simply garbage-collected like any other managed array — you just forfeit the pooling benefit.
 - **Pool exhaustion is handled for you.** `ArrayPool<T>.Shared` allocates a fresh buffer when it has none to hand out, so a "pool empty" condition never surfaces to the caller.
 - **Reference types are cleared on return** so the pool does not keep your elements reachable after disposal (memory-leak prevention); value-type buffers skip the clear for speed.
@@ -1912,7 +1914,8 @@ SmallSet(IEnumerable<T> source, int capacity = 4)
 ### Set operations (`ISet<T>` and `IReadOnlySet<T>`)
 
 The full BCL `HashSet<T>` set-algebra surface is available and follows `HashSet<T>`
-semantics exactly (duplicate-tolerant `other`, self-aliasing `other == this`):
+semantics (duplicate-tolerant `other`, self-aliasing `other == this`). One exception: `ExceptWith` over a lazy view of the same set throws, as described under
+[`CeleritySet`](#celeritysett-thasher).
 
 - **Mutating:** `void UnionWith(IEnumerable<T> other)`, `void IntersectWith(IEnumerable<T> other)`, `void ExceptWith(IEnumerable<T> other)`, `void SymmetricExceptWith(IEnumerable<T> other)`.
 - **Query:** `bool IsSubsetOf(...)`, `bool IsProperSubsetOf(...)`, `bool IsSupersetOf(...)`, `bool IsProperSupersetOf(...)`, `bool Overlaps(...)`, `bool SetEquals(...)`.
@@ -2145,8 +2148,9 @@ SparseSet(int universe, IEnumerable<int> source)
 ### Set operations (`ISet<int>` and `IReadOnlySet<int>`)
 
 The full BCL `HashSet<int>` set-algebra surface is available and follows `HashSet<int>`
-semantics exactly within the universe (duplicate-tolerant `other`, self-aliasing
-`other == this`):
+semantics within the universe (duplicate-tolerant `other`, self-aliasing
+`other == this`). One exception: `ExceptWith` over a lazy view of the same set throws, as described under
+[`CeleritySet`](#celeritysett-thasher).
 
 - **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
 - **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps`, `SetEquals`.
@@ -2324,16 +2328,21 @@ CompressedIntSet(IEnumerable<int> source)
 
 ### Set operations (`ISet<int>` and `IReadOnlySet<int>`)
 
-The full BCL `HashSet<int>` set-algebra surface, with `HashSet<int>` semantics exactly
-(duplicate-tolerant `other`, self-aliasing `other == this`):
+The full BCL `HashSet<int>` set-algebra surface, with `HashSet<int>` semantics
+(duplicate-tolerant `other`, self-aliasing `other == this`). One exception: `ExceptWith` over a lazy view of the same set throws, as described under
+[`CeleritySet`](#celeritysett-thasher).
 
 - **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
 - **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps`, `SetEquals`.
 
 Each throws `ArgumentNullException` when `other` is `null`. **Every one of them takes the chunk-wise
 fast path when `other` is also a `CompressedIntSet`** — that is the workload the type exists for —
-and otherwise falls back to the same element-at-a-time implementation the rest of the set family
-uses, which is correct but forfeits the whole-chunk skipping. If you are intersecting two of these
+and otherwise falls back to an element-at-a-time implementation with the same `HashSet<int>`
+answers, which is correct but forfeits the whole-chunk skipping. Two query shortcuts match the
+rest of the set family: `IsSubsetOf` on an empty set never enumerates `other`, and
+`IsProperSupersetOf` answers from `Count` when `other` is an empty `ICollection<int>`.
+Fallbacks that depend on the receiver's size use its `long` `Cardinality`, so they keep working
+past `int.MaxValue` elements, where `Count` throws. If you are intersecting two of these
 sets, keep both as `CompressedIntSet`; do not project one through LINQ first.
 
 As with the other sets, `ISet<int>.Add(int)` returns `bool` (equivalent to `TryAdd`), the concrete

@@ -11,11 +11,15 @@ namespace Celerity.Collections;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The semantics match BCL <see cref="HashSet{T}"/> exactly, including
+/// The semantics match BCL <see cref="HashSet{T}"/>, including
 /// duplicate-tolerant <c>other</c> sequences,
 /// self-aliasing (<c>other</c> being the same instance as the set), and the
 /// out-of-band <c>default(T)</c>/zero element each set handles specially — all of
 /// which are covered by the concrete set's own <c>Contains</c>/<c>Add</c>/<c>Remove</c>.
+/// The one exception is <c>ExceptWith</c> over a lazy view of the same set (for example
+/// <c>s.ExceptWith(s.Where(...))</c>): the concrete <c>Remove</c> invalidates the enumerator the
+/// view is reading, so it throws <see cref="InvalidOperationException"/> where
+/// <see cref="HashSet{T}"/> completes. Materializing the view first avoids it.
 /// </para>
 /// <para>
 /// <c>IsSupersetOf</c> and <c>Overlaps</c> stream <c>other</c> directly against the concrete set's

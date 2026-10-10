@@ -522,6 +522,9 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     public bool IsSubsetOf(IEnumerable<int> other)
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (_cardinality == 0)
+            return true; // the empty set is a subset of everything, so `other` is never enumerated
+
         if (other is CompressedIntSet o)
             return _cardinality <= o._cardinality && IsSubsetOfCore(o);
 
@@ -577,6 +580,10 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
         ArgumentNullException.ThrowIfNull(other);
         if (other is CompressedIntSet o)
             return o._cardinality < _cardinality && o.IsSubsetOfCore(this);
+
+        // An empty right-hand side: a proper superset iff the set is non-empty.
+        if (other is ICollection<int> collection && collection.Count == 0)
+            return _cardinality > 0;
 
         HashSet<int> materialized = new(other);
         if (materialized.Count >= _cardinality)

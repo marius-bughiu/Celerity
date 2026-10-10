@@ -620,6 +620,50 @@ public class CompressedIntSetSetAlgebraTests
         Assert.Empty(set);
     }
 
+    [Fact]
+    public void IsSubsetOf_ShouldReturnTrueWithoutEnumeratingOther_WhenTheSetIsEmpty()
+    {
+        // The empty set is a subset of everything, so the rest of the set family answers without
+        // touching `other`. A lazy or throwing sequence must behave the same way here.
+        var set = new CompressedIntSet();
+
+        Assert.True(set.IsSubsetOf(ThrowingSequence()));
+        Assert.True(new IntSet().IsSubsetOf(ThrowingSequence()));
+    }
+
+    [Fact]
+    public void IsProperSupersetOf_ShouldAnswerWithoutEnumeratingOther_WhenOtherIsAnEmptyCollection()
+    {
+        // An empty ICollection<int> answers from its Count alone, matching the shared family helper.
+        Assert.True(new CompressedIntSet(new[] { 1 }).IsProperSupersetOf(new EmptyUnenumerableCollection()));
+        Assert.False(new CompressedIntSet().IsProperSupersetOf(new EmptyUnenumerableCollection()));
+
+        // A plain (non-ICollection) sequence still takes the materializing path.
+        Assert.True(new CompressedIntSet(new[] { 1, 2 }).IsProperSupersetOf(Enumerable.Range(1, 1).Select(x => x)));
+        Assert.False(new CompressedIntSet(new[] { 1 }).IsProperSupersetOf(Enumerable.Range(1, 1).Select(x => x)));
+    }
+
+    private static IEnumerable<int> ThrowingSequence()
+    {
+        throw new InvalidOperationException("other must not be enumerated");
+#pragma warning disable CS0162 // Unreachable code: the yield only makes this an iterator.
+        yield break;
+#pragma warning restore CS0162
+    }
+
+    private sealed class EmptyUnenumerableCollection : ICollection<int>
+    {
+        public int Count => 0;
+        public bool IsReadOnly => true;
+        public void Add(int item) => throw new NotSupportedException();
+        public void Clear() => throw new NotSupportedException();
+        public bool Contains(int item) => throw new NotSupportedException();
+        public void CopyTo(int[] array, int arrayIndex) => throw new NotSupportedException();
+        public bool Remove(int item) => throw new NotSupportedException();
+        public IEnumerator<int> GetEnumerator() => throw new InvalidOperationException("other must not be enumerated");
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     // ---- argument validation ----------------------------------------------------------------
 
     [Fact]
