@@ -2341,8 +2341,8 @@ and otherwise falls back to an element-at-a-time implementation with the same `H
 answers, which is correct but forfeits the whole-chunk skipping. Two query shortcuts match the
 rest of the set family: `IsSubsetOf` on an empty set never enumerates `other`, and
 `IsProperSupersetOf` answers from `Count` when `other` is an empty `ICollection<int>`.
-Six of those fallbacks are local to this type rather than shared, because they compare against the `long` `Cardinality`
-and so keep working past `int.MaxValue` elements, where `Count` throws. If you are intersecting two of these
+Fallbacks that depend on the receiver's size use its `long` `Cardinality`, so they keep working
+past `int.MaxValue` elements, where `Count` throws. If you are intersecting two of these
 sets, keep both as `CompressedIntSet`; do not project one through LINQ first.
 
 As with the other sets, `ISet<int>.Add(int)` returns `bool` (equivalent to `TryAdd`), the concrete
