@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`MinMaxHeap<TElement, TPriority, TComparer>`**, a double-ended priority queue: `PeekMin` / `PeekMax` in `O(1)`, `DequeueMin` / `DequeueMax` in `O(log n)`, duplicates allowed, plus a fused `EnqueueDequeueMax` for capped buffers that evict their worst entry. At 100,000 entries it is 2.45–2.60x faster than `SortedSet<(priority, seq)>`; ⚠️ served from one end only, it is 1.07–1.30x slower than `PriorityQueue<,>`. [API reference](docs/api/collections.md#minmaxheaptelement-tpriority-tcomparer). Closes [#524](https://github.com/marius-bughiu/Celerity/issues/524).
+
 ### Fixed
 
 - `BloomFilter` now throws `ArgumentOutOfRangeException` when `expectedItems` and `falsePositiveRate` need more than 2^30 bits (about 112 million items at 1%), instead of silently building a smaller filter that missed the requested rate. `AbuseTracker` inherits the check through `ExpectedDistinctKeys`. `CountMinSketch` likewise rejects an `epsilon` whose single row would exceed 2^30 counters, rather than weakening it when `delta` gives one row; that rejection now names `epsilon`. Closes #507.

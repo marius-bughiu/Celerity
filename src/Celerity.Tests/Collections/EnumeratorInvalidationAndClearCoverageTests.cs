@@ -189,6 +189,26 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void MinMaxHeapEnumeratorReset_ShouldThrowInvalidOperationException_WhenHeapModified()
+    {
+        var heap = new MinMaxHeap<int, int>();
+        heap.Enqueue(1, 10);
+        heap.Enqueue(2, 20);
+
+        var enumerator = heap.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        heap.EnqueueDequeueMax(3, 15);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("The heap was modified during enumeration.", ex.Message);
+
+        var second = heap.GetEnumerator();
+        heap.DequeueMax();
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
     public void SpatialGridEnumeratorReset_ShouldThrowInvalidOperationException_WhenGridModified()
     {
         var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);

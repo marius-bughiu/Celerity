@@ -360,6 +360,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void MinMaxHeapClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var heap = new MinMaxHeap<int, int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => heap.GetEnumerator(), heap.Clear, () => heap.Count, () => heap.Enqueue(1, 10));
+    }
+
+    [Fact]
     public void DequeClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         // The regression this class was written around: Deque bumped unconditionally.
