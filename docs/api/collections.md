@@ -2338,9 +2338,10 @@ The full BCL `HashSet<int>` set-algebra surface, with `HashSet<int>` semantics
 Each throws `ArgumentNullException` when `other` is `null`. **Every one of them takes the chunk-wise
 fast path when `other` is also a `CompressedIntSet`** — that is the workload the type exists for —
 and otherwise falls back to an element-at-a-time implementation with the same `HashSet<int>`
-answers and the same shortcuts as the rest of the set family (`IsSubsetOf` on an empty set never
-enumerates `other`), which is correct but forfeits the whole-chunk skipping. Six of those fallbacks
-are local to this type rather than shared, because they compare against the `long` `Cardinality`
+answers, which is correct but forfeits the whole-chunk skipping. Two query shortcuts match the
+rest of the set family: `IsSubsetOf` on an empty set never enumerates `other`, and
+`IsProperSupersetOf` answers from `Count` when `other` is an empty `ICollection<int>`.
+Six of those fallbacks are local to this type rather than shared, because they compare against the `long` `Cardinality`
 and so keep working past `int.MaxValue` elements, where `Count` throws. If you are intersecting two of these
 sets, keep both as `CompressedIntSet`; do not project one through LINQ first.
 
