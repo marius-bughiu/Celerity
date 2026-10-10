@@ -85,12 +85,13 @@ rejects it rather than overflowing silently.
 | Member | Notes |
 |---|---|
 | `Add(double value)` | Finite values only; **zero and negatives are accepted**. |
-| `Add(double value, long count)` | The same, with a multiplicity. `count` must be positive. |
+| `Add(double value, long count)` | The same, with a multiplicity. `count` must be positive, and must not push `Count` past `long.MaxValue`. |
 | `Add(ReadOnlySpan<double> values)` | Every value in the span. |
 
 Negatives go into a mirrored second ladder and zero into its own counter, because `log` has nothing
-to say about either. Only `NaN` and the infinities are rejected, with an
-`ArgumentOutOfRangeException`.
+to say about either. The only values rejected are `NaN` and the infinities, with an
+`ArgumentOutOfRangeException` — which every `Add` form also throws when the addition would overflow
+`Count`. The span form has already added the values before the one that throws.
 
 ### Querying
 

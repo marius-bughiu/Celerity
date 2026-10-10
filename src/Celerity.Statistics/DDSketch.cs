@@ -286,7 +286,8 @@ public sealed class DDSketch
     /// <summary>Adds a single value to the sketch.</summary>
     /// <param name="value">The value to add. Must be finite; zero and negatives are accepted.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="value"/> is <see cref="double.NaN"/> or infinite.
+    /// <paramref name="value"/> is <see cref="double.NaN"/> or infinite, or <see cref="Count"/> is
+    /// already <see cref="long.MaxValue"/>.
     /// </exception>
     public void Add(double value) => Add(value, 1L);
 
