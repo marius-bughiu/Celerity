@@ -102,7 +102,7 @@ foreach (var k in toRemove) dict.Remove(k);
 
 ### `ArgumentOutOfRangeException` from a constructor
 
-**Cause:** `capacity < 0`, or `loadFactor <= 0` / `loadFactor >= 1`. The valid load-factor range is strictly `0 < loadFactor < 1`.
+**Cause:** `capacity < 0`, or a `loadFactor` outside the open interval `(0, 1)` — `NaN` included. The valid load-factor range is strictly `0 < loadFactor < 1`.
 
 **Fix:** Pass a non-negative capacity and a load factor inside `(0, 1)`, e.g. `0.6f`–`0.85f`. See the [performance guide](performance.md#4-tune-the-load-factor).
 
