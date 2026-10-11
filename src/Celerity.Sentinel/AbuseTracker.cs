@@ -53,6 +53,9 @@ public class AbuseTracker<TKey, THasher>
 
     private long _totalObservations;
 
+    // 2^-54: the largest RateConfidence for which the Count-Min delta, 1 - RateConfidence, rounds to exactly 1.
+    private const double MinRateConfidence = 5.5511151231257827E-17;
+
     /// <summary>
     /// Initializes a new <see cref="AbuseTracker{TKey, THasher}"/> with the specified options.
     /// </summary>
@@ -60,15 +63,18 @@ public class AbuseTracker<TKey, THasher>
     /// The accuracy / memory configuration, or <c>null</c> for the defaults (see <see cref="AbuseTrackerOptions"/>).
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// An option is out of range: <see cref="AbuseTrackerOptions.RateEpsilon"/> or
-    /// <see cref="AbuseTrackerOptions.RateConfidence"/> outside <c>(0, 1)</c>; a non-positive
+    /// An option is out of range. The exception's <see cref="ArgumentException.ParamName"/> is <c>options</c> and
+    /// its message names the option. The rejected values are: <see cref="AbuseTrackerOptions.RateEpsilon"/> outside
+    /// <c>(0, 1)</c>; <see cref="AbuseTrackerOptions.RateConfidence"/> outside <c>(0, 1)</c> or at most
+    /// <c>2^-54</c> (about <c>5.55e-17</c>), where <c>1 − RateConfidence</c> rounds to 1; a non-positive
     /// <see cref="AbuseTrackerOptions.OffenderCapacity"/>; a
     /// <see cref="AbuseTrackerOptions.DistinctPrecision"/> outside the supported range; a non-positive
     /// <see cref="AbuseTrackerOptions.ExpectedDistinctKeys"/> or a
     /// <see cref="AbuseTrackerOptions.FirstSeenFalsePositiveRate"/> outside <c>(0, 1)</c> while
     /// <see cref="AbuseTrackerOptions.TrackFirstSeen"/> is set (both are ignored when it is not); a
-    /// <see cref="AbuseTrackerOptions.RateEpsilon"/> so small that the rate sketch would need more counters
-    /// than it will allocate; or, while <see cref="AbuseTrackerOptions.TrackFirstSeen"/> is set, an
+    /// <see cref="AbuseTrackerOptions.RateEpsilon"/> and <see cref="AbuseTrackerOptions.RateConfidence"/> that
+    /// together need more than the rate sketch's maximum of <c>2^30</c> counters; or, while
+    /// <see cref="AbuseTrackerOptions.TrackFirstSeen"/> is set, an
     /// <see cref="AbuseTrackerOptions.ExpectedDistinctKeys"/> and
     /// <see cref="AbuseTrackerOptions.FirstSeenFalsePositiveRate"/> that together need more than the
     /// first-seen Bloom filter's maximum of <c>2^30</c> bits.
@@ -76,15 +82,76 @@ public class AbuseTracker<TKey, THasher>
     public AbuseTracker(AbuseTrackerOptions? options = null)
     {
         _options = options ?? new AbuseTrackerOptions();
-        if (!(_options.RateConfidence > 0d && _options.RateConfidence < 1d))
-            throw new ArgumentOutOfRangeException(nameof(options), _options.RateConfidence, "RateConfidence must be between 0 and 1 (exclusive).");
+        Validate(_options);
 
-        _rate = new CountMinSketch<TKey, THasher>(_options.RateEpsilon, 1d - _options.RateConfidence);
+        // The range checks above leave only the two sizing ceilings for the sketches to reject, and each of those
+        // depends on more than one option, so they are reported against the options rather than against the
+        // sketch's own parameter names.
+        try
+        {
+            _rate = new CountMinSketch<TKey, THasher>(_options.RateEpsilon, 1d - _options.RateConfidence);
+        }
+        catch (ArgumentOutOfRangeException ex) when (ex.ParamName == "epsilon")
+        {
+            // A single row already exceeds the ceiling, so no RateConfidence can bring the grid under it.
+            throw new ArgumentOutOfRangeException(nameof(options), _options.RateEpsilon,
+                $"RateEpsilon {_options.RateEpsilon} needs a rate sketch row larger than its maximum of 2^30 counters. Increase RateEpsilon.");
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), _options.RateConfidence,
+                $"RateEpsilon {_options.RateEpsilon} at RateConfidence {_options.RateConfidence} needs a rate sketch larger than its maximum of 2^30 counters. Increase RateEpsilon or lower RateConfidence.");
+        }
+
         _offenders = new TopKSketch<TKey, THasher>(_options.OffenderCapacity);
         _distinct = new HyperLogLog<TKey, THasher>(_options.DistinctPrecision);
-        _firstSeen = _options.TrackFirstSeen
-            ? new BloomFilter<TKey, THasher>(_options.ExpectedDistinctKeys, _options.FirstSeenFalsePositiveRate)
-            : null;
+        if (_options.TrackFirstSeen)
+        {
+            try
+            {
+                _firstSeen = new BloomFilter<TKey, THasher>(_options.ExpectedDistinctKeys, _options.FirstSeenFalsePositiveRate);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                throw new ArgumentOutOfRangeException(nameof(options), _options.ExpectedDistinctKeys,
+                    $"ExpectedDistinctKeys {_options.ExpectedDistinctKeys} at FirstSeenFalsePositiveRate {_options.FirstSeenFalsePositiveRate} needs a first-seen filter larger than its maximum of 2^30 bits. Lower ExpectedDistinctKeys or raise FirstSeenFalsePositiveRate.");
+            }
+        }
+    }
+
+    // Every range check names the option it failed on and reports it against `options`, the only parameter the
+    // caller passed; left to the sketches, the exception would name `epsilon`, `capacity` or `expectedItems`.
+    private static void Validate(AbuseTrackerOptions options)
+    {
+        if (!(options.RateEpsilon > 0d && options.RateEpsilon < 1d))
+            throw new ArgumentOutOfRangeException(nameof(options), options.RateEpsilon, "RateEpsilon must be between 0 and 1 (exclusive).");
+
+        if (!(options.RateConfidence > 0d && options.RateConfidence < 1d))
+            throw new ArgumentOutOfRangeException(nameof(options), options.RateConfidence, "RateConfidence must be between 0 and 1 (exclusive).");
+
+        // The Count-Min delta is 1 - RateConfidence, which rounds to exactly 1 for a confidence at or below 2^-54,
+        // and a delta of 1 is no sketch at all. Such a confidence is meaningless anyway, but it is inside (0, 1),
+        // so it gets its own message rather than a range error that would contradict the value the caller passed.
+        if (1d - options.RateConfidence >= 1d)
+            throw new ArgumentOutOfRangeException(nameof(options), options.RateConfidence,
+                $"RateConfidence must be greater than {MinRateConfidence:R}; at or below that, 1 - RateConfidence rounds to 1.");
+
+        if (options.OffenderCapacity < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), options.OffenderCapacity, "OffenderCapacity must be at least 1.");
+
+        if (options.DistinctPrecision < HyperLogLog<TKey, THasher>.MinPrecision || options.DistinctPrecision > HyperLogLog<TKey, THasher>.MaxPrecision)
+            throw new ArgumentOutOfRangeException(nameof(options), options.DistinctPrecision,
+                $"DistinctPrecision must be between {HyperLogLog<TKey, THasher>.MinPrecision} and {HyperLogLog<TKey, THasher>.MaxPrecision} inclusive.");
+
+        if (!options.TrackFirstSeen)
+            return;
+
+        if (options.ExpectedDistinctKeys < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), options.ExpectedDistinctKeys, "ExpectedDistinctKeys must be at least 1.");
+
+        if (!(options.FirstSeenFalsePositiveRate > 0d && options.FirstSeenFalsePositiveRate < 1d))
+            throw new ArgumentOutOfRangeException(nameof(options), options.FirstSeenFalsePositiveRate,
+                "FirstSeenFalsePositiveRate must be between 0 and 1 (exclusive).");
     }
 
     /// <summary>
@@ -262,6 +329,9 @@ public sealed class StringAbuseTracker : AbuseTracker<string, StringXxHash3Hashe
 {
     /// <summary>Initializes a new <see cref="StringAbuseTracker"/>.</summary>
     /// <param name="options">The accuracy / memory configuration, or <c>null</c> for the defaults.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// An option is out of range; see the base constructor.
+    /// </exception>
     public StringAbuseTracker(AbuseTrackerOptions? options = null)
         : base(options)
     {
