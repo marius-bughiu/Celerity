@@ -15,11 +15,11 @@ namespace Celerity.Sentinel.Tests;
 /// tracker's own observable output moves in the documented direction.
 /// </para>
 /// <para>
-/// The invalid-value tests assert the exception <em>type</em>, which is what
-/// <see cref="AbuseTracker{TKey, THasher}"/>'s constructor documents. Only <c>RateConfidence</c> is validated
-/// by the tracker itself; the rest are validated downstream by the sketch each one sizes, so the type is the
-/// part of the contract that holds across both paths. Pinning it is what makes a downstream change to the
-/// exception type a red test rather than a silently wrong doc comment.
+/// The invalid-value tests assert the exception <em>type</em> that <see cref="AbuseTracker{TKey, THasher}"/>'s
+/// constructor documents, and that it is reported against <c>options</c> with the offending option named in the
+/// message (#515). Before that fix only <c>RateConfidence</c> was validated by the tracker itself; every other
+/// knob was rejected downstream by the sketch it sizes, under a parameter name — <c>epsilon</c>,
+/// <c>capacity</c>, <c>expectedItems</c> — that the caller never passed.
 /// </para>
 /// </remarks>
 public class AbuseTrackerOptionsTests
@@ -35,31 +35,47 @@ public class AbuseTrackerOptionsTests
     [InlineData(2d)]
     [InlineData(double.NaN)]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateEpsilonIsOutsideTheUnitInterval(double epsilon) =>
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new StringAbuseTracker(new AbuseTrackerOptions { RateEpsilon = epsilon }));
+        AssertRejected(new AbuseTrackerOptions { RateEpsilon = epsilon }, nameof(AbuseTrackerOptions.RateEpsilon));
 
     [Fact]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenFirstSeenFilterWouldExceedItsBitCeiling()
     {
         // Regression for #507: ExpectedDistinctKeys is passed straight to the Bloom filter, which used to
-        // clamp its bit array silently and overshoot FirstSeenFalsePositiveRate. It is now rejected.
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new StringAbuseTracker(new AbuseTrackerOptions
+        // clamp its bit array silently and overshoot FirstSeenFalsePositiveRate. It is now rejected — and since
+        // #515, against `options` with both knobs that size the filter named, not the filter's `expectedItems`.
+        var ex = AssertRejected(
+            new AbuseTrackerOptions
             {
                 TrackFirstSeen = true,
                 ExpectedDistinctKeys = 50_000_000,
                 FirstSeenFalsePositiveRate = 1e-6,
-            }));
+            },
+            nameof(AbuseTrackerOptions.ExpectedDistinctKeys));
+        Assert.Contains(nameof(AbuseTrackerOptions.FirstSeenFalsePositiveRate), ex.Message);
     }
 
     [Fact]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateEpsilonDemandsAnOversizedCounterGrid()
     {
         // 1e-9 is inside (0, 1), so the range check passes — but a relative error that small asks for more
-        // Count-Min counters than the sketch will allocate. This is the one rejection that is not a simple
-        // range test, and the only reason a caller sees it is that RateEpsilon sizes the grid.
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new StringAbuseTracker(new AbuseTrackerOptions { RateEpsilon = 1e-9 }));
+        // Count-Min counters than the sketch will allocate. This is one of the two rejections that is not a
+        // simple range test, and the only reason a caller sees it is that RateEpsilon sizes the grid.
+        // A single row is already too wide, so the message must not suggest lowering RateConfidence.
+        var ex = AssertRejected(new AbuseTrackerOptions { RateEpsilon = 1e-9 }, nameof(AbuseTrackerOptions.RateEpsilon));
+        Assert.DoesNotContain(nameof(AbuseTrackerOptions.RateConfidence), ex.Message);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateConfidenceDeepensAnOversizedCounterGrid()
+    {
+        // The other half of the grid ceiling: 1e-7 fits at the default confidence (5 rows of 2^25 counters,
+        // well under 2^30), but a confidence this close to 1 asks for ceil(ln(1e15)) = 35 rows of the same width.
+        // Count-Min reports that against its `delta`, which is a name the caller never set — both knobs that size
+        // the grid are named instead.
+        AbuseTrackerOptions options = new() { RateEpsilon = 1e-7, RateConfidence = 1d - 1e-15 };
+
+        var ex = AssertRejected(options, nameof(AbuseTrackerOptions.RateConfidence));
+        Assert.Contains(nameof(AbuseTrackerOptions.RateEpsilon), ex.Message);
     }
 
     [Theory]
@@ -68,13 +84,31 @@ public class AbuseTrackerOptionsTests
     [InlineData(-0.5d)]
     [InlineData(2d)]
     [InlineData(double.NaN)]
-    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateConfidenceIsOutsideTheUnitInterval(double confidence)
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenRateConfidenceIsOutsideTheUnitInterval(double confidence) =>
+        // NaN included: it must be reported against `options`, not against the Count-Min `delta` it would
+        // otherwise reach.
+        AssertRejected(new AbuseTrackerOptions { RateConfidence = confidence }, nameof(AbuseTrackerOptions.RateConfidence));
+
+    [Theory]
+    [InlineData(1e-17)]
+    [InlineData(5.5511151231257827E-17)] // exactly 2^-54: 1 - c is a tie, and rounds to even, which is 1
+    public void Constructor_ShouldThrowArgumentOutOfRange_WhenOneMinusRateConfidenceRoundsToOne(double confidence)
     {
-        // The tracker validates RateConfidence itself, so every rejected value — NaN included — must be reported
-        // against `options`, not against the Count-Min `delta` it would otherwise reach.
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(
-            () => new StringAbuseTracker(new AbuseTrackerOptions { RateConfidence = confidence }));
-        Assert.Equal("options", ex.ParamName);
+        // Regression for #515: these are inside (0, 1), which the docs used to call valid, but the Count-Min delta
+        // 1 - c rounds to exactly 1.0 and the sketch rejected it under the name `delta`.
+        Assert.Equal(1d, 1d - confidence);
+        AssertRejected(new AbuseTrackerOptions { RateConfidence = confidence }, nameof(AbuseTrackerOptions.RateConfidence));
+    }
+
+    [Fact]
+    public void Constructor_ShouldAcceptRateConfidence_JustAboveTheRoundingFloor()
+    {
+        // The next double above 2^-54 is the smallest confidence whose delta is below 1, so the floor is exact.
+        double confidence = Math.BitIncrement(Math.ScaleB(1d, -54));
+        Assert.True(1d - confidence < 1d);
+
+        var tracker = new StringAbuseTracker(new AbuseTrackerOptions { RateConfidence = confidence });
+        Assert.Equal(1, tracker.Observe("k").EstimatedCount);
     }
 
     [Theory]
@@ -82,8 +116,7 @@ public class AbuseTrackerOptionsTests
     [InlineData(-1)]
     [InlineData(int.MinValue)]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenOffenderCapacityIsNotPositive(int capacity) =>
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new StringAbuseTracker(new AbuseTrackerOptions { OffenderCapacity = capacity }));
+        AssertRejected(new AbuseTrackerOptions { OffenderCapacity = capacity }, nameof(AbuseTrackerOptions.OffenderCapacity));
 
     [Theory]
     [InlineData(HyperLogLog<string, StringXxHash3Hasher>.MinPrecision - 1)]
@@ -91,15 +124,22 @@ public class AbuseTrackerOptionsTests
     [InlineData(0)]
     [InlineData(-1)]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenDistinctPrecisionIsOutsideTheSupportedRange(int precision) =>
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new StringAbuseTracker(new AbuseTrackerOptions { DistinctPrecision = precision }));
+        AssertRejected(new AbuseTrackerOptions { DistinctPrecision = precision }, nameof(AbuseTrackerOptions.DistinctPrecision));
+
+    [Theory]
+    [InlineData(HyperLogLog<string, StringXxHash3Hasher>.MinPrecision)]
+    [InlineData(HyperLogLog<string, StringXxHash3Hasher>.MaxPrecision)]
+    public void Constructor_ShouldAcceptDistinctPrecision_AtEitherEndOfTheSupportedRange(int precision) =>
+        // The tracker now checks the range itself, so pin that its bounds are inclusive, as HyperLogLog's are.
+        Assert.Equal(1, new StringAbuseTracker(new AbuseTrackerOptions { DistinctPrecision = precision }).Observe("k").EstimatedCount);
 
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenExpectedDistinctKeysIsNotPositive(int expectedDistinctKeys) =>
-        Assert.Throws<ArgumentOutOfRangeException>(() => new StringAbuseTracker(
-            new AbuseTrackerOptions { TrackFirstSeen = true, ExpectedDistinctKeys = expectedDistinctKeys }));
+        AssertRejected(
+            new AbuseTrackerOptions { TrackFirstSeen = true, ExpectedDistinctKeys = expectedDistinctKeys },
+            nameof(AbuseTrackerOptions.ExpectedDistinctKeys));
 
     [Theory]
     [InlineData(0d)]
@@ -108,8 +148,19 @@ public class AbuseTrackerOptionsTests
     [InlineData(2d)]
     [InlineData(double.NaN)]
     public void Constructor_ShouldThrowArgumentOutOfRange_WhenFirstSeenFalsePositiveRateIsOutsideTheUnitInterval(double rate) =>
-        Assert.Throws<ArgumentOutOfRangeException>(() => new StringAbuseTracker(
-            new AbuseTrackerOptions { TrackFirstSeen = true, FirstSeenFalsePositiveRate = rate }));
+        AssertRejected(
+            new AbuseTrackerOptions { TrackFirstSeen = true, FirstSeenFalsePositiveRate = rate },
+            nameof(AbuseTrackerOptions.FirstSeenFalsePositiveRate));
+
+    [Fact]
+    public void StripedConstructor_ShouldReportAnInvalidOptionAgainstOptions()
+    {
+        // The striped tracker builds its lanes from the same options, so it surfaces the same rejection.
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new StringStripedAbuseTracker(2, new AbuseTrackerOptions { OffenderCapacity = 0 }));
+        Assert.Equal("options", ex.ParamName);
+        Assert.Contains(nameof(AbuseTrackerOptions.OffenderCapacity), ex.Message);
+    }
 
     [Fact]
     public void Constructor_ShouldIgnoreTheFirstSeenKnobs_WhenTrackFirstSeenIsFalse()
@@ -387,6 +438,18 @@ public class AbuseTrackerOptionsTests
     // ---------------------------------------------------------------------------------------------------
 
     private const int GradientKeys = 32;
+
+    /// <summary>
+    /// Asserts the tracker rejects <paramref name="options"/> against the <c>options</c> parameter, with
+    /// <paramref name="option"/> named in the message.
+    /// </summary>
+    private static ArgumentOutOfRangeException AssertRejected(AbuseTrackerOptions options, string option)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new StringAbuseTracker(options));
+        Assert.Equal("options", ex.ParamName);
+        Assert.Contains(option, ex.Message);
+        return ex;
+    }
 
     private static string GradientKey(int rank) => $"key-{rank:D2}";
 

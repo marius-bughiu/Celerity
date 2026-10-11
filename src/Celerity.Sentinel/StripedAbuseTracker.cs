@@ -46,7 +46,11 @@ public class StripedAbuseTracker<TKey, THasher>
     /// be at least 1.
     /// </param>
     /// <param name="options">The per-lane configuration, or <c>null</c> for the defaults.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="laneCount"/> is less than 1.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="laneCount"/> is less than 1; or an option in <paramref name="options"/> is out of range, as
+    /// documented on the <see cref="AbuseTracker{TKey, THasher}(AbuseTrackerOptions)"/> constructor, in which case
+    /// <see cref="ArgumentException.ParamName"/> is <c>options</c>.
+    /// </exception>
     public StripedAbuseTracker(int laneCount, AbuseTrackerOptions? options = null)
     {
         if (laneCount < 1)
@@ -144,7 +148,10 @@ public sealed class StringStripedAbuseTracker : StripedAbuseTracker<string, Stri
     /// <summary>Initializes a new <see cref="StringStripedAbuseTracker"/>.</summary>
     /// <param name="laneCount">The number of lanes; see the base constructor.</param>
     /// <param name="options">The per-lane configuration, or <c>null</c> for the defaults.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="laneCount"/> is less than 1.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="laneCount"/> is less than 1, or an option in <paramref name="options"/> is out of range; see
+    /// the base constructor.
+    /// </exception>
     public StringStripedAbuseTracker(int laneCount, AbuseTrackerOptions? options = null)
         : base(laneCount, options)
     {
