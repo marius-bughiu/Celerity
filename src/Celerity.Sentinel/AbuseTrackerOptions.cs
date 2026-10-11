@@ -26,6 +26,10 @@ public sealed class AbuseTrackerOptions
     /// and 1 (the Count-Min <c>delta</c> is <c>1 − RateConfidence</c>). Higher adds rows to the sketch. Default
     /// <c>0.99</c>.
     /// </summary>
+    /// <remarks>
+    /// A value at or below <c>2^-54</c> (about <c>5.55e-17</c>) is rejected even though it is inside the interval:
+    /// <c>1 − RateConfidence</c> rounds to exactly 1 there, which leaves the sketch no confidence to size for.
+    /// </remarks>
     public double RateConfidence { get; init; } = 0.99;
 
     /// <summary>
