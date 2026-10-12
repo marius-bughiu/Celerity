@@ -7,6 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Added
 
 - **`MinMaxHeap<TElement, TPriority, TComparer>`**, a double-ended priority queue: `PeekMin` / `PeekMax` in `O(1)`, `DequeueMin` / `DequeueMax` in `O(log n)`, duplicates allowed, plus a fused `EnqueueDequeueMax` for capped buffers that evict their worst entry. At 100,000 entries it is 2.45–2.60x faster than `SortedSet<(priority, seq)>`; ⚠️ served from one end only, it is 1.07–1.30x slower than `PriorityQueue<,>`. [API reference](docs/api/collections.md#minmaxheaptelement-tpriority-tcomparer). Closes [#524](https://github.com/marius-bughiu/Celerity/issues/524).
+- **`SlotMap<TValue>`**, a generational slot map: `Add` returns a stable `SlotKey`, lookup and removal are one array access with no hash, and a removed key stays absent even after its slot is reused, up to 2³¹ reuses of that slot. At 100,000 values it is 1.90x faster on lookup, 1.92x on remove and 1.46x on remove-and-replace churn than a `Dictionary<int, V>` keyed by a counter; enumeration is a wash. [API reference](docs/api/collections.md#slotmaptvalue). Closes [#527](https://github.com/marius-bughiu/Celerity/issues/527).
 
 ### Fixed
 

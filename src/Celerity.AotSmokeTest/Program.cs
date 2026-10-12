@@ -888,6 +888,36 @@ void Check(bool condition, string message)
     Check(((IReadOnlyDictionary<int, int>)built)[7] == 70, "SparseMap IReadOnlyDictionary indexer");
 }
 
+// SlotMap — the generational slot map. Exercise Add's key issue, a remove that must keep every
+// other key valid, slot reuse under a new version (the retired key must stay absent), the
+// reference-releasing Clear, and the IReadOnlyDictionary forwarders.
+{
+    var slots = new SlotMap<string>();
+    var issued = new List<SlotKey>();
+    for (int i = 0; i < 10; i++) issued.Add(slots.Add($"v{i}"));
+    Check(slots.Count == 10 && slots[issued[0]] == "v0" && slots[issued[9]] == "v9", "SlotMap Add issues resolvable keys");
+    Check(!slots.ContainsKey(default), "SlotMap default key is absent");
+    Check(slots.Remove(issued[2], out string? gone) && gone == "v2" && slots[issued[9]] == "v9", "SlotMap remove keeps other keys");
+
+    SlotKey reused = slots.Add("reused");
+    Check(reused != issued[2] && !slots.ContainsKey(issued[2]) && slots[reused] == "reused", "SlotMap reused slot gets a new version");
+    slots[reused] = "overwritten";
+    Check(slots[reused] == "overwritten" && slots.ContainsValue("overwritten"), "SlotMap indexer overwrite");
+
+    var ints = new SlotMap<int>(4);
+    SlotKey a = ints.Add(1);
+    ints.Add(2);
+    Check(ints.Remove(a) && ints.Count == 1 && !ints.ContainsKey(default), "SlotMap value-type remove");
+
+    var keys = new List<SlotKey>();
+    foreach (KeyValuePair<SlotKey, string?> entry in slots) keys.Add(entry.Key);
+    Check(keys.Count == slots.Count && slots.Keys.Count == 10 && slots.Values.Contains("v9"), "SlotMap enumeration and views");
+    Check(((IReadOnlyDictionary<SlotKey, string?>)slots)[issued[0]] == "v0", "SlotMap IReadOnlyDictionary indexer");
+
+    slots.Clear();
+    Check(slots.Count == 0 && !slots.ContainsKey(issued[0]) && !slots.ContainsKey(reused), "SlotMap clear retires every key");
+}
+
 // CompressedIntSet — chunk-compressed 32-bit integer set. Drive every one of the three
 // container forms (sorted array, bitmap, run-length) through the AOT compiler, plus the
 // chunk-wise set algebra, the range add that produces runs, and Optimize.

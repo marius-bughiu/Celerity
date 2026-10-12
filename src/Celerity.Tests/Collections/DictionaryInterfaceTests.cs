@@ -41,7 +41,9 @@ namespace Celerity.Tests.Collections;
 /// an unrelated entry, which the interface's contract does not allow) and
 /// <see cref="CelerityMultiMap{TKey, TValue, THasher}"/> holds many values per key, and
 /// <see cref="SuccinctTrie{TValue}"/> is immutable by construction as well. All five keep
-/// the read-only interface only. <see cref="Trie{TValue}"/> is a genuine one-value-per-key mutable
+/// the read-only interface only. <see cref="SlotMap{TValue}"/> keeps it too, for a different
+/// reason: it issues its own keys, so the interface's <c>Add(key, value)</c> — insertion under a
+/// key the caller picks — is the one operation it cannot offer. <see cref="Trie{TValue}"/> is a genuine one-value-per-key mutable
 /// dictionary and could join, but its <c>Keys</c> / <c>Values</c> are lazy
 /// <see cref="IEnumerable{T}"/> traversals rather than the counted struct views the rest of the
 /// family exposes, so widening them to <see cref="ICollection{T}"/> is a design change rather than

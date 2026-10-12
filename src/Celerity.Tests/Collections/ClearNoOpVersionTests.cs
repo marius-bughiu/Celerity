@@ -188,6 +188,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void SlotMapClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var map = new SlotMap<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => map.GetEnumerator(), map.Clear, () => map.Count, () => map.Add(10));
+    }
+
+    [Fact]
     public void TrieClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var trie = new Trie<int>();
