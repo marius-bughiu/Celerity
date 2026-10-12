@@ -173,7 +173,7 @@ public class SlotMapTests
     public void Clear_ShouldNotStepTheVersionOfASlotThatWasAlreadyVacant()
     {
         // A vacant slot's version must move only when *that* slot is vacated, or the documented
-        // 2^32 - 1 period is not the real one: an unrelated Clear would walk it round faster.
+        // 2^31-reuse period is not the real one: an unrelated Clear would walk it round faster.
         var map = new SlotMap<int>();
         SlotKey a = map.Add(1); // slot 0, version 1
         map.Add(2);             // slot 1, version 1
