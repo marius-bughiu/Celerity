@@ -1143,7 +1143,7 @@ public class ContainsValueTests
     }
 
     [Fact]
-    public void SlotMap_FindsValueInTheDenseArray()
+    public void SlotMap_FindsAValueInALiveSlot()
     {
         var map = new SlotMap<int>();
         map.Add(100);
