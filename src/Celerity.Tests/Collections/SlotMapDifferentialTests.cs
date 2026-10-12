@@ -14,9 +14,11 @@ namespace Celerity.Tests.Collections;
 //
 // What a slot map adds to the ordinary dictionary contract is that the oracle cannot mint keys:
 // the map does. So the harness also remembers every key the map has *ever* issued, and lookups,
-// removes and overwrites pick from that whole history (plus the default key). A retired key
-// must read as absent forever, and no Add may hand out a key that was issued before — the two
-// halves of the generational guarantee. Removal-heavy scripts keep the free list busy, which is
+// removes and overwrites pick from that whole history (plus the default key). Within a run, a
+// retired key must stay absent and no Add may hand out a key that was issued before — the two
+// halves of the generational guarantee. A script reuses any one slot at most a few hundred times,
+// far inside the 2^31-reuse version ceiling documented on SlotKey, so both are exact here; the
+// ceiling itself is pinned separately by SlotMapTests' version-wrap tests. Removal-heavy scripts keep the free list busy, which is
 // where a slot gets reused and where the version check is the only thing standing between an
 // old key and the new occupant.
 public class SlotMapDifferentialTests
