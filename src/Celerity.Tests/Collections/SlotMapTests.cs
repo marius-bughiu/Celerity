@@ -590,8 +590,9 @@ public class SlotMapTests
         return values;
     }
 
-    // Writes one slot's version through reflection. Reaching uint.MaxValue honestly takes four billion
-    // removals of the same slot; this parks it there so the wrap itself can be observed.
+    // Writes one slot's version through reflection. Each remove-and-refill cycle steps a version twice, so
+    // reaching the live version uint.MaxValue from 1 honestly takes 2^31 - 1 cycles of the same slot (about
+    // two billion); this parks it there so the wrap itself can be observed.
     private static void SetSlotVersion<TValue>(SlotMap<TValue> map, int slot, uint version)
     {
         FieldInfo slotsField = typeof(SlotMap<TValue>)
