@@ -7,7 +7,8 @@ namespace Celerity.Collections;
 /// <summary>
 /// A <b>generational slot map</b>: a container that hands out its own keys. <see cref="Add"/> stores a value
 /// and returns a <see cref="SlotKey"/> &#8212; a slot index plus a version &#8212; that stays valid until that
-/// value is removed, and is reported absent forever after, even once the slot is reused. A lookup is one array
+/// value is removed, and is reported absent after that, even once the slot is reused &#8212; up to the version
+/// ceiling described on <see cref="SlotKey"/>, 2<sup>31</sup> reuses of the same slot. A lookup is one array
 /// index and one version comparison: no hash, no probe, no per-entry allocation.
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
@@ -124,8 +125,9 @@ public class SlotMap<TValue> : IReadOnlyDictionary<SlotKey, TValue?>
     /// <param name="key">A key issued by this map's <see cref="Add"/>.</param>
     /// <returns>The value the key addresses.</returns>
     /// <exception cref="KeyNotFoundException">
-    /// <paramref name="key"/> does not address a live value: it was removed, the map was cleared, it is the
-    /// <c>default</c> key, or it was issued by another map.
+    /// <paramref name="key"/> does not address a live value: it was removed, the map was cleared, or it is
+    /// the <c>default</c> key. A key issued by another map is not reliably rejected &#8212; it may match a live
+    /// value here, as described on <see cref="SlotKey"/>.
     /// </exception>
     public TValue this[SlotKey key]
     {
@@ -156,7 +158,8 @@ public class SlotMap<TValue> : IReadOnlyDictionary<SlotKey, TValue?>
     /// <param name="value">The value to store. Duplicates and <c>null</c> are allowed; each call gets its own key.</param>
     /// <returns>
     /// A key that addresses <paramref name="value"/> until it is removed or the map is cleared. A vacated slot
-    /// is reused before a new one is issued, but always under a version no earlier key carried.
+    /// is reused before a new one is issued, under a version none of the slot's previous 2<sup>31</sup> - 1
+    /// keys carried.
     /// </returns>
     public SlotKey Add(TValue value)
     {

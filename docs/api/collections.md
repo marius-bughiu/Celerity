@@ -2715,7 +2715,8 @@ public readonly struct SlotKey : IEquatable<SlotKey>
 
 A **generational slot map**: a container that hands out its own keys. `Add(value)` stores a
 value and returns a `SlotKey` — a slot index plus a 32-bit version — that addresses that value
-until it is removed, and is reported absent forever after, **even once the slot is reused**. A
+until it is removed, and is reported absent after that, **even once the slot is reused** — up to
+the [version ceiling](#the-version-ceiling) of 2³¹ reuses of the same slot. A
 lookup is one array index and one version comparison: no hash, no probe, no per-entry
 allocation.
 
@@ -2828,10 +2829,11 @@ SlotMap(int capacity)
 ### Methods and properties
 
 - `SlotKey Add(TValue value)` — `O(1)` amortized. Duplicates and `null` are allowed; every call
-  gets its own key. A vacated slot is reused before a new one is issued, always under a version no
-  earlier key carried.
+  gets its own key. A vacated slot is reused before a new one is issued, under a version none of
+  that slot's previous 2³¹ − 1 keys carried.
 - `TValue this[SlotKey key] { get; set; }` — both require a live key and throw
-  `KeyNotFoundException` otherwise. The set **overwrites only**; it cannot insert. A pure overwrite
+  `KeyNotFoundException` for a retired or `default` key. (A key from another map is not reliably
+  rejected; see the trade-offs above.) The set **overwrites only**; it cannot insert. A pure overwrite
   is not a structural change, so it does not invalidate an active enumerator (matching
   `Dictionary<,>`).
 - `bool ContainsKey(SlotKey key)` / `bool TryGetValue(SlotKey key, out TValue? value)` — `O(1)`;
