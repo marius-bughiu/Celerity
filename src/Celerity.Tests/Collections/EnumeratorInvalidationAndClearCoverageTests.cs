@@ -209,6 +209,26 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void SlotMapEnumeratorReset_ShouldThrowInvalidOperationException_WhenMapModified()
+    {
+        var map = new SlotMap<int>();
+        map.Add(1);
+        SlotKey key = map.Add(2);
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        map.Remove(key);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        var second = map.GetEnumerator();
+        map.Add(3);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
     public void SpatialGridEnumeratorReset_ShouldThrowInvalidOperationException_WhenGridModified()
     {
         var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);

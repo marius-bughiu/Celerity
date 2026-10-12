@@ -324,6 +324,19 @@ public class CopyToArgumentGuardTests
         AssertCopyToContract<string?>(3, map.Values.CopyTo);
     }
 
+    [Fact]
+    public void SlotMap_ShouldValidateCopyToArguments()
+    {
+        SlotMap<string> map = new();
+        map.Add("one");
+        map.Add("two");
+        map.Add("three");
+
+        AssertCopyToContract<KeyValuePair<SlotKey, string?>>(3, map.CopyTo);
+        AssertCopyToContract<SlotKey>(3, map.Keys.CopyTo);
+        AssertCopyToContract<string?>(3, map.Values.CopyTo);
+    }
+
     // ── The two sequences #440 was filed for ──────────────────────────────────
 
     [Fact]
@@ -362,6 +375,7 @@ public class CopyToArgumentGuardTests
         "PooledCelerityDictionary", "PooledCelerityDictionary.KeyCollection", "PooledCelerityDictionary.ValueCollection",
         "RobinHoodDictionary", "RobinHoodDictionary.KeyCollection", "RobinHoodDictionary.ValueCollection",
         "SmallDictionary", "SmallDictionary.KeyCollection", "SmallDictionary.ValueCollection",
+        "SlotMap", "SlotMap.KeyCollection", "SlotMap.ValueCollection",
         "SparseMap", "SparseMap.KeyCollection", "SparseMap.ValueCollection",
         "SwissDictionary", "SwissDictionary.KeyCollection", "SwissDictionary.ValueCollection",
     };

@@ -37,6 +37,7 @@ internal class Program
         typeof(EnumSetBenchmark),
         typeof(SparseSetBenchmark),
         typeof(SparseMapBenchmark),
+        typeof(SlotMapBenchmark),
         typeof(CompressedIntSetBenchmark),
         typeof(BloomFilterBenchmark),
         typeof(CuckooFilterBenchmark),

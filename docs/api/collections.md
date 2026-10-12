@@ -2706,6 +2706,186 @@ for (int start = 0; start < nodeCount; start++)
 
 ---
 
+## SlotMap&lt;TValue&gt;
+
+```csharp
+public class SlotMap<TValue> : IReadOnlyDictionary<SlotKey, TValue?>
+public readonly struct SlotKey : IEquatable<SlotKey>
+```
+
+A **generational slot map**: a container that hands out its own keys. `Add(value)` stores a
+value and returns a `SlotKey` — a slot index plus a 32-bit version — that addresses that value
+until it is removed, and is reported absent forever after, **even once the slot is reused**. A
+lookup is one array index and one version comparison: no hash, no probe, no per-entry
+allocation.
+
+.NET ships no container that issues stable handles, and the two hand-rolls a caller reaches for
+each give something up:
+
+- **`Dictionary<int, TValue>` keyed by an incrementing counter** is correct, but every access pays
+  a hash, a bucket load and an entry load to answer a question whose answer was known at insertion
+  time — where the value lives.
+- **`List<TValue>` plus a free list of indices** is fast, but unsafe: a removed index is reused,
+  and a caller still holding the old index silently reads the new occupant (the ABA problem).
+
+A slot map is the second shape with the hazard closed. Every slot carries a version that is
+stepped when the slot is filled and again when it is vacated, and a key matches only the version
+it was issued with.
+`SpatialGrid` and `TimerWheel` use the same mechanism internally for their handles; this type is that
+mechanism as a general-purpose container.
+
+**The workload** is an object pool or entity table addressed by handle: game entities and ECS
+component storage, graph nodes referenced from outside the graph, connection or session tables,
+resource handles in a renderer, undo-stack references to objects that may since have been
+deleted. These add and remove continuously and look up by handle far more often than they change.
+
+### How it works
+
+One array of slots, indexed by `SlotKey`. Each slot holds its version, its value, and a link that
+threads the vacant slots into a free list. A slot's version is **odd exactly while it holds a
+value**, and keys are only ever issued with odd versions, so one comparison of the stored version
+against the key's answers both "is this slot live?" and "is it still the value this key was issued
+for?". The value sits next to the version, so a lookup touches one place in memory where the
+`Dictionary` hand-roll touches two (its bucket array, then its entry array). `Remove` steps the
+version and pushes the slot onto the free list; nothing moves, and every other key stays valid.
+
+### Measured, with the losses
+
+Against `Dictionary<int, int>` plus an incrementing id counter, at **100,000 values**, with
+handles visited in shuffled order, on a development machine — the CI series on
+[the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) is the contract:
+
+| Arm | `Dictionary<int, V>` + counter | `SlotMap<V>` | |
+|---|---|---|---|
+| Look up every value by handle | 259.4 µs | 136.4 µs | **1.90x** — ⚠️ under the 2x bar |
+| Churn: remove a value, add its replacement | 589.8 µs | 404.4 µs | **1.46x** — ⚠️ under the 1.5x bar |
+| `Remove` every value | 401.3 µs | 208.7 µs | **1.92x** |
+| Fill a pre-sized map | 296.9 µs | 215.0 µs | **1.38x**, 0.55x the allocation |
+| Enumerate every entry | 57.5 µs | 55.9 µs | 1.03x — a wash |
+
+At **1,000 values**, where both tables sit in cache: lookup 1.84x, churn 1.23x, remove 1.22x,
+enumeration 1.12x, and the fill is a tie (1.00x), still at 0.55x the allocation.
+
+**Both pre-registered kill criteria were missed, narrowly, and the type ships anyway.** The issue
+([#527](https://github.com/marius-bughiu/Celerity/issues/527)) set a 2x bar on lookup and a 1.5x
+bar on churn at 100,000 values; they came in at 1.90x and 1.46x. The case rests on the other limb of
+the hard rule. No BCL type issues stable handles, so this is a genuine gap rather than a faster
+counterpart. It also wins every arm it is measured on and loses none.
+
+How it got there is worth recording. The first implementation kept the values **packed** in a dense
+array, with a back-pointer per position, so a sweep over them could be a contiguous span. That
+layout measured 1.42x on lookup, 1.00x on churn, and `foreach` was 1.32x *slower*. A lookup cost two
+dependent loads, slot then value, which is the same count the `Dictionary` pays, bucket then entry;
+removing the hash saved arithmetic, not cache misses. Storing the value **in the slot**, and
+deriving liveness from the version's parity, makes a lookup one load. That layout produced the
+table above. What it cost is the packed span: the dense layout's values-only sweep was 2.2x the
+`Dictionary` enumeration, and this type no longer has one.
+
+Every figure is a local default-job run with handles visited in shuffled order. The `Dictionary`
+side mints its own ids from a counter, so both sides do the same job.
+
+### The version ceiling
+
+A live slot's version is odd, and the 32-bit counter wraps from `uint.MaxValue` (odd, live) to
+`0` (even, vacant), so the `default` key — version `0` — never resolves in any map. The one
+limitation a fixed-width version cannot escape: a slot's version steps twice per use, so after
+**2,147,483,648** reuses of the *same* slot the odd versions repeat, and a key retired exactly
+that long ago starts resolving again. Every generational slot map has a ceiling of this kind;
+reaching this one takes
+two billion removals that all land on the one slot. `Clear` steps only the *live* slots, so a
+slot that was already vacant is not walked any closer to the ceiling by an unrelated `Clear`.
+
+### The trade-offs, stated honestly
+
+- **The caller does not choose keys.** This is not a dictionary over a key you already have — for
+  that, use `Dictionary<TKey, TValue>` or, for small non-negative ints, [`SparseMap`](#sparsemaptvalue).
+  It implements `IReadOnlyDictionary<SlotKey, TValue?>` but not `IDictionary<,>`, because that
+  interface's `Add(key, value)` is exactly the operation a slot map cannot offer.
+- **The slot array never shrinks.** It holds one slot per value that was ever live at the same time:
+  a slot discarded and later recreated would restart its version count and could resolve a key
+  that had been retired. There is no `TrimExcess`.
+- **Values are not packed.** Enumeration, `Clear` and `ContainsValue` walk every slot issued so
+  far — the high-water mark of simultaneously live values, not `Count` — skipping vacant ones.
+  After a mass removal that leaves a few survivors in a large table, a sweep pays for the holes,
+  as `Dictionary<,>`'s enumeration pays for its freed entries.
+- **A key belongs to the map that issued it.** The versions are per-map, so a key from another map
+  may match a live value here and address it. That is a programming error the type cannot detect,
+  as with an index into the wrong array. It never resolves a *vacant* slot, though: issued keys
+  are odd and vacant slots even, whatever the two maps' histories.
+- `Clear` is not `O(1)`: retiring every outstanding key means stepping every live slot's version.
+
+### Constructors
+
+```csharp
+SlotMap()
+SlotMap(int capacity)
+```
+
+- `capacity` pre-sizes the slot array. Throws `ArgumentOutOfRangeException` when negative.
+- There is no `IEnumerable` source constructor: the keys are the point of the type, and a bulk
+  constructor would have nowhere to return them. Call `Add` in a loop and keep what it returns.
+
+### Methods and properties
+
+- `SlotKey Add(TValue value)` — `O(1)` amortized. Duplicates and `null` are allowed; every call
+  gets its own key. A vacated slot is reused before a new one is issued, always under a version no
+  earlier key carried.
+- `TValue this[SlotKey key] { get; set; }` — both require a live key and throw
+  `KeyNotFoundException` otherwise. The set **overwrites only**; it cannot insert. A pure overwrite
+  is not a structural change, so it does not invalidate an active enumerator (matching
+  `Dictionary<,>`).
+- `bool ContainsKey(SlotKey key)` / `bool TryGetValue(SlotKey key, out TValue? value)` — `O(1)`;
+  `false` for a retired key and for the `default` key.
+- `bool ContainsValue(TValue? value)` — scan of the issued slots, using
+  `EqualityComparer<TValue?>.Default`.
+- `bool Remove(SlotKey key)` / `bool Remove(SlotKey key, out TValue? value)` — `O(1)`; retires
+  the key and releases the value; `false` if it was not live. No other value moves.
+- `void Clear()` — retires every outstanding key, releases the values when `TValue` can hold a
+  reference, and keeps the capacity. Vacant slots are not stepped. On an empty map it changes
+  nothing and does not invalidate enumerators.
+- `int EnsureCapacity(int capacity)` — grows the slot array in one copy; never shrinks. Throws
+  `ArgumentOutOfRangeException` when negative.
+- `int Count { get; }`, `int Capacity { get; }`
+- `KeyCollection Keys { get; }` / `ValueCollection Values { get; }` — allocation-free struct views
+  in the map's enumeration order. Read-only: the `ICollection<T>` mutators throw
+  `NotSupportedException`.
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator in ascending slot order (not
+  insertion order once slots are reused), yielding `KeyValuePair<SlotKey, TValue?>`. Any `Add`, successful `Remove`, non-empty `Clear` or growing
+  `EnsureCapacity` invalidates it.
+- `void CopyTo(KeyValuePair<SlotKey, TValue?>[] array, int arrayIndex)` — under
+  [the library's `CopyTo` argument contract](#the-copyto-argument-contract); `Keys.CopyTo` and
+  `Values.CopyTo` follow the same contract.
+
+`SlotKey` is an opaque `readonly struct` with value equality, `==` / `!=`, and a debugging
+`ToString()` of the form `#slot.version`. The `default` key renders as `#0.0` and is absent from
+every map.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var entities = new SlotMap<Entity>(capacity: 1024);
+
+SlotKey player = entities.Add(new Entity("player"));
+SlotKey enemy  = entities.Add(new Entity("goblin"));
+
+// Something elsewhere keeps the handle — a target lock, a parent link, an undo record.
+SlotKey target = enemy;
+
+entities.Remove(enemy);                     // the goblin dies; its slot goes on the free list
+SlotKey loot = entities.Add(new Entity("loot")); // reuses the slot under a new version
+
+Console.WriteLine(entities.ContainsKey(target)); // False — the stale handle does not see the loot
+Console.WriteLine(entities[player].Name);        // "player" — other keys are unaffected
+
+// Once per frame: visit every live entity, with its handle.
+foreach (var (handle, entity) in entities)
+    entity!.Tick(handle);
+```
+
+---
+
 ## BloomFilter&lt;T, THasher&gt;
 
 A space-efficient **probabilistic** set membership filter parameterized on a custom

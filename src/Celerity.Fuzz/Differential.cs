@@ -45,6 +45,7 @@ internal static class Differential
         ("SmallSet", SmallSetCase),
         ("SparseSet", SparseSetCase),
         ("SparseMap", SparseMapCase),
+        ("SlotMap", SlotMapCase),
         ("CompressedIntSet", CompressedIntSetCase),
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
@@ -757,6 +758,81 @@ internal static class Differential
 
         int enumerated = 0;
         foreach (KeyValuePair<int, int> entry in sut)
+        {
+            Check(oracle.TryGetValue(entry.Key, out int expectedValue) && expectedValue == entry.Value,
+                $"enumeration yielded unexpected entry {entry.Key}");
+            enumerated++;
+        }
+
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // SlotMap issues its own keys, so the oracle cannot mint them: it records every key the map
+    // hands out, and removals and lookups draw from that whole history — retired keys included —
+    // plus the default key. Removal-heavy churn keeps the free list busy, which is where a slot is
+    // reused and where only its version stands between a retired key and the new occupant. Every
+    // key ever issued is reconciled at the end: live ones against a Dictionary<SlotKey, int>
+    // oracle, retired ones as absent.
+    private static void SlotMapCase(Random rng)
+    {
+        var sut = new SlotMap<int>();
+        var oracle = new Dictionary<SlotKey, int>();
+        var issued = new List<SlotKey>();
+        var everIssued = new HashSet<SlotKey>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int value = rng.Next(-1000, 1000);
+            SlotKey key = issued.Count == 0 || rng.Next(0, 16) == 0 ? default : issued[rng.Next(issued.Count)];
+            switch (rng.Next(0, 20))
+            {
+                case < 8:
+                {
+                    SlotKey added = sut.Add(value);
+                    Check(everIssued.Add(added), $"Add re-issued {added}");
+                    issued.Add(added);
+                    oracle.Add(added, value);
+                    break;
+                }
+
+                case < 15:
+                {
+                    bool expected = oracle.Remove(key, out int expectedValue);
+                    bool actual = sut.Remove(key, out int actualValue);
+                    Check(actual == expected, $"Remove({key})");
+                    Check(actualValue == expectedValue, $"Remove({key}) out value");
+                    break;
+                }
+
+                case < 19:
+                    if (oracle.ContainsKey(key))
+                    {
+                        sut[key] = value;
+                        oracle[key] = value;
+                    }
+
+                    break;
+
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        Check(!sut.ContainsKey(default), "the default key resolved");
+        foreach (SlotKey k in issued)
+        {
+            bool expected = oracle.TryGetValue(k, out int expectedValue);
+            Check(sut.TryGetValue(k, out int actualValue) == expected, $"TryGetValue({k})");
+            if (expected)
+                Check(actualValue == expectedValue, $"value at {k}: {actualValue} != {expectedValue}");
+        }
+
+        int enumerated = 0;
+        foreach (KeyValuePair<SlotKey, int> entry in sut)
         {
             Check(oracle.TryGetValue(entry.Key, out int expectedValue) && expectedValue == entry.Value,
                 $"enumeration yielded unexpected entry {entry.Key}");

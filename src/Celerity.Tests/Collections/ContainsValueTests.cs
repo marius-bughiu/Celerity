@@ -1128,4 +1128,67 @@ public class ContainsValueTests
 
         Assert.True(map.ContainsValue(null));
     }
+
+    // ---------------- SlotMap ----------------
+    // The scan walks the issued slots and skips vacant ones; what is pinned is that a removed
+    // value is not reported from its vacant slot, and that a cleared map's values are gone too.
+
+    [Fact]
+    public void SlotMap_EmptyMap_ReturnsFalse()
+    {
+        var map = new SlotMap<int>();
+
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void SlotMap_FindsValueInTheDenseArray()
+    {
+        var map = new SlotMap<int>();
+        map.Add(100);
+        map.Add(200);
+        map.Add(300);
+
+        Assert.True(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void SlotMap_AfterRemove_DoesNotReportRemovedValue()
+    {
+        var map = new SlotMap<int>();
+        SlotKey first = map.Add(100);
+        map.Add(200);
+        map.Add(300);
+
+        Assert.True(map.Remove(first));
+
+        Assert.False(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(200));
+        Assert.True(map.ContainsValue(300));
+    }
+
+    [Fact]
+    public void SlotMap_AfterClear_ReportsNothing()
+    {
+        var map = new SlotMap<int>();
+        map.Add(100);
+        map.Add(200);
+
+        map.Clear();
+
+        Assert.False(map.ContainsValue(100));
+        Assert.False(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void SlotMap_NullValue_ReturnsTrue_WhenPresent()
+    {
+        var map = new SlotMap<string?>();
+        map.Add(null);
+        map.Add("x");
+
+        Assert.True(map.ContainsValue(null));
+    }
 }

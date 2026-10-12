@@ -444,6 +444,10 @@ function escapeHtml(s) {
     // ClearRefillRefs is the same workload with a reference-holding TValue, where the dense value
     // prefix has to be cleared.
     { key: 'SparseMap',           title: 'SparseMap<TValue>',                        vs: 'Dictionary<int, V>',    ops: ['Add', 'Lookup', 'ClearRefill', 'ClearRefillRefs', 'Enumerate', 'Remove'] },
+    // SlotMap issues its own keys, so its baseline is the hand-roll that does the same: a Dictionary
+    // keyed by an incrementing int counter. Churn (remove + replace at constant size) is the
+    // steady-state handle-table workload.
+    { key: 'SlotMap',             title: 'SlotMap<TValue>',                          vs: 'Dictionary<int, V> + id counter', ops: ['Add', 'Lookup', 'Enumerate', 'Churn', 'Remove'] },
     { key: 'IntSet',              title: 'IntSet',                                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },

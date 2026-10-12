@@ -287,4 +287,25 @@ public class IndexerOverwriteEnumerationTests
         Assert.Equal(11, map[1]);
         Assert.Equal(101, map[0]);
     }
+
+    [Fact]
+    public void SlotMap_OverwriteDuringEnumeration_DoesNotThrow()
+    {
+        // A slot map issues its keys rather than accepting them, so "add a new key" is Add itself;
+        // the indexer set can only overwrite. The first key it ever issues stands in for the
+        // default/zero slot the hash dictionaries special-case: it addresses slot 0.
+        var map = new SlotMap<int>();
+        SlotKey first = map.Add(100);
+        SlotKey second = map.Add(10);
+        map.Add(20);
+
+        AssertOverwriteAllowedAddRejected(
+            getEnumerator: () => map.GetEnumerator(),
+            overwriteExisting: () => map[second] = 11,
+            overwriteDefault: () => map[first] = 101,
+            addNewKey: () => map.Add(990));
+
+        Assert.Equal(11, map[second]);
+        Assert.Equal(101, map[first]);
+    }
 }

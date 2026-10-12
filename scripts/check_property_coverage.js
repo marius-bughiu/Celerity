@@ -96,6 +96,7 @@ const SUPPORTING_TYPES = new Map([
   ['SpatialBox', 'coordinate struct — the query rectangle the spatial indexes take'],
   ['SpatialGridHandle', 'opaque handle returned by SpatialGrid.Add'],
   ['TimerHandle', 'opaque handle returned by TimerWheel.Schedule'],
+  ['SlotKey', 'opaque handle returned by SlotMap.Add'],
   ['ScheduledTimer', 'result struct — one due timer returned by TimerWheel'],
   ['GraphEdge', 'result struct — one edge returned by CompressedGraph'],
   ['PatternMatch', 'result struct — one match returned by AhoCorasick'],
