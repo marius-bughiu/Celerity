@@ -6,8 +6,8 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>immutable</b>, compressed sequence of non-negative, non-decreasing <see cref="long"/> values — posting
-/// lists, record and byte offsets, monotone timestamps — stored in about <c>2 + log2(u / n)</c> bits per value,
-/// within a bit of the information-theoretic minimum, while keeping constant-time random access on typical data
+/// lists, record and byte offsets, monotone timestamps — stored in about <c>L + 4</c> bits per value, where
+/// <c>L = floor(log2(max / n))</c>, while keeping constant-time random access on typical data
 /// and fast successor (<see cref="CountLessThan"/>, <see cref="TryGetLowerBound"/>) queries.
 /// </summary>
 /// <remarks>
@@ -154,7 +154,8 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
 
     /// <summary>
     /// Gets the number of low bits <c>L</c> each value is split at, <c>floor(log2(max / Count))</c>. The low
-    /// parts cost exactly <c>L</c> bits a value; everything else costs under three. <c>0</c> for an empty
+    /// parts cost exactly <c>L</c> bits a value; the high-part vector, the select samples and the rank directory
+    /// add about four more on typical data and under five at most. <c>0</c> for an empty
     /// sequence or one whose largest value is below its count.
     /// </summary>
     public int LowBitCount => _lowBits;

@@ -8166,7 +8166,9 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
 
 An **immutable**, compressed sequence of non-negative, non-decreasing `long` values: posting
 lists, record and byte offsets, monotone timestamps, a graph's row offsets. It stores them in
-about `2 + log2(u / n)` bits a value, within a bit of the information-theoretic minimum. It still
+about `L + 4` bits a value, where `L = floor(log2(max / n))`. The Elias–Fano core (low parts plus
+the high-part vector) is under `L + 3` bits a value, close to the information-theoretic minimum,
+and the select samples and rank directory that make queries fast add between one and two more. It still
 answers three kinds of query:
 
 - **`this[i]`**: random access, constant-time on typical data and `O(log n)` in the worst case.
