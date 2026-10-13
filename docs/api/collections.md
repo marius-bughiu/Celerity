@@ -8169,7 +8169,7 @@ lists, record and byte offsets, monotone timestamps, a graph's row offsets. It s
 about `2 + log2(u / n)` bits a value, within a bit of the information-theoretic minimum. It still
 answers three kinds of query:
 
-- **`this[i]`**: random access in `O(1)`.
+- **`this[i]`**: random access, constant-time on typical data and `O(log n)` in the worst case.
 - **`CountLessThan(x)`** and **`TryGetLowerBound(x, out bound)`**: successor queries, i.e. the
   position of the first value at or above `x` and the value itself.
 - **`Contains` / `IndexOf`**: exact lookups.
@@ -8202,8 +8202,8 @@ This type also composes with the rank/select machinery that `RankSelectBitVector
   mutating member. A changed sequence means a new `O(n)` build. Collect into an array or a
   `List<long>` while it is still growing.
 - **Random access is slower than the array's.** The array answers `this[i]` with one load. This
-  type answers with a sampled select, a short word scan and a low-bit read, so expect
-  about **10×** the array's time at a million values and 11× at a thousand (measured below). If random reads
+  type answers with a select over its high-part vector and a low-bit read, so expect about
+  **12×** the array's time at a million values (measured below). If random reads
   are the hot path and memory is not tight, keep the `long[]`.
 - **The win is footprint, and only when the values are sorted and not too spread out.** The
   low parts cost `L = floor(log2(max / n))` bits a value. The more widely the values spread
@@ -8219,41 +8219,46 @@ the `long[]` itself.
 
 | Arm | `ItemCount` | `long[]` | `EliasFanoSequence` | Ratio |
 | --- | --- | --- | --- | --- |
-| `Access` | 1,000,000 | 582.2 ns | 5.89 µs | 10.1× *slower* |
-| `LowerBound` | 1,000,000 | 23.82 µs | 10.83 µs | **2.20× faster** |
-| `Enumerate` | 1,000,000 | 248.3 µs | 1.141 ms | 4.6× *slower* |
-| `Build` | 1,000,000 | 235.5 µs | 2.306 ms | 9.8× *slower* |
-| `Access` | 1,024 | 510.9 ns | 5.76 µs | 11.3× *slower* |
-| `LowerBound` | 1,024 | 12.31 µs | 11.07 µs | 1.11× faster |
-| `Enumerate` | 1,024 | 254.3 ns | 1.04 µs | 4.1× *slower* |
-| `Build` | 1,024 | 206.3 ns | 2.31 µs | 11.2× *slower* |
+| `Access` | 1,000,000 | 582.7 ns | 7.41 µs | 12.7× *slower* |
+| `LowerBound` | 1,000,000 | 23.96 µs | 13.47 µs | **1.78× faster** |
+| `Enumerate` | 1,000,000 | 248.5 µs | 1.138 ms | 4.6× *slower* |
+| `Build` | 1,000,000 | 239.6 µs | 2.311 ms | 9.7× *slower* |
+| `Access` | 1,024 | 592.4 ns | 7.04 µs | 11.9× *slower* |
+| `LowerBound` | 1,024 | 12.40 µs | 13.09 µs | 1.06× *slower* |
+| `Enumerate` | 1,024 | 254.9 ns | 1.04 µs | 4.1× *slower* |
+| `Build` | 1,024 | 205.1 ns | 2.32 µs | 11.3× *slower* |
 
-Per query, a random read at a million values costs ~5.9 ns against the array's ~0.6 ns. The
-array's figure is the best case for it: a thousand *independent* loads that the CPU overlaps
-almost completely. Each read here is a dependent chain (sample, word scan, select within the
-word, low-bit read) that cannot overlap the same way.
+**Random reads.** At a million values a random read costs about 7.4 ns, against the array's
+~0.6 ns. The array's figure is the best case for it: a thousand *independent* loads that the
+CPU overlaps almost completely. Each read here is a dependent chain (sample, directory search,
+word scan, select within the word, low-bit read) that cannot overlap the same way.
 
-`LowerBound` is the one arm the type wins. Two zero-selects land directly on the run that
-shares the probe's high part, where `Array.BinarySearch` takes about twenty dependent probes
-across 8 MB. The win grows with size: 1.11× at a thousand values, 2.20× at a million.
+**`LowerBound`** is the arm the type wins at scale. Two zero-selects land directly on the run
+that shares the probe's high part, where `Array.BinarySearch` takes about twenty dependent
+probes across 8 MB. At a thousand values the array is cache-resident and the two come out
+even.
 
 **Footprint is the number the type exists for, and the table above does not show it.**
 `[MemoryDiagnoser]` reports bytes allocated during a run, not bytes a built structure
-retains. `MemoryUsageInBytes` on the benchmark's million-value sequence is
-**about 1.23 MB against the `long[]`'s 8 MB: 6.5× smaller**, or about
-9.8 bits a value against 64. (The `Build` row's allocation column, 1,230,639 B against
-8,000,240 B, happens to show the same figure here, because building allocates nothing it
-does not keep.)
+retains. On the benchmark's million-value sequence the encoding retains **about 1.27 MB
+against the `long[]`'s 8 MB: 6.3× smaller**, or about 10.2 bits a value against 64.
+The `Build` row's allocation column happens to show the same figure here, 1,270,703 B
+against 8,000,237 B, because building allocates nothing it does not keep.
 
 The pre-registered kill criteria (issue #529) were:
 
-- retained memory at least **5×** smaller: **6.5×**, cleared;
-- random access no more than **4×** slower: **10.1×**, **missed**;
-- `CountLessThan` no more than **2×** slower than `Array.BinarySearch`: **2.20× faster**, cleared.
+- retained memory at least **5×** smaller: **6.3×**, cleared;
+- random access no more than **4×** slower: **12.7×**, **missed**;
+- `CountLessThan` no more than **2×** slower than `Array.BinarySearch`: **1.78× faster**,
+  cleared.
 
 The issue made only the footprint criterion a ship blocker, because footprint is the type's
-whole case. The access miss is published here, not rounded away. Two attempts to close it were
-measured and dropped:
+whole case. The access miss is published here, not rounded away.
+
+The first layout scanned forward from the nearest sample with no directory. It measured
+10.1× on `Access` and 2.20× faster on `LowerBound`, but a sequence with a long gap between
+values or a long run of repeats made that scan linear in the gap. The rank directory bounds
+it at the cost of one more load per select. Two other attempts were measured and dropped:
 
 - a branch-free select-within-word was **3.6× slower** on ARM64, because its chain of
   dependent popcounts cost more than the mispredictions it removed;
@@ -8283,21 +8288,37 @@ Every query uses the high vector in one of two ways:
   *zero*-selects followed by a binary search. Every value whose high part equals `x`'s sits
   between the zeros that end high parts `h − 1` and `h`, sorted by low bits, so the two
   zero-selects bound that run and a binary search of its low bits finishes the query. The cost is
-  `O(1 + log r)` for a run of `r` values. On spread-out data a run holds a value or two. A
-  sequence that piles many values onto one high part, such as long runs of repeats or a tight
-  cluster far above the rest, pays the logarithm.
+  constant on spread-out data, where a run holds a value or two. A sequence that piles many
+  values onto one high part, such as long runs of repeats or a tight cluster far above the rest,
+  pays `O(log r)` for a run of `r` values.
 
-Both selects are answered from a sample of every 128th one and every 128th zero (a `long`
-each), followed by a scan over the few adjacent words that hold the rest. The enumerator needs
+Each select is answered in three steps:
+
+1. **A sample.** A `long` records the position of every 128th one and every 128th zero. The sample at or
+   below the target and the one after it bracket the target.
+2. **A rank directory.** One `int` per 256-bit superblock counts the ones before it, and the zeros
+   follow from that. A binary search of the directory between the two samples narrows the bracket
+   to one superblock.
+3. **A scan** of at most four words finishes.
+
+On data whose values spread out, 128 ones or zeros span a superblock or two, so the search takes
+a step or none and a select is `O(1)`. Two shapes widen a bracket:
+
+- a long gap between consecutive values (a million zeros followed by `long.MaxValue`);
+- a long run of values sharing one high part (a million repeats).
+
+The cost then grows with the logarithm of that gap rather than linearly, `O(log n)` in the worst
+case. Without the directory, a scan from the sample would cross the whole gap. The enumerator needs
 no select at all: it walks the high vector's set bits in order with `TrailingZeroCount`.
 
 Space is therefore:
 
 - `n · L` bits of low parts;
 - under `3n + 1` bits of high parts;
-- one `long` per 128 ones and per 128 zeros.
+- one `long` per 128 ones and per 128 zeros;
+- one `int` per 256 bits of high parts.
 
-That totals about `L + 3` bits a value. `MemoryUsageInBytes` reports the payload figure. It
+That totals about `L + 4` bits a value. `MemoryUsageInBytes` reports the payload figure. It
 excludes the CLR's per-array header and the instance's own fields, the same accounting
 `RankSelectBitVector.IndexSizeInBytes` uses.
 
@@ -8322,7 +8343,8 @@ The constructor throws in two cases:
 - `ArgumentException` (`values`) naming the index when a value is smaller than the one before it.
 
 Building is `O(n)`: one pass to validate and write both bit vectors, and one pass over the high
-vector to take the samples. The only allocations are the four arrays the instance keeps.
+vector to fill the rank directory and take the samples. The only allocations are the five arrays
+the instance keeps.
 
 ### Methods and properties
 
@@ -8330,13 +8352,13 @@ vector to take the samples. The only allocations are the four arrays the instanc
 | --- | --- |
 | `int Count { get; }` | The number of values. |
 | `int LowBitCount { get; }` | `L = floor(log2(max / Count))`, the low bits stored verbatim per value. `0` for an empty sequence or one whose largest value is below its count. |
-| `long MemoryUsageInBytes { get; }` | The encoding's payload: low-part words, high-part words and both select samples. Compare against `Count * sizeof(long)`. A `long`, as `CompressedIntSet.MemoryUsageInBytes` is. |
-| `long this[int index] { get; }` | The value at a position, in `O(1)`. `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `long MemoryUsageInBytes { get; }` | The encoding's payload: low-part words, high-part words, both select samples and the rank directory. Compare against `Count * sizeof(long)`. A `long`, as `CompressedIntSet.MemoryUsageInBytes` is. |
+| `long this[int index] { get; }` | The value at a position: one select and one low-bit read, `O(1)` on typical data and `O(log n)` in the worst case. `ArgumentOutOfRangeException` outside `[0, Count)`. |
 | `int CountLessThan(long value)` | How many values are strictly less than `value`, which is also the position of the first value at or above it (the `lower_bound`). Any `long` is accepted: a negative bound yields `0`, and a bound above every value yields `Count`. |
 | `bool TryGetLowerBound(long value, out long bound)` | The smallest value at or above `value` (the successor), named after [`BTreeSet.TryGetLowerBound`](#btreesett-tcomparer). Returns `false` with `bound = 0` when every value is smaller. |
 | `bool Contains(long value)` | Whether any element equals `value`. |
 | `int IndexOf(long value)` | The position of the **first** occurrence of `value`, or `-1`. |
-| `Enumerator GetEnumerator()` | Decodes the values in order, `O(1)` a value with no select, allocation-free. After the last value, `MoveNext` keeps returning `false` and `Current` is `0`. |
+| `Enumerator GetEnumerator()` | Decodes the values in order with no select, `O(1)` amortized a value and `O(n)` for the pass, allocation-free. After the last value, `MoveNext` keeps returning `false` and `Current` is `0`. |
 
 The type holds no mutable state after construction, so instances are safe to share across
 threads.

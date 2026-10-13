@@ -7,8 +7,8 @@ namespace Celerity.Collections;
 /// <summary>
 /// An <b>immutable</b>, compressed sequence of non-negative, non-decreasing <see cref="long"/> values — posting
 /// lists, record and byte offsets, monotone timestamps — stored in about <c>2 + log2(u / n)</c> bits per value,
-/// within a bit of the information-theoretic minimum, while keeping <c>O(1)</c> random access and fast successor
-/// (<see cref="CountLessThan"/>, <see cref="TryGetLowerBound"/>) queries.
+/// within a bit of the information-theoretic minimum, while keeping constant-time random access on typical data
+/// and fast successor (<see cref="CountLessThan"/>, <see cref="TryGetLowerBound"/>) queries.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,13 +36,18 @@ namespace Celerity.Collections;
 /// <c>m &gt;&gt; L</c> below <c>2n</c>. Reading the <c>i</c>-th value is a <i>select</i> over that vector (the
 /// position of its <c>i</c>-th one, minus <c>i</c>, is the high part) and one read of the low bits; locating a
 /// value is a select of the zeros that bound its high part, then a binary search of the low bits between
-/// them. Both selects are answered from a sample of every 128th one and every 128th zero, followed by a short
-/// scan over adjacent words.
+/// them. Each select starts from a sample of every 128th one (or zero): that sample and the next bracket
+/// the target, a rank directory of one <see cref="int"/> per 256 bits narrows the bracket to one superblock by
+/// binary search, and a scan of at most four words finishes. On data whose values spread out, 128 ones or
+/// zeros span a superblock or two and the search takes a step or none, so a select is <c>O(1)</c>; a long
+/// gap between consecutive values, or a long run of values sharing one high part, widens a bracket, and the
+/// cost then grows with the logarithm of that gap rather than linearly — <c>O(log n)</c> in the worst case.
 /// </para>
 /// <para>
-/// <b>Space.</b> <c>n * L</c> bits of low parts, under <c>3n + 1</c> bits of high parts, and one
-/// <see cref="long"/> per 128 ones and per 128 zeros of samples — about <c>L + 3</c> bits a value in all.
-/// A million values spaced on average 100 apart take about 1.2&#160;MB against the 8&#160;MB of the
+/// <b>Space.</b> <c>n * L</c> bits of low parts, under <c>3n + 1</c> bits of high parts, one
+/// <see cref="long"/> per 128 ones and per 128 zeros of samples, and one <see cref="int"/> per 256 bits of rank
+/// directory — about <c>L + 4</c> bits a value in all. A million values spaced on average 100 apart take about
+/// 1.27&#160;MB against the 8&#160;MB of the
 /// <c>long[]</c>. <see cref="MemoryUsageInBytes"/> reports the exact figure for a given instance.
 /// </para>
 /// <para>
@@ -66,14 +71,19 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     private const int WordShift = 6;     // log2(64): a bit position >> 6 selects the word
     private const int WordMask = 63;     // a bit position & 63 selects the bit within a word
     private const int SampleShift = 7;   // log2(128): one select sample per 128 ones, and per 128 zeros
+    private const int SuperShift = 8;    // log2(256): one rank-directory entry per 256-bit superblock
 
     // _lowWords packs the L low bits of every value end to end, value i at bit offset i * L. _highWords is the
     // unary high-part vector: value i sets bit (value >> L) + i, and high value b ends at the b-th zero.
     // _oneSamples[k] is the bit position of the (k * 128)-th one, _zeroSamples[k] that of the (k * 128)-th zero.
+    // _superOnes[s] counts the ones before 256-bit superblock s of the high vector; the zeros before it are
+    // derived as s * 256 minus that. Two consecutive samples bracket a select's target, and the directory
+    // narrows the bracket to one superblock, so the final scan never covers more than four words.
     private readonly ulong[] _lowWords;
     private readonly ulong[] _highWords;
     private readonly long[] _oneSamples;
     private readonly long[] _zeroSamples;
+    private readonly int[] _superOnes;
     private readonly int _count;
     private readonly int _lowBits;
     private readonly ulong _lowMask;
@@ -94,7 +104,8 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     /// <exception cref="ArgumentException">A value is smaller than the one before it.</exception>
     /// <remarks>
     /// Building is <c>O(n)</c>: one pass to validate and write the two bit vectors, and one pass over the high
-    /// bit vector to take the select samples. The only allocations are the four arrays the instance keeps.
+    /// bit vector to fill the rank directory and take the select samples. The only allocations are the five
+    /// arrays the instance keeps.
     /// </remarks>
     public EliasFanoSequence(ReadOnlySpan<long> values)
     {
@@ -107,6 +118,7 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
             _highWords = [];
             _oneSamples = [];
             _zeroSamples = [];
+            _superOnes = [];
             _maxHigh = -1;
             return;
         }
@@ -133,6 +145,7 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
 
         _oneSamples = new long[((_count - 1) >> SampleShift) + 1];
         _zeroSamples = new long[(int)(_maxHigh >> SampleShift) + 1];
+        _superOnes = new int[(_highWords.Length + (1 << (SuperShift - WordShift)) - 1) >> (SuperShift - WordShift)];
         TakeSamples();
     }
 
@@ -147,8 +160,8 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     public int LowBitCount => _lowBits;
 
     /// <summary>
-    /// Gets the size in bytes of the encoding: the low-part words, the high-part words and both select
-    /// samples. Compare it against <c>Count * sizeof(long)</c>, the array it replaces.
+    /// Gets the size in bytes of the encoding: the low-part words, the high-part words, both select samples
+    /// and the rank directory. Compare it against <c>Count * sizeof(long)</c>, the array it replaces.
     /// </summary>
     /// <remarks>
     /// This is payload, not retained-object size: it excludes the CLR's per-array header and the instance's
@@ -158,16 +171,18 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     /// passes <see cref="int.MaxValue"/> bytes.
     /// </remarks>
     public long MemoryUsageInBytes =>
-        ((long)_lowWords.Length + _highWords.Length + _oneSamples.Length + _zeroSamples.Length) * sizeof(ulong);
+        (((long)_lowWords.Length + _highWords.Length + _oneSamples.Length + _zeroSamples.Length) * sizeof(ulong))
+        + ((long)_superOnes.Length * sizeof(int));
 
     /// <summary>Gets the value at the specified position.</summary>
     /// <param name="index">The zero-based position, over <c>[0, Count)</c>.</param>
     /// <returns>The value stored there.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is outside <c>[0, Count)</c>.</exception>
     /// <remarks>
-    /// <c>O(1)</c>: one select sample, a scan over the few adjacent words that hold the next 128 ones, and one
-    /// read of the low bits — against the array's single load. A caller that walks the values in order should
-    /// enumerate instead, which decodes each value from the one before it.
+    /// One select over the high vector and one read of the low bits, against the array's single load. The
+    /// select is <c>O(1)</c> on typical data and <c>O(log n)</c> in the worst case (see the type's remarks). A
+    /// caller that walks the values in order should enumerate instead, which decodes each value from the one
+    /// before it.
     /// </remarks>
     public long this[int index]
     {
@@ -188,9 +203,10 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     /// <returns>A count in <c>[0, Count]</c>; <see cref="Count"/> when every value is smaller.</returns>
     /// <remarks>
     /// Two zero-selects locate the run of values sharing <paramref name="value"/>'s high part, and a binary
-    /// search of their low bits finishes the job, so the cost is <c>O(1 + log r)</c> for a run of <c>r</c>
-    /// values. On spread-out data the run holds a value or two; a sequence that piles many values onto one
-    /// high part — long runs of repeats, tight clusters far above the rest — pays the logarithm.
+    /// search of their low bits finishes the job. On spread-out data the selects are <c>O(1)</c> and the run
+    /// holds a value or two, so the query is constant-time. A sequence that piles many values onto one high
+    /// part — long runs of repeats, tight clusters far above the rest — pays <c>O(log r)</c> for a run of
+    /// <c>r</c> values, and the selects that bound the run pay at most <c>O(log n)</c>.
     /// </remarks>
     public int CountLessThan(long value) => LowerBound(value, out _);
 
@@ -247,8 +263,9 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     /// </summary>
     /// <returns>A struct enumerator over the values.</returns>
     /// <remarks>
-    /// Sequential decoding is <c>O(1)</c> a value with no select at all: the enumerator walks the set bits of
-    /// the high vector one after another, which is the cheapest way to read the sequence back.
+    /// Sequential decoding needs no select at all: the enumerator walks the set bits of the high vector one
+    /// after another, <c>O(1)</c> amortized a value and <c>O(n)</c> for the whole pass (the high vector is under
+    /// <c>3n + 1</c> bits), which is the cheapest way to read the sequence back.
     /// </remarks>
     public Enumerator GetEnumerator() => new(this);
 
@@ -299,14 +316,29 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
         return lo;
     }
 
-    // Position of the rank-th one (zero-based) in the high vector: jump to the sample at or below it, then
-    // scan forward a word at a time. The scan covers at most 127 further ones, a few words on any data.
+    // Position of the rank-th one (zero-based) in the high vector. The sample at or below the rank and the one
+    // after it bracket the target; a binary search of the rank directory between them finds its superblock,
+    // and a scan of at most four words finishes. On data whose values spread out, 128 ones span a superblock
+    // or two and the search is a step or none; only a long gap between consecutive high parts — values far
+    // apart relative to the rest — widens the bracket, and then the cost is logarithmic in the gap rather than
+    // linear in it.
     private long SelectOne(int rank)
     {
-        long position = _oneSamples[rank >> SampleShift];
-        int remaining = rank & ((1 << SampleShift) - 1);
-        int word = (int)(position >> WordShift);
-        ulong bits = _highWords[word] & (ulong.MaxValue << (int)(position & WordMask));
+        int sample = rank >> SampleShift;
+        int lo = (int)(_oneSamples[sample] >> SuperShift);
+        int hi = sample + 1 < _oneSamples.Length ? (int)(_oneSamples[sample + 1] >> SuperShift) : _superOnes.Length - 1;
+        while (lo < hi)
+        {
+            int mid = lo + ((hi - lo + 1) >> 1);
+            if (_superOnes[mid] <= rank)
+                lo = mid;
+            else
+                hi = mid - 1;
+        }
+
+        int remaining = rank - _superOnes[lo];
+        int word = lo << (SuperShift - WordShift);
+        ulong bits = _highWords[word];
 
         int inWord;
         while ((inWord = BitOperations.PopCount(bits)) <= remaining)
@@ -318,14 +350,27 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
         return ((long)word << WordShift) + RankSelectBitVector.SelectInWord(bits, remaining);
     }
 
-    // The complement walk of SelectOne. Padding bits past the end of the high vector are zero, but they sit
-    // above the last real zero, so an in-range rank never resolves to one.
+    // The complement of SelectOne, with the zeros before a superblock derived from the ones before it. A long
+    // run of ones — many values sharing one high part — is what widens this bracket. Padding bits past the end
+    // of the high vector are zero, but they sit above the last real zero, so an in-range rank never resolves to
+    // one.
     private long SelectZero(long rank)
     {
-        long position = _zeroSamples[rank >> SampleShift];
-        int remaining = (int)(rank & ((1 << SampleShift) - 1));
-        int word = (int)(position >> WordShift);
-        ulong bits = ~_highWords[word] & (ulong.MaxValue << (int)(position & WordMask));
+        int sample = (int)(rank >> SampleShift);
+        int lo = (int)(_zeroSamples[sample] >> SuperShift);
+        int hi = sample + 1 < _zeroSamples.Length ? (int)(_zeroSamples[sample + 1] >> SuperShift) : _superOnes.Length - 1;
+        while (lo < hi)
+        {
+            int mid = lo + ((hi - lo + 1) >> 1);
+            if (ZerosBefore(mid) <= rank)
+                lo = mid;
+            else
+                hi = mid - 1;
+        }
+
+        int remaining = (int)(rank - ZerosBefore(lo));
+        int word = lo << (SuperShift - WordShift);
+        ulong bits = ~_highWords[word];
 
         int inWord;
         while ((inWord = BitOperations.PopCount(bits)) <= remaining)
@@ -336,6 +381,9 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
 
         return ((long)word << WordShift) + RankSelectBitVector.SelectInWord(bits, remaining);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private long ZerosBefore(int superblock) => ((long)superblock << SuperShift) - _superOnes[superblock];
 
     // The low part of value `index`, which may straddle two words.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -367,8 +415,9 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
             _lowWords[word + 1] |= low >> (64 - shift);
     }
 
-    // One pass over the high vector recording where every 128th one and every 128th zero sits. A word holds at
-    // most 64 of either, so it can contain at most one sample of each kind. The padding past the vector's end
+    // One pass over the high vector filling the rank directory and recording where every 128th one and every
+    // 128th zero sits. A word holds at most 64 of either, so it can contain at most one sample of each kind.
+    // The padding past the vector's end
     // is all zeros, but the zero samples are sized for the real zeros alone (one per 128 of the _maxHigh + 1),
     // so the last sample is taken before the scan can reach the padding.
     private void TakeSamples()
@@ -382,6 +431,9 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
         {
             ulong bits = _highWords[word];
             int ones = BitOperations.PopCount(bits);
+
+            if ((word & ((1 << (SuperShift - WordShift)) - 1)) == 0)
+                _superOnes[word >> (SuperShift - WordShift)] = (int)onesBefore;
 
             long oneTarget = (long)nextOne << SampleShift;
             if (nextOne < _oneSamples.Length && onesBefore + ones > oneTarget)

@@ -81,13 +81,14 @@ public class EliasFanoSequenceDifferentialTests
             long[] values = BuildSequence(spec.Length, spec.GapLog, spec.Origin, spec.RepeatPercent, spec.Seed);
             var sequence = new EliasFanoSequence(values);
 
-            // n * L low bits, under 3n + 1 high bits, and one long per 128 ones and per 128 zeros (the zeros
-            // number under 2n + 1). Each array rounds up to a whole word, and the sample arrays hold at least
-            // one entry each.
+            // n * L low bits, under 3n + 1 high bits, one long per 128 ones and per 128 zeros (the zeros
+            // number under 2n + 1), and one int per 256 high bits. Each array rounds up to a whole entry, and
+            // the sample arrays hold at least one entry each.
             long n = values.Length;
             long bound = n == 0
                 ? 0
-                : ((n * sequence.LowBitCount + 63) / 64 + (3 * n + 1 + 63) / 64 + (n / 128 + 1) + ((2 * n + 1) / 128 + 1)) * 8;
+                : (((n * sequence.LowBitCount + 63) / 64 + (3 * n + 1 + 63) / 64 + (n / 128 + 1) + ((2 * n + 1) / 128 + 1)) * 8)
+                    + (((3 * n + 1 + 255) / 256) * 4);
             Assert.InRange(sequence.MemoryUsageInBytes, 0, bound);
         }, iter: 300);
     }

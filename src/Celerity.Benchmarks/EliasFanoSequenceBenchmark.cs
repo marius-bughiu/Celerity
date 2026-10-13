@@ -7,11 +7,11 @@ using Celerity.Collections;
 // every category and named Array_* so the dashboard classifies it as the reference arm.
 //
 // The type is sold on footprint, and a timing benchmark cannot show that: [MemoryDiagnoser] reports bytes
-// allocated during the run, not bytes the built structure retains. The retained comparison (about 6.5x smaller
+// allocated during the run, not bytes the built structure retains. The retained comparison (about 6.3x smaller
 // on this data at 1,000,000 values) is pinned by MemoryUsageInBytes and carried in the docs. What these
 // categories measure is the price of the compression on each read path:
 //
-//   Access     — random positional reads; the array's single load against a sampled select and a low-bit read.
+//   Access     — random positional reads; the array's single load against a select and a low-bit read.
 //   LowerBound — "first value at or above x" for random x; Array.BinarySearch against two zero-selects and a
 //                binary search of the run that shares x's high part.
 //   Enumerate  — a sequential pass; the array walk against the decoder's walk over the high vector's set bits.

@@ -251,8 +251,8 @@ public class EliasFanoSequenceTests
     {
         // 1,000,000 values spaced exactly 100 apart: max 99,999,900 over n = 10^6 is 99, so L = 6. The low
         // vector is 6,000,000 bits (93,750 words). High parts reach 99,999,900 >> 6 = 1,562,498, so the high
-        // vector is 10^6 + 1,562,499 bits (40,040 words). One-samples: ceil(10^6 / 128) = 7,813. Zero-samples:
-        // (1,562,498 >> 7) + 1 = 12,208.
+        // vector is 10^6 + 1,562,499 bits (40,040 words), and its rank directory one int per four words
+        // (10,010). One-samples: ceil(10^6 / 128) = 7,813. Zero-samples: (1,562,498 >> 7) + 1 = 12,208.
         long[] values = new long[1_000_000];
         for (int i = 0; i < values.Length; i++)
             values[i] = i * 100L;
@@ -260,7 +260,45 @@ public class EliasFanoSequenceTests
         var sequence = new EliasFanoSequence(values);
 
         Assert.Equal(6, sequence.LowBitCount);
-        Assert.Equal((93_750L + 40_040 + 7_813 + 12_208) * sizeof(ulong), sequence.MemoryUsageInBytes);
+        Assert.Equal(((93_750L + 40_040 + 7_813 + 12_208) * sizeof(ulong)) + (10_010L * sizeof(int)),
+            sequence.MemoryUsageInBytes);
         Assert.True(sequence.MemoryUsageInBytes * 5 < values.Length * (long)sizeof(long));
+    }
+
+    [Fact]
+    public void Indexer_ShouldReadPastALongGapOfZeros()
+    {
+        // A million zeros and then long.MaxValue: L = 43 and the last value's high part is 2^20 - 1, so its one
+        // sits past about a million zeros. The one-sample bracketing it spans that whole gap, which is the case
+        // the rank directory's binary search exists for — a scan from the sample would cross 16,384 words.
+        long[] values = new long[1_000_000];
+        values[^1] = long.MaxValue;
+        var sequence = new EliasFanoSequence(values);
+
+        Assert.Equal(43, sequence.LowBitCount);
+        Assert.Equal(0, sequence[999_998]);
+        Assert.Equal(long.MaxValue, sequence[999_999]);
+        Assert.Equal(999_999, sequence.CountLessThan(long.MaxValue));
+        Assert.Equal(999_999, sequence.CountLessThan(1));
+        Assert.Equal(999_999, sequence.IndexOf(long.MaxValue));
+        Assert.True(sequence.TryGetLowerBound(1, out long bound));
+        Assert.Equal(long.MaxValue, bound);
+    }
+
+    [Fact]
+    public void Queries_ShouldSkipALongRunOfOnes_WhenEveryValueSharesAHighPart()
+    {
+        // A million repeats of one value whose high part is 1,000,001 (L = 20): the zero that ends that high
+        // part sits after a million consecutive ones, so the zero-select bracketing it spans the whole run.
+        const long Repeated = 1_000_001L << 20;
+        long[] values = [.. Enumerable.Repeat(Repeated, 1_000_000)];
+        var sequence = new EliasFanoSequence(values);
+
+        Assert.Equal(20, sequence.LowBitCount);
+        Assert.Equal(0, sequence.CountLessThan(Repeated));
+        Assert.Equal(1_000_000, sequence.CountLessThan(Repeated + 1));
+        Assert.Equal(0, sequence.IndexOf(Repeated));
+        Assert.False(sequence.Contains(Repeated - 1));
+        Assert.Equal(Repeated, sequence[999_999]);
     }
 }
