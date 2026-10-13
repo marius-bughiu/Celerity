@@ -8184,8 +8184,11 @@ Repeats are allowed.
 ### The gap it fills
 
 .NET has no compressed integer sequence of any kind. A caller holds sorted offsets as a
-`long[]`, which costs **64 bits a value however close together the values sit**, and finds
-"the first offset at or above `x`" with `Array.BinarySearch`.
+`long[]`, which costs **64 bits a value however close together the values sit**. It finds
+"the first offset at or above `x`" with `Array.BinarySearch` when the values are distinct. With
+repeats, an exact match may land on *any* equal element, so matching `CountLessThan` / `IndexOf`
+takes a hand-written lower-bound search. The benchmark below uses distinct values, so the two
+arms do the same job there.
 
 The ordered containers ([`BTreeSet`](#btreesett-tcomparer), [`RankedSet`](#rankedsett-tcomparer))
 hold sorted values and answer a lower bound, but they spend *more* than 64 bits a value, not

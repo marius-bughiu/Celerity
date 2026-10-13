@@ -19,8 +19,10 @@ namespace Celerity.Collections;
 /// <para>
 /// The BCL has no compressed integer sequence of any kind. The honest baseline is the <c>long[]</c> a caller
 /// already holds, which costs 64 bits a value however close together the values sit, and answers "where is
-/// the first value at or above <c>x</c>" with <see cref="Array.BinarySearch{T}(T[], T)"/>. The library's ordered
-/// containers answer the same lower bound at more than 64 bits a value, not less, and nothing else here
+/// the first value at or above <c>x</c>" with <see cref="Array.BinarySearch{T}(T[], T)"/> when the values are
+/// distinct — with repeats an exact match may land on any equal element, so the first one takes a
+/// hand-written lower-bound search, which is what <see cref="CountLessThan"/> and <see cref="IndexOf"/>
+/// return. The library's ordered containers answer the same lower bound at more than 64 bits a value, not less, and nothing else here
 /// compresses the shape: <see cref="CompressedIntSet"/> is a 32-bit <i>set</i>, with no
 /// duplicates and no positional access, and a <see cref="RankSelectBitVector"/> over the values themselves
 /// needs one bit per point of the value range, which is out of reach for byte offsets into a large file.
