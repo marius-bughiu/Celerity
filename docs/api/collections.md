@@ -8165,10 +8165,13 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
 ```
 
 An **immutable**, compressed sequence of non-negative, non-decreasing `long` values: posting
-lists, record and byte offsets, monotone timestamps, a graph's row offsets. It stores them in
-about `L + 4` bits a value, where `L = floor(log2(max / n))`. The Elias–Fano core (low parts plus
-the high-part vector) is under `L + 3` bits a value, close to the information-theoretic minimum,
-and the select samples and rank directory that make queries fast add between one and two more. It still
+lists, record and byte offsets, monotone timestamps, a graph's row offsets. On a large sequence it
+stores them in about `L + 4` bits a value, where `L = floor(log2(max / n))`. The Elias–Fano core (low
+parts plus the high-part vector) is under `L + 3` bits a value, close to the information-theoretic
+minimum, and the select samples and rank directory that make queries fast add between one and two
+more. These are asymptotic per-value costs. Every array rounds up to a whole word or entry, so a
+sequence of a handful of values pays a fixed overhead of a few dozen bytes on top;
+`MemoryUsageInBytes` reports the exact figure. It still
 answers three kinds of query:
 
 - **`this[i]`**: random access, constant-time on typical data and `O(log n)` in the worst case.
@@ -8320,7 +8323,8 @@ Space is therefore:
 - one `long` per 128 ones and per 128 zeros;
 - one `int` per 256 bits of high parts.
 
-That totals about `L + 4` bits a value. `MemoryUsageInBytes` reports the payload figure. It
+On a large sequence that totals about `L + 4` bits a value; a small one also pays each array's
+round-up to a whole word or entry. `MemoryUsageInBytes` reports the payload figure. It
 excludes the CLR's per-array header and the instance's own fields, the same accounting
 `RankSelectBitVector.IndexSizeInBytes` uses.
 
@@ -8344,8 +8348,10 @@ The constructor throws in two cases:
 - `ArgumentOutOfRangeException` (`values`) when the first value is negative;
 - `ArgumentException` (`values`) naming the index when a value is smaller than the one before it.
 
-Building is `O(n)`: one pass to validate and write both bit vectors, and one pass over the high
-vector to fill the rank directory and take the samples. The only allocations are the five arrays
+Building is `O(n)` in three passes. The first validates the order and the sign of every value.
+That has to finish before anything is written, because the split point is chosen from the last
+value. The second writes both bit vectors. The third runs over the high vector to fill the rank
+directory and take the samples. The only allocations are the five arrays
 the instance keeps.
 
 ### Methods and properties

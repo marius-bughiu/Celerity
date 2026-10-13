@@ -6,8 +6,8 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>immutable</b>, compressed sequence of non-negative, non-decreasing <see cref="long"/> values — posting
-/// lists, record and byte offsets, monotone timestamps — stored in about <c>L + 4</c> bits per value, where
-/// <c>L = floor(log2(max / n))</c>, while keeping constant-time random access on typical data
+/// lists, record and byte offsets, monotone timestamps — stored, on a large sequence, in about <c>L + 4</c> bits
+/// per value, where <c>L = floor(log2(max / n))</c>, while keeping constant-time random access on typical data
 /// and fast successor (<see cref="CountLessThan"/>, <see cref="TryGetLowerBound"/>) queries.
 /// </summary>
 /// <remarks>
@@ -46,7 +46,8 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Space.</b> <c>n * L</c> bits of low parts, under <c>3n + 1</c> bits of high parts, one
 /// <see cref="long"/> per 128 ones and per 128 zeros of samples, and one <see cref="int"/> per 256 bits of rank
-/// directory — about <c>L + 4</c> bits a value in all. A million values spaced on average 100 apart take about
+/// directory — about <c>L + 4</c> bits a value in all on a large sequence. Each array rounds up to a whole word
+/// or entry, so a short sequence also pays a fixed few dozen bytes. A million values spaced on average 100 apart take about
 /// 1.27&#160;MB against the 8&#160;MB of the
 /// <c>long[]</c>. <see cref="MemoryUsageInBytes"/> reports the exact figure for a given instance.
 /// </para>
@@ -103,7 +104,8 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     /// <exception cref="ArgumentOutOfRangeException">The first value is negative.</exception>
     /// <exception cref="ArgumentException">A value is smaller than the one before it.</exception>
     /// <remarks>
-    /// Building is <c>O(n)</c>: one pass to validate and write the two bit vectors, and one pass over the high
+    /// Building is <c>O(n)</c> in three passes: one to validate the input — which has to finish first, because
+    /// the split point is chosen from the last value — one to write the two bit vectors, and one over the high
     /// bit vector to fill the rank directory and take the select samples. The only allocations are the five
     /// arrays the instance keeps.
     /// </remarks>
@@ -155,7 +157,8 @@ public sealed class EliasFanoSequence : IReadOnlyList<long>
     /// <summary>
     /// Gets the number of low bits <c>L</c> each value is split at, <c>floor(log2(max / Count))</c>. The low
     /// parts cost exactly <c>L</c> bits a value; the high-part vector, the select samples and the rank directory
-    /// add about four more on typical data and under five at most. <c>0</c> for an empty
+    /// add about four more on a large, typical sequence and under five on any large one. A short sequence pays
+    /// more per value, because each array rounds up to a whole word or entry. <c>0</c> for an empty
     /// sequence or one whose largest value is below its count.
     /// </summary>
     public int LowBitCount => _lowBits;

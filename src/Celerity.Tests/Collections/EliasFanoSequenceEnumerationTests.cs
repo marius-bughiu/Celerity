@@ -29,6 +29,16 @@ public class EliasFanoSequenceEnumerationTests
     }
 
     [Fact]
+    public void Current_ShouldBeZero_BeforeTheFirstMoveNext()
+    {
+        EliasFanoSequence.Enumerator enumerator = new EliasFanoSequence(Sample).GetEnumerator();
+
+        Assert.Equal(0, enumerator.Current);
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal(2, enumerator.Current);
+    }
+
+    [Fact]
     public void GetEnumerator_ShouldYieldNothing_WhenTheSequenceIsEmpty()
     {
         EliasFanoSequence.Enumerator enumerator = new EliasFanoSequence([]).GetEnumerator();
