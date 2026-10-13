@@ -607,6 +607,11 @@ function escapeHtml(s) {
     // for the rest. The window is 1% of the sequence, so the 1024 arm is where the fixed ten-level
     // descent loses to a ten-element scan and the 1,000,000 arm is where it does not.
     { key: 'WaveletTree',         title: 'WaveletTree',                              vs: 'int[] sort / count loop', ops: ['Quantile', 'RangeCount', 'Rank', 'Build'], items: [1024, 1000000] },
+    // EliasFanoSequence is the compressed form of a sorted long[], benchmarked against that array: an
+    // indexed load for Access, Array.BinarySearch for LowerBound, a foreach for Enumerate and a clone for
+    // Build. Every card is the price of the compression; the footprint it buys is retained memory, which a
+    // timing benchmark does not show, so it lives in the API reference rather than on a card.
+    { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                        vs: 'long[]',                ops: ['Access', 'LowerBound', 'Enumerate', 'Build'], items: [1024, 1000000] },
     // StringKeyProbe tracks the reference-type-key probe path — every other card here keys on int/long,
     // where the JIT devirtualizes the per-probe comparison and the codegen question does not arise.
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.

@@ -387,8 +387,9 @@ public sealed class RankSelectBitVector
     }
 
     // Position of the `rank`-th set bit (counting from zero) of a word known to hold more than `rank` set bits,
-    // by binary search over the bit positions: each step keeps the half that still contains the target.
-    private static int SelectInWord(ulong word, int rank)
+    // by binary search over the bit positions: each step keeps the half that still contains the target. Internal
+    // because EliasFanoSequence resolves its sampled selects with the same step.
+    internal static int SelectInWord(ulong word, int rank)
     {
         int position = 0;
 
