@@ -294,6 +294,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void HierarchicalBitSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var set = new HierarchicalBitSet(universe: 16);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
+    }
+
+    [Fact]
     public void CompressedIntSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var set = new CompressedIntSet();

@@ -38,7 +38,7 @@ namespace Celerity.Tests.Collections;
 /// </para>
 ///
 /// Coverage is per concrete type rather than table-driven because the sets do not share a base
-/// class and several have distinct shapes — <see cref="SparseSet"/> is bounded by a universe,
+/// class and several have distinct shapes — <see cref="SparseSet"/> and <see cref="HierarchicalBitSet"/> are bounded by a universe,
 /// <see cref="PooledCeleritySet{T, THasher}"/> is <see cref="IDisposable"/>,
 /// <see cref="SmallSet{T}"/> is unhashed, and <see cref="CompressedIntSet"/> is chunk-compressed —
 /// so each needs its own construction.
@@ -252,6 +252,39 @@ public class SetExplicitICollectionMemberTests
     public void ICollectionIsReadOnly_ShouldBeFalse_WhenSetIsSparseSet()
     {
         ICollection<int> collection = new SparseSet(universe: 8);
+
+        Assert.False(collection.IsReadOnly);
+    }
+
+    // ---------------------------------------------------------------- HierarchicalBitSet
+
+    [Fact]
+    public void ICollectionAdd_ShouldNotThrowAndKeepCountAtOne_WhenHierarchicalBitSetAlreadyContainsItem()
+    {
+        var set = new HierarchicalBitSet(universe: 64);
+        ICollection<int> collection = set;
+
+        collection.Add(42);
+        collection.Add(42);
+
+        Assert.Equal(1, set.Count);
+        Assert.True(set.Contains(42));
+    }
+
+    [Fact]
+    public void ICollectionAdd_ShouldThrowArgumentOutOfRange_WhenHierarchicalBitSetItemIsOutsideUniverse()
+    {
+        ICollection<int> collection = new HierarchicalBitSet(universe: 64);
+
+        // As for SparseSet: the universe bound is a precondition, not a duplicate, so it surfaces.
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => collection.Add(64));
+        Assert.Equal("item", ex.ParamName);
+    }
+
+    [Fact]
+    public void ICollectionIsReadOnly_ShouldBeFalse_WhenSetIsHierarchicalBitSet()
+    {
+        ICollection<int> collection = new HierarchicalBitSet(universe: 8);
 
         Assert.False(collection.IsReadOnly);
     }

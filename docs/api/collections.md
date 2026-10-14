@@ -2196,6 +2196,162 @@ for (int start = 0; start < nodeCount; start++)
 
 ---
 
+## HierarchicalBitSet
+
+```csharp
+public class HierarchicalBitSet : ISet<int>, IReadOnlySet<int>
+```
+
+An **ordered set of non-negative integers over a bounded universe** `[0, Universe)`. It is a
+bit vector with a **64-ary tree of summary words** above it, a flattened van Emde Boas layout.
+Level 0 has one bit per storable value. Each level above has one bit per word of the level
+below, set exactly when that word is non-zero, and the levels stop at a single word.
+
+That tree gives the type the ordered surface a sorted set has, but each query costs a few word
+reads instead of a tree search:
+
+- **`Contains` is one bit test.** `Add` and `Remove` set or clear one bit. They touch a summary
+  level only when a word turns non-zero or zero, so most updates write a single word.
+- **Successor and predecessor queries are `O(log₆₄ Universe)`.** A query masks the value's own
+  leaf word. If nothing is left, it climbs to the first level with a set bit on the right side,
+  then descends with one trailing-zero (or leading-zero) count per level. That is at most four
+  levels for a universe of 16.7 million, and six for the largest one an `int` allows.
+- **Enumeration is ascending.** The enumerator keeps the unvisited bits of the current leaf
+  word, so a dense run costs one bit scan per element. It reaches the next non-empty word through
+  the summaries, so long empty stretches are skipped rather than scanned.
+
+The documented workload is an ordered set of integers from a known range, under a mix of
+updates and "next or previous present value" queries:
+
+- the lowest free id, port or slot;
+- the next occupied timer bucket or calendar slot;
+- the next live row in a scan;
+- a monotone integer priority queue that also needs `Remove`.
+
+The BCL's answer is `SortedSet<int>`, a red-black tree with a heap node per element and no
+successor method; a caller has to go through `GetViewBetween`.
+
+The trade-offs, stated honestly:
+
+- **Memory follows `Universe`, not `Count`.** The bit vector and its summaries are about
+  `Universe / 8` bytes from construction onwards. A few values spread over a huge range are
+  better served by [`BTreeSet`](#btreesett-tcomparer) or [`CompressedIntSet`](#compressedintset).
+- **`Clear()` zeroes the bit vector**, which is `O(Universe / 64)`. When order is not part of
+  the question and the set is cleared often, [`SparseSet`](#sparseset) has an `O(1)` `Clear`.
+- It stores **only non-negative values below `Universe`**. A value outside `[0, Universe)` is
+  rejected by `Add` / `TryAdd` with `ArgumentOutOfRangeException`, and reported as absent by
+  `Contains` / `Remove`. The ordered queries accept any `int`: `TryGetLowerBound(-5, …)`
+  returns the minimum and `TryGetFloor(int.MaxValue, …)` the maximum.
+- It is not thread-safe.
+
+### Constructors
+
+```csharp
+HierarchicalBitSet(int universe)
+HierarchicalBitSet(int universe, IEnumerable<int> source)
+```
+
+- `universe` is the **exclusive upper bound** of storable values. The whole structure is
+  allocated once, at about `universe / 8` bytes. `0` creates a set that can store nothing.
+- Throws `ArgumentOutOfRangeException` for a negative `universe`.
+- The `source` constructor silently deduplicates, matching BCL `HashSet<int>(IEnumerable<int>)`.
+  It throws `ArgumentNullException` if `source` is `null`; the null check beats the universe
+  validation. It throws `ArgumentOutOfRangeException` if any source value is outside
+  `[0, universe)`.
+
+### Methods
+
+- `void Add(int item)` — throws `ArgumentException` on a duplicate and `ArgumentOutOfRangeException` out of range.
+- `bool TryAdd(int item)` — `true` on success and `false` if already present; throws out of range.
+- `bool Contains(int item)` — one bit test; `false` for an out-of-range value.
+- `bool Remove(int item)` — `false` for an absent or out-of-range value.
+- `void Clear()` — zeroes the bit vector, `O(Universe / 64)`; a no-op on an empty set.
+- `bool TryGetMin(out int item)` / `bool TryGetMax(out int item)` — the smallest / largest element.
+- `bool TryGetLowerBound(int item, out int bound)` — the smallest element **≥** `item`.
+- `bool TryGetUpperBound(int item, out int bound)` — the smallest element **>** `item`.
+- `bool TryGetFloor(int item, out int bound)` — the largest element **≤** `item`.
+- `bool TryGetPredecessor(int item, out int bound)` — the largest element **<** `item`.
+- `RangeEnumerable EnumerateRange(int fromInclusive, int toExclusive)` — the elements in
+  `[fromInclusive, toExclusive)`, ascending and allocation-free. Bounds outside the universe
+  are clamped. Throws `ArgumentException` when `toExclusive < fromInclusive`.
+- `int Count { get; }`, `int Universe { get; }`
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator, in ascending order.
+- `void CopyTo(int[] array, int arrayIndex)` — copies in ascending order, under [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
+
+`TryGetLowerBound` and `TryGetUpperBound` are named after `BTreeSet`'s members of the same names,
+and they answer the same questions. Each query returns `false` and sets `bound` to `0` when no
+element qualifies. All six are `O(log₆₄ Universe)`. A `TryGetUpperBound(int.MaxValue, …)` or
+`TryGetPredecessor(int.MinValue, …)` returns `false` rather than wrapping.
+
+### Set operations (`ISet<int>` and `IReadOnlySet<int>`)
+
+The full BCL `HashSet<int>` set-algebra surface is available, with `SparseSet`'s
+bounded-universe caveat: a **mutating** operation that would *add* a value outside
+`[0, Universe)` throws `ArgumentOutOfRangeException`. Query operations treat out-of-range
+values in `other` as absent. `ExceptWith` over a lazy view of the same set throws, as described
+under [`CeleritySet`](#celeritysett-thasher).
+
+- **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
+- **Query:** `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps`, `SetEquals`.
+
+As with the other sets, `ISet<int>.Add(int)` returns `bool`, the concrete `public void Add(int)`
+throws on a duplicate, and `ICollection<int>.Add(int)` ignores duplicates.
+
+### Performance
+
+Against `SortedSet<int>` with BenchmarkDotNet's default job on Apple Silicon. The universe is
+eight times the item count (12.5% dense), and each query arm runs 1,000 random probes. The BCL
+arm asks for a successor through `GetViewBetween(probe, int.MaxValue).Min` (and a predecessor
+through `GetViewBetween(int.MinValue, probe).Max`), because `SortedSet<T>` has no successor method.
+
+| Operation | 1,000 values | 100,000 values |
+|---|---:|---:|
+| `TryGetLowerBound` (≥) | 20x faster | **32x faster** |
+| `TryGetLowerBound` vs `BTreeSet<int>.TryGetLowerBound` | 14x faster | **18.9x faster** |
+| `TryGetFloor` (≤) | 22x faster | 31x faster |
+| `Add` (fill from empty, constructor included) | 9.0x faster | 48x faster |
+| `Remove` (every element) | 14x faster | 64x faster |
+| `Contains` | 22x faster | 139x faster |
+| Ascending enumeration | 3.1x faster | 3.5x faster |
+| Memory | 1,136 B vs 40,000 B | 101,866 B vs 4,000,018 B (39x smaller) |
+
+Two caveats about these figures:
+
+- **The `Contains` / `Add` / `Remove` margins grow with size partly because the bit vector
+  stays small.** At 100,000 values it is about 100 KB, which fits in cache, while
+  `SortedSet<int>`'s 4 MB of nodes does not.
+- **Memory is the size of the structure, not a transient allocation.** Both sides are allocated
+  once and have nothing to resize, so the allocated bytes are the retained bytes.
+  `SortedSet<int>` spends about 40 bytes per element, and this type spends `Universe / 8`. They
+  break even at about one value per 320 of the universe. Below that density `SortedSet<int>`,
+  [`BTreeSet`](#btreesett-tcomparer) or [`CompressedIntSet`](#compressedintset) use less memory.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Hand out the lowest free connection slot out of 65,536, and take it back on disconnect.
+var free = new HierarchicalBitSet(65_536, Enumerable.Range(0, 65_536));
+
+int Acquire()
+{
+    if (!free.TryGetMin(out int slot))
+        throw new InvalidOperationException("No free slot.");
+
+    free.Remove(slot);
+    return slot;
+}
+
+void Release(int slot) => free.Add(slot);
+
+// The first free slot at or after a preferred one, wrapping to the lowest.
+int Near(int preferred) =>
+    free.TryGetLowerBound(preferred, out int slot) || free.TryGetMin(out slot) ? slot : -1;
+```
+
+---
+
 ## CompressedIntSet
 
 ```csharp
