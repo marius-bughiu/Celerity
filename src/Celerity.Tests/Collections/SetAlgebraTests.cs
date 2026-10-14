@@ -121,6 +121,22 @@ public class SetAlgebraTests
         Assert.False(set.SetEquals(new[] { 2 }));
     }
 
+    // An out-of-universe value in `other` can never be a member, but HashSet semantics still count it as a
+    // distinct element of `other`, so the cardinality-sensitive queries see it.
+    [Fact]
+    public void HierarchicalBitSet_Queries_CountOutOfUniverseValuesInOther_AsHashSetDoes()
+    {
+        var set = new HierarchicalBitSet(10, new[] { 1 });
+        var oracle = new HashSet<int> { 1 };
+        int[] other = { 1, 100 };
+
+        Assert.True(set.IsProperSubsetOf(other));
+        Assert.Equal(oracle.IsProperSubsetOf(other), set.IsProperSubsetOf(other));
+        Assert.False(set.SetEquals(other));
+        Assert.Equal(oracle.SetEquals(other), set.SetEquals(other));
+        Assert.False(set.IsSupersetOf(other));
+    }
+
     [Fact]
     public void HierarchicalBitSet_MutatingOp_ThrowsOnOutOfUniverseValueToAdd()
     {

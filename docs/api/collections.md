@@ -2289,8 +2289,10 @@ element qualifies. All six are `O(log₆₄ Universe)`. A `TryGetUpperBound(int.
 
 The full BCL `HashSet<int>` set-algebra surface is available, with `SparseSet`'s
 bounded-universe caveat: a **mutating** operation that would *add* a value outside
-`[0, Universe)` throws `ArgumentOutOfRangeException`. Query operations treat out-of-range
-values in `other` as absent. `ExceptWith` over a lazy view of the same set throws, as described
+`[0, Universe)` throws `ArgumentOutOfRangeException`. Query operations accept out-of-range
+values in `other` and answer exactly as `HashSet<int>` does. Such a value can never be a member of
+this set, but it still counts as a distinct element of `other`. So a set holding `{ 1 }` answers
+`IsProperSubsetOf([1, 100])` with `true` and `SetEquals([1, 100])` with `false`. `ExceptWith` over a lazy view of the same set throws, as described
 under [`CeleritySet`](#celeritysett-thasher).
 
 - **Mutating:** `UnionWith`, `IntersectWith`, `ExceptWith`, `SymmetricExceptWith`.
