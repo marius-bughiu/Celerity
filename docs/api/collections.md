@@ -2211,7 +2211,9 @@ That tree gives the type the ordered surface a sorted set has, but each query co
 reads instead of a tree search:
 
 - **`Contains` is one bit test.** `Add` and `Remove` set or clear one bit. They touch a summary
-  level only when a word turns non-zero or zero, so most updates write a single word.
+  level only when a word turns non-zero or zero, so most updates write a single word. The worst
+  case is a value alone in its word at every level, which writes one word per level:
+  `O(log₆₄ Universe)`, the same bound as a query.
 - **Successor and predecessor queries are `O(log₆₄ Universe)`.** A query masks the value's own
   leaf word. If nothing is left, it climbs to the first level with a set bit on the right side,
   then descends with one trailing-zero (or leading-zero) count per level. That is at most four

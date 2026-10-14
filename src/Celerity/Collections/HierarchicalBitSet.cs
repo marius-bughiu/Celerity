@@ -18,7 +18,8 @@ namespace Celerity.Collections;
 /// single word. A successor query masks the value's own leaf word; if nothing remains, it climbs to the
 /// first level that has a set bit to the right, then descends through one trailing-zero count per level.
 /// <see cref="Add(int)"/> and <see cref="Remove(int)"/> touch a summary level only when a word turns
-/// non-zero or zero, so a level costs nothing on most updates. The summaries add about one sixty-third to
+/// non-zero or zero, so most updates write a single word; the worst case, a value alone in its word at every
+/// level, writes one word per level, the same <c>O(log₆₄ Universe)</c> as a query. The summaries add about one sixty-third to
 /// the bit vector, so the whole structure is close to <c>Universe / 8</c> bytes whatever <see cref="Count"/>
 /// is.
 /// </para>
@@ -171,8 +172,9 @@ public class HierarchicalBitSet : ISet<int>, IReadOnlySet<int>
     }
 
     /// <summary>
-    /// Attempts to add the specified value to the set in <c>O(1)</c> amortized time; a summary level is
-    /// written only when the value is the first one in its word.
+    /// Attempts to add the specified value to the set. A summary level is written only when the value is the
+    /// first one in its word, so most adds write a single word; the worst case, a value alone in its word at
+    /// every level, writes one word per level, <c>O(log₆₄ Universe)</c>.
     /// </summary>
     /// <param name="item">The value to add; must be in <c>[0, Universe)</c>.</param>
     /// <returns>
@@ -228,8 +230,9 @@ public class HierarchicalBitSet : ISet<int>, IReadOnlySet<int>
         => (uint)item < (uint)_universe && (_words[item >> WordShift] & (1UL << item)) != 0;
 
     /// <summary>
-    /// Removes the specified value from the set in <c>O(1)</c> amortized time; a summary level is written
-    /// only when the value was the last one in its word.
+    /// Removes the specified value from the set. A summary level is written only when the value was the last
+    /// one in its word, so most removals write a single word; the worst case, a value alone in its word at
+    /// every level, writes one word per level, <c>O(log₆₄ Universe)</c>.
     /// </summary>
     /// <param name="item">The value to remove.</param>
     /// <returns>
