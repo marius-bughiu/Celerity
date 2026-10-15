@@ -77,10 +77,12 @@ internal static class Differential
         ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
+        ("MinHashSketch", MinHashSketchCase),
         ("CountMinSketch", CountMinSketchCase),
         ("BloomFilterMerge", BloomFilterMergeCase),
         ("CuckooFilterMerge", CuckooFilterMergeCase),
         ("HyperLogLogMerge", HyperLogLogMergeCase),
+        ("MinHashSketchMerge", MinHashSketchMergeCase),
         ("CountMinSketchMerge", CountMinSketchMergeCase),
         ("BloomFilterHash64", BloomFilterHash64Case),
         ("CuckooFilterHash64", CuckooFilterHash64Case),
@@ -3232,6 +3234,67 @@ internal static class Differential
         foreach (int k in inA) Check(a.Contains(k), $"false negative for {k} (from A) after merge");
         if (completed)
             foreach (int k in inB) Check(a.Contains(k), $"false negative for {k} (from B) after merge");
+    }
+
+    // ---- similarity sketch ----------------------------------------------------
+
+    // MinHash estimates a Jaccard similarity, which is approximate in general. With a bijective
+    // hasher (Murmur3's fmix32, then the bijective SplitMix64 widening) two registers hold equal
+    // values only when they saw the same element, so the exact relations are checkable: a
+    // sketch equals the sketch rebuilt from its oracle's contents, emptiness tracks the oracle,
+    // the estimate is symmetric and in [0, 1], equal sets estimate exactly 1 and disjoint sets
+    // exactly 0.
+    private static void MinHashSketchCase(Random rng)
+    {
+        var a = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var b = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var setA = new HashSet<int>();
+        var setB = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 9: a.Add(item); setA.Add(item); break;
+                case < 18: b.Add(item); setB.Add(item); break;
+                case 18: a.Clear(); setA.Clear(); break;
+                default: b.Clear(); setB.Clear(); break;
+            }
+        }
+
+        Check(a.IsEmpty == (setA.Count == 0), "IsEmpty disagrees with the oracle");
+        Check(a.EstimateJaccard(new MinHashSketch<int, Int32Murmur3Hasher>(setA, 6)) == 1d,
+            "sketch differs from the sketch of its own contents");
+
+        double estimate = a.EstimateJaccard(b);
+        Check(estimate == b.EstimateJaccard(a), "estimate is not symmetric");
+        Check(estimate >= 0d && estimate <= 1d, $"estimate {estimate} outside [0, 1]");
+        if (setA.SetEquals(setB))
+            Check(estimate == 1d, $"equal sets estimated {estimate}, not 1");
+        else if (!setA.Overlaps(setB))
+            Check(estimate == 0d, $"disjoint sets estimated {estimate}, not 0");
+    }
+
+    // MinHash: merge takes the per-register minimum, which is exactly the register state the
+    // combined stream would have produced, so the merged sketch must compare as identical to one
+    // built directly from the union.
+    private static void MinHashSketchMergeCase(Random rng)
+    {
+        var a = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var b = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var union = new HashSet<int>();
+
+        int opsA = OpCount(rng);
+        for (int i = 0; i < opsA; i++) { int k = Key(rng); a.Add(k); union.Add(k); }
+        int opsB = OpCount(rng);
+        for (int i = 0; i < opsB; i++) { int k = Key(rng); b.Add(k); union.Add(k); }
+
+        a.UnionWith(b);
+
+        Check(a.EstimateJaccard(new MinHashSketch<int, Int32Murmur3Hasher>(union, 6)) == 1d,
+            "merged sketch differs from the sketch of the union");
     }
 
     // HyperLogLog: merge takes the per-register maximum, which is exactly the register state the

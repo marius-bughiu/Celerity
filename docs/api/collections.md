@@ -3693,6 +3693,170 @@ shardA.UnionWith(shardB);
 Console.WriteLine(shardA.EstimateCardinality());         // distinct across A ∪ B
 ```
 
+## MinHashSketch&lt;T, THasher&gt;
+
+A fixed-size, mergeable **similarity sketch** parameterized on a custom hash provider. It
+answers "how much do these two sets overlap?" — the **Jaccard similarity**
+`|A ∩ B| / |A ∪ B|` — from two small register arrays whose size does **not** grow with the
+sets. The exact answer needs both sets in full: two `HashSet<T>`s and an `O(|A|)`
+intersection count, paid again for every pair compared.
+
+```csharp
+public class MinHashSketch<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+The contract is the MinHash trade-off:
+
+- **Fixed, small memory.** The sketch allocates `m = 2^precision` eight-byte registers
+  (2&#160;KB at the default precision 8) and never grows, however large the set.
+- **Comparison independent of set size.** `EstimateJaccard` is an `O(m)` pass over two
+  register arrays. Build one sketch per document once, then compare sketches pairwise.
+- **Bounded absolute error.** The estimate has a standard error of about
+  `sqrt(J · (1 − J) / m)` once the sets fill every register. That is at most
+  `0.5 / sqrt(m)` (≈ 0.031 at the default precision), at `J = 0.5`.
+- **Add-only.** It cannot remove an element or say whether a specific element was added.
+  Use `Clear()` to reset, or `UnionWith` to combine two sketches.
+
+### How it works
+
+This is **one-permutation** MinHash (Li, Owen &amp; Zhang, 2012). Each element is hashed
+once to 64 bits. The top `precision` bits pick one of the `m` registers, and the register
+keeps the smallest value of the remaining bits it has seen. When two sets share an element,
+that element produces the same minimum in its register in both sketches whenever it is the
+smallest there in both. That happens with probability equal to the Jaccard similarity.
+
+`EstimateJaccard` counts the registers whose minima match and divides by the number of
+registers that are non-empty in at least one sketch. That paper proves this estimator
+unbiased. Registers that are empty in both carry no information, so a small set is estimated
+from the registers it fills rather than diluted by the empty ones. Its error then grows
+toward `sqrt(J · (1 − J) / k)` for `k` filled registers.
+
+`Add` costs one hasher call, a shift and a compare. The classic `m`-permutation form needs
+`m` hash evaluations per element instead.
+
+Hashing follows [`HyperLogLog`](#hyperloglogt-thasher). A hasher implementing
+[`IHashProvider64<T>`](hashing.md#ihashprovider64t) supplies all 64 bits. A 32-bit-only
+hasher has its code avalanched by the SplitMix64 finalizer, a bijection, so two elements
+collide only when their 32-bit codes do. Two elements whose hashes are equal are the same
+element to the sketch.
+
+### Constructors
+
+```csharp
+public MinHashSketch(int precision = 8)
+
+public MinHashSketch(
+    IEnumerable<T> source,
+    int precision = 8)
+```
+
+The first overload creates an empty sketch with `2^precision` registers. The
+`IEnumerable<T>` overload adds every element of the source. Duplicates do not change the
+sketch.
+
+`precision` must be between `MinPrecision` (4, `m = 16`) and `MaxPrecision` (16,
+`m = 65536`) inclusive. Larger values cost more memory but lower the standard error.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `precision` is outside `[MinPrecision, MaxPrecision]`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats
+  the precision validation, so a `null` source with a bad precision surfaces as
+  `ArgumentNullException`.
+
+### Methods and properties
+
+- `void Add(T item)` — adds an element, lowering the register its hash routes to when the
+  element's value is the smallest that register has seen. Adding an element already
+  represented does not change the sketch.
+- `double EstimateJaccard(MinHashSketch<T, THasher> other)` — the estimated Jaccard
+  similarity, in `[0, 1]`. An `O(m)` pass; symmetric. It returns `0` whenever exactly one
+  sketch is empty, and `1` when both are. Two empty sets are identical, and the choice keeps
+  a sketch's similarity to itself at `1` in every state. Throws `ArgumentNullException` on a
+  `null` argument and `ArgumentException` if the two sketches have a different `Precision`.
+- `void UnionWith(MinHashSketch<T, THasher> other)` — merges another sketch in place
+  (per-register minimum), so this sketch afterwards summarizes the **union** of both sets.
+  That is exactly the sketch the combined stream would have produced, so the merge adds no
+  error. Same exceptions as `EstimateJaccard`.
+- `void Clear()` — resets every register; preserves the precision and register count.
+- `bool IsEmpty { get; }` — whether no element has been added since construction or the
+  last `Clear()`. An `O(m)` scan.
+- `int Precision { get; }` — the register-index precision (`p`).
+- `int RegisterCount { get; }` — the number of registers (`m = 2^precision`).
+- `double StandardError { get; }` — the largest standard error for sets that fill every
+  register, `0.5 / sqrt(m)`.
+
+### Default-element handling
+
+The sketch stores register minima, not elements, so there is no empty-slot sentinel among
+the elements. `default(T)` — a zero `int`, `Guid.Empty`, or the empty string — is hashed
+like any other element. An empty register is marked by a value no hash can produce, so no
+element is ever mistaken for one. A `null` reference is mapped to a fixed base hash so the
+sketch never invokes the hasher with `null`, matching the library's out-of-band-`null`
+convention.
+
+### Performance
+
+Two sets of `ItemCount` elements each sharing half of them (`J = 1/3`), against two
+`HashSet<int>`s and an exact intersection count. Local default-job run on Apple Silicon. The
+CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) is the
+contract.
+
+| Operation | 1,000 elements | 100,000 elements |
+| --- | ---: | ---: |
+| Compare two built sets (`EstimateJaccard` vs exact intersection) | 85.6 ns vs 2,146 ns (25x) | 84.8 ns vs 794,501 ns (~9,400x) |
+| Build one set (`Add` × n vs `HashSet<int>.Add` × n) | 0.96 µs vs 5.96 µs (6.2x) | 84.6 µs vs 1,265 µs (15x) |
+| Allocated per build | 2,072 B vs 58,600 B | 2,072 B vs 4,830,468 B |
+
+The comparison is flat because it reads `m` registers whatever the set size. The build gap is
+partly the `HashSet` growing from empty (the same shape as `HyperLogLog`'s benchmark), but the
+sketch also never grows. What the sketch gives up is exactness: here the answer carries a
+standard error of about 0.029.
+
+### Choosing it
+
+Reach for `MinHashSketch` when you need to **compare sets for overlap** and can tolerate a
+small absolute error in exchange for fixed memory and set-size-independent comparison.
+Typical uses are near-duplicate detection over document shingles, deduplicating crawled
+pages, audience or basket overlap ("users who saw X also saw Y"), and comparing log windows.
+Merge per-shard sketches with `UnionWith`.
+
+Use something else when:
+
+- you need the **exact** intersection, or the elements themselves: two `HashSet<T>`s;
+- you need the **size** of a set, not its overlap with another: `HyperLogLog<T, THasher>`;
+- you need **membership** of one element: `BloomFilter<T, THasher>`;
+- one set is tiny. With a handful of elements the exact intersection is already cheap, and
+  the sketch's error is that of the few registers they fill.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// One sketch per document, built once from its word 3-shingles.
+static MinHashSketch<string, StringXxHash64Hasher> Sketch(string text)
+{
+    string[] words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    var sketch = new MinHashSketch<string, StringXxHash64Hasher>(precision: 8);
+    for (int i = 0; i + 2 < words.Length; i++)
+        sketch.Add($"{words[i]} {words[i + 1]} {words[i + 2]}");
+    return sketch;
+}
+
+var a = Sketch(documentA);
+var b = Sketch(documentB);
+
+// O(256) whatever the document sizes; ±0.03 at worst.
+if (a.EstimateJaccard(b) > 0.8)
+    Console.WriteLine("near-duplicate");
+
+// Sketch of A ∪ B, exactly as if built from both documents.
+a.UnionWith(b);
+```
+
 ## CountMinSketch&lt;T, THasher&gt;
 
 A space-efficient **probabilistic frequency estimator** parameterized on a custom hash

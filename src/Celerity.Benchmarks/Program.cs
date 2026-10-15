@@ -45,6 +45,7 @@ internal class Program
         typeof(BitSetBenchmark),
         typeof(RankSelectBitVectorBenchmark),
         typeof(HyperLogLogBenchmark),
+        typeof(MinHashSketchBenchmark),
         typeof(CountMinSketchBenchmark),
         typeof(TopKSketchBenchmark),
         typeof(LruCacheBenchmark),
