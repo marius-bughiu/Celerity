@@ -75,8 +75,10 @@ namespace Celerity.Collections;
 /// The type is single-threaded. It implements the full <see cref="ISet{T}"/> and
 /// <see cref="IReadOnlySet{T}"/> surface with BCL <see cref="HashSet{T}"/> semantics, and every
 /// set-algebra operation takes a chunk-wise fast path when the other side is also a
-/// <see cref="CompressedIntSet"/>, falling back to the shared element-at-a-time implementation for
-/// any other <see cref="IEnumerable{T}"/>.
+/// <see cref="CompressedIntSet"/>, falling back to an element-at-a-time implementation for any
+/// other <see cref="IEnumerable{T}"/>. Fallbacks that depend on the set's own size read the
+/// <see langword="long"/> <see cref="Cardinality"/>, so they keep working past
+/// <see cref="int.MaxValue"/> elements.
 /// </para>
 /// </remarks>
 public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
