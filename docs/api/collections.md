@@ -2030,6 +2030,8 @@ the enum (exactly the declared members, not every bit position).
 ### Set operations (`ISet<TEnum>` and `IReadOnlySet<TEnum>`)
 
 The full BCL `HashSet<T>` set-algebra surface is available with `HashSet<T>` semantics.
+One exception: `ExceptWith` over a lazy view of the same set throws, as described under
+[`CeleritySet`](#celeritysett-thasher).
 When the operand is another `EnumSet<TEnum>`, each operation runs as word-wise bitwise
 work; for a general `IEnumerable<TEnum>` it falls back to the shared element-by-element
 path.
@@ -7088,7 +7090,7 @@ As with the dictionary, there is no capacity or load factor. The `IEnumerable` o
 | `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
 | `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | Smallest element **≥** / **>** `item`, `O(log n)`. |
 | `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | The elements of the half-open range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
-| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. |
+| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. One exception: `ExceptWith` over a lazy view of the same set throws, as described under [`CeleritySet`](#celeritysett-thasher). |
 | `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` / `SetEquals` | The `ISet<T>` / `IReadOnlySet<T>` queries. |
 | `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
@@ -7257,7 +7259,7 @@ There is no capacity and no load factor. The `IEnumerable` overloads throw `Argu
 | `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
 | `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | Smallest element **≥** / **>** `item`, `O(log n)`. |
 | `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | The elements of the half-open range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
-| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. |
+| `UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` | In-place `ISet<T>` algebra, with `HashSet<T>` semantics. One exception: `ExceptWith` over a lazy view of the same set throws, as described under [`CeleritySet`](#celeritysett-thasher). |
 | `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` / `SetEquals` | The `ISet<T>` / `IReadOnlySet<T>` queries. |
 | `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
