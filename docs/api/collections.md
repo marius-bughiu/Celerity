@@ -3712,9 +3712,10 @@ The contract is the MinHash trade-off:
   (2&#160;KB at the default precision 8) and never grows, however large the set.
 - **Comparison independent of set size.** `EstimateJaccard` is an `O(m)` pass over two
   register arrays. Build one sketch per document once, then compare sketches pairwise.
-- **Bounded absolute error.** The estimate has a standard error of about
-  `sqrt(J · (1 − J) / m)` once the sets fill every register. That is at most
-  `0.5 / sqrt(m)` (≈ 0.031 at the default precision), at `J = 0.5`.
+- **Approximate answer.** For large sets the estimate has a standard error of about
+  `sqrt(J · (1 − J) / m)`, up to `0.5 / sqrt(m)` (≈ 0.031 at the default precision) at
+  `J = 0.5`. That is a dispersion, not a hard bound: a single estimate can land further out,
+  so leave a margin around any similarity threshold.
 - **Add-only.** It cannot remove an element or say whether a specific element was added.
   Use `Clear()` to reset, or `UnionWith` to combine two sketches.
 
@@ -3729,8 +3730,12 @@ smallest there in both. That happens with probability equal to the Jaccard simil
 `EstimateJaccard` counts the registers whose minima match and divides by the number of
 registers that are non-empty in at least one sketch. That paper proves this estimator
 unbiased. Registers that are empty in both carry no information, so a small set is estimated
-from the registers it fills rather than diluted by the empty ones. Its error then grows
-toward `sqrt(J · (1 − J) / k)` for `k` filled registers.
+from the registers it fills rather than diluted by the empty ones. That makes small sets
+typically *more* accurate, not less. The minima of the `k` filled registers are a sample
+drawn without replacement from the `n` elements of the union, so the variance is
+`J · (1 − J) · (n − k) / (k · (n − 1))`. That finite-population correction reaches zero when
+every element has a register to itself, and tends to `J · (1 − J) / m` as the union grows
+past `m`.
 
 `Add` costs one hasher call, a shift and a compare. The classic `m`-permutation form needs
 `m` hash evaluations per element instead.
@@ -3784,8 +3789,9 @@ sketch.
   last `Clear()`. An `O(m)` scan.
 - `int Precision { get; }` — the register-index precision (`p`).
 - `int RegisterCount { get; }` — the number of registers (`m = 2^precision`).
-- `double StandardError { get; }` — the largest standard error for sets that fill every
-  register, `0.5 / sqrt(m)`.
+- `double StandardError { get; }` — the largest standard error for large sets,
+  `0.5 / sqrt(m)`. A dispersion, not a bound on a single estimate; small sets are typically
+  estimated more tightly.
 
 ### Default-element handling
 
@@ -3849,7 +3855,8 @@ static MinHashSketch<string, StringXxHash64Hasher> Sketch(string text)
 var a = Sketch(documentA);
 var b = Sketch(documentB);
 
-// O(256) whatever the document sizes; ±0.03 at worst.
+// O(256) whatever the document sizes. The standard error is up to ~0.03, and that is not a
+// hard bound, so keep the threshold clear of the decision you can't afford to get wrong.
 if (a.EstimateJaccard(b) > 0.8)
     Console.WriteLine("near-duplicate");
 

@@ -30,11 +30,14 @@ namespace Celerity.Collections;
 /// rather than the <c>m</c> hash evaluations of the classic <c>m</c>-permutation form.
 /// </para>
 /// <para>
-/// The standard error is about <c>sqrt(J · (1 − J) / m)</c> once the sets are large enough
-/// to fill every register (a few times <c>m</c> elements), which is at most
-/// <see cref="StandardError"/>, the value at <c>J = 0.5</c>. Smaller sets leave registers
-/// empty, and the estimate then rests on the registers that are filled, so its error grows
-/// toward <c>sqrt(J · (1 − J) / k)</c> for <c>k</c> filled registers. Like the other sketches
+/// The standard error is about <c>sqrt(J · (1 − J) / m)</c> once the union of the two sets is
+/// many times larger than <c>m</c>, which is at most <see cref="StandardError"/>, the value at
+/// <c>J = 0.5</c>. It is a dispersion, not a bound: an individual estimate can land further
+/// out, so leave a margin when comparing against a threshold. Smaller sets are typically
+/// estimated more tightly, not less. The minima of the <c>k</c> registers filled in either
+/// sketch are a sample drawn without replacement from the <c>n</c> elements of the union, so
+/// the variance is <c>J · (1 − J) · (n − k) / (k · (n − 1))</c>, a finite-population
+/// correction that reaches zero when every element has a register to itself. Like the other sketches
 /// it estimates what the hashes see: two distinct elements whose 64-bit hashes are equal are
 /// the same element to the sketch.
 /// </para>
@@ -63,8 +66,8 @@ public class MinHashSketch<T, THasher> where THasher : struct, IHashProvider<T>
 {
     /// <summary>
     /// The default register-index precision used when a constructor does not specify one:
-    /// 8, giving <c>m = 256</c> eight-byte registers (2&#160;KB) and a standard error of at
-    /// most about 0.031.
+    /// 8, giving <c>m = 256</c> eight-byte registers (2&#160;KB) and a standard error of up to
+    /// about 0.031.
     /// </summary>
     public const int DefaultPrecision = 8;
 
@@ -150,10 +153,11 @@ public class MinHashSketch<T, THasher> where THasher : struct, IHashProvider<T>
     public int RegisterCount => _registers.Length;
 
     /// <summary>
-    /// Gets the largest standard error of <see cref="EstimateJaccard"/> for sets large enough
-    /// to fill every register, ≈ <c>0.5 / sqrt(m)</c>: the value of
-    /// <c>sqrt(J · (1 − J) / m)</c> at <c>J = 0.5</c>, where it peaks. The error is smaller
-    /// for similarities near 0 or 1, and larger for sets too small to fill the registers.
+    /// Gets the largest standard error of <see cref="EstimateJaccard"/> for sets whose union is
+    /// many times larger than <c>m</c>, ≈ <c>0.5 / sqrt(m)</c>: the value of
+    /// <c>sqrt(J · (1 − J) / m)</c> at <c>J = 0.5</c>, where it peaks. It is a dispersion, not
+    /// a bound on any single estimate. The error is smaller for similarities near 0 or 1, and
+    /// typically smaller for small sets, whose estimate carries a finite-population correction.
     /// </summary>
     public double StandardError => 0.5 / Math.Sqrt(_registers.Length);
 

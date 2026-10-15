@@ -98,8 +98,9 @@ public class MinHashSketchAccuracyTests
         }
 
         double mean = sum / trials;
-        // About 60 registers carry information, so a single trial's sigma is roughly
-        // sqrt(J(1-J)/60); allow 4 of those over the mean of 300 trials.
+        // About 53 registers carry information. With the finite-population correction a
+        // single trial's sigma is about 0.021; sqrt(J(1-J)/60) ≈ 0.061 is a deliberately loose
+        // stand-in, and 4 of those over the mean of 300 trials still pins the bias.
         double sigmaOfMean = Sigma(exact, 60) / Math.Sqrt(trials);
         Assert.True(Math.Abs(mean - exact) <= 4 * sigmaOfMean,
             $"mean estimate {mean:F5} vs exact {exact:F5}; 4σ of the mean is {4 * sigmaOfMean:F5}");
