@@ -49,6 +49,7 @@ internal class Program
         typeof(TopKSketchBenchmark),
         typeof(LruCacheBenchmark),
         typeof(LfuCacheBenchmark),
+        typeof(SieveCacheBenchmark),
         typeof(DequeBenchmark),
         typeof(PersistentVectorBenchmark),
         typeof(PersistentHashMapBenchmark),

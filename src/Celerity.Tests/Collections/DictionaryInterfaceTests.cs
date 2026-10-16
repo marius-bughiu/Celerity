@@ -35,13 +35,16 @@ namespace Celerity.Tests.Collections;
 /// </para>
 ///
 /// <para>
-/// <b>Out of scope.</b> <see cref="FrozenCelerityDictionary{TValue, THasher}"/> is immutable by
-/// construction, <see cref="LruCache{TKey, TValue, THasher}"/> and
-/// <see cref="LfuCache{TKey, TValue, THasher}"/> evict on insert (so <c>Add</c> could silently drop
-/// an unrelated entry, which the interface's contract does not allow) and
-/// <see cref="CelerityMultiMap{TKey, TValue, THasher}"/> holds many values per key, and
-/// <see cref="SuccinctTrie{TValue}"/> is immutable by construction as well. All five keep
-/// the read-only interface only. <see cref="SlotMap{TValue}"/> keeps it too, for a different
+/// <b>Out of scope.</b> <see cref="FrozenCelerityDictionary{TValue, THasher}"/> and
+/// <see cref="SuccinctTrie{TValue}"/> are immutable by construction, so both keep the read-only
+/// interface only. <see cref="LruCache{TKey, TValue, THasher}"/>,
+/// <see cref="LfuCache{TKey, TValue, THasher}"/> and <see cref="SieveCache{TKey, TValue, THasher}"/>
+/// evict on insert (so <c>Add</c> could silently drop an unrelated entry, which the interface's
+/// contract does not allow), and <see cref="CelerityMultiMap{TKey, TValue, THasher}"/> holds many
+/// values per key; those four implement neither dictionary interface — the caches are
+/// <see cref="IReadOnlyCollection{T}"/> of pairs and the multi-map is an
+/// <see cref="System.Linq.ILookup{TKey, TElement}"/>. <see cref="SlotMap{TValue}"/> keeps the
+/// read-only interface, for a different
 /// reason: it issues its own keys, so the interface's <c>Add(key, value)</c> — insertion under a
 /// key the caller picks — is the one operation it cannot offer. <see cref="Trie{TValue}"/> is a genuine one-value-per-key mutable
 /// dictionary and could join, but its <c>Keys</c> / <c>Values</c> are lazy

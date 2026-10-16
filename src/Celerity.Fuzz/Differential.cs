@@ -51,6 +51,7 @@ internal static class Differential
         ("BTreeSet", BTreeSetCase),
         ("RankedSet", RankedSetCase),
         ("LfuCache", LfuCacheCase),
+        ("SieveCache", SieveCacheCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -1123,6 +1124,118 @@ internal static class Differential
             sut.EnumerateRange(from, to),
             oracle.Where(v => v >= from && v < to),
             $"range[{from},{to})");
+    }
+
+    // SieveCache vs a list-based reference SIEVE: a List in insertion order (newest first), a set of
+    // visited keys, and a hand held as a key rather than a slot. SIEVE is deterministic, so membership
+    // after every insert pins the eviction choice exactly — where the hand resumed, which bits it
+    // cleared, and whether it wrapped. The soak's depth matters here as for LfuCache: small
+    // capacities make almost every insert a sweep, and long runs carry the hand through many laps and
+    // removals, which is where a stale-hand or free-slot bug lives.
+    private static void SieveCacheCase(Random rng)
+    {
+        int capacity = rng.Next(1, 9);
+        var sut = new SieveCache<int, int, Int32WangNaiveHasher>(capacity);
+
+        var order = new List<int>(); // [0] = newest
+        var values = new Dictionary<int, int>();
+        var visited = new HashSet<int>();
+        int? hand = null;
+
+        void Put(int key, int value)
+        {
+            if (values.ContainsKey(key))
+            {
+                values[key] = value;
+                visited.Add(key);
+                return;
+            }
+            if (values.Count == capacity)
+            {
+                int i = hand is int h ? order.IndexOf(h) : order.Count - 1;
+                while (visited.Remove(order[i]))
+                {
+                    i--;
+                    if (i < 0)
+                        i = order.Count - 1;
+                }
+                int victim = order[i];
+                hand = i > 0 ? order[i - 1] : null;
+                order.RemoveAt(i);
+                values.Remove(victim);
+            }
+            values[key] = value;
+            order.Insert(0, key);
+        }
+
+        int ops = OpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            int value = rng.Next();
+            switch (rng.Next(0, 20))
+            {
+                case < 7:
+                    sut.AddOrUpdate(key, value);
+                    Put(key, value);
+                    break;
+                case < 13:
+                {
+                    bool hit = values.TryGetValue(key, out int expected);
+                    if (hit) visited.Add(key);
+                    Check(sut.TryGet(key, out int actual) == hit, $"TryGet({key}) hit");
+                    Check(!hit || actual == expected, $"TryGet({key}) value");
+                    break;
+                }
+                case < 15:
+                {
+                    bool added = !values.ContainsKey(key);
+                    if (added) Put(key, value);
+                    Check(sut.TryAdd(key, value) == added, $"TryAdd({key})");
+                    break;
+                }
+                case < 18:
+                {
+                    bool removed = values.Remove(key);
+                    if (removed)
+                    {
+                        int at = order.IndexOf(key);
+                        if (hand == key)
+                            hand = at > 0 ? order[at - 1] : null;
+                        order.RemoveAt(at);
+                        visited.Remove(key);
+                    }
+                    Check(sut.Remove(key) == removed, $"Remove({key})");
+                    break;
+                }
+                case < 19:
+                    // A peek must not mark the entry visited in either implementation.
+                    Check(sut.TryPeek(key, out int peeked) == values.ContainsKey(key), $"TryPeek({key})");
+                    Check(!values.TryGetValue(key, out int want) || peeked == want, $"TryPeek({key}) value");
+                    break;
+                default:
+                    sut.Clear();
+                    order.Clear();
+                    values.Clear();
+                    visited.Clear();
+                    hand = null;
+                    break;
+            }
+        }
+
+        Check(sut.Count == values.Count, $"Count {sut.Count} != {values.Count}");
+        Check(sut.Count <= capacity, $"Count {sut.Count} exceeds capacity {capacity}");
+
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool expectedPresent = values.ContainsKey(k);
+            Check(sut.ContainsKey(k) == expectedPresent, $"ContainsKey({k})");
+            Check(sut.TryPeek(k, out int v) == expectedPresent, $"TryPeek({k})");
+            Check(!expectedPresent || v == values[k], $"value at {k}");
+        }
+
+        // The queue itself: insertion order, newest first, untouched by hits.
+        CheckSameSequence(sut.Select(e => e.Key), order, "enumeration");
     }
 
     // LfuCache vs a sort-based reference LFU. The BCL has no cache of any policy, so the oracle is the

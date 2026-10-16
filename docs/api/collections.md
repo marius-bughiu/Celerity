@@ -4319,6 +4319,186 @@ if (cache.TryGetFrequency(bestSellerId, out long uses))
     Console.WriteLine($"Best seller served from cache {uses} times");
 ```
 
+## SieveCache&lt;TKey, TValue, THasher&gt;
+
+A fixed-capacity cache with **SIEVE eviction** (Zhang et al., *SIEVE is Simpler than LRU*, NSDI
+2024), parameterized on a custom hash provider. A hit sets a per-entry *visited* flag instead of
+reordering anything; an insert into a full cache sweeps a "hand" over an insertion-ordered queue and
+evicts the first entry that was not used since the hand last passed it.
+
+```csharp
+public class SieveCache<TKey, TValue, THasher>
+    : IReadOnlyCollection<KeyValuePair<TKey, TValue?>>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+The BCL ships no bounded cache, and the library's two others order their entries by use:
+[`LruCache`](#lrucachetkey-tvalue-thasher) relinks a hit at the head of its recency list, and
+[`LfuCache`](#lfucachetkey-tvalue-thasher) moves a hit to the next frequency bucket. `SieveCache`
+does neither. A hit is one flag write rather than a relink, and it is not a structural change:
+**reads leave active enumerators valid**. The policy also misses less
+often than LRU on skewed workloads, because an entry inserted and never read again is evicted on the
+hand's next pass, while an entry that keeps being read survives every pass without paying to be
+promoted.
+
+### How it works
+
+Entries sit in a queue threaded through one fixed array of node structs (allocated once, sized to
+`Capacity`), newest at the head. Each node carries its key, value, the two queue links and the
+visited flag, so a hit's value read and flag write share a cache line. A key→slot index dogfoods
+`CelerityDictionary<TKey, int, THasher>`, which is where `THasher` is used and which supplies the
+out-of-band handling for a `default(TKey)` or `null` key.
+
+- **A hit** (the indexer getter, `TryGet`, or an `AddOrUpdate` that overwrites) sets the entry's
+  visited flag. Nothing moves.
+- **An insert into a full cache** starts at the hand, or at the oldest entry when the hand is unset.
+  It walks toward the newest entry, clearing each visited flag it passes, and evicts the first entry
+  whose flag is already clear. Past the newest entry it wraps back to the oldest. The hand then rests
+  on the victim's newer neighbour, so the next sweep resumes there instead of starting over. The new
+  entry goes in at the head, unvisited, in the victim's recycled slot.
+- **`Remove`** of the entry under the hand moves the hand to its newer neighbour, as an eviction
+  would. **`Clear`** resets the hand.
+
+Because the hand resumes where it stopped and new entries go in behind it, the hand chases fresh
+inserts: with no hits, each insert evicts the entry the hand rests on. The cache then behaves as a
+FIFO over the newest entries, while an older entry the hand has already passed stays until the hand
+next laps the queue.
+
+### Cost
+
+A hit or a miss is one index lookup plus `O(1)` work. An eviction is `O(1)` **amortized**: every
+flag the hand clears was set by an earlier use, so the total sweep work never exceeds the inserts
+plus the uses. A *single* eviction can still sweep the whole queue, when every entry was used since
+the hand last passed it. Nothing on the get/put/evict path allocates after construction.
+
+### Miss ratio
+
+Measured on a seeded Zipf(α) trace of 1,000,000 requests over 100,000 distinct keys at capacity
+1,024. Every policy saw the identical request stream, with a get followed by a put on a miss. The
+α = 1.0 row is pinned by a test.
+
+| α | `SieveCache` | `LruCache` | `LfuCache` |
+|---|---:|---:|---:|
+| 0.6 | 88.40% | 94.53% | 88.66% |
+| 0.8 | 69.17% | 79.36% | 69.64% |
+| 1.0 | 40.17% | 49.16% | 40.46% |
+| 1.2 | 15.94% | 20.33% | 16.11% |
+
+A stationary Zipf stream is LFU's best case, since popularity never changes, so SIEVE matching LFU
+there is the notable result. Unlike `LfuCache`, it holds no counts that need to age when popularity
+drifts. LRU still wins when recency is the whole signal, for example a working set that leaves and
+then returns within one capacity's worth of requests. Measure against your own trace before you
+switch.
+
+### Performance
+
+From `SieveCacheBenchmark` (capacity 1,024, Apple M-series, .NET 10). The baseline is the
+idiomatic .NET LRU, a `Dictionary` keyed to `LinkedList` nodes.
+
+| Arm | Items | Baseline LRU | `SieveCache` | Ratio |
+|---|---:|---:|---:|---:|
+| `Get` (1,024 warm hits) | 100,000 | 18.97 µs | 1.63 µs | **11.6x faster** |
+| `ZipfWorkload` (get, put on miss) | 100,000 | 2.63 ms | 1.57 ms | **1.68x faster**, 0 B vs 2.36 MB |
+| `Put` (eviction churn) | 1,000 | 14.28 µs | 10.17 µs | 1.40x faster, 0 B vs 48.7 KB |
+| `Put` (eviction churn) | 100,000 | 1.23 ms | 3.24 ms | **2.65x slower**, 0 B vs 4.8 MB |
+| `GetMissing` | 100,000 | 137 µs | 731 µs | **5.35x slower** |
+
+On the same warm hits, `LruCache` takes 2.42 µs, so a SIEVE hit is about 1.5x cheaper than an LRU
+relink. The two losing rows come from the shared key index rather than the policy. `LruCache` loses
+the same two arms by about the same factors (2.45x and 4.94x), because both caches use the same
+`CelerityDictionary` index. A cache that mostly misses on a wide key space is therefore better
+served by the baseline. A cache that mostly hits, which is what a cache is for, is where this one
+wins.
+
+### Constructors
+
+```csharp
+public SieveCache(int capacity)
+
+public SieveCache(
+    int capacity,
+    IEnumerable<KeyValuePair<TKey, TValue?>> source)
+```
+
+The first overload creates an empty cache that retains at most `capacity` entries. The `source`
+overload inserts each pair in enumeration order through `AddOrUpdate`. A later duplicate key
+therefore overwrites the earlier value and counts as a use of it, and a source with more than
+`capacity` distinct keys evicts under the SIEVE policy as it goes.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity` is less than 1.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This takes priority over an
+  invalid `capacity`.
+
+### Methods and properties
+
+- `int Capacity` — the maximum number of entries retained.
+- `int Count` — the current number of entries (never greater than `Capacity`).
+- `TValue? this[TKey key]` — **get** marks the entry visited and throws `KeyNotFoundException` if
+  absent; **set** behaves like `AddOrUpdate`.
+- `bool TryGet(TKey key, out TValue? value)` — a *use*: marks the entry visited on a hit.
+- `bool TryPeek(TKey key, out TValue? value)` — reads without marking the entry visited.
+- `bool ContainsKey(TKey key)` — membership test; does not mark the entry visited.
+- `void AddOrUpdate(TKey key, TValue? value)` — inserts as the newest, unvisited entry (evicting
+  one first if full), or overwrites an existing value and marks it visited.
+- `void Add(TKey key, TValue? value)` — inserts; throws `ArgumentException` if the key exists.
+- `bool TryAdd(TKey key, TValue? value)` — inserts if absent (evicting one first if full); returns
+  `false` and leaves the cache unchanged, including the existing entry's flag, if the key exists.
+- `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` — removes an entry,
+  optionally returning its value.
+- `void Clear()` — removes all entries and resets the hand; the backing storage is retained.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator yielding entries
+  **newest-inserted → oldest-inserted**. Hits never change that order. Enumeration is a peek.
+
+There is no counterpart to `LruCache.TryPeekLeastRecentlyUsed`. The next victim depends on the
+flags between the hand and the first unvisited entry, so finding it without moving the hand would
+cost a sweep of its own.
+
+### Enumeration and versioning
+
+`MoveNext` and `Reset` throw `InvalidOperationException` after an insert, an eviction, a successful
+`Remove`, or a `Clear` of a non-empty cache. A hit, an overwrite, a rejected `TryAdd`, a failed
+`Remove` and a `Clear` of an empty cache change neither the entry set nor the order, so they leave
+active enumerators valid. That makes "read every cached entry while serving reads from it" legal
+here. On `LruCache` it throws as soon as a read promotes an entry that was not already the most
+recently used, and on `LfuCache` every hit invalidates.
+
+### Default-key handling
+
+`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key. The dogfooded index
+stores it out-of-band, so the whole surface works with it and the hasher is never invoked with
+`null`.
+
+### Thread safety
+
+`SieveCache` is not thread-safe; concurrent callers must synchronize externally. A read writes the
+visited flag, so even a read-only workload is a write to shared state.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A bounded cache in front of an expensive lookup, keyed by product id.
+var cache = new SieveCache<long, Product, Int64WangHasher>(capacity: 10_000);
+
+Product GetProduct(long id)
+{
+    if (cache.TryGet(id, out Product? cached))
+        return cached!;               // a hit only marks the entry visited
+
+    Product fresh = LoadFromDatabase(id);
+    cache[id] = fresh;                // insert; the hand evicts one unvisited entry if full
+    return fresh;
+}
+
+// Reads do not invalidate an enumerator, so a snapshot can be taken while serving hits.
+foreach (KeyValuePair<long, Product?> entry in cache)
+    _ = GetProduct(entry.Key);
+```
+
 ## Deque&lt;T&gt;
 
 A growable **double-ended queue** backed by a single **circular buffer**: an array with a moving
