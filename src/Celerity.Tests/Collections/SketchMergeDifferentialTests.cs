@@ -110,6 +110,36 @@ public class SketchMergeDifferentialTests
         }
     }
 
+    // MinHash: merge takes the per-register minimum, which is exactly the register state a single
+    // sketch fed both streams would hold — so the merged sketch must compare as identical (an
+    // estimate of exactly 1) to one built directly from the union, and its similarity to a third
+    // sketch must equal the direct sketch's.
+    [Fact]
+    public void MinHashSketch_UnionWith_IsTheSketchOfTheUnion()
+    {
+        for (int seed = 0; seed < Seeds; seed++)
+        {
+            var rng = new Random(seed);
+            var a = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+            var b = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+            var direct = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+            var probe = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+
+            int opsA = OpCount(rng);
+            for (int i = 0; i < opsA; i++) { int k = Key(rng); a.Add(k); direct.Add(k); }
+            int opsB = OpCount(rng);
+            for (int i = 0; i < opsB; i++) { int k = Key(rng); b.Add(k); direct.Add(k); }
+            int opsP = OpCount(rng);
+            for (int i = 0; i < opsP; i++) probe.Add(Key(rng));
+
+            a.UnionWith(b);
+
+            Assert.True(a.EstimateJaccard(direct) == 1d, $"seed {seed}: merged sketch differs from the sketch of the union");
+            Assert.True(a.EstimateJaccard(probe) == direct.EstimateJaccard(probe),
+                $"seed {seed}: merged and direct sketches compare differently against a third");
+        }
+    }
+
     // Count-Min: merge adds counters elementwise, so the never-underestimate guarantee extends to
     // the combined stream and the total count is exactly the sum of both operands' totals.
     [Fact]

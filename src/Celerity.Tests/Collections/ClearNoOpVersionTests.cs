@@ -33,7 +33,7 @@ namespace Celerity.Tests.Collections;
 /// clear it would be trying to skip. All three therefore bump the version every time, they agree with each
 /// other, and the three tests at the bottom pin that judgement so it reads as a decision rather than as the
 /// same oversight. The probabilistic sketches (<c>BloomFilter</c>,
-/// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>TopKSketch</c>) are out of scope
+/// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>MinHashSketch</c>, <c>TopKSketch</c>) are out of scope
 /// entirely: they track no version and expose no enumerator, so there is nothing for a redundant
 /// <c>Clear()</c> to invalidate. The <b>build-once</b> types are out of scope one step further still —
 /// <see cref="WaveletTree"/>, <see cref="SparseTable{T, TMonoid}"/> and <see cref="EliasFanoSequence"/> are

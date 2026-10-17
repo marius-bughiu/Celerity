@@ -342,8 +342,8 @@ next to the winning ones so the crossovers can be read off rather than guessed.
 ## See also
 
 - [Collections API](collections.md) — including the sketches (`HyperLogLog`, `CountMinSketch`,
-  `TopKSketch`) that summarize a stream's *cardinality* and *frequencies* rather than its
-  distribution.
+  `TopKSketch`, `MinHashSketch`) that summarize a stream's *cardinality*, *frequencies* and
+  *overlap with another stream* rather than its distribution.
 - [Utilities API](utilities.md) — the seedable struct PRNGs the sampler is parameterized on.
 - [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch` and `RunningStatistics`
   reconcile against exact oracles; the sampler's is invariant fuzzing, because uniformity is

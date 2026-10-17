@@ -53,7 +53,7 @@ The 64-bit sibling of `IHashProvider<T>`, for consumers whose accuracy depends o
 
 A hash table masks the code down to a bucket index and resolves the rest by comparing keys, so a collision costs a probe, not a wrong answer. 32 bits is plenty.
 
-The probabilistic sketches — `HyperLogLog`, `BloomFilter`, `CuckooFilter`, `XorFilter`, `CountMinSketch` — never store the element. Two elements that hash alike are indistinguishable *forever*, and their error budgets assume the hash space is large enough for that to be negligible.
+The probabilistic sketches — `HyperLogLog`, `MinHashSketch`, `BloomFilter`, `CuckooFilter`, `XorFilter`, `CountMinSketch` — never store the element. Two elements that hash alike are indistinguishable *forever*, and their error budgets assume the hash space is large enough for that to be negligible.
 
 A 32-bit hash gives only 2^32 ≈ 4.3 billion values. Widening it into 64 bits with a bijective finalizer such as SplitMix64 spreads those values over the full range but **creates no entropy that was not there** — the reachable set is still 2^32. For `n` distinct elements the expected number of distinct codes is `2^32 · (1 − e^(−n / 2^32))`, a systematic shortfall of about `n / 2^33`:
 

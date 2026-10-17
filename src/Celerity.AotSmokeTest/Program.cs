@@ -2475,6 +2475,44 @@ void Check(bool condition, string message)
     Check(guidHll.EstimateCardinality() == 1, "HyperLogLog<Guid> empty-guid element");
 }
 
+// MinHashSketch — Jaccard-similarity sketch (no out-of-band slot; default(T) is an
+// ordinary element, a null reference is mapped to a fixed base hash so the hasher is never
+// called with null). Exercise Add / EstimateJaccard / UnionWith / Clear / IsEmpty and the
+// IEnumerable ctor across int / string / long-with-64-bit-hasher instantiations so the AOT
+// publish compiles both Hash64 arms, the register fill, and the matched-register estimator.
+{
+    var a = new MinHashSketch<int, Int32WangNaiveHasher>();
+    var b = new MinHashSketch<int, Int32WangNaiveHasher>();
+    Check(a.IsEmpty && a.EstimateJaccard(b) == 1d, "MinHashSketch two empty sketches");
+    Check(a.Precision == MinHashSketch<int, Int32WangNaiveHasher>.DefaultPrecision,
+        "MinHashSketch default precision");
+    Check(a.RegisterCount == 1 << 8, "MinHashSketch register count");
+
+    // [0, 20000) against [10000, 30000): J = 1/3.
+    for (int i = 0; i < 20_000; i++) a.Add(i);
+    for (int i = 10_000; i < 30_000; i++) b.Add(i);
+    double j = a.EstimateJaccard(b);
+    Check(Math.Abs(j - 1d / 3d) <= a.StandardError * 4, "MinHashSketch estimate within bound");
+
+    var direct = new MinHashSketch<int, Int32WangNaiveHasher>(Enumerable.Range(0, 30_000));
+    a.UnionWith(b);
+    Check(a.EstimateJaccard(direct) == 1d, "MinHashSketch UnionWith");
+
+    a.Clear();
+    Check(a.IsEmpty && a.EstimateJaccard(b) == 0d, "MinHashSketch clear");
+
+    var strA = new MinHashSketch<string, StringFnV1AHasher>(new[] { "alice", "bob" });
+    var strB = new MinHashSketch<string, StringFnV1AHasher>(new[] { "bob", "alice", "alice" });
+    strA.Add(null!);
+    strB.Add(null!);
+    Check(strA.EstimateJaccard(strB) == 1d, "MinHashSketch<string> ctor + null element");
+
+    var longA = new MinHashSketch<long, Int64WangHasher>(10);
+    var longB = new MinHashSketch<long, Int64WangHasher>(10);
+    for (long i = 0; i < 10_000; i++) { longA.Add(i); longB.Add(i + 1_000_000); }
+    Check(longA.EstimateJaccard(longB) == 0d, "MinHashSketch with a 64-bit hasher");
+}
+
 // CountMinSketch — probabilistic frequency estimator (no out-of-band slot; default(T)
 // is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
 // is never called with null). Exercise Add / Add(count) / EstimateCount / Clear /
