@@ -88,7 +88,12 @@ internal class Program
         typeof(DDSketchBenchmark),
         typeof(ReservoirSamplerBenchmark),
         typeof(RunningStatisticsBenchmark),
+        // One comparison split by hasher family so the shard packer can spread it; see
+        // StringHasherBenchmarkBase.
         typeof(StringHasherBenchmark),
+        typeof(StringFnvHasherBenchmark),
+        typeof(StringThroughputHasherBenchmark),
+        typeof(StringKeyedHasherBenchmark),
         typeof(IntegerHasherBenchmark),
     };
 
@@ -189,10 +194,14 @@ internal class Program
 
             // Resolve the slice and stop, without measuring anything. The shard packing is
             // otherwise only observable by running the suite for hours, which is what let
-            // the head/base mismatch above go unnoticed for as long as it did.
+            // the head/base mismatch above go unnoticed for as long as it did. Each class
+            // carries the case count the packer weighed it by, so a lopsided slice is
+            // visible here too.
             if (args.Contains("--shard-dry-run"))
             {
-                Console.WriteLine($"Shard resolves to {slice.Length} class(es): {string.Join(", ", slice.Select(t => t.Name))}");
+                Console.WriteLine(
+                    $"Shard resolves to {slice.Length} class(es), {slice.Sum(CaseCount)} case(s): " +
+                    string.Join(", ", slice.Select(t => $"{t.Name} ({CaseCount(t)})")));
                 return;
             }
 
@@ -287,7 +296,10 @@ internal class Program
 
         // Greedy longest-processing-time bin-packing: place the heaviest classes first,
         // each onto the currently-lightest shard, so wall time is balanced across shards
-        // (round-robin would dump the 75-case StringHasher onto one runner).
+        // (round-robin ignores class size, so it can stack the heaviest classes on one runner).
+        // A class is never split, so the heaviest class is a floor under the heaviest shard:
+        // keep every class well below the per-shard average, splitting one by family as the
+        // string hashers were.
         var buckets = new List<Type>[total];
         for (int b = 0; b < total; b++)
         {

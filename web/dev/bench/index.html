@@ -385,7 +385,7 @@
       <span class="meta">latest run</span>
     </div>
     <div class="about" style="margin-bottom:16px">
-      <strong>Comparing the built-in hashers.</strong> Each bar is one hasher's <code>Hash</code> throughput over a fixed key sample, grouped by key type and (for <code>string</code>) by key shape, with the framework's <code>GetHashCode()</code> as the baseline. Shorter is faster. <strong>This is throughput only</strong> &mdash; a fast hasher that clusters is not a win, so weigh these against the distribution metrics from <code>HashQualityEvaluator</code> (see the <a href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/hashing.md#benchmarking-the-string-hashers">hashing docs</a>) before picking one. Source: <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/StringHasherBenchmark.cs"><code>StringHasherBenchmark</code></a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/IntegerHasherBenchmark.cs"><code>IntegerHasherBenchmark</code></a>.
+      <strong>Comparing the built-in hashers.</strong> Each bar is one hasher's <code>Hash</code> throughput over a fixed key sample, grouped by key type and (for <code>string</code>) by key shape, with the framework's <code>GetHashCode()</code> as the baseline. Hasher families measured on a different CI runner are rescaled through their own same-runner <code>GetHashCode()</code> reference, so every ratio compares measurements from one machine. Shorter is faster. <strong>This is throughput only</strong> &mdash; a fast hasher that clusters is not a win, so weigh these against the distribution metrics from <code>HashQualityEvaluator</code> (see the <a href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/hashing.md#benchmarking-the-string-hashers">hashing docs</a>) before picking one. Source: <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/StringHasherBenchmarkBase.cs"><code>String*HasherBenchmark</code></a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/IntegerHasherBenchmark.cs"><code>IntegerHasherBenchmark</code></a>.
     </div>
     <div id="hasher-groups"></div>
   </section>
@@ -975,7 +975,7 @@ function escapeHtml(s) {
 // ---- Hash function throughput section ----
 // Independent of the per-collection logic above: a bug here cannot break that, and vice versa.
 // Hidden unless the latest run actually contains hasher benchmarks (the section stays dormant
-// until StringHasherBenchmark / IntegerHasherBenchmark land in the joined report on main).
+// until the String*HasherBenchmark / IntegerHasherBenchmark classes land in the joined report on main).
 (function () {
   'use strict';
 
@@ -986,13 +986,20 @@ function escapeHtml(s) {
   var latest = runs[runs.length - 1];
   if (!latest || !latest.benches) return;
 
-  // String:  StringHasherBenchmark.{Method}(Shape: {Shape})
+  // String:  String{Family}HasherBenchmark.{Method}(Shape: {Shape}) — one comparison split by hasher
+  //          family only so CI can shard it. StringHasherBenchmark (empty {Family}) carries the
+  //          baseline; each family class re-measures Bcl_GetHashCode as a same-runner reference, which
+  //          is parsed but not drawn (see the rescale below).
   // Integer: IntegerHasherBenchmark.{Type}_{Hasher}
   function parseHasher(name, value) {
-    var m = name.match(/^StringHasherBenchmark\.(\w+)\(Shape:\s*(\w+)\)$/);
-    if (m) return { family: 'string', group: m[2], method: m[1], value: value, isBaseline: m[1] === 'Bcl_GetHashCode' };
+    var m = name.match(/^String(\w*)HasherBenchmark\.(\w+)\(Shape:\s*(\w+)\)$/);
+    if (m) {
+      var bcl = m[2] === 'Bcl_GetHashCode';
+      return { family: 'string', group: m[3], method: m[2], value: value, source: m[1],
+               isBaseline: bcl && m[1] === '', isReference: bcl && m[1] !== '' };
+    }
     m = name.match(/^IntegerHasherBenchmark\.(\w+?)_(\w+)$/);
-    if (m) return { family: 'integer', group: m[1], method: m[2], value: value, isBaseline: m[2] === 'Bcl' };
+    if (m) return { family: 'integer', group: m[1], method: m[2], value: value, source: '', isBaseline: m[2] === 'Bcl', isReference: false };
     return null;
   }
 
@@ -1015,9 +1022,22 @@ function escapeHtml(s) {
     var p = parseHasher(b.name, b.value);
     if (!p) return;
     var key = p.family + '|' + p.group;
-    if (!groups[key]) groups[key] = { key: key, baseline: null, rows: [] };
+    if (!groups[key]) groups[key] = { key: key, baseline: null, refs: {}, rows: [] };
+    if (p.isReference) { groups[key].refs[p.source] = p.value; return; }
     if (p.isBaseline) groups[key].baseline = p.value;
     groups[key].rows.push(p);
+  });
+
+  // A family class may have run on a different CI runner from the baseline, and raw times from two
+  // runners are not comparable. Scale its rows by baseline / its own reference: that cancels the
+  // runner, so each ratio below becomes reference / value, a same-runner comparison. Rows from the
+  // baseline's own class (and runs from before the split) carry no source and are left as measured.
+  Object.keys(groups).forEach(function (k) {
+    var grp = groups[k];
+    grp.rows.forEach(function (r) {
+      var ref = grp.refs[r.source];
+      if (r.source && ref && grp.baseline != null) r.value = r.value * grp.baseline / ref;
+    });
   });
 
   var ordered = GROUP_ORDER.filter(function (k) { return groups[k]; });
