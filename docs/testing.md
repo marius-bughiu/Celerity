@@ -182,16 +182,17 @@ The release-notes gate is the one piece that is pure shell and therefore outside
 
 ## Script guards
 
-Four checks are plain Node scripts rather than xUnit tests, because what they inspect is not compiled: markdown links, source-file naming, the dashboard's collection roster, and which paths make a benchmark run worth spending. Each is its own `ci.yml` job.
+Five checks are plain Node scripts rather than xUnit tests, because what they inspect is not compiled: markdown links, constant naming, the dashboard's collection roster, oracle coverage per collection, and which paths make a benchmark run worth spending. Each is its own `ci.yml` job.
 
 | Guard | Fails on | Job |
 |---|---|---|
 | [`check_doc_anchors.js`](../scripts/check_doc_anchors.js) | A markdown link to a missing file, a missing anchor, or an anchor no heading can keep — see below. | `doc-anchors` |
 | [`check_constant_naming.js`](../scripts/check_constant_naming.js) | A `const` in a shipping package that is not `PascalCase`. | `constant-naming` |
 | [`check_dashboard_coverage.js`](../scripts/check_dashboard_coverage.js) | A benchmarked collection the dashboard does not list, so its data publishes to a card that never renders. | `dashboard-coverage` |
+| [`check_property_coverage.js`](../scripts/check_property_coverage.js) | A collection type in `Celerity.Collections` that no randomized oracle suite exercises — see [above](#property-based-tests-cscheck). | `property-coverage` |
 | [`benchmark_relevant_changes.js`](../scripts/benchmark_relevant_changes.js) | Nothing — it decides whether a commit can move a measured number, so the benchmark run can be skipped when it cannot. | `benchmark-gate` |
 
-**Three of the four have a `--self-test` mode, and CI runs it as a separate step from the check itself.** The distinction is the point: the check tells you whether the repository is currently well-formed, and `--self-test` tells you whether the check still knows what well-formed means. A guard whose own rule has silently drifted passes everything, which is the failure mode that costs the most to notice.
+**Four of the five have a `--self-test` mode, and CI runs it as a separate step from the check itself.** The distinction is the point: the check tells you whether the repository is currently well-formed, and `--self-test` tells you whether the check still knows what well-formed means. A guard whose own rule has silently drifted passes everything, which is the failure mode that costs the most to notice.
 
 ```bash
 node scripts/check_doc_anchors.js --self-test   # is the rule still right?
