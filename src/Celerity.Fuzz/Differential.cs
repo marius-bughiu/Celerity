@@ -61,6 +61,7 @@ internal static class Differential
         ("BitSet", BitSetCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("WaveletTree", WaveletTreeCase),
+        ("EliasFanoSequence", EliasFanoSequenceCase),
         ("SegmentTree", SegmentTreeCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
@@ -1579,6 +1580,60 @@ internal static class Differential
                 Check(sut.RangeRank(start, window, value) == sorted.Count(v => v == value),
                     "WaveletTree RangeRank disagreed");
             }
+        }
+    }
+
+    // ---- Elias-Fano sequence --------------------------------------------------
+
+    // EliasFanoSequence is immutable, so the randomization is in the sequence: a random length that straddles
+    // the 64-bit word and 128-entry select-sample boundaries, gaps from dense (no low bits) to tens of bits
+    // wide, an origin that can sit far above zero, and a random share of repeats. Every read and every
+    // lower-bound query is then reconciled against the long[] it compresses.
+    private static void EliasFanoSequenceCase(Random rng)
+    {
+        int length = rng.Next(0, 900);
+        long gapLimit = 1L << rng.Next(0, 41);
+        long current = rng.Next(2) == 0 ? 0 : rng.NextInt64(0, long.MaxValue / 4);
+        int repeatPercent = rng.Next(0, 101);
+
+        long[] values = new long[length];
+        for (int i = 0; i < length; i++)
+        {
+            if (i > 0 && rng.Next(100) >= repeatPercent)
+            {
+                long gap = rng.NextInt64(1, gapLimit + 1);
+                current = gap > long.MaxValue - current ? long.MaxValue : current + gap;
+            }
+
+            values[i] = current;
+        }
+
+        var sut = new EliasFanoSequence(values);
+
+        Check(sut.Count == length, "EliasFanoSequence Count disagreed");
+        for (int i = 0; i < length; i++)
+            Check(sut[i] == values[i], $"EliasFanoSequence value at {i} disagreed");
+
+        Check(sut.ToArray().SequenceEqual(values), "EliasFanoSequence enumeration disagreed");
+
+        long top = length == 0 ? 1000 : values[^1];
+        for (int trial = 0; trial < 200; trial++)
+        {
+            long probe = trial % 2 == 0 && length > 0
+                ? values[rng.Next(length)] + rng.Next(-1, 2)
+                : rng.NextInt64(-5, top == long.MaxValue ? long.MaxValue : top + 5);
+
+            int expected = Array.FindIndex(values, v => v >= probe);
+            if (expected < 0)
+                expected = length;
+
+            bool present = expected < length && values[expected] == probe;
+            Check(sut.CountLessThan(probe) == expected, $"EliasFanoSequence CountLessThan({probe}) disagreed");
+            Check(sut.Contains(probe) == present, $"EliasFanoSequence Contains({probe}) disagreed");
+            Check(sut.IndexOf(probe) == (present ? expected : -1), $"EliasFanoSequence IndexOf({probe}) disagreed");
+            Check(sut.TryGetLowerBound(probe, out long bound) == expected < length
+                && bound == (expected < length ? values[expected] : 0),
+                $"EliasFanoSequence TryGetLowerBound({probe}) disagreed");
         }
     }
 

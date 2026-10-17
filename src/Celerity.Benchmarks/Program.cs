@@ -76,6 +76,7 @@ internal class Program
         typeof(BTreeSetBenchmark),
         typeof(RankedSetBenchmark),
         typeof(WaveletTreeBenchmark),
+        typeof(EliasFanoSequenceBenchmark),
         typeof(RadixSortBenchmark),
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),

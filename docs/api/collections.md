@@ -8157,3 +8157,253 @@ if (index.TrySelect(0, 200, out int firstAt))
 Console.WriteLine($"{index.AlphabetSize} distinct latencies over {index.LevelCount} levels, "
                 + $"index costs {index.IndexSizeInBytes} bytes vs {index.Length * sizeof(int)}");
 ```
+
+## EliasFanoSequence
+
+```csharp
+public sealed class EliasFanoSequence : IReadOnlyList<long>
+```
+
+An **immutable**, compressed sequence of non-negative, non-decreasing `long` values: posting
+lists, record and byte offsets, monotone timestamps, a graph's row offsets. On a large sequence it
+stores them in about `L + 4` bits a value, where `L = floor(log2(max / n))`. The Elias–Fano core (low
+parts plus the high-part vector) is under `L + 3` bits a value, close to the information-theoretic
+minimum, and the select samples and rank directory that make queries fast add between one and two
+more. These are asymptotic per-value costs. Every array rounds up to a whole word or entry, so a
+sequence of a handful of values pays a fixed overhead of a few dozen bytes on top;
+`MemoryUsageInBytes` reports the exact figure. It still
+answers three kinds of query:
+
+- **`this[i]`**: random access, constant-time on typical data and `O(log n)` in the worst case.
+- **`CountLessThan(x)`** and **`TryGetLowerBound(x, out bound)`**: successor queries, i.e. the
+  position of the first value at or above `x` and the value itself.
+- **`Contains` / `IndexOf`**: exact lookups.
+
+Repeats are allowed.
+
+### The gap it fills
+
+.NET has no compressed integer sequence of any kind. A caller holds sorted offsets as a
+`long[]`, which costs **64 bits a value however close together the values sit**. It finds
+"the first offset at or above `x`" with `Array.BinarySearch` when the values are distinct. With
+repeats, an exact match may land on *any* equal element, so matching `CountLessThan` / `IndexOf`
+takes a hand-written lower-bound search. The benchmark below uses distinct values, so the two
+arms do the same job there.
+
+The ordered containers ([`BTreeSet`](#btreesett-tcomparer), [`RankedSet`](#rankedsett-tcomparer))
+hold sorted values and answer a lower bound, but they spend *more* than 64 bits a value, not
+less. Nothing else in this library compresses the shape:
+
+- [`CompressedIntSet`](#compressedintset) is a 32-bit **set**. It has no duplicates and no
+  positional access, and it cannot hold a 64-bit offset.
+- [`RankSelectBitVector`](#rankselectbitvector) built over the values themselves needs one bit
+  per point of the *value range*. That is out of reach for byte offsets into a large file.
+- A delta-plus-[`VarInt`](utilities.md#varint-span-varint-codec) stream can be smaller still, but it has no
+  random access: reading the `i`-th value means decoding every value before it.
+
+Elias–Fano is the standard encoding for this shape: Lucene, PISA, folly and sdsl all ship it.
+This type also composes with the rank/select machinery that `RankSelectBitVector` already provides.
+
+### When *not* to use this — read first
+
+- **The sequence must be final.** The values are encoded at construction and there is no
+  mutating member. A changed sequence means a new `O(n)` build. Collect into an array or a
+  `List<long>` while it is still growing.
+- **Random access is slower than the array's.** The array answers `this[i]` with one load. This
+  type answers with a select over its high-part vector and a low-bit read, so expect about
+  **12×** the array's time at a million values (measured below). If random reads
+  are the hot path and memory is not tight, keep the `long[]`.
+- **The win is footprint, and only when the values are sorted and not too spread out.** The
+  low parts cost `L = floor(log2(max / n))` bits a value. The more widely the values spread
+  relative to their count, the larger `L` gets. At `L ≈ 61` (a handful of values spread
+  across the whole `long` range) the encoding is no smaller than the array.
+
+### Measured
+
+BenchmarkDotNet default job, .NET 10, Apple Silicon, `EliasFanoSequenceBenchmark`. The
+values are a monotone sequence whose gaps are drawn uniformly from `[1, 200)` (mean ~100),
+which splits at `L = 6`. Each query arm runs 1,000 queries per measurement. The baseline is
+the `long[]` itself.
+
+| Arm | `ItemCount` | `long[]` | `EliasFanoSequence` | Ratio |
+| --- | --- | --- | --- | --- |
+| `Access` | 1,000,000 | 582.7 ns | 7.41 µs | 12.7× *slower* |
+| `LowerBound` | 1,000,000 | 23.96 µs | 13.47 µs | **1.78× faster** |
+| `Enumerate` | 1,000,000 | 248.5 µs | 1.138 ms | 4.6× *slower* |
+| `Build` | 1,000,000 | 239.6 µs | 2.311 ms | 9.7× *slower* |
+| `Access` | 1,024 | 592.4 ns | 7.04 µs | 11.9× *slower* |
+| `LowerBound` | 1,024 | 12.40 µs | 13.09 µs | 1.06× *slower* |
+| `Enumerate` | 1,024 | 254.9 ns | 1.04 µs | 4.1× *slower* |
+| `Build` | 1,024 | 205.1 ns | 2.32 µs | 11.3× *slower* |
+
+**Random reads.** At a million values a random read costs about 7.4 ns, against the array's
+~0.6 ns. The array's figure is the best case for it: a thousand *independent* loads that the
+CPU overlaps almost completely. Each read here is a dependent chain (sample, directory search,
+word scan, select within the word, low-bit read) that cannot overlap the same way.
+
+**`LowerBound`** is the arm the type wins at scale. Two zero-selects land directly on the run
+that shares the probe's high part, where `Array.BinarySearch` takes about twenty dependent
+probes across 8 MB. At a thousand values the array is cache-resident and the two come out
+even.
+
+**Footprint is the number the type exists for, and the table above does not show it.**
+`[MemoryDiagnoser]` reports bytes allocated during a run, not bytes a built structure
+retains. On the benchmark's million-value sequence the encoding retains **about 1.27 MB
+against the `long[]`'s 8 MB: 6.3× smaller**, or about 10.2 bits a value against 64.
+The `Build` row's allocation column happens to show the same figure here, 1,270,703 B
+against 8,000,237 B, because building allocates nothing it does not keep.
+
+The pre-registered kill criteria (issue #529) were:
+
+- retained memory at least **5×** smaller: **6.3×**, cleared;
+- random access no more than **4×** slower: **12.7×**, **missed**;
+- `CountLessThan` no more than **2×** slower than `Array.BinarySearch`: **1.78× faster**,
+  cleared.
+
+The issue made only the footprint criterion a ship blocker, because footprint is the type's
+whole case. The access miss is published here, not rounded away.
+
+The first layout scanned forward from the nearest sample with no directory. It measured
+10.1× on `Access` and 2.20× faster on `LowerBound`, but a sequence with a long gap between
+values or a long run of repeats made that scan linear in the gap. The rank directory bounds
+it at the cost of one more load per select. Two other attempts were measured and dropped:
+
+- a branch-free select-within-word was **3.6× slower** on ARM64, because its chain of
+  dependent popcounts cost more than the mispredictions it removed;
+- sampling every 64th one instead of every 128th gained about 12%, within the short job's
+  error, for 5% more memory.
+
+If random reads dominate and memory is not the constraint, keep the `long[]`.
+
+These are local figures. The CI series on the dashboard is the contract.
+
+### How it works, and what it costs
+
+For `n` values whose largest is `m`, each value is split at
+`L = floor(log2(m / n))` bits (`LowBitCount`):
+
+- **Low parts.** The `L` low bits of every value are packed verbatim, end to end, so value `i`'s
+  low part sits at bit offset `i · L`.
+- **High parts.** The high part `h` of value `i` is recorded by setting bit `h + i` of a second
+  bit vector. That vector holds `n` ones, one per value in order, and one zero per high value
+  `0..(m >> L)`. The choice of `L` keeps `m >> L` below `2n`, so the vector is under `3n + 1` bits.
+
+Every query uses the high vector in one of two ways:
+
+- **Reading `this[i]`** is a *select*. The position of the `i`-th one, less `i`, is the high
+  part. One read of the low bits then finishes the value.
+- **Locating `x`** (`CountLessThan`, `TryGetLowerBound`, `Contains`, `IndexOf`) is two
+  *zero*-selects followed by a binary search. Every value whose high part equals `x`'s sits
+  between the zeros that end high parts `h − 1` and `h`, sorted by low bits, so the two
+  zero-selects bound that run and a binary search of its low bits finishes the query. The cost is
+  constant on spread-out data, where a run holds a value or two. A sequence that piles many
+  values onto one high part, such as long runs of repeats or a tight cluster far above the rest,
+  pays `O(log r)` for a run of `r` values.
+
+Each select is answered in three steps:
+
+1. **A sample.** A `long` records the position of every 128th one and every 128th zero. The sample at or
+   below the target and the one after it bracket the target.
+2. **A rank directory.** One `int` per 256-bit superblock counts the ones before it, and the zeros
+   follow from that. A binary search of the directory between the two samples narrows the bracket
+   to one superblock.
+3. **A scan** of at most four words finishes.
+
+On data whose values spread out, 128 ones or zeros span a superblock or two, so the search takes
+a step or none and a select is `O(1)`. Two shapes widen a bracket:
+
+- a long gap between consecutive values (a million zeros followed by `long.MaxValue`);
+- a long run of values sharing one high part (a million repeats).
+
+The cost then grows with the logarithm of that gap rather than linearly, `O(log n)` in the worst
+case. Without the directory, a scan from the sample would cross the whole gap. The enumerator needs
+no select at all: it walks the high vector's set bits in order with `TrailingZeroCount`.
+
+Space is therefore:
+
+- `n · L` bits of low parts;
+- under `3n + 1` bits of high parts;
+- one `long` per 128 ones and per 128 zeros;
+- one `int` per 256 bits of high parts.
+
+On a large sequence that totals about `L + 4` bits a value; a small one also pays each array's
+round-up to a whole word or entry. `MemoryUsageInBytes` reports the payload figure. It
+excludes the CLR's per-array header and the instance's own fields, the same accounting
+`RankSelectBitVector.IndexSizeInBytes` uses.
+
+### Constructor
+
+```csharp
+public EliasFanoSequence(ReadOnlySpan<long> values)
+```
+
+Encodes `values`, which must be **non-negative** and in **non-decreasing** order; repeats are
+allowed. The values are copied into the encoding, so the caller's buffer may be reused or freed.
+A `long[]` converts implicitly, and a `List<long>` reaches the constructor through
+`CollectionsMarshal.AsSpan` without a copy. There is deliberately **no
+`IEnumerable<long>` overload**, for two reasons:
+
+- the encoding needs the count and the largest value before it writes anything;
+- a `long[]` argument would convert to both overloads.
+
+The constructor throws in two cases:
+
+- `ArgumentOutOfRangeException` (`values`) when the first value is negative;
+- `ArgumentException` (`values`) naming the index when a value is smaller than the one before it.
+
+Building is `O(n)` in three passes. The first validates the order and the sign of every value.
+That has to finish before anything is written, because the split point is chosen from the last
+value. The second writes both bit vectors. The third runs over the high vector to fill the rank
+directory and take the samples. The only allocations are the five arrays
+the instance keeps.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of values. |
+| `int LowBitCount { get; }` | `L = floor(log2(max / Count))`, the low bits stored verbatim per value. `0` for an empty sequence or one whose largest value is below its count. |
+| `long MemoryUsageInBytes { get; }` | The encoding's payload: low-part words, high-part words, both select samples and the rank directory. Compare against `Count * sizeof(long)`. A `long`, as `CompressedIntSet.MemoryUsageInBytes` is. |
+| `long this[int index] { get; }` | The value at a position: one select and one low-bit read, `O(1)` on typical data and `O(log n)` in the worst case. `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `int CountLessThan(long value)` | How many values are strictly less than `value`, which is also the position of the first value at or above it (the `lower_bound`). Any `long` is accepted: a negative bound yields `0`, and a bound above every value yields `Count`. |
+| `bool TryGetLowerBound(long value, out long bound)` | The smallest value at or above `value` (the successor), named after [`BTreeSet.TryGetLowerBound`](#btreesett-tcomparer). Returns `false` with `bound = 0` when every value is smaller. |
+| `bool Contains(long value)` | Whether any element equals `value`. |
+| `int IndexOf(long value)` | The position of the **first** occurrence of `value`, or `-1`. |
+| `Enumerator GetEnumerator()` | Decodes the values in order with no select, `O(1)` amortized a value and `O(n)` for the pass, allocation-free. After the last value, `MoveNext` keeps returning `false` and `Current` is `0`. |
+
+The type holds no mutable state after construction, so instances are safe to share across
+threads.
+
+### Caveats
+
+- **Build-once**, as with [`RankSelectBitVector`](#rankselectbitvector) and
+  [`WaveletTree`](#wavelettree).
+- **Non-negative `long` values only.** A sequence that can go negative (a signed delta series,
+  say) must be shifted by its minimum first.
+- **No positional search window.** `CountLessThan(b) − CountLessThan(a)` counts the values in
+  `[a, b)`, but there is no range enumerator. Enumerate from `CountLessThan(a)` with the
+  indexer, or walk the whole sequence.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// The byte offset at which each record of a large append-only log starts, collected while the
+// log was written and encoded once it was sealed.
+long[] recordOffsets = LoadOffsets();
+var offsets = new EliasFanoSequence(recordOffsets);
+
+Console.WriteLine($"{offsets.Count:N0} offsets in {offsets.MemoryUsageInBytes:N0} bytes " +
+                  $"(a long[] would take {offsets.Count * sizeof(long):N0})");
+
+// Where does record 123,456 start, and how long is it?
+long start = offsets[123_456];
+long length = offsets[123_457] - start;
+
+// Which record holds byte 7,000,000,000? The last one starting at or before it.
+int record = offsets.CountLessThan(7_000_000_001) - 1;
+
+// How many records start inside the first gigabyte?
+int inFirstGiB = offsets.CountLessThan(1L << 30);
+```
