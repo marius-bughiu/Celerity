@@ -463,6 +463,9 @@ function escapeHtml(s) {
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'], items: [NO_SWEEP] },
     // SparseSet is a bounded-universe integer set; ClearRefill is the O(1)-clear headline win.
     { key: 'SparseSet',           title: 'SparseSet',                                vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ClearRefill', 'Remove'] },
+    // HierarchicalBitSet is the ordered bounded-universe set; LowerBound / Floor (successor / predecessor) are
+    // the headline. Its BTreeSet_CrossLowerBound arm has an op of its own, so it draws no card.
+    { key: 'HierarchicalBitSet',  title: 'HierarchicalBitSet',                       vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'LowerBound', 'Floor', 'Enumerate', 'Remove'] },
     // CompressedIntSet is the chunk-compressed integer set. The three Intersect arms sweep the key
     // distribution rather than a second [Params] (which the name parser would reject), because which
     // container form each 65,536-value chunk lands in — sorted array, bitmap or run — follows entirely
