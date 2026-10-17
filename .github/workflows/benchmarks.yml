@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     # Sized from measured slices. At SHARD_TOTAL=8 the suite outgrew the cap: slices ran
     # 77-119 min and two `main` runs lost a shard to it (2b0c668, 7494a36). At 14 shards each
-    # slice holds 90-97 cases, ~70-76 min at the per-case rate the 8-shard runs measured.
+    # slice holds 90-98 cases, ~70-77 min at the per-case rate the 8-shard runs measured.
     #
     # The packer balances case counts, not minutes, and per-case cost varies by class, so
     # equal case totals still ran 85-111 min side by side: size for the heaviest slice, not

@@ -14,9 +14,16 @@ using Celerity.Hashing;
 /// and <see cref="StringKeyedHasherBenchmark"/>. The split exists only for CI: the benchmark workflow
 /// shards the suite by class, and the comparison as a single 81-case class set a floor under the
 /// heaviest shard that no shard count could lower. Every class inherits the same sample and loops from
-/// here, so the numbers are directly comparable across classes, and the dashboard reads all four as one
-/// comparison with every row relative to the <c>Bcl_GetHashCode</c> baseline in
-/// <see cref="StringHasherBenchmark"/>.
+/// here, and the dashboard reads all four as one comparison against the <c>Bcl_GetHashCode</c> baseline
+/// in <see cref="StringHasherBenchmark"/>.
+/// </para>
+/// <para>
+/// Splitting gives up one thing the single class had: every row shared a runner with the baseline. The
+/// packer can put a family class on a different hosted runner, and runners differ enough that raw times
+/// from two of them would read as hasher speedups or slowdowns. So each family class also measures
+/// <c>Bcl_GetHashCode</c> (through the same <see cref="HashAllBcl"/> as the baseline, unmarked) as a
+/// same-runner reference, and the dashboard rescales that family's rows by baseline / reference rather
+/// than comparing raw times across runners. The references are not drawn.
 /// </para>
 /// <para>
 /// Each benchmark hashes the same <see cref="HasherKeySamples.DefaultCount"/> distinct keys through one
@@ -69,6 +76,22 @@ public abstract class StringHasherBenchmarkBase
         for (int i = 0; i < k.Length; i++)
         {
             acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
+
+    /// <summary>
+    /// Hashes every key through <see cref="string.GetHashCode()"/>, XOR-folding the codes like
+    /// <see cref="HashAll{THasher}"/>. The baseline and every family's same-runner reference measure
+    /// through this one method, so they run identical code.
+    /// </summary>
+    protected int HashAllBcl()
+    {
+        string[] k = keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= k[i].GetHashCode();
         }
         return acc;
     }

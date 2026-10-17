@@ -15,7 +15,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- The post-merge benchmark suite now runs on 14 shards instead of 8, and `StringHasherBenchmark` is split by hasher family into four classes so the shard packer can spread it. Slices had grown past 100 minutes, and two `main` runs had lost a shard to the 120-minute cap. The dashboard shows the same rows; 54 of the 81 string hasher results now publish under their family class's name. Each shard's job summary now lists per-class wall time.
+- The post-merge benchmark suite now runs on 14 shards instead of 8, and `StringHasherBenchmark` is split by hasher family into four classes so the shard packer can spread it. Each family re-measures the `GetHashCode` baseline on its own runner, so dashboard ratios still compare measurements from one machine. Slices had grown past 100 minutes, and two `main` runs had lost a shard to the 120-minute cap. The dashboard shows the same rows; 54 of the 81 string hasher results now publish under their family class's name. Each shard's job summary now lists per-class wall time.
 
 ### Fixed
 

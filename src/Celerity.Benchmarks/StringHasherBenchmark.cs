@@ -22,23 +22,14 @@ using Celerity.Hashing;
 /// per-process-randomized <c>Marvin32</c> — the fixed-seed hashers are <strong>not</strong> a
 /// HashDoS defence, so this baseline is the speed floor for a <em>randomized, DoS-resistant</em> hash, not
 /// a zero-work one. The dashboard reads every <c>string</c> hasher row, in all four classes, relative to
-/// <see cref="Bcl_GetHashCode"/>.
+/// <see cref="Bcl_GetHashCode"/>; the family classes reach it through their own same-runner reference.
 /// </para>
 /// </remarks>
 public class StringHasherBenchmark : StringHasherBenchmarkBase
 {
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Hash")]
-    public int Bcl_GetHashCode()
-    {
-        string[] k = Keys;
-        int acc = 0;
-        for (int i = 0; i < k.Length; i++)
-        {
-            acc ^= k[i].GetHashCode();
-        }
-        return acc;
-    }
+    public int Bcl_GetHashCode() => HashAllBcl();
 
     /// <summary>
     /// The realistic <strong>replaced</strong> baseline: hashes every key through
