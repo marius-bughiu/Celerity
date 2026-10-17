@@ -36,6 +36,7 @@ internal class Program
         typeof(SmallSetBenchmark),
         typeof(EnumSetBenchmark),
         typeof(SparseSetBenchmark),
+        typeof(HierarchicalBitSetBenchmark),
         typeof(SparseMapBenchmark),
         typeof(SlotMapBenchmark),
         typeof(CompressedIntSetBenchmark),

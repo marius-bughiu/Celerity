@@ -9,8 +9,8 @@ namespace Celerity.Tests.Collections;
 /// (<see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
 /// <see cref="PooledCeleritySet{T, THasher}"/>, <see cref="SmallSet{T}"/>,
-/// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>, <see cref="SparseSet"/> and
-/// <see cref="EnumSet{TEnum}"/>), the read-only mirror of the <see cref="ISet{T}"/> conformance
+/// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>, <see cref="SparseSet"/>,
+/// <see cref="HierarchicalBitSet"/> and <see cref="EnumSet{TEnum}"/>), the read-only mirror of the <see cref="ISet{T}"/> conformance
 /// covered by <see cref="SetAlgebraTests"/> — and of the immutable
 /// <see cref="PersistentHashSet{T, THasher}"/>, which declares <see cref="IReadOnlySet{T}"/> alone,
 /// since it has no in-place mutation for <see cref="ISet{T}"/> to describe.
@@ -34,7 +34,7 @@ namespace Celerity.Tests.Collections;
 /// (<c>0</c> / <c>null</c>), whichever way its type represents it: out-of-band for the
 /// open-addressed sets, inline for <see cref="SmallSet{T}"/> (which never hashes, so it has no
 /// empty-slot sentinel to work around), and an ordinary slot in the dense array or bit vector
-/// for <see cref="SparseSet"/> and <see cref="EnumSet{TEnum}"/>.
+/// for <see cref="SparseSet"/>, <see cref="HierarchicalBitSet"/> and <see cref="EnumSet{TEnum}"/>.
 /// </para>
 /// </summary>
 public class ReadOnlySetInterfaceTests
@@ -196,6 +196,21 @@ public class ReadOnlySetInterfaceTests
         Assert.IsAssignableFrom<IReadOnlySet<int>>(set);
         AssertMatchesOracle(set, members, 7);
         AssertEmptyContract<int>(new SparseSet(universe: 64), members);
+    }
+
+    // ── HierarchicalBitSet ────────────────────────────────────────────────────
+
+    [Fact]
+    public void HierarchicalBitSet_ShouldSatisfyTheReadOnlySetContract_WhenReachedThroughTheInterface()
+    {
+        // Universe-bounded like SparseSet; the members straddle a word boundary.
+        int[] members = { 0, 1, 3, 63, 64, 127 };
+        var set = new HierarchicalBitSet(universe: 128);
+        Fill(set.TryAdd, members);
+
+        Assert.IsAssignableFrom<IReadOnlySet<int>>(set);
+        AssertMatchesOracle(set, members, 7);
+        AssertEmptyContract<int>(new HierarchicalBitSet(universe: 128), members);
     }
 
     // ── EnumSet ───────────────────────────────────────────────────────────────

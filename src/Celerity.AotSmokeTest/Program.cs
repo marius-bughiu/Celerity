@@ -856,6 +856,29 @@ void Check(bool condition, string message)
     Check(reached.Count == 4 && reached.Contains(2), "SparseSet ISet<int> union within universe");
 }
 
+// HierarchicalBitSet — ordered bounded-universe integer set (a bit vector under a 64-ary tree of
+// summary words). Exercise add / remove across a word boundary, the four ordered queries and min / max
+// through a three-level tree, the ascending struct enumerator and a range scan.
+{
+    var hb = new HierarchicalBitSet(10_000, new[] { 9_000, 5, 70, 5 }); // dedupes
+    Check(hb.Count == 3 && hb.Universe == 10_000 && hb.Contains(70) && !hb.Contains(-1), "HierarchicalBitSet source ctor + contains");
+    Check(hb.TryGetLowerBound(6, out int lower) && lower == 70, "HierarchicalBitSet.TryGetLowerBound");
+    Check(hb.TryGetUpperBound(70, out int upper) && upper == 9_000, "HierarchicalBitSet.TryGetUpperBound");
+    Check(hb.TryGetFloor(8_999, out int floor) && floor == 70, "HierarchicalBitSet.TryGetFloor");
+    Check(hb.TryGetPredecessor(70, out int predecessor) && predecessor == 5, "HierarchicalBitSet.TryGetPredecessor");
+    Check(hb.TryGetMin(out int hbMin) && hbMin == 5 && hb.TryGetMax(out int hbMax) && hbMax == 9_000, "HierarchicalBitSet min / max");
+
+    Check(hb.Remove(70) && hb.TryGetLowerBound(6, out lower) && lower == 9_000, "HierarchicalBitSet remove clears the summary");
+    var ordered = new List<int>();
+    foreach (int x in hb) ordered.Add(x);
+    Check(ordered.Count == 2 && ordered[0] == 5 && ordered[1] == 9_000, "HierarchicalBitSet ascending enumeration");
+    var ranged = new List<int>();
+    foreach (int x in hb.EnumerateRange(6, 10_000)) ranged.Add(x);
+    Check(ranged.Count == 1 && ranged[0] == 9_000, "HierarchicalBitSet.EnumerateRange");
+    ((ISet<int>)hb).UnionWith(new[] { 1, 2 });
+    Check(hb.Count == 4 && hb.Contains(2), "HierarchicalBitSet ISet<int> union within universe");
+}
+
 // SparseMap — the dictionary half of the sparse tier. Exercise the indexer's insert and
 // overwrite paths, the swap-remove that has to carry the moved entry's value with it, the
 // split Clear contract on a reference-holding TValue, and the Keys / Values struct views.
