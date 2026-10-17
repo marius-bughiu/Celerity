@@ -2393,6 +2393,42 @@ void Check(bool condition, string message)
     Check(empty.Length == 0 && empty.AlphabetSize == 0, "WaveletTree empty sequence");
 }
 
+// EliasFanoSequence — immutable compressed sequence of non-decreasing longs. Exercise the
+// split-point choice, the sampled select behind the indexer, the zero-select and low-bit
+// binary search behind every lower-bound query, and the set-bit walk of the enumerator,
+// over a sequence long enough to span several select samples and low parts that straddle
+// word boundaries.
+{
+    long[] offsets = new long[1000];
+    for (int i = 0; i < offsets.Length; i++) offsets[i] = i * 97L + (i % 3 == 0 ? 0 : 5);
+    var elias = new EliasFanoSequence(offsets);
+
+    Check(elias.Count == 1000 && elias.LowBitCount == 6, "EliasFanoSequence split point");
+    Check(elias.MemoryUsageInBytes > 0 && elias.MemoryUsageInBytes < offsets.Length * sizeof(long),
+        "EliasFanoSequence memory usage");
+
+    bool offsetsOk = true;
+    for (int i = 0; i < offsets.Length; i++) offsetsOk &= elias[i] == offsets[i];
+    Check(offsetsOk, "EliasFanoSequence indexer");
+
+    Check(elias.CountLessThan(0) == 0 && elias.CountLessThan(offsets[500]) == 500
+        && elias.CountLessThan(long.MaxValue) == 1000, "EliasFanoSequence count less than");
+    Check(elias.Contains(offsets[777]) && !elias.Contains(offsets[777] + 1), "EliasFanoSequence contains");
+    Check(elias.IndexOf(offsets[321]) == 321 && elias.IndexOf(-3) == -1, "EliasFanoSequence index of");
+    Check(elias.TryGetLowerBound(offsets[10] + 1, out long successor) && successor == offsets[11],
+        "EliasFanoSequence lower bound");
+    Check(!elias.TryGetLowerBound(offsets[^1] + 1, out _), "EliasFanoSequence lower bound past the end");
+
+    long decoded = 0;
+    foreach (long value in elias) decoded += value;
+    Check(decoded == offsets.Sum(), "EliasFanoSequence enumeration");
+
+    var repeats = new EliasFanoSequence(new long[] { 4, 4, 4, 9 });
+    Check(repeats.IndexOf(4) == 0 && repeats.CountLessThan(5) == 3, "EliasFanoSequence repeats");
+    var none = new EliasFanoSequence(Array.Empty<long>());
+    Check(none.Count == 0 && none.CountLessThan(1) == 0, "EliasFanoSequence empty sequence");
+}
+
 // HyperLogLog — probabilistic cardinality estimator (no out-of-band slot; default(T)
 // is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
 // is never called with null). Exercise Add / EstimateCardinality / Clear / UnionWith
