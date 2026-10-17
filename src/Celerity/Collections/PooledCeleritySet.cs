@@ -85,7 +85,8 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
     // detect concurrent modification and fast-fail, matching BCL HashSet<T>.
     private int _version;
 
-    // Set by Dispose; every public member rejects calls once true.
+    // Set by Dispose; once true, every member that reads or writes the contents throws
+    // ObjectDisposedException (Dispose, IsReadOnly and an enumerator's Current/Dispose do not).
     private bool _disposed;
 
     // Whether the element type holds managed references, computed once. When true,
