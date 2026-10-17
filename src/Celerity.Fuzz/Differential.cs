@@ -44,6 +44,7 @@ internal static class Differential
         ("LongSet", LongSetCase),
         ("SmallSet", SmallSetCase),
         ("SparseSet", SparseSetCase),
+        ("HierarchicalBitSet", HierarchicalBitSetCase),
         ("SparseMap", SparseMapCase),
         ("SlotMap", SlotMapCase),
         ("CompressedIntSet", CompressedIntSetCase),
@@ -62,6 +63,7 @@ internal static class Differential
         ("BitSet", BitSetCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("WaveletTree", WaveletTreeCase),
+        ("EliasFanoSequence", EliasFanoSequenceCase),
         ("SegmentTree", SegmentTreeCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
@@ -78,10 +80,12 @@ internal static class Differential
         ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
+        ("MinHashSketch", MinHashSketchCase),
         ("CountMinSketch", CountMinSketchCase),
         ("BloomFilterMerge", BloomFilterMergeCase),
         ("CuckooFilterMerge", CuckooFilterMergeCase),
         ("HyperLogLogMerge", HyperLogLogMergeCase),
+        ("MinHashSketchMerge", MinHashSketchMergeCase),
         ("CountMinSketchMerge", CountMinSketchMergeCase),
         ("BloomFilterHash64", BloomFilterHash64Case),
         ("CuckooFilterHash64", CuckooFilterHash64Case),
@@ -706,6 +710,53 @@ internal static class Differential
             enumerated++;
         }
         Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // HierarchicalBitSet is the ordered bounded-universe set: a bit vector under a 64-ary tree of summary
+    // words. The universe is drawn per case from one word, two levels and four levels, and the values
+    // cluster around a few centres so words fill and empty. An ordered query runs after every update,
+    // so a summary bit left stale by one update fails at the next query that walks through it.
+    private static void HierarchicalBitSetCase(Random rng)
+    {
+        int universe = rng.Next(0, 3) switch
+        {
+            0 => rng.Next(1, 65),
+            1 => rng.Next(65, 4097),
+            _ => rng.Next(262_145, 270_000),
+        };
+        int[] centres = { 0, universe / 2, universe - 1, rng.Next(universe) };
+        var sut = new HierarchicalBitSet(universe);
+        var oracle = new SortedSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Math.Clamp(centres[rng.Next(centres.Length)] + rng.Next(-100, 101), 0, universe - 1);
+            switch (rng.Next(0, 20))
+            {
+                case < 11: Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})"); break;
+                case < 19: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+
+            int probe = Math.Clamp(centres[rng.Next(centres.Length)] + rng.Next(-150, 151), -1, universe);
+            var above = oracle.GetViewBetween(Math.Max(probe, 0), int.MaxValue);
+            var below = oracle.GetViewBetween(int.MinValue, probe);
+            Check(sut.TryGetLowerBound(probe, out int lower) == (above.Count > 0) && (above.Count == 0 || lower == above.Min),
+                $"LowerBound({probe})");
+            Check(sut.TryGetFloor(probe, out int floor) == (below.Count > 0) && (below.Count == 0 || floor == below.Max),
+                $"Floor({probe})");
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+        CheckSameSequence(sut, oracle, "enumeration");
+
+        int from = rng.Next(-5, universe + 5);
+        int to = from + rng.Next(0, 300);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to),
+            oracle.Where(v => v >= from && v < to),
+            $"range[{from},{to})");
     }
 
     // SparseMap is SparseSet's dictionary half: the same dense/sparse pair with a parallel
@@ -1692,6 +1743,60 @@ internal static class Differential
                 Check(sut.RangeRank(start, window, value) == sorted.Count(v => v == value),
                     "WaveletTree RangeRank disagreed");
             }
+        }
+    }
+
+    // ---- Elias-Fano sequence --------------------------------------------------
+
+    // EliasFanoSequence is immutable, so the randomization is in the sequence: a random length that straddles
+    // the 64-bit word and 128-entry select-sample boundaries, gaps from dense (no low bits) to tens of bits
+    // wide, an origin that can sit far above zero, and a random share of repeats. Every read and every
+    // lower-bound query is then reconciled against the long[] it compresses.
+    private static void EliasFanoSequenceCase(Random rng)
+    {
+        int length = rng.Next(0, 900);
+        long gapLimit = 1L << rng.Next(0, 41);
+        long current = rng.Next(2) == 0 ? 0 : rng.NextInt64(0, long.MaxValue / 4);
+        int repeatPercent = rng.Next(0, 101);
+
+        long[] values = new long[length];
+        for (int i = 0; i < length; i++)
+        {
+            if (i > 0 && rng.Next(100) >= repeatPercent)
+            {
+                long gap = rng.NextInt64(1, gapLimit + 1);
+                current = gap > long.MaxValue - current ? long.MaxValue : current + gap;
+            }
+
+            values[i] = current;
+        }
+
+        var sut = new EliasFanoSequence(values);
+
+        Check(sut.Count == length, "EliasFanoSequence Count disagreed");
+        for (int i = 0; i < length; i++)
+            Check(sut[i] == values[i], $"EliasFanoSequence value at {i} disagreed");
+
+        Check(sut.ToArray().SequenceEqual(values), "EliasFanoSequence enumeration disagreed");
+
+        long top = length == 0 ? 1000 : values[^1];
+        for (int trial = 0; trial < 200; trial++)
+        {
+            long probe = trial % 2 == 0 && length > 0
+                ? values[rng.Next(length)] + rng.Next(-1, 2)
+                : rng.NextInt64(-5, top == long.MaxValue ? long.MaxValue : top + 5);
+
+            int expected = Array.FindIndex(values, v => v >= probe);
+            if (expected < 0)
+                expected = length;
+
+            bool present = expected < length && values[expected] == probe;
+            Check(sut.CountLessThan(probe) == expected, $"EliasFanoSequence CountLessThan({probe}) disagreed");
+            Check(sut.Contains(probe) == present, $"EliasFanoSequence Contains({probe}) disagreed");
+            Check(sut.IndexOf(probe) == (present ? expected : -1), $"EliasFanoSequence IndexOf({probe}) disagreed");
+            Check(sut.TryGetLowerBound(probe, out long bound) == expected < length
+                && bound == (expected < length ? values[expected] : 0),
+                $"EliasFanoSequence TryGetLowerBound({probe}) disagreed");
         }
     }
 
@@ -3345,6 +3450,67 @@ internal static class Differential
         foreach (int k in inA) Check(a.Contains(k), $"false negative for {k} (from A) after merge");
         if (completed)
             foreach (int k in inB) Check(a.Contains(k), $"false negative for {k} (from B) after merge");
+    }
+
+    // ---- similarity sketch ----------------------------------------------------
+
+    // MinHash estimates a Jaccard similarity, which is approximate in general. With a bijective
+    // hasher (Murmur3's fmix32, then the bijective SplitMix64 widening) two registers hold equal
+    // values only when they saw the same element, so the exact relations are checkable: a
+    // sketch equals the sketch rebuilt from its oracle's contents, emptiness tracks the oracle,
+    // the estimate is symmetric and in [0, 1], equal sets estimate exactly 1 and disjoint sets
+    // exactly 0.
+    private static void MinHashSketchCase(Random rng)
+    {
+        var a = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var b = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var setA = new HashSet<int>();
+        var setB = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 9: a.Add(item); setA.Add(item); break;
+                case < 18: b.Add(item); setB.Add(item); break;
+                case 18: a.Clear(); setA.Clear(); break;
+                default: b.Clear(); setB.Clear(); break;
+            }
+        }
+
+        Check(a.IsEmpty == (setA.Count == 0), "IsEmpty disagrees with the oracle");
+        Check(a.EstimateJaccard(new MinHashSketch<int, Int32Murmur3Hasher>(setA, 6)) == 1d,
+            "sketch differs from the sketch of its own contents");
+
+        double estimate = a.EstimateJaccard(b);
+        Check(estimate == b.EstimateJaccard(a), "estimate is not symmetric");
+        Check(estimate >= 0d && estimate <= 1d, $"estimate {estimate} outside [0, 1]");
+        if (setA.SetEquals(setB))
+            Check(estimate == 1d, $"equal sets estimated {estimate}, not 1");
+        else if (!setA.Overlaps(setB))
+            Check(estimate == 0d, $"disjoint sets estimated {estimate}, not 0");
+    }
+
+    // MinHash: merge takes the per-register minimum, which is exactly the register state the
+    // combined stream would have produced, so the merged sketch must compare as identical to one
+    // built directly from the union.
+    private static void MinHashSketchMergeCase(Random rng)
+    {
+        var a = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var b = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+        var union = new HashSet<int>();
+
+        int opsA = OpCount(rng);
+        for (int i = 0; i < opsA; i++) { int k = Key(rng); a.Add(k); union.Add(k); }
+        int opsB = OpCount(rng);
+        for (int i = 0; i < opsB; i++) { int k = Key(rng); b.Add(k); union.Add(k); }
+
+        a.UnionWith(b);
+
+        Check(a.EstimateJaccard(new MinHashSketch<int, Int32Murmur3Hasher>(union, 6)) == 1d,
+            "merged sketch differs from the sketch of the union");
     }
 
     // HyperLogLog: merge takes the per-register maximum, which is exactly the register state the

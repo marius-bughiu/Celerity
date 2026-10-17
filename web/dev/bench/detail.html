@@ -380,6 +380,7 @@
     { key: 'SmallSet',            title: 'SmallSet<int>',                         vs: 'HashSet<int>', items: [8, 64] },
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                        vs: 'HashSet<TEnum>', items: [NO_SWEEP] },
     { key: 'SparseSet',           title: 'SparseSet',                             vs: 'HashSet<int>' },
+    { key: 'HierarchicalBitSet',  title: 'HierarchicalBitSet',                    vs: 'SortedSet<int>' },
     { key: 'CompressedIntSet',    title: 'CompressedIntSet',                      vs: 'HashSet<int>' },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                 vs: 'HashSet<int>' },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                vs: 'HashSet<int>' },
@@ -387,6 +388,7 @@
     { key: 'BitSet',              title: 'BitSet',                                vs: 'BitArray', items: [1024, 1000000] },
     { key: 'RankSelectBitVector', title: 'RankSelectBitVector',                   vs: 'ulong[] popcount loop', items: [1024, 1000000] },
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                   vs: 'HashSet<int>' },
+    { key: 'MinHashSketch',       title: 'MinHashSketch<T, ...>',                 vs: 'HashSet<int>' },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                vs: 'Dictionary<int, int>' },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                    vs: 'Dictionary<int, int>' },
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',               vs: 'Dictionary + LinkedList LRU' },
@@ -422,6 +424,7 @@
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
     { key: 'RankedSet',           title: 'RankedSet<int>',                        vs: 'SortedSet<int>' },
     { key: 'WaveletTree',         title: 'WaveletTree',                           vs: 'int[] sort / count loop', items: [1024, 1000000] },
+    { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                     vs: 'long[]', items: [1024, 1000000] },
     // StringKeyProbe is the reference-type-key probe path (every other card here keys on int/long).
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
     { key: 'StringKeyProbe',      title: 'String-keyed probe',                    vs: 'Dictionary<string, int> / HashSet<string>' },

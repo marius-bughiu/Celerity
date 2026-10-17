@@ -229,6 +229,24 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void HierarchicalBitSetEnumeratorReset_ShouldThrowInvalidOperationException_WhenSetModified()
+    {
+        var set = new HierarchicalBitSet(100, new[] { 1, 2 });
+
+        var enumerator = set.EnumerateRange(0, 100).GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        set.Remove(2);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        var second = set.GetEnumerator();
+        set.Add(3);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
     public void SpatialGridEnumeratorReset_ShouldThrowInvalidOperationException_WhenGridModified()
     {
         var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);

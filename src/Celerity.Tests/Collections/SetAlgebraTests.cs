@@ -42,6 +42,7 @@ public class SetAlgebraTests
         Assert.IsAssignableFrom<ISet<int>>(new HashCachingSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new SmallSet<int>());
         Assert.IsAssignableFrom<ISet<int>>(new SparseSet(16));
+        Assert.IsAssignableFrom<ISet<int>>(new HierarchicalBitSet(16));
         Assert.IsAssignableFrom<ISet<int>>(new CompressedIntSet());
         using var pooled = new PooledCeleritySet<int, Int32WangNaiveHasher>();
         Assert.IsAssignableFrom<ISet<int>>(pooled);
@@ -98,6 +99,48 @@ public class SetAlgebraTests
         var set = new SparseSet(10);
         set.Add(1);
         // UnionWith must add 50, which is outside [0, 10) — the bounded-universe caveat.
+        Assert.Throws<ArgumentOutOfRangeException>(() => set.UnionWith(new[] { 2, 50 }));
+    }
+
+    // HierarchicalBitSet is bounded the same way as SparseSet; its exhaustive differential lives in
+    // HierarchicalBitSetDifferentialTests. Here we pin the basic algebra, that the result enumerates in
+    // ascending order, and the same bounded-universe caveat.
+    [Fact]
+    public void HierarchicalBitSet_SetAlgebra_MatchesHashSet_WithinUniverse()
+    {
+        var set = new HierarchicalBitSet(32, new[] { 3, 2, 1 });
+
+        set.UnionWith(new[] { 5, 4, 3 });
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, set);
+
+        set.IntersectWith(new[] { 6, 4, 2 });
+        Assert.Equal(new[] { 2, 4 }, set);
+
+        Assert.True(set.IsSubsetOf(new[] { 2, 4, 8 }));
+        Assert.True(set.Overlaps(new[] { 4, 100 })); // 100 is out of universe but only probed
+        Assert.False(set.SetEquals(new[] { 2 }));
+    }
+
+    // An out-of-universe value in `other` can never be a member, but HashSet semantics still count it as a
+    // distinct element of `other`, so the cardinality-sensitive queries see it.
+    [Fact]
+    public void HierarchicalBitSet_Queries_CountOutOfUniverseValuesInOther_AsHashSetDoes()
+    {
+        var set = new HierarchicalBitSet(10, new[] { 1 });
+        var oracle = new HashSet<int> { 1 };
+        int[] other = { 1, 100 };
+
+        Assert.True(set.IsProperSubsetOf(other));
+        Assert.Equal(oracle.IsProperSubsetOf(other), set.IsProperSubsetOf(other));
+        Assert.False(set.SetEquals(other));
+        Assert.Equal(oracle.SetEquals(other), set.SetEquals(other));
+        Assert.False(set.IsSupersetOf(other));
+    }
+
+    [Fact]
+    public void HierarchicalBitSet_MutatingOp_ThrowsOnOutOfUniverseValueToAdd()
+    {
+        var set = new HierarchicalBitSet(10, new[] { 1 });
         Assert.Throws<ArgumentOutOfRangeException>(() => set.UnionWith(new[] { 2, 50 }));
     }
 

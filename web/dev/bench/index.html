@@ -463,6 +463,9 @@ function escapeHtml(s) {
     { key: 'EnumSet',             title: 'EnumSet<TEnum>',                           vs: 'HashSet<TEnum>',        ops: ['Add', 'Contains', 'Remove', 'Union'], items: [NO_SWEEP] },
     // SparseSet is a bounded-universe integer set; ClearRefill is the O(1)-clear headline win.
     { key: 'SparseSet',           title: 'SparseSet',                                vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ClearRefill', 'Remove'] },
+    // HierarchicalBitSet is the ordered bounded-universe set; LowerBound / Floor (successor / predecessor) are
+    // the headline. Its BTreeSet_CrossLowerBound arm has an op of its own, so it draws no card.
+    { key: 'HierarchicalBitSet',  title: 'HierarchicalBitSet',                       vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'LowerBound', 'Floor', 'Enumerate', 'Remove'] },
     // CompressedIntSet is the chunk-compressed integer set. The three Intersect arms sweep the key
     // distribution rather than a second [Params] (which the name parser would reject), because which
     // container form each 65,536-value chunk lands in — sorted array, bitmap or run — follows entirely
@@ -479,6 +482,7 @@ function escapeHtml(s) {
     // and the three Rank arms sweep the query position, where that loop's O(index / 64) cost lives.
     { key: 'RankSelectBitVector', title: 'RankSelectBitVector',                      vs: 'ulong[] popcount loop', ops: ['RankEarly', 'RankMid', 'RankLate', 'Select', 'Build'], items: [1024, 1000000] },
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                      vs: 'HashSet<int>',          ops: ['Add', 'Estimate'] },
+    { key: 'MinHashSketch',       title: 'MinHashSketch<T, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Jaccard'] },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                   vs: 'Dictionary<int, int>',  ops: ['Add', 'Estimate'] },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                       vs: 'Dictionary<int, int>',  ops: ['Add', 'TopK'] },
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] },
@@ -608,6 +612,11 @@ function escapeHtml(s) {
     // for the rest. The window is 1% of the sequence, so the 1024 arm is where the fixed ten-level
     // descent loses to a ten-element scan and the 1,000,000 arm is where it does not.
     { key: 'WaveletTree',         title: 'WaveletTree',                              vs: 'int[] sort / count loop', ops: ['Quantile', 'RangeCount', 'Rank', 'Build'], items: [1024, 1000000] },
+    // EliasFanoSequence is the compressed form of a sorted long[], benchmarked against that array: an
+    // indexed load for Access, Array.BinarySearch for LowerBound, a foreach for Enumerate and a clone for
+    // Build. Every card is the price of the compression; the footprint it buys is retained memory, which a
+    // timing benchmark does not show, so it lives in the API reference rather than on a card.
+    { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                        vs: 'long[]',                ops: ['Access', 'LowerBound', 'Enumerate', 'Build'], items: [1024, 1000000] },
     // StringKeyProbe tracks the reference-type-key probe path — every other card here keys on int/long,
     // where the JIT devirtualizes the per-probe comparison and the codegen question does not arise.
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.

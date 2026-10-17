@@ -73,6 +73,22 @@ public class SketchHashProvider64Tests
     }
 
     [Fact]
+    public void MinHashSketch_UsesHash64_WhenTheHasherProvidesOne()
+    {
+        // [0, N) against [N/2, 3N/2): J = 1/3. On the 32-bit path every element would land in
+        // one register with one value, so any two non-empty sketches would compare as identical.
+        var a = new MinHashSketch<long, DisagreeingHasher>();
+        var b = new MinHashSketch<long, DisagreeingHasher>();
+        for (long i = 0; i < N; i++)
+        {
+            a.Add(i);
+            b.Add(i + N / 2);
+        }
+
+        Assert.InRange(a.EstimateJaccard(b), 0.2, 0.47);
+    }
+
+    [Fact]
     public void BloomFilter_UsesHash64_WhenTheHasherProvidesOne()
     {
         var filter = new BloomFilter<long, DisagreeingHasher>(N, 0.01);
@@ -158,9 +174,14 @@ public class SketchHashProvider64Tests
         var bloom = new BloomFilter<long, Fold32Hasher>(N, 0.01);
         var cuckoo = new CuckooFilter<long, Fold32Hasher>(N, 0.01);
         var cms = new CountMinSketch<long, Fold32Hasher>(0.001, 0.01);
+        var minHash = new MinHashSketch<long, Fold32Hasher>();
+        var minHashHalf = new MinHashSketch<long, Fold32Hasher>();
 
         for (long i = 0; i < N; i++)
         {
+            minHash.Add(i);
+            if (i < N / 2)
+                minHashHalf.Add(i);
             hll.Add(i);
             bloom.Add(i);
             cuckoo.Add(i);
@@ -168,6 +189,7 @@ public class SketchHashProvider64Tests
         }
 
         Assert.InRange(hll.EstimateCardinality(), N * 0.9, N * 1.1);
+        Assert.InRange(minHash.EstimateJaccard(minHashHalf), 0.33, 0.67); // exact J = 0.5
         for (long i = 0; i < N; i++)
         {
             Assert.True(bloom.Contains(i));
@@ -201,6 +223,7 @@ public class SketchHashProvider64Tests
             typeof(CuckooFilter<,>),
             typeof(XorFilter<,>),
             typeof(CountMinSketch<,>),
+            typeof(MinHashSketch<,>),
         ];
 
         foreach (Type sketch in sketches)
@@ -226,13 +249,18 @@ public class SketchHashProvider64Tests
         var bloom = new BloomFilter<string, StringXxHash64Hasher>(16, 0.01);
         var cuckoo = new CuckooFilter<string, StringXxHash64Hasher>(16, 0.01);
         var cms = new CountMinSketch<string, StringXxHash64Hasher>(0.01, 0.01);
+        var minHash = new MinHashSketch<string, StringXxHash64Hasher>();
+        var minHashOther = new MinHashSketch<string, StringXxHash64Hasher>();
 
         hll.Add(null!);
+        minHash.Add(null!);
+        minHashOther.Add(null!);
         bloom.Add(null!);
         Assert.True(cuckoo.TryAdd(null!));
         cms.Add(null!);
 
         Assert.Equal(1, hll.EstimateCardinality());
+        Assert.Equal(1d, minHash.EstimateJaccard(minHashOther));
         Assert.True(bloom.Contains(null!));
         Assert.True(cuckoo.Contains(null!));
         Assert.True(cms.EstimateCount(null!) >= 1);

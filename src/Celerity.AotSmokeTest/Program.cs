@@ -889,6 +889,29 @@ void Check(bool condition, string message)
     Check(reached.Count == 4 && reached.Contains(2), "SparseSet ISet<int> union within universe");
 }
 
+// HierarchicalBitSet — ordered bounded-universe integer set (a bit vector under a 64-ary tree of
+// summary words). Exercise add / remove across a word boundary, the four ordered queries and min / max
+// through a three-level tree, the ascending struct enumerator and a range scan.
+{
+    var hb = new HierarchicalBitSet(10_000, new[] { 9_000, 5, 70, 5 }); // dedupes
+    Check(hb.Count == 3 && hb.Universe == 10_000 && hb.Contains(70) && !hb.Contains(-1), "HierarchicalBitSet source ctor + contains");
+    Check(hb.TryGetLowerBound(6, out int lower) && lower == 70, "HierarchicalBitSet.TryGetLowerBound");
+    Check(hb.TryGetUpperBound(70, out int upper) && upper == 9_000, "HierarchicalBitSet.TryGetUpperBound");
+    Check(hb.TryGetFloor(8_999, out int floor) && floor == 70, "HierarchicalBitSet.TryGetFloor");
+    Check(hb.TryGetPredecessor(70, out int predecessor) && predecessor == 5, "HierarchicalBitSet.TryGetPredecessor");
+    Check(hb.TryGetMin(out int hbMin) && hbMin == 5 && hb.TryGetMax(out int hbMax) && hbMax == 9_000, "HierarchicalBitSet min / max");
+
+    Check(hb.Remove(70) && hb.TryGetLowerBound(6, out lower) && lower == 9_000, "HierarchicalBitSet remove clears the summary");
+    var ordered = new List<int>();
+    foreach (int x in hb) ordered.Add(x);
+    Check(ordered.Count == 2 && ordered[0] == 5 && ordered[1] == 9_000, "HierarchicalBitSet ascending enumeration");
+    var ranged = new List<int>();
+    foreach (int x in hb.EnumerateRange(6, 10_000)) ranged.Add(x);
+    Check(ranged.Count == 1 && ranged[0] == 9_000, "HierarchicalBitSet.EnumerateRange");
+    ((ISet<int>)hb).UnionWith(new[] { 1, 2 });
+    Check(hb.Count == 4 && hb.Contains(2), "HierarchicalBitSet ISet<int> union within universe");
+}
+
 // SparseMap — the dictionary half of the sparse tier. Exercise the indexer's insert and
 // overwrite paths, the swap-remove that has to carry the moved entry's value with it, the
 // split Clear contract on a reference-holding TValue, and the Keys / Values struct views.
@@ -2403,6 +2426,42 @@ void Check(bool condition, string message)
     Check(empty.Length == 0 && empty.AlphabetSize == 0, "WaveletTree empty sequence");
 }
 
+// EliasFanoSequence — immutable compressed sequence of non-decreasing longs. Exercise the
+// split-point choice, the sampled select behind the indexer, the zero-select and low-bit
+// binary search behind every lower-bound query, and the set-bit walk of the enumerator,
+// over a sequence long enough to span several select samples and low parts that straddle
+// word boundaries.
+{
+    long[] offsets = new long[1000];
+    for (int i = 0; i < offsets.Length; i++) offsets[i] = i * 97L + (i % 3 == 0 ? 0 : 5);
+    var elias = new EliasFanoSequence(offsets);
+
+    Check(elias.Count == 1000 && elias.LowBitCount == 6, "EliasFanoSequence split point");
+    Check(elias.MemoryUsageInBytes > 0 && elias.MemoryUsageInBytes < offsets.Length * sizeof(long),
+        "EliasFanoSequence memory usage");
+
+    bool offsetsOk = true;
+    for (int i = 0; i < offsets.Length; i++) offsetsOk &= elias[i] == offsets[i];
+    Check(offsetsOk, "EliasFanoSequence indexer");
+
+    Check(elias.CountLessThan(0) == 0 && elias.CountLessThan(offsets[500]) == 500
+        && elias.CountLessThan(long.MaxValue) == 1000, "EliasFanoSequence count less than");
+    Check(elias.Contains(offsets[777]) && !elias.Contains(offsets[777] + 1), "EliasFanoSequence contains");
+    Check(elias.IndexOf(offsets[321]) == 321 && elias.IndexOf(-3) == -1, "EliasFanoSequence index of");
+    Check(elias.TryGetLowerBound(offsets[10] + 1, out long successor) && successor == offsets[11],
+        "EliasFanoSequence lower bound");
+    Check(!elias.TryGetLowerBound(offsets[^1] + 1, out _), "EliasFanoSequence lower bound past the end");
+
+    long decoded = 0;
+    foreach (long value in elias) decoded += value;
+    Check(decoded == offsets.Sum(), "EliasFanoSequence enumeration");
+
+    var repeats = new EliasFanoSequence(new long[] { 4, 4, 4, 9 });
+    Check(repeats.IndexOf(4) == 0 && repeats.CountLessThan(5) == 3, "EliasFanoSequence repeats");
+    var none = new EliasFanoSequence(Array.Empty<long>());
+    Check(none.Count == 0 && none.CountLessThan(1) == 0, "EliasFanoSequence empty sequence");
+}
+
 // HyperLogLog — probabilistic cardinality estimator (no out-of-band slot; default(T)
 // is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
 // is never called with null). Exercise Add / EstimateCardinality / Clear / UnionWith
@@ -2447,6 +2506,44 @@ void Check(bool condition, string message)
     var guidHll = new HyperLogLog<Guid, GuidHasher>();
     guidHll.Add(Guid.Empty); // ordinary element, no out-of-band slot
     Check(guidHll.EstimateCardinality() == 1, "HyperLogLog<Guid> empty-guid element");
+}
+
+// MinHashSketch — Jaccard-similarity sketch (no out-of-band slot; default(T) is an
+// ordinary element, a null reference is mapped to a fixed base hash so the hasher is never
+// called with null). Exercise Add / EstimateJaccard / UnionWith / Clear / IsEmpty and the
+// IEnumerable ctor across int / string / long-with-64-bit-hasher instantiations so the AOT
+// publish compiles both Hash64 arms, the register fill, and the matched-register estimator.
+{
+    var a = new MinHashSketch<int, Int32WangNaiveHasher>();
+    var b = new MinHashSketch<int, Int32WangNaiveHasher>();
+    Check(a.IsEmpty && a.EstimateJaccard(b) == 1d, "MinHashSketch two empty sketches");
+    Check(a.Precision == MinHashSketch<int, Int32WangNaiveHasher>.DefaultPrecision,
+        "MinHashSketch default precision");
+    Check(a.RegisterCount == 1 << 8, "MinHashSketch register count");
+
+    // [0, 20000) against [10000, 30000): J = 1/3.
+    for (int i = 0; i < 20_000; i++) a.Add(i);
+    for (int i = 10_000; i < 30_000; i++) b.Add(i);
+    double j = a.EstimateJaccard(b);
+    Check(Math.Abs(j - 1d / 3d) <= a.StandardError * 4, "MinHashSketch estimate within bound");
+
+    var direct = new MinHashSketch<int, Int32WangNaiveHasher>(Enumerable.Range(0, 30_000));
+    a.UnionWith(b);
+    Check(a.EstimateJaccard(direct) == 1d, "MinHashSketch UnionWith");
+
+    a.Clear();
+    Check(a.IsEmpty && a.EstimateJaccard(b) == 0d, "MinHashSketch clear");
+
+    var strA = new MinHashSketch<string, StringFnV1AHasher>(new[] { "alice", "bob" });
+    var strB = new MinHashSketch<string, StringFnV1AHasher>(new[] { "bob", "alice", "alice" });
+    strA.Add(null!);
+    strB.Add(null!);
+    Check(strA.EstimateJaccard(strB) == 1d, "MinHashSketch<string> ctor + null element");
+
+    var longA = new MinHashSketch<long, Int64WangHasher>(10);
+    var longB = new MinHashSketch<long, Int64WangHasher>(10);
+    for (long i = 0; i < 10_000; i++) { longA.Add(i); longB.Add(i + 1_000_000); }
+    Check(longA.EstimateJaccard(longB) == 0d, "MinHashSketch with a 64-bit hasher");
 }
 
 // CountMinSketch — probabilistic frequency estimator (no out-of-band slot; default(T)

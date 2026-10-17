@@ -11,7 +11,7 @@
 // each for the same reason: randomized oracle coverage lives under conventions that share no
 // suffix and no directory, so *inferring* from a filename that does not exist is unsound.
 // `SmallSet` is covered by `SetAlgebraDifferentialTests`, `EnumSet` by
-// `EnumSetAlgebraDifferentialTests`, the three sketches by `*AccuracyTests`, twenty-odd
+// `EnumSetAlgebraDifferentialTests`, the four sketches by `*AccuracyTests`, twenty-odd
 // hash-backed types by the shared `CollectionModelPropertyTests`, and the rest by a file of
 // their own. A search for `SmallSetDifferentialTests` finds nothing and means nothing.
 //

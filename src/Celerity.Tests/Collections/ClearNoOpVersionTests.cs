@@ -33,10 +33,11 @@ namespace Celerity.Tests.Collections;
 /// clear it would be trying to skip. All three therefore bump the version every time, they agree with each
 /// other, and the three tests at the bottom pin that judgement so it reads as a decision rather than as the
 /// same oversight. The probabilistic sketches (<c>BloomFilter</c>,
-/// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>TopKSketch</c>) are out of scope
+/// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>MinHashSketch</c>, <c>TopKSketch</c>) are out of scope
 /// entirely: they track no version and expose no enumerator, so there is nothing for a redundant
 /// <c>Clear()</c> to invalidate. The <b>build-once</b> types are out of scope one step further still —
-/// <see cref="WaveletTree"/> and <see cref="SparseTable{T, TMonoid}"/> are immutable after construction, so
+/// <see cref="WaveletTree"/>, <see cref="SparseTable{T, TMonoid}"/> and <see cref="EliasFanoSequence"/> are
+/// immutable after construction, so
 /// they expose no <c>Clear()</c> to be redundant and carry no version for one to bump; their enumerators
 /// cannot be invalidated by anything and are pinned on that basis in their own suites.
 /// <see cref="PersistentVector{T}"/> is out of scope for the same reason arrived at from the other
@@ -289,6 +290,14 @@ public class ClearNoOpVersionTests
     public void SparseSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var set = new SparseSet(universe: 16);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
+    }
+
+    [Fact]
+    public void HierarchicalBitSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var set = new HierarchicalBitSet(universe: 16);
         AssertClearBumpsVersionOnlyWhenItRemovesSomething(
             () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
     }

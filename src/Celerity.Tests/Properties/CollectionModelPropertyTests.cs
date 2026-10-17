@@ -783,6 +783,65 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- MinHashSketch (probabilistic) vs two HashSet<int> -----------------
+
+    // MinHash estimates a Jaccard similarity, which is only approximate in general — but with a
+    // bijective hasher (Murmur3's fmix32, then the bijective SplitMix64 widening) two registers
+    // hold equal values only when they saw the same element, so several properties are exact
+    // and the model can pin them: a sketch is register-for-register the sketch of its oracle's
+    // contents, equal sets estimate exactly 1, disjoint sets exactly 0, emptiness tracks the
+    // oracle, and a merge is exactly the sketch of the union.
+    private enum MinHashOp { AddA, AddB, ClearA, ClearB }
+
+    private static readonly Gen<List<(MinHashOp, int)>> GenMinHashOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n =>
+                n < 46 ? MinHashOp.AddA :
+                n < 92 ? MinHashOp.AddB :
+                n < 96 ? MinHashOp.ClearA : MinHashOp.ClearB),
+            Gen.Int[-8, 24])
+        .List[0, 120];
+
+    [Fact]
+    public void MinHashSketch_ShouldMatchExactSetRelations_VsBclHashSet()
+    {
+        GenMinHashOps.Sample(ops =>
+        {
+            var a = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+            var b = new MinHashSketch<int, Int32Murmur3Hasher>(6);
+            var setA = new HashSet<int>();
+            var setB = new HashSet<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case MinHashOp.AddA: a.Add(item); setA.Add(item); break;
+                    case MinHashOp.AddB: b.Add(item); setB.Add(item); break;
+                    case MinHashOp.ClearA: a.Clear(); setA.Clear(); break;
+                    case MinHashOp.ClearB: b.Clear(); setB.Clear(); break;
+                }
+            }
+
+            Assert.Equal(setA.Count == 0, a.IsEmpty);
+            Assert.Equal(setB.Count == 0, b.IsEmpty);
+            Assert.Equal(1d, a.EstimateJaccard(new MinHashSketch<int, Int32Murmur3Hasher>(setA, 6)));
+
+            double estimate = a.EstimateJaccard(b);
+            Assert.Equal(estimate, b.EstimateJaccard(a));
+            Assert.InRange(estimate, 0d, 1d);
+            if (setA.SetEquals(setB))
+                Assert.Equal(1d, estimate);
+            else if (!setA.Overlaps(setB))
+                Assert.Equal(0d, estimate);
+
+            var union = new HashSet<int>(setA);
+            union.UnionWith(setB);
+            a.UnionWith(b);
+            Assert.Equal(1d, a.EstimateJaccard(new MinHashSketch<int, Int32Murmur3Hasher>(union, 6)));
+        }, iter: 2000);
+    }
+
     // ---- CountMinSketch (probabilistic) vs Dictionary<int,long> -------------
 
     // A Count-Min sketch never underestimates a frequency (counters only accumulate, and
