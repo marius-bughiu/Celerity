@@ -153,6 +153,14 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void HierarchicalBitSet_ShouldValidateCopyToArguments()
+    {
+        HierarchicalBitSet set = new(16, new[] { 1, 2, 3 });
+
+        AssertCopyToContract<int>(3, set.CopyTo);
+    }
+
+    [Fact]
     public void EnumSet_ShouldValidateCopyToArguments()
     {
         EnumSet<Colour> set = new(new[] { Colour.Red, Colour.Green, Colour.Blue });
@@ -363,7 +371,7 @@ public class CopyToArgumentGuardTests
     private static readonly HashSet<string> Covered = new(StringComparer.Ordinal)
     {
         "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
-        "IntSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet", "RobinHoodSet",
+        "HierarchicalBitSet", "IntSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet", "RobinHoodSet",
         "SmallSet", "SparseSet", "SwissSet",
 
         "BTreeDictionary", "BTreeDictionary.KeyCollection", "BTreeDictionary.ValueCollection",

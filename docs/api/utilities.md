@@ -61,7 +61,7 @@ The sizing primitive behind the collections' `EnsureCapacity` / `TrimExcess` met
 **Special cases:**
 
 - `entryCount <= 0` returns the minimum table size of `1`.
-- A `loadFactor` outside `(0, 1)` is clamped into that range rather than dividing by a non-positive or `>= 1` factor (so the helper never loops forever or throws).
+- A `loadFactor` outside `(0, 1)` is clamped into that range rather than dividing by a non-positive or `>= 1` factor (so the helper never loops forever or throws). `float.NaN` clamps to the low end, like a non-positive value.
 - An `entryCount` too large for any power-of-two table at the given load factor saturates at `MaxPowerOfTwoCapacity` rather than overflowing.
 
 ```csharp

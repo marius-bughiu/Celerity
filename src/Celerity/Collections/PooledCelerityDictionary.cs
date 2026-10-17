@@ -88,7 +88,8 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
     // detect concurrent modification and throw, matching BCL semantics.
     private int _version;
 
-    // Set by Dispose; every public member rejects calls once true.
+    // Set by Dispose; once true, every member that reads or writes the contents throws
+    // ObjectDisposedException (Dispose, IsReadOnly and an enumerator's Current/Dispose do not).
     private bool _disposed;
 
     // Whether the element type holds managed references, computed once. When true,
