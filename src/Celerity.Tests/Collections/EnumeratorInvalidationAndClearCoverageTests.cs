@@ -515,6 +515,46 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void SieveCacheEnumeratorReset_ShouldThrowInvalidOperationException_WhenCacheModified()
+    {
+        var cache = new SieveCache<int, string, Int32WangHasher>(4);
+        cache.Add(1, "a");
+        cache.Add(2, "b");
+
+        var enumerator = cache.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        cache.AddOrUpdate(3, "c");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        var second = cache.GetEnumerator();
+        cache.Remove(1);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
+    public void SieveCacheClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
+    {
+        var cache = new SieveCache<int, string, Int32WangHasher>(4);
+        var enumerator = cache.GetEnumerator();
+
+        cache.Clear();
+
+        Assert.Equal(0, cache.Count);
+        Assert.Equal(4, cache.Capacity);
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(0, seen);
+
+        cache.Add(1, "a");
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
     public void TopKSketchClear_ShouldBeNoOp_WhenSketchNeverObservedAnything()
     {
         var sketch = new TopKSketch<int, Int32Murmur3Hasher>(8);

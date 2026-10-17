@@ -592,6 +592,39 @@ void Check(bool condition, string message)
     Check(scan.ContainsKey(100), "LfuCache hot key survives a scan");
 }
 
+// SieveCache — fixed-capacity cache with SIEVE eviction. Exercise put/get, that a hit marks an
+// entry visited instead of reordering it (so it survives one sweep and enumeration order is
+// unchanged), the hand resuming where it stopped, peek/remove, the out-of-band default/zero key,
+// and the newest-first struct enumerator.
+{
+    var cache = new SieveCache<int, string, Int32WangNaiveHasher>(3);
+    cache[0] = "zero"; // out-of-band default key
+    cache[1] = "one";
+    cache[2] = "two";
+    Check(cache.Count == 3 && cache[0] == "zero", "SieveCache put/get + default key");
+
+    // The indexer get above marked 0 visited. Inserting a fourth key sweeps from the oldest entry:
+    // the hand clears 0's bit and evicts 1, the first unvisited entry it reaches.
+    cache[3] = "three";
+    Check(!cache.ContainsKey(1) && cache.ContainsKey(0), "SieveCache evicts unvisited, spares read");
+
+    var order = new List<int>();
+    foreach (var kvp in cache) order.Add(kvp.Key);
+    Check(order.Count == 3 && order[0] == 3 && order[1] == 2 && order[2] == 0, "SieveCache newest-first enumeration");
+
+    // The hand rests on 2, so the next insert evicts 2, not 0 (whose bit is clear but which the hand
+    // has already passed).
+    Check(cache.TryPeek(0, out string? peeked) && peeked == "zero", "SieveCache TryPeek");
+    cache[4] = "four";
+    Check(!cache.ContainsKey(2) && cache.ContainsKey(0), "SieveCache hand resumes where it stopped");
+    Check(cache.Remove(0, out string? removed) && removed == "zero", "SieveCache Remove out value");
+
+    // A hit during enumeration is not a structural change.
+    int seen = 0;
+    foreach (var kvp in cache) { _ = cache[kvp.Key]; seen++; }
+    Check(seen == 2, "SieveCache hit keeps enumerator valid");
+}
+
 // Deque — growable double-ended queue over a circular buffer. Exercise both-ends push/pop,
 // the front-relative indexer, wrap-around growth, Try* peeks, the front-to-back struct
 // enumerator, and the IEnumerable constructor.
