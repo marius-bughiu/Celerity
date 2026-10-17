@@ -385,7 +385,7 @@
       <span class="meta">latest run</span>
     </div>
     <div class="about" style="margin-bottom:16px">
-      <strong>Comparing the built-in hashers.</strong> Each bar is one hasher's <code>Hash</code> throughput over a fixed key sample, grouped by key type and (for <code>string</code>) by key shape, with the framework's <code>GetHashCode()</code> as the baseline. Shorter is faster. <strong>This is throughput only</strong> &mdash; a fast hasher that clusters is not a win, so weigh these against the distribution metrics from <code>HashQualityEvaluator</code> (see the <a href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/hashing.md#benchmarking-the-string-hashers">hashing docs</a>) before picking one. Source: <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/StringHasherBenchmark.cs"><code>StringHasherBenchmark</code></a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/IntegerHasherBenchmark.cs"><code>IntegerHasherBenchmark</code></a>.
+      <strong>Comparing the built-in hashers.</strong> Each bar is one hasher's <code>Hash</code> throughput over a fixed key sample, grouped by key type and (for <code>string</code>) by key shape, with the framework's <code>GetHashCode()</code> as the baseline. Shorter is faster. <strong>This is throughput only</strong> &mdash; a fast hasher that clusters is not a win, so weigh these against the distribution metrics from <code>HashQualityEvaluator</code> (see the <a href="https://github.com/marius-bughiu/Celerity/blob/main/docs/api/hashing.md#benchmarking-the-string-hashers">hashing docs</a>) before picking one. Source: <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/StringHasherBenchmarkBase.cs"><code>String*HasherBenchmark</code></a> &middot; <a href="https://github.com/marius-bughiu/Celerity/blob/main/src/Celerity.Benchmarks/IntegerHasherBenchmark.cs"><code>IntegerHasherBenchmark</code></a>.
     </div>
     <div id="hasher-groups"></div>
   </section>
@@ -975,7 +975,7 @@ function escapeHtml(s) {
 // ---- Hash function throughput section ----
 // Independent of the per-collection logic above: a bug here cannot break that, and vice versa.
 // Hidden unless the latest run actually contains hasher benchmarks (the section stays dormant
-// until StringHasherBenchmark / IntegerHasherBenchmark land in the joined report on main).
+// until the String*HasherBenchmark / IntegerHasherBenchmark classes land in the joined report on main).
 (function () {
   'use strict';
 
@@ -986,10 +986,12 @@ function escapeHtml(s) {
   var latest = runs[runs.length - 1];
   if (!latest || !latest.benches) return;
 
-  // String:  StringHasherBenchmark.{Method}(Shape: {Shape})
+  // String:  String{Family}HasherBenchmark.{Method}(Shape: {Shape}) — one comparison split by hasher
+  //          family only so CI can shard it (StringHasherBenchmark, which carries the baseline, plus
+  //          StringFnv/StringThroughput/StringKeyedHasherBenchmark), so the class is not part of the key.
   // Integer: IntegerHasherBenchmark.{Type}_{Hasher}
   function parseHasher(name, value) {
-    var m = name.match(/^StringHasherBenchmark\.(\w+)\(Shape:\s*(\w+)\)$/);
+    var m = name.match(/^String\w*HasherBenchmark\.(\w+)\(Shape:\s*(\w+)\)$/);
     if (m) return { family: 'string', group: m[2], method: m[1], value: value, isBaseline: m[1] === 'Bcl_GetHashCode' };
     m = name.match(/^IntegerHasherBenchmark\.(\w+?)_(\w+)$/);
     if (m) return { family: 'integer', group: m[1], method: m[2], value: value, isBaseline: m[2] === 'Bcl' };
