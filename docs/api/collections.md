@@ -4408,8 +4408,8 @@ most-recently-used entries.
 ### Default-key handling
 
 `default(TKey)` — `0` for `int`, `null` for reference types — is a valid key, and the whole surface
-(get / set / peek / remove) works with it. The key index needs no reserved empty value, so `0` is an
-ordinary key to it, and it hashes a `null` key to a fixed bucket without invoking the hasher.
+(get / set / peek / remove) works with it. The key index hashes the default key to a fixed bucket
+without invoking the hasher, so a hasher is never handed `0`, `null` or an empty `Nullable<T>`.
 
 ### The key index
 
@@ -4436,7 +4436,7 @@ From `LruCacheBenchmark` (capacity 1,024, Apple M-series, .NET 10). The baseline
 
 | Arm | Items | Baseline LRU | `LruCache` | Before #544 | Ratio |
 |---|---:|---:|---:|---:|---:|
-| `Get` (1,024 warm hits) | 100,000 | 19.92 µs | 2.62 µs | 2.50 µs | **7.6x faster** |
+| `Get` (1,024 warm hits) | 100,000 | 20.11 µs | 2.67 µs | 2.50 µs | **7.5x faster** |
 | `Put` (eviction churn) | 1,000 | 14.20 µs | 5.34 µs | 12.14 µs | **2.66x faster**, 0 B vs 48.7 KB |
 | `Put` (eviction churn) | 100,000 | 1.30 ms | 0.98 ms | 3.52 ms | **1.32x faster**, 0 B vs 4.8 MB |
 | `GetMissing` | 100,000 | 135–191 µs | 244–371 µs | 717–737 µs | about **2x slower** |
@@ -4641,8 +4641,8 @@ and `3`, not the last two distinct keys.
 ### Default-key handling
 
 `default(TKey)` — `0` for `int`, `null` for reference types — is a valid key, and the whole surface
-(get / set / peek / remove) works with it. The key index hashes a `null` key to a fixed bucket without
-invoking the hasher.
+(get / set / peek / remove) works with it. The key index hashes the default key to a fixed bucket
+without invoking the hasher.
 
 ### Thread safety
 
@@ -4765,13 +4765,13 @@ idiomatic .NET LRU, a `Dictionary` keyed to `LinkedList` nodes.
 
 | Arm | Items | Baseline LRU | `SieveCache` | Ratio |
 |---|---:|---:|---:|---:|
-| `Get` (1,024 warm hits) | 100,000 | 19.26 µs | 1.67 µs | **11.5x faster** |
+| `Get` (1,024 warm hits) | 100,000 | 19.33 µs | 1.71 µs | **11.3x faster** |
 | `ZipfWorkload` (get, put on miss) | 100,000 | 2.59 ms | 0.99 ms | **2.61x faster**, 0 B vs 2.36 MB |
 | `Put` (eviction churn) | 1,000 | 13.74 µs | 6.22 µs | **2.21x faster**, 0 B vs 48.7 KB |
 | `Put` (eviction churn) | 100,000 | 1.26 ms | 1.01 ms | **1.25x faster**, 0 B vs 4.8 MB |
 | `GetMissing` | 100,000 | 136–144 µs | 255–376 µs | about **2x slower** |
 
-On the same warm hits, `LruCache` takes 2.62 µs, so a SIEVE hit is about 1.6x cheaper than an LRU
+On the same warm hits, `LruCache` takes 2.67 µs, so a SIEVE hit is about 1.6x cheaper than an LRU
 relink. Until [#544](https://github.com/marius-bughiu/Celerity/issues/544) replaced the shared key
 index, the 100,000-key `Put` and `GetMissing` arms lost 2.65x and 5.35x. The miss row is the one
 that still loses, for the reason given under [LruCache's numbers](#lrucache-performance). A cache
@@ -4835,7 +4835,7 @@ recently used, and on `LfuCache` every hit invalidates.
 ### Default-key handling
 
 `default(TKey)` — `0` for `int`, `null` for reference types — is a valid key, and the whole surface
-works with it. The key index hashes a `null` key to a fixed bucket without invoking the hasher.
+works with it. The key index hashes the default key to a fixed bucket without invoking the hasher.
 
 ### Thread safety
 

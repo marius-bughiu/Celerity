@@ -26,9 +26,9 @@ namespace Celerity.Collections;
 /// cache is full. A removal recomputes no hash, because the slot stores its own.
 /// </para>
 /// <para>
-/// A <c>null</c> key (a <c>null</c> reference, or a <see cref="Nullable{T}"/> with no value) hashes to
-/// <c>0</c> without consulting the hasher, so a cache accepts a <c>null</c> key whichever hasher it was
-/// built with, as it did when it was backed by the dictionary.
+/// The default key (<c>0</c>, a <c>null</c> reference, or a <see cref="Nullable{T}"/> with no value)
+/// hashes to <c>0</c> without consulting the hasher, so a cache accepts it whichever hasher it was built
+/// with, as it did when it was backed by the dictionary.
 /// </para>
 /// <para>
 /// The type is a <see langword="readonly"/> struct of array references, so a cache holds it in a
@@ -52,9 +52,6 @@ internal readonly struct CacheKeyIndex<TKey, THasher>
     private readonly int[] _hashes;
 
     private readonly int _mask;
-
-    // Whether TKey has a null value: true for a reference type or a Nullable<T>.
-    private static readonly bool KeyCanBeNull = default(TKey) is null;
 
     /// <summary>
     /// The key resident in each node slot. Owned here because the chain walk compares against it; the
@@ -159,11 +156,11 @@ internal readonly struct CacheKeyIndex<TKey, THasher>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int HashOf(TKey key)
     {
-        // A null key — a null reference, or a Nullable<T> without a value — never reaches the hasher,
-        // which may not accept one. KeyCanBeNull is a static readonly the tiered JIT treats as a
-        // constant, so a non-nullable value-type instantiation drops the test entirely. The comparer
-        // form, rather than `key is null`, keeps an unoptimized (Debug) build from boxing every key.
-        if (KeyCanBeNull && EqualityComparer<TKey>.Default.Equals(key, default!))
+        // default(TKey) — a null reference, a Nullable<T> without a value, or 0 for an integer — never
+        // reaches the hasher, which may not accept it. The dictionary this index replaced kept the
+        // default key out of band, so no hasher ever saw it, and the caches keep that guarantee.
+        // EmptySlot.Is costs one intrinsic comparison and never boxes, even in an unoptimized build.
+        if (EmptySlot.Is(key))
             return 0;
         return default(THasher).Hash(key);
     }

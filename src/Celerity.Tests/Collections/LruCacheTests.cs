@@ -266,6 +266,20 @@ public class LruCacheTests
     }
 
     [Fact]
+    public void DefaultValueKey_ShouldBeSupported_WithoutReachingTheHasher()
+    {
+        var cache = new LruCache<int, int, DefaultRejectingIntHasher>(2);
+        cache[0] = 1;
+        cache[5] = 2;
+        Assert.True(cache.ContainsKey(0));
+        Assert.Equal(1, cache[0]);
+        Assert.True(cache.Remove(0, out int removed));
+        Assert.Equal(1, removed);
+        Assert.False(cache.ContainsKey(0));
+        Assert.Equal(2, cache[5]);
+    }
+
+    [Fact]
     public void NullNullableKey_ShouldBeSupported_WithoutReachingTheHasher()
     {
         // A Nullable<int> is a value type, so this checks the null test is not limited to references.

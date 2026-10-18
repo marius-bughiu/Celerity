@@ -45,3 +45,17 @@ internal struct NullRejectingNullableIntHasher : IHashProvider<int?>
 {
     public int Hash(int? key) => key!.Value;
 }
+
+/// <summary>
+/// An <see cref="int"/> hasher that throws on <c>0</c>, <c>default(int)</c>. It pins that the caches
+/// never hand the default key to the hasher, as the dictionary-backed index they replaced did not.
+/// </summary>
+internal struct DefaultRejectingIntHasher : IHashProvider<int>
+{
+    public int Hash(int key)
+    {
+        if (key == 0)
+            throw new ArgumentOutOfRangeException(nameof(key));
+        return key;
+    }
+}
