@@ -4329,20 +4329,20 @@ The BCL ships no bounded LRU cache. The idiomatic .NET LRU pairs a
 `Dictionary<TKey, LinkedListNode<(TKey, TValue)>>` with a `LinkedList<(TKey, TValue)>`, which
 **heap-allocates a `LinkedListNode` per insertion** and threads its recency order through pointers
 scattered across the managed heap. `LruCache` instead threads an **intrusive doubly-linked list
-through fixed-size node arrays** (allocated once, sized to `Capacity`) alongside an open-addressed
-key→node-slot index, so after construction the hot get/put/evict path performs **no allocation at
-all**. The documented BCL-beating workload is a hot, bounded cache under continuous eviction churn
-(memoize the last `N` results), where the array-backed list wins on allocation and locality.
+through fixed-size node arrays** (allocated once, sized to `Capacity`) alongside a key→node-slot
+index chained through those same slots, so after construction the hot get/put/evict path performs **no allocation at
+all**. Against that idiomatic LRU, hits and eviction churn are faster and allocate nothing, and a
+stream of misses over a wide key space is about 2x slower; the numbers are under
+[Performance](#lrucache-performance) below.
 
 ### How it works
 
 Every entry occupies a slot in the fixed node arrays. Occupied slots form a doubly-linked
 **most-recently-used → least-recently-used** chain via parallel `prev`/`next` index arrays; the
-free slots form a stack via the same `next` array. A key→slot index dogfoods
-`CelerityDictionary<TKey, int, THasher>` — which is where `THasher` is used, and which also supplies
-the out-of-band handling for a `default(TKey)` or `null` key (so a string hasher is never invoked
-with `null`). Because a slot index is **stable across recency reordering**, a cache hit relinks the
-chain but never touches the index. When a new key arrives at capacity, the tail (LRU) slot is
+free slots form a stack via the same `next` array. The key→slot index, which is where `THasher` is
+used, is a hash table chained through the node slots themselves (see
+[The key index](#the-key-index)). Because a slot index is **stable across recency reordering**, a
+cache hit relinks the chain but never touches the index. When a new key arrives at capacity, the tail (LRU) slot is
 evicted and **recycled in place** for the newcomer, so steady-state churn neither allocates nor
 frees.
 
@@ -4407,9 +4407,45 @@ most-recently-used entries.
 
 ### Default-key handling
 
-`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key. The dogfooded index
-stores it out-of-band, so the whole surface (get / set / peek / remove) works with it and the hasher
-is never invoked with `null`.
+`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key, and the whole surface
+(get / set / peek / remove) works with it. The key index needs no reserved empty value, so `0` is an
+ordinary key to it, and it hashes a `null` key to a fixed bucket without invoking the hasher.
+
+### The key index
+
+All three caches (`LruCache`, `LfuCache`, `SieveCache`) share one key→slot index. A slot never moves
+while its entry is resident, so the index stores no entries of its own. Each bucket holds the first
+slot of its chain, and each slot records its key, its full hash and the next slot in the same bucket.
+There are at least twice as many buckets as slots, so a full cache leaves most buckets empty and a
+miss usually stops at the first read. An insert pushes the slot onto its bucket's chain, and a removal
+or eviction unlinks it using the stored hash. Nothing is rehashed or moved, and nothing allocates
+after construction.
+
+Until [#544](https://github.com/marius-bughiu/Celerity/issues/544) the index was a `CelerityDictionary<TKey, int, THasher>`. Its linear probing suited a
+growing map but not a cache. A miss walked a cluster whose length the branch predictor cannot learn
+over a stream of distinct keys. Every eviction ran a backward-shift delete that rehashed the keys
+after the gap. The chained index cut the cost of a miss roughly in half and of a churning insert to
+about a third, and left the cost of a hit within a few percent.
+
+<a id="lrucache-performance"></a>
+### Performance
+
+From `LruCacheBenchmark` (capacity 1,024, Apple M-series, .NET 10). The baseline is the idiomatic
+.NET LRU, a `Dictionary` keyed to `LinkedList` nodes. The "before" column is the
+`CelerityDictionary`-indexed `LruCache` measured on the same machine.
+
+| Arm | Items | Baseline LRU | `LruCache` | Before #544 | Ratio |
+|---|---:|---:|---:|---:|---:|
+| `Get` (1,024 warm hits) | 100,000 | 19.92 µs | 2.62 µs | 2.50 µs | **7.6x faster** |
+| `Put` (eviction churn) | 1,000 | 14.20 µs | 5.34 µs | 12.14 µs | **2.66x faster**, 0 B vs 48.7 KB |
+| `Put` (eviction churn) | 100,000 | 1.30 ms | 0.98 ms | 3.52 ms | **1.32x faster**, 0 B vs 4.8 MB |
+| `GetMissing` | 100,000 | 135–191 µs | 244–371 µs | 717–737 µs | about **2x slower** |
+
+`GetMissing` varies from run to run on both sides, so the row gives the range over four runs. The
+benchmark's warm keys are `1..1024`, which the baseline's identity hash spreads over that many
+buckets without a single collision, so a miss there costs one comparison against a key that is
+always present. Keys that are not dense integers do not get that layout. `LfuCache` and `SieveCache`
+moved the same way on the same arms; `LfuCache`'s 100,000-key `Put` went from 3.81 ms to 1.12 ms.
 
 ### Thread safety
 
@@ -4488,8 +4524,8 @@ a constant one — its **policy bookkeeping is `O(1)` worst case** — and, afte
 **allocates nothing** on the hot get/put/evict path.
 
 A note on what that bound covers. The bucket and chain relinking is worst-case constant, but a
-complete cache operation also probes the key index, and that index is open-addressed with linear
-probing, so its probe length grows with clustering. **End to end, an operation is expected `O(1)`**,
+complete cache operation also looks the key up in the key index, a hash table whose chains lengthen
+when the hasher clusters the keys. **End to end, an operation is expected `O(1)`**,
 on the same terms as every other hash-backed collection in this library; it is the *policy* half —
 the half a sorted-structure LFU pays `O(log n)` for — that is worst-case constant.
 
@@ -4503,10 +4539,9 @@ Shah, Mitra and Matani, *"An O(1) algorithm for implementing the LFU cache evict
 
 Both the entry chains and the bucket list are threaded through **fixed-size arrays allocated once at
 construction**. `Capacity` bucket slots are always enough, because a live bucket holds at least one of
-the at-most-`Capacity` entries. A key→slot index dogfoods
-`CelerityDictionary<TKey, int, THasher>` — which is where `THasher` is used, and which also supplies
-the out-of-band handling for a `default(TKey)` or `null` key (so a string hasher is never invoked with
-`null`). Because a slot index is **stable across bucket movement**, a cache hit relinks chains but
+the at-most-`Capacity` entries. The key→slot index, which is where `THasher` is used, is the one
+`LruCache` uses, chained through the node slots (see [The key index](#the-key-index)). Because a slot
+index is **stable across bucket movement**, a cache hit relinks chains but
 never touches the index. When a new key arrives at capacity, the victim's slot is **recycled in
 place** for the newcomer, so steady-state churn neither allocates nor frees.
 
@@ -4605,9 +4640,9 @@ and `3`, not the last two distinct keys.
 
 ### Default-key handling
 
-`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key. The dogfooded index
-stores it out-of-band, so the whole surface (get / set / peek / remove) works with it and the hasher
-is never invoked with `null`.
+`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key, and the whole surface
+(get / set / peek / remove) works with it. The key index hashes a `null` key to a fixed bucket without
+invoking the hasher.
 
 ### Thread safety
 
@@ -4677,10 +4712,10 @@ promoted.
 ### How it works
 
 Entries sit in a queue threaded through one fixed array of node structs (allocated once, sized to
-`Capacity`), newest at the head. Each node carries its key, value, the two queue links and the
-visited flag, so a hit's value read and flag write share a cache line. A key→slot index dogfoods
-`CelerityDictionary<TKey, int, THasher>`, which is where `THasher` is used and which supplies the
-out-of-band handling for a `default(TKey)` or `null` key.
+`Capacity`), newest at the head. Each node carries its value, the two queue links and the visited
+flag, so a hit's value read and flag write share a cache line. The key→slot index, which is where
+`THasher` is used and which holds the keys, is the one `LruCache` uses (see
+[The key index](#the-key-index)).
 
 - **A hit** (the indexer getter, `TryGet`, or an `AddOrUpdate` that overwrites) sets the entry's
   visited flag. Nothing moves.
@@ -4730,18 +4765,18 @@ idiomatic .NET LRU, a `Dictionary` keyed to `LinkedList` nodes.
 
 | Arm | Items | Baseline LRU | `SieveCache` | Ratio |
 |---|---:|---:|---:|---:|
-| `Get` (1,024 warm hits) | 100,000 | 18.97 µs | 1.63 µs | **11.6x faster** |
-| `ZipfWorkload` (get, put on miss) | 100,000 | 2.63 ms | 1.57 ms | **1.68x faster**, 0 B vs 2.36 MB |
-| `Put` (eviction churn) | 1,000 | 14.28 µs | 10.17 µs | 1.40x faster, 0 B vs 48.7 KB |
-| `Put` (eviction churn) | 100,000 | 1.23 ms | 3.24 ms | **2.65x slower**, 0 B vs 4.8 MB |
-| `GetMissing` | 100,000 | 137 µs | 731 µs | **5.35x slower** |
+| `Get` (1,024 warm hits) | 100,000 | 19.26 µs | 1.67 µs | **11.5x faster** |
+| `ZipfWorkload` (get, put on miss) | 100,000 | 2.59 ms | 0.99 ms | **2.61x faster**, 0 B vs 2.36 MB |
+| `Put` (eviction churn) | 1,000 | 13.74 µs | 6.22 µs | **2.21x faster**, 0 B vs 48.7 KB |
+| `Put` (eviction churn) | 100,000 | 1.26 ms | 1.01 ms | **1.25x faster**, 0 B vs 4.8 MB |
+| `GetMissing` | 100,000 | 136–144 µs | 255–376 µs | about **2x slower** |
 
-On the same warm hits, `LruCache` takes 2.42 µs, so a SIEVE hit is about 1.5x cheaper than an LRU
-relink. The two losing rows come from the shared key index rather than the policy. `LruCache` loses
-the same two arms by about the same factors (2.45x and 4.94x), because both caches use the same
-`CelerityDictionary` index. A cache that mostly misses on a wide key space is therefore better
-served by the baseline. A cache that mostly hits, which is what a cache is for, is where this one
-wins.
+On the same warm hits, `LruCache` takes 2.62 µs, so a SIEVE hit is about 1.6x cheaper than an LRU
+relink. Until [#544](https://github.com/marius-bughiu/Celerity/issues/544) replaced the shared key
+index, the 100,000-key `Put` and `GetMissing` arms lost 2.65x and 5.35x. The miss row is the one
+that still loses, for the reason given under [LruCache's numbers](#lrucache-performance). A cache
+that mostly misses on dense integer keys may still be better served by the baseline. A cache that
+mostly hits, which is what a cache is for, is where this one wins.
 
 ### Constructors
 
@@ -4799,9 +4834,8 @@ recently used, and on `LfuCache` every hit invalidates.
 
 ### Default-key handling
 
-`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key. The dogfooded index
-stores it out-of-band, so the whole surface works with it and the hasher is never invoked with
-`null`.
+`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key, and the whole surface
+works with it. The key index hashes a `null` key to a fixed bucket without invoking the hasher.
 
 ### Thread safety
 

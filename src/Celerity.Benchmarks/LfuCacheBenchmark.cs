@@ -11,8 +11,8 @@ using Celerity.Hashing;
 // tree node per insertion, whereas LfuCache keeps its frequency buckets and their entry chains in
 // fixed-size arrays allocated once at construction, so its policy bookkeeping is O(1) worst case
 // rather than logarithmic and the hot get/put/evict path allocates nothing. (End to end an operation
-// is expected O(1), not worst-case: it also probes the open-addressed key index, whose probe length
-// grows on clustered keys like every other hash-backed collection here.) The [MemoryDiagnoser] Allocated column is the headline on the
+// is expected O(1), not worst-case: it also looks the key up in the key index, whose chains
+// lengthen on clustered keys like every other hash-backed collection here.) The [MemoryDiagnoser] Allocated column is the headline on the
 // Put category: sustained eviction churn allocates a fresh tree node per insert in the baseline and
 // zero in LfuCache. Get is where the complexity gap shows up on its own, since a hit is a pure
 // frequency bump — two constant-time relinks here against a remove-plus-reinsert there. The baseline is

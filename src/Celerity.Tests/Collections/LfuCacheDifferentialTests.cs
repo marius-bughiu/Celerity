@@ -126,6 +126,18 @@ public class LfuCacheDifferentialTests
     [InlineData(8)]
     [InlineData(16)]
     public void RandomOperations_ShouldMatchTheReferenceLfu_WhenAppliedToBoth(int capacity)
+        => RunAgainstOracle<Int32WangHasher>(capacity);
+
+    // Every key shares one chain of the key index, so lookups, evictions and removals all walk it.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(16)]
+    public void RandomOperations_ShouldMatchTheReferenceLfu_WhenEveryKeyCollides(int capacity)
+        => RunAgainstOracle<CacheCollidingHasher>(capacity);
+
+    private static void RunAgainstOracle<THasher>(int capacity)
+        where THasher : struct, IHashProvider<int>
     {
         const int Seeds = 40;
         const int OpsPerSeed = 400;
@@ -134,12 +146,12 @@ public class LfuCacheDifferentialTests
         for (int seed = 0; seed < Seeds; seed++)
         {
             var rng = new Random(seed * 7919 + capacity);
-            var cache = new LfuCache<int, int, Int32WangHasher>(capacity);
+            var cache = new LfuCache<int, int, THasher>(capacity);
             var oracle = new OracleLfu(capacity);
 
             for (int op = 0; op < OpsPerSeed; op++)
             {
-                int key = rng.Next(0, KeySpan); // includes 0 == default(int) to hit the out-of-band path
+                int key = rng.Next(0, KeySpan); // includes 0 == default(int) so the default key stays covered
                 int value = rng.Next();
                 int choice = rng.Next(6);
 

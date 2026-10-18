@@ -233,7 +233,7 @@ public class LruCacheTests
     [Fact]
     public void DefaultKey_IsSupported()
     {
-        // 0 is default(int); the underlying index stores it out-of-band. Exercise the full surface.
+        // 0 is default(int), which an index must not mistake for a vacant slot. Exercise the full surface.
         var cache = NewCache(3);
         cache[0] = "zero";
         Assert.True(cache.ContainsKey(0));
@@ -243,6 +243,41 @@ public class LruCacheTests
         Assert.True(cache.Remove(0, out string? removed));
         Assert.Equal("zero", removed);
         Assert.False(cache.ContainsKey(0));
+    }
+
+    [Fact]
+    public void ReferenceKeys_ShouldResolve_WhenEveryKeySharesOneChain()
+    {
+        // "a" and "b" share a hash; "cc" and "dd" share the other. A lookup walks past both kinds of
+        // neighbour, and removing a key from the middle of the chain must keep the rest reachable.
+        var cache = new LruCache<string, int, CacheCollidingStringHasher>(4);
+        cache["a"] = 1;
+        cache["cc"] = 2;
+        cache["b"] = 3;
+        cache["dd"] = 4;
+        Assert.Equal(1, cache["a"]);
+        Assert.Equal(2, cache["cc"]);
+        Assert.False(cache.ContainsKey("e"));
+        Assert.True(cache.Remove("cc"));
+        Assert.False(cache.ContainsKey("cc"));
+        Assert.Equal(3, cache["b"]);
+        Assert.Equal(4, cache["dd"]);
+        Assert.Equal(1, cache["a"]);
+    }
+
+    [Fact]
+    public void NullKey_ShouldBeSupported_WithoutReachingTheHasher()
+    {
+        // A null key hashes to a fixed bucket inside the cache, so a hasher that rejects null is fine.
+        var cache = new LruCache<string, int, NullRejectingStringHasher>(2);
+        cache[null!] = 1;
+        cache["a"] = 2;
+        Assert.True(cache.ContainsKey(null!));
+        Assert.Equal(1, cache[null!]);
+        Assert.True(cache.Remove(null!, out int removed));
+        Assert.Equal(1, removed);
+        Assert.False(cache.ContainsKey(null!));
+        Assert.Equal(2, cache["a"]);
     }
 
     [Fact]
