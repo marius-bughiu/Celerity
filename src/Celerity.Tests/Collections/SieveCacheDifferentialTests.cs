@@ -115,7 +115,7 @@ public class SieveCacheDifferentialTests
     private enum Op { AddOrUpdate, TryGet, TryAdd, Remove, TryPeek, Clear }
 
     // Deliberately smaller than the operation count, so hits, overwrites and evictions collide on
-    // the same keys. Key 0 is default(int), which the hash table stores out of band.
+    // the same keys. Key 0 is default(int), kept in range so the default key stays covered.
     private const int KeySpan = 20;
 
     // Weighted toward put and get, so the visited bits the hand sweeps are dense; clear is rare,
@@ -135,12 +135,20 @@ public class SieveCacheDifferentialTests
         Gen.Select(Gen.Int[1, 16], GenOp.List[0, 300]);
 
     [Fact]
-    public void SieveCache_ShouldMatch_AReferenceSieve()
+    public void SieveCache_ShouldMatch_AReferenceSieve() => RunAgainstOracle<Int32WangHasher>();
+
+    // Every key shares one chain of the key index, so lookups, evictions and removals all walk it.
+    [Fact]
+    public void SieveCache_ShouldMatch_AReferenceSieve_WhenEveryKeyCollides()
+        => RunAgainstOracle<CacheCollidingHasher>();
+
+    private static void RunAgainstOracle<THasher>()
+        where THasher : struct, IHashProvider<int>
     {
         GenScript.Sample(script =>
         {
             int capacity = script.Capacity;
-            var cache = new SieveCache<int, int, Int32WangHasher>(capacity);
+            var cache = new SieveCache<int, int, THasher>(capacity);
             var oracle = new OracleSieve(capacity);
 
             foreach (var (kind, key, value) in script.Ops)

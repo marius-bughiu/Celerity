@@ -23,10 +23,11 @@ namespace Celerity.Collections;
 /// insertion and chases pointers scattered across the managed heap. <see cref="LruCache{TKey, TValue, THasher}"/>
 /// instead keeps its recency order in an <b>intrusive doubly-linked list threaded through fixed-size
 /// node arrays</b> (allocated once, sized to <see cref="Capacity"/>) and an open-addressed
-/// key&#8594;node-slot index. The node slot is stable across recency reordering, so a cache hit never
-/// touches the index; after construction the hot get/put/evict path performs <b>no allocation at all</b>.
-/// The documented BCL-beating workload is a hot, bounded cache under continuous eviction churn
-/// (memoize the last <c>N</c> results), where the array-backed list wins on allocation and locality.
+/// key&#8594;node-slot index chained through those same slots. The node slot is stable across recency
+/// reordering, so a cache hit never touches the index; after construction the hot get/put/evict path performs <b>no allocation at all</b>.
+/// Against that idiomatic LRU, hits and eviction churn are faster and allocate nothing; a stream of
+/// misses over a wide key space is about 2x slower when the resident keys are dense integers, which
+/// the baseline's identity-hashed <c>Dictionary</c> lays out without a single collision.
 /// </para>
 /// <para>
 /// <b>Reads are mutating.</b> LRU semantics require a lookup to count as a use, so the indexer getter
@@ -46,12 +47,13 @@ public class LruCache<TKey, TValue, THasher>
     // Sentinel for "no node" in the intrusive list / free stack.
     private const int Nil = -1;
 
-    // Key -> node slot index. Dogfoods CelerityDictionary; because a node slot index is stable
-    // across recency reordering, a cache hit (which only relinks the list) never mutates this map.
-    private readonly CelerityDictionary<TKey, int, THasher> _index;
+    // Key -> node slot index, chained through the node slots themselves. Because a node slot index
+    // is stable across recency reordering, a cache hit (which only relinks the list) never mutates it.
+    private readonly CacheKeyIndex<TKey, THasher> _index;
 
     // Fixed-size node storage (length == capacity). Occupied nodes form the MRU..LRU recency chain
-    // via _prev/_next; free nodes form a singly-linked stack via _next (rooted at _freeHead).
+    // via _prev/_next; free nodes form a singly-linked stack via _next (rooted at _freeHead). The key
+    // array is the index's own (_index.Keys), aliased here so reads stay one load.
     private readonly TKey[] _nodeKeys;
     private readonly TValue?[] _nodeValues;
     private readonly int[] _prev;
@@ -78,7 +80,8 @@ public class LruCache<TKey, TValue, THasher>
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least 1.");
 
         _capacity = capacity;
-        _nodeKeys = new TKey[capacity];
+        _index = new CacheKeyIndex<TKey, THasher>(capacity);
+        _nodeKeys = _index.Keys;
         _nodeValues = new TValue?[capacity];
         _prev = new int[capacity];
         _next = new int[capacity];
@@ -87,10 +90,6 @@ public class LruCache<TKey, TValue, THasher>
         _head = Nil;
         _tail = Nil;
         _count = 0;
-
-        // Pre-size the index for the full capacity so it never resizes during steady-state churn.
-        _index = new CelerityDictionary<TKey, int, THasher>(capacity);
-        _index.EnsureCapacity(capacity);
     }
 
     /// <summary>
@@ -146,7 +145,8 @@ public class LruCache<TKey, TValue, THasher>
     {
         get
         {
-            if (!_index.TryGetValue(key, out int node))
+            int node = _index.Find(key);
+            if (node < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
             if (MoveToHeadIfNeeded(node))
                 _version++;
@@ -171,7 +171,8 @@ public class LruCache<TKey, TValue, THasher>
     /// </remarks>
     public bool TryGet(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
@@ -195,7 +196,8 @@ public class LruCache<TKey, TValue, THasher>
     /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
     public bool TryPeek(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
@@ -210,7 +212,7 @@ public class LruCache<TKey, TValue, THasher>
     /// </summary>
     /// <param name="key">The key to locate.</param>
     /// <returns><c>true</c> if the key is found; otherwise <c>false</c>.</returns>
-    public bool ContainsKey(TKey key) => _index.ContainsKey(key);
+    public bool ContainsKey(TKey key) => _index.Find(key) >= 0;
 
     /// <summary>
     /// Adds <paramref name="key"/> with <paramref name="value"/> as the most-recently-used entry,
@@ -221,7 +223,8 @@ public class LruCache<TKey, TValue, THasher>
     /// <param name="value">The value to associate with <paramref name="key"/>.</param>
     public void AddOrUpdate(TKey key, TValue? value)
     {
-        if (_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node >= 0)
         {
             _nodeValues[node] = value;
             if (MoveToHeadIfNeeded(node))
@@ -258,7 +261,7 @@ public class LruCache<TKey, TValue, THasher>
     /// </returns>
     public bool TryAdd(TKey key, TValue? value)
     {
-        if (_index.ContainsKey(key))
+        if (_index.Find(key) >= 0)
             return false;
 
         InsertNew(key, value);
@@ -284,14 +287,15 @@ public class LruCache<TKey, TValue, THasher>
     /// <returns><c>true</c> if the entry was removed; <c>false</c> if the key was not found.</returns>
     public bool Remove(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
         }
 
         value = _nodeValues[node];
-        _index.Remove(key);
+        _index.Remove(node);
         Unlink(node);
         FreeNode(node);
         _count--;
@@ -308,7 +312,6 @@ public class LruCache<TKey, TValue, THasher>
             return;
 
         _index.Clear();
-        Array.Clear(_nodeKeys, 0, _nodeKeys.Length);
         Array.Clear(_nodeValues, 0, _nodeValues.Length);
         InitFreeStack();
         _head = Nil;
@@ -393,7 +396,7 @@ public class LruCache<TKey, TValue, THasher>
         {
             // Evict the least-recently-used entry and recycle its slot in place (no free-stack churn).
             node = _tail;
-            _index.Remove(_nodeKeys[node]);
+            _index.Remove(node);
             Unlink(node);
         }
         else
@@ -403,16 +406,15 @@ public class LruCache<TKey, TValue, THasher>
             _count++;
         }
 
-        _nodeKeys[node] = key;
+        _index.Insert(node, key);
         _nodeValues[node] = value;
         LinkAtHead(node);
-        _index[key] = node;
     }
 
-    // Detaches a free node's storage and pushes its slot onto the free stack.
+    // Detaches a free node's value (the index already released its key) and pushes its slot onto
+    // the free stack.
     private void FreeNode(int node)
     {
-        _nodeKeys[node] = default!;
         _nodeValues[node] = default;
         _next[node] = _freeHead;
         _freeHead = node;

@@ -57,12 +57,14 @@ public class SieveCache<TKey, TValue, THasher>
     // Sentinel for "no node" in the queue links, the free stack and the hand.
     private const int Nil = -1;
 
-    // Key -> node slot index. A node slot never moves while its entry is resident, and a hit does
-    // not touch the queue at all, so only inserts, evictions and removals mutate this map.
-    private readonly CelerityDictionary<TKey, int, THasher> _index;
+    // Key -> node slot index, chained through the node slots themselves. A node slot never moves
+    // while its entry is resident, and a hit does not touch the queue at all, so only inserts,
+    // evictions and removals mutate it. It owns each slot's key (_index.Keys, aliased as _keys).
+    private readonly CacheKeyIndex<TKey, THasher> _index;
+    private readonly TKey[] _keys;
 
-    // Fixed-size node storage (length == capacity). One array of structs, so a hit's value read and
-    // visited-bit write land on the same cache line, as do the hand's bit test and link read.
+    // Fixed-size node storage (length == capacity), keys aside. One array of structs, so a hit's value
+    // read and visited-bit write land on the same cache line, as do the hand's bit test and link read.
     // Occupied nodes form the head (newest) .. tail (oldest) queue via Prev/Next; free nodes form a
     // singly-linked stack via Next, rooted at _freeHead.
     private readonly Node[] _nodes;
@@ -80,7 +82,6 @@ public class SieveCache<TKey, TValue, THasher>
 
     private struct Node
     {
-        public TKey Key;
         public TValue? Value;
         public int Prev;
         public int Next;
@@ -99,16 +100,14 @@ public class SieveCache<TKey, TValue, THasher>
 
         _capacity = capacity;
         _nodes = new Node[capacity];
+        _index = new CacheKeyIndex<TKey, THasher>(capacity);
+        _keys = _index.Keys;
 
         InitFreeStack();
         _head = Nil;
         _tail = Nil;
         _hand = Nil;
         _count = 0;
-
-        // Pre-size the index for the full capacity so it never resizes during steady-state churn.
-        _index = new CelerityDictionary<TKey, int, THasher>(capacity);
-        _index.EnsureCapacity(capacity);
     }
 
     /// <summary>
@@ -164,7 +163,8 @@ public class SieveCache<TKey, TValue, THasher>
     {
         get
         {
-            if (!_index.TryGetValue(key, out int node))
+            int node = _index.Find(key);
+            if (node < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
             ref Node n = ref _nodes[node];
             n.Visited = true;
@@ -189,7 +189,8 @@ public class SieveCache<TKey, TValue, THasher>
     /// </remarks>
     public bool TryGet(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
@@ -213,7 +214,8 @@ public class SieveCache<TKey, TValue, THasher>
     /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
     public bool TryPeek(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
@@ -228,7 +230,7 @@ public class SieveCache<TKey, TValue, THasher>
     /// </summary>
     /// <param name="key">The key to locate.</param>
     /// <returns><c>true</c> if the key is found; otherwise <c>false</c>.</returns>
-    public bool ContainsKey(TKey key) => _index.ContainsKey(key);
+    public bool ContainsKey(TKey key) => _index.Find(key) >= 0;
 
     /// <summary>
     /// Adds <paramref name="key"/> with <paramref name="value"/> as the newest, unvisited entry,
@@ -243,7 +245,8 @@ public class SieveCache<TKey, TValue, THasher>
     /// </remarks>
     public void AddOrUpdate(TKey key, TValue? value)
     {
-        if (_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node >= 0)
         {
             ref Node n = ref _nodes[node];
             n.Value = value;
@@ -280,7 +283,7 @@ public class SieveCache<TKey, TValue, THasher>
     /// </returns>
     public bool TryAdd(TKey key, TValue? value)
     {
-        if (_index.ContainsKey(key))
+        if (_index.Find(key) >= 0)
             return false;
 
         InsertNew(key, value);
@@ -310,14 +313,15 @@ public class SieveCache<TKey, TValue, THasher>
     /// </remarks>
     public bool Remove(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
         }
 
         value = _nodes[node].Value;
-        _index.Remove(key);
+        _index.Remove(node);
         if (node == _hand)
             _hand = _nodes[node].Prev;
         Unlink(node);
@@ -388,12 +392,11 @@ public class SieveCache<TKey, TValue, THasher>
             _count++;
         }
 
+        _index.Insert(node, key);
         ref Node n = ref _nodes[node];
-        n.Key = key;
         n.Value = value;
         n.Visited = false;
         LinkAtHead(node);
-        _index[key] = node;
     }
 
     // The SIEVE sweep. Starting at the hand (or the tail when the hand is unset), clear each visited
@@ -413,16 +416,16 @@ public class SieveCache<TKey, TValue, THasher>
         }
 
         _hand = _nodes[node].Prev;
-        _index.Remove(_nodes[node].Key);
+        _index.Remove(node);
         Unlink(node);
         return node;
     }
 
-    // Detaches a free node's storage and pushes its slot onto the free stack.
+    // Detaches a free node's value (the index already released its key) and pushes its slot onto
+    // the free stack.
     private void FreeNode(int node)
     {
         ref Node n = ref _nodes[node];
-        n.Key = default!;
         n.Value = default;
         n.Visited = false;
         n.Next = _freeHead;
@@ -497,8 +500,7 @@ public class SieveCache<TKey, TValue, THasher>
                 return false;
             }
 
-            ref Node n = ref _cache._nodes[_node];
-            _current = new KeyValuePair<TKey, TValue?>(n.Key, n.Value);
+            _current = new KeyValuePair<TKey, TValue?>(_cache._keys[_node], _cache._nodes[_node].Value);
             return true;
         }
 

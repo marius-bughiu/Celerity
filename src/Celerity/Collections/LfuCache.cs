@@ -8,7 +8,8 @@ namespace Celerity.Collections;
 /// automatically evicts the least-frequently-used entry when a new key would push the count past
 /// <see cref="Capacity"/>, breaking ties between equally-frequent entries by least-recently-used. The
 /// eviction bookkeeping itself is <c>O(1)</c> <i>worst case</i>; the qualifier on the whole operation
-/// is the open-addressed key-index probe, as on every hash-backed collection here.
+/// is the key-index lookup, whose chain length depends on how the hasher spreads the keys, as on every
+/// hash-backed collection here.
 /// Parameterized on a custom <see cref="IHashProvider{T}"/> so key hashing devirtualizes and inlines.
 /// </summary>
 /// <typeparam name="TKey">The type of the keys.</typeparam>
@@ -104,13 +105,15 @@ public class LfuCache<TKey, TValue, THasher>
     // Sentinel for "no node" / "no bucket" in the intrusive lists and the free stacks.
     private const int Nil = -1;
 
-    // Key -> node slot index. Dogfoods CelerityDictionary; because a node slot index is stable across
-    // bucket movement, a cache hit (which only relinks the entry and bucket chains) never mutates this map.
-    private readonly CelerityDictionary<TKey, int, THasher> _index;
+    // Key -> node slot index, chained through the node slots themselves. Because a node slot index is
+    // stable across bucket movement, a cache hit (which only relinks the entry and bucket chains) never
+    // mutates it.
+    private readonly CacheKeyIndex<TKey, THasher> _index;
 
     // Fixed-size entry storage (length == capacity). Occupied nodes belong to exactly one frequency
     // bucket and form that bucket's most-recently-used..least-recently-used chain via _prev/_next;
-    // free nodes form a singly-linked stack via _next (rooted at _freeHead).
+    // free nodes form a singly-linked stack via _next (rooted at _freeHead). The key array is the
+    // index's own (_index.Keys), aliased here so reads stay one load.
     private readonly TKey[] _nodeKeys;
     private readonly TValue?[] _nodeValues;
     private readonly int[] _nodeBucket;
@@ -149,7 +152,8 @@ public class LfuCache<TKey, TValue, THasher>
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least 1.");
 
         _capacity = capacity;
-        _nodeKeys = new TKey[capacity];
+        _index = new CacheKeyIndex<TKey, THasher>(capacity);
+        _nodeKeys = _index.Keys;
         _nodeValues = new TValue?[capacity];
         _nodeBucket = new int[capacity];
         _prev = new int[capacity];
@@ -165,10 +169,6 @@ public class LfuCache<TKey, TValue, THasher>
         _minBucket = Nil;
         _maxBucket = Nil;
         _count = 0;
-
-        // Pre-size the index for the full capacity so it never resizes during steady-state churn.
-        _index = new CelerityDictionary<TKey, int, THasher>(capacity);
-        _index.EnsureCapacity(capacity);
     }
 
     /// <summary>
@@ -234,7 +234,8 @@ public class LfuCache<TKey, TValue, THasher>
     {
         get
         {
-            if (!_index.TryGetValue(key, out int node))
+            int node = _index.Find(key);
+            if (node < 0)
                 throw new KeyNotFoundException($"Key {key} not found.");
             Touch(node);
             _version++;
@@ -259,7 +260,8 @@ public class LfuCache<TKey, TValue, THasher>
     /// </remarks>
     public bool TryGet(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
@@ -283,7 +285,8 @@ public class LfuCache<TKey, TValue, THasher>
     /// <returns><c>true</c> if the key was found; otherwise <c>false</c>.</returns>
     public bool TryPeek(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
@@ -298,7 +301,7 @@ public class LfuCache<TKey, TValue, THasher>
     /// </summary>
     /// <param name="key">The key to locate.</param>
     /// <returns><c>true</c> if the key is found; otherwise <c>false</c>.</returns>
-    public bool ContainsKey(TKey key) => _index.ContainsKey(key);
+    public bool ContainsKey(TKey key) => _index.Find(key) >= 0;
 
     /// <summary>
     /// Reads the number of times <paramref name="key"/> has been used — one for the insert, plus one
@@ -318,7 +321,8 @@ public class LfuCache<TKey, TValue, THasher>
     /// </remarks>
     public bool TryGetFrequency(TKey key, out long frequency)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             frequency = 0;
             return false;
@@ -336,7 +340,8 @@ public class LfuCache<TKey, TValue, THasher>
     /// <param name="value">The value to associate with <paramref name="key"/>.</param>
     public void AddOrUpdate(TKey key, TValue? value)
     {
-        if (_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node >= 0)
         {
             _nodeValues[node] = value;
             Touch(node);
@@ -373,7 +378,7 @@ public class LfuCache<TKey, TValue, THasher>
     /// </returns>
     public bool TryAdd(TKey key, TValue? value)
     {
-        if (_index.ContainsKey(key))
+        if (_index.Find(key) >= 0)
             return false;
 
         InsertNew(key, value);
@@ -400,14 +405,15 @@ public class LfuCache<TKey, TValue, THasher>
     /// <returns><c>true</c> if the entry was removed; <c>false</c> if the key was not found.</returns>
     public bool Remove(TKey key, out TValue? value)
     {
-        if (!_index.TryGetValue(key, out int node))
+        int node = _index.Find(key);
+        if (node < 0)
         {
             value = default;
             return false;
         }
 
         value = _nodeValues[node];
-        _index.Remove(key);
+        _index.Remove(node);
         DetachFromBucket(node);
         FreeNode(node);
         _count--;
@@ -425,7 +431,6 @@ public class LfuCache<TKey, TValue, THasher>
             return;
 
         _index.Clear();
-        Array.Clear(_nodeKeys, 0, _nodeKeys.Length);
         Array.Clear(_nodeValues, 0, _nodeValues.Length);
         InitFreeStacks();
         _minBucket = Nil;
@@ -520,7 +525,7 @@ public class LfuCache<TKey, TValue, THasher>
             // Evict the least-frequently-used entry — the LRU end of the lowest-frequency bucket — and
             // recycle its slot in place (no free-stack churn).
             node = _bucketTail[_minBucket];
-            _index.Remove(_nodeKeys[node]);
+            _index.Remove(node);
             DetachFromBucket(node);
         }
         else
@@ -530,7 +535,7 @@ public class LfuCache<TKey, TValue, THasher>
             _count++;
         }
 
-        _nodeKeys[node] = key;
+        _index.Insert(node, key);
         _nodeValues[node] = value;
 
         // At most _count - 1 entries are linked at this point, so at most _count - 1 <= _capacity - 1
@@ -545,8 +550,6 @@ public class LfuCache<TKey, TValue, THasher>
             LinkBucketAtFront(bucket);
             LinkIntoBucket(node, bucket);
         }
-
-        _index[key] = node;
     }
 
     // Raises an entry's frequency by one, moving it to the bucket for f + 1 and creating that bucket if
@@ -596,10 +599,10 @@ public class LfuCache<TKey, TValue, THasher>
             FreeBucket(bucket);
     }
 
-    // Detaches a free node's storage and pushes its slot onto the free stack.
+    // Detaches a free node's value (the index already released its key) and pushes its slot onto
+    // the free stack.
     private void FreeNode(int node)
     {
-        _nodeKeys[node] = default!;
         _nodeValues[node] = default;
         _next[node] = _freeHead;
         _freeHead = node;

@@ -99,8 +99,8 @@ public class LruCacheDifferentialTests
     private enum Op { AddOrUpdate, TryGet, TryAdd, Remove, TryPeek }
 
     // Deliberately smaller than the operation count, so updates and evictions collide on the same
-    // keys instead of the cache filling once with distinct ones. Key 0 is default(int), which is
-    // the out-of-band slot the hash table stores separately.
+    // keys instead of the cache filling once with distinct ones. Key 0 is default(int), kept in
+    // range so the default key stays covered.
     private const int KeySpan = 20;
 
     private static readonly Gen<Op> GenKind =
@@ -113,12 +113,20 @@ public class LruCacheDifferentialTests
         Gen.Select(Gen.Int[1, 16], GenOp.List[0, 300]);
 
     [Fact]
-    public void LruCache_ShouldMatch_AReferenceLru()
+    public void LruCache_ShouldMatch_AReferenceLru() => RunAgainstOracle<Int32WangHasher>();
+
+    // Every key shares one chain of the key index, so lookups, evictions and removals all walk it.
+    [Fact]
+    public void LruCache_ShouldMatch_AReferenceLru_WhenEveryKeyCollides()
+        => RunAgainstOracle<CacheCollidingHasher>();
+
+    private static void RunAgainstOracle<THasher>()
+        where THasher : struct, IHashProvider<int>
     {
         GenScript.Sample(script =>
         {
             int capacity = script.Capacity;
-            var cache = new LruCache<int, int, Int32WangHasher>(capacity);
+            var cache = new LruCache<int, int, THasher>(capacity);
             var oracle = new OracleLru(capacity);
 
             foreach (var (kind, key, value) in script.Ops)
