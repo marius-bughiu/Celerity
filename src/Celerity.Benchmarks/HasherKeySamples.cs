@@ -16,7 +16,7 @@ public enum KeyShape
 }
 
 /// <summary>
-/// Deterministic, <b>distinct</b> key samples shared by <c>StringHasherBenchmark</c> /
+/// Deterministic, <b>distinct</b> key samples shared by the <c>String*HasherBenchmark</c> classes /
 /// <c>IntegerHasherBenchmark</c> (throughput) and the <c>--hash-quality</c> distribution report.
 /// </summary>
 /// <remarks>

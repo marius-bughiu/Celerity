@@ -28,15 +28,15 @@ concurrency:
   group: benchmarks-${{ github.sha }}
   cancel-in-progress: false
 
-# The core suite is ~300 cases and, at full BenchmarkDotNet accuracy (Job.Default x2
-# launches, see CiConfig.cs), one pass takes ~3h — past GitHub's 6h job ceiling once, when
-# this workflow also measured a base (#217). Rather than trade away measurement accuracy,
-# we shard the suite across a parallel matrix: each shard measures only its slice on its
-# own runner, so wall time is ~3h / SHARD_TOTAL at full accuracy, and an aggregate job
-# stitches the per-shard JSON back together for the gh-pages publish.
+# The core suite is ~1,300 cases and, at full BenchmarkDotNet accuracy (Job.Default x2
+# launches, see CiConfig.cs), one pass takes ~13h — far past GitHub's 6h job ceiling.
+# Rather than trade away measurement accuracy, we shard the suite across a parallel
+# matrix: each shard measures only its slice on its own runner, so wall time is ~13h /
+# SHARD_TOTAL at full accuracy, and an aggregate job stitches the per-shard JSON back
+# together for the gh-pages publish.
 env:
   # Keep in sync with the matrix.shard list below.
-  SHARD_TOTAL: '8'
+  SHARD_TOTAL: '14'
 
 jobs:
   # The `paths: src/**` trigger above is a path filter, not a semantic one: an XML
@@ -96,18 +96,24 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_benchmarks == 'true'
     runs-on: ubuntu-latest
-    # Sized from the measured slices at SHARD_TOTAL=8, which ran 45.8-67.3 min. The cap was
-    # 180 min when a job also replayed its slice against a `main` base and so cost about
-    # twice its slice; measuring one side halves that, and 120 min leaves room for the
-    # suite to grow into. Re-measure if slices approach 90 min; at that point the fix is to
-    # split the 81-case StringHasherBenchmark, which is a single class and therefore floors
-    # the heaviest slice no matter how many shards there are.
+    # Sized from measured slices. At SHARD_TOTAL=8 the suite outgrew the cap: slices ran
+    # 77-119 min and two `main` runs lost a shard to it (2b0c668, 7494a36). At 14 shards the
+    # slices ran 53.7-68.0 min (workflow_dispatch run 39039341612: 1,315 cases, 0.63 min each
+    # on average), leaving ~50 min under the cap.
+    #
+    # The packer balances case counts, not minutes, and per-case cost varies by class, so
+    # equal case totals still ran 85-111 min side by side: size for the heaviest slice, not
+    # the average. Re-measure if slices approach 90 min; each shard's job summary lists its
+    # per-class wall time. The packer never splits a class, so no class may approach the
+    # per-shard case average (StringHasherBenchmark was split by hasher family for that),
+    # and every added shard is one more concurrent runner taken from PR CI, so split a heavy
+    # class before widening the matrix.
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         # Must enumerate 0 .. SHARD_TOTAL-1.
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
     permissions:
       contents: read
@@ -153,6 +159,28 @@ jobs:
           path: /tmp/reports/**
           if-no-files-found: error
           retention-days: 30
+
+      # One row per class from BenchmarkDotNet's own per-class "Run time" line, so re-sizing
+      # the matrix reads off the job summary instead of a ~40k-line log. After the upload and
+      # non-fatal: a diagnostics step must never cost the measurement.
+      - name: Summarize per-class wall time
+        continue-on-error: true
+        working-directory: src/Celerity.Benchmarks
+        run: |
+          set -euo pipefail
+          log=$(ls BenchmarkDotNet.Artifacts/*.log | head -n 1)
+          {
+            echo "### Shard ${{ matrix.shard }} — per-class wall time"
+            echo
+            echo "| Class | Cases | Minutes |"
+            echo "|---|--:|--:|"
+            awk '
+              /^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] }
+              /^Run time: / { secs = $4; sub(/^\(/, "", secs); printf "%s\t%d\t%.1f\n", cls, $NF, secs / 60 }
+            ' "$log" | sort -t$'\t' -k3,3nr | awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }'
+            echo
+            grep -m1 '^Global total time' "$log" || true
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   aggregate:
     name: aggregate & report
