@@ -36,3 +36,12 @@ internal struct CacheCollidingStringHasher : IHashProvider<string>
 {
     public int Hash(string key) => (key.Length & 1) << 20;
 }
+
+/// <summary>
+/// A <see cref="Nullable{T}"/> hasher that reads <c>key.Value</c>, so it throws on a null key. It pins
+/// that a null nullable key, which is a value type, never reaches the hasher either.
+/// </summary>
+internal struct NullRejectingNullableIntHasher : IHashProvider<int?>
+{
+    public int Hash(int? key) => key!.Value;
+}

@@ -409,6 +409,21 @@ public class LfuCacheTests
     }
 
     [Fact]
+    public void NullNullableKey_ShouldBeSupported_WithoutReachingTheHasher()
+    {
+        // A Nullable<int> is a value type, so this checks the null test is not limited to references.
+        var cache = new LfuCache<int?, int, NullRejectingNullableIntHasher>(2);
+        cache[null] = 1;
+        cache[5] = 2;
+        Assert.True(cache.ContainsKey(null));
+        Assert.Equal(1, cache[null]);
+        Assert.True(cache.Remove(null, out int removed));
+        Assert.Equal(1, removed);
+        Assert.False(cache.ContainsKey(null));
+        Assert.Equal(2, cache[5]);
+    }
+
+    [Fact]
     public void NullKey_ShouldBeSupported_WithoutReachingTheHasher()
     {
         // A null key hashes to a fixed bucket inside the cache, so a hasher that rejects null is fine.
