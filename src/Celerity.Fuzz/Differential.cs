@@ -61,6 +61,7 @@ internal static class Differential
         ("CuckooFilter", CuckooFilterCase),
         ("XorFilter", XorFilterCase),
         ("BitSet", BitSetCase),
+        ("BitPackedArray", BitPackedArrayCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("WaveletTree", WaveletTreeCase),
         ("EliasFanoSequence", EliasFanoSequenceCase),
@@ -1744,6 +1745,72 @@ internal static class Differential
                     "WaveletTree RangeRank disagreed");
             }
         }
+    }
+
+    // ---- bit-packed array --------------------------------------------------------
+
+    // Every width from 1 to 64, so each straddle period gcd(width, 64) is reached, and a mix of point writes,
+    // range writes, fills and clears drawn towards the edge values where a lost or stray high bit shows. After
+    // every operation the whole array, plus one random GetRange window, is reconciled against a ulong[].
+    private static void BitPackedArrayCase(Random rng)
+    {
+        int bits = rng.Next(1, 65);
+        int length = rng.Next(0, 600);
+        var sut = new BitPackedArray(length, bits);
+        var model = new ulong[length];
+        ulong max = sut.MaxValue;
+
+        ulong NextValue() => rng.Next(4) switch
+        {
+            0 => max,
+            1 => (max >> 1) + 1,
+            2 => 0,
+            _ => (ulong)rng.NextInt64() * 2 + (ulong)rng.Next(2) & max,
+        };
+
+        for (int op = 0; op < 300; op++)
+        {
+            int roll = rng.Next(100);
+            if (roll < 60 && length > 0)
+            {
+                int index = rng.Next(length);
+                ulong value = NextValue();
+                sut[index] = value;
+                model[index] = value;
+            }
+            else if (roll < 90)
+            {
+                int start = rng.Next(length + 1);
+                ulong[] run = new ulong[rng.Next(length - start + 1)];
+                for (int i = 0; i < run.Length; i++)
+                    run[i] = NextValue();
+                sut.SetRange(start, run);
+                run.CopyTo(model, start);
+            }
+            else if (roll < 95)
+            {
+                ulong value = NextValue();
+                sut.Fill(value);
+                Array.Fill(model, value);
+            }
+            else
+            {
+                sut.Clear();
+                Array.Clear(model);
+            }
+
+            for (int i = 0; i < length; i++)
+                Check(sut[i] == model[i], $"BitPackedArray value at {i} disagreed (width {bits})");
+
+            int from = rng.Next(length + 1);
+            var window = new ulong[rng.Next(length - from + 1)];
+            sut.GetRange(from, window);
+            Check(window.AsSpan().SequenceEqual(model.AsSpan(from, window.Length)),
+                $"BitPackedArray GetRange({from}, {window.Length}) disagreed (width {bits})");
+        }
+
+        Check(sut.ToArray().SequenceEqual(model), "BitPackedArray enumeration disagreed");
+        Check(new BitPackedArray(model, bits).ToArray().SequenceEqual(model), "BitPackedArray rebuild disagreed");
     }
 
     // ---- Elias-Fano sequence --------------------------------------------------

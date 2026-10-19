@@ -27,11 +27,11 @@ namespace Celerity.Tests.Collections;
 /// </para>
 ///
 /// <para>
-/// <b>Deliberate exceptions.</b> <see cref="BitSet"/>, <see cref="FenwickTree{T}"/> and
-/// <see cref="SegmentTree{T, TMonoid}"/> are fixed-length, so "already empty" means "every word / cell already
+/// <b>Deliberate exceptions.</b> <see cref="BitSet"/>, <see cref="BitPackedArray"/>, <see cref="FenwickTree{T}"/>
+/// and <see cref="SegmentTree{T, TMonoid}"/> are fixed-length, so "already empty" means "every word / cell already
 /// holds the neutral value" — establishing that costs a full scan, which is the same work as the unconditional
-/// clear it would be trying to skip. All three therefore bump the version every time, they agree with each
-/// other, and the three tests at the bottom pin that judgement so it reads as a decision rather than as the
+/// clear it would be trying to skip. All four therefore bump the version every time, they agree with each
+/// other, and the four tests at the bottom pin that judgement so it reads as a decision rather than as the
 /// same oversight. The probabilistic sketches (<c>BloomFilter</c>,
 /// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>MinHashSketch</c>, <c>TopKSketch</c>) are out of scope
 /// entirely: they track no version and expose no enumerator, so there is nothing for a redundant
@@ -448,6 +448,24 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void BitPackedArrayClear_ShouldBumpTheVersionUnconditionally_BecauseEmptinessCostsAScan()
+    {
+        // BitSet's reasoning at any width: "already empty" is "every word is zero", which costs the same scan
+        // as the clear itself.
+        var packed = new BitPackedArray(128, 20);
+
+        IEnumerator overAllZeroes = packed.GetEnumerator();
+        packed.Clear();
+        Assert.Throws<InvalidOperationException>(() => overAllZeroes.MoveNext());
+
+        packed[7] = 99;
+        IEnumerator overOneValue = packed.GetEnumerator();
+        packed.Clear();
+        Assert.Throws<InvalidOperationException>(() => overOneValue.MoveNext());
+        Assert.Equal(0UL, packed[7]);
+    }
+
+    [Fact]
     public void FenwickTreeClear_ShouldBumpTheVersionUnconditionally_BecauseEmptinessCostsAScan()
     {
         // Same reasoning as BitSet, and the two agree with each other. FenwickTree's own no-op exception is a
@@ -468,7 +486,7 @@ public class ClearNoOpVersionTests
     [Fact]
     public void SegmentTreeClear_ShouldBumpTheVersionUnconditionally_BecauseEmptinessCostsAScan()
     {
-        // The third fixed-length type, and it agrees with the other two. It goes further than they do: an
+        // The fourth fixed-length type, and it agrees with the other three. It goes further than they do: an
         // assignment that stores the value already there also bumps, because IMonoid<T> carries no equality
         // obligation and the tree will not invent one. That difference is pinned in SegmentTreeTests.
         var tree = new SegmentTree<int, MinMonoid<int>>(8);

@@ -2462,6 +2462,43 @@ void Check(bool condition, string message)
     Check(none.Count == 0 && none.CountLessThan(1) == 0, "EliasFanoSequence empty sequence");
 }
 
+// BitPackedArray — fixed-width unsigned integers packed end to end into 64-bit words.
+// Exercise the branch-free straddling read and write at a width that does not divide 64,
+// the streaming constructor pack, the bulk GetRange / SetRange paths, Fill, the width
+// check, and the struct enumerator, at 20 bits and at the 64-bit edge where the two-step
+// shifts are what keep a shift of 64 out of the generated code.
+{
+    var packed = new BitPackedArray(1000, 20);
+    for (int i = 0; i < packed.Count; i++) packed[i] = (ulong)(i * 1009 % (1 << 20));
+    bool packedOk = true;
+    for (int i = 0; i < packed.Count; i++) packedOk &= packed[i] == (ulong)(i * 1009 % (1 << 20));
+    Check(packedOk, "BitPackedArray indexer round trip");
+    Check(packed.MemoryUsageInBytes == 2512 && packed.MaxValue == (1UL << 20) - 1,
+        "BitPackedArray footprint and max value");
+
+    var window = new ulong[16];
+    packed.GetRange(100, window);
+    Check(window[0] == packed[100] && window[15] == packed[115], "BitPackedArray GetRange");
+    packed.SetRange(3, new ulong[] { 7, 8, 9 });
+    Check(packed[3] == 7 && packed[5] == 9 && packed[6] == (ulong)(6 * 1009), "BitPackedArray SetRange");
+
+    ulong enumerated = 0, indexed = 0;
+    foreach (ulong value in packed) enumerated += value;
+    for (int i = 0; i < packed.Count; i++) indexed += packed[i];
+    Check(enumerated == indexed && enumerated > 0, "BitPackedArray enumeration");
+
+    var wide = new BitPackedArray(new[] { ulong.MaxValue, 0UL, 1UL << 63 }, 64);
+    Check(wide[0] == ulong.MaxValue && wide[1] == 0 && wide[2] == 1UL << 63, "BitPackedArray 64-bit width");
+    wide.Fill(5);
+    Check(wide.All(v => v == 5), "BitPackedArray fill");
+    Check(BitPackedArray.BitsRequired(1_000_000) == 20 && BitPackedArray.BitsRequired(0) == 1,
+        "BitPackedArray bits required");
+
+    bool rejected = false;
+    try { packed[0] = 1UL << 20; } catch (ArgumentOutOfRangeException) { rejected = true; }
+    Check(rejected && packed[0] == 0, "BitPackedArray rejects a too-wide value");
+}
+
 // HyperLogLog — probabilistic cardinality estimator (no out-of-band slot; default(T)
 // is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
 // is never called with null). Exercise Add / EstimateCardinality / Clear / UnionWith

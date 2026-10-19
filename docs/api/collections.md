@@ -3577,6 +3577,157 @@ aMask.And(bMask);                     // SIMD over 64-bit words
 
 ---
 
+## BitPackedArray
+
+A mutable, fixed-length array of unsigned integers, each stored in exactly `BitsPerValue`
+bits (1 to 64), packed end to end into 64-bit words. It covers the widths between
+`System.Collections.BitArray` (and this library's `BitSet`), which store one bit per
+element, and an `int[]` or `long[]`, which round every value up to a primitive width.
+
+```csharp
+public sealed class BitPackedArray : IReadOnlyList<ulong>
+```
+
+Use it for a large array of small integers whose range you know. Typical cases are
+dictionary-encoded column codes, quantized features, node or symbol ids below some `2^w`,
+palette indices, and small counters. A million 20-bit values take 2.5 MB here, against
+4 MB as an `int[]` and 8 MB as a `long[]`, and each element is still read and written in
+`O(1)`, in place. .NET has no multi-bit integer array narrower than a primitive: `BitArray` is the
+one-bit case only, and `BitVector32` packs a few fields into a single 32-bit integer. `BitReader` / `BitWriter` in `Celerity.Primitives` pack arbitrary widths, but as
+a sequential stream with no random access or in-place update. `EliasFanoSequence`
+compresses further, but only a **sorted** sequence, and it is immutable.
+
+**Layout.** Element `i` occupies bits `[i * w, (i + 1) * w)` of the word array,
+least-significant bit first, so an element straddles two words whenever `w` does not
+divide 64. One spare word past the last data word is kept zero. Because of it, every read
+takes the same two loads, two shifts and a mask, and never branches on whether the element
+straddles. Bits past the last element are also kept zero. The payload is
+`ceil(Count * w / 64) + 1` words, which `MemoryUsageInBytes` reports.
+
+**Values that do not fit are rejected, not truncated.** Every write checks the value
+against `MaxValue` (`2^w - 1`) and throws when it is wider, because silently keeping its
+low bits would corrupt the data with no error. `BitsRequired(maxValue)` picks the width.
+
+### Constructors
+
+```csharp
+public BitPackedArray(int length, int bitsPerValue)
+public BitPackedArray(IEnumerable<ulong> values, int bitsPerValue)
+```
+
+- `BitPackedArray(int length, int bitsPerValue)` creates `length` elements, all zero.
+  A `length` of `0` is a valid empty array.
+- `BitPackedArray(IEnumerable<ulong> values, int bitsPerValue)` packs `values` in
+  enumeration order. A `ulong[]` or `List<ulong>` is packed directly, in one streaming pass
+  that writes a whole word at a time. Any other counted collection has its length checked
+  before anything is allocated and is then copied once. Any other sequence is materialized
+  once.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `length` is negative, if `bitsPerValue` is outside
+  `[1, 64]`, or if `length` needs more words than one array can hold. Below 64 bits a value
+  every `int` length fits; at exactly 64 bits the limit is `Array.MaxLength - 1`, because
+  of the padding word.
+- `ArgumentNullException` if `values` is `null`.
+- `ArgumentException` if a value in `values` is wider than `bitsPerValue` (the message
+  names the first one and its position), or if there are more values than one array of
+  words can hold at that width.
+
+### Methods and properties
+
+- `int Count { get; }` is the number of elements (the fixed length).
+- `int BitsPerValue { get; }` is the width of each element.
+- `ulong MaxValue { get; }` is the largest storable value, `2^BitsPerValue - 1`
+  (`ulong.MaxValue` at 64 bits).
+- `long MemoryUsageInBytes { get; }` is the size of the packed words,
+  `(ceil(Count * BitsPerValue / 64) + 1) * 8`. It is payload only: it excludes the array
+  header and the instance's own fields, the same accounting `EliasFanoSequence` uses.
+- `ulong this[int index] { get; set; }` gets or sets one element.
+- `ulong Get(int index)` and `void Set(int index, ulong value)` are single-element access.
+  Both throw `ArgumentOutOfRangeException` for an index outside `[0, Count)`, and `Set` also
+  throws it for a value above `MaxValue`, leaving the element unchanged.
+- `void GetRange(int index, Span<ulong> destination)` unpacks `destination.Length`
+  consecutive elements starting at `index`.
+- `void SetRange(int index, ReadOnlySpan<ulong> values)` stores `values` into consecutive
+  elements starting at `index`. Every value is checked before any is written, so a rejected
+  call leaves the array unchanged.
+
+  Both range methods throw `ArgumentOutOfRangeException` for an `index` outside
+  `[0, Count]`, and `ArgumentException` when the span runs past the end (or, for
+  `SetRange`, holds a value above `MaxValue`).
+- `void Fill(ulong value)` sets every element to `value`.
+- `void Clear()` sets every element to zero.
+- `void CopyTo(ulong[] array, int arrayIndex)` copies every element, under the library's
+  [`CopyTo` argument contract](#the-copyto-argument-contract).
+- `static int BitsRequired(ulong maxValue)` returns the narrowest width that holds every
+  value up to `maxValue`: `floor(log2(maxValue)) + 1`, and `1` for `0`.
+- `Enumerator GetEnumerator()` is an allocation-free struct enumerator over the elements in
+  index order.
+
+The enumerator is invalidated by any write and throws `InvalidOperationException` if the
+array is modified mid-iteration. As with `BitSet`, a write that stores the value already
+there still counts as a write, and `Clear()` always invalidates, because establishing that
+every element is already zero costs the same scan as clearing it. An empty `SetRange` and
+every rejected write leave enumerators valid. The array is not thread-safe.
+
+### Performance
+
+Measured against the `int[]` a caller would otherwise use for 20-bit values (the narrowest
+primitive that fits). These are local default-job runs on Apple Silicon; the CI series on
+the dashboard is the contract.
+
+| 20-bit values | 1,024 | 1,000,000 |
+|---|---|---|
+| Payload vs `int[]` | 1.59x smaller (2,568 B vs 4,096 B) | **1.60x smaller** (2.50 MB vs 4.00 MB) |
+| Random read (`this[i]`) | 1.72x slower | 1.59x slower |
+| Random write (`this[i] = v`) | 2.06x slower | 1.90x slower |
+| Sequential pass (`foreach`) | 2.96x slower | 2.78x slower |
+| Build from a `ulong[]` | on par (1.00x), 0.64x the allocation | **1.30x faster**, 0.63x the allocation |
+
+Every access path pays for the packing: a read is two loads and three bit operations where
+the array's is one load, and a write is a read-modify-write of two words. A sequential pass
+pays most, about 2.8–3x, because it decodes each element separately where the array's loop
+is a plain load. Building is the exception: packing a `ulong[]` streams whole words, so it
+writes 1.6x fewer bytes than narrowing the same values into an `int[]`. The footprint is the
+case for the type, and the price is a constant factor on each access. These figures clear
+all of the pre-registered bars in
+[#547](https://github.com/marius-bughiu/Celerity/issues/547) (footprint ≥ 1.55x, reads
+≤ 2x, writes ≤ 3x slower).
+
+### Choosing it
+
+Reach for `BitPackedArray` when you hold a **large, fixed-length array of integers with a
+known range that is not a primitive width**, and memory or cache footprint is what limits
+you. When the width is 8, 16, 32 or 64, a `byte[]`, `ushort[]`, `uint[]` or `ulong[]` is
+the same size and faster. When the values are sorted, `EliasFanoSequence` stores them in
+fewer bits than their width. When each value is a single flag, use `BitSet`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A dictionary-encoded column: a million rows, each a code into a table of 700,000
+// distinct strings. Twenty bits a code instead of an int's 32.
+int bits = BitPackedArray.BitsRequired(699_999);           // 20
+var codes = new BitPackedArray(1_000_000, bits);
+
+codes[0] = 123_456;
+codes.SetRange(1, new ulong[] { 7, 699_999, 0 });
+ulong code = codes[2];                                      // 699_999
+
+// codes[3] = 1 << 20;   // throws ArgumentOutOfRangeException: does not fit in 20 bits
+
+// Unpack a block of rows into a buffer for a vectorized scan.
+Span<ulong> block = stackalloc ulong[256];
+codes.GetRange(0, block);
+
+Console.WriteLine(codes.MemoryUsageInBytes);                // 2,500,008 bytes, vs 4,000,000
+```
+
+---
+
 ## RankSelectBitVector
 
 ```csharp

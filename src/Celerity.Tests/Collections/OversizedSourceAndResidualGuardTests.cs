@@ -27,6 +27,10 @@ namespace Celerity.Tests.Collections;
 /// the limit depends on the length being checked. That is the case where the check earns its keep rather
 /// than merely improving a message, because the cell count is computed in <see cref="long"/> precisely so the
 /// <c>int</c> multiplication cannot wrap to a small or negative array length and silently corrupt the table.
+/// <see cref="BitPackedArray"/> applies its ceiling the same way to any counted source that is not an array or a
+/// <see cref="List{T}"/>, checking it before the one copy it makes. Its limit depends on the <i>width</i>, because
+/// it counts 64-bit words: below 64 bits a value every <see cref="int"/> length fits, and at 64 bits the padding
+/// word puts <see cref="int.MaxValue"/> elements past <see cref="Array.MaxLength"/>.
 /// </para>
 ///
 /// <para>
@@ -54,11 +58,11 @@ public class OversizedSourceAndResidualGuardTests
     // ---- FenwickTree: the counted-source ceiling ---------------------------------------------------
 
     /// <summary>
-    /// A counted source that lies about its size. Only <see cref="Count"/> is usable; every other member
+    /// A counted source that lies about its size. Only <see cref="LyingCountCollection{T}.Count"/> is usable; every other member
     /// throws, so any test that reaches the documented ArgumentException has proven that the constructor
     /// consulted the count and rejected the source without allocating, copying, or enumerating.
     /// </summary>
-    private sealed class LyingCountCollection : ICollection<int>
+    private sealed class LyingCountCollection<T> : ICollection<T>
     {
         public LyingCountCollection(int count) => Count = count;
 
@@ -66,17 +70,17 @@ public class OversizedSourceAndResidualGuardTests
 
         public bool IsReadOnly => throw new NotSupportedException();
 
-        public void Add(int item) => throw new NotSupportedException();
+        public void Add(T item) => throw new NotSupportedException();
 
         public void Clear() => throw new NotSupportedException();
 
-        public bool Contains(int item) => throw new NotSupportedException();
+        public bool Contains(T item) => throw new NotSupportedException();
 
-        public void CopyTo(int[] array, int arrayIndex) => throw new NotSupportedException();
+        public void CopyTo(T[] array, int arrayIndex) => throw new NotSupportedException();
 
-        public bool Remove(int item) => throw new NotSupportedException();
+        public bool Remove(T item) => throw new NotSupportedException();
 
-        public IEnumerator<int> GetEnumerator() => throw new NotSupportedException();
+        public IEnumerator<T> GetEnumerator() => throw new NotSupportedException();
 
         IEnumerator IEnumerable.GetEnumerator() => throw new NotSupportedException();
     }
@@ -86,7 +90,7 @@ public class OversizedSourceAndResidualGuardTests
     {
         // int.MaxValue is comfortably above Array.MaxLength - 1, the largest logical length the 1-based
         // layout can hold.
-        var oversized = new LyingCountCollection(int.MaxValue);
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
 
         ArgumentException ex = Assert.Throws<ArgumentException>(() => new FenwickTree<int>(oversized));
 
@@ -100,7 +104,7 @@ public class OversizedSourceAndResidualGuardTests
         // Every member other than Count throws NotSupportedException, so an ArgumentException — not a
         // NotSupportedException — is the observable proof that the ceiling is applied before the backing
         // array is allocated and before a single element is read.
-        var oversized = new LyingCountCollection(int.MaxValue);
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
 
         Assert.Throws<ArgumentException>(() => new FenwickTree<int>(oversized));
     }
@@ -125,7 +129,7 @@ public class OversizedSourceAndResidualGuardTests
     {
         // The segment tree stores two cells per logical element, so its ceiling is Array.MaxLength / 2 — half
         // the Fenwick one, and reached by the same count-first ordering.
-        var oversized = new LyingCountCollection(int.MaxValue);
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
 
         ArgumentException ex = Assert.Throws<ArgumentException>(
             () => new SegmentTree<int, SumMonoid<int>>(oversized));
@@ -137,7 +141,7 @@ public class OversizedSourceAndResidualGuardTests
     [Fact]
     public void SegmentTreeConstructor_ShouldNotEnumerateOrCopy_WhenCountedSourceExceedsTheMaximumLength()
     {
-        var oversized = new LyingCountCollection(int.MaxValue);
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
 
         Assert.Throws<ArgumentException>(() => new SegmentTree<int, SumMonoid<int>>(oversized));
     }
@@ -161,7 +165,7 @@ public class OversizedSourceAndResidualGuardTests
         // A table over int.MaxValue elements would need 31 rows of int.MaxValue cells. The product is
         // computed as a long for exactly this reason — as an int it wraps, and the constructor would allocate
         // a nonsensically small array instead of reporting anything.
-        var oversized = new LyingCountCollection(int.MaxValue);
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
 
         ArgumentException ex = Assert.Throws<ArgumentException>(
             () => new SparseTable<int, MinMonoid<int>>(oversized));
@@ -178,7 +182,7 @@ public class OversizedSourceAndResidualGuardTests
     [Fact]
     public void SparseTableConstructor_ShouldNotEnumerateOrCopy_WhenCountedSourceExceedsTheMaximumLength()
     {
-        var oversized = new LyingCountCollection(int.MaxValue);
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
 
         Assert.Throws<ArgumentException>(() => new SparseTable<int, MinMonoid<int>>(oversized));
     }
@@ -190,7 +194,7 @@ public class OversizedSourceAndResidualGuardTests
         // Array.MaxLength / 2 allowance still needs 30 rows here, which is far outside a single array. Because
         // this length *is* one SegmentTree can hold, the message names it as the way out — unlike the
         // int.MaxValue case above, where it says the opposite.
-        var oversized = new LyingCountCollection(Array.MaxLength / 4);
+        var oversized = new LyingCountCollection<int>(Array.MaxLength / 4);
 
         ArgumentException ex = Assert.Throws<ArgumentException>(
             () => new SparseTable<int, MinMonoid<int>>(oversized));
@@ -208,6 +212,22 @@ public class OversizedSourceAndResidualGuardTests
         Assert.Equal(1, table.Aggregate);
         Assert.Equal(4, table[2]);
         Assert.Equal(1, table.Query(0, 3));
+    }
+
+    // ---- BitPackedArray: a ceiling that depends on the width ---------------------------------------
+
+    [Fact]
+    public void BitPackedArrayConstructor_ShouldThrowArgumentException_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        // At 64 bits a value, int.MaxValue elements plus the padding word pass Array.MaxLength words. Reaching the
+        // ArgumentException rather than a NotSupportedException from CopyTo proves the count is checked before
+        // the copy is allocated.
+        var oversized = new LyingCountCollection<ulong>(int.MaxValue);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => new BitPackedArray(oversized, 64));
+
+        Assert.Equal("values", ex.ParamName);
+        Assert.Contains("more words than one array can hold", ex.Message);
     }
 
     // ---- Trie.Enumerator: the exhausted state latches ----------------------------------------------

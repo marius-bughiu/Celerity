@@ -617,6 +617,11 @@ function escapeHtml(s) {
     // Build. Every card is the price of the compression; the footprint it buys is retained memory, which a
     // timing benchmark does not show, so it lives in the API reference rather than on a card.
     { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                        vs: 'long[]',                ops: ['Access', 'LowerBound', 'Enumerate', 'Build'], items: [1024, 1000000] },
+    // BitPackedArray stores 20-bit values in 20 bits each, benchmarked against the int[] a caller would
+    // otherwise use: an indexed load for Access, an indexed store for Set, a foreach for Enumerate, and a
+    // narrowing copy from the same ulong[] for Build. As with EliasFanoSequence, every card is the price of the
+    // packing; the 1.6x smaller footprint is retained memory and lives in the API reference.
+    { key: 'BitPackedArray',      title: 'BitPackedArray',                           vs: 'int[]',                 ops: ['Access', 'Set', 'Enumerate', 'Build'], items: [1024, 1000000] },
     // StringKeyProbe tracks the reference-type-key probe path — every other card here keys on int/long,
     // where the JIT devirtualizes the per-probe comparison and the codegen question does not arise.
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
