@@ -161,6 +161,14 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void BitPackedArray_ShouldValidateCopyToArguments()
+    {
+        BitPackedArray array = new(new ulong[] { 1, 2, 3 }, 2);
+
+        AssertCopyToContract<ulong>(3, array.CopyTo);
+    }
+
+    [Fact]
     public void EnumSet_ShouldValidateCopyToArguments()
     {
         EnumSet<Colour> set = new(new[] { Colour.Red, Colour.Green, Colour.Blue });
@@ -370,7 +378,7 @@ public class CopyToArgumentGuardTests
     // name it is missing, not as silent divergence.
     private static readonly HashSet<string> Covered = new(StringComparer.Ordinal)
     {
-        "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
+        "BitPackedArray", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
         "HierarchicalBitSet", "IntSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet", "RobinHoodSet",
         "SmallSet", "SparseSet", "SwissSet",
 

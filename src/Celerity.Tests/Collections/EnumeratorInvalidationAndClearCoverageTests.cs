@@ -229,6 +229,24 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void BitPackedArrayEnumeratorReset_ShouldThrowInvalidOperationException_WhenArrayModified()
+    {
+        var packed = new BitPackedArray(new ulong[] { 1, 2 }, 4);
+
+        var enumerator = packed.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        packed[1] = 3;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        var second = packed.GetEnumerator();
+        packed.Clear();
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
     public void HierarchicalBitSetEnumeratorReset_ShouldThrowInvalidOperationException_WhenSetModified()
     {
         var set = new HierarchicalBitSet(100, new[] { 1, 2 });
