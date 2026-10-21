@@ -180,6 +180,41 @@ public class IndexerOverwriteResizeTests
     }
 
     [Fact]
+    public void LinkedDictionary_IndexerOverwriteAtThreshold_DoesNotResize()
+    {
+        // 16 buckets at 0.75 hold (int)(16 * 0.75) = 12 entries. A rebuild never re-hashes, so
+        // the hash count cannot see a resize here; the entry capacity is read back instead.
+        var map = new LinkedDictionary<string, int, CountingStringHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map[$"k{i}"] = i; // Count == 12 == entry capacity
+        Assert.Equal(12, map.EnsureCapacity(0));
+
+        _hashCallCount = 0;
+        map["k6"] = 99; // overwrite existing key — must not resize
+
+        Assert.Equal(1, _hashCallCount);
+        Assert.Equal(12, map.Count);
+        Assert.Equal(12, map.EnsureCapacity(0));
+        Assert.Equal(99, map["k6"]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_IndexerNewKeyAtThreshold_StillResizesAndKeepsAllEntries()
+    {
+        var map = new LinkedDictionary<int, int, CountingIntHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map[i] = i; // Count == 12 == entry capacity
+
+        map[13] = 13; // new key — must resize
+
+        Assert.Equal(13, map.Count);
+        Assert.Equal(24, map.EnsureCapacity(0));
+        for (int i = 1; i <= 13; i++)
+            Assert.Equal(i, map[i]);
+        Assert.Equal(Enumerable.Range(1, 13), map.Keys.ToArray());
+    }
+
+    [Fact]
     public void HashCachingDictionary_IndexerOverwriteAtThreshold_DoesNotResize()
     {
         // HashCachingDictionary's minimum table is one SIMD group (16 slots), so its

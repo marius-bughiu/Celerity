@@ -261,6 +261,14 @@ public class DictionaryInterfaceTests
     }
 
     [Fact]
+    public void LinkedDictionary_ShouldHonourIDictionary()
+    {
+        IDictionary<int, string?> subject = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+
+        AssertIDictionaryContract(subject, IntKeys, Values, absentKey: 99, absentValue: "omega");
+    }
+
+    [Fact]
     public void RobinHoodDictionary_ShouldHonourIDictionary()
     {
         IDictionary<int, string?> subject = new RobinHoodDictionary<int, string, Int32WangNaiveHasher>();

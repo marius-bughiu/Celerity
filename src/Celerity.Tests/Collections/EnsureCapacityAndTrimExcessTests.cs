@@ -162,6 +162,26 @@ public class EnsureCapacityAndTrimExcessTests
     }
 
     [Fact]
+    public void LinkedDictionary_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
+    {
+        var map = new LinkedDictionary<string, int, CountingStringHasher>();
+        int capacity = map.EnsureCapacity(N);
+        Assert.True(capacity >= N);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= N; i++)
+            map[$"k{i}"] = i;
+
+        // A rebuild never re-hashes, so the entry capacity (not the hash count) is what proves
+        // the inserts did not grow the table.
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, map.Count);
+        Assert.Equal(capacity, map.EnsureCapacity(0));
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
     public void HashCachingDictionary_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
     {
         var map = new HashCachingDictionary<string, int, CountingStringHasher>();
@@ -455,6 +475,27 @@ public class EnsureCapacityAndTrimExcessTests
         for (int i = 1; i <= 5; i++)
             Assert.Equal(i, map[$"k{i}"]);
         map["zz"] = 7; // tombstones were dropped; table still usable
+        Assert.Equal(7, map["zz"]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TrimExcess_AfterShrink_PreservesContents()
+    {
+        var map = new LinkedDictionary<string, int, CountingStringHasher>();
+        for (int i = 1; i <= N; i++)
+            map[$"k{i}"] = i;
+        for (int i = 6; i <= N; i++)
+            map.Remove($"k{i}");
+
+        _hashCallCount = 0;
+        map.TrimExcess();
+
+        Assert.Equal(0, _hashCallCount); // the rebuild reuses each entry's stored hash
+        Assert.Equal(5, map.Count);
+        Assert.Equal(new[] { "k1", "k2", "k3", "k4", "k5" }, map.Keys.ToArray());
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+        map["zz"] = 7; // free slots were compacted away; table still usable
         Assert.Equal(7, map["zz"]);
     }
 

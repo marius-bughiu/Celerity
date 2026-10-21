@@ -589,6 +589,145 @@ public class AddAndTryAddTests
     }
 
     // ---------------------------------------------------------------
+    //  LinkedDictionary — Add / TryAdd (mirror of CelerityDictionary)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void LinkedDictionary_Add_ShouldStoreValue_ForNewKey()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(1, "one");
+
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_Add_ShouldThrow_OnDuplicateKey()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(1, "first");
+
+        var ex = Assert.Throws<ArgumentException>(() => map.Add(1, "second"));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void LinkedDictionary_Add_ShouldThrow_OnDuplicateKey_AndLeaveValueUnchanged()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+        map.Add(42, 100);
+
+        Assert.Throws<ArgumentException>(() => map.Add(42, 999));
+
+        Assert.Single(map);
+        Assert.Equal(100, map[42]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_Add_ShouldStoreValue_ForDefaultKey()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(0, "zero");
+
+        Assert.Single(map);
+        Assert.Equal("zero", map[0]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_Add_ShouldThrow_OnDuplicateDefaultKey()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        map.Add(0, "first");
+
+        Assert.Throws<ArgumentException>(() => map.Add(0, "second"));
+        Assert.Single(map);
+        Assert.Equal("first", map[0]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_Add_ShouldStoreValue_ForNullStringKey()
+    {
+        var map = new LinkedDictionary<string, int, StringFnV1AHasher>();
+        map.Add(null!, 99);
+
+        Assert.Single(map);
+        Assert.Equal(99, map[null!]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_Add_ShouldSupportManyKeys()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 0; i <= 50; i++)
+            map.Add(i, i * 10);
+
+        Assert.Equal(51, map.Count);
+        for (int i = 0; i <= 50; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_ShouldReturnTrue_ForNewKey()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        bool added = map.TryAdd(5, "five");
+
+        Assert.True(added);
+        Assert.Equal("five", map[5]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_ShouldReturnFalse_ForExistingKey()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        map.TryAdd(5, "five");
+
+        bool added = map.TryAdd(5, "FIVE");
+
+        Assert.False(added);
+        Assert.Equal("five", map[5]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_ShouldReturnFalse_ForExistingDefaultKey()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        map.TryAdd(0, "original");
+
+        bool added = map.TryAdd(0, "replacement");
+
+        Assert.False(added);
+        Assert.Equal("original", map[0]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_ForNullStringKey_ShouldRoundTrip()
+    {
+        var map = new LinkedDictionary<string, string, StringFnV1AHasher>();
+        bool added = map.TryAdd(null!, "null-val");
+
+        Assert.True(added);
+
+        bool addedAgain = map.TryAdd(null!, "other");
+        Assert.False(addedAgain);
+        Assert.Equal("null-val", map[null!]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_AfterClear_ShouldSucceed()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+        map.TryAdd(7, 70);
+        map.Clear();
+
+        bool added = map.TryAdd(7, 700);
+
+        Assert.True(added);
+        Assert.Equal(700, map[7]);
+    }
+
+    // ---------------------------------------------------------------
     //  HashCachingDictionary — Add / TryAdd (mirror of CelerityDictionary)
     // ---------------------------------------------------------------
 
@@ -943,6 +1082,7 @@ public class AddAndTryAddTests
         var celDict = new CelerityDictionary<int, int, Int32WangNaiveHasher>();
         var rhDict = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
         var swissDict = new SwissDictionary<int, int, Int32WangNaiveHasher>();
+        var linkedDict = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
         var hashCachingDict = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();
 
         const int Inserts = 32;
@@ -955,6 +1095,7 @@ public class AddAndTryAddTests
             celDict[i] = i;
             rhDict[i] = i;
             swissDict[i] = i;
+            linkedDict[i] = i;
             hashCachingDict[i] = i;
         }
 
@@ -967,6 +1108,7 @@ public class AddAndTryAddTests
                 celDict[i] = round;
                 rhDict[i] = round;
                 swissDict[i] = round;
+                linkedDict[i] = round;
                 hashCachingDict[i] = round;
             }
         }
@@ -976,6 +1118,7 @@ public class AddAndTryAddTests
         Assert.Equal(Inserts, celDict.Count);
         Assert.Equal(Inserts, rhDict.Count);
         Assert.Equal(Inserts, swissDict.Count);
+        Assert.Equal(Inserts, linkedDict.Count);
         Assert.Equal(Inserts, hashCachingDict.Count);
     }
 

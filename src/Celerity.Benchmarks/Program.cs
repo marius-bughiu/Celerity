@@ -18,6 +18,7 @@ internal class Program
         typeof(SwissDictionaryBenchmark),
         typeof(HashCachingDictionaryBenchmark),
         typeof(PooledCelerityDictionaryBenchmark),
+        typeof(LinkedDictionaryBenchmark),
         typeof(IntDictionaryBenchmark),
         typeof(LongDictionaryBenchmark),
         typeof(FrozenCelerityDictionaryBenchmark),

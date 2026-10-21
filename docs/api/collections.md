@@ -484,6 +484,110 @@ foreach (var kvp in dict)
 
 ---
 
+## LinkedDictionary&lt;TKey, TValue, THasher&gt;
+
+A hash dictionary that **remembers insertion order**. It enumerates its entries in the order their keys were first added and keeps that order through any number of removals, at `O(1)` per `Remove`. It can also move an entry to either end and read or remove the oldest and newest entries, all in `O(1)`. This is the shape of Java's `LinkedHashMap` and Python's `OrderedDict`. The rest of the public surface matches `CelerityDictionary`: constructors, indexer, `ContainsKey` / `ContainsValue` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`.
+
+```csharp
+public class LinkedDictionary<TKey, TValue, THasher>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+### Why not `Dictionary` or `OrderedDictionary`
+
+Each of the .NET types gives up half of what this one does:
+
+- `Dictionary<TKey, TValue>` enumerates in insertion order only until the first `Remove`. The freed entry goes on a free list, and the next `Add` reuses it, so the new key appears where the removed one was. The order is not documented, so even before a removal it is an accident of the implementation.
+- .NET 9's `OrderedDictionary<TKey, TValue>` keeps the order and adds index access (`GetAt`, `Insert`, `IndexOf`). It stores entries in one dense array, so `Remove` shifts every later entry down and costs `O(n)`. Draining or churning `n` keys costs `O(n²)`. It does not exist on `net8.0`.
+
+`LinkedDictionary` has `O(1)` removal and re-ordering, and **no index access**. If you need the `i`-th entry by position, use `OrderedDictionary`. If order does not matter at all, `CelerityDictionary` and `SwissDictionary` are smaller and faster.
+
+### How it works
+
+Entries live in one array of structs. Each entry holds the key, the value, the key's full hash, the next entry in the same hash bucket, and the previous and next entries in insertion order. Buckets are a power-of-two array of chain heads.
+
+- A lookup hashes once and walks one bucket's chain, touching one entry per step. Reference keys compare the stored hash before calling `Equals`.
+- A removal unlinks the entry from its chain and from the order list, then puts the slot on a free list. The next add reuses it, so a remove/add churn never grows the table.
+- Enumeration follows the order list, so it costs `O(Count)` however many entries have been removed.
+- Growth doubles the bucket count and copies the live entries **in order** into a fresh array. That compacts out every free slot. It also lays entries out sequentially, so enumeration after a resize or a `TrimExcess` walks memory front to back. The hasher is not called again, because each entry keeps its hash.
+
+### Performance
+
+Measured locally on Apple Silicon (.NET 10); the dashboard's CI series is the contract.
+
+| Operation, 10,000 `int` keys | `OrderedDictionary<int, int>` (.NET 9+) | `LinkedDictionary` |
+|---|---|---|
+| Remove every key, shuffled order | ~59 ms (`O(n)` per removal) | ~63 µs (~900x faster) |
+| Lookup every key (hits) | ~42–64 µs | ~17 µs (2.3–3.7x faster) |
+| Insert every key, pre-sized | ~88 µs | ~68 µs (1.3x faster) |
+
+The CI benchmark runs on `net8.0`, where `OrderedDictionary<,>` does not exist. It compares against what a `net8.0` caller builds by hand, a `Dictionary<TKey, LinkedListNode<…>>` plus a `LinkedList<…>`, which also removes in `O(1)`. Against that baseline, inserts are 4.7–13x faster and allocate 26–43% less (no node object per entry), lookups are about 2.3x faster, and removal is about 2x faster. **Enumeration is about 2.5x slower**. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase.
+
+### Constructors
+
+```csharp
+public LinkedDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public LinkedDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Validation and exceptions are the same as for `CelerityDictionary`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. Duplicate keys in `source` throw `ArgumentException`. `capacity` is the number of hash buckets, rounded up to a power of two. The dictionary holds `capacity × loadFactor` entries (at least one) before it grows. The source constructor adds entries in the order `source` enumerates them, and it sizes the table from an `ICollection<T>` source's `Count` so the build never resizes.
+
+### Ordered operations
+
+```csharp
+public bool MoveToEnd(TKey key)
+public bool MoveToFront(TKey key)
+public bool TryGetFirst(out TKey key, out TValue? value)
+public bool TryGetLast(out TKey key, out TValue? value)
+public bool TryRemoveFirst(out TKey key, out TValue? value)
+public bool TryRemoveLast(out TKey key, out TValue? value)
+```
+
+- `MoveToEnd` / `MoveToFront` move an existing entry to the newest or oldest position, with its value unchanged, and return `false` for an absent key. Moving an entry to the end it is already at changes nothing and leaves active enumerators valid. Any real move invalidates them.
+- `TryGetFirst` / `TryGetLast` read the oldest and newest entries. They return `false` when the dictionary is empty.
+- `TryRemoveFirst` / `TryRemoveLast` remove and return them. A `TryRemoveFirst` loop drains the dictionary first-in, first-out, and a `TryRemoveLast` loop drains it last-in, first-out.
+
+### Order semantics
+
+- `Add`, `TryAdd`, and the indexer append a **new** key at the end.
+- Setting the value of an **existing** key through the indexer keeps the key where it is, as `LinkedHashMap` and `OrderedDict` do. It is not a structural change, so active enumerators stay valid. To move the key as well, call `MoveToEnd`.
+- A removed key that is added again goes to the end.
+- `GetEnumerator`, `Keys`, `Values`, and every `CopyTo` yield oldest first.
+
+### Default-key handling
+
+Unlike the open-addressed dictionaries, `default(TKey)` (`0`, a `null` reference, a `Nullable<T>` with no value) is stored **in the table** like any other key, so it keeps its place in the order. It is still never passed to the hasher: the default key gets hash code `0` directly, so string hashers that throw on `null` are safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Pending jobs keyed by id, processed in arrival order; cancellations can come at any time.
+var pending = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+pending.Add(17, "resize image");
+pending.Add(4, "send email");
+pending.Add(9, "rebuild index");
+
+pending.Remove(4);           // O(1), and 17 and 9 keep their order
+pending.Add(4, "send email"); // a re-added key goes to the end
+
+pending.MoveToFront(9);      // escalate one job
+
+while (pending.TryRemoveFirst(out int id, out string? job))
+    Console.WriteLine($"{id}: {job}"); // 9, 17, 4
+```
+
+---
+
 ## IntDictionary&lt;TValue&gt;
 
 A convenience subclass of `IntDictionary<TValue, Int32WangNaiveHasher>` for the common case of integer-keyed dictionaries.
