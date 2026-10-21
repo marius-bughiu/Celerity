@@ -313,6 +313,63 @@ public class TryAddProbeCountTests
     }
 
     [Fact]
+    public void LinkedDictionary_TryAdd_NewKey_DoesExactlyOneHashCall()
+    {
+        // TryAdd hashes once and threads the hash through both the chain walk and the
+        // insert, so a new-key insert costs exactly one Hash() call (no growth at capacity 64).
+        var map = new LinkedDictionary<string, int, CountingStringHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 10; i++)
+        {
+            Assert.True(map.TryAdd($"k{i}", i));
+            Assert.Equal(i, _hashCallCount);
+        }
+
+        Assert.Equal(10, map.Count);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_DuplicateKey_DoesExactlyOneHashCall()
+    {
+        var map = new LinkedDictionary<string, int, CountingStringHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            map.TryAdd($"k{i}", i);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(map.TryAdd($"k{i}", -1));
+
+        Assert.Equal(5, _hashCallCount);
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_GrowthDoesNotRehash()
+    {
+        // Entries keep their hash, so even an insert that grows the table costs one Hash() call.
+        var map = new LinkedDictionary<string, int, CountingStringHasher>(capacity: 1);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 100; i++)
+            Assert.True(map.TryAdd($"k{i}", i));
+
+        Assert.Equal(100, _hashCallCount);
+        Assert.Equal(100, map.Count);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TryAdd_PreservesExistingValueOnDuplicate()
+    {
+        var map = new LinkedDictionary<string, int, CountingStringHasher>(capacity: 64);
+        map.TryAdd("k7", 700);
+
+        Assert.False(map.TryAdd("k7", -1));
+        Assert.Equal(700, map["k7"]);
+    }
+
+    [Fact]
     public void HashCachingDictionary_TryAdd_NewKey_DoesExactlyOneProbeWalk()
     {
         // The combined probe both checks for an existing key and chooses the

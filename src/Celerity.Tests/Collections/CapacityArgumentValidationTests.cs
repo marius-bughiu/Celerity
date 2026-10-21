@@ -96,6 +96,13 @@ public class CapacityArgumentValidationTests
     }
 
     [Fact]
+    public void LinkedDictionary_EnsureCapacity_ShouldThrowArgumentOutOfRange_WhenCapacityIsNegative()
+    {
+        var map = new LinkedDictionary<string, int, DefaultHasher<string>>();
+        AssertNegativeCapacityRejected(() => map.EnsureCapacity(-1), -1);
+    }
+
+    [Fact]
     public void HashCachingDictionary_EnsureCapacity_ShouldThrowArgumentOutOfRange_WhenCapacityIsNegative()
     {
         var map = new HashCachingDictionary<string, int, DefaultHasher<string>>();
@@ -203,6 +210,17 @@ public class CapacityArgumentValidationTests
     public void SwissDictionary_TrimExcess_ShouldThrowArgumentOutOfRange_WhenCapacityIsBelowCount()
     {
         var map = new SwissDictionary<string, int, DefaultHasher<string>>();
+        for (int i = 1; i <= 4; i++)
+            map[$"k{i}"] = i;
+
+        AssertCapacityBelowCountRejected(() => map.TrimExcess(1), 1);
+        Assert.Equal(4, map.Count);
+    }
+
+    [Fact]
+    public void LinkedDictionary_TrimExcess_ShouldThrowArgumentOutOfRange_WhenCapacityIsBelowCount()
+    {
+        var map = new LinkedDictionary<string, int, DefaultHasher<string>>();
         for (int i = 1; i <= 4; i++)
             map[$"k{i}"] = i;
 

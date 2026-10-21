@@ -236,6 +236,17 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void LinkedDictionary_ShouldValidateCopyToArguments()
+    {
+        LinkedDictionary<int, string, Int32WangNaiveHasher> dictionary = new();
+        Fill(dictionary.Add);
+
+        AssertCopyToContract<KeyValuePair<int, string?>>(3, dictionary.CopyTo);
+        AssertCopyToContract<int>(3, dictionary.Keys.CopyTo);
+        AssertCopyToContract<string?>(3, dictionary.Values.CopyTo);
+    }
+
+    [Fact]
     public void RobinHoodDictionary_ShouldValidateCopyToArguments()
     {
         RobinHoodDictionary<int, string, Int32WangNaiveHasher> dictionary = new();
@@ -387,6 +398,7 @@ public class CopyToArgumentGuardTests
         "EnumMap", "EnumMap.KeyCollection", "EnumMap.ValueCollection",
         "HashCachingDictionary", "HashCachingDictionary.KeyCollection", "HashCachingDictionary.ValueCollection",
         "IntDictionary", "IntDictionary.KeyCollection", "IntDictionary.ValueCollection",
+        "LinkedDictionary", "LinkedDictionary.KeyCollection", "LinkedDictionary.ValueCollection",
         "LongDictionary", "LongDictionary.KeyCollection", "LongDictionary.ValueCollection",
         "PooledCelerityDictionary", "PooledCelerityDictionary.KeyCollection", "PooledCelerityDictionary.ValueCollection",
         "RobinHoodDictionary", "RobinHoodDictionary.KeyCollection", "RobinHoodDictionary.ValueCollection",

@@ -30,6 +30,7 @@ internal static class Differential
         ("CelerityDictionary", CelerityDictionaryCase),
         ("RobinHoodDictionary", RobinHoodDictionaryCase),
         ("SwissDictionary", SwissDictionaryCase),
+        ("LinkedDictionary", LinkedDictionaryCase),
         ("HashCachingDictionary", HashCachingDictionaryCase),
         ("PooledCelerityDictionary", PooledCelerityDictionaryCase),
         ("IntDictionary", IntDictionaryCase),
@@ -315,6 +316,137 @@ internal static class Differential
         Check(seen.Count == oracle.Count, $"enumeration count {seen.Count} != {oracle.Count}");
         foreach (var kv in oracle)
             Check(seen.TryGetValue(kv.Key, out int sv) && sv == kv.Value, $"enumeration missing/wrong {kv.Key}");
+    }
+
+    // LinkedDictionary vs a List of keys in insertion order plus a Dictionary of values. Contents
+    // alone would pass a table that forgot its links, so every check compares the full order:
+    // removal from the middle, MoveToEnd / MoveToFront, popping either end, an overwrite that must
+    // keep its position, and a rebuild (EnsureCapacity / TrimExcess) that must preserve the order.
+    private static void LinkedDictionaryCase(Random rng)
+    {
+        var sut = new LinkedDictionary<int, int, Int32WangNaiveHasher>(rng.Next(0, 9));
+        var order = new List<int>(); // [0] = oldest
+        var values = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 6:
+                {
+                    // Indexer: insert at the end, or overwrite in place without moving.
+                    int v = Value(rng);
+                    sut[key] = v;
+                    if (!values.ContainsKey(key))
+                        order.Add(key);
+                    values[key] = v;
+                    break;
+                }
+                case < 8:
+                {
+                    int v = Value(rng);
+                    bool added = values.TryAdd(key, v);
+                    if (added)
+                        order.Add(key);
+                    Check(sut.TryAdd(key, v) == added, $"TryAdd({key}) disagreed");
+                    break;
+                }
+                case < 11:
+                {
+                    bool had = values.Remove(key, out int ev);
+                    if (had)
+                        order.Remove(key);
+                    Check(sut.Remove(key, out int av) == had, $"Remove({key}) disagreed");
+                    Check(!had || av == ev, $"Remove({key}) value {av} != {ev}");
+                    break;
+                }
+                case < 13:
+                {
+                    bool had = values.ContainsKey(key);
+                    if (had)
+                    {
+                        order.Remove(key);
+                        order.Add(key);
+                    }
+                    Check(sut.MoveToEnd(key) == had, $"MoveToEnd({key}) disagreed");
+                    break;
+                }
+                case < 15:
+                {
+                    bool had = values.ContainsKey(key);
+                    if (had)
+                    {
+                        order.Remove(key);
+                        order.Insert(0, key);
+                    }
+                    Check(sut.MoveToFront(key) == had, $"MoveToFront({key}) disagreed");
+                    break;
+                }
+                case < 16:
+                {
+                    bool any = order.Count > 0;
+                    Check(sut.TryRemoveFirst(out int k, out int v) == any, "TryRemoveFirst presence disagreed");
+                    if (any)
+                    {
+                        int ek = order[0];
+                        Check(k == ek && v == values[ek], $"TryRemoveFirst ({k},{v}) != ({ek},{values[ek]})");
+                        order.RemoveAt(0);
+                        values.Remove(ek);
+                    }
+                    break;
+                }
+                case < 17:
+                {
+                    bool any = order.Count > 0;
+                    Check(sut.TryRemoveLast(out int k, out int v) == any, "TryRemoveLast presence disagreed");
+                    if (any)
+                    {
+                        int ek = order[^1];
+                        Check(k == ek && v == values[ek], $"TryRemoveLast ({k},{v}) != ({ek},{values[ek]})");
+                        order.RemoveAt(order.Count - 1);
+                        values.Remove(ek);
+                    }
+                    break;
+                }
+                case < 18:
+                    sut.EnsureCapacity(rng.Next(0, 64));
+                    break;
+                case < 19:
+                    sut.TrimExcess();
+                    break;
+                default:
+                    sut.Clear();
+                    order.Clear();
+                    values.Clear();
+                    break;
+            }
+
+            if (rng.Next(0, 8) == 0)
+                CheckSameSequence(sut.Keys, order, $"order after op {i}");
+        }
+
+        Check(sut.Count == values.Count, $"Count {sut.Count} != {values.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool e = values.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a, $"TryGetValue({k}) presence {a} != {e}");
+            Check(!e || ev == av, $"value[{k}] {av} != {ev}");
+            Check(sut.ContainsKey(k) == e, $"ContainsKey({k}) disagreed");
+        }
+
+        CheckSameSequence(sut.Select(kv => kv.Key), order, "enumeration keys");
+        CheckSameSequence(sut.Select(kv => kv.Value), order.Select(k => values[k]), "enumeration values");
+        CheckSameSequence(sut.Keys, order, "Keys");
+        CheckSameSequence(sut.Values, order.Select(k => values[k]), "Values");
+
+        bool nonEmpty = order.Count > 0;
+        Check(sut.TryGetFirst(out int fk, out int fv) == nonEmpty, "TryGetFirst presence disagreed");
+        Check(!nonEmpty || (fk == order[0] && fv == values[order[0]]), "TryGetFirst entry disagreed");
+        Check(sut.TryGetLast(out int lk, out int lv) == nonEmpty, "TryGetLast presence disagreed");
+        Check(!nonEmpty || (lk == order[^1] && lv == values[order[^1]]), "TryGetLast entry disagreed");
     }
 
     private static void HashCachingDictionaryCase(Random rng)

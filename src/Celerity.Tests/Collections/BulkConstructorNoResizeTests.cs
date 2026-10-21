@@ -167,6 +167,23 @@ public class BulkConstructorNoResizeTests
     }
 
     [Fact]
+    public void LinkedDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        KeyValuePair<string, int>[] src = StringPairs();
+        _hashCallCount = 0;
+
+        var map = new LinkedDictionary<string, int, CountingStringHasher>(src);
+
+        // A rebuild never re-hashes (entries keep their hash), so the call count alone cannot
+        // prove the absence of a resize here; the pre-sized entry capacity can.
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, map.Count);
+        Assert.True(map.EnsureCapacity(0) >= N);
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
     public void HashCachingDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
     {
         KeyValuePair<string, int>[] src = StringPairs();

@@ -622,6 +622,126 @@ public class ContainsValueTests
         Assert.False(map.ContainsValue(300));
     }
 
+    // ---------------- LinkedDictionary ----------------
+
+    [Fact]
+    public void LinkedDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void LinkedDictionary_FindsValueInRegularSlot()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void LinkedDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void LinkedDictionary_FindsValueOnlyInDefaultKeySlot_IntKey()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void LinkedDictionary_FindsValueOnlyInDefaultKeySlot_NullStringKey()
+    {
+        var map = new LinkedDictionary<string, int, StringFnV1AHasher>();
+        map[null!] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void LinkedDictionary_DefaultValueLookup_ZeroValue()
+    {
+        // Unused and freed entries hold default(TValue); ContainsValue walks only
+        // the order list, so it never sees them.
+        var empty = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+        Assert.False(empty.ContainsValue(0));
+
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+    }
+
+    [Fact]
+    public void LinkedDictionary_NullValueLookup_ReferenceType()
+    {
+        var map = new LinkedDictionary<int, string?, Int32WangNaiveHasher>();
+        map[1] = "one";
+        map[2] = null;
+        Assert.True(map.ContainsValue(null));
+
+        var noNulls = new LinkedDictionary<int, string, Int32WangNaiveHasher> { [1] = "one", [2] = "two" };
+        Assert.False(noNulls.ContainsValue(null));
+    }
+
+    [Fact]
+    public void LinkedDictionary_DuplicateValues_ReturnsTrue()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>
+        {
+            [1] = 42,
+            [2] = 42,
+            [3] = 42,
+        };
+        Assert.True(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void LinkedDictionary_SurvivesResize()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 10;
+
+        Assert.True(map.ContainsValue(770));
+        Assert.False(map.ContainsValue(-1));
+    }
+
+    [Fact]
+    public void LinkedDictionary_AfterDefaultKeyRemove_ReturnsFalse()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+        map[0] = 555;
+        map[1] = 100;
+        map.Remove(0);
+        Assert.False(map.ContainsValue(555));
+        Assert.True(map.ContainsValue(100));
+    }
+
+    [Fact]
+    public void LinkedDictionary_AfterRemove_ReturnsFalse()
+    {
+        // A removed entry goes on the free list with its value cleared, and leaves
+        // the order list that ContainsValue walks.
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map.Remove(1);
+        Assert.False(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void LinkedDictionary_AfterClear_ReturnsFalse()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map[0] = 300;
+        map.Clear();
+        Assert.False(map.ContainsValue(100));
+        Assert.False(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(300));
+    }
+
     // ---------------- HashCachingDictionary ----------------
 
     [Fact]

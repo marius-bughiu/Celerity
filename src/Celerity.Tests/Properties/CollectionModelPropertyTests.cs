@@ -177,6 +177,44 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- LinkedDictionary<int,int> vs Dictionary<int,int> -------------------
+    //
+    // Set parity only; the insertion-order contract is modelled op-by-op in
+    // Collections/LinkedDictionaryDifferentialTests.
+
+    [Fact]
+    public void LinkedDictionary_ShouldMatch_BclDictionary()
+    {
+        GenDictOps.Sample(ops =>
+        {
+            var sut = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+            var oracle = new Dictionary<int, int>();
+
+            foreach (var (op, key, val) in ops)
+            {
+                switch (op)
+                {
+                    case DictOp.Set:
+                        sut[key] = val;
+                        oracle[key] = val;
+                        break;
+                    case DictOp.Remove:
+                        Assert.Equal(oracle.Remove(key), sut.Remove(key));
+                        break;
+                    case DictOp.TryAdd:
+                        Assert.Equal(oracle.TryAdd(key, val), sut.TryAdd(key, val));
+                        break;
+                    case DictOp.Clear:
+                        sut.Clear();
+                        oracle.Clear();
+                        break;
+                }
+            }
+
+            AssertDictEquivalent(sut, oracle);
+        }, iter: 2000);
+    }
+
     // ---- HashCachingDictionary<int,int> vs Dictionary<int,int> --------------
 
     [Fact]
@@ -1064,6 +1102,26 @@ public class CollectionModelPropertyTests
 
     private static void AssertDictEquivalent(
         SwissDictionary<int, int, Int32WangNaiveHasher> sut,
+        Dictionary<int, int> oracle)
+    {
+        Assert.Equal(oracle.Count, sut.Count);
+
+        for (int k = -8; k <= 24; k++)
+        {
+            bool expected = oracle.TryGetValue(k, out int ev);
+            bool actual = sut.TryGetValue(k, out int av);
+            Assert.Equal(expected, actual);
+            if (expected) Assert.Equal(ev, av);
+        }
+
+        var enumerated = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            enumerated[kv.Key] = kv.Value;
+        Assert.Equal(oracle.OrderBy(p => p.Key), enumerated.OrderBy(p => p.Key));
+    }
+
+    private static void AssertDictEquivalent(
+        LinkedDictionary<int, int, Int32WangNaiveHasher> sut,
         Dictionary<int, int> oracle)
     {
         Assert.Equal(oracle.Count, sut.Count);

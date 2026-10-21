@@ -112,6 +112,25 @@ public class IndexerReturnTypeTests
     }
 
     [Fact]
+    public void LinkedDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(typeof(LinkedDictionary<string, int, StringFnV1AHasher>), keyType: typeof(string), valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void LinkedDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
     public void HashCachingDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
     {
         AssertPrimaryIndexerReturnsTValue(typeof(HashCachingDictionary<string, int, StringFnV1AHasher>), keyType: typeof(string), valueGenericIndex: 1);

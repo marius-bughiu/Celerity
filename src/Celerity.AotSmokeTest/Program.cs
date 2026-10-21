@@ -1978,6 +1978,58 @@ void Check(bool condition, string message)
         "SwissDictionary<Guid> round-trip + empty-key slot");
 }
 
+// LinkedDictionary — insertion-ordered chained hash dictionary. Exercise the indexer overwrite that
+// keeps its position, removal from the middle with the slot reused by the next add, MoveToEnd /
+// MoveToFront, first/last peek and pop, the default key stored in the table like any other, growth
+// (the rebuild walks the order list), the IEnumerable ctor, and the in-order struct enumerators over a
+// reference-typed key and value so a second closed generic is rooted.
+{
+    var d = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+    d[3] = "three";
+    d[1] = "one";
+    d[0] = "zero"; // default key: kept in the table and in the order, never hashed
+    d.Add(2, "two");
+    d[1] = "ONE";  // overwrite keeps 1 in second place
+    Check(d.Remove(3, out string? removed) && removed == "three", "LinkedDictionary Remove out value");
+    Check(d.TryAdd(5, "five") && !d.TryAdd(5, "dup"), "LinkedDictionary TryAdd");
+
+    var order = new List<int>();
+    foreach (var kvp in d) order.Add(kvp.Key);
+    Check(order.SequenceEqual(new[] { 1, 0, 2, 5 }) && d[1] == "ONE", "LinkedDictionary insertion order through remove + overwrite");
+
+    Check(d.MoveToEnd(1) && d.MoveToFront(5) && !d.MoveToEnd(42), "LinkedDictionary MoveToEnd / MoveToFront");
+    order.Clear();
+    foreach (int k in d.Keys) order.Add(k);
+    Check(order.SequenceEqual(new[] { 5, 0, 2, 1 }), "LinkedDictionary order after moves");
+
+    Check(d.TryGetFirst(out int firstKey, out _) && firstKey == 5
+        && d.TryGetLast(out int lastKey, out string? lastValue) && lastKey == 1 && lastValue == "ONE",
+        "LinkedDictionary TryGetFirst / TryGetLast");
+    Check(d.TryRemoveFirst(out int poppedFirst, out _) && poppedFirst == 5
+        && d.TryRemoveLast(out int poppedLast, out _) && poppedLast == 1 && d.Count == 2,
+        "LinkedDictionary TryRemoveFirst / TryRemoveLast");
+
+    // Grow through several rebuilds; the order must come out the same.
+    var grow = new LinkedDictionary<int, int, Int32WangNaiveHasher>(capacity: 2);
+    for (int i = 500; i >= 1; i--) grow[i] = i * 3;
+    for (int i = 2; i <= 500; i += 2) grow.Remove(i);
+    int expected = 499;
+    bool ok = grow.Count == 250;
+    foreach (var kvp in grow) { ok &= kvp.Key == expected && kvp.Value == expected * 3; expected -= 2; }
+    Check(ok, "LinkedDictionary resize + remove keeps order");
+
+    var byStr = new LinkedDictionary<string, string, StringMurmur3Hasher>(new[]
+    {
+        new KeyValuePair<string, string>("bob", "b"),
+        new KeyValuePair<string, string>("alice", "a"),
+    });
+    byStr[null!] = "null"; // null key stored in the table, never handed to the hasher
+    var strOrder = new List<string?>();
+    foreach (string? value in byStr.Values) strOrder.Add(value);
+    Check(strOrder.SequenceEqual(new[] { "b", "a", "null" }) && byStr.ContainsKey(null!),
+        "LinkedDictionary<string, string> IEnumerable ctor + null key + Values order");
+}
+
 // SwissSet — the set-shaped sibling of the dictionary above: the same Vector128 group compare over a
 // control-byte array and the same tombstone deletion, but a separate closed generic, so the SIMD probe
 // has to be emitted again for the set's element layout. Exercise the surface, a fill that forces
