@@ -432,6 +432,9 @@ function escapeHtml(s) {
     { key: 'SwissDictionary',     title: 'SwissDictionary<int, int, ...>',           vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'HashCachingDictionary', title: 'HashCachingDictionary<int, int, ...>',    vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'PooledCelerityDictionary', title: 'PooledCelerityDictionary<int, int, ...>', vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
+    // LinkedDictionary keeps insertion order, so its baseline is the ordered map a net8.0 caller builds
+    // from BCL parts (.NET 9's generic OrderedDictionary is not on the net8.0 benchmark runner).
+    { key: 'LinkedDictionary',    title: 'LinkedDictionary<int, int, ...>',          vs: 'Dictionary + LinkedList', ops: ['Insert', 'Lookup', 'Remove', 'Enumerate'] },
     { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup', 'SpanLookup'] },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'CelerityMultiSet',    title: 'CelerityMultiSet<int, ...>',               vs: 'Dictionary<int, int>',       ops: ['Count', 'Lookup', 'Remove'] },
