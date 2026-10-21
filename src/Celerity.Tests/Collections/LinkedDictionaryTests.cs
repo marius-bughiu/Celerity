@@ -951,6 +951,41 @@ public class LinkedDictionaryTests
         Assert.Equal(new[] { 1 }, KeysOf(map));
     }
 
+    // One bucket always holds one entry, so sizing for a single entry must not apply the load
+    // factor: at 1e-6 that would ask for 2^20 buckets (4 MiB) whose entry capacity is still one.
+    // Entry capacity reads 1 either way, so the regression shows only in the bytes allocated.
+    private const float TinyLoadFactor = 0.000001f;
+    private const long SingletonAllocationCeiling = 64 * 1024;
+
+    [Fact]
+    public void SourceConstructor_WithOnePair_ShouldNotOversizeForATinyLoadFactor()
+    {
+        var source = new List<KeyValuePair<int, int>> { new(7, 70) };
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>(source, capacity: 16, loadFactor: TinyLoadFactor);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allocated < SingletonAllocationCeiling, $"allocated {allocated} bytes");
+        Assert.Equal(70, map[7]);
+        Assert.Equal(1, map.EnsureCapacity(0));
+    }
+
+    [Fact]
+    public void TrimExcess_WithOneEntry_ShouldNotOversizeForATinyLoadFactor()
+    {
+        var map = new LinkedDictionary<int, int, Int32WangNaiveHasher>(capacity: 16, loadFactor: TinyLoadFactor);
+        map[7] = 70;
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        map.TrimExcess();
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allocated < SingletonAllocationCeiling, $"allocated {allocated} bytes");
+        Assert.Equal(70, map[7]);
+        Assert.Equal(1, map.EnsureCapacity(0));
+    }
+
     [Fact]
     public void TrimExcess_ShouldShrinkAndPreserveOrder()
     {

@@ -206,7 +206,7 @@ public class LinkedDictionary<TKey, TValue, THasher>
         int count = (source as ICollection<KeyValuePair<TKey, TValue>>)?.Count ?? 0;
 
         if (count > 0 && loadFactor > 0f && loadFactor < 1f)
-            count = FastUtils.MinTableSizeFor(count, loadFactor);
+            count = BucketsFor(count, loadFactor);
 
         // A negative capacity passes through untouched so the primary ctor rejects it,
         // exactly as the capacity-only overload does (issue #460).
@@ -518,7 +518,7 @@ public class LinkedDictionary<TKey, TValue, THasher>
         // one whenever the current one holds fewer, so this rebuild always grows.
         if (_entries.Length < capacity)
         {
-            Rebuild(FastUtils.MinTableSizeFor(capacity, _loadFactor));
+            Rebuild(BucketsFor(capacity, _loadFactor));
             _version++;
         }
 
@@ -546,7 +546,7 @@ public class LinkedDictionary<TKey, TValue, THasher>
         if (capacity < _count)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
 
-        int buckets = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+        int buckets = BucketsFor(capacity, _loadFactor);
         if (buckets != _buckets.Length)
         {
             Rebuild(buckets);
@@ -915,6 +915,12 @@ public class LinkedDictionary<TKey, TValue, THasher>
     // one-bucket table with a tiny load factor can take its first entry.
     private static int EntryCapacityFor(int buckets, float loadFactor) =>
         Math.Max(1, (int)(buckets * loadFactor));
+
+    // The fewest buckets whose entry capacity holds `entries`. One bucket always holds one entry (see
+    // EntryCapacityFor), so zero or one entry needs no load-factor headroom; past that, the table must
+    // reach the load factor, which a tiny one makes large.
+    private static int BucketsFor(int entries, float loadFactor) =>
+        entries <= 1 ? 1 : FastUtils.MinTableSizeFor(entries, loadFactor);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int HashOf(TKey key)
