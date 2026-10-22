@@ -46,7 +46,9 @@ public class RollingQuantileDifferentialTests
     [MemberData(nameof(SweepCases))]
     public void Value_ShouldMatchASortedOracle_AfterEveryAdd(int window, double quantile, int range)
     {
-        var random = new Random(HashCode.Combine(window, quantile, range));
+        // Plain arithmetic, not HashCode.Combine, whose per-process seed would draw a different stream on
+        // every run and make a failing case impossible to replay.
+        var random = new Random((window * 7_919) + ((int)(quantile * 1_000) * 31) + range);
         var values = new int[window * 6 + 7];
         for (int i = 0; i < values.Length; i++)
         {

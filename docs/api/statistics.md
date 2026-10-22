@@ -347,7 +347,9 @@ window slot, where that slot's value currently sits in its heap. When the window
 value takes the expiring value's slot and its heap position, so nothing is searched for. If the new
 value belongs on the other side, it trades places with that side's root instead. Either way an
 `Add` costs at most two heap sifts and the heaps keep their sizes. Both heaps share one array of
-`w` entries, so the footprint is `w` values plus `w` positions, whatever the quantile.
+`w` entries, each a value and the slot it arrived in, beside the `w`-entry position table. The footprint is
+`w` values plus `2w` integers (plus any padding `T` needs), whatever the quantile. For `T = int` that is
+12 bytes a value.
 
 The BCL has no windowed quantile. The careful hand-roll keeps the window sorted in an array beside
 a `Queue<T>` of arrival order, binary-searches the expiring and the new value, and shifts the
@@ -400,8 +402,8 @@ lose:
   5.0× at 10,000 and 32× at 100,000**, and still about 2× at 16 and 100. No crossover turned up, but
   below a few hundred values the whole sample costs tens of nanoseconds either way, so pick the
   type there for the code it saves rather than the time.
-- **`RollingQuantile` answers one quantile, and holds the window.** It is `w` values plus `w`
-  positions, against `DDSketch`'s fixed footprint. A second quantile over the same window needs a
+- **`RollingQuantile` answers one quantile, and holds the window.** It is `w` values plus `2w`
+  integers, against `DDSketch`'s fixed footprint. A second quantile over the same window needs a
   second instance and a second copy of the window.
 - **`RunningStatistics` is slower than LINQ, measurably.** CI puts `Moments` at **1.9× the
   two-pass LINQ shape** at both sizes, because the accumulator maintains all four moments on

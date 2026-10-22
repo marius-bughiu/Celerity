@@ -54,7 +54,7 @@ means keeping the stream, which is the one thing a stream will not let you do.
   maintains all four moments on every `Add`. What it buys is a single pass over
   a stream it never retains, and an answer the `sum` / `sumOfSquares` shortcut
   gets wrong: that one is cheaper still and can return a negative variance.
-- **`RollingQuantile` holds its window**, `w` values plus `w` ints, and answers
+- **`RollingQuantile` holds its window**, `w` values plus `2w` ints, and answers
   one quantile per instance. Against a sorted array plus a queue it is 2.5×
   faster at a 1,000-value window and 32× at 100,000.
 - **`ReservoirSampler` loses on short streams**, where Algorithm L's

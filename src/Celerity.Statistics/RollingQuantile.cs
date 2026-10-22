@@ -28,7 +28,8 @@ namespace Celerity.Statistics;
 /// When the answer can be approximate, or the window is the whole stream, <see cref="DDSketch"/> answers
 /// every quantile at once in a fixed footprint. This type answers one quantile exactly over a bounded
 /// window, and stores the window to do it. The two heaps share one array of <see cref="WindowSize"/>
-/// entries, beside one <see cref="int"/> per entry recording where that value currently sits.
+/// entries, each a value and the <see cref="int"/> slot it arrived in, beside one more <see cref="int"/> per
+/// slot recording where that slot's value currently sits: <c>WindowSize</c> values plus twice as many integers.
 /// </para>
 /// <para>
 /// The type is not thread-safe. There is no enumerator: the window is a stream position, and a caller who
