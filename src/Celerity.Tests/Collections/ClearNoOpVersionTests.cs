@@ -435,7 +435,7 @@ public class ClearNoOpVersionTests
             () => rope.GetEnumerator(), rope.Clear, () => rope.Length, () => rope.Append("text"));
     }
 
-    // ---- The two documented exceptions ------------------------------------------------------------
+    // ---- The four documented exceptions -----------------------------------------------------------
 
     [Fact]
     public void BitSetClear_ShouldBumpTheVersionUnconditionally_BecauseEmptinessCostsAScan()
