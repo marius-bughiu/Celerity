@@ -436,6 +436,7 @@
     // idioms a caller writes instead (List / Array / Linq) rather than a type name.
     { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',   vs: 'List<double> sort + index' },
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',     vs: 'List<T> + partial Fisher-Yates' },
+    { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>' },
     { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',   vs: 'LINQ two-pass mean / variance' }
   ];
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
