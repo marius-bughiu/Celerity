@@ -351,9 +351,12 @@ public sealed class RollingQuantile<T> where T : IComparable<T>
     {
         Entry entry = _entries[index];
         int count = _lowerCount;
-        int child = (2 * index) + 1;
-        while (child < count)
+
+        // `index < count / 2` is "has a left child", tested before 2 · index + 1 is formed, so a window past
+        // 2^30 entries cannot overflow the child index.
+        while (index < count / 2)
         {
+            int child = (2 * index) + 1;
             if (child + 1 < count && Compare(_entries[child + 1].Value, _entries[child].Value) > 0)
             {
                 child++;
@@ -368,7 +371,6 @@ public sealed class RollingQuantile<T> where T : IComparable<T>
             _entries[index] = below;
             _where[below.Slot] = index;
             index = child;
-            child = (2 * index) + 1;
         }
 
         _entries[index] = entry;
@@ -400,9 +402,12 @@ public sealed class RollingQuantile<T> where T : IComparable<T>
     {
         Entry entry = Upper(index);
         int count = _upperCount;
-        int child = (2 * index) + 1;
-        while (child < count)
+
+        // `index < count / 2` is "has a left child", tested before 2 · index + 1 is formed, so a window past
+        // 2^30 entries cannot overflow the child index.
+        while (index < count / 2)
         {
+            int child = (2 * index) + 1;
             if (child + 1 < count && Compare(Upper(child + 1).Value, Upper(child).Value) < 0)
             {
                 child++;
@@ -417,7 +422,6 @@ public sealed class RollingQuantile<T> where T : IComparable<T>
             Upper(index) = below;
             _where[below.Slot] = ~index;
             index = child;
-            child = (2 * index) + 1;
         }
 
         Upper(index) = entry;
