@@ -104,6 +104,7 @@ internal static class Differential
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
         ("ReservoirSampler", ReservoirSamplerCase),
+        ("RollingQuantile", RollingQuantileCase),
     ];
 
     private const int MinKey = -8;
@@ -4563,6 +4564,45 @@ internal static class Differential
         {
             for (int i = 0; i < length; i++)
                 Check(sampler[i] == i, "ReservoirSampler reordered an unfilled reservoir");
+        }
+    }
+
+    // RollingQuantile — the exact sliding-window quantile, against a queue of the window sorted after every
+    // value. The nightly value over the in-repo suite is length and width: windows up to a few hundred values
+    // slid for thousands of steps, so every slot is evicted many times over and the position index that finds
+    // the expiring value is exercised at every heap depth the window reaches. The quantile is drawn from the
+    // whole unit interval and the value range is narrow or wide, so ties at the boundary come and go.
+    private static void RollingQuantileCase(Random rng)
+    {
+        int window = rng.Next(1, 300);
+        double quantile = rng.Next(4) switch { 0 => 0d, 1 => 1d, 2 => 0.5d, _ => rng.NextDouble() };
+        int range = rng.Next(2) == 0 ? 8 : int.MaxValue;
+        int length = rng.Next(0, 4_000);
+
+        var sut = new RollingQuantile<int>(window, quantile);
+        var oracle = new Queue<int>();
+        for (int i = 0; i < length; i++)
+        {
+            int value = rng.Next(range);
+            sut.Add(value);
+            oracle.Enqueue(value);
+            if (oracle.Count > window)
+                oracle.Dequeue();
+
+            Check(sut.Count == oracle.Count, "RollingQuantile Count disagreed");
+            if (i % 7 == 0 || i == length - 1)
+            {
+                int[] sorted = oracle.ToArray();
+                Array.Sort(sorted);
+                Check(sut.Value == sorted[(int)(quantile * (sorted.Length - 1))], "RollingQuantile Value disagreed");
+            }
+
+            if (rng.Next(500) == 0)
+            {
+                sut.Clear();
+                oracle.Clear();
+                Check(!sut.TryGetValue(out _), "RollingQuantile reported a value after Clear");
+            }
         }
     }
 
