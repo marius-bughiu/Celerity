@@ -140,8 +140,8 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
     {
     }
 
-    // `entryCapacity` is the exact entry count to allocate when a caller knows it (a sized source);
-    // otherwise the bucket count's load-factor capacity is used.
+    // `entryCapacity`, when positive, is the exact entry count to allocate (a sized source); otherwise
+    // the bucket count's load-factor capacity is used.
     private BiDictionary(int capacity, float loadFactor, int entryCapacity)
     {
         if (capacity < 0)
@@ -154,7 +154,7 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
         _keyBuckets = new int[buckets];
         _valueBuckets = new int[buckets];
         _mask = buckets - 1;
-        _entries = new Entry[Math.Max(entryCapacity, EntryCapacityFor(buckets, loadFactor))];
+        _entries = new Entry[entryCapacity > 0 ? entryCapacity : EntryCapacityFor(buckets, loadFactor)];
     }
 
     /// <summary>
@@ -221,17 +221,20 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
         return capacity < 0 ? capacity : Math.Max(capacity, count);
     }
 
-    // The entry array a sized source needs: exactly its count, so the buckets' load-factor headroom
-    // is not paid a second time in entries. Runs after InitialCapacityForSource, which has already
-    // rejected a null source; an unsized source, or invalid arguments the ctor is about to reject,
-    // leave the default sizing in place.
+    // The entry array a sized source needs: its count, so the buckets' load-factor headroom is not
+    // paid a second time in entries, or the entries an explicit `capacity` asked for when that is more.
+    // Runs after InitialCapacityForSource, which has already rejected a null source; an unsized or
+    // empty source, or invalid arguments the ctor is about to reject, return 0 for the default sizing.
     private static int EntryCapacityForSource(
         IEnumerable<KeyValuePair<TKey, TValue>> source,
         int capacity,
         float loadFactor)
     {
         int count = (source as ICollection<KeyValuePair<TKey, TValue>>)?.Count ?? 0;
-        return capacity >= 0 && loadFactor > 0f && loadFactor < 1f ? count : 0;
+        if (count == 0 || capacity < 0 || !(loadFactor > 0f && loadFactor < 1f))
+            return 0;
+
+        return Math.Max(count, EntryCapacityFor(FastUtils.NextPowerOfTwo(capacity), loadFactor));
     }
 
     /// <summary>
@@ -1206,17 +1209,27 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
     private void RemoveAt(int index, int keyHash, int valueHash)
     {
         Entry[] entries = _entries;
+        int last = _count - 1;
+
+        // Hash the entry that will fill the hole before touching any link, so a hasher that throws
+        // leaves the table exactly as it was.
+        int movedKeyHash = 0;
+        int movedValueHash = 0;
+        if (index != last)
+        {
+            movedKeyHash = KeyHashOf(entries[last].Key);
+            movedValueHash = ValueHashOf(entries[last].Value);
+        }
+
         KeyLinkTo(index, keyHash) = entries[index].KeyNext;
         ValueLinkTo(index, valueHash) = entries[index].ValueNext;
 
-        int last = _count - 1;
         if (index != last)
         {
             // Re-aim whatever pointed at the last entry, in both chains, at the hole, then move it in.
-            ref Entry moved = ref entries[last];
-            KeyLinkTo(last, KeyHashOf(moved.Key)) = index + 1;
-            ValueLinkTo(last, ValueHashOf(moved.Value)) = index + 1;
-            entries[index] = moved;
+            KeyLinkTo(last, movedKeyHash) = index + 1;
+            ValueLinkTo(last, movedValueHash) = index + 1;
+            entries[index] = entries[last];
         }
 
         // Release the key and value so the table keeps no reference alive.
@@ -1238,13 +1251,17 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
     // the same order; when the bucket count changes, both chain families are re-threaded, hashing each
     // key and value again, and otherwise the links are still valid and nothing is hashed. The caller
     // guarantees `entryCapacity` is at least Count and within the buckets' load-factor capacity.
+    // Nothing is published until every hash has been computed, so a hasher that throws mid-rebuild
+    // leaves the old table installed and intact.
     private void Resize(int buckets, int entryCapacity)
     {
         var entries = new Entry[entryCapacity];
         Array.Copy(_entries, entries, _count);
-        _entries = entries;
         if (buckets == _keyBuckets.Length)
+        {
+            _entries = entries;
             return;
+        }
 
         var keyBuckets = new int[buckets];
         var valueBuckets = new int[buckets];
@@ -1263,6 +1280,7 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
             valueBucket = i + 1;
         }
 
+        _entries = entries;
         _keyBuckets = keyBuckets;
         _valueBuckets = valueBuckets;
         _mask = mask;

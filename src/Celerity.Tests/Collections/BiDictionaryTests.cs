@@ -485,8 +485,8 @@ public class BiDictionaryTests
 
         var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(source, capacity: 1);
 
-        // MinTableSizeFor(100, 0.75) = 256 buckets → 192 entries, reached without growing.
-        Assert.Equal(192, map.EnsureCapacity(0));
+        // Exactly 100 entries over MinTableSizeFor(100, 0.75) = 256 buckets, reached without growing.
+        Assert.Equal(100, map.EnsureCapacity(0));
         Assert.Equal(Enumerable.Range(1, 100), KeysOf(map));
     }
 
@@ -1525,6 +1525,134 @@ public class BiDictionaryTests
         e.Reset();
         Assert.True(e.MoveNext());
         Assert.Equal(new KeyValuePair<int, int>(2, 20), e.Current);
+    }
+
+    // ---------------------------------------------------------------
+    //  A hasher that throws leaves the table intact
+    // ---------------------------------------------------------------
+
+    // Removal and re-bucketing both call the hashers (no hash is cached), so a throw part-way through
+    // must not leave a pair counted and enumerated but unreachable by lookup.
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Remove_ShouldLeaveTheTableIntact_WhenHashingTheMovedEntryThrows(bool keySide)
+    {
+        var map = NewThrowingMap(10);
+        ArmThrow(keySide, key: 10); // the last entry, which a removal of key 1 moves into the hole
+
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => map.Remove(1));
+        }
+        finally
+        {
+            Disarm();
+        }
+
+        AssertThrowingMapHolds(map, 10);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Growth_ShouldLeaveTheTableIntact_WhenRehashingThrows(bool keySide)
+    {
+        var map = NewThrowingMap(12); // the default 16 buckets hold 12 entries; the 13th re-buckets
+        ArmThrow(keySide, key: 12); // the last entry re-hashed, so every other chain link is already rewritten
+
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => map.Add(13, 1013));
+        }
+        finally
+        {
+            Disarm();
+        }
+
+        AssertThrowingMapHolds(map, 12);
+        Assert.False(map.ContainsKey(13));
+
+        map.Add(13, 1013); // and the table still grows once the hasher behaves
+        AssertThrowingMapHolds(map, 13);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EnsureCapacityAndTrimExcess_ShouldLeaveTheTableIntact_WhenRehashingThrows(bool keySide)
+    {
+        var grown = NewThrowingMap(12);
+        var trimmed = NewThrowingMap(12, capacity: 256); // TrimExcess re-buckets it down to 16
+        ArmThrow(keySide, key: 12);
+
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => grown.EnsureCapacity(1000));
+            Assert.Throws<InvalidOperationException>(() => trimmed.TrimExcess());
+        }
+        finally
+        {
+            Disarm();
+        }
+
+        AssertThrowingMapHolds(grown, 12);
+        AssertThrowingMapHolds(trimmed, 12);
+    }
+
+    private static BiDictionary<int, int, ThrowingKeyHasher, ThrowingValueHasher> NewThrowingMap(
+        int count, int capacity = 16)
+    {
+        var map = new BiDictionary<int, int, ThrowingKeyHasher, ThrowingValueHasher>(capacity);
+        for (int i = 1; i <= count; i++)
+            map.Add(i, 1000 + i);
+        return map;
+    }
+
+    private static void ArmThrow(bool keySide, int key)
+    {
+        if (keySide)
+            ThrowingKeyHasher.ThrowOn = key;
+        else
+            ThrowingValueHasher.ThrowOn = 1000 + key;
+    }
+
+    private static void Disarm()
+    {
+        ThrowingKeyHasher.ThrowOn = null;
+        ThrowingValueHasher.ThrowOn = null;
+    }
+
+    private static void AssertThrowingMapHolds(BiDictionary<int, int, ThrowingKeyHasher, ThrowingValueHasher> map, int count)
+    {
+        Assert.Equal(count, map.Count);
+        Assert.Equal(Enumerable.Range(1, count), KeysOf(map).OrderBy(k => k));
+        for (int i = 1; i <= count; i++)
+        {
+            Assert.Equal(1000 + i, map[i]);
+            Assert.Equal(i, map.GetKey(1000 + i));
+        }
+    }
+
+    // Test-only hashers that throw on one armed input. Each is used by this class alone, and xUnit
+    // runs a class's tests one at a time, so the static switch is not shared across threads. The hash
+    // puts every entry in one chain at 16 buckets and splits odd from even at 32, so a re-bucketing
+    // that stops part-way would leave chain links that skip live entries.
+    private struct ThrowingKeyHasher : IHashProvider<int>
+    {
+        public static int? ThrowOn;
+
+        public int Hash(int key) =>
+            key == ThrowOn ? throw new InvalidOperationException("Armed key hasher.") : (key & 1) << 4;
+    }
+
+    private struct ThrowingValueHasher : IHashProvider<int>
+    {
+        public static int? ThrowOn;
+
+        public int Hash(int value) =>
+            value == ThrowOn ? throw new InvalidOperationException("Armed value hasher.") : (value & 1) << 4;
     }
 
     // A test-only hasher used to exercise the Guid path. Uses the GUID's hash
