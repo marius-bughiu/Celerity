@@ -25,7 +25,6 @@ public class BiDictionaryBenchmark
     private int[] keys = null!;          // ItemCount distinct keys, in insertion order
     private int[] values = null!;        // values[i] = keys[i] ^ ValueMask, distinct because the keys are
     private int[] removeOrder = null!;   // the same keys, shuffled
-    private int biCapacity;              // the bucket count that holds ItemCount entries without growing
 
     private Dictionary<int, int> forward = null!;
     private Dictionary<int, int> inverse = null!;
@@ -56,10 +55,6 @@ public class BiDictionaryBenchmark
         removeOrder = (int[])keys.Clone();
         rand.Shuffle(removeOrder);
 
-        // The constructor takes a bucket count; this is the smallest one whose 0.75 load factor
-        // holds ItemCount entries.
-        biCapacity = FastUtils.MinTableSizeFor(ItemCount, 0.75f);
-
         (forward, inverse) = NewPair();
         bi = NewBi();
     }
@@ -78,11 +73,21 @@ public class BiDictionaryBenchmark
 
     private BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> NewBi()
     {
-        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(biCapacity);
+        var map = NewSizedBi();
         for (int i = 0; i < keys.Length; i++)
         {
             map.Add(keys[i], values[i]);
         }
+        return map;
+    }
+
+    // The constructor's capacity is a bucket count, whose 0.75 load factor would allocate up to twice
+    // ItemCount entry slots. EnsureCapacity sizes the entry array to exactly ItemCount, the same
+    // pre-sizing the Dictionary(capacity) baseline gets.
+    private BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> NewSizedBi()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 1);
+        map.EnsureCapacity(ItemCount);
         return map;
     }
 
@@ -104,7 +109,7 @@ public class BiDictionaryBenchmark
     [BenchmarkCategory("Insert")]
     public void BiDictionary_Insert()
     {
-        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(biCapacity);
+        var map = NewSizedBi();
 
         for (int i = 0; i < keys.Length; i++)
         {
