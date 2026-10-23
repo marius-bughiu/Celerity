@@ -184,6 +184,22 @@ public class BulkConstructorNoResizeTests
     }
 
     [Fact]
+    public void BiDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        KeyValuePair<string, int>[] src = StringPairs();
+        _hashCallCount = 0;
+
+        // Only the key side counts; a rebuild re-hashes every key, so a resize would push it past N.
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(src);
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, map.Count);
+        Assert.True(map.EnsureCapacity(0) >= N);
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
     public void HashCachingDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
     {
         KeyValuePair<string, int>[] src = StringPairs();

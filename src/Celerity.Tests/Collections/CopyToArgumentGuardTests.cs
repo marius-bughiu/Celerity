@@ -247,6 +247,18 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void BiDictionary_ShouldValidateCopyToArguments()
+    {
+        BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher> dictionary = new();
+        Fill(dictionary.Add);
+
+        // TValue is not widened to TValue? here, so the element types are the non-nullable ones.
+        AssertCopyToContract<KeyValuePair<int, string>>(3, dictionary.CopyTo);
+        AssertCopyToContract<int>(3, dictionary.Keys.CopyTo);
+        AssertCopyToContract<string>(3, dictionary.Values.CopyTo);
+    }
+
+    [Fact]
     public void RobinHoodDictionary_ShouldValidateCopyToArguments()
     {
         RobinHoodDictionary<int, string, Int32WangNaiveHasher> dictionary = new();
@@ -393,6 +405,7 @@ public class CopyToArgumentGuardTests
         "HierarchicalBitSet", "IntSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet", "RobinHoodSet",
         "SmallSet", "SparseSet", "SwissSet",
 
+        "BiDictionary", "BiDictionary.KeyCollection", "BiDictionary.ValueCollection",
         "BTreeDictionary", "BTreeDictionary.KeyCollection", "BTreeDictionary.ValueCollection",
         "CelerityDictionary", "CelerityDictionary.KeyCollection", "CelerityDictionary.ValueCollection",
         "EnumMap", "EnumMap.KeyCollection", "EnumMap.ValueCollection",
