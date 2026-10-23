@@ -294,7 +294,7 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
             {
                 // Re-pointing an existing key leaves the entry array as it is, so _version is left
                 // untouched and active enumerators stay valid, matching BCL Dictionary<,>. See #233.
-                Rebind(keyIndex, value, valueHash);
+                Rebind(keyIndex, ValueHashOf(_entries[keyIndex].Value), value, valueHash);
                 return;
             }
 
@@ -518,12 +518,16 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
         int valueHash = ValueHashOf(value);
         int keyIndex = FindKey(key, keyHash);
         int valueIndex = FindValue(value, valueHash);
+        if (valueIndex >= 0 && valueIndex == keyIndex)
+            return false;
+
+        // Every hash the call needs is computed before the eviction commits, so a hasher that throws
+        // leaves the dictionary unchanged. After an eviction AddNew never grows: the removal freed a
+        // slot.
+        int oldValueHash = keyIndex >= 0 ? ValueHashOf(_entries[keyIndex].Value) : 0;
         bool evicted = false;
         if (valueIndex >= 0)
         {
-            if (valueIndex == keyIndex)
-                return false;
-
             RemoveAt(valueIndex, KeyHashOf(_entries[valueIndex].Key), valueHash);
             evicted = true;
 
@@ -534,7 +538,7 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
         }
 
         if (keyIndex >= 0)
-            Rebind(keyIndex, value, valueHash);
+            Rebind(keyIndex, oldValueHash, value, valueHash);
         else
             AddNew(key, value, keyHash, valueHash);
 
@@ -1193,11 +1197,12 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
     }
 
     // Re-points entry `index` at a value the caller has just found absent: moves the entry from its
-    // old value chain to the new one. The key side and the entry's position are unchanged.
-    private void Rebind(int index, TValue value, int valueHash)
+    // old value chain to the new one. The key side and the entry's position are unchanged. The caller
+    // passes the current value's hash, so this calls no hasher and cannot fail part-way.
+    private void Rebind(int index, int oldValueHash, TValue value, int valueHash)
     {
         ref Entry entry = ref _entries[index];
-        ValueLinkTo(index, ValueHashOf(entry.Value)) = entry.ValueNext;
+        ValueLinkTo(index, oldValueHash) = entry.ValueNext;
 
         entry.Value = value;
         ref int valueBucket = ref _valueBuckets[valueHash & _mask];

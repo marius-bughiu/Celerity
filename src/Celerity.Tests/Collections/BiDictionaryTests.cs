@@ -1601,6 +1601,25 @@ public class BiDictionaryTests
         AssertThrowingMapHolds(trimmed, 12);
     }
 
+    [Fact]
+    public void ForceSet_ShouldLeaveTheTableIntact_WhenHashingTheKeysOldValueThrows()
+    {
+        var map = NewThrowingMap(3);
+        ThrowingValueHasher.ThrowOn = 1001; // key 1's current value, re-hashed to move it off its chain
+
+        try
+        {
+            // Would evict 2 -> 1002 and re-point 1 at 1002; the throw must come before the eviction.
+            Assert.Throws<InvalidOperationException>(() => map.ForceSet(1, 1002));
+        }
+        finally
+        {
+            Disarm();
+        }
+
+        AssertThrowingMapHolds(map, 3);
+    }
+
     private static BiDictionary<int, int, ThrowingKeyHasher, ThrowingValueHasher> NewThrowingMap(
         int count, int capacity = 16)
     {
