@@ -47,6 +47,7 @@ Standalone libraries built **on top of** Celerity — each solves a real problem
 - `HashCachingDictionary<TKey, TValue, THasher>` — struct-of-arrays layout: a dense side array of 32-bit hash fingerprints lets probes scan metadata only and skip expensive key equality on a single integer compare (cost: four bytes per slot). For costly-equality keys.
 - `PooledCelerityDictionary<TKey, TValue, THasher>` — backing arrays rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
 - `LinkedDictionary<TKey, TValue, THasher>` — **insertion-ordered** dictionary (the .NET `LinkedHashMap` / `OrderedDict`): enumerates oldest first and keeps that order through removals, with `O(1)` `Remove`, `MoveToEnd` / `MoveToFront`, and first/last access (`TryRemoveFirst` drains it in FIFO order). .NET 9's `OrderedDictionary` removes in `O(n)`, and `Dictionary` reuses freed slots, so its order breaks at the first removal. No index access (cost: two `int` order links per entry).
+- `BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>` — **one-to-one** dictionary (the .NET `BiMap` / `BidiMap`): `O(1)` lookup by key *and* by value (`TryGetKey`, `ContainsValue`, `RemoveValue`, an `Inverse` view), with value uniqueness enforced on every write. One table instead of two hand-synced `Dictionary` instances, at 0.6–0.75x their memory (cost: removal re-hashes, since no hash code is cached).
 - `FrozenCelerityDictionary<TValue>` / `<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: `Add` appends instead of overwriting. Implements `ILookup<TKey, TValue?>`.
 - `CelerityMultiSet<T, THasher>` — counting multiset (bag): each element maps to its multiplicity. Single-probe `Add`-increment for frequency counting, vs the two-probe `Dictionary<T,int>` idiom. `Count` (distinct) / `TotalCount` (occurrences).
@@ -200,7 +201,7 @@ byName["bob"] = 1;
 The hasher is a `struct` generic constraint, so the JIT devirtualizes and inlines `Hash()` on the probe path.
 
 <details>
-<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Linked, Frozen, MultiMap, MultiSet, Small, EnumMap, SparseMap, SlotMap</summary>
+<summary><b>Specialized dictionaries</b> — RobinHood, Swiss, HashCaching, Pooled, Linked, Bi, Frozen, MultiMap, MultiSet, Small, EnumMap, SparseMap, SlotMap</summary>
 
 All four `CelerityDictionary` peers below are drop-in (same API, same hashers) and differ only in collision strategy / storage:
 
@@ -238,6 +239,17 @@ pending.MoveToFront(9);       // escalate one job
 
 while (pending.TryRemoveFirst(out int id, out string? job))
     Console.WriteLine($"{id}: {job}"); // 9, then 17
+```
+
+`BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>` is a one-to-one map you can look up from either side in `O(1)`, so it replaces the forward and inverse `Dictionary` pair kept in sync by hand. Values are unique like keys: a write that would give a value a second key throws, and `ForceSet` moves the value instead.
+
+```csharp
+var columns = new BiDictionary<string, int, StringFnV1AHasher, Int32IdentityHasher>();
+columns.Add("id", 0);
+columns.Add("email", 1);
+int ordinal = columns["email"];      // 1
+string name = columns.GetKey(0);     // "id", O(1)
+columns.ForceSet("created", 0);      // moves 0 to "created", removing "id"
 ```
 
 `FrozenCelerityDictionary<TValue>` is build-once, read-many and searches for a perfect (collision-free) hash at construction, so each lookup is single-probe. Immutable; implements `IReadOnlyDictionary<string, TValue?>`. Use the `<TValue, THasher>` overload (e.g. `StringFnV1AFullHasher` for non-ASCII keys) for the single-probe fast path on keys the default would collide — lookups stay correct regardless.
@@ -1214,6 +1226,7 @@ Each type buys a different tradeoff. Find your workload below; if it isn't here,
 | **Lookup-heavy** dictionary with **costly key equality** (long strings, large value-type keys) or large cache-cold tables | `HashCachingDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, but a dense side array of 32-bit hash fingerprints lets probes scan metadata only and short-circuit the key comparison on a single integer compare. Costs four bytes of metadata per slot; complementary to `SwissDictionary` (scalar wide fingerprint vs SIMD one-byte tags). For small tables of cheap keys, `CelerityDictionary` is roughly a wash. On 100k `string` keys it is the difference between losing to the BCL `Dictionary` and beating it on the negative-lookup path — see the [performance guide](docs/performance.md#reference-type-keys-cache-the-hash). |
 | **Short-lived** dictionary rebuilt frequently on a hot path where GC pressure matters | `PooledCelerityDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary` plus `IDisposable`; rents its backing arrays from `ArrayPool<T>.Shared` and returns them on `Dispose`, so build/use/dispose cycles recycle buffers instead of allocating. Dispose it (a `using` scope); for long-lived dictionaries the pooling buys nothing, so prefer `CelerityDictionary`. |
 | Dictionary that must **enumerate in insertion order** even after removals — id-keyed work queues with cancellation, dedup that keeps first-seen order, "touch to move to the end" recency lists | `LinkedDictionary<TKey, TValue, THasher>` | Same API as `CelerityDictionary`, plus an order list threaded through the entries: `Remove`, `MoveToEnd` / `MoveToFront`, and `TryRemoveFirst` / `TryRemoveLast` are all `O(1)`. .NET 9's `OrderedDictionary` keeps the order but removes in `O(n)`; `Dictionary`'s order breaks at the first removal. No index access, so use `OrderedDictionary` if you need the `i`-th entry; if order doesn't matter, `CelerityDictionary` is smaller. |
+| **One-to-one** map read in **both directions** — id ↔ name tables, protocol code ↔ enum maps, handle ↔ object registries | `BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>` | One table instead of a forward and an inverse `Dictionary`: `TryGetKey` / `ContainsValue` / `RemoveValue` are `O(1)`, an `Inverse` view reads the other direction, and a write that would give a value a second key throws (`ForceSet` moves it instead). 0.6–0.75x the memory of the dictionary pair. For dense `0..n` ids use `Int32IdentityHasher`; if only the forward direction is read, `CelerityDictionary` is cheaper to write. |
 | Build-once, read-many lookup table keyed by `string` | `FrozenCelerityDictionary<TValue>` | Immutable; searches for a perfect (collision-free) hash at build time so lookups are single-probe. Tune the hasher via the `<TValue, THasher>` overload. |
 | One key maps to **many** values (one-to-many) | `CelerityMultiMap<TKey, TValue, THasher>` | `Add` appends to a per-key value group instead of overwriting; implements `ILookup<,>`. Pick the struct hasher for your key type, as with `CelerityDictionary`. |
 | **Counting** occurrences / frequency histogram (element → count) | `CelerityMultiSet<T, THasher>` | `Add` is a single probe-and-increment vs the two-probe `Dictionary<T,int>` counting idiom; `SetCount` / `Remove` / `RemoveAll` manage multiplicities, `Count` is distinct elements and `TotalCount` the sum. Pick the struct hasher for your element type. |
