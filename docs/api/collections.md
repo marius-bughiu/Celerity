@@ -680,7 +680,7 @@ All of these are `O(1)` hash lookups. `GetKey` throws `KeyNotFoundException` for
 
 ### Enumeration order and versioning
 
-Enumeration, `Keys`, `Values`, `Inverse`, and every `CopyTo` follow the entry array. That is insertion order until the first removal. A removal moves the newest entry into the removed entry's place, so it is enumerated there from then on. If the order must survive removals, use `LinkedDictionary`.
+Enumeration, `Keys`, `Values`, `Inverse`, and every `CopyTo` follow the entry array. That is insertion order until the first removal. A removal moves the last live entry in the array into the removed entry's place, so that entry is enumerated there from then on. After earlier removals, that entry is not necessarily the newest insertion: with keys 1–4 inserted, removing 1 moves 4 into its slot, and then removing 2 moves 3. If the order must survive removals, use `LinkedDictionary`.
 
 Re-pointing a key at a new value, through the indexer or a `ForceSet` that removes nothing, is not a structural change, so active enumerators stay valid, as with BCL `Dictionary`. Every add, removal, `Clear`, and rebuild invalidates them.
 

@@ -47,9 +47,10 @@ namespace Celerity.Collections;
 /// </description></item>
 /// </list>
 /// <para>
-/// Enumeration follows insertion order until the first removal. A removal moves the newest entry into
-/// the removed entry's place, so that entry is enumerated there from then on. When the order must
-/// survive removals, use <see cref="LinkedDictionary{TKey, TValue, THasher}"/>.
+/// Enumeration follows insertion order until the first removal. A removal moves the last live entry
+/// in the array (after earlier removals, not necessarily the newest insertion) into the removed
+/// entry's place, so that entry is enumerated there from then on. When the order must survive
+/// removals, use <see cref="LinkedDictionary{TKey, TValue, THasher}"/>.
 /// </para>
 /// <para>
 /// The default key and the default value (<c>0</c>, a <see langword="null"/> reference, or a
