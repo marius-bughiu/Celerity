@@ -2030,6 +2030,59 @@ void Check(bool condition, string message)
         "LinkedDictionary<string, string> IEnumerable ctor + null key + Values order");
 }
 
+// LinkedSet — the set sibling of LinkedDictionary: the same entry array threading the hash chains and
+// the insertion order, without a value. Exercise a duplicate add that keeps its position, removal from
+// the middle with the slot reused by the next add, MoveToEnd / MoveToFront, first/last peek and pop, the
+// default element stored in the table like any other, growth (the rebuild walks the order list), the
+// order-preserving set algebra, the IEnumerable ctor, and the in-order struct enumerator over a
+// reference-typed element so a second closed generic is rooted.
+{
+    var s = new LinkedSet<int, Int32WangNaiveHasher>();
+    s.Add(3);
+    s.Add(1);
+    s.Add(0); // default element: kept in the table and in the order, never hashed
+    s.Add(2);
+    Check(!s.TryAdd(1) && s.Remove(3) && !s.Remove(3), "LinkedSet TryAdd duplicate / Remove");
+    Check(s.TryAdd(5), "LinkedSet TryAdd reuses the freed slot");
+
+    var order = new List<int>();
+    foreach (int x in s) order.Add(x);
+    Check(order.SequenceEqual(new[] { 1, 0, 2, 5 }) && s.Contains(0), "LinkedSet insertion order through remove + duplicate add");
+
+    Check(s.MoveToEnd(1) && s.MoveToFront(5) && !s.MoveToEnd(42), "LinkedSet MoveToEnd / MoveToFront");
+    order.Clear();
+    foreach (int x in s) order.Add(x);
+    Check(order.SequenceEqual(new[] { 5, 0, 2, 1 }), "LinkedSet order after moves");
+
+    Check(s.TryGetFirst(out int first) && first == 5 && s.TryGetLast(out int last) && last == 1,
+        "LinkedSet TryGetFirst / TryGetLast");
+    Check(s.TryRemoveFirst(out int poppedFirst) && poppedFirst == 5
+        && s.TryRemoveLast(out int poppedLast) && poppedLast == 1 && s.Count == 2,
+        "LinkedSet TryRemoveFirst / TryRemoveLast");
+
+    s.UnionWith(new[] { 7, 0, 6 });
+    s.ExceptWith(new[] { 2 });
+    order.Clear();
+    foreach (int x in s) order.Add(x);
+    Check(order.SequenceEqual(new[] { 0, 7, 6 }), "LinkedSet UnionWith / ExceptWith keep order");
+
+    // Grow through several rebuilds; the order must come out the same.
+    var grow = new LinkedSet<int, Int32WangNaiveHasher>(capacity: 2);
+    for (int i = 500; i >= 1; i--) grow.Add(i);
+    for (int i = 2; i <= 500; i += 2) grow.Remove(i);
+    int expected = 499;
+    bool ok = grow.Count == 250;
+    foreach (int x in grow) { ok &= x == expected; expected -= 2; }
+    Check(ok, "LinkedSet resize + remove keeps order");
+
+    var byStr = new LinkedSet<string, StringMurmur3Hasher>(new[] { "bob", "alice", "bob" });
+    byStr.Add(null!); // null element stored in the table, never handed to the hasher
+    var strOrder = new List<string?>();
+    foreach (string? x in byStr) strOrder.Add(x);
+    Check(strOrder.SequenceEqual(new[] { "bob", "alice", null }) && byStr.Contains(null!),
+        "LinkedSet<string> IEnumerable ctor dedup + null element order");
+}
+
 // SwissSet — the set-shaped sibling of the dictionary above: the same Vector128 group compare over a
 // control-byte array and the same tombstone deletion, but a separate closed generic, so the SIMD probe
 // has to be emitted again for the set's element layout. Exercise the surface, a fill that forces

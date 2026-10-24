@@ -449,6 +449,48 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- LinkedSet<int> vs HashSet<int> + an insertion-order list -----------
+    //
+    // Set parity against HashSet, plus a List<int> that models the order: a new element
+    // appends, a duplicate add leaves it in place, a removal drops it. The default element
+    // (0 is in the key domain) is stored in-table, so it must enumerate in its insertion
+    // position, not first. The op-by-op order contract (MoveToEnd/Front, TryRemoveFirst/Last)
+    // is modelled in Collections/LinkedSetDifferentialTests.
+
+    [Fact]
+    public void LinkedSet_ShouldMatch_BclHashSet()
+    {
+        GenSetOps.Sample(ops =>
+        {
+            var sut = new LinkedSet<int, Int32WangNaiveHasher>();
+            var oracle = new HashSet<int>();
+            var order = new List<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case SetOp.Add:
+                        bool added = oracle.Add(item);
+                        Assert.Equal(added, sut.TryAdd(item));
+                        if (added) order.Add(item);
+                        break;
+                    case SetOp.Remove:
+                        Assert.Equal(oracle.Remove(item), sut.Remove(item));
+                        order.Remove(item);
+                        break;
+                    case SetOp.Clear: sut.Clear(); oracle.Clear(); order.Clear(); break;
+                }
+            }
+
+            Assert.Equal(oracle.Count, sut.Count);
+            for (int k = -8; k <= 24; k++)
+                Assert.Equal(oracle.Contains(k), sut.Contains(k));
+            Assert.True(oracle.SetEquals(sut.ToHashSet()));
+            Assert.Equal(order, sut.ToList());
+        }, iter: 2000);
+    }
+
     [Fact]
     public void PooledCeleritySet_ShouldMatch_BclHashSet()
     {

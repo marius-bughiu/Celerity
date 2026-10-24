@@ -33,6 +33,7 @@ public class NaNLoadFactorTests
         { "RobinHoodSet", () => _ = new RobinHoodSet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "SwissSet", () => _ = new SwissSet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "HashCachingSet", () => _ = new HashCachingSet<int, Int32WangNaiveHasher>(16, float.NaN) },
+        { "LinkedSet", () => _ = new LinkedSet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "PooledCeleritySet", () => _ = new PooledCeleritySet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "StringInternTable", () => _ = new StringInternTable(16, float.NaN) },
     };
@@ -55,6 +56,7 @@ public class NaNLoadFactorTests
         { "RobinHoodSet", () => _ = new RobinHoodSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
         { "SwissSet", () => _ = new SwissSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
         { "HashCachingSet", () => _ = new HashCachingSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
+        { "LinkedSet", () => _ = new LinkedSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
         { "PooledCeleritySet", () => _ = new PooledCeleritySet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
     };
 

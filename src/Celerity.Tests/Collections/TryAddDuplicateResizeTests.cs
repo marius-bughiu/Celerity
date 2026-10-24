@@ -583,6 +583,45 @@ public class TryAddDuplicateResizeTests
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
 
+    // LinkedSet at 16 buckets and 0.75 holds (int)(16 * 0.75) = 12 entries before it grows,
+    // the same boundary as LinkedDictionary above.
+
+    [Fact]
+    public void LinkedSet_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        var set = new LinkedSet<int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            set.Add(i); // Count == 12 == entry capacity
+
+        var enumerator = set.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current);
+
+        Assert.False(set.TryAdd(2));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current);
+
+        // Insertion order, so no sort is needed.
+        Assert.Equal(Enumerable.Range(1, 12).ToArray(), seen.ToArray());
+    }
+
+    [Fact]
+    public void LinkedSet_TryAdd_NewItemAtThreshold_InvalidatesEnumerator()
+    {
+        var set = new LinkedSet<int, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            set.Add(i); // Count == 12 == entry capacity
+
+        var enumerator = set.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(set.TryAdd(13));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
     // PooledCeleritySet shares CeleritySet's defaults (16-slot table, 0.75 load
     // factor → threshold 12), so the same at-threshold boundary applies; the
     // rented backing array is returned on Dispose via the using declaration.
