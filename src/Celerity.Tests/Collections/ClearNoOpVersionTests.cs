@@ -255,6 +255,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void LinkedSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var set = new LinkedSet<int, Int32WangHasher>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
+    }
+
+    [Fact]
     public void SwissSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var set = new SwissSet<int, Int32WangHasher>();

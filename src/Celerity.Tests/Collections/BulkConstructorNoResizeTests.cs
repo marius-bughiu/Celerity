@@ -284,6 +284,23 @@ public class BulkConstructorNoResizeTests
     }
 
     [Fact]
+    public void LinkedSet_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        string[] src = Enumerable.Range(1, N).Select(i => $"v{i}").ToArray();
+        _hashCallCount = 0;
+
+        var set = new LinkedSet<string, CountingStringHasher>(src);
+
+        // A rebuild never re-hashes (entries keep their hash), so the call count alone cannot
+        // prove the absence of a resize here; the pre-sized entry capacity can.
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        Assert.True(set.EnsureCapacity(0) >= N);
+        for (int i = 1; i <= N; i++)
+            Assert.True(set.Contains($"v{i}"));
+    }
+
+    [Fact]
     public void PooledCeleritySet_BulkConstruct_FromKnownCount_DoesNotResize()
     {
         string[] src = Enumerable.Range(1, N).Select(i => $"v{i}").ToArray();

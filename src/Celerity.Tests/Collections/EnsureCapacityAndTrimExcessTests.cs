@@ -310,6 +310,26 @@ public class EnsureCapacityAndTrimExcessTests
     }
 
     [Fact]
+    public void LinkedSet_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
+    {
+        var set = new LinkedSet<string, CountingStringHasher>();
+        int capacity = set.EnsureCapacity(N);
+        Assert.True(capacity >= N);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= N; i++)
+            set.Add($"v{i}");
+
+        // A rebuild never re-hashes, so the entry capacity (not the hash count) is what proves
+        // the inserts did not grow the table.
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        Assert.Equal(capacity, set.EnsureCapacity(0));
+        for (int i = 1; i <= N; i++)
+            Assert.True(set.Contains($"v{i}"));
+    }
+
+    [Fact]
     public void PooledCeleritySet_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
     {
         using var set = new PooledCeleritySet<string, CountingStringHasher>();
@@ -615,6 +635,29 @@ public class EnsureCapacityAndTrimExcessTests
             Assert.True(set.Contains($"v{i}"));
         set.Add("zz"); // table still usable after the shrink
         Assert.True(set.Contains("zz"));
+    }
+
+    [Fact]
+    public void LinkedSet_TrimExcess_AfterShrink_PreservesContents()
+    {
+        var set = new LinkedSet<string, CountingStringHasher>();
+        for (int i = 1; i <= N; i++)
+            set.Add($"v{i}");
+        for (int i = 6; i <= N; i++)
+            set.Remove($"v{i}");
+
+        _hashCallCount = 0;
+        set.TrimExcess();
+
+        Assert.Equal(0, _hashCallCount); // the rebuild reuses each entry's stored hash
+        Assert.Equal(5, set.Count);
+        Assert.Equal(new[] { "v1", "v2", "v3", "v4", "v5" }, set.ToArray());
+        for (int i = 1; i <= 5; i++)
+            Assert.True(set.Contains($"v{i}"));
+        set.Add("zz"); // free slots were compacted away; table still usable
+        Assert.True(set.Contains("zz"));
+        Assert.True(set.TryGetLast(out string? last));
+        Assert.Equal("zz", last);
     }
 
     [Fact]

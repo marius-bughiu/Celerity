@@ -28,6 +28,7 @@ internal class Program
         typeof(EnumMapBenchmark),
         typeof(CeleritySetBenchmark),
         typeof(SwissSetBenchmark),
+        typeof(LinkedSetBenchmark),
         typeof(RobinHoodSetBenchmark),
         typeof(HashCachingSetBenchmark),
         typeof(PooledCeleritySetBenchmark),
