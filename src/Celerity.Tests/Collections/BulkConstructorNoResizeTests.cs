@@ -301,6 +301,21 @@ public class BulkConstructorNoResizeTests
     }
 
     [Fact]
+    public void LinkedSet_BulkConstruct_SizesFromSourceCount_NotFromDistinctCount()
+    {
+        // For N distinct elements, growth from the default table happens to end at the same entry
+        // capacity the pre-sized table has, so the test above cannot tell the two apart. A counted
+        // source of N copies of four elements can: growth would stop at the default 12 entries,
+        // while sizing from Count reserves room for all N.
+        string[] src = Enumerable.Range(0, N).Select(i => $"v{i % 4}").ToArray();
+
+        var set = new LinkedSet<string, CountingStringHasher>(src);
+
+        Assert.Equal(4, set.Count);
+        Assert.True(set.EnsureCapacity(0) >= N);
+    }
+
+    [Fact]
     public void PooledCeleritySet_BulkConstruct_FromKnownCount_DoesNotResize()
     {
         string[] src = Enumerable.Range(1, N).Select(i => $"v{i}").ToArray();
