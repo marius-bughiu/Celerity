@@ -316,6 +316,21 @@ public class HierarchicalBitSetTests
     }
 
     [Fact]
+    public void LowerBound_ShouldReturnFalse_PastTheLastWordOfAMultipleOf64Level()
+    {
+        // 8,192 = 128 level-0 words = 2 level-1 words, so level 1 is a whole number of words. The climb out of
+        // the last level-0 word lands one past the end of level 1, which must report "no successor" rather
+        // than read into the next level's words. Only a universe that is a multiple of 8,192 reaches that exit,
+        // and the randomized suite hit one only by chance, which made the coverage gate flaky (#558).
+        var set = new HierarchicalBitSet(8192);
+        set.Add(5);
+
+        Assert.False(set.TryGetLowerBound(8150, out int bound));
+        Assert.Equal(0, bound);
+        Assert.False(set.TryGetUpperBound(8150, out _));
+    }
+
+    [Fact]
     public void UpperBound_ShouldSkipExactMatch()
     {
         var set = new HierarchicalBitSet(10_000, new[] { 5, 70, 5000 });
