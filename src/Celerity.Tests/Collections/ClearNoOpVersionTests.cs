@@ -435,6 +435,14 @@ public class ClearNoOpVersionTests
             () => rope.GetEnumerator(), rope.Clear, () => rope.Length, () => rope.Append("text"));
     }
 
+    [Fact]
+    public void BTreeListClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var list = new BTreeList<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => list.GetEnumerator(), list.Clear, () => list.Count, () => list.Add(1));
+    }
+
     // ---- The two documented exceptions ------------------------------------------------------------
 
     [Fact]

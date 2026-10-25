@@ -382,6 +382,16 @@ public class CopyToArgumentGuardTests
         AssertCopyToContract<int>(3, vector.CopyTo);
     }
 
+    // ── Positional lists added after #440 ─────────────────────────────────────
+
+    [Fact]
+    public void BTreeList_ShouldValidateCopyToArguments()
+    {
+        BTreeList<int> list = new(new[] { 1, 2, 3 });
+
+        AssertCopyToContract<int>(3, list.CopyTo);
+    }
+
     // ── The completeness gate ─────────────────────────────────────────────────
 
     // Every public declaration of `void CopyTo(T[], int)` in the shipped collections assembly,
@@ -389,7 +399,7 @@ public class CopyToArgumentGuardTests
     // name it is missing, not as silent divergence.
     private static readonly HashSet<string> Covered = new(StringComparer.Ordinal)
     {
-        "BitPackedArray", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
+        "BitPackedArray", "BTreeList", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
         "HierarchicalBitSet", "IntSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet", "RobinHoodSet",
         "SmallSet", "SparseSet", "SwissSet",
 
