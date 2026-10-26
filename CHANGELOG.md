@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`RadixHeap<TElement>`**, a monotone priority queue over `ulong` priorities for queues where no priority enqueued is below the last one dequeued, such as Dijkstra over integer weights and event simulation. `Enqueue` rejects a priority below `Floor`. At 100,000 entries it is 2.52x faster than `PriorityQueue<,>` on Dijkstra, 2.07x on a drain and 1.52x on a steady-state hold workload; ⚠️ at 1,000 entries `PriorityQueue<,>` is 1.07–1.17x faster on Dijkstra and a drain. Closes [#568](https://github.com/marius-bughiu/Celerity/issues/568).
+
 ## [3.5.0] - 2026-10-25
 
 ### Added

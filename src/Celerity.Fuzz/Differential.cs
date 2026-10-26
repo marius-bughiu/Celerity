@@ -75,6 +75,7 @@ internal static class Differential
         ("IntervalTree", IntervalTreeCase),
         ("RangeMap", RangeMapCase),
         ("MinMaxHeap", MinMaxHeapCase),
+        ("RadixHeap", RadixHeapCase),
         ("CompressedGraph", CompressedGraphCase),
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
@@ -3283,6 +3284,170 @@ internal static class Differential
         {
             int at = sorted.BinarySearch(value);
             sorted.Insert(at < 0 ? ~at : at, value);
+        }
+    }
+
+    // ---- radix heap ---------------------------------------------------------
+
+    // RadixHeap — monotone priority queue over ulong priorities. The oracle is a sorted list of the live
+    // (priority, element) pairs, with every element a unique id, so a dequeued pair is checked for both the
+    // minimum priority and payload integrity (ties come out in any order, so any live pair at the minimum
+    // passes), and Floor is tracked alongside it. Enqueued priorities are Floor plus an offset drawn from a
+    // per-case mix of zero (ties at the floor), narrow, wide and near-ulong.MaxValue spreads, so every bucket
+    // from 0 to 64 is reached and the top bit's redistribution runs. Below-floor enqueues must be rejected
+    // without a change; the seeded constructor rebuilds from the oracle and resets Floor to 0.
+    private static void RadixHeapCase(Random rng)
+    {
+        var sut = new RadixHeap<int>();
+        var model = new List<(ulong Priority, int Element)>();
+        ulong floor = 0;
+        int nextId = 0;
+        int spread = rng.Next(0, 4);
+
+        int ops = OrderedOpCount(rng);
+        for (int op = 0; op < ops; op++)
+        {
+            switch (rng.Next(0, 40))
+            {
+                case < 16:
+                {
+                    ulong priority = floor + Offset(rng, ulong.MaxValue - floor, spread);
+                    int id = nextId++;
+                    sut.Enqueue(id, priority);
+                    Insert(model, (priority, id));
+                    break;
+                }
+                case < 23:
+                    if (sut.TryDequeue(out int element, out ulong priority1))
+                    {
+                        Check(model.Count > 0 && priority1 == model[0].Priority, "RadixHeap TryDequeue priority disagreed");
+                        Check(sut.Floor == priority1, "RadixHeap TryDequeue did not raise Floor to the dequeued priority");
+                        Take(model, (priority1, element), "RadixHeap TryDequeue returned an entry not queued");
+                        floor = priority1;
+                    }
+                    else
+                    {
+                        Check(model.Count == 0, "RadixHeap TryDequeue failed on a non-empty heap");
+                    }
+
+                    break;
+                case < 27:
+                    if (model.Count > 0)
+                    {
+                        int element2 = sut.Dequeue();
+                        Check(sut.Floor == model[0].Priority, "RadixHeap Dequeue did not take the minimum");
+                        floor = sut.Floor;
+                        Take(model, (floor, element2), "RadixHeap Dequeue returned an entry not queued");
+                    }
+                    else
+                    {
+                        bool threw = false;
+                        try { sut.Dequeue(); }
+                        catch (InvalidOperationException) { threw = true; }
+                        Check(threw, "RadixHeap Dequeue on an empty heap did not throw");
+                    }
+
+                    break;
+                case < 31:
+                    if (sut.TryPeek(out int peeked, out ulong peekedPriority))
+                    {
+                        Check(model.Count > 0 && peekedPriority == model[0].Priority, "RadixHeap TryPeek priority disagreed");
+                        Check(model.BinarySearch((peekedPriority, peeked)) >= 0, "RadixHeap TryPeek returned an entry not queued");
+                        int again = sut.Peek();
+                        Check(model.BinarySearch((peekedPriority, again)) >= 0, "RadixHeap Peek returned an entry not at the minimum");
+                    }
+                    else
+                    {
+                        Check(model.Count == 0, "RadixHeap TryPeek failed on a non-empty heap");
+                    }
+
+                    Check(sut.Floor == floor, "RadixHeap Peek changed Floor");
+                    break;
+                case < 33:
+                    if (floor > 0)
+                    {
+                        ulong below = floor - 1 - (ulong)rng.NextInt64() % floor;
+                        bool rejected = false;
+                        try { sut.Enqueue(nextId, below); }
+                        catch (ArgumentOutOfRangeException) { rejected = true; }
+                        Check(rejected, $"RadixHeap accepted priority {below} below Floor {floor}");
+                    }
+
+                    break;
+                case < 35:
+                    CheckEntries(sut, model);
+                    break;
+                case < 37:
+                    sut.TrimExcess();
+                    break;
+                case < 39:
+                {
+                    var entries = new (int, ulong)[model.Count];
+                    for (int k = 0; k < model.Count; k++)
+                        entries[k] = (model[k].Element, model[k].Priority);
+                    rng.Shuffle(entries);
+                    sut = new RadixHeap<int>(entries);
+                    floor = 0;
+                    break;
+                }
+                default:
+                    sut.Clear();
+                    model.Clear();
+                    floor = 0;
+                    break;
+            }
+
+            Check(sut.Count == model.Count, "RadixHeap Count disagreed");
+            Check(sut.Floor == floor, "RadixHeap Floor disagreed");
+        }
+
+        CheckEntries(sut, model);
+        for (int k = 0; k < model.Count; k++)
+        {
+            Check(sut.TryDequeue(out _, out ulong p) && p == model[k].Priority, "RadixHeap final drain out of order");
+            Check(sut.Floor == p, "RadixHeap final drain did not raise Floor");
+        }
+
+        Check(sut.Count == 0 && !sut.TryDequeue(out _, out _), "RadixHeap final drain left entries behind");
+
+        // An offset in [0, room]: zero (a tie at the floor), narrow, wide, a uniformly random 64-bit value, or
+        // one within a few of the top — never overflowing Floor + offset.
+        static ulong Offset(Random rng, ulong room, int spread)
+        {
+            ulong raw = rng.Next(0, 8 + spread * 4) switch
+            {
+                < 2 => 0,
+                < 6 => (ulong)rng.Next(0, 64),
+                < 9 => (ulong)rng.Next(0, 1 << 24),
+                < 12 => (ulong)rng.NextInt64() ^ ((ulong)rng.NextInt64() << 1),
+                _ => room - (ulong)rng.Next(0, 4),
+            };
+
+            return room == ulong.MaxValue ? raw : raw % (room + 1);
+        }
+
+        static void Insert(List<(ulong, int)> sorted, (ulong, int) entry)
+        {
+            int at = sorted.BinarySearch(entry);
+            sorted.Insert(at < 0 ? ~at : at, entry);
+        }
+
+        static void Take(List<(ulong, int)> sorted, (ulong, int) entry, string message)
+        {
+            int at = sorted.BinarySearch(entry);
+            Check(at >= 0, message);
+            sorted.RemoveAt(at);
+        }
+
+        static void CheckEntries(RadixHeap<int> sut, List<(ulong Priority, int Element)> model)
+        {
+            var seen = new List<(ulong, int)>(sut.Count);
+            foreach ((int element, ulong priority) in sut)
+                seen.Add((priority, element));
+            seen.Sort();
+            Check(seen.Count == model.Count, "RadixHeap enumeration count disagreed");
+            for (int k = 0; k < seen.Count; k++)
+                Check(seen[k] == model[k], "RadixHeap enumeration multiset disagreed");
         }
     }
 

@@ -6335,6 +6335,122 @@ Console.WriteLine(queue.DequeueMin());   // page-oncall
 Console.WriteLine(queue.PeekMax());      // reindex
 ```
 
+## RadixHeap&lt;TElement&gt;
+
+A **monotone priority queue** over `ulong` priorities. `Enqueue` is an `O(1)` append and `Dequeue` is amortized `O(log C)` in the priority range, with no comparison on the push path. The price is a contract the BCL heap does not ask for: **no priority enqueued may be smaller than the last one dequeued**. Dijkstra and A\* with non-negative integer weights meet it, and so do discrete-event simulation over integer timestamps and a scheduler draining deadlines in order. Implements `IReadOnlyCollection<(TElement Element, ulong Priority)>`.
+
+```csharp
+public class RadixHeap<TElement> : IReadOnlyCollection<(TElement Element, ulong Priority)>
+```
+
+Elements are **payload, not keys**. The same element may be queued any number of times, and so may the same priority. The heap never hashes or compares an element. Priorities of another integer type map in directly: cast a non-negative `int` or `long`, or shift a signed range by its minimum.
+
+### How it works
+
+This is the radix heap of Ahuja, Mehlhorn, Orlin and Tarjan (1990), in its 64-bit form. `Floor` is the priority of the last entry dequeued (0 to begin with). The heap keeps 65 buckets, and an entry with priority `k` sits in bucket `bitlength(k XOR Floor)`. Bucket 0 holds the entries equal to `Floor`, and bucket `i` holds those that first differ from it at bit `i - 1`. Since every queued priority is at least `Floor`, everything in a lower bucket is smaller than everything in a higher one.
+
+- **`Enqueue`** computes the bucket with one `LeadingZeroCount` and appends. It never compares priorities.
+- **`Dequeue`** pops bucket 0. When bucket 0 is empty, it finds the lowest non-empty bucket with one `TrailingZeroCount` over an occupancy mask, makes that bucket's minimum the new `Floor`, and redistributes the bucket's entries into strictly lower buckets. The minimum and anything tied with it land in bucket 0.
+
+An entry can only move down, so it moves at most 64 times over its life. Each move is part of a sequential pass over one array, where a binary or 4-ary heap sifts through `O(log n)` levels and takes a cache miss on each one at scale.
+
+### The documented BCL-beating workload
+
+A **large monotone queue**: a single-source shortest path over integer weights, an event simulation holding many pending events, or a priority-ordered drain of a big batch. The BCL `PriorityQueue<TElement, TPriority>` is a comparison-based 4-ary heap. It pays a full sift on every enqueue and dequeue and cannot use the monotonicity.
+
+Measured against `PriorityQueue<int, ulong>`, both constructed without a capacity (Apple M-series, .NET 10, default BenchmarkDotNet job). The CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RadixHeap) is the contract:
+
+| Workload | n | `PriorityQueue` | `RadixHeap` | Speed-up | Allocated |
+|---|---|---|---|---|---|
+| Lazy-deletion Dijkstra from one source, over a random graph of `n` vertices with 8 out-edges each and weights in `[1, 1000)` | 1,000 | 40.8 µs | 43.7 µs | ⚠️ **1.07x slower** | 64 KB → 92 KB |
+| | 100,000 | 17.8 ms | 7.07 ms | **2.52x** | 4.0 MB → 10.3 MB |
+| Drain: enqueue `n` random priorities in `[0, 2^30)`, then dequeue them all | 1,000 | 16.7 µs | 19.5 µs | ⚠️ **1.17x slower** | 32 KB → 44 KB |
+| | 100,000 | 7.71 ms | 3.72 ms | **2.07x** | 4.0 MB → 4.0 MB |
+| Hold: fill with `n`, then `n` times take the minimum and re-enqueue it up to 1,000 later | 1,000 | 17.2 µs | 10.9 µs | **1.58x** | 32 KB → 42 KB |
+| | 100,000 | 3.89 ms | 2.56 ms | **1.52x** | 4.0 MB → 4.1 MB |
+
+Both pre-registered bars from [#568](https://github.com/marius-bughiu/Celerity/issues/568) clear: at least 1.8x on the drain and at least 1.4x on the hold model, both at 100,000 entries.
+
+**Where it loses:** a **small** queue. At 1,000 entries, Dijkstra measures 1.07x slower and a drain 1.17x slower than `PriorityQueue`. The radix heap allocates and grows up to 65 bucket arrays, while a 1,000-entry heap fits in cache, so the sift never misses. The hold model still wins at that size: each re-enqueued priority sits at most 1,000 above `Floor`, so it lands in a low bucket and has little distance left to move. The Allocated column also counts that growth: Dijkstra at 100,000 allocates 2.6x the bytes, because each of the 65 buckets grows by doubling on its own, and every redistribution re-pushes entries into buckets that may themselves have to grow. That is garbage made during the run, not memory the heap retains; `TrimExcess` gives back the capacity drained buckets keep.
+
+### Constructors
+
+```csharp
+public RadixHeap()
+public RadixHeap(IEnumerable<(TElement Element, ulong Priority)> items)
+```
+
+- Both start with a `Floor` of 0.
+- The `items` overload keeps every pair, duplicates included, in any order. Each is an `O(1)` append, so seeding is `O(n)`.
+- There is no capacity overload. The heap holds 65 bucket arrays whose sizes depend on the priorities, not on the count, so no single number could pre-size it.
+
+**Throws:** `ArgumentNullException` if `items` is `null`.
+
+### Methods and properties
+
+| Member | Description |
+|--------|-------------|
+| `int Count` | Number of entries in the heap. |
+| `ulong Floor` | The smallest priority `Enqueue` accepts: the priority of the last entry dequeued, or 0 for a heap never dequeued from or cleared since. Every queued priority is at least this. |
+| `void Enqueue(TElement element, ulong priority)` | Adds an entry. `O(1)` amortized. Throws `ArgumentOutOfRangeException` if `priority < Floor`. |
+| `TElement Peek()` | The minimum-priority element. `O(1)` when an entry at `Floor` is queued, otherwise a scan of the lowest non-empty bucket. Never changes `Floor`. Throws `InvalidOperationException` if empty. |
+| `bool TryPeek(out TElement, out ulong)` | Non-throwing peek. |
+| `TElement Dequeue()` | Removes and returns the minimum-priority element and raises `Floor` to its priority. Amortized `O(log C)`. Throws `InvalidOperationException` if empty. |
+| `bool TryDequeue(out TElement, out ulong)` | Non-throwing dequeue. |
+| `void Clear()` | Removes every entry and resets `Floor` to 0. The bucket arrays are retained. |
+| `void TrimExcess()` | Shrinks every bucket array to its count. An empty bucket gives its array up. |
+| `Enumerator GetEnumerator()` | A struct enumerator over the entries in **bucket order**. |
+
+`Peek` deliberately moves nothing. If it redistributed the way `Dequeue` does, it would have to raise `Floor` to the peeked minimum, and a later `Enqueue` between the old `Floor` and that minimum would be rejected for no reason a caller could see. Ties are broken arbitrarily: two entries with equal priority come out in no guaranteed order. Enumeration visits every entry of a lower bucket before any entry of a higher one, but in no particular order within a bucket, so it is not priority order. Reads, `Clear` on an empty heap and a `TrimExcess` that frees nothing do not invalidate an in-flight enumerator. Every other call does.
+
+A drained bucket keeps its array, so after a large drain the heap can hold a few times its current count in capacity. Call `TrimExcess` to release it. This type is not thread-safe; concurrent callers must synchronize externally.
+
+### Choosing it
+
+Reach for `RadixHeap` when the queue is **large and monotone, with integer priorities**. If a priority can go below the last one taken, or isn't an integer, use `PriorityQueue<TElement, TPriority>`. Use `PriorityQueue` for a small queue too (see the loss above). If a queued element's priority must change, use [`IndexedPriorityQueue`](#indexedpriorityqueuetelement-tpriority-thasher). If you need the maximum as well as the minimum, use [`MinMaxHeap`](#minmaxheaptelement-tpriority-tcomparer). For a timer with cancellation handles and a coarse tick, use [`TimerWheel`](#timerwheeltvalue).
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Dijkstra over non-negative integer weights. Every priority pushed is the popped vertex's
+// distance plus a non-negative weight, so it is never below Floor, which is the radix heap's contract.
+(int To, int Weight)[][] graph =
+[
+    [(1, 4), (2, 1)],   // 0
+    [(3, 1)],           // 1
+    [(1, 2), (3, 5)],   // 2
+    [(4, 3)],           // 3
+    [],                 // 4
+];
+
+var dist = new ulong[graph.Length];
+Array.Fill(dist, ulong.MaxValue);
+dist[0] = 0;
+
+var queue = new RadixHeap<int>();
+queue.Enqueue(0, 0);
+while (queue.TryDequeue(out int u, out ulong du))
+{
+    if (du > dist[u])
+        continue;                    // a stale duplicate: u was already settled closer
+
+    foreach ((int v, int w) in graph[u])
+    {
+        ulong candidate = du + (ulong)w;
+        if (candidate < dist[v])
+        {
+            dist[v] = candidate;
+            queue.Enqueue(v, candidate);
+        }
+    }
+}
+
+Console.WriteLine(string.Join(", ", dist));   // 0, 3, 1, 4, 7
+Console.WriteLine(queue.Floor);               // 7: the last distance settled
+```
+
 ## Trie&lt;TValue&gt;
 
 An ordered **prefix tree** (trie) mapping `string` keys to values. Every key is stored as a path of characters from a shared root, so keys sharing a prefix share that prefix's nodes. Implements `IReadOnlyDictionary<string, TValue?>`.

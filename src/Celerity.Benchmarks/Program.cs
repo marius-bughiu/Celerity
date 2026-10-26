@@ -60,6 +60,7 @@ internal class Program
         typeof(DisjointSetBenchmark),
         typeof(IndexedPriorityQueueBenchmark),
         typeof(MinMaxHeapBenchmark),
+        typeof(RadixHeapBenchmark),
         typeof(TimerWheelBenchmark),
         typeof(TrieBenchmark),
         typeof(SuccinctTrieBenchmark),
