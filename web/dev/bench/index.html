@@ -435,6 +435,9 @@ function escapeHtml(s) {
     // LinkedDictionary keeps insertion order, so its baseline is the ordered map a net8.0 caller builds
     // from BCL parts (.NET 9's generic OrderedDictionary is not on the net8.0 benchmark runner).
     { key: 'LinkedDictionary',    title: 'LinkedDictionary<int, int, ...>',          vs: 'Dictionary + LinkedList', ops: ['Insert', 'Lookup', 'Remove', 'Enumerate'] },
+    // BiDictionary's baseline is the hand-roll: a forward and an inverse Dictionary kept in sync, so
+    // Insert and Remove touch both, and InverseLookup reads the inverse map.
+    { key: 'BiDictionary',        title: 'BiDictionary<int, int, ...>',              vs: 'Dictionary pair (forward + inverse)', ops: ['Insert', 'Lookup', 'InverseLookup', 'Remove', 'Enumerate'] },
     { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup', 'SpanLookup'] },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'CelerityMultiSet',    title: 'CelerityMultiSet<int, ...>',               vs: 'Dictionary<int, int>',       ops: ['Count', 'Lookup', 'Remove'] },
@@ -455,6 +458,9 @@ function escapeHtml(s) {
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'SwissSet',            title: 'SwissSet<int, ...>',                       vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
+    // LinkedSet keeps insertion order, so its baseline is the ordered set a net8.0 caller builds from
+    // BCL parts: a Dictionary keyed to the nodes of a LinkedList.
+    { key: 'LinkedSet',           title: 'LinkedSet<int, ...>',                      vs: 'Dictionary + LinkedList', ops: ['Add', 'Contains', 'Remove', 'Enumerate'] },
     { key: 'RobinHoodSet',        title: 'RobinHoodSet<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'HashCachingSet',      title: 'HashCachingSet<int, ...>',                 vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'PooledCeleritySet',   title: 'PooledCeleritySet<int, ...>',              vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
@@ -652,6 +658,10 @@ function escapeHtml(s) {
     // The sampler's baseline is the good hand-roll — materialize the stream, partial Fisher-Yates — not
     // the OrderBy(random).Take(k) that would flatter it. The win is the footprint, not the asymptotics.
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',        vs: 'List<T> + partial Fisher-Yates', ops: ['Sample', 'Accumulate'] },
+    // The rolling median's baseline is the careful hand-roll — a sorted int[] beside a Queue<int>, one span
+    // shift per sample between the expiring value and the new one — not a re-sort per read. ItemCount is the
+    // window: the shift is linear in it and the heaps logarithmic, so the gap widens with the window.
+    { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', ops: ['Slide'], items: [1000, 10000, 100000] },
     // Welford against the LINQ two-pass. Expect a factor near one on Moments: the reason to prefer this
     // type is that the faster one-pass shortcut is numerically wrong, which a chart cannot show.
     { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',      vs: 'LINQ two-pass mean / variance', ops: ['Moments', 'Accumulate'] }

@@ -23,6 +23,7 @@ in the collections.
 - [DDSketch](#ddsketch)
 - [ReservoirSampler](#reservoirsampler)
 - [RunningStatistics](#runningstatistics)
+- [RollingQuantile](#rollingquantile)
 - [Where these lose](#where-these-lose)
 
 ## Choosing a summary
@@ -32,6 +33,7 @@ in the collections.
 | p50 / p90 / p99 latency over a stream that never ends | `DDSketch` | A relative error bound at every quantile, in memory proportional to the log of the value range rather than to the sample count. |
 | Percentiles per shard, combined into a global one | `DDSketch.Merge` | Two sketches of the same accuracy merge without re-reading either input — bucket-exactly, unless an operand has already collapsed. |
 | An exact median of data you already hold and will not add to | `Array.Sort` + index | Nothing beats a pre-sorted array indexed in `O(1)`. The sketch is for the case where you cannot keep the data or it keeps changing. |
+| A rolling median or p99 over the last *w* values — a median filter, a "spike over the recent median" alarm | `RollingQuantile<T>` | Exact, `O(log w)` per value and `O(1)` to read. It holds the window, which is what makes it exact; `DDSketch` cannot forget old values. |
 | A bounded sample of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` | `O(k)` memory and `O(k · log(n / k))` random draws, uniform to the precision of the generator, and it never needs to know `n`. |
 | Mean and standard deviation of a stream, or of one bucket among many | `RunningStatistics` | One pass, no allocation, numerically stable, and a `struct` so per-bucket accumulators live inline. |
 | Skewness / kurtosis | `RunningStatistics` | Welford extended to the fourth moment (Terriberry). There is no BCL equivalent at all. |
@@ -311,9 +313,74 @@ ref RunningStatistics slot = ref CollectionsMarshal.GetValueRefOrAddDefault(byEn
 slot.Add(latency);
 ```
 
+## RollingQuantile
+
+The exact quantile of the most recent `w` values of a stream — a rolling median, p95 or any other
+fraction — updated in `O(log w)` per value and read in `O(1)`.
+
+```csharp
+// The median of the last 1,001 latency samples, updated as each one arrives.
+var median = new RollingQuantile<double>(windowSize: 1_001, quantile: 0.5);
+
+foreach (double latency in samples)
+{
+    median.Add(latency);
+    if (median.IsFull && latency > 3 * median.Value)
+    {
+        Console.WriteLine($"spike: {latency}");
+    }
+}
+```
+
+Each `Add` appends to a fixed-size sliding window, evicting the oldest value once the window is
+full. `Value` is the window's element of zero-based rank `⌊q · (n − 1)⌋` in sorted order, where `q`
+is the quantile and `n` the window's count. NumPy calls this the `"lower"` method. A median over an
+even window is therefore the lower of the two middle values, `q = 0` is the window minimum, and
+`q = 1` the maximum. The answer is always a value from the window, never an interpolation or an
+estimate.
+
+### How it works
+
+The window lives in two heaps that meet at the quantile: a max-heap of the values at or below it,
+whose root is the answer, and a min-heap of the values above. A side table records, for every
+window slot, where that slot's value currently sits in its heap. When the window is full, the new
+value takes the expiring value's slot and its heap position, so nothing is searched for. If the new
+value belongs on the other side, it trades places with that side's root instead. Either way an
+`Add` costs at most two heap sifts and the heaps keep their sizes. Both heaps share one array of
+`w` entries, each a value and the slot it arrived in, beside the `w`-entry position table. The footprint is
+`w` values plus `2w` integers (plus any padding `T` needs), whatever the quantile. For `T = int` that is
+12 bytes a value.
+
+The BCL has no windowed quantile. The careful hand-roll keeps the window sorted in an array beside
+a `Queue<T>` of arrival order, binary-searches the expiring and the new value, and shifts the
+values between them by one place. That is a memmove, linear in the window, so it is quick for a
+small window and slow for a large one. The more obvious `List<T>.RemoveAt` + `Insert` moves the
+tail twice, and re-sorting per read is worse again. Against that careful hand-roll, sliding a full
+window and reading the median after every sample measured **2.5× faster at 1,000 values, 5.0× at
+10,000 and 32× at 100,000** on a local run (Apple M-series, .NET 10). Neither side allocates. The
+CI-tracked numbers are on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
+
+### Surface
+
+| Member | Notes |
+|---|---|
+| `RollingQuantile<T>(int windowSize, double quantile)` | `windowSize ≥ 1`; `quantile` in `[0, 1]`. `NaN` is rejected. `T : IComparable<T>`. |
+| `Add(T value)` / `Add(ReadOnlySpan<T> values)` | One value, or a span in order. Evicts the oldest value once the window is full. |
+| `Value` / `TryGetValue(out T)` | The current quantile. `Value` throws `InvalidOperationException` on an empty window. |
+| `Count` / `WindowSize` / `IsFull` / `Quantile` | Values in the window, its capacity, whether it has filled, and the fraction. |
+| `Clear()` | Empties the window in `O(Count)`, releasing any references it held. |
+
+While the window is still filling, `Value` is taken over the values seen so far. Check `IsFull`
+when a partial window should not be read as a full one. Values are ordered by
+`Comparer<T>.Default`, which puts a `null` reference first and, for `double`, `NaN` below every
+number. One instance answers one quantile; for a median *and* a p99 over the same window, use two.
+
+There is no enumerator. The window is a position in the caller's stream, and a caller who needs
+its contents already has them.
+
 ## Where these lose
 
-Celerity documents its tradeoffs rather than claiming a blanket win. All three of these are on the
+Celerity documents its tradeoffs rather than claiming a blanket win. All four of these are on the
 [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), including the arms they
 lose:
 
@@ -330,6 +397,14 @@ lose:
   replacement, and at a thousand items that is most of the work: CI measures it **6.2× slower**
   than materializing and shuffling. By a hundred thousand it is **1.7× faster** and holds 100
   items instead of 100,000. The crossover is around ten thousand — below that, materialize.
+- **`RollingQuantile`'s margin is narrow on a small window.** Against the careful sorted-array
+  hand-roll, a local run (Apple M-series, .NET 10) measured **2.5× faster at a 1,000-value window,
+  5.0× at 10,000 and 32× at 100,000**, and still about 2× at 16 and 100. No crossover turned up, but
+  below a few hundred values the whole sample costs tens of nanoseconds either way, so pick the
+  type there for the code it saves rather than the time.
+- **`RollingQuantile` answers one quantile, and holds the window.** It is `w` values plus `2w`
+  integers, against `DDSketch`'s fixed footprint. A second quantile over the same window needs a
+  second instance and a second copy of the window.
 - **`RunningStatistics` is slower than LINQ, measurably.** CI puts `Moments` at **1.9× the
   two-pass LINQ shape** at both sizes, because the accumulator maintains all four moments on
   every `Add` while that caller reads two. It buys a single pass over a stream it never
@@ -345,6 +420,6 @@ next to the winning ones so the crossovers can be read off rather than guessed.
   `TopKSketch`, `MinHashSketch`) that summarize a stream's *cardinality*, *frequencies* and
   *overlap with another stream* rather than its distribution.
 - [Utilities API](utilities.md) — the seedable struct PRNGs the sampler is parameterized on.
-- [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch` and `RunningStatistics`
-  reconcile against exact oracles; the sampler's is invariant fuzzing, because uniformity is
+- [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch`, `RunningStatistics` and
+  `RollingQuantile` reconcile against exact oracles; the sampler's is invariant fuzzing, because uniformity is
   distributional and no single case can measure it.

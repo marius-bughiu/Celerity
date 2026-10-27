@@ -19,6 +19,7 @@ internal class Program
         typeof(HashCachingDictionaryBenchmark),
         typeof(PooledCelerityDictionaryBenchmark),
         typeof(LinkedDictionaryBenchmark),
+        typeof(BiDictionaryBenchmark),
         typeof(IntDictionaryBenchmark),
         typeof(LongDictionaryBenchmark),
         typeof(FrozenCelerityDictionaryBenchmark),
@@ -28,6 +29,7 @@ internal class Program
         typeof(EnumMapBenchmark),
         typeof(CeleritySetBenchmark),
         typeof(SwissSetBenchmark),
+        typeof(LinkedSetBenchmark),
         typeof(RobinHoodSetBenchmark),
         typeof(HashCachingSetBenchmark),
         typeof(PooledCeleritySetBenchmark),
@@ -90,6 +92,7 @@ internal class Program
         typeof(SortedSpanBenchmark),
         typeof(DDSketchBenchmark),
         typeof(ReservoirSamplerBenchmark),
+        typeof(RollingQuantileBenchmark),
         typeof(RunningStatisticsBenchmark),
         // One comparison split by hasher family so the shard packer can spread it; see
         // StringHasherBenchmarkBase.

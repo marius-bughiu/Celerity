@@ -510,7 +510,7 @@ Entries live in one array of structs. Each entry holds the key, the value, the k
 - A lookup hashes once and walks one bucket's chain, touching one entry per step. Reference keys compare the stored hash before calling `Equals`.
 - A removal unlinks the entry from its chain and from the order list, then puts the slot on a free list. The next add reuses it, so a remove/add churn never grows the table.
 - Enumeration follows the order list, so it costs `O(Count)` however many entries have been removed.
-- Growth doubles the bucket count and copies the live entries **in order** into a fresh array. That compacts out every free slot. It also lays entries out sequentially, so enumeration after a resize or a `TrimExcess` walks memory front to back. The hasher is not called again, because each entry keeps its hash.
+- Growth doubles the bucket count and copies the live entries **in order** into a fresh array. That compacts out every free slot. It also lays entries out sequentially, so enumeration after a resize walks memory front to back. A `TrimExcess` does the same only when it changes the table size; one that leaves the bucket count unchanged rebuilds nothing, so it neither compacts free slots nor restores sequential layout after moves. The hasher is not called again, because each entry keeps its hash.
 
 ### Performance
 
@@ -584,6 +584,134 @@ pending.MoveToFront(9);      // escalate one job
 
 while (pending.TryRemoveFirst(out int id, out string? job))
     Console.WriteLine($"{id}: {job}"); // 9, 17, 4
+```
+
+---
+
+## BiDictionary&lt;TKey, TValue, TKeyHasher, TValueHasher&gt;
+
+A **one-to-one** hash dictionary that can be looked up by key and by value. Every key maps to exactly one value and every value belongs to exactly one key, so the value side gets the same `O(1)` hash lookups as the key side: `ContainsValue`, `TryGetKey`, `GetKey`, and `RemoveValue`. `Inverse` exposes the same table as a read-only `IReadOnlyDictionary<TValue, TKey>`. This is the shape of Guava's `HashBiMap` and Apache Commons' `BidiMap`. The rest of the public surface matches `CelerityDictionary`: constructors, indexer, `ContainsKey` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and both `IDictionary<TKey, TValue>` and `IReadOnlyDictionary<TKey, TValue>`.
+
+```csharp
+public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
+    : IDictionary<TKey, TValue>, IReadOnlyDictionary<TKey, TValue>
+    where TKeyHasher : struct, IHashProvider<TKey>
+    where TValueHasher : struct, IHashProvider<TValue>
+```
+
+### Why not two `Dictionary` instances
+
+.NET has no bidirectional dictionary. The usual hand-roll is a forward `Dictionary<TKey, TValue>` and an inverse `Dictionary<TValue, TKey>`, kept in sync by the caller:
+
+- Every write has to touch both maps, and an overwrite has to remove the stale inverse entry first.
+- Nothing enforces that values are unique unless the caller checks the inverse map before every write. A second `Add` that throws on a duplicate value leaves the two maps disagreeing unless the caller rolls the first one back.
+- Every key and every value is stored twice, in two entry arrays, each with its own bucket array and a cached hash code per entry.
+
+`BiDictionary` does that bookkeeping inside one table and refuses any write that would give a value a second key. Use it when both directions are read: id ↔ name tables, protocol code ↔ enum maps, handle ↔ object registries, column name ↔ ordinal maps. When only the forward direction is read, `CelerityDictionary` and `SwissDictionary` are faster to write.
+
+### How it works
+
+Entries live in one **dense** array of structs. Each entry holds the key, the value, and one link into each of two chain families. A key-bucket array chains entries by key hash, and a value-bucket array chains them by value hash. Both are power-of-two arrays of chain heads.
+
+- Lookups in either direction hash once and walk one chain.
+- No hash code is cached in the entry. That is what keeps an `int ↔ int` entry at 16 bytes, where the dictionary pair spends 32 bytes on its two entries. The cost shows up on churn: a removal re-hashes the removed entry's other side and the entry that fills the hole, and growth that adds buckets re-hashes every entry. A key or value type with an expensive hasher pays more for that than a `Dictionary` does.
+- A removal unlinks the entry from both chains and moves the **last** entry into the hole, so the array never holds a gap and enumeration is a straight scan.
+- The entry array is sized apart from the buckets. `EnsureCapacity(n)`, `TrimExcess(n)` and a sized source allocate exactly `n` entries rather than the buckets' full load-factor capacity. Growth doubles the entry array and re-buckets (re-hashing) only when the load factor needs more buckets.
+
+### Performance
+
+Measured locally on Apple Silicon (.NET 10), with `Int32WangNaiveHasher` on both sides and random distinct `int` keys. The baseline is the two-`Dictionary` hand-roll. The dashboard's CI series is the contract.
+
+| Operation | 10,000 entries | 100,000 entries |
+|---|---|---|
+| Build (one `Add` vs the pair's two) | ~0.8x the time | ~0.65x |
+| Forward hit lookup (vs one `Dictionary`) | ~0.95x | ~0.55–0.75x |
+| Inverse hit lookup (vs the inverse `Dictionary`) | ~0.9x | ~0.7–0.75x |
+| Remove by key (vs the pair's two `Remove`s) | ~0.53x | ~0.41x |
+
+Retained `int ↔ int` memory, averaged over 47 sizes from 1,000 to 300,000: **~0.61x** of the pair when both grow unsized, and **~0.73x** when both are pre-sized (worst 1.08x, at a count just past a power-of-two bucket boundary).
+
+For `string ↔ string`, retained memory was 0.59x of the pair at 10,000 entries and 0.74x at 100,000.
+
+⚠️ **Dense integer ids want the identity hasher.** `Dictionary<int, …>` hashes an `int` to itself, so keys `0..n` fill its buckets in order. A mixing hasher such as `Int32WangHasher` scatters them, and with keys `0..100,000` lookups measured about 2.2x slower than `Dictionary`. With `Int32IdentityHasher` on both sides the same workload was faster than the pair in every row above.
+
+### Constructors
+
+```csharp
+public BiDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public BiDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Validation and exceptions are the same as for `CelerityDictionary`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. `capacity` is the number of hash buckets in each direction, rounded up to a power of two. The dictionary holds `capacity × loadFactor` entries (at least one) before it grows. A duplicate key in `source`, or two keys with the same value, throws `ArgumentException`.
+
+### One-to-one writes
+
+```csharp
+public TValue this[TKey key] { get; set; }
+public void Add(TKey key, TValue value)
+public bool TryAdd(TKey key, TValue value)
+public bool ForceSet(TKey key, TValue value)
+```
+
+- `Add` throws `ArgumentException` when the key exists (`ParamName` `"key"`) or when the value already belongs to another key (`ParamName` `"value"`). `TryAdd` returns `false` in both cases. Either way the dictionary is unchanged.
+- The indexer setter re-points an existing key at a new value, or adds a new key. It throws `ArgumentException` when the value already belongs to a **different** key. Setting a key to the value it already has does nothing.
+- `ForceSet` is Guava's `forcePut`. Where the indexer refuses, it removes whichever entry held the value, then sets the key. It returns `true` when it removed another key's entry.
+
+### Value-side lookups and the inverse view
+
+```csharp
+public bool ContainsValue(TValue value)
+public bool TryGetKey(TValue value, out TKey key)
+public TKey GetKey(TValue value)
+public bool RemoveValue(TValue value)
+public bool RemoveValue(TValue value, out TKey key)
+public InverseView Inverse { get; }
+```
+
+All of these are `O(1)` hash lookups. `GetKey` throws `KeyNotFoundException` for an absent value. `Values.Contains` is `O(1)` too.
+
+`Inverse` is a `readonly struct` implementing `IReadOnlyDictionary<TValue, TKey>`. It is a view of the same table, not a copy, so it reflects every later change. Its indexer, `ContainsKey`, `TryGetValue`, and its struct enumerator do not allocate. Its `Keys` are the dictionary's `Values`, and its `Values` are the dictionary's `Keys`.
+
+### Enumeration order and versioning
+
+Enumeration, `Keys`, `Values`, `Inverse`, and every `CopyTo` follow the entry array. That is insertion order until the first removal. A removal moves the last live entry in the array into the removed entry's place, so that entry is enumerated there from then on. After earlier removals, that entry is not necessarily the newest insertion: with keys 1–4 inserted, removing 1 moves 4 into its slot, and then removing 2 moves 3. If the order must survive removals, use `LinkedDictionary`.
+
+Re-pointing a key at a new value, through the indexer or a `ForceSet` that removes nothing, is not a structural change, so active enumerators stay valid, as with BCL `Dictionary`. Every add, removal, `Clear`, and rebuild invalidates them.
+
+### Default-key and default-value handling
+
+`default(TKey)` and `default(TValue)` (`0`, a `null` reference, a `Nullable<T>` with no value) are stored **in the table** like any other key or value. Neither is ever passed to its hasher: each gets hash code `0` directly, so string hashers that throw on `null` are safe on both sides. Keys are compared with `EqualityComparer<TKey>.Default` and values with `EqualityComparer<TValue>.Default`, and each hasher must agree with its comparer.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Interned column names: look up an ordinal by name and a name by ordinal.
+var columns = new BiDictionary<string, int, StringFnV1AHasher, Int32IdentityHasher>();
+columns.Add("id", 0);
+columns.Add("name", 1);
+columns.Add("email", 2);
+
+int ordinal = columns["email"];        // 2
+string column = columns.GetKey(1);     // "name"
+bool known = columns.ContainsValue(3); // false, O(1)
+
+// The value side is unique too: this would throw, because 0 already belongs to "id".
+// columns["created"] = 0;
+
+columns.ForceSet("created", 0);  // moves 0 to "created" and removes "id"
+columns.RemoveValue(2);          // removes "email"
+
+foreach (KeyValuePair<int, string> pair in columns.Inverse)
+    Console.WriteLine($"{pair.Key} -> {pair.Value}");
 ```
 
 ---
@@ -1153,6 +1281,102 @@ using (var set = new PooledCeleritySet<int, Int32WangNaiveHasher>())
     foreach (var item in set)
         Console.WriteLine(item);
 } // Dispose() returns the backing array to ArrayPool<T>.Shared here.
+```
+
+---
+
+## LinkedSet&lt;T, THasher&gt;
+
+A hash set that **remembers insertion order**, and the set counterpart of [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher). It enumerates its elements in the order they were first added and keeps that order through any number of removals, at `O(1)` per `Remove`. It can also move an element to either end and read or remove the oldest and newest elements, all in `O(1)`. This is the shape of Java's `LinkedHashSet`. The rest of the public surface matches `CeleritySet`: constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, the full `ISet<T>` algebra, and `IReadOnlySet<T>`.
+
+```csharp
+public class LinkedSet<T, THasher> : ISet<T>, IReadOnlySet<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+### Why not `HashSet` or `SortedSet`
+
+.NET ships no insertion-ordered set:
+
+- `HashSet<T>` enumerates in insertion order only until the first `Remove`. The freed entry goes on a free list, and the next `Add` reuses it, so the new element appears where the removed one was. The order is not documented, so even before a removal it is an accident of the implementation.
+- `SortedSet<T>` keeps an order, but the comparer's order, not arrival order.
+- The usual hand-rolls each pay somewhere. A `HashSet<T>` beside a `List<T>` removes in `O(n)`. A `Dictionary<T, LinkedListNode<T>>` beside a `LinkedList<T>` removes in `O(1)`, but allocates a node object per element and stores every element twice.
+
+`LinkedSet` has `O(1)` removal and re-ordering, no per-element allocation, and **no index access**. If order does not matter at all, `CeleritySet` and `SwissSet` are smaller and faster.
+
+### How it works
+
+The layout is `LinkedDictionary`'s without the value. Elements live in one array of structs, each holding the element, its full hash, the next entry in the same hash bucket, and the previous and next entries in insertion order. Buckets are a power-of-two array of chain heads. A lookup hashes once and walks one chain. A removal unlinks the entry and puts its slot on a free list, so remove/add churn never grows the table. Growth copies the live entries **in order** into a fresh array, which compacts out every free slot and never calls the hasher again.
+
+### Performance
+
+Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is the `net8.0` hand-roll that also removes in `O(1)`: a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`.
+
+| Operation, `int` elements | 1,000 | 10,000 | 100,000 |
+|---|---|---|---|
+| Add every element, pre-sized | 4.3x faster, 51% less allocated | 7–9x faster, 59% less allocated | 13.4x faster, 36% less allocated |
+| `Contains`, every element a hit | 1.7x faster | 1.7x faster | 4.0x faster |
+| Remove every element, shuffled order | 2.1x faster | 2.2x faster | 2.3x faster |
+| Enumerate after removing half | **2.7x slower** | **2.4x slower** | **2.7x slower** |
+
+The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. A `TrimExcess` after heavy churn compacts the entries into order, which makes the walk sequential again.
+
+### Constructors
+
+```csharp
+public LinkedSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public LinkedSet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Validation and exceptions are the same as for `CeleritySet`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. `capacity` is the number of hash buckets, rounded up to a power of two. The set holds `capacity × loadFactor` elements (at least one) before it grows, so to pre-size for `n` elements call `EnsureCapacity(n)`. The source constructor adds elements in the order `source` enumerates them. Duplicates are dropped silently, as `HashSet<T>` drops them, and each element keeps the position of its first occurrence. An `ICollection<T>` source's `Count` sizes the table so the build never resizes.
+
+### Ordered operations
+
+```csharp
+public bool MoveToEnd(T item)
+public bool MoveToFront(T item)
+public bool TryGetFirst(out T item)
+public bool TryGetLast(out T item)
+public bool TryRemoveFirst(out T item)
+public bool TryRemoveLast(out T item)
+```
+
+These behave exactly as `LinkedDictionary`'s do. `MoveToEnd` / `MoveToFront` return `false` for an absent element, and a move to the end the element is already at changes nothing and leaves active enumerators valid. `TryGetFirst` / `TryGetLast` read the oldest and newest elements. `TryRemoveFirst` / `TryRemoveLast` remove them, so a `TryRemoveFirst` loop drains the set first-in, first-out.
+
+### Order semantics
+
+- `Add`, `TryAdd`, `ISet<T>.Add` and `ICollection<T>.Add` append a **new** element at the end. Adding an element that is already present leaves it where it is, as `LinkedHashSet` does. To move it, call `MoveToEnd`.
+- A removed element that is added again goes to the end.
+- `UnionWith` appends the new elements in the order `other` first enumerates them. `IntersectWith` and `ExceptWith` keep the survivors in their order. `SymmetricExceptWith` keeps the survivors in their order and appends the elements only `other` held after them.
+- `SetEquals` and the subset / superset queries compare membership only, never order.
+- `GetEnumerator` and `CopyTo` yield oldest first.
+
+### Default-element handling
+
+Unlike the open-addressed sets, `default(T)` (`0`, a `null` reference, a `Nullable<T>` with no value) is stored **in the table** like any other element, so it keeps its place in the order rather than being yielded first. It is still never passed to the hasher: the default element gets hash code `0` directly, so string hashers that throw on `null` are safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Dedup a stream of user ids, keeping first-seen order.
+var seen = new LinkedSet<int, Int32WangNaiveHasher>();
+foreach (int id in new[] { 7, 3, 7, 9, 3, 1 })
+    seen.TryAdd(id);                 // 7, 3, 9, 1
+
+seen.Remove(3);                      // O(1); 7, 9, 1 keep their order
+seen.MoveToEnd(7);                   // 9, 1, 7
+
+while (seen.TryRemoveFirst(out int next))
+    Console.WriteLine(next);         // 9, 1, 7
 ```
 
 ---

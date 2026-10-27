@@ -103,6 +103,13 @@ public class CapacityArgumentValidationTests
     }
 
     [Fact]
+    public void BiDictionary_EnsureCapacity_ShouldThrowArgumentOutOfRange_WhenCapacityIsNegative()
+    {
+        var map = new BiDictionary<string, int, DefaultHasher<string>, DefaultHasher<int>>();
+        AssertNegativeCapacityRejected(() => map.EnsureCapacity(-1), -1);
+    }
+
+    [Fact]
     public void HashCachingDictionary_EnsureCapacity_ShouldThrowArgumentOutOfRange_WhenCapacityIsNegative()
     {
         var map = new HashCachingDictionary<string, int, DefaultHasher<string>>();
@@ -173,6 +180,13 @@ public class CapacityArgumentValidationTests
     }
 
     [Fact]
+    public void LinkedSet_EnsureCapacity_ShouldThrowArgumentOutOfRange_WhenCapacityIsNegative()
+    {
+        var set = new LinkedSet<string, DefaultHasher<string>>();
+        AssertNegativeCapacityRejected(() => set.EnsureCapacity(-1), -1);
+    }
+
+    [Fact]
     public void PooledCeleritySet_EnsureCapacity_ShouldThrowArgumentOutOfRange_WhenCapacityIsNegative()
     {
         using var set = new PooledCeleritySet<string, DefaultHasher<string>>();
@@ -221,6 +235,17 @@ public class CapacityArgumentValidationTests
     public void LinkedDictionary_TrimExcess_ShouldThrowArgumentOutOfRange_WhenCapacityIsBelowCount()
     {
         var map = new LinkedDictionary<string, int, DefaultHasher<string>>();
+        for (int i = 1; i <= 4; i++)
+            map[$"k{i}"] = i;
+
+        AssertCapacityBelowCountRejected(() => map.TrimExcess(1), 1);
+        Assert.Equal(4, map.Count);
+    }
+
+    [Fact]
+    public void BiDictionary_TrimExcess_ShouldThrowArgumentOutOfRange_WhenCapacityIsBelowCount()
+    {
+        var map = new BiDictionary<string, int, DefaultHasher<string>, DefaultHasher<int>>();
         for (int i = 1; i <= 4; i++)
             map[$"k{i}"] = i;
 
@@ -336,6 +361,17 @@ public class CapacityArgumentValidationTests
     public void HashCachingSet_TrimExcess_ShouldThrowArgumentOutOfRange_WhenCapacityIsBelowCount()
     {
         var set = new HashCachingSet<string, DefaultHasher<string>>();
+        for (int i = 1; i <= 4; i++)
+            set.Add($"v{i}");
+
+        AssertCapacityBelowCountRejected(() => set.TrimExcess(1), 1);
+        Assert.Equal(4, set.Count);
+    }
+
+    [Fact]
+    public void LinkedSet_TrimExcess_ShouldThrowArgumentOutOfRange_WhenCapacityIsBelowCount()
+    {
+        var set = new LinkedSet<string, DefaultHasher<string>>();
         for (int i = 1; i <= 4; i++)
             set.Add($"v{i}");
 

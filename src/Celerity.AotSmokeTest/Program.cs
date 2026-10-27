@@ -2079,6 +2079,112 @@ void Check(bool condition, string message)
         "LinkedDictionary<string, string> IEnumerable ctor + null key + Values order");
 }
 
+// BiDictionary — one-to-one map threaded through two chain families over one entry array. Exercise
+// lookup in both directions, the duplicate-value refusal on Add / TryAdd / the indexer, ForceSet
+// evicting the old owner, Remove and RemoveValue (each swaps the last entry into the hole), the default
+// key and value stored like any other, growth (the rebuild re-threads both families), the Inverse view,
+// and the IEnumerable ctor over reference-typed keys and values so a second closed generic is rooted.
+{
+    var d = new BiDictionary<int, string, Int32WangNaiveHasher, StringMurmur3Hasher>();
+    d.Add(1, "one");
+    d[2] = "two";
+    d[0] = "zero"; // default key: kept in the table, never hashed
+    Check(!d.TryAdd(3, "one") && !d.TryAdd(1, "uno") && d.Count == 3, "BiDictionary TryAdd rejects duplicate key and value");
+    bool threw = false;
+    try { d[3] = "two"; } catch (ArgumentException) { threw = true; }
+    Check(threw && !d.ContainsKey(3), "BiDictionary indexer refuses a value owned by another key");
+
+    Check(d.TryGetKey("two", out int twoKey) && twoKey == 2 && d.GetKey("zero") == 0 && d.ContainsValue("one"),
+        "BiDictionary lookup by value");
+    Check(d.ForceSet(3, "two") && !d.ContainsKey(2) && d[3] == "two" && d.GetKey("two") == 3,
+        "BiDictionary ForceSet moves the value");
+    d[1] = "ONE"; // re-point an existing key: the old value is released
+    Check(!d.ContainsValue("one") && d.GetKey("ONE") == 1, "BiDictionary indexer re-point");
+
+    Check(d.Remove(0, out string? removed) && removed == "zero", "BiDictionary Remove out value");
+    Check(d.RemoveValue("ONE", out int removedKey) && removedKey == 1 && d.Count == 1, "BiDictionary RemoveValue out key");
+
+    // Grow through several rebuilds, then remove half from both ends; both directions must agree.
+    var grow = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 2);
+    for (int i = 1; i <= 500; i++) grow.Add(i, -i);
+    for (int i = 2; i <= 500; i += 4) grow.Remove(i);
+    for (int i = -4; i >= -500; i -= 4) grow.RemoveValue(i);
+    bool ok = grow.Count == 250;
+    for (int i = 1; i <= 500; i++)
+    {
+        bool live = i % 2 == 1;
+        ok &= grow.TryGetValue(i, out int v) == live && (!live || v == -i);
+        ok &= grow.TryGetKey(-i, out int k) == live && (!live || k == i);
+    }
+    long inverseSum = 0;
+    foreach (var kvp in grow.Inverse) inverseSum += kvp.Key + kvp.Value;
+    Check(ok && inverseSum == 0, "BiDictionary resize + remove keeps both directions");
+
+    var byStr = new BiDictionary<string, string, StringMurmur3Hasher, StringMurmur3Hasher>(new[]
+    {
+        new KeyValuePair<string, string>("en", "hello"),
+        new KeyValuePair<string, string>("fr", "bonjour"),
+    });
+    byStr[null!] = null!; // null key and null value stored in the table, never handed to the hasher
+    var keysOf = new List<string?>();
+    foreach (string? value in byStr.Values) keysOf.Add(byStr.GetKey(value!));
+    Check(keysOf.Count == 3 && keysOf.Contains("en") && keysOf.Contains(null) && byStr.Inverse["bonjour"] == "fr",
+        "BiDictionary<string, string> IEnumerable ctor + null key/value + Inverse");
+}
+
+// LinkedSet — the set sibling of LinkedDictionary: the same entry array threading the hash chains and
+// the insertion order, without a value. Exercise a duplicate add that keeps its position, removal from
+// the middle with the slot reused by the next add, MoveToEnd / MoveToFront, first/last peek and pop, the
+// default element stored in the table like any other, growth (the rebuild walks the order list), the
+// order-preserving set algebra, the IEnumerable ctor, and the in-order struct enumerator over a
+// reference-typed element so a second closed generic is rooted.
+{
+    var s = new LinkedSet<int, Int32WangNaiveHasher>();
+    s.Add(3);
+    s.Add(1);
+    s.Add(0); // default element: kept in the table and in the order, never hashed
+    s.Add(2);
+    Check(!s.TryAdd(1) && s.Remove(3) && !s.Remove(3), "LinkedSet TryAdd duplicate / Remove");
+    Check(s.TryAdd(5), "LinkedSet TryAdd reuses the freed slot");
+
+    var order = new List<int>();
+    foreach (int x in s) order.Add(x);
+    Check(order.SequenceEqual(new[] { 1, 0, 2, 5 }) && s.Contains(0), "LinkedSet insertion order through remove + duplicate add");
+
+    Check(s.MoveToEnd(1) && s.MoveToFront(5) && !s.MoveToEnd(42), "LinkedSet MoveToEnd / MoveToFront");
+    order.Clear();
+    foreach (int x in s) order.Add(x);
+    Check(order.SequenceEqual(new[] { 5, 0, 2, 1 }), "LinkedSet order after moves");
+
+    Check(s.TryGetFirst(out int first) && first == 5 && s.TryGetLast(out int last) && last == 1,
+        "LinkedSet TryGetFirst / TryGetLast");
+    Check(s.TryRemoveFirst(out int poppedFirst) && poppedFirst == 5
+        && s.TryRemoveLast(out int poppedLast) && poppedLast == 1 && s.Count == 2,
+        "LinkedSet TryRemoveFirst / TryRemoveLast");
+
+    s.UnionWith(new[] { 7, 0, 6 });
+    s.ExceptWith(new[] { 2 });
+    order.Clear();
+    foreach (int x in s) order.Add(x);
+    Check(order.SequenceEqual(new[] { 0, 7, 6 }), "LinkedSet UnionWith / ExceptWith keep order");
+
+    // Grow through several rebuilds; the order must come out the same.
+    var grow = new LinkedSet<int, Int32WangNaiveHasher>(capacity: 2);
+    for (int i = 500; i >= 1; i--) grow.Add(i);
+    for (int i = 2; i <= 500; i += 2) grow.Remove(i);
+    int expected = 499;
+    bool ok = grow.Count == 250;
+    foreach (int x in grow) { ok &= x == expected; expected -= 2; }
+    Check(ok, "LinkedSet resize + remove keeps order");
+
+    var byStr = new LinkedSet<string, StringMurmur3Hasher>(new[] { "bob", "alice", "bob" });
+    byStr.Add(null!); // null element stored in the table, never handed to the hasher
+    var strOrder = new List<string?>();
+    foreach (string? x in byStr) strOrder.Add(x);
+    Check(strOrder.SequenceEqual(new[] { "bob", "alice", null }) && byStr.Contains(null!),
+        "LinkedSet<string> IEnumerable ctor dedup + null element order");
+}
+
 // SwissSet — the set-shaped sibling of the dictionary above: the same Vector128 group compare over a
 // control-byte array and the same tombstone deletion, but a separate closed generic, so the SIMD probe
 // has to be emitted again for the set's element layout. Exercise the surface, a fill that forces
@@ -3371,12 +3477,13 @@ void Check(bool condition, string message)
     Check(PartialSort.TopK<int>(selection, top.AsSpan()) == 3 && top[0] == 9 && top[^1] == 7, "PartialSort.TopK");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377).
+// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
-// generator, so the struct-PRNG generic is closed twice), and the moment accumulator, which is a
-// mutable struct whose ref-accumulation path is the one a caller is meant to use.
+// generator, so the struct-PRNG generic is closed twice), the moment accumulator, which is a
+// mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
+// quantile over a value type and a reference type, whose heap entries are a generic struct.
 {
     var sketch = new DDSketch(0.01d, 1024);
     for (int i = 1; i <= 1_000; i++)
@@ -3418,6 +3525,16 @@ void Check(bool condition, string message)
 
     RunningStatistics combined = RunningStatistics.Combine(perBucket[1], new RunningStatistics([1d, 9d]));
     Check(combined.Count == 10 && combined.Min == 1d && combined.Max == 9d, "RunningStatistics merge");
+
+    var median = new RollingQuantile<double>(windowSize: 5, quantile: 0.5d);
+    median.Add([9d, 1d, 7d, 3d, 5d]);
+    Check(median.IsFull && median.Value == 5d, "RollingQuantile median of a full window");
+    median.Add([100d, 200d]);
+    Check(median.Value == 7d && median.Count == 5, "RollingQuantile evicts the oldest values");
+
+    var lowest = new RollingQuantile<string>(windowSize: 2, quantile: 0d);
+    lowest.Add(["pear", "apple", "fig"]);
+    Check(lowest.TryGetValue(out string? first) && first == "apple", "RollingQuantile over a reference type");
 }
 
 // Celerity.Ring — ConsistentHashRing / RendezvousHash.
