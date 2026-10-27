@@ -55,17 +55,17 @@ namespace Celerity.Collections;
 /// victim is always exactly defined: the least-recently-used entry of the lowest-frequency bucket.
 /// Promotion, insertion and eviction each touch a constant number of links, so the <b>policy
 /// bookkeeping</b> is <c>O(1)</c> <i>worst case</i> rather than amortized or logarithmic — that is the
-/// part being contrasted with a sorted-structure LFU. A complete cache operation also probes the key
-/// index, which is open-addressed with linear probing, so <b>end to end an operation is expected
-/// <c>O(1)</c></b>, degrading with probe length on clustered or adversarial keys exactly as every
+/// part being contrasted with a sorted-structure LFU. A complete cache operation also looks the key up
+/// in the key index, a separately-chained hash table, so <b>end to end an operation is expected
+/// <c>O(1)</c></b>, degrading with chain length on clustered or adversarial keys exactly as every
 /// other hash-backed collection in this library does. This is the structure from Shah, Mitra and
 /// Matani, <i>"An O(1) algorithm for implementing the LFU cache eviction scheme"</i>.
 /// </para>
 /// <para>
 /// Storage mirrors <see cref="LruCache{TKey, TValue, THasher}"/>: the entry chains and the bucket list
 /// are threaded through <b>fixed-size arrays allocated once at construction</b> (sized to
-/// <see cref="Capacity"/>, which also bounds the number of simultaneously non-empty buckets), over an
-/// open-addressed key&#8594;node-slot index. The node slot is stable across bucket movement, so a hit
+/// <see cref="Capacity"/>, which also bounds the number of simultaneously non-empty buckets), over a
+/// key&#8594;node-slot index chained through those same slots. The node slot is stable across bucket movement, so a hit
 /// never touches the index; after construction the hot get/put/evict path performs <b>no allocation at
 /// all</b>.
 /// </para>
