@@ -417,6 +417,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void RadixHeapClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var heap = new RadixHeap<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => heap.GetEnumerator(), heap.Clear, () => heap.Count, () => heap.Enqueue(1, 10));
+    }
+
+    [Fact]
     public void DequeClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         // The regression this class was written around: Deque bumped unconditionally.

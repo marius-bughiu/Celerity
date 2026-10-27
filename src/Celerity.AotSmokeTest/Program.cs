@@ -914,6 +914,39 @@ void Check(bool condition, string message)
     Check(inverted.PeekMin() == 3 && inverted.PeekMax() == 1, "MinMaxHeap custom struct comparer");
 }
 
+// RadixHeap — monotone priority queue over ulong priorities. Exercise enqueue / peek / dequeue
+// order, the Floor that dequeue raises and peek leaves alone, the below-floor rejection, the
+// widest (top-bit) bucket, the O(n) seeded constructor, and a reference-type element.
+{
+    var radix = new RadixHeap<string>();
+    radix.Enqueue("mid", 50);
+    radix.Enqueue("low", 10);
+    radix.Enqueue("top", ulong.MaxValue);
+    radix.Enqueue("mid", 50);
+    Check(radix.Count == 4 && radix.Peek() == "low" && radix.Floor == 0, "RadixHeap peek leaves Floor alone");
+    Check(radix.Dequeue() == "low" && radix.Floor == 10, "RadixHeap dequeue raises Floor");
+    var rejected = false;
+    try { radix.Enqueue("late", 9); }
+    catch (ArgumentOutOfRangeException) { rejected = true; }
+    Check(rejected && radix.Count == 3, "RadixHeap rejects a priority below Floor");
+    radix.Enqueue("floor", 10);
+    Check(radix.TryDequeue(out var atFloor, out var atFloorPriority) && atFloor == "floor" && atFloorPriority == 10, "RadixHeap accepts a priority equal to Floor");
+    Check(radix.Dequeue() == "mid" && radix.Dequeue() == "mid" && radix.Floor == 50, "RadixHeap duplicate priorities");
+    Check(radix.Dequeue() == "top" && radix.Floor == ulong.MaxValue && radix.Count == 0, "RadixHeap top-bit bucket");
+    Check(!radix.TryPeek(out _, out _) && !radix.TryDequeue(out _, out _), "RadixHeap empty Try* paths");
+    radix.Clear();
+    Check(radix.Floor == 0, "RadixHeap Clear resets Floor");
+
+    var seeded = new RadixHeap<int>(Enumerable.Range(0, 500).Select(i => (i, (ulong)((i * 7919) % 500) * 1_000_003UL)));
+    var inOrder = true;
+    for (int expected = 0; expected < 500; expected++)
+    {
+        if (!seeded.TryDequeue(out _, out var p) || p != (ulong)expected * 1_000_003UL) inOrder = false;
+    }
+    Check(inOrder && seeded.Count == 0, "RadixHeap seeded constructor drains in priority order");
+    seeded.TrimExcess();
+}
+
 // SparseSet — bounded-universe sparse integer set (Briggs–Torczon). Exercise add /
 // contains / swap-remove, the out-of-range rejection, the O(1) clear-then-reuse path
 // (which must reject stale sparse entries), and the dense-array enumerator.

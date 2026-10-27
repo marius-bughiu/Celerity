@@ -209,6 +209,26 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void RadixHeapEnumeratorReset_ShouldThrowInvalidOperationException_WhenHeapModified()
+    {
+        var heap = new RadixHeap<int>();
+        heap.Enqueue(1, 10);
+        heap.Enqueue(2, 20);
+
+        var enumerator = heap.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        heap.Enqueue(3, 15);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("The heap was modified during enumeration.", ex.Message);
+
+        var second = heap.GetEnumerator();
+        heap.Dequeue();
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
     public void SlotMapEnumeratorReset_ShouldThrowInvalidOperationException_WhenMapModified()
     {
         var map = new SlotMap<int>();
@@ -807,5 +827,44 @@ public class EnumeratorInvalidationAndClearCoverageTests
         pq.Enqueue(1, 1);
         Assert.Equal(1, pq.Count);
         Assert.Equal(1, pq.Peek());
+    }
+
+    [Fact]
+    public void RadixHeapTrimExcess_ShouldBeNoOpAndKeepEnumeratorsValid_WhenEveryBucketIsExactlySized()
+    {
+        var heap = new RadixHeap<int>();
+
+        // A fresh heap holds no storage, so TrimExcess has nothing to free.
+        var fresh = heap.GetEnumerator();
+        heap.TrimExcess();
+        Assert.False(fresh.MoveNext());
+
+        // Four entries exactly fill bucket 0's default array; every other bucket is still unallocated.
+        for (int i = 0; i < 4; i++)
+            heap.Enqueue(i, 0);
+
+        var enumerator = heap.GetEnumerator();
+        heap.TrimExcess();
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(4, seen);
+    }
+
+    [Fact]
+    public void RadixHeapClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
+    {
+        var heap = new RadixHeap<string>();
+        heap.Enqueue("a", 9);
+        heap.Dequeue();
+        Assert.Equal(9UL, heap.Floor);
+
+        var enumerator = heap.GetEnumerator();
+        heap.Clear();
+
+        // The floor resets even though nothing was removed, and the version does not move.
+        Assert.Equal(0UL, heap.Floor);
+        Assert.False(enumerator.MoveNext());
     }
 }
