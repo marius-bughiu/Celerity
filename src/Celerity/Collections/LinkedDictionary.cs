@@ -508,7 +508,10 @@ public class LinkedDictionary<TKey, TValue, THasher>
     /// </summary>
     /// <param name="capacity">The minimum number of entries the dictionary must hold without resizing.</param>
     /// <returns>The number of entries the dictionary can now hold before the next resize.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or more than the largest table (2<sup>30</sup> slots) can hold at
+    /// this load factor.
+    /// </exception>
     public int EnsureCapacity(int capacity)
     {
         if (capacity < 0)
@@ -518,7 +521,7 @@ public class LinkedDictionary<TKey, TValue, THasher>
         // one whenever the current one holds fewer, so this rebuild always grows.
         if (_entries.Length < capacity)
         {
-            Rebuild(BucketsFor(capacity, _loadFactor));
+            Rebuild(CheckedBucketsFor(capacity));
             _version++;
         }
 
@@ -539,14 +542,15 @@ public class LinkedDictionary<TKey, TValue, THasher>
     /// The number of entries to size the table for. Must be at least the current <see cref="Count"/>.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>.
+    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>, or more than
+    /// the largest table (2<sup>30</sup> slots) can hold at this load factor.
     /// </exception>
     public void TrimExcess(int capacity)
     {
         if (capacity < _count)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
 
-        int buckets = BucketsFor(capacity, _loadFactor);
+        int buckets = CheckedBucketsFor(capacity);
         if (buckets != _buckets.Length)
         {
             Rebuild(buckets);
@@ -921,6 +925,15 @@ public class LinkedDictionary<TKey, TValue, THasher>
     // reach the load factor, which a tiny one makes large.
     private static int BucketsFor(int entries, float loadFactor) =>
         entries <= 1 ? 1 : FastUtils.MinTableSizeFor(entries, loadFactor);
+
+    // BucketsFor for EnsureCapacity and TrimExcess(int), which promise the table holds `capacity`:
+    // rejects a count that even the capped table cannot hold at this load factor (#570).
+    private int CheckedBucketsFor(int capacity)
+    {
+        int buckets = BucketsFor(capacity, _loadFactor);
+        TableSizeGuard.ThrowIfUnreachable(EntryCapacityFor(buckets, _loadFactor), capacity, _loadFactor);
+        return buckets;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int HashOf(TKey key)

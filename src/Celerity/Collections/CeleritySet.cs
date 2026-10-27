@@ -287,7 +287,10 @@ public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : 
     /// </summary>
     /// <param name="capacity">The minimum number of elements the set must hold without resizing.</param>
     /// <returns>The number of elements the set can now hold before the next resize.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or more than the largest table (2<sup>30</sup> slots) can hold at
+    /// this load factor.
+    /// </exception>
     public int EnsureCapacity(int capacity)
     {
         if (capacity < 0)
@@ -295,7 +298,7 @@ public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : 
 
         if (_threshold < capacity)
         {
-            int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+            int newSize = TableSizeGuard.MinTableSizeFor(capacity, _loadFactor);
             if (newSize > _slots.Length)
             {
                 Resize(newSize);
@@ -321,14 +324,15 @@ public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : 
     /// The number of elements to size the table for. Must be at least the current <see cref="Count"/>.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>.
+    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>, or more than
+    /// the largest table (2<sup>30</sup> slots) can hold at this load factor.
     /// </exception>
     public void TrimExcess(int capacity)
     {
         if (capacity < _count)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
 
-        int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+        int newSize = TableSizeGuard.MinTableSizeFor(capacity, _loadFactor);
         if (newSize != _slots.Length)
         {
             Resize(newSize);

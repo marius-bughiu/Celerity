@@ -143,7 +143,7 @@ Removes all entries. The underlying array capacity is preserved.
 public int EnsureCapacity(int capacity)
 ```
 
-Grows the backing table in a single rehash so it can hold at least `capacity` entries without resizing, and returns the number of entries it can now hold before the next resize. Pre-sizing before a bulk insert of a known size avoids the `O(log n)` incremental rehashes an unsized dictionary pays as it doubles — matching BCL `Dictionary<TKey, TValue>.EnsureCapacity`. The dictionary is never shrunk by this call; if it already has room, no rehash occurs. Throws `ArgumentOutOfRangeException` if `capacity` is negative.
+Grows the backing table in a single rehash so it can hold at least `capacity` entries without resizing, and returns the number of entries it can now hold before the next resize. Pre-sizing before a bulk insert of a known size avoids the `O(log n)` incremental rehashes an unsized dictionary pays as it doubles — matching BCL `Dictionary<TKey, TValue>.EnsureCapacity`. The dictionary is never shrunk by this call; if it already has room, no rehash occurs. Throws `ArgumentOutOfRangeException` if `capacity` is negative, or if even the largest table (2³⁰ slots) cannot hold it at the dictionary's load factor — checked before anything is allocated.
 
 #### TrimExcess
 
@@ -152,7 +152,7 @@ public void TrimExcess()
 public void TrimExcess(int capacity)
 ```
 
-Rehashes the entries into the smallest power-of-two table that still holds the current `Count` (the parameterless overload) or at least `capacity` entries (the parameterized overload), reclaiming memory after the dictionary has shrunk via `Remove` / `Clear`. The out-of-band default-key entry is preserved. `TrimExcess(capacity)` throws `ArgumentOutOfRangeException` if `capacity` is less than the current `Count`.
+Rehashes the entries into the smallest power-of-two table that still holds the current `Count` (the parameterless overload) or at least `capacity` entries (the parameterized overload), reclaiming memory after the dictionary has shrunk via `Remove` / `Clear`. The out-of-band default-key entry is preserved. `TrimExcess(capacity)` throws `ArgumentOutOfRangeException` if `capacity` is less than the current `Count`, or more than the largest table can hold at this load factor, as `EnsureCapacity` does.
 
 #### GetEnumerator
 
@@ -930,7 +930,7 @@ The `IEnumerable<T>` overload copies elements from `source`. When `source` imple
 - `bool Contains(T item)`
 - `bool Remove(T item)`
 - `void Clear()`
-- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring BCL `HashSet<T>`: `EnsureCapacity` pre-grows the table to hold `capacity` elements without resizing and returns the resulting capacity; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`). The out-of-band `default(T)` slot is preserved. `EnsureCapacity` throws `ArgumentOutOfRangeException` on a negative capacity; `TrimExcess(capacity)` throws if `capacity < Count`.
+- `int EnsureCapacity(int capacity)` / `void TrimExcess()` / `void TrimExcess(int capacity)` — capacity management mirroring BCL `HashSet<T>`: `EnsureCapacity` pre-grows the table to hold `capacity` elements without resizing and returns the resulting capacity; `TrimExcess` rehashes down to the smallest table that still holds `Count` (or `capacity`). The out-of-band `default(T)` slot is preserved. `EnsureCapacity` throws `ArgumentOutOfRangeException` on a negative capacity; `TrimExcess(capacity)` throws if `capacity < Count`; both throw when the capacity is more than the largest table (2³⁰ slots) can hold at the set's load factor.
 - `int Count { get; }`
 - `Enumerator GetEnumerator()` — struct enumerator. The out-of-band `default(T)` entry (zero for primitives, `Guid.Empty`, `null` for reference types) is yielded first when present.
 - `void CopyTo(T[] array, int arrayIndex)` — copies every element (the out-of-band `default(T)` entry first) into `array`, under [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
@@ -1335,6 +1335,8 @@ public LinkedSet(
 ```
 
 Validation and exceptions are the same as for `CeleritySet`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. `capacity` is the number of hash buckets, rounded up to a power of two. The set holds `capacity × loadFactor` elements (at least one) before it grows, so to pre-size for `n` elements call `EnsureCapacity(n)`. The source constructor adds elements in the order `source` enumerates them. Duplicates are dropped silently, as `HashSet<T>` drops them, and each element keeps the position of its first occurrence. An `ICollection<T>` source's `Count` sizes the table so the build never resizes.
+
+`EnsureCapacity(n)` and `TrimExcess(n)` throw `ArgumentOutOfRangeException` if even the largest table (2³⁰ buckets) cannot hold `n` elements at the configured load factor, before allocating that table. `TrimExcess()` sizes for the current count. All three preserve the insertion order.
 
 ### Ordered operations
 

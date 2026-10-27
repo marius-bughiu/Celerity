@@ -530,7 +530,10 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
     /// </summary>
     /// <param name="capacity">The minimum number of entries the dictionary must hold without resizing.</param>
     /// <returns>The number of entries the dictionary can now hold before the next resize.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or more than the largest table (2<sup>30</sup> slots) can hold at
+    /// this load factor.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
     public int EnsureCapacity(int capacity)
     {
@@ -540,7 +543,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
 
         if (_threshold < capacity)
         {
-            int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+            int newSize = TableSizeGuard.MinTableSizeFor(capacity, _loadFactor);
             if (newSize > _size)
             {
                 Resize(newSize);
@@ -567,7 +570,8 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
     /// The number of entries to size the table for. Must be at least the current <see cref="Count"/>.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>.
+    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>, or more than
+    /// the largest table (2<sup>30</sup> slots) can hold at this load factor.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The dictionary has been disposed.</exception>
     public void TrimExcess(int capacity)
@@ -576,7 +580,7 @@ public class PooledCelerityDictionary<TKey, TValue, THasher>
         if (capacity < _count)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
 
-        int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+        int newSize = TableSizeGuard.MinTableSizeFor(capacity, _loadFactor);
         if (newSize != _size)
         {
             Resize(newSize);
