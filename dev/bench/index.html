@@ -435,6 +435,9 @@ function escapeHtml(s) {
     // LinkedDictionary keeps insertion order, so its baseline is the ordered map a net8.0 caller builds
     // from BCL parts (.NET 9's generic OrderedDictionary is not on the net8.0 benchmark runner).
     { key: 'LinkedDictionary',    title: 'LinkedDictionary<int, int, ...>',          vs: 'Dictionary + LinkedList', ops: ['Insert', 'Lookup', 'Remove', 'Enumerate'] },
+    // BiDictionary's baseline is the hand-roll: a forward and an inverse Dictionary kept in sync, so
+    // Insert and Remove touch both, and InverseLookup reads the inverse map.
+    { key: 'BiDictionary',        title: 'BiDictionary<int, int, ...>',              vs: 'Dictionary pair (forward + inverse)', ops: ['Insert', 'Lookup', 'InverseLookup', 'Remove', 'Enumerate'] },
     { key: 'FrozenCelerityDictionary', title: 'FrozenCelerityDictionary<int>',        vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup', 'SpanLookup'] },
     { key: 'CelerityMultiMap',    title: 'CelerityMultiMap<int, int, ...>',          vs: 'Dictionary<int, List<int>>', ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'CelerityMultiSet',    title: 'CelerityMultiSet<int, ...>',               vs: 'Dictionary<int, int>',       ops: ['Count', 'Lookup', 'Remove'] },
