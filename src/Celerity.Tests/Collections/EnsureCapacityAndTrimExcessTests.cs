@@ -182,6 +182,25 @@ public class EnsureCapacityAndTrimExcessTests
     }
 
     [Fact]
+    public void BiDictionary_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
+    {
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>();
+        int capacity = map.EnsureCapacity(N);
+        Assert.True(capacity >= N);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= N; i++)
+            map[$"k{i}"] = i;
+
+        // Only the key side counts; a rebuild re-hashes every key, so a resize would push it past N.
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, map.Count);
+        Assert.Equal(capacity, map.EnsureCapacity(0));
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
     public void HashCachingDictionary_EnsureCapacity_PreSized_BulkInsert_DoesNotResize()
     {
         var map = new HashCachingDictionary<string, int, CountingStringHasher>();
@@ -516,6 +535,30 @@ public class EnsureCapacityAndTrimExcessTests
         for (int i = 1; i <= 5; i++)
             Assert.Equal(i, map[$"k{i}"]);
         map["zz"] = 7; // free slots were compacted away; table still usable
+        Assert.Equal(7, map["zz"]);
+    }
+
+    [Fact]
+    public void BiDictionary_TrimExcess_AfterShrink_PreservesContents()
+    {
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>();
+        for (int i = 1; i <= N; i++)
+            map[$"k{i}"] = i;
+        for (int i = 6; i <= N; i++)
+            map.Remove($"k{i}");
+
+        _hashCallCount = 0;
+        map.TrimExcess();
+
+        Assert.Equal(5, _hashCallCount); // no hash is cached, so the rebuild re-hashes each live key once
+        Assert.Equal(5, map.Count);
+        Assert.Equal(new[] { "k1", "k2", "k3", "k4", "k5" }, map.Keys.ToArray());
+        for (int i = 1; i <= 5; i++)
+        {
+            Assert.Equal(i, map[$"k{i}"]);
+            Assert.Equal($"k{i}", map.GetKey(i));
+        }
+        map["zz"] = 7; // the entry array stays dense; table still usable
         Assert.Equal(7, map["zz"]);
     }
 

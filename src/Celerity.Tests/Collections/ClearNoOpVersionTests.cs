@@ -149,6 +149,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void BiDictionaryClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var dict = new BiDictionary<int, int, Int32WangHasher, Int32WangHasher>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => dict.GetEnumerator(), dict.Clear, () => dict.Count, () => dict.Add(1, 10));
+    }
+
+    [Fact]
     public void PooledCelerityDictionaryClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         using var dict = new PooledCelerityDictionary<int, int, Int32WangHasher>();
@@ -443,7 +451,7 @@ public class ClearNoOpVersionTests
             () => rope.GetEnumerator(), rope.Clear, () => rope.Length, () => rope.Append("text"));
     }
 
-    // ---- The two documented exceptions ------------------------------------------------------------
+    // ---- The four documented exceptions -----------------------------------------------------------
 
     [Fact]
     public void BitSetClear_ShouldBumpTheVersionUnconditionally_BecauseEmptinessCostsAScan()

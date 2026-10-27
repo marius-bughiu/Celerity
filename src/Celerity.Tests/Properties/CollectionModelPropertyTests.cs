@@ -215,6 +215,69 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- BiDictionary<int,int> vs a forward + reverse Dictionary<int,int> pair
+    //
+    // Values are unique, so the oracle is the hand-rolled pair of dictionaries the type
+    // replaces: a Set or TryAdd that would give a value a second key must be rejected and
+    // leave both directions unchanged. The value domain is folded small so that rejection,
+    // re-pointing and the default (0) value all fire densely.
+
+    private const int BiValueDomain = 40;
+
+    [Fact]
+    public void BiDictionary_ShouldMatch_BclDictionaryPair()
+    {
+        GenDictOps.Sample(ops =>
+        {
+            var sut = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+            var forward = new Dictionary<int, int>();
+            var reverse = new Dictionary<int, int>();
+
+            foreach (var (op, key, raw) in ops)
+            {
+                int val = raw % BiValueDomain;
+                switch (op)
+                {
+                    case DictOp.Set:
+                        if (reverse.TryGetValue(val, out int owner) && owner != key)
+                        {
+                            Assert.Throws<ArgumentException>(() => sut[key] = val);
+                            break;
+                        }
+
+                        sut[key] = val;
+                        if (forward.TryGetValue(key, out int previous))
+                            reverse.Remove(previous);
+                        forward[key] = val;
+                        reverse[val] = key;
+                        break;
+                    case DictOp.Remove:
+                        bool removed = forward.Remove(key, out int old);
+                        if (removed)
+                            reverse.Remove(old);
+                        Assert.Equal(removed, sut.Remove(key));
+                        break;
+                    case DictOp.TryAdd:
+                        bool added = !forward.ContainsKey(key) && !reverse.ContainsKey(val);
+                        if (added)
+                        {
+                            forward.Add(key, val);
+                            reverse.Add(val, key);
+                        }
+                        Assert.Equal(added, sut.TryAdd(key, val));
+                        break;
+                    case DictOp.Clear:
+                        sut.Clear();
+                        forward.Clear();
+                        reverse.Clear();
+                        break;
+                }
+            }
+
+            AssertDictEquivalent(sut, forward, reverse);
+        }, iter: 2000);
+    }
+
     // ---- HashCachingDictionary<int,int> vs Dictionary<int,int> --------------
 
     [Fact]
@@ -1180,6 +1243,42 @@ public class CollectionModelPropertyTests
         foreach (var kv in sut)
             enumerated[kv.Key] = kv.Value;
         Assert.Equal(oracle.OrderBy(p => p.Key), enumerated.OrderBy(p => p.Key));
+    }
+
+    private static void AssertDictEquivalent(
+        BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> sut,
+        Dictionary<int, int> forward,
+        Dictionary<int, int> reverse)
+    {
+        Assert.Equal(forward.Count, sut.Count);
+        Assert.Equal(reverse.Count, sut.Count);
+
+        for (int k = -8; k <= 24; k++)
+        {
+            bool expected = forward.TryGetValue(k, out int ev);
+            bool actual = sut.TryGetValue(k, out int av);
+            Assert.Equal(expected, actual);
+            if (expected) Assert.Equal(ev, av);
+        }
+
+        for (int v = 0; v < BiValueDomain; v++)
+        {
+            bool expected = reverse.TryGetValue(v, out int ek);
+            bool actual = sut.TryGetKey(v, out int ak);
+            Assert.Equal(expected, actual);
+            Assert.Equal(expected, sut.ContainsValue(v));
+            if (expected) Assert.Equal(ek, ak);
+        }
+
+        var enumerated = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            enumerated[kv.Key] = kv.Value;
+        Assert.Equal(forward.OrderBy(p => p.Key), enumerated.OrderBy(p => p.Key));
+
+        var inverse = new Dictionary<int, int>();
+        foreach (var kv in sut.Inverse)
+            inverse[kv.Key] = kv.Value;
+        Assert.Equal(reverse.OrderBy(p => p.Key), inverse.OrderBy(p => p.Key));
     }
 
     private static void AssertDictEquivalent(

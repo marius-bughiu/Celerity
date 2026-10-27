@@ -131,6 +131,29 @@ public class IndexerOverwriteEnumerationTests
     }
 
     [Fact]
+    public void BiDictionary_OverwriteDuringEnumeration_DoesNotThrow()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        map[0] = 100; // default key — stored in the table (hash 0), not out of band
+        map[1] = 10;
+        map[2] = 20;
+
+        // Re-pointing a key at a new (unused) value is not structural; values stay distinct.
+        AssertOverwriteAllowedAddRejected(
+            getEnumerator: () => map.GetEnumerator(),
+            overwriteExisting: () => map[1] = 11,
+            overwriteDefault: () => map[0] = 101,
+            addNewKey: () => map[99] = 990);
+
+        Assert.Equal(11, map[1]);
+        Assert.Equal(101, map[0]);
+        Assert.False(map.ContainsValue(10));
+        Assert.False(map.ContainsValue(100));
+        // An overwrite keeps the key's place in the entry array; only the new key is appended.
+        Assert.Equal(new[] { 0, 1, 2, 99 }, map.Keys.ToArray());
+    }
+
+    [Fact]
     public void HashCachingDictionary_OverwriteDuringEnumeration_DoesNotThrow()
     {
         var map = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();

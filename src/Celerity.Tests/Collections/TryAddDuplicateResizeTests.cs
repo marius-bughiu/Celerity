@@ -281,6 +281,68 @@ public class TryAddDuplicateResizeTests
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
 
+    // BiDictionary at 16 buckets and 0.75 holds (int)(16 * 0.75) = 12 entries before it
+    // grows, the same boundary as SwissDictionary above.
+
+    [Fact]
+    public void BiDictionary_TryAdd_DuplicateAtThreshold_KeepsEnumeratorValid()
+    {
+        var map = new BiDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map.Add(i, i * 10); // Count == 12 == entry capacity
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(2, 99));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        // Insertion order (nothing was removed), so no sort is needed.
+        Assert.Equal(Enumerable.Range(1, 12).ToArray(), seen.ToArray());
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_DuplicateValueAtThreshold_KeepsEnumeratorValid()
+    {
+        // A new key carrying an existing value is the BiDictionary-only duplicate: it too must return
+        // false before any growth, so the enumerator survives.
+        var map = new BiDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map.Add(i, i * 10); // Count == 12 == entry capacity
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(13, 20));
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        Assert.Equal(Enumerable.Range(1, 12).ToArray(), seen.ToArray());
+        Assert.Equal(12, map.EnsureCapacity(0));
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_NewKeyAtThreshold_InvalidatesEnumerator()
+    {
+        var map = new BiDictionary<int, int, Celerity.Hashing.Int32WangNaiveHasher, Celerity.Hashing.Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 12; i++)
+            map.Add(i, i * 10); // Count == 12 == entry capacity
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.TryAdd(13, 130));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
     // HashCachingDictionary's minimum table is one SIMD group (16 slots), so its
     // default-capacity threshold is (int)(16 * 0.75) = 12. Fill to exactly that
     // before exercising the at-threshold duplicate / new-key paths.

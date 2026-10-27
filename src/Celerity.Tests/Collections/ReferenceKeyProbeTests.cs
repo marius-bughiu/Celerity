@@ -269,6 +269,58 @@ public class ReferenceKeyProbeTests
         Assert.Equal(16, map.Count);
     }
 
+    // ---------------- BiDictionary ----------------
+
+    [Fact]
+    public void BiDictionary_ShouldProbeCorrectly_WhenKeyEqualsClaimsEqualityWithNull()
+    {
+        var map = new BiDictionary<NullGreedyKey, int, DefaultHasher<NullGreedyKey>, Int32WangNaiveHasher>();
+        NullGreedyKey[] keys = Keys();
+
+        foreach (var key in keys)
+            map[key] = key.Id;
+
+        Assert.Equal(keys.Length, map.Count);
+        foreach (var key in keys)
+            Assert.Equal(key.Id, map[key]);
+
+        Assert.False(map.ContainsKey(Missing));
+
+        for (int i = 0; i < keys.Length; i += 2)
+            Assert.True(map.Remove(keys[i]));
+
+        Assert.Equal(keys.Length / 2, map.Count);
+        for (int i = 1; i < keys.Length; i += 2)
+            Assert.True(map.ContainsKey(keys[i]));
+    }
+
+    // BiDictionary has no out-of-band slot: the null key lives in the table under hash 0 (the
+    // hasher is never called with it), reachable from its value like any other key. Pin that it still
+    // round-trips and is never confused with a NullGreedyKey that claims equality with null.
+    [Fact]
+    public void BiDictionary_ShouldStoreNullKeyInTableWithoutConfusingIt_WhenKeyIsAReferenceType()
+    {
+        var map = new BiDictionary<NullGreedyKey, int, DefaultHasher<NullGreedyKey>, Int32WangNaiveHasher>();
+        NullGreedyKey[] keys = Keys(16);
+        foreach (var key in keys)
+            map[key] = key.Id;
+
+        map[null!] = -1;
+
+        Assert.Equal(17, map.Count);
+        Assert.True(map.ContainsKey(null!));
+        Assert.Equal(-1, map[null!]);
+        foreach (var key in keys)
+            Assert.Equal(key.Id, map[key]);
+        Assert.True(map.TryGetKey(-1, out NullGreedyKey? owner));
+        Assert.Null(owner);
+
+        Assert.True(map.Remove(null!));
+        Assert.False(map.ContainsKey(null!));
+        Assert.False(map.ContainsValue(-1));
+        Assert.Equal(16, map.Count);
+    }
+
     // ---------------- HashCachingDictionary ----------------
 
     [Fact]
