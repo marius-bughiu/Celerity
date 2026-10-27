@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
@@ -81,6 +82,7 @@ internal static class Differential
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
         ("Rope", RopeCase),
+        ("BTreeList", BTreeListCase),
         ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
@@ -3393,6 +3395,214 @@ internal static class Differential
             text.Append(RopeChar(rng));
 
         return text.ToString();
+    }
+
+    // ---- positional B+ tree list --------------------------------------------
+
+    // BTreeList against the List<int> it replaces. Like the rope, its state is path-dependent: a leaf split
+    // that puts its cut in the wrong place, a borrow that moves elements but not the parent's count, or a merge
+    // that drops the leaf chain link all leave every element individually intact and surface many edits later
+    // as a read from the wrong position. So every edit is followed by reads around the position it touched,
+    // and the whole sequence is reconciled through all three read paths (indexer descent, leaf-chain
+    // enumeration, ToArray / CopyTo) on a schedule and at the end.
+    //
+    // Positions are skewed to both ends, because the split point follows the edit (an append keeps the left
+    // leaf three quarters full, a prepend keeps the right one so) and the first and last leaves are where a
+    // borrow has only one neighbour to take from. One case in eight starts large enough to need a third level
+    // — more than 64 leaves of 128 — built either bottom-up by the bulk constructor, by Add, or by prepending,
+    // and then edits it; the rest start small and run long, so splits, borrows, merges and root collapses all
+    // happen near the root where they are cheapest to reach.
+    private static void BTreeListCase(Random rng)
+    {
+        bool large = rng.Next(0, 8) == 0;
+        int initial = large ? rng.Next(8200, 20_001) : rng.Next(0, 600);
+        var oracle = new List<int>(initial);
+        for (int i = 0; i < initial; i++)
+            oracle.Add(Value(rng));
+
+        BTreeList<int> sut;
+        switch (rng.Next(0, 3))
+        {
+            case 0:
+                sut = new BTreeList<int>(oracle);
+                break;
+            case 1:
+                sut = new BTreeList<int>();
+                foreach (int value in oracle)
+                    sut.Add(value);
+                break;
+            default:
+                sut = new BTreeList<int>();
+                for (int i = oracle.Count - 1; i >= 0; i--)
+                    sut.Insert(0, oracle[i]);
+                break;
+        }
+
+        // More than 64 leaves of at most 128 elements cannot fit under one internal node.
+        if (large)
+            Check(sut.Depth >= 3, $"BTreeList of {initial} built only {sut.Depth} levels");
+        CheckBTreeList(sut, oracle, "BTreeList build");
+
+        int operations = large ? rng.Next(0, 500) : rng.Next(0, 1500);
+        int fullCheckEvery = large ? 125 : 40;
+
+        for (int op = 0; op < operations; op++)
+        {
+            int touched;
+            switch (rng.Next(0, 100))
+            {
+                case < 30:
+                {
+                    int index = BTreeListPosition(rng, oracle.Count + 1);
+                    int value = Value(rng);
+                    sut.Insert(index, value);
+                    oracle.Insert(index, value);
+                    touched = index;
+                    break;
+                }
+                case < 40:
+                {
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                case < 70:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = BTreeListPosition(rng, oracle.Count);
+                    sut.RemoveAt(index);
+                    oracle.RemoveAt(index);
+                    touched = index;
+                    break;
+                }
+                case < 82:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = BTreeListPosition(rng, oracle.Count);
+                    int value = Value(rng);
+                    sut[index] = value;
+                    oracle[index] = value;
+                    touched = index;
+                    break;
+                }
+                case < 90:
+                {
+                    // A value drawn from the element domain, so most removes hit and some miss; both remove the
+                    // first occurrence, so the oracle's IndexOf is also the position the tree edited.
+                    int value = Value(rng);
+                    touched = oracle.IndexOf(value);
+                    Check(sut.IndexOf(value) == touched, $"BTreeList IndexOf({value}) disagreed");
+                    Check(sut.Contains(value) == (touched >= 0), $"BTreeList Contains({value}) disagreed");
+                    Check(sut.Remove(value) == oracle.Remove(value), $"BTreeList Remove({value}) disagreed");
+                    if (touched < 0)
+                        touched = 0;
+                    break;
+                }
+                case < 99:
+                {
+                    // Enumerator invalidation: an in-place set must leave a live enumerator usable, and a
+                    // structural edit must tear it down — the one rule this type deliberately does not share
+                    // with List<T>, so it cannot be checked against the oracle and is checked directly.
+                    var enumerator = sut.GetEnumerator();
+                    if (oracle.Count > 0)
+                    {
+                        int index = BTreeListPosition(rng, oracle.Count);
+                        sut[index] = oracle[index];
+                        Check(enumerator.MoveNext() && enumerator.Current == oracle[0], "BTreeList set invalidated an enumerator");
+                    }
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    bool threw = false;
+                    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+                    Check(threw, "BTreeList Add did not invalidate an enumerator");
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                default:
+                {
+                    // Rare in a large case so the third level survives long enough to be edited.
+                    if (!large || rng.Next(0, 4) == 0)
+                    {
+                        sut.Clear();
+                        oracle.Clear();
+                    }
+                    touched = 0;
+                    break;
+                }
+            }
+
+            Check(sut.Count == oracle.Count, $"BTreeList count diverged after op {op}");
+            for (int i = Math.Max(0, touched - 2); i < Math.Min(oracle.Count, touched + 3); i++)
+                Check(sut[i] == oracle[i], $"BTreeList indexer diverged at {i} next to an edit at {touched}");
+            if (oracle.Count > 0)
+            {
+                Check(sut[0] == oracle[0] && sut[^1] == oracle[^1], "BTreeList ends diverged");
+                int probe = rng.Next(0, oracle.Count);
+                Check(sut[probe] == oracle[probe], $"BTreeList indexer diverged at {probe}");
+            }
+
+            if (op % fullCheckEvery == fullCheckEvery - 1)
+                CheckBTreeList(sut, oracle, $"BTreeList after op {op}");
+        }
+
+        CheckBTreeList(sut, oracle, "BTreeList final");
+        CheckBTreeList(new BTreeList<int>(sut), oracle, "BTreeList rebuilt from itself");
+    }
+
+    // Two thirds of positions land within a few slots of either end — the first and last leaves, and the
+    // append / prepend split rule — and the rest are uniform. `bound` is exclusive.
+    private static int BTreeListPosition(Random rng, int bound) => rng.Next(0, 3) switch
+    {
+        0 => rng.Next(0, Math.Min(bound, 4)),
+        1 => bound - 1 - rng.Next(0, Math.Min(bound, 4)),
+        _ => rng.Next(0, bound),
+    };
+
+    // Reconciles the indexer, the enumerator and both bulk copies, then checks the depth against the fewest
+    // elements a tree that deep can hold: every non-root node is at least a quarter full (32 of 128 in a leaf,
+    // 16 of 64 children in an internal node) and a root above a leaf has at least two children. A tree deeper
+    // than its count allows means a merge or root collapse was skipped.
+    private static void CheckBTreeList(BTreeList<int> actual, List<int> expected, string label)
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        for (int i = 0; i < expected.Count; i++)
+            Check(actual[i] == expected[i], $"{label} indexer diverged at {i}");
+
+        int position = 0;
+        foreach (int value in actual)
+        {
+            Check(position < expected.Count && value == expected[position], $"{label} enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} enumeration length diverged");
+
+        Check(actual.ToArray().AsSpan().SequenceEqual(CollectionsMarshal.AsSpan(expected)), $"{label} ToArray diverged");
+
+        var copy = new int[expected.Count + 2];
+        actual.CopyTo(copy, 1);
+        Check(copy.AsSpan(1, expected.Count).SequenceEqual(CollectionsMarshal.AsSpan(expected)) && copy[0] == 0 && copy[^1] == 0,
+            $"{label} CopyTo diverged");
+
+        long minimum = 0;
+        if (actual.Depth >= 2)
+        {
+            minimum = 2 * 32;
+            for (int level = 3; level <= actual.Depth; level++)
+                minimum *= 16;
+        }
+        Check(expected.Count >= minimum, $"{label} is {actual.Depth} levels deep at only {expected.Count} elements");
     }
 
     // ---- interval tree -------------------------------------------------------

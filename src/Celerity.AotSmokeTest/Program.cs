@@ -653,6 +653,55 @@ void Check(bool condition, string message)
     Check(order.Count == 3 && order[0] == 1 && order[2] == 3, "Deque front-to-back enumeration");
 }
 
+// BTreeList — positional list over a counted B+ tree. Exercise the bottom-up bulk constructor and an
+// Add-built list deep enough for a third level (more than 64 leaves of 128), the count-subtracting indexer
+// descent, Insert / RemoveAt at the front, middle and back (splits, borrows, merges and the root collapse on
+// the way down), the linear IndexOf / Remove, CopyTo, and the leaf-chain struct enumerator — including the
+// in-place set that, unlike List<T>'s, does not invalidate it.
+{
+    var bulk = new BTreeList<int>(Enumerable.Range(0, 10_000));
+    Check(bulk.Count == 10_000 && bulk.Depth == 3 && bulk[0] == 0 && bulk[6_789] == 6_789 && bulk[^1] == 9_999,
+        "BTreeList bulk constructor + indexer");
+
+    var list = new BTreeList<int>();
+    for (int i = 0; i < 10_000; i++) list.Add(i);
+    Check(list.Depth == 3 && list[5_000] == 5_000, "BTreeList Add-built three levels");
+
+    list.Insert(0, -1);
+    list.Insert(5_001, -2);
+    list.Insert(list.Count, -3);
+    Check(list.Count == 10_003 && list[0] == -1 && list[5_001] == -2 && list[^1] == -3 && list[5_002] == 5_000,
+        "BTreeList Insert front, middle and back");
+
+    list.RemoveAt(5_001);
+    list.RemoveAt(0);
+    Check(list.Remove(-3) && !list.Remove(-3) && list.IndexOf(4_321) == 4_321 && list.Contains(9_999),
+        "BTreeList RemoveAt / Remove / IndexOf");
+
+    // Below 64 elements no tree can be two levels deep (a root over two leaves at least a quarter full).
+    while (list.Count > 60) list.RemoveAt(list.Count / 2);
+    Check(list.Count == 60 && list.Depth == 1 && list[0] == 0 && list[^1] == 9_999, "BTreeList drain collapses the root");
+
+    var copy = new int[62];
+    list.CopyTo(copy, 1);
+    Check(copy[0] == 0 && copy[1] == 0 && copy[60] == 9_999 && copy[61] == 0, "BTreeList CopyTo");
+
+    long sum = 0;
+    foreach (int x in bulk) sum += x;
+    Check(sum == 49_995_000 && bulk.ToArray().Length == 10_000, "BTreeList leaf-chain enumeration");
+
+    var enumerator = bulk.GetEnumerator();
+    bulk[0] = 42;
+    Check(enumerator.MoveNext() && enumerator.Current == 42, "BTreeList set keeps an enumerator valid");
+    bulk.Add(10_000);
+    bool threw = false;
+    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+    Check(threw, "BTreeList Add invalidates an enumerator");
+
+    bulk.Clear();
+    Check(bulk.Count == 0 && bulk.Depth == 1 && !bulk.Contains(0), "BTreeList Clear");
+}
+
 // PersistentVector - immutable indexed sequence over a 32-way bit-partitioned trie. Exercise the
 // IEnumerable constructor, the tail and trie read paths, all three persistent operations across the
 // 1,057-element root-growth boundary, the builder's owned tail, and the chunked struct enumerator.

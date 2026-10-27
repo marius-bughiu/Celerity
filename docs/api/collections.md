@@ -5460,6 +5460,198 @@ int lo = work.PopBack();            // 3 — low-priority, from the back
 ```
 
 
+## BTreeList&lt;T&gt;
+
+A **positional list** laid out as a **counted B+ tree**: inserting or removing at any index is
+`O(log n)` plus a shift inside one bounded leaf, where `List<T>` shifts every later element and pays
+`O(n)`. It is the list for **a sequence that keeps changing in the middle**.
+
+```csharp
+public sealed class BTreeList<T> : IList<T>, IReadOnlyList<T>
+```
+
+**Positional, not sorted.** It shares a layout family with [`BTreeSet<T, TComparer>`](#btreesett-tcomparer)
+and [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictionarytkey-tvalue-tcomparer), but it keeps
+elements wherever the caller puts them, exactly as `List<T>` does, and never compares them. The tree is
+keyed by *position*: every internal node records where each child's elements start, so reaching index
+`i` is a descent that compares positions.
+
+### Why not `List<T>`, `LinkedList<T>` or `ImmutableList<T>`
+
+Three BCL types hold a sequence you edit in the middle, and each pays for it somewhere:
+
+- `List<T>` indexes in `O(1)`, but `Insert` and `RemoveAt` move every later element, so each middle
+  edit is `O(n)` and a list churned in the middle is quadratic.
+- `LinkedList<T>` inserts in `O(1)` once you hold a node, but reaching position `i` is an `O(i)` walk,
+  and it has no indexer at all.
+- `ImmutableList<T>` and its `Builder` are `O(log n)` on both an edit and a read, but they are an AVL
+  tree with **one heap node per element**. Every read follows a pointer per level of a tree about
+  `1.44 log2 n` deep, and every element carries a node header, two child references, a height and a
+  count.
+
+`BTreeList<T>` stores up to 128 elements contiguously in each leaf and up to 64 children in each internal
+node, so at a million elements the tree is four levels deep where an AVL tree is around twenty, and
+the elements sit in arrays. Java users
+know this shape as Apache Commons `TreeList` (an AVL tree like `ImmutableList`) or Python's `blist` (a B+
+tree like this one). [`Rope`](#rope) is the same idea specialized to `char`, with text operations on top.
+[`RankedSet<T, TComparer>`](#rankedsett-tcomparer) also answers positional questions, but over a *sorted* set.
+
+### How it works
+
+- **Leaves** hold a fixed 128-slot array and a count, and are chained left to right, so a `foreach`,
+  `IndexOf`, `CopyTo` or `ToArray` walks the chain and never touches an internal node.
+- **Internal nodes** hold up to 64 children and a parallel `int[]` of the position each child starts
+  at, padded with `int.MaxValue` past the last child. A descent finds its child with one vector compare
+  over those positions and a sum, with no data-dependent branch (see [Measured](#measured-btreelist) for
+  why that matters). An edit shifts the later positions by one on each level on the way back.
+- **A full leaf splits**, and the split point follows the edit. An append past a node's last slot keeps
+  the left node three quarters full and gives the right one a quarter. A prepend at slot 0 mirrors that,
+  and an insert anywhere else splits evenly. That is why a list built by `Add` ends up about three
+  quarters dense, not half. Internal nodes take the append bias too, but not the prepend one, since
+  the child a split adds always lands after its sibling, so a list built only by prepending has
+  half-full internal nodes. Those hold no elements, so the cost is a little depth, not memory.
+- **A node that falls below a quarter full** merges with a neighbour when the two fit in one node.
+  Otherwise the two split their entries evenly. Internal nodes follow the same rule one level up, and a
+  root branch left with one child is replaced by that child. So every node except the root stays at least
+  a quarter full under **any** sequence of edits, and the depth stays `O(log n)`.
+- **The `IEnumerable<T>` constructor builds bottom-up in `O(n)`**, with every node three quarters full.
+  That leaves each leaf room for 32 inserts before its first split. The last node on each level is evened
+  out with its neighbour so it never starts below the floor.
+
+`Depth` is public, so the cost of a descent can be observed rather than taken on trust. It is `1` while
+the whole list fits in one leaf, `2` to a few thousand elements, `3` to a few hundred thousand and `4`
+at a million. The exact thresholds depend on how full the edit history has left the nodes.
+
+### Constructors
+
+```csharp
+public BTreeList()
+public BTreeList(IEnumerable<T> collection)
+```
+
+- The parameterless constructor allocates one empty leaf.
+- The `collection` overload copies the elements in enumeration order, in one pass, without asking the
+  source for its count.
+
+**Throws:** `ArgumentNullException` if `collection` is `null`.
+
+### Methods and properties
+
+| Member | Cost | Behaviour |
+| --- | --- | --- |
+| `int Count` | `O(1)` | The number of elements. |
+| `int Depth` | `O(1)` | Node levels from the root to a leaf. |
+| `T this[int index] { get; set; }` | `O(log n)` | Get and set by position. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set replaces the element in place and does **not** invalidate an active enumerator (see below). |
+| `void Add(T item)` | `O(log n)` | Appends at the end. |
+| `void Insert(int index, T item)` | `O(log n)` + one leaf shift | Inserts at `index`, moving the element there and every later one up a position. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
+| `void RemoveAt(int index)` | `O(log n)` + one leaf shift | Removes the element at `index`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
+| `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. The search is linear, as on `List<T>`; the removal itself is `O(log n)`. |
+| `int IndexOf(T item)` / `bool Contains(T item)` | `O(n)` | A linear scan of the leaf chain under `EqualityComparer<T>.Default`. The tree indexes position, not value. |
+| `void Clear()` | `O(1)` | Drops the whole tree. Clearing an **already-empty** list is a true no-op and leaves enumerators valid, like the rest of the library. |
+| `T[] ToArray()` | `O(n)` | One `Array.Copy` per leaf. |
+| `void CopyTo(T[] array, int arrayIndex)` | `O(n)` | Under [the library's `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | `O(1)` per step | An allocation-free struct enumerator that walks the leaf chain front to back. |
+
+The "one leaf shift" is at most 127 elements, whatever the size of the list.
+
+**What invalidates an enumerator.** Every structural mutation does: `Add`, `Insert`, `RemoveAt`, a
+`Remove` that finds its element, and a `Clear` that had something to clear. Assignment through the
+indexer does **not**, because it replaces one element in place and moves no leaf boundary. That is the
+rule [`Deque<T>`](#dequet) and [`Rope`](#rope) follow, and it is the one place this type deliberately
+differs from `List<T>`, whose indexer setter does invalidate.
+
+### When not to reach for it
+
+- **If you only append and read, use `List<T>`.** A read here is a descent of three or four levels
+  where `List<T>` does one array load. Random reads lose by the factor in the table below, and nothing
+  in this type wins it back if you never edit the middle.
+- **If the list is small and mostly read, use `List<T>`.** At a thousand elements the edits still win,
+  by 1.3–2x, but reads lose by 4x, so a small list needs to be edited far more often than it is read
+  before this type pays. The 1,000-element rows below have the numbers.
+- **If you need a snapshot, use `ImmutableList<T>` or [`PersistentVector<T>`](#persistentvectort).**
+  This type is mutable and does not share structure between versions.
+- **If the order is a sort order, use [`BTreeSet<T, TComparer>`](#btreesett-tcomparer)** (or
+  [`RankedSet<T, TComparer>`](#rankedsett-tcomparer) if you also need ranks). Keeping a positional list
+  sorted by hand means a linear search for every insert position.
+- **Memory is in the same range as `List<T>`'s, not below it.** Every leaf owns its full 128-slot array
+  whatever it holds, so even an empty list owns one. A list at the three-quarter fill spends about a
+  third more than its elements need, plus a small node object per leaf and per internal node. A
+  `List<T>` that grew by doubling carries up to twice what it needs, so neither is consistently smaller.
+
+### Thread safety
+
+`BTreeList<T>` is not thread-safe. Concurrent callers must synchronize externally.
+
+<a id="measured-btreelist"></a>
+
+### Measured
+
+The bars were pre-registered in [#565](https://github.com/marius-bughiu/Celerity/issues/565) before
+implementation, on `int` at 100,000 elements, and all three clear. Each edit row is a thousand edits at
+positions drawn once, so every arm edits the same positions in the same order, against a list rebuilt
+for each iteration. **These are development-machine numbers** (Apple Silicon, .NET 8). CI publishes
+its own on [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeList) at
+each merge to `main`.
+
+| At 100,000 | Baseline | `BTreeList<int>` | Ratio | Bar |
+| --- | ---: | ---: | ---: | ---: |
+| `Insert` ×1,000 vs `List<int>` | 2.93 ms | 36.7 µs | **~80x** | 5x |
+| `RemoveAt` ×1,000 vs `List<int>` | 2.89 ms | 35.0 µs | **~83x** | 5x |
+| `Insert` ×1,000 vs `ImmutableList<int>.Builder` | 126 µs | 38.0 µs | **3.3x** | 2x |
+| Random read ×10,000 vs `ImmutableList<int>.Builder` | 640 µs | 70.0 µs | **9.1x** | 2x |
+| **Random read ×10,000 vs `List<int>`** | 5.74 µs | 70.7 µs | **a 12.3x loss** | — |
+| **Enumerate vs `List<int>`** | 34.1 µs | 58.7 µs | **a 1.72x loss** | — |
+
+| At 1,000 | Baseline | `BTreeList<int>` | Ratio |
+| --- | ---: | ---: | ---: |
+| `Insert` ×1,000 vs `List<int>` | 38.1 µs | 19.2 µs | 2.0x |
+| `RemoveAt` ×1,000 vs `List<int>` | 17.3 µs | 13.3 µs | 1.3x |
+| `Insert` ×1,000 vs `ImmutableList<int>.Builder` | 39.7 µs | 19.2 µs | 2.1x |
+| Random read ×10,000 vs `ImmutableList<int>.Builder` | 134 µs | 17.6 µs | 7.6x |
+| **Random read ×10,000 vs `List<int>`** | 4.21 µs | 17.6 µs | **a 4.2x loss** |
+| **Enumerate vs `List<int>`** | 341 ns | 506 ns | **a 1.48x loss** |
+
+**The edit arms run one invocation per iteration**, because each needs its list rebuilt, so they move
+from run to run. Read them as directions, not as ratios to three figures. The read and enumerate rows
+are stable. The edits allocate almost nothing: a split allocates one leaf, and an edit that splits nothing
+allocates nothing at all.
+
+**Reads are where the layout earned its keep.** The first version scanned each internal node's child
+counts one by one, and a random read cost 21 ns at 100,000 elements, a 35x loss to `List<int>`. Every
+level of every read mispredicted that scan's exit. Internal nodes now hold each child's *starting
+position*, padded with `int.MaxValue` past the last child, and the child is found by one vector compare
+and a horizontal sum, with no data-dependent branch. Independent reads now overlap in the pipeline, and
+a read costs 7 ns. Edits paid a little for it (they now shift the later offsets on each level), and they
+moved from about 30 µs to about 36 µs for a thousand inserts.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A playlist edited in the middle: tracks are inserted after the current one and removed from
+// anywhere. Each edit is a short descent plus a shift inside one 128-slot leaf.
+var playlist = new BTreeList<string>(new[] { "intro", "verse", "chorus", "outro" });
+
+playlist.Insert(2, "bridge");          // intro, verse, bridge, chorus, outro
+playlist.RemoveAt(0);                  // verse, bridge, chorus, outro
+playlist[playlist.Count - 1] = "coda"; // verse, bridge, chorus, coda
+
+Console.WriteLine(playlist[1]);                   // bridge
+Console.WriteLine(playlist.IndexOf("chorus"));    // 2 (a linear scan, as on List<T>)
+Console.WriteLine(string.Join(", ", playlist));   // verse, bridge, chorus, coda
+
+// At scale, the edit no longer scales with the list. A List<T> would move half a million
+// elements for each of these inserts.
+var big = new BTreeList<int>(Enumerable.Range(0, 1_000_000));
+for (int i = 0; i < 1_000; i++)
+    big.Insert(big.Count / 2, -i);
+
+Console.WriteLine(big.Count);  // 1001000
+Console.WriteLine(big.Depth);  // 4
+```
+
+
 ## PersistentVector&lt;T&gt;
 
 An **immutable indexed sequence** backed by a **32-way bit-partitioned trie** with a tail buffer:
@@ -5601,7 +5793,8 @@ against this type's two-to-three; measured on the same harness as the figures be
 **5.7x faster**. `PersistentVector<T>` earns its trie only when the sequence grows.
 
 **If you insert or remove in the middle, use `ImmutableList<T>`.** It does that in `O(log n)`; a
-vector cannot do it at all without rebuilding the tail of the sequence.
+vector cannot do it at all without rebuilding the tail of the sequence. If nobody needs the old
+versions, [`BTreeList<T>`](#btreelistt) does the same edits mutably, with no node per element.
 
 ### Thread safety
 
