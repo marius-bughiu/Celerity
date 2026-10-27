@@ -458,6 +458,9 @@ function escapeHtml(s) {
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'SwissSet',            title: 'SwissSet<int, ...>',                       vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
+    // LinkedSet keeps insertion order, so its baseline is the ordered set a net8.0 caller builds from
+    // BCL parts: a Dictionary keyed to the nodes of a LinkedList.
+    { key: 'LinkedSet',           title: 'LinkedSet<int, ...>',                      vs: 'Dictionary + LinkedList', ops: ['Add', 'Contains', 'Remove', 'Enumerate'] },
     { key: 'RobinHoodSet',        title: 'RobinHoodSet<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'HashCachingSet',      title: 'HashCachingSet<int, ...>',                 vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'PooledCeleritySet',   title: 'PooledCeleritySet<int, ...>',              vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
