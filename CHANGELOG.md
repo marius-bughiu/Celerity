@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-25
+
 ### Added
 
 - **`MinMaxHeap<TElement, TPriority, TComparer>`**, a double-ended priority queue: `PeekMin` / `PeekMax` in `O(1)`, `DequeueMin` / `DequeueMax` in `O(log n)`, duplicates allowed, plus a fused `EnqueueDequeueMax` for capped buffers that evict their worst entry. At 100,000 entries it is 2.45–2.60x faster than `SortedSet<(priority, seq)>`; ⚠️ served from one end only, it is 1.07–1.30x slower than `PriorityQueue<,>`. [API reference](docs/api/collections.md#minmaxheaptelement-tpriority-tcomparer). Closes [#524](https://github.com/marius-bughiu/Celerity/issues/524).
@@ -18,7 +20,6 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Changed
 
 - `LruCache`, `SieveCache` and `LfuCache` now look keys up in a chained index threaded through their own slots instead of a `CelerityDictionary`. At 100,000 keys, eviction churn is more than 3x faster and now beats the `Dictionary` + `LinkedList` LRU, and misses are about twice as fast; hits are unchanged within a few percent. Closes [#544](https://github.com/marius-bughiu/Celerity/issues/544).
-
 - The post-merge benchmark suite now runs on 14 shards instead of 8, and `StringHasherBenchmark` is split by hasher family into four classes so the shard packer can spread it. Each family re-measures the `GetHashCode` baseline on its own runner, so dashboard ratios still compare measurements from one machine. Slices had grown past 100 minutes, and two `main` runs had lost a shard to the 120-minute cap; at 14 shards they measure 54–68 minutes. The dashboard shows the same rows; 54 of the 81 string hasher results now publish under their family class's name. Each shard's job summary now lists per-class wall time.
 
 ### Fixed
@@ -832,7 +833,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.5.0
 [3.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.4.0
 [3.3.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.1
 [3.3.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.0
