@@ -131,6 +131,25 @@ public class IndexerReturnTypeTests
     }
 
     [Fact]
+    public void BiDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(typeof(BiDictionary<string, int, StringFnV1AHasher, Int32WangNaiveHasher>), keyType: typeof(string), valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void BiDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
     public void HashCachingDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
     {
         AssertPrimaryIndexerReturnsTValue(typeof(HashCachingDictionary<string, int, StringFnV1AHasher>), keyType: typeof(string), valueGenericIndex: 1);

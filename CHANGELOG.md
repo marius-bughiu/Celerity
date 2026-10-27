@@ -7,6 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Added
 
 - **`RollingQuantile<T>`** (in `Celerity.Statistics`), the exact quantile (a rolling median, p99, …) of the last `w` values of a stream: `O(log w)` per value and `O(1)` to read, with no allocation after construction. Against a sorted array plus a queue it is 2.5x faster at a 1,000-value window and 32x at 100,000. Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #559.
+- **`BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>`**, a one-to-one dictionary with `O(1)` lookup by key and by value (`TryGetKey`, `ContainsValue`, `RemoveValue`, and an allocation-free `Inverse` view). Writes that would give a value a second key are rejected, and `ForceSet` moves the value instead. Against a pair of `Dictionary` instances kept in sync by hand, it retains 0.6–0.75x the memory, builds in 0.65–0.8x the time, and removes in 0.4–0.55x the time, with lookups as fast or faster. ⚠️ With dense `0..n` keys, use `Int32IdentityHasher`, because a mixing hasher made lookups about 2.2x slower than `Dictionary`'s. [API reference](docs/api/collections.md#bidictionarytkey-tvalue-tkeyhasher-tvaluehasher). Closes [#561](https://github.com/marius-bughiu/Celerity/issues/561).
 
 ## [3.5.0] - 2026-10-25
 

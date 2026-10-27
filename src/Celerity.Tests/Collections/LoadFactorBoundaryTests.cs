@@ -828,6 +828,100 @@ public class LoadFactorBoundaryTests
     }
 
     // ---------------------------------------------------------------
+    //  BiDictionary — low load factor
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BiDictionary_LowLoadFactor_TriggersEarlyResize_AndPreservesAllData()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 40; i++)
+            map[i] = i * 10;
+
+        Assert.Equal(40, map.Count);
+        for (int i = 1; i <= 40; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  BiDictionary — high load factor
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BiDictionary_HighLoadFactor_PermitsHighDensity_AndPreservesAllData()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.95f);
+
+        for (int i = 1; i <= 60; i++)
+            map[i] = i * 100;
+
+        Assert.Equal(60, map.Count);
+        for (int i = 1; i <= 60; i++)
+            Assert.Equal(i * 100, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  BiDictionary — multiple sequential resizes
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BiDictionary_TinyInitialCapacity_MultipleResizes_PreserveAllEntries()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.5f);
+
+        for (int i = 1; i <= 200; i++)
+            map[i] = i;
+
+        Assert.Equal(200, map.Count);
+        for (int i = 1; i <= 200; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    // ---------------------------------------------------------------
+    //  BiDictionary — default key with load-factor boundary
+    // ---------------------------------------------------------------
+
+    // Unlike SwissDictionary, default(int) == 0 is stored in the table (under hash 0) and
+    // consumes an entry like any other key; verify resize timing and data integrity.
+    [Fact]
+    public void BiDictionary_DefaultKey_InsertsBeforeThreshold_DoesNotCorruptResizeTiming()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: 0.5f);
+        map[0] = -1;
+
+        for (int i = 1; i <= 40; i++)
+            map[i] = i;
+
+        Assert.Equal(41, map.Count);
+        Assert.Equal(-1, map[0]);
+        for (int i = 1; i <= 40; i++)
+            Assert.Equal(i, map[i]);
+    }
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.95f)]
+    public void BiDictionary_VariousLoadFactors_AllDataSurvivesMultipleResizes(float loadFactor)
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(
+            capacity: 16, loadFactor: loadFactor);
+
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 7;
+
+        Assert.Equal(100, map.Count);
+        for (int i = 1; i <= 100; i++)
+            Assert.Equal(i * 7, map[i]);
+    }
+
+    // ---------------------------------------------------------------
     //  HashCachingDictionary — low load factor
     // ---------------------------------------------------------------
 

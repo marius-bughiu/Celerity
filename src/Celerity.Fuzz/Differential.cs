@@ -31,6 +31,7 @@ internal static class Differential
         ("RobinHoodDictionary", RobinHoodDictionaryCase),
         ("SwissDictionary", SwissDictionaryCase),
         ("LinkedDictionary", LinkedDictionaryCase),
+        ("BiDictionary", BiDictionaryCase),
         ("HashCachingDictionary", HashCachingDictionaryCase),
         ("PooledCelerityDictionary", PooledCelerityDictionaryCase),
         ("IntDictionary", IntDictionaryCase),
@@ -448,6 +449,141 @@ internal static class Differential
         Check(!nonEmpty || (fk == order[0] && fv == values[order[0]]), "TryGetFirst entry disagreed");
         Check(sut.TryGetLast(out int lk, out int lv) == nonEmpty, "TryGetLast presence disagreed");
         Check(!nonEmpty || (lk == order[^1] && lv == values[order[^1]]), "TryGetLast entry disagreed");
+    }
+
+    // BiDictionary vs a forward and an inverse Dictionary kept in sync by hand. Values are drawn from the
+    // same small domain as keys, so a write often hits a value another key already owns: the indexer and
+    // Add must refuse it and leave the table unchanged, TryAdd must return false, and ForceSet must evict
+    // the owner. Every check reads both directions, since a table whose two chain families drift apart
+    // would still pass a key-side oracle.
+    private static void BiDictionaryCase(Random rng)
+    {
+        var sut = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(rng.Next(0, 9));
+        var fwd = new Dictionary<int, int>();
+        var inv = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        // The model's write, once the caller has cleared the value of any foreign owner.
+        void Bind(int key, int value)
+        {
+            if (fwd.Remove(key, out int old))
+                inv.Remove(old);
+            fwd[key] = value;
+            inv[value] = key;
+        }
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            int value = Key(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 5:
+                {
+                    // Indexer: refuses a value that belongs to a different key; otherwise binds.
+                    bool conflict = inv.TryGetValue(value, out int owner) && owner != key;
+                    bool threw = false;
+                    try { sut[key] = value; }
+                    catch (ArgumentException) { threw = true; }
+                    Check(threw == conflict, $"indexer[{key}] = {value} threw {threw}, expected {conflict}");
+                    if (!conflict)
+                        Bind(key, value);
+                    break;
+                }
+                case < 7:
+                {
+                    bool reject = fwd.ContainsKey(key) || inv.ContainsKey(value);
+                    bool threw = false;
+                    try { sut.Add(key, value); }
+                    catch (ArgumentException) { threw = true; }
+                    Check(threw == reject, $"Add({key}, {value}) threw {threw}, expected {reject}");
+                    if (!reject)
+                        Bind(key, value);
+                    break;
+                }
+                case < 9:
+                {
+                    bool added = !fwd.ContainsKey(key) && !inv.ContainsKey(value);
+                    Check(sut.TryAdd(key, value) == added, $"TryAdd({key}, {value}) disagreed");
+                    if (added)
+                        Bind(key, value);
+                    break;
+                }
+                case < 12:
+                {
+                    bool evict = inv.TryGetValue(value, out int owner) && owner != key;
+                    if (evict)
+                    {
+                        fwd.Remove(owner);
+                        inv.Remove(value);
+                    }
+                    Check(sut.ForceSet(key, value) == evict, $"ForceSet({key}, {value}) disagreed");
+                    Bind(key, value);
+                    break;
+                }
+                case < 14:
+                {
+                    bool had = fwd.Remove(key, out int ev);
+                    if (had)
+                        inv.Remove(ev);
+                    Check(sut.Remove(key, out int av) == had, $"Remove({key}) disagreed");
+                    Check(!had || av == ev, $"Remove({key}) value {av} != {ev}");
+                    break;
+                }
+                case < 16:
+                {
+                    bool had = inv.Remove(value, out int ek);
+                    if (had)
+                        fwd.Remove(ek);
+                    Check(sut.RemoveValue(value, out int ak) == had, $"RemoveValue({value}) disagreed");
+                    Check(!had || ak == ek, $"RemoveValue({value}) key {ak} != {ek}");
+                    break;
+                }
+                case < 17:
+                    sut.EnsureCapacity(rng.Next(0, 64));
+                    break;
+                case < 19:
+                    sut.TrimExcess();
+                    break;
+                default:
+                    sut.Clear();
+                    fwd.Clear();
+                    inv.Clear();
+                    break;
+            }
+
+            Check(sut.Count == fwd.Count, $"Count {sut.Count} != {fwd.Count} after op {i}");
+        }
+
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool e = fwd.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a, $"TryGetValue({k}) presence {a} != {e}");
+            Check(!e || ev == av, $"value[{k}] {av} != {ev}");
+            Check(sut.ContainsKey(k) == e, $"ContainsKey({k}) disagreed");
+
+            bool ie = inv.TryGetValue(k, out int ik);
+            bool ia = sut.TryGetKey(k, out int iak);
+            Check(ie == ia, $"TryGetKey({k}) presence {ia} != {ie}");
+            Check(!ie || ik == iak, $"key of value {k}: {iak} != {ik}");
+            Check(sut.ContainsValue(k) == ie, $"ContainsValue({k}) disagreed");
+            Check(sut.Inverse.TryGetValue(k, out int vk) == ie && (!ie || vk == ik), $"Inverse.TryGetValue({k}) disagreed");
+        }
+
+        var seen = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            Check(seen.TryAdd(kv.Key, kv.Value), $"enumeration yielded duplicate key {kv.Key}");
+        Check(seen.Count == fwd.Count, $"enumeration count {seen.Count} != {fwd.Count}");
+        foreach (var kv in fwd)
+            Check(seen.TryGetValue(kv.Key, out int sv) && sv == kv.Value, $"enumeration missing/wrong {kv.Key}");
+
+        var seenInverse = new Dictionary<int, int>();
+        foreach (var kv in sut.Inverse)
+            Check(seenInverse.TryAdd(kv.Key, kv.Value), $"inverse enumeration yielded duplicate value {kv.Key}");
+        Check(seenInverse.Count == inv.Count, $"inverse enumeration count {seenInverse.Count} != {inv.Count}");
+        foreach (var kv in inv)
+            Check(seenInverse.TryGetValue(kv.Key, out int sk) && sk == kv.Value, $"inverse enumeration missing/wrong {kv.Key}");
     }
 
     private static void HashCachingDictionaryCase(Random rng)

@@ -70,7 +70,9 @@ public class DictionaryInterfaceTests
     /// <param name="subject">An empty dictionary, viewed through the interface under test.</param>
     /// <param name="keys">Three distinct keys. <c>keys[0]</c> should be the type's out-of-band
     /// default/zero key where it has one, so the interface members cover that slot too.</param>
-    /// <param name="values">Three distinct values.</param>
+    /// <param name="values">Three distinct values, or four for a dictionary whose values must be
+    /// unique (<c>BiDictionary</c>): the overwrite then re-points <c>keys[2]</c> at <c>values[3]</c>
+    /// instead of at <c>values[0]</c>, which <c>keys[0]</c> already holds.</param>
     /// <param name="absentKey">A key never inserted.</param>
     /// <param name="absentValue">A value never inserted.</param>
     private static void AssertIDictionaryContract<TKey, TValue>(
@@ -100,8 +102,9 @@ public class DictionaryInterfaceTests
         // The interface indexer, inserting and then overwriting.
         subject[keys[2]] = values[2];
         oracle[keys[2]] = values[2];
-        subject[keys[2]] = values[0];
-        oracle[keys[2]] = values[0];
+        TValue overwrite = values.Length > 3 ? values[3] : values[0];
+        subject[keys[2]] = overwrite;
+        oracle[keys[2]] = overwrite;
 
         Assert.Equal(oracle.Count, subject.Count);
         Assert.Equal(oracle.Count, CountThroughInterface(subject));
@@ -241,6 +244,7 @@ public class DictionaryInterfaceTests
     private static readonly int[] IntKeys = [0, 1, 2];
     private static readonly long[] LongKeys = [0L, 1L, 2L];
     private static readonly string[] Values = ["alpha", "beta", "gamma"];
+    private static readonly string[] UniqueValues = ["alpha", "beta", "gamma", "delta"];
 
     // ---------------- one row per dictionary ----------------
 
@@ -266,6 +270,15 @@ public class DictionaryInterfaceTests
         IDictionary<int, string?> subject = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
 
         AssertIDictionaryContract(subject, IntKeys, Values, absentKey: 99, absentValue: "omega");
+    }
+
+    [Fact]
+    public void BiDictionary_ShouldHonourIDictionary()
+    {
+        // BiDictionary implements IDictionary<TKey, TValue>, not IDictionary<TKey, TValue?>.
+        IDictionary<int, string> subject = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+
+        AssertIDictionaryContract(subject, IntKeys, UniqueValues, absentKey: 99, absentValue: "omega");
     }
 
     [Fact]

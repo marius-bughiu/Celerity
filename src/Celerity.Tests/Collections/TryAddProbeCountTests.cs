@@ -370,6 +370,87 @@ public class TryAddProbeCountTests
     }
 
     [Fact]
+    public void BiDictionary_TryAdd_NewKey_DoesExactlyOneHashCall()
+    {
+        // TryAdd hashes once and threads the hash through both the chain walk and the
+        // insert, so a new-key insert costs exactly one Hash() call (no growth at capacity 64).
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(capacity: 64);
+        _hashCallCount = 0;
+
+        for (int i = 1; i <= 10; i++)
+        {
+            Assert.True(map.TryAdd($"k{i}", i));
+            Assert.Equal(i, _hashCallCount);
+        }
+
+        Assert.Equal(10, map.Count);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_DuplicateKey_DoesExactlyOneHashCall()
+    {
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            map.TryAdd($"k{i}", i);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(map.TryAdd($"k{i}", -1));
+
+        Assert.Equal(5, _hashCallCount);
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_DuplicateValue_DoesExactlyOneKeyHashCall()
+    {
+        // A new key whose value is already mapped is rejected after one key hash and one value-chain
+        // walk; the key is never hashed a second time.
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(capacity: 64);
+        for (int i = 1; i <= 5; i++)
+            map.TryAdd($"k{i}", i);
+
+        _hashCallCount = 0;
+        for (int i = 1; i <= 5; i++)
+            Assert.False(map.TryAdd($"other{i}", i));
+
+        Assert.Equal(5, _hashCallCount);
+        Assert.Equal(5, map.Count);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_GrowthRehashes_UnlessPreSized()
+    {
+        // Unlike LinkedDictionary, no hash is cached, so a growing insert re-hashes every live key.
+        // Pre-sizing with EnsureCapacity brings the cost back to exactly one Hash() call per insert.
+        var growing = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(capacity: 1);
+        _hashCallCount = 0;
+        for (int i = 1; i <= 100; i++)
+            Assert.True(growing.TryAdd($"k{i}", i));
+        Assert.True(_hashCallCount > 100);
+        Assert.Equal(100, growing.Count);
+
+        var presized = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(capacity: 1);
+        presized.EnsureCapacity(100);
+        _hashCallCount = 0;
+        for (int i = 1; i <= 100; i++)
+            Assert.True(presized.TryAdd($"k{i}", i));
+        Assert.Equal(100, _hashCallCount);
+        Assert.Equal(100, presized.Count);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_PreservesExistingValueOnDuplicate()
+    {
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(capacity: 64);
+        map.TryAdd("k7", 700);
+
+        Assert.False(map.TryAdd("k7", -1));
+        Assert.Equal(700, map["k7"]);
+    }
+
+    [Fact]
     public void HashCachingDictionary_TryAdd_NewKey_DoesExactlyOneProbeWalk()
     {
         // The combined probe both checks for an existing key and chooses the
