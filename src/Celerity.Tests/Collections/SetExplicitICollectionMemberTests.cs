@@ -97,6 +97,30 @@ public class SetExplicitICollectionMemberTests
     }
 
     [Fact]
+    public void ICollectionAdd_ShouldNotThrowAndKeepCountAtOne_WhenLinkedSetAlreadyContainsItem()
+    {
+        var set = new LinkedSet<int, Int32WangNaiveHasher>();
+        ICollection<int> collection = set;
+
+        collection.Add(42);
+        collection.Add(42);
+
+        Assert.Equal(1, collection.Count);
+        Assert.Contains(42, (IReadOnlySet<int>)set);
+
+        var ex = Assert.Throws<ArgumentException>(() => set.Add(42));
+        Assert.Equal("item", ex.ParamName);
+    }
+
+    [Fact]
+    public void ICollectionIsReadOnly_ShouldBeFalse_WhenSetIsLinkedSet()
+    {
+        ICollection<int> collection = new LinkedSet<int, Int32WangNaiveHasher>();
+
+        Assert.False(collection.IsReadOnly);
+    }
+
+    [Fact]
     public void ICollectionAdd_ShouldNotThrowAndKeepCountAtOne_WhenSwissSetAlreadyContainsItem()
     {
         var set = new SwissSet<int, Int32WangNaiveHasher>();

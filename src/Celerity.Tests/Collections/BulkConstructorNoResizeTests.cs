@@ -184,6 +184,22 @@ public class BulkConstructorNoResizeTests
     }
 
     [Fact]
+    public void BiDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        KeyValuePair<string, int>[] src = StringPairs();
+        _hashCallCount = 0;
+
+        // Only the key side counts; a rebuild re-hashes every key, so a resize would push it past N.
+        var map = new BiDictionary<string, int, CountingStringHasher, Int32WangNaiveHasher>(src);
+
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, map.Count);
+        Assert.True(map.EnsureCapacity(0) >= N);
+        for (int i = 1; i <= N; i++)
+            Assert.Equal(i, map[$"k{i}"]);
+    }
+
+    [Fact]
     public void HashCachingDictionary_BulkConstruct_FromKnownCount_DoesNotResize()
     {
         KeyValuePair<string, int>[] src = StringPairs();
@@ -281,6 +297,38 @@ public class BulkConstructorNoResizeTests
         Assert.Equal(N, set.Count);
         for (int i = 1; i <= N; i++)
             Assert.True(set.Contains($"v{i}"));
+    }
+
+    [Fact]
+    public void LinkedSet_BulkConstruct_FromKnownCount_DoesNotResize()
+    {
+        string[] src = Enumerable.Range(1, N).Select(i => $"v{i}").ToArray();
+        _hashCallCount = 0;
+
+        var set = new LinkedSet<string, CountingStringHasher>(src);
+
+        // A rebuild never re-hashes (entries keep their hash), so the call count alone cannot
+        // prove the absence of a resize here; the pre-sized entry capacity can.
+        Assert.Equal(N, _hashCallCount);
+        Assert.Equal(N, set.Count);
+        Assert.True(set.EnsureCapacity(0) >= N);
+        for (int i = 1; i <= N; i++)
+            Assert.True(set.Contains($"v{i}"));
+    }
+
+    [Fact]
+    public void LinkedSet_BulkConstruct_SizesFromSourceCount_NotFromDistinctCount()
+    {
+        // For N distinct elements, growth from the default table happens to end at the same entry
+        // capacity the pre-sized table has, so the test above cannot tell the two apart. A counted
+        // source of N copies of four elements can: growth would stop at the default 12 entries,
+        // while sizing from Count reserves room for all N.
+        string[] src = Enumerable.Range(0, N).Select(i => $"v{i % 4}").ToArray();
+
+        var set = new LinkedSet<string, CountingStringHasher>(src);
+
+        Assert.Equal(4, set.Count);
+        Assert.True(set.EnsureCapacity(0) >= N);
     }
 
     [Fact]

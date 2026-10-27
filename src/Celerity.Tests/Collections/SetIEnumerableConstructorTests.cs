@@ -8,6 +8,7 @@ namespace Celerity.Tests.Collections;
 /// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>,
 /// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
+/// <see cref="LinkedSet{T, THasher}"/>,
 /// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/>, and the
 /// immutable <see cref="PersistentHashSet{T, THasher}"/>.
 ///
@@ -1133,6 +1134,198 @@ public class SetIEnumerableConstructorTests
         Assert.Equal(celerity.Count, copy.Count);
         foreach (int item in celerity)
             Assert.True(copy.Contains(item));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LinkedSet — source argument validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LinkedSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LinkedSet<string, StringFnV1AHasher>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldStillValidate_LoadFactor_WhenConstructedFromSource()
+    {
+        var source = new[] { "a" };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LinkedSet<string, StringFnV1AHasher>(source, loadFactor: 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LinkedSet<string, StringFnV1AHasher>(source, loadFactor: 0f));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  LinkedSet — happy path
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LinkedSet_ShouldSupportEmptySource()
+    {
+        var set = new LinkedSet<string, StringFnV1AHasher>(Array.Empty<string>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldCopyAllElements_FromArraySource()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new LinkedSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+        Assert.Equal(source, set);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        IEnumerable<int> source = Enumerable.Range(1, 50);
+
+        var set = new LinkedSet<int, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(50, set.Count);
+        for (int i = 1; i <= 50; i++)
+            Assert.True(set.Contains(i));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldSilentlyDedupe_DuplicateElements()
+    {
+        var source = new[] { "b", "a", "b", "c", "a", "b" };
+
+        var set = new LinkedSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+        // Each element keeps the position of its first occurrence.
+        Assert.Equal(new[] { "b", "a", "c" }, set);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldSilentlyDedupe_DuplicateNullElements()
+    {
+        var source = CreateSourceWithRuntimeNulls("a", null, "b", null, "c", null);
+
+        var set = new LinkedSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(4, set.Count);
+        Assert.True(set.Contains(null!));
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+        // null is stored in-table, so it keeps its first-occurrence position rather than leading.
+        Assert.Equal(new[] { "a", null, "b", "c" }, set);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldSilentlyDedupe_DuplicateDefaultValueTypeElements()
+    {
+        var source = new[] { 0, 1, 0, 2, 0 };
+
+        var set = new LinkedSet<int, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(0));
+        Assert.True(set.Contains(1));
+        Assert.True(set.Contains(2));
+        Assert.Equal(new[] { 0, 1, 2 }, set);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldCaptureNullElement_FromSource()
+    {
+        var source = CreateSourceWithRuntimeNulls("x", null, "y");
+
+        var set = new LinkedSet<string, StringFnV1AHasher>(source);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains(null!));
+        Assert.True(set.Contains("x"));
+        Assert.True(set.Contains("y"));
+        Assert.Equal(new[] { "x", null, "y" }, set);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldHandleLargeSource()
+    {
+        IEnumerable<int> source = Enumerable.Range(1, 500);
+
+        var set = new LinkedSet<int, Int32WangNaiveHasher>(source);
+
+        Assert.Equal(500, set.Count);
+        for (int i = 1; i <= 500; i++)
+            Assert.True(set.Contains(i), $"missing element {i}");
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldBeIndependent_FromSourceArray()
+    {
+        var source = new[] { "a", "b", "c" };
+        var set = new LinkedSet<string, StringFnV1AHasher>(source);
+
+        source[0] = "MUTATED";
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.False(set.Contains("MUTATED"));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldUseCallerCapacity_WhenLargerThanSourceCount()
+    {
+        var source = new[] { "a", "b", "c" };
+
+        var set = new LinkedSet<string, StringFnV1AHasher>(source, capacity: 1024);
+
+        Assert.Equal(3, set.Count);
+        Assert.True(set.Contains("a"));
+        Assert.True(set.Contains("b"));
+        Assert.True(set.Contains("c"));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldRoundtrip_FromAnotherLinkedSetEnumeration()
+    {
+        var original = new LinkedSet<int, Int32WangNaiveHasher>();
+        foreach (int i in new[] { 3, 0, 5, 1, 4, 2 })
+            original.Add(i);
+
+        var copy = new LinkedSet<int, Int32WangNaiveHasher>(original);
+
+        Assert.Equal(original.Count, copy.Count);
+        foreach (int item in original)
+            Assert.True(copy.Contains(item));
+        Assert.Equal(original, copy);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldRoundtrip_FromCeleritySetEnumeration()
+    {
+        // Cross-collection copy: build a LinkedSet from a CeleritySet. The copy takes the source's
+        // enumeration order, whatever it is.
+        var celerity = new CeleritySet<int, Int32WangNaiveHasher> { 0, 5, 10, 15 };
+
+        var copy = new LinkedSet<int, Int32WangNaiveHasher>(celerity);
+
+        Assert.Equal(celerity.Count, copy.Count);
+        foreach (int item in celerity)
+            Assert.True(copy.Contains(item));
+        Assert.Equal(celerity, copy);
     }
 
     // ──────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ namespace Celerity.Tests.Collections;
 /// Pins the <see cref="IReadOnlySet{T}"/> surface of the mutable set family
 /// (<see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
+/// <see cref="LinkedSet{T, THasher}"/>,
 /// <see cref="PooledCeleritySet{T, THasher}"/>, <see cref="SmallSet{T}"/>,
 /// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>, <see cref="SparseSet"/>,
 /// <see cref="HierarchicalBitSet"/> and <see cref="EnumSet{TEnum}"/>), the read-only mirror of the <see cref="ISet{T}"/> conformance
@@ -33,7 +34,8 @@ namespace Celerity.Tests.Collections;
 /// reference-type and enum elements, and every fixture includes the default element
 /// (<c>0</c> / <c>null</c>), whichever way its type represents it: out-of-band for the
 /// open-addressed sets, inline for <see cref="SmallSet{T}"/> (which never hashes, so it has no
-/// empty-slot sentinel to work around), and an ordinary slot in the dense array or bit vector
+/// empty-slot sentinel to work around) and <see cref="LinkedSet{T, THasher}"/> (which stores it
+/// in-table under hash code <c>0</c>), and an ordinary slot in the dense array or bit vector
 /// for <see cref="SparseSet"/>, <see cref="HierarchicalBitSet"/> and <see cref="EnumSet{TEnum}"/>.
 /// </para>
 /// </summary>
@@ -115,6 +117,36 @@ public class ReadOnlySetInterfaceTests
         Assert.IsAssignableFrom<IReadOnlySet<string>>(set);
         AssertMatchesOracle(set, StringMembers, StringAbsent);
         AssertEmptyContract<string>(new HashCachingSet<string, DefaultHasher<string>>(), StringMembers);
+    }
+
+    // ── LinkedSet ─────────────────────────────────────────────────────────────
+    // Chained and insertion-ordered: the default element lives in the table under hash code 0, so
+    // it enumerates in its insertion position (second in the int fixture), not first. The string
+    // row uses a hasher that throws on null, so the fixture's null element proves it never reaches
+    // the hasher.
+
+    [Fact]
+    public void LinkedSet_ShouldSatisfyTheReadOnlySetContract_WhenReachedThroughTheInterface()
+    {
+        var set = new LinkedSet<int, Int32WangNaiveHasher>();
+        Fill(set.TryAdd, IntMembers);
+
+        Assert.IsAssignableFrom<IReadOnlySet<int>>(set);
+        AssertMatchesOracle(set, IntMembers, IntAbsent);
+        Assert.Equal(IntMembers, set);
+        AssertEmptyContract<int>(new LinkedSet<int, Int32WangNaiveHasher>(), IntMembers);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldSatisfyTheReadOnlySetContract_WhenElementsAreStrings()
+    {
+        var set = new LinkedSet<string, StringFnV1AHasher>();
+        Fill(set.TryAdd, StringMembers);
+
+        Assert.IsAssignableFrom<IReadOnlySet<string>>(set);
+        AssertMatchesOracle(set, StringMembers, StringAbsent);
+        Assert.Equal(StringMembers, set);
+        AssertEmptyContract<string>(new LinkedSet<string, StringFnV1AHasher>(), StringMembers);
     }
 
     // ── PooledCeleritySet ─────────────────────────────────────────────────────

@@ -728,6 +728,173 @@ public class AddAndTryAddTests
     }
 
     // ---------------------------------------------------------------
+    //  BiDictionary — Add / TryAdd (mirror of CelerityDictionary)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BiDictionary_Add_ShouldStoreValue_ForNewKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map.Add(1, "one");
+
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void BiDictionary_Add_ShouldThrow_OnDuplicateKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map.Add(1, "first");
+
+        var ex = Assert.Throws<ArgumentException>(() => map.Add(1, "second"));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void BiDictionary_Add_ShouldThrow_OnDuplicateKey_AndLeaveValueUnchanged()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        map.Add(42, 100);
+
+        Assert.Throws<ArgumentException>(() => map.Add(42, 999));
+
+        Assert.Single(map);
+        Assert.Equal(100, map[42]);
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void BiDictionary_Add_ShouldThrow_OnDuplicateValue_AndLeaveDictionaryUnchanged()
+    {
+        // Values are unique too: a second key for an existing value is rejected like a duplicate key.
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        map.Add(1, 100);
+
+        Assert.Throws<ArgumentException>(() => map.Add(2, 100));
+
+        Assert.Single(map);
+        Assert.False(map.ContainsKey(2));
+        Assert.Equal(1, map.GetKey(100));
+    }
+
+    [Fact]
+    public void BiDictionary_Add_ShouldStoreValue_ForDefaultKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map.Add(0, "zero");
+
+        Assert.Single(map);
+        Assert.Equal("zero", map[0]);
+    }
+
+    [Fact]
+    public void BiDictionary_Add_ShouldThrow_OnDuplicateDefaultKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map.Add(0, "first");
+
+        Assert.Throws<ArgumentException>(() => map.Add(0, "second"));
+        Assert.Single(map);
+        Assert.Equal("first", map[0]);
+    }
+
+    [Fact]
+    public void BiDictionary_Add_ShouldStoreValue_ForNullStringKey()
+    {
+        var map = new BiDictionary<string, int, StringFnV1AHasher, Int32WangNaiveHasher>();
+        map.Add(null!, 99);
+
+        Assert.Single(map);
+        Assert.Equal(99, map[null!]);
+    }
+
+    [Fact]
+    public void BiDictionary_Add_ShouldSupportManyKeys()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 0; i <= 50; i++)
+            map.Add(i, i * 10);
+
+        Assert.Equal(51, map.Count);
+        for (int i = 0; i <= 50; i++)
+            Assert.Equal(i * 10, map[i]);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_ShouldReturnTrue_ForNewKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        bool added = map.TryAdd(5, "five");
+
+        Assert.True(added);
+        Assert.Equal("five", map[5]);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_ShouldReturnFalse_ForExistingKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map.TryAdd(5, "five");
+
+        bool added = map.TryAdd(5, "FIVE");
+
+        Assert.False(added);
+        Assert.Equal("five", map[5]);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_ShouldReturnFalse_ForExistingValue()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map.TryAdd(5, "five");
+
+        bool added = map.TryAdd(6, "five");
+
+        Assert.False(added);
+        Assert.Single(map);
+        Assert.False(map.ContainsKey(6));
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_ShouldReturnFalse_ForExistingDefaultKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map.TryAdd(0, "original");
+
+        bool added = map.TryAdd(0, "replacement");
+
+        Assert.False(added);
+        Assert.Equal("original", map[0]);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_ForNullStringKey_ShouldRoundTrip()
+    {
+        var map = new BiDictionary<string, string, StringFnV1AHasher, StringFnV1AHasher>();
+        bool added = map.TryAdd(null!, "null-val");
+
+        Assert.True(added);
+
+        bool addedAgain = map.TryAdd(null!, "other");
+        Assert.False(addedAgain);
+        Assert.Equal("null-val", map[null!]);
+    }
+
+    [Fact]
+    public void BiDictionary_TryAdd_AfterClear_ShouldSucceed()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        map.TryAdd(7, 70);
+        map.Clear();
+
+        bool added = map.TryAdd(7, 700);
+
+        Assert.True(added);
+        Assert.Equal(700, map[7]);
+    }
+
+    // ---------------------------------------------------------------
     //  HashCachingDictionary — Add / TryAdd (mirror of CelerityDictionary)
     // ---------------------------------------------------------------
 
@@ -1083,6 +1250,7 @@ public class AddAndTryAddTests
         var rhDict = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>();
         var swissDict = new SwissDictionary<int, int, Int32WangNaiveHasher>();
         var linkedDict = new LinkedDictionary<int, int, Int32WangNaiveHasher>();
+        var biDict = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
         var hashCachingDict = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();
 
         const int Inserts = 32;
@@ -1096,6 +1264,7 @@ public class AddAndTryAddTests
             rhDict[i] = i;
             swissDict[i] = i;
             linkedDict[i] = i;
+            biDict[i] = i;
             hashCachingDict[i] = i;
         }
 
@@ -1109,6 +1278,8 @@ public class AddAndTryAddTests
                 rhDict[i] = round;
                 swissDict[i] = round;
                 linkedDict[i] = round;
+                // Values are unique in a BiDictionary, so each key gets its own value every round.
+                biDict[i] = (round + 1) * Inserts + i;
                 hashCachingDict[i] = round;
             }
         }
@@ -1119,6 +1290,7 @@ public class AddAndTryAddTests
         Assert.Equal(Inserts, rhDict.Count);
         Assert.Equal(Inserts, swissDict.Count);
         Assert.Equal(Inserts, linkedDict.Count);
+        Assert.Equal(Inserts, biDict.Count);
         Assert.Equal(Inserts, hashCachingDict.Count);
     }
 

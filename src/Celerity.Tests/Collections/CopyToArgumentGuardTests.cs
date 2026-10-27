@@ -115,6 +115,17 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void LinkedSet_ShouldValidateCopyToArguments()
+    {
+        LinkedSet<int, Int32WangNaiveHasher> set = new();
+        set.Add(1);
+        set.Add(2);
+        set.Add(3);
+
+        AssertCopyToContract<int>(3, set.CopyTo);
+    }
+
+    [Fact]
     public void IntSet_ShouldValidateCopyToArguments()
     {
         IntSet<Int32WangNaiveHasher> set = new();
@@ -244,6 +255,18 @@ public class CopyToArgumentGuardTests
         AssertCopyToContract<KeyValuePair<int, string?>>(3, dictionary.CopyTo);
         AssertCopyToContract<int>(3, dictionary.Keys.CopyTo);
         AssertCopyToContract<string?>(3, dictionary.Values.CopyTo);
+    }
+
+    [Fact]
+    public void BiDictionary_ShouldValidateCopyToArguments()
+    {
+        BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher> dictionary = new();
+        Fill(dictionary.Add);
+
+        // TValue is not widened to TValue? here, so the element types are the non-nullable ones.
+        AssertCopyToContract<KeyValuePair<int, string>>(3, dictionary.CopyTo);
+        AssertCopyToContract<int>(3, dictionary.Keys.CopyTo);
+        AssertCopyToContract<string>(3, dictionary.Values.CopyTo);
     }
 
     [Fact]
@@ -390,9 +413,10 @@ public class CopyToArgumentGuardTests
     private static readonly HashSet<string> Covered = new(StringComparer.Ordinal)
     {
         "BitPackedArray", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
-        "HierarchicalBitSet", "IntSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet", "RobinHoodSet",
-        "SmallSet", "SparseSet", "SwissSet",
+        "HierarchicalBitSet", "IntSet", "LinkedSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet",
+        "RobinHoodSet", "SmallSet", "SparseSet", "SwissSet",
 
+        "BiDictionary", "BiDictionary.KeyCollection", "BiDictionary.ValueCollection",
         "BTreeDictionary", "BTreeDictionary.KeyCollection", "BTreeDictionary.ValueCollection",
         "CelerityDictionary", "CelerityDictionary.KeyCollection", "CelerityDictionary.ValueCollection",
         "EnumMap", "EnumMap.KeyCollection", "EnumMap.ValueCollection",

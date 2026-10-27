@@ -382,6 +382,58 @@ public class ConstructorValidationTests
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  BiDictionary — loadFactor validation
+    // ──────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-0.5f)]
+    [InlineData(-1f)]
+    public void BiDictionary_ShouldThrow_WhenLoadFactorIsZeroOrNegative(float loadFactor)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    [InlineData(2f)]
+    public void BiDictionary_ShouldThrow_WhenLoadFactorIsOneOrGreater(float loadFactor)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor));
+    }
+
+    [Fact]
+    public void BiDictionary_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: -1));
+    }
+
+    [Fact]
+    public void BiDictionary_ShouldAcceptZeroCapacity()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 0);
+        map[42] = 100;
+        Assert.Equal(100, map[42]);
+    }
+
+    [Theory]
+    [InlineData(0.01f)]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(0.75f)]
+    [InlineData(0.99f)]
+    public void BiDictionary_ShouldAcceptValidLoadFactor(float loadFactor)
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 16, loadFactor: loadFactor);
+        map[1] = 10;
+        Assert.Equal(10, map[1]);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  HashCachingDictionary — loadFactor validation
     // ──────────────────────────────────────────────────────────────
 
@@ -714,6 +766,14 @@ public class ConstructorValidationTests
     {
         AssertRejectsCapacity(capacity, () =>
             new LinkedDictionary<int, int, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void BiDictionary_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        AssertRejectsCapacity(capacity, () =>
+            new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(IntPairs(shape), capacity: capacity));
     }
 
     [Theory]
