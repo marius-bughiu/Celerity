@@ -469,7 +469,10 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// </summary>
     /// <param name="capacity">The minimum number of distinct keys the key table must hold without resizing.</param>
     /// <returns>The number of distinct keys the map can now hold before the next resize.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or more than the largest table (2<sup>30</sup> slots) can hold at
+    /// this load factor.
+    /// </exception>
     public int EnsureCapacity(int capacity)
     {
         if (capacity < 0)
@@ -477,7 +480,7 @@ public class CelerityMultiMap<TKey, TValue, THasher>
 
         if (_threshold < capacity)
         {
-            int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+            int newSize = TableSizeGuard.MinTableSizeFor(capacity, _loadFactor);
             if (newSize > _keys.Length)
             {
                 Resize(newSize);
@@ -504,14 +507,15 @@ public class CelerityMultiMap<TKey, TValue, THasher>
     /// <see cref="Count"/>.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="capacity"/> is less than the current distinct key <see cref="Count"/>.
+    /// <paramref name="capacity"/> is less than the current distinct key <see cref="Count"/>, or more than
+    /// the largest table (2<sup>30</sup> slots) can hold at this load factor.
     /// </exception>
     public void TrimExcess(int capacity)
     {
         if (capacity < _count)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
 
-        int newSize = FastUtils.MinTableSizeFor(capacity, _loadFactor);
+        int newSize = TableSizeGuard.MinTableSizeFor(capacity, _loadFactor);
         if (newSize != _keys.Length)
         {
             Resize(newSize);

@@ -783,6 +783,56 @@ public class EnsureCapacityAndTrimExcessTests
             Assert.Equal(i, map[i]);
     }
 
+    // ── A capacity the 2^30-slot table cannot reach (issue #570) ─────────────────────
+
+    // At this load factor even the largest table, 2^30 slots, holds only (int)(2^30 * 1e-6) = 1073
+    // entries, so asking for 2000 is unreachable. Before #570 each type resized to that capped table
+    // (gigabytes of slots) and returned less than it was asked for; now it throws before allocating.
+    private const float TinyLoadFactor = 1e-6f;
+    private const int UnreachableCapacity = 2_000;
+
+    public static TheoryData<string, Func<(Func<int, int> Ensure, Action<int> Trim)>> TinyLoadFactorTables => new()
+    {
+        { "CelerityDictionary", () => { var t = new CelerityDictionary<string, int, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "CeleritySet", () => { var t = new CeleritySet<string, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "IntDictionary", () => { var t = new IntDictionary<int, CountingIntHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "IntSet", () => { var t = new IntSet<CountingIntHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "LongDictionary", () => { var t = new LongDictionary<int, CountingLongHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "LongSet", () => { var t = new LongSet<CountingLongHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "RobinHoodDictionary", () => { var t = new RobinHoodDictionary<string, int, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "RobinHoodSet", () => { var t = new RobinHoodSet<string, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "SwissDictionary", () => { var t = new SwissDictionary<string, int, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "SwissSet", () => { var t = new SwissSet<string, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "HashCachingDictionary", () => { var t = new HashCachingDictionary<string, int, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "HashCachingSet", () => { var t = new HashCachingSet<string, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "PooledCelerityDictionary", () => { var t = new PooledCelerityDictionary<string, int, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "PooledCeleritySet", () => { var t = new PooledCeleritySet<string, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "CelerityMultiMap", () => { var t = new CelerityMultiMap<int, int, CountingIntHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "CelerityMultiSet", () => { var t = new CelerityMultiSet<int, CountingIntHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "LinkedDictionary", () => { var t = new LinkedDictionary<string, int, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+    };
+
+    [Theory]
+    [MemberData(nameof(TinyLoadFactorTables))]
+    public void EnsureCapacity_And_TrimExcess_BeyondTheTableCap_Throw_WithoutResizing(
+        string type, Func<(Func<int, int> Ensure, Action<int> Trim)> create)
+    {
+        _ = type; // names the row in the test explorer
+        var (ensure, trim) = create();
+        int before = ensure(0);
+
+        var grow = Assert.Throws<ArgumentOutOfRangeException>(() => ensure(UnreachableCapacity));
+        Assert.Equal("capacity", grow.ParamName);
+        Assert.Equal(UnreachableCapacity, grow.ActualValue);
+
+        var trimmed = Assert.Throws<ArgumentOutOfRangeException>(() => trim(UnreachableCapacity));
+        Assert.Equal("capacity", trimmed.ParamName);
+
+        // The rejected calls left the table as it was. (No reachable-capacity call follows: at this load
+        // factor even 1,000 entries need the full 2^30-slot table.)
+        Assert.Equal(before, ensure(0));
+    }
+
     [Fact]
     public void PooledCelerityDictionary_EnsureCapacity_AfterDispose_Throws()
     {
