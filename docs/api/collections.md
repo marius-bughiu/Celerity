@@ -510,7 +510,7 @@ Entries live in one array of structs. Each entry holds the key, the value, the k
 - A lookup hashes once and walks one bucket's chain, touching one entry per step. Reference keys compare the stored hash before calling `Equals`.
 - A removal unlinks the entry from its chain and from the order list, then puts the slot on a free list. The next add reuses it, so a remove/add churn never grows the table.
 - Enumeration follows the order list, so it costs `O(Count)` however many entries have been removed.
-- Growth doubles the bucket count and copies the live entries **in order** into a fresh array. That compacts out every free slot. It also lays entries out sequentially, so enumeration after a resize or a `TrimExcess` walks memory front to back. The hasher is not called again, because each entry keeps its hash.
+- Growth doubles the bucket count and copies the live entries **in order** into a fresh array. That compacts out every free slot. It also lays entries out sequentially, so enumeration after a resize walks memory front to back. A `TrimExcess` does the same only when it changes the table size; one that leaves the bucket count unchanged rebuilds nothing, so it neither compacts free slots nor restores sequential layout after moves. The hasher is not called again, because each entry keeps its hash.
 
 ### Performance
 

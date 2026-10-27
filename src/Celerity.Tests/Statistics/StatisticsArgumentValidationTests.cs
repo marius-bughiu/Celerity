@@ -150,5 +150,38 @@ public class StatisticsArgumentValidationTests
         var sampler = new ReservoirSampler<int>(capacity: 4, seed: 1UL);
         sampler.Add(ReadOnlySpan<int>.Empty);
         Assert.Equal(0, sampler.TotalSeen);
+
+        var rolling = new RollingQuantile<int>(windowSize: 4, quantile: 0.5d);
+        rolling.Add(ReadOnlySpan<int>.Empty);
+        Assert.Equal(0, rolling.Count);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void RollingQuantileConstructor_ShouldThrow_WhenTheWindowIsNotPositive(int windowSize)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new RollingQuantile<int>(windowSize, 0.5d));
+        Assert.Equal("windowSize", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(-0.01d)]
+    [InlineData(1.01d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void RollingQuantileConstructor_ShouldThrow_WhenTheQuantileIsOutsideTheUnitInterval(double quantile)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new RollingQuantile<int>(8, quantile));
+        Assert.Equal("quantile", ex.ParamName);
+    }
+
+    [Fact]
+    public void RollingQuantileConstructor_ShouldAcceptBothEndsOfTheUnitInterval_AndAWindowOfOne()
+    {
+        Assert.Equal(0d, new RollingQuantile<int>(1, 0d).Quantile);
+        Assert.Equal(1d, new RollingQuantile<int>(1, 1d).Quantile);
     }
 }

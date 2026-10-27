@@ -22,7 +22,7 @@ namespace Celerity.Collections;
 /// <c>LinkedList&lt;(TKey, TValue)&gt;</c>, which heap-allocates a <c>LinkedListNode</c> per
 /// insertion and chases pointers scattered across the managed heap. <see cref="LruCache{TKey, TValue, THasher}"/>
 /// instead keeps its recency order in an <b>intrusive doubly-linked list threaded through fixed-size
-/// node arrays</b> (allocated once, sized to <see cref="Capacity"/>) and an open-addressed
+/// node arrays</b> (allocated once, sized to <see cref="Capacity"/>) and a
 /// key&#8594;node-slot index chained through those same slots. The node slot is stable across recency
 /// reordering, so a cache hit never touches the index; after construction the hot get/put/evict path performs <b>no allocation at all</b>.
 /// Against that idiomatic LRU, hits and eviction churn are faster and allocate nothing; a stream of

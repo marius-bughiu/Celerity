@@ -650,6 +650,10 @@ function escapeHtml(s) {
     // The sampler's baseline is the good hand-roll — materialize the stream, partial Fisher-Yates — not
     // the OrderBy(random).Take(k) that would flatter it. The win is the footprint, not the asymptotics.
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',        vs: 'List<T> + partial Fisher-Yates', ops: ['Sample', 'Accumulate'] },
+    // The rolling median's baseline is the careful hand-roll — a sorted int[] beside a Queue<int>, one span
+    // shift per sample between the expiring value and the new one — not a re-sort per read. ItemCount is the
+    // window: the shift is linear in it and the heaps logarithmic, so the gap widens with the window.
+    { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', ops: ['Slide'], items: [1000, 10000, 100000] },
     // Welford against the LINQ two-pass. Expect a factor near one on Moments: the reason to prefer this
     // type is that the faster one-pass shortcut is numerically wrong, which a chart cannot show.
     { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',      vs: 'LINQ two-pass mean / variance', ops: ['Moments', 'Accumulate'] }
