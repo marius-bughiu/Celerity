@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`RollingQuantile<T>`** (in `Celerity.Statistics`), the exact quantile (a rolling median, p99, …) of the last `w` values of a stream: `O(log w)` per value and `O(1)` to read, with no allocation after construction. Against a sorted array plus a queue it is 2.5x faster at a 1,000-value window and 32x at 100,000. Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #559.
+
 ## [3.5.0] - 2026-10-25
 
 ### Added

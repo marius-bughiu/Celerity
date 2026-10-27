@@ -3322,12 +3322,13 @@ void Check(bool condition, string message)
     Check(PartialSort.TopK<int>(selection, top.AsSpan()) == 3 && top[0] == 9 && top[^1] == 7, "PartialSort.TopK");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377).
+// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
-// generator, so the struct-PRNG generic is closed twice), and the moment accumulator, which is a
-// mutable struct whose ref-accumulation path is the one a caller is meant to use.
+// generator, so the struct-PRNG generic is closed twice), the moment accumulator, which is a
+// mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
+// quantile over a value type and a reference type, whose heap entries are a generic struct.
 {
     var sketch = new DDSketch(0.01d, 1024);
     for (int i = 1; i <= 1_000; i++)
@@ -3369,6 +3370,16 @@ void Check(bool condition, string message)
 
     RunningStatistics combined = RunningStatistics.Combine(perBucket[1], new RunningStatistics([1d, 9d]));
     Check(combined.Count == 10 && combined.Min == 1d && combined.Max == 9d, "RunningStatistics merge");
+
+    var median = new RollingQuantile<double>(windowSize: 5, quantile: 0.5d);
+    median.Add([9d, 1d, 7d, 3d, 5d]);
+    Check(median.IsFull && median.Value == 5d, "RollingQuantile median of a full window");
+    median.Add([100d, 200d]);
+    Check(median.Value == 7d && median.Count == 5, "RollingQuantile evicts the oldest values");
+
+    var lowest = new RollingQuantile<string>(windowSize: 2, quantile: 0d);
+    lowest.Add(["pear", "apple", "fig"]);
+    Check(lowest.TryGetValue(out string? first) && first == "apple", "RollingQuantile over a reference type");
 }
 
 // Celerity.Ring — ConsistentHashRing / RendezvousHash.
