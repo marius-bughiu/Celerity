@@ -510,7 +510,7 @@ Entries live in one array of structs. Each entry holds the key, the value, the k
 - A lookup hashes once and walks one bucket's chain, touching one entry per step. Reference keys compare the stored hash before calling `Equals`.
 - A removal unlinks the entry from its chain and from the order list, then puts the slot on a free list. The next add reuses it, so a remove/add churn never grows the table.
 - Enumeration follows the order list, so it costs `O(Count)` however many entries have been removed.
-- Growth doubles the bucket count and copies the live entries **in order** into a fresh array. That compacts out every free slot. It also lays entries out sequentially, so enumeration after a resize or a `TrimExcess` walks memory front to back. The hasher is not called again, because each entry keeps its hash.
+- Growth doubles the bucket count and copies the live entries **in order** into a fresh array. That compacts out every free slot. It also lays entries out sequentially, so enumeration after a resize walks memory front to back. A `TrimExcess` does the same only when it changes the table size; one that leaves the bucket count unchanged rebuilds nothing, so it neither compacts free slots nor restores sequential layout after moves. The hasher is not called again, because each entry keeps its hash.
 
 ### Performance
 
@@ -584,6 +584,134 @@ pending.MoveToFront(9);      // escalate one job
 
 while (pending.TryRemoveFirst(out int id, out string? job))
     Console.WriteLine($"{id}: {job}"); // 9, 17, 4
+```
+
+---
+
+## BiDictionary&lt;TKey, TValue, TKeyHasher, TValueHasher&gt;
+
+A **one-to-one** hash dictionary that can be looked up by key and by value. Every key maps to exactly one value and every value belongs to exactly one key, so the value side gets the same `O(1)` hash lookups as the key side: `ContainsValue`, `TryGetKey`, `GetKey`, and `RemoveValue`. `Inverse` exposes the same table as a read-only `IReadOnlyDictionary<TValue, TKey>`. This is the shape of Guava's `HashBiMap` and Apache Commons' `BidiMap`. The rest of the public surface matches `CelerityDictionary`: constructors, indexer, `ContainsKey` / `TryGetValue` / `Add` / `TryAdd` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator` / `KeyCollection` / `ValueCollection`, and both `IDictionary<TKey, TValue>` and `IReadOnlyDictionary<TKey, TValue>`.
+
+```csharp
+public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
+    : IDictionary<TKey, TValue>, IReadOnlyDictionary<TKey, TValue>
+    where TKeyHasher : struct, IHashProvider<TKey>
+    where TValueHasher : struct, IHashProvider<TValue>
+```
+
+### Why not two `Dictionary` instances
+
+.NET has no bidirectional dictionary. The usual hand-roll is a forward `Dictionary<TKey, TValue>` and an inverse `Dictionary<TValue, TKey>`, kept in sync by the caller:
+
+- Every write has to touch both maps, and an overwrite has to remove the stale inverse entry first.
+- Nothing enforces that values are unique unless the caller checks the inverse map before every write. A second `Add` that throws on a duplicate value leaves the two maps disagreeing unless the caller rolls the first one back.
+- Every key and every value is stored twice, in two entry arrays, each with its own bucket array and a cached hash code per entry.
+
+`BiDictionary` does that bookkeeping inside one table and refuses any write that would give a value a second key. Use it when both directions are read: id ↔ name tables, protocol code ↔ enum maps, handle ↔ object registries, column name ↔ ordinal maps. When only the forward direction is read, `CelerityDictionary` and `SwissDictionary` are faster to write.
+
+### How it works
+
+Entries live in one **dense** array of structs. Each entry holds the key, the value, and one link into each of two chain families. A key-bucket array chains entries by key hash, and a value-bucket array chains them by value hash. Both are power-of-two arrays of chain heads.
+
+- Lookups in either direction hash once and walk one chain.
+- No hash code is cached in the entry. That is what keeps an `int ↔ int` entry at 16 bytes, where the dictionary pair spends 32 bytes on its two entries. The cost shows up on churn: a removal re-hashes the removed entry's other side and the entry that fills the hole, and growth that adds buckets re-hashes every entry. A key or value type with an expensive hasher pays more for that than a `Dictionary` does.
+- A removal unlinks the entry from both chains and moves the **last** entry into the hole, so the array never holds a gap and enumeration is a straight scan.
+- The entry array is sized apart from the buckets. `EnsureCapacity(n)`, `TrimExcess(n)` and a sized source allocate exactly `n` entries rather than the buckets' full load-factor capacity. Growth doubles the entry array and re-buckets (re-hashing) only when the load factor needs more buckets.
+
+### Performance
+
+Measured locally on Apple Silicon (.NET 10), with `Int32WangNaiveHasher` on both sides and random distinct `int` keys. The baseline is the two-`Dictionary` hand-roll. The dashboard's CI series is the contract.
+
+| Operation | 10,000 entries | 100,000 entries |
+|---|---|---|
+| Build (one `Add` vs the pair's two) | ~0.8x the time | ~0.65x |
+| Forward hit lookup (vs one `Dictionary`) | ~0.95x | ~0.55–0.75x |
+| Inverse hit lookup (vs the inverse `Dictionary`) | ~0.9x | ~0.7–0.75x |
+| Remove by key (vs the pair's two `Remove`s) | ~0.53x | ~0.41x |
+
+Retained `int ↔ int` memory, averaged over 47 sizes from 1,000 to 300,000: **~0.61x** of the pair when both grow unsized, and **~0.73x** when both are pre-sized (worst 1.08x, at a count just past a power-of-two bucket boundary).
+
+For `string ↔ string`, retained memory was 0.59x of the pair at 10,000 entries and 0.74x at 100,000.
+
+⚠️ **Dense integer ids want the identity hasher.** `Dictionary<int, …>` hashes an `int` to itself, so keys `0..n` fill its buckets in order. A mixing hasher such as `Int32WangHasher` scatters them, and with keys `0..100,000` lookups measured about 2.2x slower than `Dictionary`. With `Int32IdentityHasher` on both sides the same workload was faster than the pair in every row above.
+
+### Constructors
+
+```csharp
+public BiDictionary(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public BiDictionary(
+    IEnumerable<KeyValuePair<TKey, TValue>> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Validation and exceptions are the same as for `CelerityDictionary`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. `capacity` is the number of hash buckets in each direction, rounded up to a power of two. The dictionary holds `capacity × loadFactor` entries (at least one) before it grows. A duplicate key in `source`, or two keys with the same value, throws `ArgumentException`.
+
+### One-to-one writes
+
+```csharp
+public TValue this[TKey key] { get; set; }
+public void Add(TKey key, TValue value)
+public bool TryAdd(TKey key, TValue value)
+public bool ForceSet(TKey key, TValue value)
+```
+
+- `Add` throws `ArgumentException` when the key exists (`ParamName` `"key"`) or when the value already belongs to another key (`ParamName` `"value"`). `TryAdd` returns `false` in both cases. Either way the dictionary is unchanged.
+- The indexer setter re-points an existing key at a new value, or adds a new key. It throws `ArgumentException` when the value already belongs to a **different** key. Setting a key to the value it already has does nothing.
+- `ForceSet` is Guava's `forcePut`. Where the indexer refuses, it removes whichever entry held the value, then sets the key. It returns `true` when it removed another key's entry.
+
+### Value-side lookups and the inverse view
+
+```csharp
+public bool ContainsValue(TValue value)
+public bool TryGetKey(TValue value, out TKey key)
+public TKey GetKey(TValue value)
+public bool RemoveValue(TValue value)
+public bool RemoveValue(TValue value, out TKey key)
+public InverseView Inverse { get; }
+```
+
+All of these are `O(1)` hash lookups. `GetKey` throws `KeyNotFoundException` for an absent value. `Values.Contains` is `O(1)` too.
+
+`Inverse` is a `readonly struct` implementing `IReadOnlyDictionary<TValue, TKey>`. It is a view of the same table, not a copy, so it reflects every later change. Its indexer, `ContainsKey`, `TryGetValue`, and its struct enumerator do not allocate. Its `Keys` are the dictionary's `Values`, and its `Values` are the dictionary's `Keys`.
+
+### Enumeration order and versioning
+
+Enumeration, `Keys`, `Values`, `Inverse`, and every `CopyTo` follow the entry array. That is insertion order until the first removal. A removal moves the last live entry in the array into the removed entry's place, so that entry is enumerated there from then on. After earlier removals, that entry is not necessarily the newest insertion: with keys 1–4 inserted, removing 1 moves 4 into its slot, and then removing 2 moves 3. If the order must survive removals, use `LinkedDictionary`.
+
+Re-pointing a key at a new value, through the indexer or a `ForceSet` that removes nothing, is not a structural change, so active enumerators stay valid, as with BCL `Dictionary`. Every add, removal, `Clear`, and rebuild invalidates them.
+
+### Default-key and default-value handling
+
+`default(TKey)` and `default(TValue)` (`0`, a `null` reference, a `Nullable<T>` with no value) are stored **in the table** like any other key or value. Neither is ever passed to its hasher: each gets hash code `0` directly, so string hashers that throw on `null` are safe on both sides. Keys are compared with `EqualityComparer<TKey>.Default` and values with `EqualityComparer<TValue>.Default`, and each hasher must agree with its comparer.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Interned column names: look up an ordinal by name and a name by ordinal.
+var columns = new BiDictionary<string, int, StringFnV1AHasher, Int32IdentityHasher>();
+columns.Add("id", 0);
+columns.Add("name", 1);
+columns.Add("email", 2);
+
+int ordinal = columns["email"];        // 2
+string column = columns.GetKey(1);     // "name"
+bool known = columns.ContainsValue(3); // false, O(1)
+
+// The value side is unique too: this would throw, because 0 already belongs to "id".
+// columns["created"] = 0;
+
+columns.ForceSet("created", 0);  // moves 0 to "created" and removes "id"
+columns.RemoveValue(2);          // removes "email"
+
+foreach (KeyValuePair<int, string> pair in columns.Inverse)
+    Console.WriteLine($"{pair.Key} -> {pair.Value}");
 ```
 
 ---
@@ -1153,6 +1281,102 @@ using (var set = new PooledCeleritySet<int, Int32WangNaiveHasher>())
     foreach (var item in set)
         Console.WriteLine(item);
 } // Dispose() returns the backing array to ArrayPool<T>.Shared here.
+```
+
+---
+
+## LinkedSet&lt;T, THasher&gt;
+
+A hash set that **remembers insertion order**, and the set counterpart of [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher). It enumerates its elements in the order they were first added and keeps that order through any number of removals, at `O(1)` per `Remove`. It can also move an element to either end and read or remove the oldest and newest elements, all in `O(1)`. This is the shape of Java's `LinkedHashSet`. The rest of the public surface matches `CeleritySet`: constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, the full `ISet<T>` algebra, and `IReadOnlySet<T>`.
+
+```csharp
+public class LinkedSet<T, THasher> : ISet<T>, IReadOnlySet<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+### Why not `HashSet` or `SortedSet`
+
+.NET ships no insertion-ordered set:
+
+- `HashSet<T>` enumerates in insertion order only until the first `Remove`. The freed entry goes on a free list, and the next `Add` reuses it, so the new element appears where the removed one was. The order is not documented, so even before a removal it is an accident of the implementation.
+- `SortedSet<T>` keeps an order, but the comparer's order, not arrival order.
+- The usual hand-rolls each pay somewhere. A `HashSet<T>` beside a `List<T>` removes in `O(n)`. A `Dictionary<T, LinkedListNode<T>>` beside a `LinkedList<T>` removes in `O(1)`, but allocates a node object per element and stores every element twice.
+
+`LinkedSet` has `O(1)` removal and re-ordering, no per-element allocation, and **no index access**. If order does not matter at all, `CeleritySet` and `SwissSet` are smaller and faster.
+
+### How it works
+
+The layout is `LinkedDictionary`'s without the value. Elements live in one array of structs, each holding the element, its full hash, the next entry in the same hash bucket, and the previous and next entries in insertion order. Buckets are a power-of-two array of chain heads. A lookup hashes once and walks one chain. A removal unlinks the entry and puts its slot on a free list, so remove/add churn never grows the table. Growth copies the live entries **in order** into a fresh array, which compacts out every free slot and never calls the hasher again.
+
+### Performance
+
+Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is the `net8.0` hand-roll that also removes in `O(1)`: a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`.
+
+| Operation, `int` elements | 1,000 | 10,000 | 100,000 |
+|---|---|---|---|
+| Add every element, pre-sized | 4.3x faster, 51% less allocated | 7–9x faster, 59% less allocated | 13.4x faster, 36% less allocated |
+| `Contains`, every element a hit | 1.7x faster | 1.7x faster | 4.0x faster |
+| Remove every element, shuffled order | 2.1x faster | 2.2x faster | 2.3x faster |
+| Enumerate after removing half | **2.7x slower** | **2.4x slower** | **2.7x slower** |
+
+The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. A `TrimExcess` after heavy churn compacts the entries into order, which makes the walk sequential again.
+
+### Constructors
+
+```csharp
+public LinkedSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public LinkedSet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Validation and exceptions are the same as for `CeleritySet`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. `capacity` is the number of hash buckets, rounded up to a power of two. The set holds `capacity × loadFactor` elements (at least one) before it grows, so to pre-size for `n` elements call `EnsureCapacity(n)`. The source constructor adds elements in the order `source` enumerates them. Duplicates are dropped silently, as `HashSet<T>` drops them, and each element keeps the position of its first occurrence. An `ICollection<T>` source's `Count` sizes the table so the build never resizes.
+
+### Ordered operations
+
+```csharp
+public bool MoveToEnd(T item)
+public bool MoveToFront(T item)
+public bool TryGetFirst(out T item)
+public bool TryGetLast(out T item)
+public bool TryRemoveFirst(out T item)
+public bool TryRemoveLast(out T item)
+```
+
+These behave exactly as `LinkedDictionary`'s do. `MoveToEnd` / `MoveToFront` return `false` for an absent element, and a move to the end the element is already at changes nothing and leaves active enumerators valid. `TryGetFirst` / `TryGetLast` read the oldest and newest elements. `TryRemoveFirst` / `TryRemoveLast` remove them, so a `TryRemoveFirst` loop drains the set first-in, first-out.
+
+### Order semantics
+
+- `Add`, `TryAdd`, `ISet<T>.Add` and `ICollection<T>.Add` append a **new** element at the end. Adding an element that is already present leaves it where it is, as `LinkedHashSet` does. To move it, call `MoveToEnd`.
+- A removed element that is added again goes to the end.
+- `UnionWith` appends the new elements in the order `other` first enumerates them. `IntersectWith` and `ExceptWith` keep the survivors in their order. `SymmetricExceptWith` keeps the survivors in their order and appends the elements only `other` held after them.
+- `SetEquals` and the subset / superset queries compare membership only, never order.
+- `GetEnumerator` and `CopyTo` yield oldest first.
+
+### Default-element handling
+
+Unlike the open-addressed sets, `default(T)` (`0`, a `null` reference, a `Nullable<T>` with no value) is stored **in the table** like any other element, so it keeps its place in the order rather than being yielded first. It is still never passed to the hasher: the default element gets hash code `0` directly, so string hashers that throw on `null` are safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Dedup a stream of user ids, keeping first-seen order.
+var seen = new LinkedSet<int, Int32WangNaiveHasher>();
+foreach (int id in new[] { 7, 3, 7, 9, 3, 1 })
+    seen.TryAdd(id);                 // 7, 3, 9, 1
+
+seen.Remove(3);                      // O(1); 7, 9, 1 keep their order
+seen.MoveToEnd(7);                   // 9, 1, 7
+
+while (seen.TryRemoveFirst(out int next))
+    Console.WriteLine(next);         // 9, 1, 7
 ```
 
 ---
@@ -5236,6 +5460,198 @@ int lo = work.PopBack();            // 3 — low-priority, from the back
 ```
 
 
+## BTreeList&lt;T&gt;
+
+A **positional list** laid out as a **counted B+ tree**: inserting or removing at any index is
+`O(log n)` plus a shift inside one bounded leaf, where `List<T>` shifts every later element and pays
+`O(n)`. It is the list for **a sequence that keeps changing in the middle**.
+
+```csharp
+public sealed class BTreeList<T> : IList<T>, IReadOnlyList<T>
+```
+
+**Positional, not sorted.** It shares a layout family with [`BTreeSet<T, TComparer>`](#btreesett-tcomparer)
+and [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictionarytkey-tvalue-tcomparer), but it keeps
+elements wherever the caller puts them, exactly as `List<T>` does, and never compares them. The tree is
+keyed by *position*: every internal node records where each child's elements start, so reaching index
+`i` is a descent that compares positions.
+
+### Why not `List<T>`, `LinkedList<T>` or `ImmutableList<T>`
+
+Three BCL types hold a sequence you edit in the middle, and each pays for it somewhere:
+
+- `List<T>` indexes in `O(1)`, but `Insert` and `RemoveAt` move every later element, so each middle
+  edit is `O(n)` and a list churned in the middle is quadratic.
+- `LinkedList<T>` inserts in `O(1)` once you hold a node, but reaching position `i` is an `O(i)` walk,
+  and it has no indexer at all.
+- `ImmutableList<T>` and its `Builder` are `O(log n)` on both an edit and a read, but they are an AVL
+  tree with **one heap node per element**. Every read follows a pointer per level of a tree about
+  `1.44 log2 n` deep, and every element carries a node header, two child references, a height and a
+  count.
+
+`BTreeList<T>` stores up to 128 elements contiguously in each leaf and up to 64 children in each internal
+node, so at a million elements the tree is four levels deep where an AVL tree is around twenty, and
+the elements sit in arrays. Java users
+know this shape as Apache Commons `TreeList` (an AVL tree like `ImmutableList`) or Python's `blist` (a B+
+tree like this one). [`Rope`](#rope) is the same idea specialized to `char`, with text operations on top.
+[`RankedSet<T, TComparer>`](#rankedsett-tcomparer) also answers positional questions, but over a *sorted* set.
+
+### How it works
+
+- **Leaves** hold a fixed 128-slot array and a count, and are chained left to right, so a `foreach`,
+  `IndexOf`, `CopyTo` or `ToArray` walks the chain and never touches an internal node.
+- **Internal nodes** hold up to 64 children and a parallel `int[]` of the position each child starts
+  at, padded with `int.MaxValue` past the last child. A descent finds its child with one vector compare
+  over those positions and a sum, with no data-dependent branch (see [Measured](#measured-btreelist) for
+  why that matters). An edit shifts the later positions by one on each level on the way back.
+- **A full leaf splits**, and the split point follows the edit. An append past a node's last slot keeps
+  the left node three quarters full and gives the right one a quarter. A prepend at slot 0 mirrors that,
+  and an insert anywhere else splits evenly. That is why a list built by `Add` ends up about three
+  quarters dense, not half. Internal nodes take the append bias too, but not the prepend one, since
+  the child a split adds always lands after its sibling, so a list built only by prepending has
+  half-full internal nodes. Those hold no elements, so the cost is a little depth, not memory.
+- **A node that falls below a quarter full** merges with a neighbour when the two fit in one node.
+  Otherwise the two split their entries evenly. Internal nodes follow the same rule one level up, and a
+  root branch left with one child is replaced by that child. So every node except the root stays at least
+  a quarter full under **any** sequence of edits, and the depth stays `O(log n)`.
+- **The `IEnumerable<T>` constructor builds bottom-up in `O(n)`**, with every node three quarters full.
+  That leaves each leaf room for 32 inserts before its first split. The last node on each level is evened
+  out with its neighbour so it never starts below the floor.
+
+`Depth` is public, so the cost of a descent can be observed rather than taken on trust. It is `1` while
+the whole list fits in one leaf, `2` to a few thousand elements, `3` to a few hundred thousand and `4`
+at a million. The exact thresholds depend on how full the edit history has left the nodes.
+
+### Constructors
+
+```csharp
+public BTreeList()
+public BTreeList(IEnumerable<T> collection)
+```
+
+- The parameterless constructor allocates one empty leaf.
+- The `collection` overload copies the elements in enumeration order, in one pass, without asking the
+  source for its count.
+
+**Throws:** `ArgumentNullException` if `collection` is `null`.
+
+### Methods and properties
+
+| Member | Cost | Behaviour |
+| --- | --- | --- |
+| `int Count` | `O(1)` | The number of elements. |
+| `int Depth` | `O(1)` | Node levels from the root to a leaf. |
+| `T this[int index] { get; set; }` | `O(log n)` | Get and set by position. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set replaces the element in place and does **not** invalidate an active enumerator (see below). |
+| `void Add(T item)` | `O(log n)` | Appends at the end. |
+| `void Insert(int index, T item)` | `O(log n)` + one leaf shift | Inserts at `index`, moving the element there and every later one up a position. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
+| `void RemoveAt(int index)` | `O(log n)` + one leaf shift | Removes the element at `index`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
+| `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. The search is linear, as on `List<T>`; the removal itself is `O(log n)`. |
+| `int IndexOf(T item)` / `bool Contains(T item)` | `O(n)` | A linear scan of the leaf chain under `EqualityComparer<T>.Default`. The tree indexes position, not value. |
+| `void Clear()` | `O(1)` | Drops the whole tree. Clearing an **already-empty** list is a true no-op and leaves enumerators valid, like the rest of the library. |
+| `T[] ToArray()` | `O(n)` | One `Array.Copy` per leaf. |
+| `void CopyTo(T[] array, int arrayIndex)` | `O(n)` | Under [the library's `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | `O(1)` per step | An allocation-free struct enumerator that walks the leaf chain front to back. |
+
+The "one leaf shift" is at most 127 elements, whatever the size of the list.
+
+**What invalidates an enumerator.** Every structural mutation does: `Add`, `Insert`, `RemoveAt`, a
+`Remove` that finds its element, and a `Clear` that had something to clear. Assignment through the
+indexer does **not**, because it replaces one element in place and moves no leaf boundary. That is the
+rule [`Deque<T>`](#dequet) and [`Rope`](#rope) follow, and it is the one place this type deliberately
+differs from `List<T>`, whose indexer setter does invalidate.
+
+### When not to reach for it
+
+- **If you only append and read, use `List<T>`.** A read here is a descent of three or four levels
+  where `List<T>` does one array load. Random reads lose by the factor in the table below, and nothing
+  in this type wins it back if you never edit the middle.
+- **If the list is small and mostly read, use `List<T>`.** At a thousand elements the edits still win,
+  by 1.3–2x, but reads lose by 4x, so a small list needs to be edited far more often than it is read
+  before this type pays. The 1,000-element rows below have the numbers.
+- **If you need a snapshot, use `ImmutableList<T>` or [`PersistentVector<T>`](#persistentvectort).**
+  This type is mutable and does not share structure between versions.
+- **If the order is a sort order, use [`BTreeSet<T, TComparer>`](#btreesett-tcomparer)** (or
+  [`RankedSet<T, TComparer>`](#rankedsett-tcomparer) if you also need ranks). Keeping a positional list
+  sorted by hand means a linear search for every insert position.
+- **Memory is in the same range as `List<T>`'s, not below it.** Every leaf owns its full 128-slot array
+  whatever it holds, so even an empty list owns one. A list at the three-quarter fill spends about a
+  third more than its elements need, plus a small node object per leaf and per internal node. A
+  `List<T>` that grew by doubling carries up to twice what it needs, so neither is consistently smaller.
+
+### Thread safety
+
+`BTreeList<T>` is not thread-safe. Concurrent callers must synchronize externally.
+
+<a id="measured-btreelist"></a>
+
+### Measured
+
+The bars were pre-registered in [#565](https://github.com/marius-bughiu/Celerity/issues/565) before
+implementation, on `int` at 100,000 elements, and all three clear. Each edit row is a thousand edits at
+positions drawn once, so every arm edits the same positions in the same order, against a list rebuilt
+for each iteration. **These are development-machine numbers** (Apple Silicon, .NET 8). CI publishes
+its own on [the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=BTreeList) at
+each merge to `main`.
+
+| At 100,000 | Baseline | `BTreeList<int>` | Ratio | Bar |
+| --- | ---: | ---: | ---: | ---: |
+| `Insert` ×1,000 vs `List<int>` | 2.93 ms | 36.7 µs | **~80x** | 5x |
+| `RemoveAt` ×1,000 vs `List<int>` | 2.89 ms | 35.0 µs | **~83x** | 5x |
+| `Insert` ×1,000 vs `ImmutableList<int>.Builder` | 126 µs | 38.0 µs | **3.3x** | 2x |
+| Random read ×10,000 vs `ImmutableList<int>.Builder` | 640 µs | 70.0 µs | **9.1x** | 2x |
+| **Random read ×10,000 vs `List<int>`** | 5.74 µs | 70.7 µs | **a 12.3x loss** | — |
+| **Enumerate vs `List<int>`** | 34.1 µs | 58.7 µs | **a 1.72x loss** | — |
+
+| At 1,000 | Baseline | `BTreeList<int>` | Ratio |
+| --- | ---: | ---: | ---: |
+| `Insert` ×1,000 vs `List<int>` | 38.1 µs | 19.2 µs | 2.0x |
+| `RemoveAt` ×1,000 vs `List<int>` | 17.3 µs | 13.3 µs | 1.3x |
+| `Insert` ×1,000 vs `ImmutableList<int>.Builder` | 39.7 µs | 19.2 µs | 2.1x |
+| Random read ×10,000 vs `ImmutableList<int>.Builder` | 134 µs | 17.6 µs | 7.6x |
+| **Random read ×10,000 vs `List<int>`** | 4.21 µs | 17.6 µs | **a 4.2x loss** |
+| **Enumerate vs `List<int>`** | 341 ns | 506 ns | **a 1.48x loss** |
+
+**The edit arms run one invocation per iteration**, because each needs its list rebuilt, so they move
+from run to run. Read them as directions, not as ratios to three figures. The read and enumerate rows
+are stable. The edits allocate almost nothing: a split allocates one leaf, and an edit that splits nothing
+allocates nothing at all.
+
+**Reads are where the layout earned its keep.** The first version scanned each internal node's child
+counts one by one, and a random read cost 21 ns at 100,000 elements, a 35x loss to `List<int>`. Every
+level of every read mispredicted that scan's exit. Internal nodes now hold each child's *starting
+position*, padded with `int.MaxValue` past the last child, and the child is found by one vector compare
+and a horizontal sum, with no data-dependent branch. Independent reads now overlap in the pipeline, and
+a read costs 7 ns. Edits paid a little for it (they now shift the later offsets on each level), and they
+moved from about 30 µs to about 36 µs for a thousand inserts.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A playlist edited in the middle: tracks are inserted after the current one and removed from
+// anywhere. Each edit is a short descent plus a shift inside one 128-slot leaf.
+var playlist = new BTreeList<string>(new[] { "intro", "verse", "chorus", "outro" });
+
+playlist.Insert(2, "bridge");          // intro, verse, bridge, chorus, outro
+playlist.RemoveAt(0);                  // verse, bridge, chorus, outro
+playlist[playlist.Count - 1] = "coda"; // verse, bridge, chorus, coda
+
+Console.WriteLine(playlist[1]);                   // bridge
+Console.WriteLine(playlist.IndexOf("chorus"));    // 2 (a linear scan, as on List<T>)
+Console.WriteLine(string.Join(", ", playlist));   // verse, bridge, chorus, coda
+
+// At scale, the edit no longer scales with the list. A List<T> would move half a million
+// elements for each of these inserts.
+var big = new BTreeList<int>(Enumerable.Range(0, 1_000_000));
+for (int i = 0; i < 1_000; i++)
+    big.Insert(big.Count / 2, -i);
+
+Console.WriteLine(big.Count);  // 1001000
+Console.WriteLine(big.Depth);  // 4
+```
+
+
 ## PersistentVector&lt;T&gt;
 
 An **immutable indexed sequence** backed by a **32-way bit-partitioned trie** with a tail buffer:
@@ -5377,7 +5793,8 @@ against this type's two-to-three; measured on the same harness as the figures be
 **5.7x faster**. `PersistentVector<T>` earns its trie only when the sequence grows.
 
 **If you insert or remove in the middle, use `ImmutableList<T>`.** It does that in `O(log n)`; a
-vector cannot do it at all without rebuilding the tail of the sequence.
+vector cannot do it at all without rebuilding the tail of the sequence. If nobody needs the old
+versions, [`BTreeList<T>`](#btreelistt) does the same edits mutably, with no node per element.
 
 ### Thread safety
 

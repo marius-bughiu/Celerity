@@ -16,8 +16,10 @@ public class HierarchicalBitSetDifferentialTests
 {
     private enum Op { TryAdd, Remove, Clear, Query }
 
-    // One word, two levels (65..4096 bits) and four levels (> 262,144 bits).
-    private static readonly Gen<int> GenUniverse = Gen.OneOf(Gen.Int[1, 64], Gen.Int[65, 4096], Gen.Int[262_145, 300_000]);
+    // One word, two levels (65..4096 bits), whole multiples of 8,192 bits (where level 1 is a whole number of
+    // words, the only shape that reaches NextSetBit's past-the-level exit) and four levels (> 262,144 bits).
+    private static readonly Gen<int> GenUniverse =
+        Gen.OneOf(Gen.Int[1, 64], Gen.Int[65, 4096], Gen.Int[1, 40].Select(k => k * 8192), Gen.Int[262_145, 300_000]);
 
     // The value is a position in [0, 1], scaled to the universe at run time and widened a little past both
     // ends, so the out-of-universe paths are exercised at every size.

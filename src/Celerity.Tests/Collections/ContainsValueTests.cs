@@ -742,6 +742,136 @@ public class ContainsValueTests
         Assert.False(map.ContainsValue(300));
     }
 
+    // ---------------- BiDictionary ----------------
+
+    [Fact]
+    public void BiDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void BiDictionary_FindsValueInRegularSlot()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void BiDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void BiDictionary_FindsValueOnlyInDefaultKeySlot_IntKey()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        map[0] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void BiDictionary_FindsValueOnlyInDefaultKeySlot_NullStringKey()
+    {
+        var map = new BiDictionary<string, int, StringFnV1AHasher, Int32WangNaiveHasher>();
+        map[null!] = 777;
+        Assert.True(map.ContainsValue(777));
+    }
+
+    [Fact]
+    public void BiDictionary_DefaultValueLookup_ZeroValue()
+    {
+        // ContainsValue is a value-chain lookup, so unused entries holding default(TValue) are never
+        // reached; the default value itself is chained under hash 0 like any other.
+        var empty = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        Assert.False(empty.ContainsValue(0));
+
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+    }
+
+    [Fact]
+    public void BiDictionary_NullValueLookup_ReferenceType()
+    {
+        var map = new BiDictionary<int, string?, Int32WangNaiveHasher, DefaultHasher<string?>>();
+        map[1] = "one";
+        map[2] = null;
+        Assert.True(map.ContainsValue(null));
+
+        var noNulls = new BiDictionary<int, string?, Int32WangNaiveHasher, DefaultHasher<string?>> { [1] = "one", [2] = "two" };
+        Assert.False(noNulls.ContainsValue(null));
+    }
+
+    [Fact]
+    public void BiDictionary_DuplicateValue_IsRejected_AndStillFound()
+    {
+        // The rest of the family accepts a value under several keys; a BiDictionary refuses the
+        // second key, so the value stays found under its one key.
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> { [1] = 42 };
+        Assert.Throws<ArgumentException>(() => map[2] = 42);
+        Assert.True(map.ContainsValue(42));
+        Assert.False(map.ContainsKey(2));
+    }
+
+    [Fact]
+    public void BiDictionary_AfterOverwrite_TracksTheNewValueOnly()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map[1] = 150;
+        Assert.False(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(150));
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void BiDictionary_SurvivesResize()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(capacity: 16);
+        for (int i = 1; i <= 100; i++)
+            map[i] = i * 10;
+
+        Assert.True(map.ContainsValue(770));
+        Assert.False(map.ContainsValue(-1));
+    }
+
+    [Fact]
+    public void BiDictionary_AfterDefaultKeyRemove_ReturnsFalse()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        map[0] = 555;
+        map[1] = 100;
+        map.Remove(0);
+        Assert.False(map.ContainsValue(555));
+        Assert.True(map.ContainsValue(100));
+    }
+
+    [Fact]
+    public void BiDictionary_AfterRemove_ReturnsFalse()
+    {
+        // A removal unlinks the entry from its value chain and moves the last entry into the hole;
+        // the moved entry's value must still be found.
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> { [1] = 100, [2] = 200, [3] = 300 };
+        map.Remove(1);
+        Assert.False(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(200));
+        Assert.True(map.ContainsValue(300));
+    }
+
+    [Fact]
+    public void BiDictionary_AfterClear_ReturnsFalse()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher> { [1] = 100, [2] = 200 };
+        map[0] = 300;
+        map.Clear();
+        Assert.False(map.ContainsValue(100));
+        Assert.False(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(300));
+    }
+
     // ---------------- HashCachingDictionary ----------------
 
     [Fact]

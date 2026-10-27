@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
@@ -31,6 +32,7 @@ internal static class Differential
         ("RobinHoodDictionary", RobinHoodDictionaryCase),
         ("SwissDictionary", SwissDictionaryCase),
         ("LinkedDictionary", LinkedDictionaryCase),
+        ("BiDictionary", BiDictionaryCase),
         ("HashCachingDictionary", HashCachingDictionaryCase),
         ("PooledCelerityDictionary", PooledCelerityDictionaryCase),
         ("IntDictionary", IntDictionaryCase),
@@ -39,6 +41,7 @@ internal static class Differential
         ("CeleritySet", CeleritySetCase),
         ("RobinHoodSet", RobinHoodSetCase),
         ("SwissSet", SwissSetCase),
+        ("LinkedSet", LinkedSetCase),
         ("HashCachingSet", HashCachingSetCase),
         ("PooledCeleritySet", PooledCeleritySetCase),
         ("IntSet", IntSetCase),
@@ -80,6 +83,7 @@ internal static class Differential
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
         ("Rope", RopeCase),
+        ("BTreeList", BTreeListCase),
         ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
@@ -105,6 +109,7 @@ internal static class Differential
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
         ("ReservoirSampler", ReservoirSamplerCase),
+        ("RollingQuantile", RollingQuantileCase),
     ];
 
     private const int MinKey = -8;
@@ -450,6 +455,141 @@ internal static class Differential
         Check(!nonEmpty || (lk == order[^1] && lv == values[order[^1]]), "TryGetLast entry disagreed");
     }
 
+    // BiDictionary vs a forward and an inverse Dictionary kept in sync by hand. Values are drawn from the
+    // same small domain as keys, so a write often hits a value another key already owns: the indexer and
+    // Add must refuse it and leave the table unchanged, TryAdd must return false, and ForceSet must evict
+    // the owner. Every check reads both directions, since a table whose two chain families drift apart
+    // would still pass a key-side oracle.
+    private static void BiDictionaryCase(Random rng)
+    {
+        var sut = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(rng.Next(0, 9));
+        var fwd = new Dictionary<int, int>();
+        var inv = new Dictionary<int, int>();
+        int ops = OpCount(rng);
+
+        // The model's write, once the caller has cleared the value of any foreign owner.
+        void Bind(int key, int value)
+        {
+            if (fwd.Remove(key, out int old))
+                inv.Remove(old);
+            fwd[key] = value;
+            inv[value] = key;
+        }
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = Key(rng);
+            int value = Key(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 5:
+                {
+                    // Indexer: refuses a value that belongs to a different key; otherwise binds.
+                    bool conflict = inv.TryGetValue(value, out int owner) && owner != key;
+                    bool threw = false;
+                    try { sut[key] = value; }
+                    catch (ArgumentException) { threw = true; }
+                    Check(threw == conflict, $"indexer[{key}] = {value} threw {threw}, expected {conflict}");
+                    if (!conflict)
+                        Bind(key, value);
+                    break;
+                }
+                case < 7:
+                {
+                    bool reject = fwd.ContainsKey(key) || inv.ContainsKey(value);
+                    bool threw = false;
+                    try { sut.Add(key, value); }
+                    catch (ArgumentException) { threw = true; }
+                    Check(threw == reject, $"Add({key}, {value}) threw {threw}, expected {reject}");
+                    if (!reject)
+                        Bind(key, value);
+                    break;
+                }
+                case < 9:
+                {
+                    bool added = !fwd.ContainsKey(key) && !inv.ContainsKey(value);
+                    Check(sut.TryAdd(key, value) == added, $"TryAdd({key}, {value}) disagreed");
+                    if (added)
+                        Bind(key, value);
+                    break;
+                }
+                case < 12:
+                {
+                    bool evict = inv.TryGetValue(value, out int owner) && owner != key;
+                    if (evict)
+                    {
+                        fwd.Remove(owner);
+                        inv.Remove(value);
+                    }
+                    Check(sut.ForceSet(key, value) == evict, $"ForceSet({key}, {value}) disagreed");
+                    Bind(key, value);
+                    break;
+                }
+                case < 14:
+                {
+                    bool had = fwd.Remove(key, out int ev);
+                    if (had)
+                        inv.Remove(ev);
+                    Check(sut.Remove(key, out int av) == had, $"Remove({key}) disagreed");
+                    Check(!had || av == ev, $"Remove({key}) value {av} != {ev}");
+                    break;
+                }
+                case < 16:
+                {
+                    bool had = inv.Remove(value, out int ek);
+                    if (had)
+                        fwd.Remove(ek);
+                    Check(sut.RemoveValue(value, out int ak) == had, $"RemoveValue({value}) disagreed");
+                    Check(!had || ak == ek, $"RemoveValue({value}) key {ak} != {ek}");
+                    break;
+                }
+                case < 17:
+                    sut.EnsureCapacity(rng.Next(0, 64));
+                    break;
+                case < 19:
+                    sut.TrimExcess();
+                    break;
+                default:
+                    sut.Clear();
+                    fwd.Clear();
+                    inv.Clear();
+                    break;
+            }
+
+            Check(sut.Count == fwd.Count, $"Count {sut.Count} != {fwd.Count} after op {i}");
+        }
+
+        for (int k = MinKey; k <= MaxKey; k++)
+        {
+            bool e = fwd.TryGetValue(k, out int ev);
+            bool a = sut.TryGetValue(k, out int av);
+            Check(e == a, $"TryGetValue({k}) presence {a} != {e}");
+            Check(!e || ev == av, $"value[{k}] {av} != {ev}");
+            Check(sut.ContainsKey(k) == e, $"ContainsKey({k}) disagreed");
+
+            bool ie = inv.TryGetValue(k, out int ik);
+            bool ia = sut.TryGetKey(k, out int iak);
+            Check(ie == ia, $"TryGetKey({k}) presence {ia} != {ie}");
+            Check(!ie || ik == iak, $"key of value {k}: {iak} != {ik}");
+            Check(sut.ContainsValue(k) == ie, $"ContainsValue({k}) disagreed");
+            Check(sut.Inverse.TryGetValue(k, out int vk) == ie && (!ie || vk == ik), $"Inverse.TryGetValue({k}) disagreed");
+        }
+
+        var seen = new Dictionary<int, int>();
+        foreach (var kv in sut)
+            Check(seen.TryAdd(kv.Key, kv.Value), $"enumeration yielded duplicate key {kv.Key}");
+        Check(seen.Count == fwd.Count, $"enumeration count {seen.Count} != {fwd.Count}");
+        foreach (var kv in fwd)
+            Check(seen.TryGetValue(kv.Key, out int sv) && sv == kv.Value, $"enumeration missing/wrong {kv.Key}");
+
+        var seenInverse = new Dictionary<int, int>();
+        foreach (var kv in sut.Inverse)
+            Check(seenInverse.TryAdd(kv.Key, kv.Value), $"inverse enumeration yielded duplicate value {kv.Key}");
+        Check(seenInverse.Count == inv.Count, $"inverse enumeration count {seenInverse.Count} != {inv.Count}");
+        foreach (var kv in inv)
+            Check(seenInverse.TryGetValue(kv.Key, out int sk) && sk == kv.Value, $"inverse enumeration missing/wrong {kv.Key}");
+    }
+
     private static void HashCachingDictionaryCase(Random rng)
     {
         var sut = new HashCachingDictionary<int, int, Int32WangNaiveHasher>();
@@ -717,6 +857,130 @@ internal static class Differential
             enumerated++;
         }
         Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // LinkedSet vs a List of elements in insertion order. Contents alone would pass a table that
+    // forgot its links, so every check compares the full order: removal from the middle,
+    // MoveToEnd / MoveToFront, popping either end, a duplicate add that must keep its position, the
+    // order-preserving set algebra, and a rebuild (EnsureCapacity / TrimExcess) that must keep the order.
+    private static void LinkedSetCase(Random rng)
+    {
+        var sut = new LinkedSet<int, Int32WangNaiveHasher>(rng.Next(0, 9));
+        var order = new List<int>(); // [0] = oldest
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 7:
+                {
+                    // A duplicate add leaves the element where it is.
+                    bool added = !order.Contains(item);
+                    if (added)
+                        order.Add(item);
+                    Check(sut.TryAdd(item) == added, $"TryAdd({item}) disagreed");
+                    break;
+                }
+                case < 10:
+                    Check(sut.Remove(item) == order.Remove(item), $"Remove({item}) disagreed");
+                    break;
+                case < 12:
+                {
+                    bool had = order.Remove(item);
+                    if (had)
+                        order.Add(item);
+                    Check(sut.MoveToEnd(item) == had, $"MoveToEnd({item}) disagreed");
+                    break;
+                }
+                case < 14:
+                {
+                    bool had = order.Remove(item);
+                    if (had)
+                        order.Insert(0, item);
+                    Check(sut.MoveToFront(item) == had, $"MoveToFront({item}) disagreed");
+                    break;
+                }
+                case < 15:
+                {
+                    bool any = order.Count > 0;
+                    Check(sut.TryRemoveFirst(out int v) == any, "TryRemoveFirst presence disagreed");
+                    if (any)
+                    {
+                        Check(v == order[0], $"TryRemoveFirst {v} != {order[0]}");
+                        order.RemoveAt(0);
+                    }
+                    break;
+                }
+                case < 16:
+                {
+                    bool any = order.Count > 0;
+                    Check(sut.TryRemoveLast(out int v) == any, "TryRemoveLast presence disagreed");
+                    if (any)
+                    {
+                        Check(v == order[^1], $"TryRemoveLast {v} != {order[^1]}");
+                        order.RemoveAt(order.Count - 1);
+                    }
+                    break;
+                }
+                case < 17:
+                {
+                    // Set algebra: survivors keep their order, new elements are appended in the
+                    // order `other` first yields them.
+                    var other = new List<int>();
+                    for (int n = rng.Next(0, 6); n > 0; n--)
+                        other.Add(Key(rng));
+                    var otherSet = new HashSet<int>(other);
+                    switch (rng.Next(0, 3))
+                    {
+                        case 0:
+                            sut.UnionWith(other);
+                            foreach (int o in other)
+                                if (!order.Contains(o))
+                                    order.Add(o);
+                            break;
+                        case 1:
+                            sut.IntersectWith(other);
+                            order.RemoveAll(x => !otherSet.Contains(x));
+                            break;
+                        default:
+                            sut.ExceptWith(other);
+                            order.RemoveAll(otherSet.Contains);
+                            break;
+                    }
+                    break;
+                }
+                case < 18:
+                    sut.EnsureCapacity(rng.Next(0, 64));
+                    break;
+                case < 19:
+                    sut.TrimExcess();
+                    break;
+                default:
+                    sut.Clear();
+                    order.Clear();
+                    break;
+            }
+
+            if (rng.Next(0, 8) == 0)
+                CheckSameSequence(sut, order, $"order after op {i}");
+        }
+
+        Check(sut.Count == order.Count, $"Count {sut.Count} != {order.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == order.Contains(k), $"Contains({k}) disagreed");
+
+        CheckSameSequence(sut, order, "enumeration");
+        var copy = new int[sut.Count];
+        sut.CopyTo(copy, 0);
+        CheckSameSequence(copy, order, "CopyTo");
+
+        bool nonEmpty = order.Count > 0;
+        Check(sut.TryGetFirst(out int first) == nonEmpty, "TryGetFirst presence disagreed");
+        Check(!nonEmpty || first == order[0], "TryGetFirst element disagreed");
+        Check(sut.TryGetLast(out int last) == nonEmpty, "TryGetLast presence disagreed");
+        Check(!nonEmpty || last == order[^1], "TryGetLast element disagreed");
     }
 
     private static void HashCachingSetCase(Random rng)
@@ -3134,6 +3398,214 @@ internal static class Differential
         return text.ToString();
     }
 
+    // ---- positional B+ tree list --------------------------------------------
+
+    // BTreeList against the List<int> it replaces. Like the rope, its state is path-dependent: a leaf split
+    // that puts its cut in the wrong place, a borrow that moves elements but not the parent's count, or a merge
+    // that drops the leaf chain link all leave every element individually intact and surface many edits later
+    // as a read from the wrong position. So every edit is followed by reads around the position it touched,
+    // and the whole sequence is reconciled through all three read paths (indexer descent, leaf-chain
+    // enumeration, ToArray / CopyTo) on a schedule and at the end.
+    //
+    // Positions are skewed to both ends, because the split point follows the edit (an append keeps the left
+    // leaf three quarters full, a prepend keeps the right one so) and the first and last leaves are where a
+    // borrow has only one neighbour to take from. One case in eight starts large enough to need a third level
+    // — more than 64 leaves of 128 — built either bottom-up by the bulk constructor, by Add, or by prepending,
+    // and then edits it; the rest start small and run long, so splits, borrows, merges and root collapses all
+    // happen near the root where they are cheapest to reach.
+    private static void BTreeListCase(Random rng)
+    {
+        bool large = rng.Next(0, 8) == 0;
+        int initial = large ? rng.Next(8200, 20_001) : rng.Next(0, 600);
+        var oracle = new List<int>(initial);
+        for (int i = 0; i < initial; i++)
+            oracle.Add(Value(rng));
+
+        BTreeList<int> sut;
+        switch (rng.Next(0, 3))
+        {
+            case 0:
+                sut = new BTreeList<int>(oracle);
+                break;
+            case 1:
+                sut = new BTreeList<int>();
+                foreach (int value in oracle)
+                    sut.Add(value);
+                break;
+            default:
+                sut = new BTreeList<int>();
+                for (int i = oracle.Count - 1; i >= 0; i--)
+                    sut.Insert(0, oracle[i]);
+                break;
+        }
+
+        // More than 64 leaves of at most 128 elements cannot fit under one internal node.
+        if (large)
+            Check(sut.Depth >= 3, $"BTreeList of {initial} built only {sut.Depth} levels");
+        CheckBTreeList(sut, oracle, "BTreeList build");
+
+        int operations = large ? rng.Next(0, 500) : rng.Next(0, 1500);
+        int fullCheckEvery = large ? 125 : 40;
+
+        for (int op = 0; op < operations; op++)
+        {
+            int touched;
+            switch (rng.Next(0, 100))
+            {
+                case < 30:
+                {
+                    int index = BTreeListPosition(rng, oracle.Count + 1);
+                    int value = Value(rng);
+                    sut.Insert(index, value);
+                    oracle.Insert(index, value);
+                    touched = index;
+                    break;
+                }
+                case < 40:
+                {
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                case < 70:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = BTreeListPosition(rng, oracle.Count);
+                    sut.RemoveAt(index);
+                    oracle.RemoveAt(index);
+                    touched = index;
+                    break;
+                }
+                case < 82:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = BTreeListPosition(rng, oracle.Count);
+                    int value = Value(rng);
+                    sut[index] = value;
+                    oracle[index] = value;
+                    touched = index;
+                    break;
+                }
+                case < 90:
+                {
+                    // A value drawn from the element domain, so most removes hit and some miss; both remove the
+                    // first occurrence, so the oracle's IndexOf is also the position the tree edited.
+                    int value = Value(rng);
+                    touched = oracle.IndexOf(value);
+                    Check(sut.IndexOf(value) == touched, $"BTreeList IndexOf({value}) disagreed");
+                    Check(sut.Contains(value) == (touched >= 0), $"BTreeList Contains({value}) disagreed");
+                    Check(sut.Remove(value) == oracle.Remove(value), $"BTreeList Remove({value}) disagreed");
+                    if (touched < 0)
+                        touched = 0;
+                    break;
+                }
+                case < 99:
+                {
+                    // Enumerator invalidation: an in-place set must leave a live enumerator usable, and a
+                    // structural edit must tear it down — the one rule this type deliberately does not share
+                    // with List<T>, so it cannot be checked against the oracle and is checked directly.
+                    var enumerator = sut.GetEnumerator();
+                    if (oracle.Count > 0)
+                    {
+                        int index = BTreeListPosition(rng, oracle.Count);
+                        sut[index] = oracle[index];
+                        Check(enumerator.MoveNext() && enumerator.Current == oracle[0], "BTreeList set invalidated an enumerator");
+                    }
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    bool threw = false;
+                    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+                    Check(threw, "BTreeList Add did not invalidate an enumerator");
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                default:
+                {
+                    // Rare in a large case so the third level survives long enough to be edited.
+                    if (!large || rng.Next(0, 4) == 0)
+                    {
+                        sut.Clear();
+                        oracle.Clear();
+                    }
+                    touched = 0;
+                    break;
+                }
+            }
+
+            Check(sut.Count == oracle.Count, $"BTreeList count diverged after op {op}");
+            for (int i = Math.Max(0, touched - 2); i < Math.Min(oracle.Count, touched + 3); i++)
+                Check(sut[i] == oracle[i], $"BTreeList indexer diverged at {i} next to an edit at {touched}");
+            if (oracle.Count > 0)
+            {
+                Check(sut[0] == oracle[0] && sut[^1] == oracle[^1], "BTreeList ends diverged");
+                int probe = rng.Next(0, oracle.Count);
+                Check(sut[probe] == oracle[probe], $"BTreeList indexer diverged at {probe}");
+            }
+
+            if (op % fullCheckEvery == fullCheckEvery - 1)
+                CheckBTreeList(sut, oracle, $"BTreeList after op {op}");
+        }
+
+        CheckBTreeList(sut, oracle, "BTreeList final");
+        CheckBTreeList(new BTreeList<int>(sut), oracle, "BTreeList rebuilt from itself");
+    }
+
+    // Two thirds of positions land within a few slots of either end — the first and last leaves, and the
+    // append / prepend split rule — and the rest are uniform. `bound` is exclusive.
+    private static int BTreeListPosition(Random rng, int bound) => rng.Next(0, 3) switch
+    {
+        0 => rng.Next(0, Math.Min(bound, 4)),
+        1 => bound - 1 - rng.Next(0, Math.Min(bound, 4)),
+        _ => rng.Next(0, bound),
+    };
+
+    // Reconciles the indexer, the enumerator and both bulk copies, then checks the depth against the fewest
+    // elements a tree that deep can hold: every non-root node is at least a quarter full (32 of 128 in a leaf,
+    // 16 of 64 children in an internal node) and a root above a leaf has at least two children. A tree deeper
+    // than its count allows means a merge or root collapse was skipped.
+    private static void CheckBTreeList(BTreeList<int> actual, List<int> expected, string label)
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        for (int i = 0; i < expected.Count; i++)
+            Check(actual[i] == expected[i], $"{label} indexer diverged at {i}");
+
+        int position = 0;
+        foreach (int value in actual)
+        {
+            Check(position < expected.Count && value == expected[position], $"{label} enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} enumeration length diverged");
+
+        Check(actual.ToArray().AsSpan().SequenceEqual(CollectionsMarshal.AsSpan(expected)), $"{label} ToArray diverged");
+
+        var copy = new int[expected.Count + 2];
+        actual.CopyTo(copy, 1);
+        Check(copy.AsSpan(1, expected.Count).SequenceEqual(CollectionsMarshal.AsSpan(expected)) && copy[0] == 0 && copy[^1] == 0,
+            $"{label} CopyTo diverged");
+
+        long minimum = 0;
+        if (actual.Depth >= 2)
+        {
+            minimum = 2 * 32;
+            for (int level = 3; level <= actual.Depth; level++)
+                minimum *= 16;
+        }
+        Check(expected.Count >= minimum, $"{label} is {actual.Depth} levels deep at only {expected.Count} elements");
+    }
+
     // ---- interval tree -------------------------------------------------------
 
     // The oracle is the linear scan the type replaces: filter every interval by the overlap predicate. What
@@ -4728,6 +5200,45 @@ internal static class Differential
         {
             for (int i = 0; i < length; i++)
                 Check(sampler[i] == i, "ReservoirSampler reordered an unfilled reservoir");
+        }
+    }
+
+    // RollingQuantile — the exact sliding-window quantile, against a queue of the window sorted after every
+    // value. The nightly value over the in-repo suite is length and width: windows up to a few hundred values
+    // slid for thousands of steps, so every slot is evicted many times over and the position index that finds
+    // the expiring value is exercised at every heap depth the window reaches. The quantile is drawn from the
+    // whole unit interval and the value range is narrow or wide, so ties at the boundary come and go.
+    private static void RollingQuantileCase(Random rng)
+    {
+        int window = rng.Next(1, 300);
+        double quantile = rng.Next(4) switch { 0 => 0d, 1 => 1d, 2 => 0.5d, _ => rng.NextDouble() };
+        int range = rng.Next(2) == 0 ? 8 : int.MaxValue;
+        int length = rng.Next(0, 4_000);
+
+        var sut = new RollingQuantile<int>(window, quantile);
+        var oracle = new Queue<int>();
+        for (int i = 0; i < length; i++)
+        {
+            int value = rng.Next(range);
+            sut.Add(value);
+            oracle.Enqueue(value);
+            if (oracle.Count > window)
+                oracle.Dequeue();
+
+            Check(sut.Count == oracle.Count, "RollingQuantile Count disagreed");
+            if (i % 7 == 0 || i == length - 1)
+            {
+                int[] sorted = oracle.ToArray();
+                Array.Sort(sorted);
+                Check(sut.Value == sorted[(int)(quantile * (sorted.Length - 1))], "RollingQuantile Value disagreed");
+            }
+
+            if (rng.Next(500) == 0)
+            {
+                sut.Clear();
+                oracle.Clear();
+                Check(!sut.TryGetValue(out _), "RollingQuantile reported a value after Clear");
+            }
         }
     }
 

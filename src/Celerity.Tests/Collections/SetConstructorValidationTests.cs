@@ -6,7 +6,8 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Constructor validation tests for <see cref="CeleritySet{T, THasher}"/>,
 /// <see cref="SwissSet{T, THasher}"/>, <see cref="RobinHoodSet{T, THasher}"/>,
-/// <see cref="HashCachingSet{T, THasher}"/>, <see cref="IntSet{THasher}"/>, and
+/// <see cref="HashCachingSet{T, THasher}"/>, <see cref="LinkedSet{T, THasher}"/>,
+/// <see cref="IntSet{THasher}"/>, and
 /// <see cref="LongSet{THasher}"/>. Mirrors
 /// <see cref="ConstructorValidationTests"/> for the dictionary types.
 /// </summary>
@@ -166,6 +167,45 @@ public class SetConstructorValidationTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new HashCachingSet<int, Int32WangNaiveHasher>(-1));
+    }
+
+    // ---------------------------------------------------------------
+    //  LinkedSet
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void LinkedSet_ShouldThrow_WhenLoadFactorIsZero()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new LinkedSet<int, Int32WangNaiveHasher>(16, 0f));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldThrow_WhenLoadFactorIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new LinkedSet<int, Int32WangNaiveHasher>(16, -0.5f));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldThrow_WhenLoadFactorIsOne()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new LinkedSet<int, Int32WangNaiveHasher>(16, 1f));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldThrow_WhenLoadFactorExceedsOne()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new LinkedSet<int, Int32WangNaiveHasher>(16, 1.5f));
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldThrow_WhenCapacityIsNegative()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new LinkedSet<int, Int32WangNaiveHasher>(-1));
     }
 
     // ---------------------------------------------------------------
@@ -344,6 +384,14 @@ public class SetConstructorValidationTests
     {
         ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
             new HashCachingSet<int, Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
+    }
+
+    [Theory]
+    [MemberData(nameof(NegativeCapacityWithSource))]
+    public void LinkedSet_SourceCtor_ShouldThrow_WhenCapacityIsNegative(string shape, int capacity)
+    {
+        ConstructorValidationTests.AssertRejectsCapacity(capacity, () =>
+            new LinkedSet<int, Int32WangNaiveHasher>(Ints(shape), capacity: capacity));
     }
 
     [Theory]

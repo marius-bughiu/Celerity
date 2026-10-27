@@ -207,6 +207,26 @@ public class SetSourceCountBranchTests
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  LinkedSet
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LinkedSet_ShouldCopyEveryElement_WhenSourceReportsACount()
+    {
+        var set = new LinkedSet<int, Int32WangNaiveHasher>(CountedRange(1, ElementCount));
+
+        AssertHoldsRange(set, 1, ElementCount);
+    }
+
+    [Fact]
+    public void LinkedSet_ShouldCopyEveryElement_WhenSourceCannotReportACount()
+    {
+        var set = new LinkedSet<int, Int32WangNaiveHasher>(LazyRange(1, ElementCount));
+
+        AssertHoldsRange(set, 1, ElementCount);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  PooledCeleritySet
     // ──────────────────────────────────────────────────────────────
 

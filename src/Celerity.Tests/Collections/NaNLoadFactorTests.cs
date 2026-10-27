@@ -23,6 +23,7 @@ public class NaNLoadFactorTests
         { "RobinHoodDictionary", () => _ = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(16, float.NaN) },
         { "SwissDictionary", () => _ = new SwissDictionary<int, int, Int32WangNaiveHasher>(16, float.NaN) },
         { "LinkedDictionary", () => _ = new LinkedDictionary<int, int, Int32WangNaiveHasher>(16, float.NaN) },
+        { "BiDictionary", () => _ = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(16, float.NaN) },
         { "HashCachingDictionary", () => _ = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(16, float.NaN) },
         { "PooledCelerityDictionary", () => _ = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(16, float.NaN) },
         { "CelerityMultiMap", () => _ = new CelerityMultiMap<int, int, Int32WangNaiveHasher>(16, float.NaN) },
@@ -33,6 +34,7 @@ public class NaNLoadFactorTests
         { "RobinHoodSet", () => _ = new RobinHoodSet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "SwissSet", () => _ = new SwissSet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "HashCachingSet", () => _ = new HashCachingSet<int, Int32WangNaiveHasher>(16, float.NaN) },
+        { "LinkedSet", () => _ = new LinkedSet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "PooledCeleritySet", () => _ = new PooledCeleritySet<int, Int32WangNaiveHasher>(16, float.NaN) },
         { "StringInternTable", () => _ = new StringInternTable(16, float.NaN) },
     };
@@ -45,6 +47,7 @@ public class NaNLoadFactorTests
         { "RobinHoodDictionary", () => _ = new RobinHoodDictionary<int, int, Int32WangNaiveHasher>(Pairs, 16, float.NaN) },
         { "SwissDictionary", () => _ = new SwissDictionary<int, int, Int32WangNaiveHasher>(Pairs, 16, float.NaN) },
         { "LinkedDictionary", () => _ = new LinkedDictionary<int, int, Int32WangNaiveHasher>(Pairs, 16, float.NaN) },
+        { "BiDictionary", () => _ = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>(Pairs, 16, float.NaN) },
         { "HashCachingDictionary", () => _ = new HashCachingDictionary<int, int, Int32WangNaiveHasher>(Pairs, 16, float.NaN) },
         { "PooledCelerityDictionary", () => _ = new PooledCelerityDictionary<int, int, Int32WangNaiveHasher>(Pairs, 16, float.NaN) },
         { "CelerityMultiMap", () => _ = new CelerityMultiMap<int, int, Int32WangNaiveHasher>(Pairs, 16, float.NaN) },
@@ -55,6 +58,7 @@ public class NaNLoadFactorTests
         { "RobinHoodSet", () => _ = new RobinHoodSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
         { "SwissSet", () => _ = new SwissSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
         { "HashCachingSet", () => _ = new HashCachingSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
+        { "LinkedSet", () => _ = new LinkedSet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
         { "PooledCeleritySet", () => _ = new PooledCeleritySet<int, Int32WangNaiveHasher>(Items, 16, float.NaN) },
     };
 
