@@ -896,6 +896,7 @@ public class EnsureCapacityAndTrimExcessTests
         { "CelerityMultiMap", () => { var t = new CelerityMultiMap<int, int, CountingIntHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
         { "CelerityMultiSet", () => { var t = new CelerityMultiSet<int, CountingIntHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
         { "LinkedDictionary", () => { var t = new LinkedDictionary<string, int, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
+        { "LinkedSet", () => { var t = new LinkedSet<string, CountingStringHasher>(0, TinyLoadFactor); return (t.EnsureCapacity, t.TrimExcess); } },
     };
 
     [Theory]

@@ -1336,6 +1336,8 @@ public LinkedSet(
 
 Validation and exceptions are the same as for `CeleritySet`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. `capacity` is the number of hash buckets, rounded up to a power of two. The set holds `capacity × loadFactor` elements (at least one) before it grows, so to pre-size for `n` elements call `EnsureCapacity(n)`. The source constructor adds elements in the order `source` enumerates them. Duplicates are dropped silently, as `HashSet<T>` drops them, and each element keeps the position of its first occurrence. An `ICollection<T>` source's `Count` sizes the table so the build never resizes.
 
+`EnsureCapacity(n)` and `TrimExcess(n)` throw `ArgumentOutOfRangeException` if even the largest table (2³⁰ buckets) cannot hold `n` elements at the configured load factor, before allocating that table. `TrimExcess()` sizes for the current count. All three preserve the insertion order.
+
 ### Ordered operations
 
 ```csharp

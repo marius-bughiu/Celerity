@@ -15,7 +15,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Fixed
 
 - The 100% coverage gate no longer fails at random on pull requests that do not touch `HierarchicalBitSet`. One exit in its successor search was reached only when the randomized suite happened to draw a universe that is a multiple of 8,192; a deterministic test now covers it, and the generator draws that shape on every run. Closes #558.
-- `EnsureCapacity(n)` and `TrimExcess(n)` on the 17 hash tables (`CelerityDictionary` / `CeleritySet` and their `Int`, `Long`, `RobinHood`, `Swiss`, `HashCaching` and `Pooled` peers, `CelerityMultiMap`, `CelerityMultiSet`, `LinkedDictionary`) now throw `ArgumentOutOfRangeException` when even the largest table (2^30 slots) cannot hold `n` at the configured load factor. Before, they allocated that multi-gigabyte table anyway and left room for fewer than `n` entries. The cap binds above about 1,073 entries at a load factor of `1e-6`, or 805 million at the default `0.75`. Closes #570.
+- `EnsureCapacity(n)` and `TrimExcess(n)` on the 18 hash tables (`CelerityDictionary` / `CeleritySet` and their `Int`, `Long`, `RobinHood`, `Swiss`, `HashCaching` and `Pooled` peers, `CelerityMultiMap`, `CelerityMultiSet`, `LinkedDictionary`, `LinkedSet`) now throw `ArgumentOutOfRangeException` when even the largest table (2^30 slots) cannot hold `n` at the configured load factor. Before, they allocated that multi-gigabyte table anyway and left room for fewer than `n` entries. The cap binds above about 1,073 entries at a load factor of `1e-6`, or 805 million at the default `0.75`. Closes #570.
 
 ## [3.5.0] - 2026-10-25
 
