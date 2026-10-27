@@ -512,6 +512,41 @@ public class ReferenceKeyProbeTests
         AssertNullElementRoundTrips(set);
     }
 
+    // ---------------- LinkedSet ----------------
+
+    [Fact]
+    public void LinkedSet_ShouldProbeCorrectly_WhenElementEqualsClaimsEqualityWithNull()
+    {
+        var set = new LinkedSet<NullGreedyKey, DefaultHasher<NullGreedyKey>>();
+        AssertSetProbesCorrectly(set);
+    }
+
+    // LinkedSet, like LinkedDictionary, has no out-of-band slot: the null element lives in the table
+    // under hash 0 (the hasher is never called with it) and keeps its place in the order. Pin that it
+    // still round-trips and is never confused with a NullGreedyKey that claims equality with null.
+    [Fact]
+    public void LinkedSet_ShouldStoreNullElementInTableWithoutConfusingIt_WhenElementIsAReferenceType()
+    {
+        var set = new LinkedSet<NullGreedyKey, DefaultHasher<NullGreedyKey>>();
+        NullGreedyKey[] keys = Keys(16);
+        foreach (var key in keys)
+            Assert.True(set.TryAdd(key));
+
+        Assert.True(set.TryAdd(null!));
+
+        Assert.Equal(17, set.Count);
+        Assert.True(set.Contains(null!));
+        foreach (var key in keys)
+            Assert.True(set.Contains(key));
+        Assert.True(set.TryGetLast(out NullGreedyKey last));
+        Assert.Null(last);
+
+        Assert.True(set.Remove(null!));
+        Assert.False(set.Contains(null!));
+        Assert.Equal(16, set.Count);
+        Assert.Equal(keys, set);
+    }
+
     // ---------------- PooledCeleritySet ----------------
 
     [Fact]

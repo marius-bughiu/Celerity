@@ -1285,6 +1285,102 @@ using (var set = new PooledCeleritySet<int, Int32WangNaiveHasher>())
 
 ---
 
+## LinkedSet&lt;T, THasher&gt;
+
+A hash set that **remembers insertion order**, and the set counterpart of [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher). It enumerates its elements in the order they were first added and keeps that order through any number of removals, at `O(1)` per `Remove`. It can also move an element to either end and read or remove the oldest and newest elements, all in `O(1)`. This is the shape of Java's `LinkedHashSet`. The rest of the public surface matches `CeleritySet`: constructors, `Add` / `TryAdd` / `Contains` / `Remove` / `Clear` / `EnsureCapacity` / `TrimExcess`, the struct `Enumerator`, the full `ISet<T>` algebra, and `IReadOnlySet<T>`.
+
+```csharp
+public class LinkedSet<T, THasher> : ISet<T>, IReadOnlySet<T>
+    where THasher : struct, IHashProvider<T>
+```
+
+### Why not `HashSet` or `SortedSet`
+
+.NET ships no insertion-ordered set:
+
+- `HashSet<T>` enumerates in insertion order only until the first `Remove`. The freed entry goes on a free list, and the next `Add` reuses it, so the new element appears where the removed one was. The order is not documented, so even before a removal it is an accident of the implementation.
+- `SortedSet<T>` keeps an order, but the comparer's order, not arrival order.
+- The usual hand-rolls each pay somewhere. A `HashSet<T>` beside a `List<T>` removes in `O(n)`. A `Dictionary<T, LinkedListNode<T>>` beside a `LinkedList<T>` removes in `O(1)`, but allocates a node object per element and stores every element twice.
+
+`LinkedSet` has `O(1)` removal and re-ordering, no per-element allocation, and **no index access**. If order does not matter at all, `CeleritySet` and `SwissSet` are smaller and faster.
+
+### How it works
+
+The layout is `LinkedDictionary`'s without the value. Elements live in one array of structs, each holding the element, its full hash, the next entry in the same hash bucket, and the previous and next entries in insertion order. Buckets are a power-of-two array of chain heads. A lookup hashes once and walks one chain. A removal unlinks the entry and puts its slot on a free list, so remove/add churn never grows the table. Growth copies the live entries **in order** into a fresh array, which compacts out every free slot and never calls the hasher again.
+
+### Performance
+
+Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is the `net8.0` hand-roll that also removes in `O(1)`: a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`.
+
+| Operation, `int` elements | 1,000 | 10,000 | 100,000 |
+|---|---|---|---|
+| Add every element, pre-sized | 4.3x faster, 51% less allocated | 7–9x faster, 59% less allocated | 13.4x faster, 36% less allocated |
+| `Contains`, every element a hit | 1.7x faster | 1.7x faster | 4.0x faster |
+| Remove every element, shuffled order | 2.1x faster | 2.2x faster | 2.3x faster |
+| Enumerate after removing half | **2.7x slower** | **2.4x slower** | **2.7x slower** |
+
+The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. A `TrimExcess` after heavy churn compacts the entries into order, which makes the walk sequential again.
+
+### Constructors
+
+```csharp
+public LinkedSet(
+    int capacity = 16,
+    float loadFactor = 0.75f)
+
+public LinkedSet(
+    IEnumerable<T> source,
+    int capacity = 16,
+    float loadFactor = 0.75f)
+```
+
+Validation and exceptions are the same as for `CeleritySet`: a negative `capacity` or a `loadFactor` outside the open interval (0, 1), NaN included, throws `ArgumentOutOfRangeException`. A `null` source throws `ArgumentNullException` before either is checked. `capacity` is the number of hash buckets, rounded up to a power of two. The set holds `capacity × loadFactor` elements (at least one) before it grows, so to pre-size for `n` elements call `EnsureCapacity(n)`. The source constructor adds elements in the order `source` enumerates them. Duplicates are dropped silently, as `HashSet<T>` drops them, and each element keeps the position of its first occurrence. An `ICollection<T>` source's `Count` sizes the table so the build never resizes.
+
+### Ordered operations
+
+```csharp
+public bool MoveToEnd(T item)
+public bool MoveToFront(T item)
+public bool TryGetFirst(out T item)
+public bool TryGetLast(out T item)
+public bool TryRemoveFirst(out T item)
+public bool TryRemoveLast(out T item)
+```
+
+These behave exactly as `LinkedDictionary`'s do. `MoveToEnd` / `MoveToFront` return `false` for an absent element, and a move to the end the element is already at changes nothing and leaves active enumerators valid. `TryGetFirst` / `TryGetLast` read the oldest and newest elements. `TryRemoveFirst` / `TryRemoveLast` remove them, so a `TryRemoveFirst` loop drains the set first-in, first-out.
+
+### Order semantics
+
+- `Add`, `TryAdd`, `ISet<T>.Add` and `ICollection<T>.Add` append a **new** element at the end. Adding an element that is already present leaves it where it is, as `LinkedHashSet` does. To move it, call `MoveToEnd`.
+- A removed element that is added again goes to the end.
+- `UnionWith` appends the new elements in the order `other` first enumerates them. `IntersectWith` and `ExceptWith` keep the survivors in their order. `SymmetricExceptWith` keeps the survivors in their order and appends the elements only `other` held after them.
+- `SetEquals` and the subset / superset queries compare membership only, never order.
+- `GetEnumerator` and `CopyTo` yield oldest first.
+
+### Default-element handling
+
+Unlike the open-addressed sets, `default(T)` (`0`, a `null` reference, a `Nullable<T>` with no value) is stored **in the table** like any other element, so it keeps its place in the order rather than being yielded first. It is still never passed to the hasher: the default element gets hash code `0` directly, so string hashers that throw on `null` are safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Dedup a stream of user ids, keeping first-seen order.
+var seen = new LinkedSet<int, Int32WangNaiveHasher>();
+foreach (int id in new[] { 7, 3, 7, 9, 3, 1 })
+    seen.TryAdd(id);                 // 7, 3, 9, 1
+
+seen.Remove(3);                      // O(1); 7, 9, 1 keep their order
+seen.MoveToEnd(7);                   // 9, 1, 7
+
+while (seen.TryRemoveFirst(out int next))
+    Console.WriteLine(next);         // 9, 1, 7
+```
+
+---
+
 ## IntSet
 
 A convenience subclass of `IntSet<Int32WangNaiveHasher>` for the common case of integer sets.

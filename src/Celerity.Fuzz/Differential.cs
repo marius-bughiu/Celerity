@@ -40,6 +40,7 @@ internal static class Differential
         ("CeleritySet", CeleritySetCase),
         ("RobinHoodSet", RobinHoodSetCase),
         ("SwissSet", SwissSetCase),
+        ("LinkedSet", LinkedSetCase),
         ("HashCachingSet", HashCachingSetCase),
         ("PooledCeleritySet", PooledCeleritySetCase),
         ("IntSet", IntSetCase),
@@ -853,6 +854,130 @@ internal static class Differential
             enumerated++;
         }
         Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+    }
+
+    // LinkedSet vs a List of elements in insertion order. Contents alone would pass a table that
+    // forgot its links, so every check compares the full order: removal from the middle,
+    // MoveToEnd / MoveToFront, popping either end, a duplicate add that must keep its position, the
+    // order-preserving set algebra, and a rebuild (EnsureCapacity / TrimExcess) that must keep the order.
+    private static void LinkedSetCase(Random rng)
+    {
+        var sut = new LinkedSet<int, Int32WangNaiveHasher>(rng.Next(0, 9));
+        var order = new List<int>(); // [0] = oldest
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = Key(rng);
+            switch (rng.Next(0, 20))
+            {
+                case < 7:
+                {
+                    // A duplicate add leaves the element where it is.
+                    bool added = !order.Contains(item);
+                    if (added)
+                        order.Add(item);
+                    Check(sut.TryAdd(item) == added, $"TryAdd({item}) disagreed");
+                    break;
+                }
+                case < 10:
+                    Check(sut.Remove(item) == order.Remove(item), $"Remove({item}) disagreed");
+                    break;
+                case < 12:
+                {
+                    bool had = order.Remove(item);
+                    if (had)
+                        order.Add(item);
+                    Check(sut.MoveToEnd(item) == had, $"MoveToEnd({item}) disagreed");
+                    break;
+                }
+                case < 14:
+                {
+                    bool had = order.Remove(item);
+                    if (had)
+                        order.Insert(0, item);
+                    Check(sut.MoveToFront(item) == had, $"MoveToFront({item}) disagreed");
+                    break;
+                }
+                case < 15:
+                {
+                    bool any = order.Count > 0;
+                    Check(sut.TryRemoveFirst(out int v) == any, "TryRemoveFirst presence disagreed");
+                    if (any)
+                    {
+                        Check(v == order[0], $"TryRemoveFirst {v} != {order[0]}");
+                        order.RemoveAt(0);
+                    }
+                    break;
+                }
+                case < 16:
+                {
+                    bool any = order.Count > 0;
+                    Check(sut.TryRemoveLast(out int v) == any, "TryRemoveLast presence disagreed");
+                    if (any)
+                    {
+                        Check(v == order[^1], $"TryRemoveLast {v} != {order[^1]}");
+                        order.RemoveAt(order.Count - 1);
+                    }
+                    break;
+                }
+                case < 17:
+                {
+                    // Set algebra: survivors keep their order, new elements are appended in the
+                    // order `other` first yields them.
+                    var other = new List<int>();
+                    for (int n = rng.Next(0, 6); n > 0; n--)
+                        other.Add(Key(rng));
+                    var otherSet = new HashSet<int>(other);
+                    switch (rng.Next(0, 3))
+                    {
+                        case 0:
+                            sut.UnionWith(other);
+                            foreach (int o in other)
+                                if (!order.Contains(o))
+                                    order.Add(o);
+                            break;
+                        case 1:
+                            sut.IntersectWith(other);
+                            order.RemoveAll(x => !otherSet.Contains(x));
+                            break;
+                        default:
+                            sut.ExceptWith(other);
+                            order.RemoveAll(otherSet.Contains);
+                            break;
+                    }
+                    break;
+                }
+                case < 18:
+                    sut.EnsureCapacity(rng.Next(0, 64));
+                    break;
+                case < 19:
+                    sut.TrimExcess();
+                    break;
+                default:
+                    sut.Clear();
+                    order.Clear();
+                    break;
+            }
+
+            if (rng.Next(0, 8) == 0)
+                CheckSameSequence(sut, order, $"order after op {i}");
+        }
+
+        Check(sut.Count == order.Count, $"Count {sut.Count} != {order.Count}");
+        for (int k = MinKey; k <= MaxKey; k++)
+            Check(sut.Contains(k) == order.Contains(k), $"Contains({k}) disagreed");
+
+        CheckSameSequence(sut, order, "enumeration");
+        var copy = new int[sut.Count];
+        sut.CopyTo(copy, 0);
+        CheckSameSequence(copy, order, "CopyTo");
+
+        bool nonEmpty = order.Count > 0;
+        Check(sut.TryGetFirst(out int first) == nonEmpty, "TryGetFirst presence disagreed");
+        Check(!nonEmpty || first == order[0], "TryGetFirst element disagreed");
+        Check(sut.TryGetLast(out int last) == nonEmpty, "TryGetLast presence disagreed");
+        Check(!nonEmpty || last == order[^1], "TryGetLast element disagreed");
     }
 
     private static void HashCachingSetCase(Random rng)

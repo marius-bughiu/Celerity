@@ -40,6 +40,7 @@ public class SetAlgebraTests
         Assert.IsAssignableFrom<ISet<int>>(new SwissSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new RobinHoodSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new HashCachingSet<int, Int32WangNaiveHasher>());
+        Assert.IsAssignableFrom<ISet<int>>(new LinkedSet<int, Int32WangNaiveHasher>());
         Assert.IsAssignableFrom<ISet<int>>(new SmallSet<int>());
         Assert.IsAssignableFrom<ISet<int>>(new SparseSet(16));
         Assert.IsAssignableFrom<ISet<int>>(new HierarchicalBitSet(16));
