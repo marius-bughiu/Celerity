@@ -256,6 +256,32 @@ public class RadixHeapTests
         Assert.Equal("high", heap.Dequeue());
     }
 
+    [Theory]
+    [InlineData(1UL)]
+    [InlineData(8UL)]
+    [InlineData(ulong.MaxValue)]
+    public void Peek_WithTiedMinima_ReturnsTheNextElementDequeued(ulong priority)
+    {
+        var heap = new RadixHeap<string>();
+        heap.Enqueue("first", priority);
+        heap.Enqueue("second", priority);
+
+        // Bucket 0 is empty, so the peek scans a bucket that the dequeue will redistribute.
+        Assert.True(heap.TryPeek(out string? first, out ulong peekedPriority));
+        Assert.Equal(priority, peekedPriority);
+        Assert.Equal(first, heap.Peek());
+        Assert.Equal(0UL, heap.Floor);
+        Assert.Equal(first, heap.Dequeue());
+
+        // The remaining tied entry is now in bucket 0; both paths must agree there too.
+        Assert.True(heap.TryPeek(out string? second, out peekedPriority));
+        Assert.Equal(priority, peekedPriority);
+        Assert.NotEqual(first, second);
+        Assert.Equal(second, heap.Peek());
+        Assert.Equal(second, heap.Dequeue());
+        Assert.Empty(heap);
+    }
+
     [Fact]
     public void Peek_AfterARedistribution_ReadsBucketZero()
     {

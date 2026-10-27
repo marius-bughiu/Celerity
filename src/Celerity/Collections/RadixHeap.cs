@@ -321,7 +321,9 @@ public class RadixHeap<TElement> : IReadOnlyCollection<(TElement Element, ulong 
         for (int i = 1; i < count; i++)
         {
             ulong priority = items[i].Priority;
-            if (priority < min)
+            // Redistribution appends tied minima to bucket 0 in this order, then Dequeue pops the
+            // last one. Choose that same entry so Peek observes the next element to be dequeued.
+            if (priority <= min)
             {
                 min = priority;
                 best = i;
