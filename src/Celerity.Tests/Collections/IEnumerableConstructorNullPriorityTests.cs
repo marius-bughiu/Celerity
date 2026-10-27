@@ -105,6 +105,17 @@ public class IEnumerableConstructorNullPriorityTests
     }
 
     [Fact]
+    public void BiDictionary_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
     public void HashCachingDictionary_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
     {
         IEnumerable<KeyValuePair<int, string>>? source = null;
@@ -225,6 +236,17 @@ public class IEnumerableConstructorNullPriorityTests
 
         var ex = Assert.Throws<ArgumentNullException>(() =>
             new HashCachingSet<string, StringFnV1AHasher>(source!, capacity: 16, loadFactor: 2.0f));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void LinkedSet_NullSourceWithInvalidLoadFactor_ShouldThrow_ArgumentNullException()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new LinkedSet<string, StringFnV1AHasher>(source!, capacity: 16, loadFactor: 2.0f));
 
         Assert.Equal("source", ex.ParamName);
     }

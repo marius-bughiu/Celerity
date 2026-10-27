@@ -30,6 +30,10 @@ means keeping the stream, which is the one thing a stream will not let you do.
   extended to the fourth moment. A mutable struct, so `default` is a valid empty
   accumulator and an array of per-bucket statistics costs no allocations.
   Mergeable by Chan's parallel formulas.
+- **`RollingQuantile<T>`** — the **exact** quantile (a rolling median, p99, …)
+  of the last `w` values of a stream, `O(log w)` per value and `O(1)` to read.
+  Two heaps meet at the quantile, and a slot index replaces the expiring value
+  in place, so nothing is searched for.
 
 ## Where it wins, and where it does not
 
@@ -50,6 +54,9 @@ means keeping the stream, which is the one thing a stream will not let you do.
   maintains all four moments on every `Add`. What it buys is a single pass over
   a stream it never retains, and an answer the `sum` / `sumOfSquares` shortcut
   gets wrong: that one is cheaper still and can return a negative variance.
+- **`RollingQuantile` holds its window**, `w` values plus `2w` ints, and answers
+  one quantile per instance. Against a sorted array plus a queue it is 2.5×
+  faster at a 1,000-value window and 32× at 100,000.
 - **`ReservoirSampler` loses on short streams**, where Algorithm L's
   transcendentals dominate: 6.2× slower than materializing at a thousand items,
   1.7× faster at a hundred thousand. The crossover is around ten thousand.
@@ -86,6 +93,15 @@ foreach (string line in logLines)
 var stats = new RunningStatistics();
 stats.Add(payloadSizes);
 Console.WriteLine($"{stats.Mean:F1} ± {stats.StandardDeviation:F1} bytes");
+
+// The exact median of the last 1,001 samples, updated per sample.
+var median = new RollingQuantile<double>(windowSize: 1_001, quantile: 0.5);
+foreach (double ms in requestLatencies)
+{
+    median.Add(ms);
+}
+
+Console.WriteLine($"rolling median {median.Value:F2} ms");
 ```
 
 ## Documentation

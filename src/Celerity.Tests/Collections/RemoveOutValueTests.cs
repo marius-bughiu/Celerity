@@ -935,6 +935,147 @@ public class RemoveOutValueTests
     }
 
     // ---------------------------------------------------------------
+    //  BiDictionary
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BiDictionary_RemoveOutValue_ReturnsTrueAndCapturedValue_ForExistingKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map[7] = "seven";
+
+        bool removed = map.Remove(7, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("seven", captured);
+        Assert.False(map.ContainsKey(7));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void BiDictionary_RemoveOutValue_ReturnsFalseAndDefault_ForMissingKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map[1] = "one";
+
+        bool removed = map.Remove(99, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void BiDictionary_RemoveOutValue_CapturesDefaultIntKeyValue()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map[0] = "zero";
+        map[1] = "one";
+
+        bool removed = map.Remove(0, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("zero", captured);
+        Assert.False(map.ContainsKey(0));
+        Assert.Single(map);
+        Assert.Equal("one", map[1]);
+    }
+
+    [Fact]
+    public void BiDictionary_RemoveOutValue_CapturesNullStringKeyValue()
+    {
+        var map = new BiDictionary<string, int, StringFnV1AHasher, Int32WangNaiveHasher>();
+        map[null!] = 42;
+        map["alpha"] = 1;
+
+        bool removed = map.Remove(null!, out int captured);
+
+        Assert.True(removed);
+        Assert.Equal(42, captured);
+        Assert.False(map.ContainsKey(null!));
+        Assert.Single(map);
+        Assert.Equal(1, map["alpha"]);
+    }
+
+    [Fact]
+    public void BiDictionary_RemoveOutValue_ReturnsFalse_WhenDefaultKeyAbsent()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
+        map[1] = "one";
+
+        bool removed = map.Remove(0, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Single(map);
+    }
+
+    [Fact]
+    public void BiDictionary_RemoveOutValue_UnlinksMidChainEntry_UnderFullCollision()
+    {
+        var map = new BiDictionary<string, int, ConstantStringHasher, Int32WangNaiveHasher>(16);
+        map["a"] = 1;
+        map["b"] = 2;
+        map["c"] = 3;
+        map["d"] = 4;
+        map["e"] = 5;
+
+        bool removed = map.Remove("c", out int captured);
+
+        Assert.True(removed);
+        Assert.Equal(3, captured);
+        Assert.Equal(4, map.Count);
+        Assert.False(map.ContainsKey("c"));
+
+        Assert.Equal(1, map["a"]);
+        Assert.Equal(2, map["b"]);
+        Assert.Equal(4, map["d"]);
+        Assert.Equal(5, map["e"]);
+    }
+
+    [Fact]
+    public void BiDictionary_RemoveValueOutKey_UnlinksMidChainEntry_UnderFullValueCollision()
+    {
+        // The value-side mirror: every value shares one value chain.
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, ConstantStringHasher>(16);
+        map[1] = "a";
+        map[2] = "b";
+        map[3] = "c";
+        map[4] = "d";
+        map[5] = "e";
+
+        bool removed = map.RemoveValue("c", out int captured);
+
+        Assert.True(removed);
+        Assert.Equal(3, captured);
+        Assert.Equal(4, map.Count);
+        Assert.False(map.ContainsValue("c"));
+        Assert.False(map.ContainsKey(3));
+
+        Assert.Equal(1, map.GetKey("a"));
+        Assert.Equal(2, map.GetKey("b"));
+        Assert.Equal(4, map.GetKey("d"));
+        Assert.Equal(5, map.GetKey("e"));
+    }
+
+    [Fact]
+    public void BiDictionary_RemoveOutValue_BumpsVersion_AndInvalidatesEnumerator()
+    {
+        var map = new BiDictionary<int, int, Int32WangNaiveHasher, Int32WangNaiveHasher>();
+        for (int i = 1; i <= 4; i++)
+            map[i] = i;
+
+        var e = map.GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        Assert.True(map.Remove(2, out int captured));
+        Assert.Equal(2, captured);
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+    }
+
+    // ---------------------------------------------------------------
     //  HashCachingDictionary
     // ---------------------------------------------------------------
 
@@ -1105,6 +1246,17 @@ public class RemoveOutValueTests
     public void LinkedDictionary_VoidRemove_StillReturnsTrueForFoundKey()
     {
         var map = new LinkedDictionary<int, string, Int32WangNaiveHasher>();
+        map[1] = "one";
+
+        Assert.True(map.Remove(1));
+        Assert.False(map.ContainsKey(1));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void BiDictionary_VoidRemove_StillReturnsTrueForFoundKey()
+    {
+        var map = new BiDictionary<int, string, Int32WangNaiveHasher, StringFnV1AHasher>();
         map[1] = "one";
 
         Assert.True(map.Remove(1));

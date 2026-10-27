@@ -209,6 +209,26 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void RadixHeapEnumeratorReset_ShouldThrowInvalidOperationException_WhenHeapModified()
+    {
+        var heap = new RadixHeap<int>();
+        heap.Enqueue(1, 10);
+        heap.Enqueue(2, 20);
+
+        var enumerator = heap.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        heap.Enqueue(3, 15);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("The heap was modified during enumeration.", ex.Message);
+
+        var second = heap.GetEnumerator();
+        heap.Dequeue();
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
     public void SlotMapEnumeratorReset_ShouldThrowInvalidOperationException_WhenMapModified()
     {
         var map = new SlotMap<int>();
@@ -350,6 +370,45 @@ public class EnumeratorInvalidationAndClearCoverageTests
         Assert.True(enumerator.MoveNext());
         Assert.Equal('a', enumerator.Current);
         Assert.Equal("abcdefZhij", rope.ToString());
+    }
+
+    [Fact]
+    public void BTreeListEnumeratorReset_ShouldThrowInvalidOperationException_WhenListModified()
+    {
+        var list = new BTreeList<int>(new[] { 1, 2, 3 });
+
+        BTreeList<int>.Enumerator enumerator = list.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        list.Insert(1, 9);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        BTreeList<int>.Enumerator second = list.GetEnumerator();
+        list.RemoveAt(0);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    /// <summary>
+    /// The list's deliberate exception to the rule, the same one <see cref="Rope"/> and
+    /// <see cref="Deque{T}"/> make: assigning through the indexer replaces one element inside one leaf and
+    /// moves no leaf boundary, so the sequence an enumerator is walking keeps its shape.
+    /// </summary>
+    [Fact]
+    public void BTreeListIndexerSet_ShouldNotBumpTheVersion_BecauseTheSequenceIsUnchanged()
+    {
+        var list = new BTreeList<int>(new[] { 1, 2, 3 });
+
+        BTreeList<int>.Enumerator enumerator = list.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        list[2] = 30;
+
+        enumerator.Reset();
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal(1, enumerator.Current);
+        Assert.Equal(new[] { 1, 2, 30 }, list);
     }
 
     /// <summary>
@@ -768,5 +827,44 @@ public class EnumeratorInvalidationAndClearCoverageTests
         pq.Enqueue(1, 1);
         Assert.Equal(1, pq.Count);
         Assert.Equal(1, pq.Peek());
+    }
+
+    [Fact]
+    public void RadixHeapTrimExcess_ShouldBeNoOpAndKeepEnumeratorsValid_WhenEveryBucketIsExactlySized()
+    {
+        var heap = new RadixHeap<int>();
+
+        // A fresh heap holds no storage, so TrimExcess has nothing to free.
+        var fresh = heap.GetEnumerator();
+        heap.TrimExcess();
+        Assert.False(fresh.MoveNext());
+
+        // Four entries exactly fill bucket 0's default array; every other bucket is still unallocated.
+        for (int i = 0; i < 4; i++)
+            heap.Enqueue(i, 0);
+
+        var enumerator = heap.GetEnumerator();
+        heap.TrimExcess();
+
+        int seen = 0;
+        while (enumerator.MoveNext())
+            seen++;
+        Assert.Equal(4, seen);
+    }
+
+    [Fact]
+    public void RadixHeapClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
+    {
+        var heap = new RadixHeap<string>();
+        heap.Enqueue("a", 9);
+        heap.Dequeue();
+        Assert.Equal(9UL, heap.Floor);
+
+        var enumerator = heap.GetEnumerator();
+        heap.Clear();
+
+        // The floor resets even though nothing was removed, and the version does not move.
+        Assert.Equal(0UL, heap.Floor);
+        Assert.False(enumerator.MoveNext());
     }
 }
