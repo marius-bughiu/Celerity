@@ -369,7 +369,7 @@
     <h2>Design notes</h2>
   </div>
   <div class="about">
-    Hashers are <strong>structs</strong> passed as generic constraints (<code>where THasher : struct, IHashProvider&lt;T&gt;</code>) so the JIT devirtualizes and inlines <code>Hash()</code> on the probe path. Dictionaries implement <code>IReadOnlyDictionary&lt;TKey, TValue&gt;</code>, ship allocation-free struct enumerators, and handle <code>default(TKey)</code> out-of-band so the zero / null key never collides with the empty-slot sentinel. Celerity is single-threaded and does not guarantee iteration order &mdash; if you need either, use <code>ConcurrentDictionary&lt;,&gt;</code> or stay on the BCL.
+    Hashers are <strong>structs</strong> passed as generic constraints (<code>where THasher : struct, IHashProvider&lt;T&gt;</code>) so the JIT devirtualizes and inlines <code>Hash()</code> on the probe path. The mutable dictionaries implement both <code>IDictionary&lt;TKey, TValue?&gt;</code> and <code>IReadOnlyDictionary&lt;TKey, TValue?&gt;</code>, ship allocation-free struct enumerators, and handle <code>default(TKey)</code> so the zero / null key never collides with an empty slot. Celerity is single-threaded: for concurrency, use <code>ConcurrentDictionary&lt;,&gt;</code>. The hash collections leave iteration order unspecified, except <code>LinkedDictionary</code> and <code>LinkedSet</code>, which keep insertion order; the B-trees iterate in sorted order.
   </div>
 </main>
 

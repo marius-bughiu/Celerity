@@ -16,6 +16,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - The 100% coverage gate no longer fails at random on pull requests that do not touch `HierarchicalBitSet`. One exit in its successor search was reached only when the randomized suite happened to draw a universe that is a multiple of 8,192; a deterministic test now covers it, and the generator draws that shape on every run. Closes #558.
 - `EnsureCapacity(n)` and `TrimExcess(n)` on the 18 hash tables (`CelerityDictionary` / `CeleritySet` and their `Int`, `Long`, `RobinHood`, `Swiss`, `HashCaching` and `Pooled` peers, `CelerityMultiMap`, `CelerityMultiSet`, `LinkedDictionary`, `LinkedSet`) now throw `ArgumentOutOfRangeException` when even the largest table (2^30 slots) cannot hold `n` at the configured load factor. Before, they allocated that multi-gigabyte table anyway and left room for fewer than `n` entries. The cap binds above about 1,073 entries at a load factor of `1e-6`, or 805 million at the default `0.75`. Closes #570.
+- The migration guide, FAQ, troubleshooting page, README and site no longer say that sets lack set algebra, that dictionaries don't implement `IDictionary<,>`, or that no hash collection keeps an order. They now point to `LinkedDictionary` / `LinkedSet` for insertion order and document the `ExceptWith`-over-a-lazy-self-view exception. Memory break-evens for `HierarchicalBitSet`, read-cost and "nothing else compresses" claims, and the `RollingQuantile` rank rounding are corrected too. Closes #539, #540, #556, #557, #572.
 
 ## [3.5.0] - 2026-10-25
 

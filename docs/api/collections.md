@@ -1319,7 +1319,7 @@ Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); t
 | Remove every element, shuffled order | 2.1x faster | 2.2x faster | 2.3x faster |
 | Enumerate after removing half | **2.7x slower** | **2.4x slower** | **2.7x slower** |
 
-The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. A `TrimExcess` after heavy churn compacts the entries into order, which makes the walk sequential again.
+The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. Growth copies the live entries into a fresh array in order, which makes the walk sequential again. A `TrimExcess` does the same only when it changes the table size. One that leaves the bucket count unchanged rebuilds nothing, so it does not restore sequential layout after steady churn.
 
 ### Constructors
 
@@ -2659,8 +2659,13 @@ Two caveats about these figures:
 - **Memory is the size of the structure, not a transient allocation.** Both sides are allocated
   once and have nothing to resize, so the allocated bytes are the retained bytes.
   `SortedSet<int>` spends about 40 bytes per element, and this type spends `Universe / 8`. They
-  break even at about one value per 320 of the universe. Below that density `SortedSet<int>`,
-  [`BTreeSet`](#btreesett-tcomparer) or [`CompressedIntSet`](#compressedintset) use less memory.
+  break even at about one value per 320 of the universe, and below that density `SortedSet<int>`
+  uses less memory. The other sorted alternatives cross over much sooner. In a local measurement
+  of live heap bytes over an 8,000,000 universe, [`BTreeSet`](#btreesett-tcomparer) held 9.5–13
+  bytes a value (the high end for ascending inserts, which leave nodes half full), so it is
+  smaller below about one value per 75–105. [`CompressedIntSet`](#compressedintset) stores two
+  bytes a value in a sparse chunk and is smaller below about one value per 16. Check
+  `CompressedIntSet.MemoryUsageInBytes` for your data.
 
 ### Usage example
 
@@ -3263,7 +3268,7 @@ enumeration 1.12x, and the fill is a tie (1.00x), still at 0.55x the allocation.
 ([#527](https://github.com/marius-bughiu/Celerity/issues/527)) set a 2x bar on lookup and a 1.5x
 bar on churn at 100,000 values; they came in at 1.90x and 1.46x. The case rests on the other limb of
 the hard rule. No BCL type issues stable handles, so this is a genuine gap rather than a faster
-counterpart. It also wins every arm it is measured on and loses none.
+counterpart. It also wins or ties every arm it is measured on.
 
 How it got there is worth recording. The first implementation kept the values **packed** in a dense
 array, with a back-pointer per position, so a sweep over them could be a contiguous span. That
@@ -3930,7 +3935,7 @@ compresses further, but only a **sorted** sequence, and it is immutable.
 **Layout.** Element `i` occupies bits `[i * w, (i + 1) * w)` of the word array,
 least-significant bit first, so an element straddles two words whenever `w` does not
 divide 64. One spare word past the last data word is kept zero. Because of it, every read
-takes the same two loads, two shifts and a mask, and never branches on whether the element
+takes the same two loads, three shifts, an OR and a mask, and never branches on whether the element
 straddles. Bits past the last element are also kept zero. The payload is
 `ceil(Count * w / 64) + 1` words, which `MemoryUsageInBytes` reports.
 
@@ -4015,7 +4020,7 @@ the dashboard is the contract.
 | Sequential pass (`foreach`) | 2.96x slower | 2.78x slower |
 | Build from a `ulong[]` | on par (1.00x), 0.64x the allocation | **1.30x faster**, 0.63x the allocation |
 
-Every access path pays for the packing: a read is two loads and three bit operations where
+Every access path pays for the packing: a read is two loads, three shifts, an OR and a mask where
 the array's is one load, and a write is a read-modify-write of two words. A sequential pass
 pays most, about 2.8–3x, because it decodes each element separately where the array's loop
 is a plain load. Building is the exception: packing a `ulong[]` streams whole words, so it
@@ -7116,7 +7121,7 @@ var frozen = new SuccinctTrie<string>(built);
 
 ## Span-keyed lookups
 
-Every string-keyed Celerity collection can be probed with a `ReadOnlySpan<char>` — a slice of a buffer the caller already holds — without first materializing a `string`.
+The string-keyed collections below can be probed with a `ReadOnlySpan<char>` — a slice of a buffer the caller already holds — without first materializing a `string`.
 
 | Type | Span members |
 |------|--------------|
@@ -9529,7 +9534,11 @@ arms do the same job there.
 
 The ordered containers ([`BTreeSet`](#btreesett-tcomparer), [`RankedSet`](#rankedsett-tcomparer))
 hold sorted values and answer a lower bound, but they spend *more* than 64 bits a value, not
-less. Nothing else in this library compresses the shape:
+less. Nothing else in this library compresses the shape as tightly:
+
+- [`BitPackedArray`](#bitpackedarray) stores each value in a fixed `w` bits with `O(1)` random
+  access, but `w` must cover the *largest* value: a million offsets about 100 apart need 27 bits a
+  value against Elias–Fano's 10 or so. It has no lower-bound query either.
 
 - [`CompressedIntSet`](#compressedintset) is a 32-bit **set**. It has no duplicates and no
   positional access, and it cannot hold a 64-bit offset.
