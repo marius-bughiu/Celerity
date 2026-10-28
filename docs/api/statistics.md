@@ -334,7 +334,9 @@ foreach (double latency in samples)
 
 Each `Add` appends to a fixed-size sliding window, evicting the oldest value once the window is
 full. `Value` is the window's element of zero-based rank `⌊q · (n − 1)⌋` in sorted order, where `q`
-is the quantile and `n` the window's count. NumPy calls this the `"lower"` method. A median over an
+is the quantile and `n` the window's count. NumPy calls this the `"lower"` method. The product is
+taken in `double`, as NumPy takes it, so a quantile with no exact binary form can land one rank
+below the exact-arithmetic answer: `0.29 · 100` is `28.999…`, so rank 28, not 29. A median over an
 even window is therefore the lower of the two middle values, `q = 0` is the window minimum, and
 `q = 1` the maximum. The answer is always a value from the window, never an interpolation or an
 estimate.

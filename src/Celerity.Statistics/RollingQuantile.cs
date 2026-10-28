@@ -11,7 +11,8 @@ namespace Celerity.Statistics;
 /// Each <see cref="Add(T)"/> appends a value to a fixed-size sliding window; once the window is full, the
 /// oldest value leaves it as the new one arrives. <see cref="Value"/> is then the element of zero-based rank
 /// <c>⌊Quantile · (Count − 1)⌋</c> in the sorted window — what NumPy calls the <c>"lower"</c> quantile
-/// method. A <see cref="Quantile"/> of <c>0.5</c> over an even window gives the lower of the two middle
+/// method. The product is taken in <see cref="double"/>, as NumPy takes it, so a quantile with no exact binary
+/// form can land one rank below the exact-arithmetic answer: <c>0.29 · 100</c> is <c>28.999…</c>, rank 28. A <see cref="Quantile"/> of <c>0.5</c> over an even window gives the lower of the two middle
 /// values, <c>0</c> gives the window minimum and <c>1</c> its maximum. The answer is exact: it is always
 /// one of the values in the window, never an interpolation or an estimate.
 /// </para>

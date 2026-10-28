@@ -415,7 +415,7 @@ public class LongSet<THasher> : ISet<long>, IReadOnlySet<long> where THasher : s
     // ── ISet<long> / ICollection<long> set-algebra surface ────────────────────
     // The set-algebra logic is shared across the mutable set family via
     // SetOperations, written once against the ISet<T> primitives every set
-    // exposes; the semantics match BCL HashSet<long> exactly.
+    // exposes; the semantics match BCL HashSet<long> (bar ExceptWith over a lazy self-view).
 
     /// <summary>
     /// Modifies the set to contain all elements that are present in itself, in

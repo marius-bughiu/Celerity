@@ -6,7 +6,7 @@ Conceptual questions about Celerity — the "why does it work this way" behind t
 
 ### What is Celerity, in one sentence?
 
-A .NET library of specialized high-performance collections that beat the BCL on specific key shapes and access patterns by trading away generality (thread safety, stable iteration order, the mutable `IDictionary<,>` interface).
+A .NET library of specialized high-performance collections that beat the BCL on specific key shapes and access patterns by trading away generality (thread safety, a stable iteration order on most of the hash collections, custom equality comparers).
 
 ### Is it really faster than `Dictionary<,>`?
 
@@ -14,11 +14,11 @@ On the shapes it targets, yes — **up to 2.4× faster than `Dictionary<int, int
 
 ### Is Celerity a drop-in replacement for `Dictionary<,>`?
 
-Almost, for the common API surface (indexer, `TryGetValue`, `Add`, `TryAdd`, `Remove`, `Clear`, `Count`, `Keys`, `Values`, enumeration). The differences that bite: it implements `IReadOnlyDictionary<TKey, TValue?>` not `IDictionary<,>`, values surface as `TValue?`, and iteration order is unspecified. The [migration guide](migration.md) covers each.
+Almost, for the common API surface (indexer, `TryGetValue`, `Add`, `TryAdd`, `Remove`, `Clear`, `Count`, `Keys`, `Values`, enumeration). It implements both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`. The differences that bite: values surface as `TValue?`, and iteration order is unspecified (except on `LinkedDictionary`, which keeps insertion order). The [migration guide](migration.md) covers each.
 
 ### Which collection should I use?
 
-See the [decision table in the README](../README.md#choosing-a-collection). Short version: `IntDictionary`/`LongDictionary` for integer keys, `CelerityDictionary` for other keys (with a struct hasher), `FrozenCelerityDictionary` for build-once string lookups, `CelerityMultiMap` for one-to-many, the `*Set` types for membership-only.
+See the [decision table in the README](../README.md#choosing-a-collection). Short version: `IntDictionary`/`LongDictionary` for integer keys, `CelerityDictionary` for other keys (with a struct hasher), `FrozenCelerityDictionary` for build-once string lookups, `CelerityMultiMap` for one-to-many, `LinkedDictionary` / `LinkedSet` when you need insertion order, and the `*Set` types for membership and set algebra.
 
 ## Thread safety
 
@@ -34,15 +34,15 @@ Either wrap it in your own lock, or use a BCL `ConcurrentDictionary<,>` for that
 
 ### Why is the iteration order different from `Dictionary<,>`, and is it stable?
 
-Order reflects the open-addressed probe layout, so it differs from the BCL and is **unspecified** — it can change across versions or after a resize. Never depend on it; sort explicitly if you need a stable order.
+On the hash collections, order reflects the probe layout, so it differs from the BCL and is **unspecified**. It can change across versions or after a resize. Never depend on it; sort explicitly if you need a stable order. Two hash-based exceptions guarantee **insertion order**, even through removals: `LinkedDictionary` and `LinkedSet`. The sorted containers (`BTreeDictionary`, `BTreeSet`, `Trie`) enumerate in key order.
 
 ### Why are values typed `TValue?` everywhere?
 
-Because the public read interface is `IReadOnlyDictionary<TKey, TValue?>`. `TryGetValue` returns `default` (i.e. `null` for reference types) on a miss, and the nullable annotation makes that explicit. Once `TryGetValue` returns `true`, the value is present — assert with `!` or a null check.
+Because the public dictionary interfaces are `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`. `TryGetValue` returns `default` (i.e. `null` for reference types) on a miss, and the nullable annotation makes that explicit. Once `TryGetValue` returns `true`, the value is present — assert with `!` or a null check.
 
 ### Does the zero key / `null` key / `Guid.Empty` work?
 
-Yes. `default(TKey)` would normally collide with the empty-slot sentinel used during probing, so Celerity stores it **out-of-band** in a dedicated slot. `dict[0]`, `dict[null]`, and `dict[Guid.Empty]` round-trip correctly and appear in enumeration. This is one of the most-tested areas of the library.
+Yes. `default(TKey)` would normally collide with the empty-slot sentinel used during probing, so the open-addressed tables store it **out-of-band** in a dedicated slot. The chained tables (`LinkedDictionary`, `LinkedSet`, `BiDictionary`) have no empty-slot sentinel, so they store it in the table like any other key, without passing it to the hasher. That way it keeps its place in insertion order. `dict[0]`, `dict[null]`, and `dict[Guid.Empty]` round-trip correctly and appear in enumeration. This is one of the most-tested areas of the library.
 
 ### What happens when I `Add` a duplicate key?
 

@@ -462,7 +462,7 @@ public class PooledCeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T>, IDisposab
     // ── ISet<T> / ICollection<T> set-algebra surface ──────────────────────────
     // The set-algebra logic is shared across the mutable set family via
     // SetOperations, written once against the ISet<T> primitives every set
-    // exposes; the semantics match BCL HashSet<T> exactly. Each entry point
+    // exposes; the semantics match BCL HashSet<T> (bar ExceptWith over a lazy self-view). Each entry point
     // rejects calls after disposal before delegating.
 
     /// <summary>

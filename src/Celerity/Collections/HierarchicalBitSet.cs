@@ -437,7 +437,7 @@ public class HierarchicalBitSet : ISet<int>, IReadOnlySet<int>
 
     // ── ISet<int> / ICollection<int> set-algebra surface ──────────────────────
     // Shared with the mutable set family via SetOperations, written once against the ISet<T> primitives
-    // every set exposes; the semantics match BCL HashSet<int> exactly. A mutating op that would add an
+    // every set exposes; the semantics match BCL HashSet<int> (bar ExceptWith over a lazy self-view). A mutating op that would add an
     // out-of-universe value throws ArgumentOutOfRangeException via TryAdd — the bounded-universe caveat
     // noted on the type.
 
