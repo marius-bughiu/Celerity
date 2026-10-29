@@ -90,19 +90,26 @@ public class TopKSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// tracked at once, and the space bound. A larger capacity tracks more candidates and
     /// tightens the guarantees, at proportional memory. Must be at least 1.
     /// </param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is less than 1.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is less than 1, or more than the element index's largest table
+    /// (2<sup>30</sup> slots) can hold.
+    /// </exception>
     public TopKSketch(int capacity = DefaultCapacity)
     {
         if (capacity < 1)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least 1.");
 
+        // Pre-size the element index for the full monitor set so filling it never rehashes. Built empty and
+        // sized once: passing `capacity` to the ctor sizes it too small for the load factor, so EnsureCapacity
+        // would allocate it a second time. It runs first so a capacity the index cannot hold (#570) throws
+        // before the arrays are allocated.
+        _index = new CelerityDictionary<T, int, THasher>();
+        _index.EnsureCapacity(capacity);
+
         _capacity = capacity;
         _elements = new T?[capacity];
         _counts = new long[capacity];
         _errors = new long[capacity];
-        _index = new CelerityDictionary<T, int, THasher>(capacity);
-        // Pre-size the element index for the full monitor set so filling it never rehashes.
-        _index.EnsureCapacity(capacity);
     }
 
     /// <summary>

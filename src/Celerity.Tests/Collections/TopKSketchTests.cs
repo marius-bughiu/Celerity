@@ -179,6 +179,21 @@ public class TopKSketchTests
     }
 
     [Fact]
+    public void Constructor_CapacityBeyondIndexCap_Throws_BeforeAllocatingArrays()
+    {
+        // Above 805,306,368 the element index's 2^30-slot table cannot hold the monitors at its 0.75 load
+        // factor (#570). The sketch must reject that before allocating its three capacity-sized arrays (#579).
+        const int BeyondIndexCap = 805_306_369;
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TopKSketch<int, Int32Murmur3Hasher>(BeyondIndexCap));
+
+        Assert.Equal("capacity", ex.ParamName);
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 1_000_000);
+    }
+
+    [Fact]
     public void EnumerableConstructor_PrepopulatesFromSource()
     {
         int[] source = { 1, 1, 1, 2, 2, 3 };
