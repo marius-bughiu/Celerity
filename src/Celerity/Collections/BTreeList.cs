@@ -148,9 +148,10 @@ public sealed class BTreeList<T> : IList<T>, IReadOnlyList<T>
     public int Count => _count;
 
     /// <summary>
-    /// Gets the number of node levels from the root to a leaf: <c>1</c> while the whole list fits in one leaf
-    /// of 128 elements, and <c>O(log n)</c> under any sequence of edits. Public so the cost of a descent is
-    /// observable rather than folklore.
+    /// Gets the number of node levels from the root to a leaf: <c>1</c> while the root is a single leaf, and
+    /// <c>O(log n)</c> under any sequence of edits. A leaf holds up to 128 elements, but a list can be deeper
+    /// at that size: the bulk constructor fills leaves to 96, and two leaves merge back into one only once one
+    /// drops below 32. Public so the cost of a descent is observable rather than folklore.
     /// </summary>
     public int Depth => _height + 1;
 
