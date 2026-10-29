@@ -1317,6 +1317,83 @@ public class ContainsValueTests
 
         Assert.True(map.ContainsValue(null));
     }
+
+    // ---------------- PersistentSortedMap ----------------
+    // The scan walks the leaves in key order, so what is pinned here is that a value in a leaf past the first
+    // split is reachable, and that the default key is an ordinary inline entry rather than an out-of-band slot.
+
+    [Fact]
+    public void PersistentSortedMap_EmptyMap_ReturnsFalse()
+    {
+        PersistentSortedMap<int, int, DefaultComparer<int>> map =
+            PersistentSortedMap<int, int, DefaultComparer<int>>.Empty;
+
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void PersistentSortedMap_FindsValueInTheTree()
+    {
+        PersistentSortedMap<int, int, DefaultComparer<int>> map =
+            PersistentSortedMap<int, int, DefaultComparer<int>>.Empty
+                .Add(1, 100)
+                .Add(2, 200)
+                .Add(3, 300);
+
+        Assert.True(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void PersistentSortedMap_FindsValueUnderTheDefaultKey()
+    {
+        PersistentSortedMap<int, int, DefaultComparer<int>> map =
+            PersistentSortedMap<int, int, DefaultComparer<int>>.Empty.Add(0, 7).Add(1, 100);
+
+        Assert.True(map.ContainsValue(7));
+    }
+
+    [Fact]
+    public void PersistentSortedMap_AfterRemove_DoesNotReportRemovedValue()
+    {
+        PersistentSortedMap<int, int, DefaultComparer<int>> map =
+            PersistentSortedMap<int, int, DefaultComparer<int>>.Empty
+                .Add(1, 100)
+                .Add(2, 200)
+                .Add(3, 300);
+
+        PersistentSortedMap<int, int, DefaultComparer<int>> without = map.Remove(2);
+
+        Assert.False(without.ContainsValue(200));
+        Assert.True(without.ContainsValue(100));
+        Assert.True(without.ContainsValue(300));
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void PersistentSortedMap_FindsValue_AcrossMultipleLevels()
+    {
+        PersistentSortedMap<int, int, DefaultComparer<int>> map =
+            PersistentSortedMap<int, int, DefaultComparer<int>>.Empty;
+
+        // 2,000 entries is well past one leaf of 32, so the tree is at least three levels deep.
+        for (int i = 1; i < 2_000; i++)
+            map = map.Add(i, i * 3);
+
+        Assert.True(map.ContainsValue(3));
+        Assert.True(map.ContainsValue(1_999 * 3));
+        Assert.False(map.ContainsValue(2_000 * 3));
+    }
+
+    [Fact]
+    public void PersistentSortedMap_NullValue_ReturnsTrue_WhenPresent()
+    {
+        PersistentSortedMap<int, string?, DefaultComparer<int>> map =
+            PersistentSortedMap<int, string?, DefaultComparer<int>>.Empty.Add(1, null).Add(2, "x");
+
+        Assert.True(map.ContainsValue(null));
+    }
     // ---------------- SparseMap ----------------
     // The scan walks the dense value prefix, which holds exactly the present entries — so what is
     // pinned here is that a swap-removed entry's value does not linger behind the count, and that

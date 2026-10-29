@@ -6083,8 +6083,8 @@ when the map is written to as well as read.
 there is nothing to share with, and every write here allocates a root-to-leaf path where
 `CelerityDictionary` writes one slot.
 
-**If you need ordered iteration or range queries, use `BTreeDictionary`.** A hash trie's enumeration
-order is unspecified.
+**If you need ordered iteration or range queries, use `PersistentSortedMap`** — or `BTreeDictionary`
+when nobody holds an old version. A hash trie's enumeration order is unspecified.
 
 ### Thread safety
 
@@ -6418,6 +6418,225 @@ for (int i = 0; i < 100_000; i++)
 
 PersistentHashSet<int, Int32WangNaiveHasher> numbers = builder.ToImmutable();
 Console.WriteLine(numbers.Contains(99_999));        // True
+```
+
+
+## PersistentSortedMap&lt;TKey, TValue, TComparer&gt;
+
+An **immutable sorted map** backed by a **persistent B+ tree**: a **single-key edit** returns a new
+map that **shares** all but one root-to-leaf path of the old one's storage — while a write that
+changes nothing hands back the receiver — and the ordered queries the BCL's immutable sorted
+dictionary does not have (`Min`, `Max`, lower and upper bound, floor and predecessor, range
+enumeration) each cost one `O(log n)` descent. The sorted sibling of
+[`PersistentHashMap`](#persistenthashmaptkey-tvalue-thasher), and the immutable sibling of
+[`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer).
+
+```csharp
+public sealed class PersistentSortedMap<TKey, TValue, TComparer> : IReadOnlyDictionary<TKey, TValue?>
+    where TComparer : struct, IComparer<TKey>
+```
+
+`System.Collections.Immutable.ImmutableSortedDictionary<TKey, TValue>` is the BCL's only immutable
+sorted map, and it has two problems:
+
+- **It is an AVL tree with one heap node per entry.** Its branching factor is two, so a lookup is a
+  pointer chase per level — about seventeen at 100,000 entries — and every comparison is an
+  interface call through the `IComparer<TKey>` it holds.
+- **It answers only exact questions.** There is no `Min` / `Max`, no floor or ceiling, and no range
+  enumeration, so "the first key at or after *x*" — or "the value as of time *t*" — on an immutable
+  sorted map is an `O(n)` scan from the start.
+
+`PersistentSortedMap<TKey, TValue, TComparer>` is a **B+ tree of fan-out 32**. Every entry lives in a
+leaf of up to 32 entries held in two flat arrays; a branch holds up to 32 children and the separator
+keys between them. 100,000 entries are four levels deep rather than seventeen, a level costs one
+binary search over a contiguous key array, and in-order enumeration walks leaf arrays rather than a
+node per entry. `TComparer` is a struct type argument, as in `BTreeDictionary`, so the comparison is
+inlined rather than dispatched.
+
+The documented BCL-beating workload is the one `PersistentHashMap` serves, when the reader also needs
+**order**: a sorted snapshot read far more often than it is written, that must still be updatable
+without copying, and that is queried by **position in the order** as well as by key — a versioned
+order book or price ladder, a time-indexed state answering "the value as of *t*" with `TryGetFloor`,
+a route or range table swapped atomically, or a sorted symbol table threaded through a compiler pass.
+
+### How it works
+
+A leaf holds keys and values in `[0, Count)` of two arrays. A branch holds `Count` children and the
+`Count - 1` separators between them; separator *i* is a lower bound on every key under child *i + 1*
+and orders after every key under child *i*, so a descent picks the child by counting the separators
+at or below the key. Every node except the root holds between **16 and 32** entries or children, so
+the tree is at most eight levels deep for any count an `int` can hold — the structural bound the
+enumerator's inline path is sized from.
+
+A single-key mutation is **path copying**. An insert that overflows a leaf to 33 entries splits it
+into 16 and 17 and inserts the new separator into the parent, which may split in turn; a root that
+splits gains a level. A removal that drops a node below 16 **borrows** from a neighbour, sharing the
+pair's entries out evenly, or **merges** with it when the two fit in one node; a root branch left
+with one child is dropped. Each copied node gets exact-length arrays, and a copy whose separators did
+not change — overwriting a value, or replacing one child — **shares** the old node's key array,
+since nothing ever writes through a node a published map can reach. A rebalancing removal copies the
+neighbour too, so it copies up to two nodes per level it reaches.
+
+There is **no out-of-band `default(TKey)` slot**, unlike the hashed persistent types. A comparer
+orders `null` and `0` like any other key, so they are stored inline: `Comparer<TKey>.Default` puts
+`null` before every non-`null` key, and a value-type `default(TKey)` sorts wherever the comparer puts
+it, exactly as in `BTreeDictionary`.
+
+**The comparer is `default(TComparer)`.** Every map — `Empty` included — orders by the default value
+of `TComparer`, because the type shares one static empty map and every node operation is static. A
+comparer must carry its configuration in its *type* rather than in fields, as `DefaultComparer<T>`
+does. Unlike `BTreeDictionary`, there is no constructor taking a comparer instance.
+
+### Constructors
+
+```csharp
+public PersistentSortedMap(IEnumerable<KeyValuePair<TKey, TValue>> source)
+public static readonly PersistentSortedMap<TKey, TValue, TComparer> Empty
+```
+
+- `Empty` is the empty map, and is the instance `Remove` returns when it takes the last entry.
+- The `source` constructor inserts through a `Builder`, so no intermediate map is allocated per entry
+  and no root-to-leaf path is copied per entry either. The source does not need to be sorted.
+
+**Throws:**
+
+- `ArgumentNullException` if `source` is `null`.
+- `ArgumentException` if `source` contains duplicate keys.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `bool IsEmpty { get; }` | The number of entries, and whether there are none. |
+| `TValue this[TKey key] { get; }` | The value stored under `key`; throws `KeyNotFoundException` if absent. There is no setter: `SetItem` returns a new map instead. |
+| `KeyCollection Keys { get; }` / `ValueCollection Values { get; }` | Allocation-free struct views in ascending key order, each with a `Count`. |
+| `bool ContainsKey(TKey key)` / `bool TryGetValue(TKey key, out TValue? value)` | `O(log n)`: one binary search per level, four levels at 100,000 entries and never more than eight. |
+| `bool ContainsValue(TValue? value)` | `O(n)` scan with `EqualityComparer<TValue>.Default` — the tree is ordered by key. |
+| `KeyValuePair<TKey, TValue?> Min { get; }` / `Max { get; }` | First / last entry in key order, `O(log n)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out ...)` / `TryGetMax(out ...)` | The non-throwing forms. |
+| `bool TryGetLowerBound(TKey key, out ...)` | First entry with a key **≥** `key` (`lower_bound`, the ceiling); an exact match is its own lower bound. |
+| `bool TryGetUpperBound(TKey key, out ...)` | First entry with a key **>** `key` (`upper_bound`). |
+| `bool TryGetFloor(TKey key, out ...)` | Last entry with a key **≤** `key` — the "value as of *t*" query. |
+| `bool TryGetPredecessor(TKey key, out ...)` | Last entry with a key **<** `key`. |
+| `RangeEnumerable EnumerateRange(TKey fromInclusive, TKey toExclusive)` | The entries of `[fromInclusive, toExclusive)`, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `PersistentSortedMap<...> Add(TKey key, TValue value)` | A map with the entry added; throws `ArgumentException` if the key is present — matching `Dictionary<,>.Add`, and stricter than `ImmutableSortedDictionary<,>.Add`, which tolerates a duplicate with an equal value. |
+| `PersistentSortedMap<...> SetItem(TKey key, TValue value)` | A map with the entry inserted or overwritten; returns **the receiver** when the key already maps to an equal value. |
+| `PersistentSortedMap<...> SetItems(IEnumerable<KeyValuePair<TKey, TValue>> items)` | The same for many entries, through one `Builder`; later entries win. Returns the receiver when nothing changed. |
+| `PersistentSortedMap<...> Remove(TKey key)` | A map without the key; returns **the receiver** when it was absent and `Empty` when it was the last entry. |
+| `PersistentSortedMap<...> RemoveRange(IEnumerable<TKey> keys)` | The same for many keys, ignoring absent ones; returns the receiver when none was present. |
+| `Builder ToBuilder()` | A mutable builder seeded with this map's entries. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending key order. Nothing can invalidate it, so it has no version check; `Reset` replays the sequence. The root-to-leaf path is held inline in the struct. |
+
+#### Builder
+
+```csharp
+public sealed class Builder
+```
+
+The builder works as `PersistentHashMap`'s does: it **stamps every node it creates with an ownership
+token** and edits such a node in place rather than copying it. A write that reaches a node shared
+with a published map copies it once — into arrays one slot past full, so the node can take the next
+insert in place — and owns the copy from then on. `ToImmutable()` takes a **new** token, which makes
+every node the builder has handed out read-only again in one assignment; it is `O(1)`.
+
+- `Builder()` — a new, empty builder.
+- `int Count` — the number of entries the builder holds.
+- `TValue this[TKey key]` — get **and set**; the setter inserts when the key is absent.
+- `bool ContainsKey(TKey key)` / `bool TryGetValue(TKey key, out TValue? value)` — the read surface.
+- `void Add(TKey key, TValue value)` — insert; throws `ArgumentException` if the key is present.
+- `bool Remove(TKey key)` — remove, reporting whether the key was there.
+- `PersistentSortedMap<...> ToImmutable()` — a map holding the builder's current entries.
+
+### Two deliberate omissions
+
+Both mirror `PersistentHashMap`. **There is no `Clear()`**: everywhere else in this library
+`Clear()` means in-place mutation, so the empty map is spelled `Empty`. And it **does not implement
+`IImmutableDictionary<TKey, TValue>`**, whose `Clear()` and duplicate-tolerant `Add` contradict those
+decisions. It implements `IReadOnlyDictionary<TKey, TValue?>`.
+
+### When not to reach for it
+
+**If nobody holds an old version, use `BTreeDictionary`.** Structural sharing buys nothing when there
+is nothing to share with: the mutable B-tree writes into one node where this allocates a path.
+
+**If the map never needs order, use `PersistentHashMap`.** A hash trie looks a key up with a popcount
+per level instead of a binary search per level.
+
+**If the map never changes after it is built, a sorted array is hard to beat.** `Array.BinarySearch`
+over a sorted key array answers lookups and bounds with no tree at all.
+
+### Thread safety
+
+Concurrent readers need no synchronization: no published map is ever mutated after it is returned.
+A shared *variable* holding successive maps still needs the usual publication rules, and the
+guarantee covers the map's own state only — every lookup calls `TComparer`, and `ContainsValue`
+calls `EqualityComparer<TValue>.Default`, so a comparer, key or value whose comparison is not
+thread-safe makes concurrent reads unsafe however immutable the map is. `Builder` is **not**
+thread-safe; the maps it produces are.
+
+### Measured
+
+`int` keys and `string` values, against `ImmutableSortedDictionary<int, string>`, as speedups (BCL
+time ÷ this type's time; below 1x is a loss):
+
+| Operation | 1,000 entries | 100,000 entries |
+| --- | --- | --- |
+| `LowerBound` — `TryGetLowerBound` at random keys, against the BCL's only option, an in-order scan | **~170x** | **~17,000x** |
+| `Enumerate` — every entry in order | **2.3x** | **3.9x** |
+| `Insert` — build the whole map one entry at a time | 1.13x | **1.85x** |
+| `Update` — `SetItem` over an existing key | 1.10x | **1.48x** |
+| `Lookup` — `TryGetValue` at random keys | ⚠️ **0.71x** (1.40x slower) | **1.29x** |
+
+**The type's case rests on the ordered queries**, which `ImmutableSortedDictionary` does not have at
+all, so the `LowerBound` row compares an `O(log n)` descent against an `O(n)` scan and grows with the
+map. The timings for the queries both types share are mixed, and the issue's pre-registered bars
+were missed at 1,000 entries for all three of them: **a lookup there is 1.40x slower**, because a
+1,000-entry AVL tree is about ten levels deep and fits in cache, where its ten comparisons beat three
+binary searches over 32-wide nodes. At 100,000 entries the AVL tree's pointer chase costs more and
+the B+ tree wins every shared operation.
+
+**Writes allocate more**: 1.36x the BCL's bytes when building at 1,000 entries, and 1.23x on
+`Update` at 100,000, while running faster. A path copy here rebuilds about four nodes of up to 32
+slots, where an AVL path copy rebuilds about seventeen nodes of a few fields: fewer objects, more
+bytes.
+
+Every ratio above was measured on a development machine (Apple Silicon, .NET 10). The CI series that
+is the project's contract is published to the
+[benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=PersistentSortedMap)
+and refreshes on merge to `main`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A price ladder: bids keyed by price, republished to readers on every change.
+PersistentSortedMap<decimal, int, DefaultComparer<decimal>> bids =
+    PersistentSortedMap<decimal, int, DefaultComparer<decimal>>.Empty
+        .Add(99.50m, 300)
+        .Add(99.75m, 120)
+        .Add(100.00m, 40);
+
+PersistentSortedMap<decimal, int, DefaultComparer<decimal>> snapshot = bids; // hand to a reader
+bids = bids.SetItem(99.60m, 75);                    // snapshot is untouched
+
+Console.WriteLine(bids.Max.Key);                    // 100.00 — best bid
+bids.TryGetLowerBound(99.55m, out var atOrAbove);   // 99.60 — first level at or above
+bids.TryGetFloor(99.70m, out var atOrBelow);        // 99.60 — last level at or below
+
+foreach (KeyValuePair<decimal, int> level in bids.EnumerateRange(99.50m, 100.00m))
+    Console.WriteLine($"{level.Key}: {level.Value}");  // 99.50, 99.60, 99.75 in ascending order
+
+Console.WriteLine(snapshot.ContainsKey(99.60m));    // False
+
+// A version history: the value as of any point in time is a floor query.
+var history = new PersistentSortedMap<long, string, DefaultComparer<long>>.Builder();
+history.Add(1_000, "v1");
+history.Add(2_000, "v2");
+history.Add(3_000, "v3");
+
+PersistentSortedMap<long, string, DefaultComparer<long>> versions = history.ToImmutable();
+versions.TryGetFloor(2_500, out var asOf);          // (2000, "v2")
 ```
 
 

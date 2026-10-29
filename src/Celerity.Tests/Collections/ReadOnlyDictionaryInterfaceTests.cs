@@ -2028,4 +2028,121 @@ public class ReadOnlyDictionaryInterfaceTests
 
         Assert.Equal(map.Count, ro.Count());
     }
+
+    // -------- PersistentSortedMap --------
+    // The sorted sibling of PersistentHashMap: the same surface with no mutation to invalidate an enumerator
+    // with, but every view yields in key order — and the default key is an ordinary inline entry, so order is
+    // asserted as-is rather than sorted first.
+
+    [Fact]
+    public void PersistentSortedMap_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        PersistentSortedMap<int, string, DefaultComparer<int>> map =
+            PersistentSortedMap<int, string, DefaultComparer<int>>.Empty.Add(1, "one");
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1));
+        Assert.Equal("one", ro[1]);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentSortedMap<int, string, DefaultComparer<int>>.Empty;
+
+        Assert.Throws<KeyNotFoundException>(() => ro[42]);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentSortedMap<int, string, DefaultComparer<int>>.Empty;
+
+        bool found = ro.TryGetValue(42, out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        IReadOnlyDictionary<int, string?> ro =
+            PersistentSortedMap<int, string, DefaultComparer<int>>.Empty.Add(7, "seven");
+
+        bool found = ro.TryGetValue(7, out string? value);
+
+        Assert.True(found);
+        Assert.Equal("seven", value);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_InterfaceKeysAndValues_ShouldEnumerateInKeyOrder_IncludingDefault()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentSortedMap<int, string, DefaultComparer<int>>.Empty
+            .Add(2, "two")
+            .Add(0, "zero")
+            .Add(1, "one");
+
+        Assert.Equal(new[] { 0, 1, 2 }, ro.Keys.ToArray());
+        Assert.Equal(new[] { "zero", "one", "two" }, ro.Values.ToArray());
+    }
+
+    [Fact]
+    public void PersistentSortedMap_InterfaceEnumeration_ShouldYieldEveryPair_InKeyOrder()
+    {
+        IReadOnlyDictionary<int, string?> ro = PersistentSortedMap<int, string, DefaultComparer<int>>.Empty
+            .Add(5, "five")
+            .Add(0, "zero");
+
+        var pairs = new List<KeyValuePair<int, string?>>();
+        foreach (KeyValuePair<int, string?> pair in ro)
+            pairs.Add(pair);
+
+        Assert.Equal(
+            new[] { new KeyValuePair<int, string?>(0, "zero"), new KeyValuePair<int, string?>(5, "five") },
+            pairs);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_NonGenericEnumeration_ShouldYieldEveryPair_InKeyOrder()
+    {
+        IEnumerable ro = PersistentSortedMap<int, string, DefaultComparer<int>>.Empty
+            .Add(5, "five")
+            .Add(0, "zero");
+
+        var keys = new List<int>();
+        foreach (object? entry in ro)
+            keys.Add(((KeyValuePair<int, string?>)entry!).Key);
+
+        Assert.Equal(new[] { 0, 5 }, keys);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_InterfaceKeys_ShouldOrderNullReferenceKeyFirst()
+    {
+        // Comparer<string>.Default orders null before every non-null key, so the null key is stored inline
+        // and enumerates first.
+        IReadOnlyDictionary<string, int?> ro = PersistentSortedMap<string, int?, DefaultComparer<string>>.Empty
+            .Add("a", 1)
+            .Add(null!, 0);
+
+        Assert.Equal(new[] { null, "a" }, ro.Keys.ToArray());
+    }
+
+    [Fact]
+    public void PersistentSortedMap_InterfaceLinqCount_ShouldMatchMapCount()
+    {
+        PersistentSortedMap<int, string, DefaultComparer<int>> map =
+            PersistentSortedMap<int, string, DefaultComparer<int>>.Empty;
+
+        for (int key = 0; key < 100; key++)
+            map = map.Add(key, key.ToString());
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Equal(map.Count, ro.Count());
+    }
 }

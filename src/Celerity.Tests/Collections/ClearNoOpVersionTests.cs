@@ -46,7 +46,9 @@ namespace Celerity.Tests.Collections;
 /// this family. The empty vector is <c>PersistentVector&lt;T&gt;.Empty</c>, and
 /// <see cref="PersistentHashMap{TKey, TValue, THasher}"/> is out of scope on exactly that reasoning —
 /// its empty map is <c>PersistentHashMap&lt;TKey, TValue, THasher&gt;.Empty</c> — as is
-/// <see cref="PersistentHashSet{T, THasher}"/>, whose empty set is <c>PersistentHashSet&lt;T, THasher&gt;.Empty</c>.
+/// <see cref="PersistentHashSet{T, THasher}"/>, whose empty set is <c>PersistentHashSet&lt;T, THasher&gt;.Empty</c>,
+/// and <see cref="PersistentSortedMap{TKey, TValue, TComparer}"/>, whose empty map is
+/// <c>PersistentSortedMap&lt;TKey, TValue, TComparer&gt;.Empty</c>.
 /// </para>
 /// </summary>
 public class ClearNoOpVersionTests

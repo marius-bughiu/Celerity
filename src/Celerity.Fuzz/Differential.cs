@@ -101,6 +101,7 @@ internal static class Differential
         ("CountMinSketchHash64", CountMinSketchHash64Case),
         ("PersistentVector", PersistentVectorCase),
         ("PersistentHashMap", PersistentHashMapCase),
+        ("PersistentSortedMap", PersistentSortedMapCase),
         ("PersistentHashSet", PersistentHashSetCase),
         ("RadixSort", RadixSortCase),
         ("CountingSort", CountingSortCase),
@@ -5427,6 +5428,185 @@ internal static class Differential
         }
 
         Check(seen == expected.Count, $"{label} enumeration length diverged");
+    }
+
+    // PersistentSortedMap — the immutable B+ tree, against a SortedDictionary<int, int> oracle. It carries
+    // the PersistentHashMap case's two concerns — a builder driven through the same sequence, and snapshots
+    // re-checked at the end so a path copy that wrote into an earlier map's storage is caught — and adds the
+    // B-tree one: the enumerated *sequence* and the ordered queries must agree, because a tree that has
+    // dropped a separator in a split, borrow or merge can still answer exact lookups correctly. Keys span
+    // negative values and zero, which this type stores inline rather than in an out-of-band slot.
+    private static void PersistentSortedMapCase(Random rng)
+    {
+        var sut = PersistentSortedMap<int, int, DefaultComparer<int>>.Empty;
+        var builder = new PersistentSortedMap<int, int, DefaultComparer<int>>.Builder();
+
+        var oracle = new SortedDictionary<int, int>();
+        var snapshots =
+            new List<(PersistentSortedMap<int, int, DefaultComparer<int>> Map, SortedDictionary<int, int> Oracle)>();
+        var builderSnapshots =
+            new List<(PersistentSortedMap<int, int, DefaultComparer<int>> Map, SortedDictionary<int, int> Oracle)>();
+
+        int removeWeight = rng.Next(0, 51);
+
+        // A key space of a few thousand builds three levels at fan-out 32; a small one keeps the root a leaf
+        // and churns it. The offset puts zero and negative keys in play.
+        int keySpace = rng.Next(1, 4000);
+        int keyOffset = rng.Next(-keySpace, 1);
+        int operations = rng.Next(0, 2500);
+
+        for (int op = 0; op < operations; op++)
+        {
+            int key = keyOffset + rng.Next(0, keySpace);
+            int roll = rng.Next(0, 100);
+
+            if (roll < removeWeight)
+            {
+                var before = sut;
+                sut = sut.Remove(key);
+                bool inOracle = oracle.Remove(key);
+
+                if (!inOracle)
+                    Check(ReferenceEquals(before, sut), "PersistentSortedMap Remove of an absent key allocated");
+
+                Check(builder.Remove(key) == inOracle, "PersistentSortedMap builder Remove diverged");
+            }
+            else if (roll < removeWeight + 5)
+            {
+                // The batch paths run through an internal builder seeded from the receiver, a third route into
+                // the tree. Later entries in a batch win, as they do when replayed into the oracle in order.
+                var batch = new List<KeyValuePair<int, int>>();
+                int batchSize = rng.Next(0, 40);
+                for (int i = 0; i < batchSize; i++)
+                    batch.Add(new KeyValuePair<int, int>(keyOffset + rng.Next(0, keySpace), Value(rng)));
+
+                bool removeBatch = rng.Next(0, 2) == 0;
+                var before = sut;
+                bool changed = false;
+
+                if (removeBatch)
+                {
+                    sut = sut.RemoveRange(batch.Select(entry => entry.Key));
+                    foreach (KeyValuePair<int, int> entry in batch)
+                    {
+                        changed |= oracle.Remove(entry.Key);
+                        builder.Remove(entry.Key);
+                    }
+                }
+                else
+                {
+                    sut = sut.SetItems(batch);
+                    foreach (KeyValuePair<int, int> entry in batch)
+                    {
+                        changed |= !oracle.TryGetValue(entry.Key, out int old) || old != entry.Value;
+                        oracle[entry.Key] = entry.Value;
+                        builder[entry.Key] = entry.Value;
+                    }
+                }
+
+                if (!changed)
+                    Check(ReferenceEquals(before, sut), "PersistentSortedMap no-op batch allocated");
+            }
+            else
+            {
+                int value = Value(rng);
+                sut = sut.SetItem(key, value);
+                builder[key] = value;
+                oracle[key] = value;
+            }
+
+            Check(sut.Count == oracle.Count, "PersistentSortedMap count diverged");
+            Check(sut.IsEmpty == (oracle.Count == 0), "PersistentSortedMap IsEmpty diverged");
+            Check(builder.Count == oracle.Count, "PersistentSortedMap builder count diverged");
+
+            if (op % 64 == 0)
+            {
+                snapshots.Add((sut, new SortedDictionary<int, int>(oracle)));
+                builderSnapshots.Add((builder.ToImmutable(), new SortedDictionary<int, int>(oracle)));
+            }
+        }
+
+        CheckSortedEntries(sut, oracle, keyOffset, keySpace, rng, "PersistentSortedMap");
+        CheckSortedEntries(builder.ToImmutable(), oracle, keyOffset, keySpace, rng, "PersistentSortedMap builder");
+
+        foreach ((PersistentSortedMap<int, int, DefaultComparer<int>> snapshot, SortedDictionary<int, int> expected) in snapshots)
+            CheckSortedEntries(snapshot, expected, keyOffset, keySpace, rng, "PersistentSortedMap snapshot");
+
+        foreach ((PersistentSortedMap<int, int, DefaultComparer<int>> snapshot, SortedDictionary<int, int> expected) in builderSnapshots)
+            CheckSortedEntries(snapshot, expected, keyOffset, keySpace, rng, "PersistentSortedMap builder snapshot");
+    }
+
+    // Reconciles every read surface: TryGetValue and the four seeks descend the tree, while enumeration and
+    // EnumerateRange walk the leaves. The seeks are probed against a binary search over the oracle's keys, at
+    // a sample of points that includes both ends of the key space and one past each.
+    private static void CheckSortedEntries(
+        PersistentSortedMap<int, int, DefaultComparer<int>> actual,
+        SortedDictionary<int, int> expected,
+        int keyOffset,
+        int keySpace,
+        Random rng,
+        string label)
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        foreach (KeyValuePair<int, int> entry in expected)
+        {
+            Check(actual.TryGetValue(entry.Key, out int value), $"{label} lost key {entry.Key}");
+            Check(value == entry.Value, $"{label} value diverged at key {entry.Key}");
+        }
+
+        CheckSameSequence(actual.Keys, expected.Keys, $"{label} key order");
+        CheckSameSequence(actual.Values, expected.Values, $"{label} value order");
+
+        int[] keys = expected.Keys.ToArray();
+
+        Check(actual.TryGetMin(out KeyValuePair<int, int> min) == (keys.Length > 0), $"{label} TryGetMin diverged");
+        Check(actual.TryGetMax(out KeyValuePair<int, int> max) == (keys.Length > 0), $"{label} TryGetMax diverged");
+        if (keys.Length > 0)
+        {
+            Check(min.Key == keys[0], $"{label} Min {min.Key} != {keys[0]}");
+            Check(max.Key == keys[^1], $"{label} Max {max.Key} != {keys[^1]}");
+        }
+
+        for (int probe = 0; probe < 64; probe++)
+        {
+            int k = probe switch
+            {
+                0 => keyOffset - 1,
+                1 => keyOffset,
+                2 => keyOffset + keySpace - 1,
+                3 => keyOffset + keySpace,
+                _ => keyOffset + rng.Next(0, keySpace),
+            };
+
+            // Index of the first key >= k; the other three bounds follow from it.
+            int at = Array.BinarySearch(keys, k);
+            bool exact = at >= 0;
+            int ceiling = exact ? at : ~at;
+            int higher = exact ? at + 1 : ceiling;
+            int floor = exact ? at : ceiling - 1;
+            int lower = ceiling - 1;
+
+            CheckSeek(actual.TryGetLowerBound(k, out KeyValuePair<int, int> e), e, keys, ceiling, $"{label} lower({k})");
+            CheckSeek(actual.TryGetUpperBound(k, out e), e, keys, higher, $"{label} upper({k})");
+            CheckSeek(actual.TryGetFloor(k, out e), e, keys, floor, $"{label} floor({k})");
+            CheckSeek(actual.TryGetPredecessor(k, out e), e, keys, lower, $"{label} predecessor({k})");
+        }
+
+        int from = keyOffset + rng.Next(-2, keySpace + 2);
+        int to = from + rng.Next(0, 200);
+        CheckSameSequence(
+            actual.EnumerateRange(from, to).Select(entry => entry.Key),
+            expected.Keys.Where(key => key >= from && key < to),
+            $"{label} range[{from},{to})");
+
+        static void CheckSeek(bool found, KeyValuePair<int, int> entry, int[] keys, int index, string what)
+        {
+            bool expectFound = index >= 0 && index < keys.Length;
+            Check(found == expectFound, $"{what} found {found} != {expectFound}");
+            if (expectFound)
+                Check(entry.Key == keys[index], $"{what} key {entry.Key} != {keys[index]}");
+        }
     }
 
     // PersistentHashSet — the set half of the same trie, against a HashSet<int> oracle. The nightly value is
