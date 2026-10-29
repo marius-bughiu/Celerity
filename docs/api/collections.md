@@ -6424,8 +6424,9 @@ Console.WriteLine(numbers.Contains(99_999));        // True
 ## PersistentSortedMap&lt;TKey, TValue, TComparer&gt;
 
 An **immutable sorted map** backed by a **persistent B+ tree**: a **single-key edit** returns a new
-map that **shares** all but one root-to-leaf path of the old one's storage — while a write that
-changes nothing hands back the receiver — and the ordered queries the BCL's immutable sorted
+map that **shares** all but one root-to-leaf path of the old one's storage (plus a neighbour per
+level on a removal that rebalances) — while a write that changes nothing hands back the receiver —
+and the ordered queries the BCL's immutable sorted
 dictionary does not have (`Min`, `Max`, lower and upper bound, floor and predecessor, range
 enumeration) each cost one `O(log n)` descent. The sorted sibling of
 [`PersistentHashMap`](#persistenthashmaptkey-tvalue-thasher), and the immutable sibling of

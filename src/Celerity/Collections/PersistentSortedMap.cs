@@ -6,8 +6,8 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>immutable sorted map</b> backed by a <b>persistent B+ tree</b>: a <b>single-key edit</b> returns a new
-/// map that <b>shares</b> all but one root-to-leaf path of the old one's storage — while a write that changes
-/// nothing hands back the receiver — and the ordered queries the BCL's immutable sorted dictionary does not
+/// map that <b>shares</b> all but one root-to-leaf path of the old one's storage (plus a neighbour per level on a
+/// removal that rebalances) — while a write that changes nothing hands back the receiver — and the ordered queries the BCL's immutable sorted dictionary does not
 /// have (<see cref="Min"/>, <see cref="Max"/>, <see cref="TryGetLowerBound"/>, <see cref="TryGetUpperBound"/>,
 /// <see cref="TryGetFloor"/>, <see cref="TryGetPredecessor"/>, <see cref="EnumerateRange"/>) each cost one
 /// <c>O(log n)</c> descent.
