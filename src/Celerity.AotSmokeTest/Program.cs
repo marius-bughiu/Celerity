@@ -776,6 +776,63 @@ void Check(bool condition, string message)
     Check(mapSnapshot.Keys.Count == 500 && mapSnapshot.Values.Count == 500, "PersistentHashMap key/value views");
 }
 
+// PersistentSortedMap - immutable path-copying B+ tree, PersistentHashMap's sorted sibling. Exercise the
+// IEnumerable constructor from an unsorted source, Add / SetItem / Remove at a depth that needs several
+// levels (so splits, borrows and merges all run), the ordered surface, a null reference key stored inline
+// under a __Canon-shared instantiation, the builder's ownership token, and the struct enumerators.
+{
+    var psm = new PersistentSortedMap<int, string, DefaultComparer<int>>(
+        new[] { new KeyValuePair<int, string>(2, "two"), new KeyValuePair<int, string>(1, "one") });
+    Check(psm.Count == 2 && psm[1] == "one" && psm.Min.Key == 1, "PersistentSortedMap construct + indexer");
+    Check(psm.Add(3, "three").Count == 3 && psm.Count == 2, "PersistentSortedMap Add leaves the receiver alone");
+    Check(psm.SetItem(1, "uno")[1] == "uno" && psm[1] == "one", "PersistentSortedMap SetItem leaves the receiver alone");
+    Check(psm.Remove(1).Count == 1 && psm.ContainsKey(1), "PersistentSortedMap Remove leaves the receiver alone");
+    Check(PersistentSortedMap<int, string, DefaultComparer<int>>.Empty.IsEmpty, "PersistentSortedMap Empty");
+
+    var deepSorted = PersistentSortedMap<int, int, DefaultComparer<int>>.Empty;
+    for (int i = 2999; i >= 0; i--) deepSorted = deepSorted.Add(i, i * 2);
+    Check(deepSorted.Count == 3000 && deepSorted[0] == 0 && deepSorted[2999] == 5998, "PersistentSortedMap multi-level reads");
+    Check(deepSorted.TryGetLowerBound(500, out var sortedLower) && sortedLower.Key == 500, "PersistentSortedMap lower bound");
+    Check(deepSorted.TryGetUpperBound(500, out var sortedUpper) && sortedUpper.Key == 501, "PersistentSortedMap upper bound");
+
+    int sortedScanned = 0;
+    foreach (var entry in deepSorted.EnumerateRange(100, 150)) sortedScanned++;
+    Check(sortedScanned == 50, "PersistentSortedMap range scan");
+
+    for (int i = 0; i < 3000; i += 2) deepSorted = deepSorted.Remove(i);
+    Check(deepSorted.Count == 1500 && deepSorted.Min.Key == 1 && deepSorted.Max.Key == 2999,
+        "PersistentSortedMap removal rebalances the tree");
+
+    // A reference key shares one __Canon body across instantiations; null orders first under Comparer<T>.Default.
+    var named = PersistentSortedMap<string, int, DefaultComparer<string>>.Empty.Add("b", 2).Add(null!, 0).Add("a", 1);
+    Check(named.Count == 3 && named[null!] == 0 && named.Min.Key is null && named.Max.Key == "b",
+        "PersistentSortedMap null reference key stored inline");
+
+    var sortedBuilder = new PersistentSortedMap<int, int, DefaultComparer<int>>.Builder();
+    for (int i = 0; i < 500; i++) sortedBuilder.Add(i, i);
+    var sortedSnapshot = sortedBuilder.ToImmutable();
+
+    // Overwriting a key the snapshot shares is what drives the ownership token: the builder must copy the
+    // path it now shares with sortedSnapshot rather than write through it.
+    sortedBuilder[317] = -317;
+    sortedBuilder.Remove(499);
+    Check(sortedSnapshot.Count == 500 && sortedSnapshot[317] == 317 && sortedSnapshot[499] == 499,
+        "PersistentSortedMap builder isolates its snapshots");
+    Check(sortedBuilder.Count == 499 && sortedBuilder[317] == -317, "PersistentSortedMap builder keeps its own edits");
+
+    long sortedTotal = 0;
+    int sortedPrevious = int.MinValue;
+    foreach (var entry in sortedSnapshot)
+    {
+        Check(entry.Key > sortedPrevious, "PersistentSortedMap enumerates in ascending key order");
+        sortedPrevious = entry.Key;
+        sortedTotal += entry.Value;
+    }
+
+    Check(sortedTotal == 124750, "PersistentSortedMap struct enumeration");
+    Check(sortedSnapshot.Keys.Count == 500 && sortedSnapshot.Values.Count == 500, "PersistentSortedMap key/value views");
+}
+
 // PersistentHashSet - immutable CHAMP set, the map's trie without the value array. Exercise the deduping
 // IEnumerable constructor, the trie read paths at a depth that needs several levels, Add / Remove and their
 // no-op receivers, the out-of-band default and null elements, the builder-driven set algebra, the

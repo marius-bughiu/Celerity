@@ -514,6 +514,10 @@ function escapeHtml(s) {
     // and an AVL tree keyed by hash with one heap node per entry, so its branching factor is two where this
     // one's is 32.
     { key: 'PersistentHashMap',   title: 'PersistentHashMap<int, string, ...>',      vs: 'ImmutableDictionary<int, string>', ops: ['Lookup', 'Insert', 'Update', 'Enumerate'] },
+    // PersistentSortedMap is the immutable ordered map, benchmarked against ImmutableSortedDictionary — the BCL's
+    // only one, an AVL tree with one heap node per entry. LowerBound is charted too: the BCL type has no seek, so
+    // its arm is an in-order scan from the smallest key, and the card shows what the B+ tree's O(log n) seek buys.
+    { key: 'PersistentSortedMap', title: 'PersistentSortedMap<int, string, ...>',    vs: 'ImmutableSortedDictionary<int, string>', ops: ['Lookup', 'Insert', 'Update', 'Enumerate', 'LowerBound'] },
     // PersistentHashSet is the set half of the same trie, benchmarked against ImmutableHashSet — likewise the
     // BCL's only one, and likewise an AVL tree keyed by hash with a heap node per distinct hash.
     { key: 'PersistentHashSet',   title: 'PersistentHashSet<int, ...>',              vs: 'ImmutableHashSet<int>', ops: ['Contains', 'Insert', 'Remove', 'Enumerate'] },
@@ -673,7 +677,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableHashSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
