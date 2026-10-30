@@ -100,6 +100,7 @@ const SUPPORTING_TYPES = new Map([
   ['ScheduledTimer', 'result struct — one due timer returned by TimerWheel'],
   ['GraphEdge', 'result struct — one edge returned by CompressedGraph'],
   ['PatternMatch', 'result struct — one match returned by AhoCorasick'],
+  ['FuzzyMatch', 'result struct — one match returned by EditDistanceIndex'],
   ['TopKEntry', 'result struct — one ranked entry returned by TopKSketch'],
 ]);
 

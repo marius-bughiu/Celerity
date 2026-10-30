@@ -1582,6 +1582,49 @@ void Check(bool condition, string message)
     Check(wide.ContainsAny(new string('a', 100) + "b"), "AhoCorasick matches deep into a degenerate text");
 }
 
+// EditDistanceIndex — the build-once symmetric-delete index. What is ILC-specific here is the generic
+// variant walk: the build and every query drive one recursive method constrained over a private struct
+// visitor, so ILC has to compile a separate instantiation for the posting sink and for the candidate buffer,
+// and the candidate buffer re-enters the index through a ref to itself. The build and the queries also rent
+// scratch from ArrayPool<T>.Shared once a word passes the stack limit, and the verifier rents its row there
+// too. Exercise the build, every query tier with its documented order, the duplicate collapse, and a word
+// long enough to take the pooled path on both sides.
+{
+    var index = new EditDistanceIndex(["apple", "apply", "ample", "maple", "angle", "apple"], maxDistance: 2);
+
+    Check(index.Count == 5 && index.MaxDistance == 2, "EditDistanceIndex collapses a duplicate word");
+    Check(index[3] == "maple" && index.Words[4] == "angle", "EditDistanceIndex resolves a word id");
+    Check(index.PostingCount == 72, "EditDistanceIndex posts every distinct deletion variant");
+    Check(!index.ContainsWithin("appel", 1) && index.ContainsWithin("appel", 2),
+        "EditDistanceIndex counts a transposition as two edits");
+    Check(index.CountWithin("aple", 1) == 3 && index.CountWithin("aple", 2) == 5, "EditDistanceIndex counts matches");
+
+    Check(index.TryFindNearest("appl", 2, out var nearest) && nearest == new FuzzyMatch(0, 1),
+        "EditDistanceIndex breaks a nearest tie toward the lowest id");
+    Check(!index.TryFindNearest("zzzzzz", 2, out _), "EditDistanceIndex reports no word within the distance");
+
+    var all = index.FindWithin("aple", 2);
+    Check(all.Length == 5 && all[0] == new FuzzyMatch(0, 1) && all[2] == new FuzzyMatch(3, 1) &&
+        all[3] == new FuzzyMatch(1, 2) && all[4] == new FuzzyMatch(4, 2),
+        "EditDistanceIndex orders matches by distance, then id");
+
+    var closest = new FuzzyMatch[3];
+    Check(index.CopyWithin("aple", 2, closest, 1) == 2 && closest[1] == all[0] && closest[2] == all[1],
+        "EditDistanceIndex copy tier keeps the closest matches");
+
+    var letters = 0;
+    foreach (var word in index) letters += word.Length;
+    Check(letters == 25, "EditDistanceIndex enumerates every word");
+
+    // A 300-character word is past the 256-character stack limit, so the build's variant walk rents its
+    // scratch; the query is the word shifted by one place, which leaves no common prefix or suffix to strip
+    // and so makes the verifier rent its row as well.
+    string longWord = string.Concat(Enumerable.Repeat("ab", 150));
+    var wide = new EditDistanceIndex([longWord, "ab", "ba"], maxDistance: 2);
+    Check(wide.TryFindNearest("b" + longWord[..^1], 2, out var shifted) && shifted == new FuzzyMatch(0, 2),
+        "EditDistanceIndex verifies a word past the stack limit");
+}
+
 // Rope — the mutable text tree. What is ILC-specific here is the node graph plus the two struct enumerators:
 // a rope is a class-per-node structure whose leaves each own a char[], and its chunk enumerator hands out
 // ReadOnlySpan<char> slices over those buffers, which is the shape a trimmed, JIT-less runtime is most likely

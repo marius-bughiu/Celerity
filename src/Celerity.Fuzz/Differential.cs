@@ -82,6 +82,7 @@ internal static class Differential
         ("CompressedGraph", CompressedGraphCase),
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
+        ("EditDistanceIndex", EditDistanceIndexCase),
         ("Rope", RopeCase),
         ("BTreeList", BTreeListCase),
         ("SuccinctTrie", SuccinctTrieCase),
@@ -3168,6 +3169,189 @@ internal static class Differential
         }
 
         return matched;
+    }
+
+    // ---- edit-distance index -------------------------------------------------
+
+    // EditDistanceIndex against the scan it replaces: the full, unbounded Levenshtein distance to every word,
+    // then filtered and ordered the way the index documents — ascending distance, then ascending id — with the
+    // nearest word the first entry of that order.
+    //
+    // The alphabet is tiny and the words short for the same reason as AhoCorasick's: what the index can get
+    // wrong is a word it never names as a candidate, and that happens when the deletion walk skips a subset of
+    // positions or a lookup misses part of a hash's postings. Over {a, b, c} nearly every word is within a few
+    // edits of nearly every query, repeated letters make variants coincide (which the build's deduplication
+    // has to survive), and the empty word and the empty query both arise. Every distance from 0 to the index's
+    // MaxDistance is asked of every query, because asking for fewer deletions than were indexed is a separate
+    // exactness argument from asking for all of them.
+    private static void EditDistanceIndexCase(Random rng)
+    {
+        int alphabet = rng.Next(1, 4);
+        int wordCount = rng.Next(0, 16);
+        int maxDistance = rng.Next(0, 4);
+
+        var words = new string[wordCount];
+        for (int i = 0; i < wordCount; i++)
+            words[i] = RandomWord(rng, alphabet, rng.Next(0, 8));
+
+        var sut = new EditDistanceIndex(words, maxDistance);
+
+        string[] distinct = [.. words.Distinct(StringComparer.Ordinal)];
+        Check(sut.Count == distinct.Length, "EditDistanceIndex did not collapse the duplicate words");
+        Check(sut.MaxDistance == maxDistance, "EditDistanceIndex reported the wrong MaxDistance");
+        for (int id = 0; id < distinct.Length; id++)
+        {
+            Check(sut[id] == distinct[id] && sut.Words[id] == distinct[id],
+                "EditDistanceIndex did not keep the word ids in first-appearance order");
+        }
+
+        // Every word posts at least itself, and at most one posting per distinct deletion variant — fewer only
+        // when two of its variants share a 32-bit hash.
+        long variants = 0;
+        foreach (string word in distinct)
+            variants += DeletionVariants(word, maxDistance).Count;
+
+        Check(sut.PostingCount >= distinct.Length && sut.PostingCount <= variants,
+            "EditDistanceIndex PostingCount is outside what the deletion variants allow");
+
+        int queryCount = rng.Next(1, 9);
+        for (int q = 0; q < queryCount; q++)
+        {
+            // Half the queries are a word of the set with a few random edits, so near matches are the norm;
+            // the rest are random strings, some of them longer than any word.
+            string query = distinct.Length > 0 && rng.Next(2) == 0
+                ? Perturb(rng, distinct[rng.Next(distinct.Length)], alphabet, rng.Next(0, 4))
+                : RandomWord(rng, alphabet, rng.Next(0, 10));
+
+            var distances = new int[distinct.Length];
+            for (int id = 0; id < distinct.Length; id++)
+                distances[id] = Levenshtein(query, distinct[id]);
+
+            for (int d = 0; d <= maxDistance; d++)
+            {
+                FuzzyMatch[] oracle =
+                [
+                    .. Enumerable.Range(0, distinct.Length)
+                        .Where(id => distances[id] <= d)
+                        .Select(id => new FuzzyMatch(id, distances[id]))
+                        .OrderBy(match => match.Distance)
+                        .ThenBy(match => match.WordId),
+                ];
+
+                FuzzyMatch[] found = sut.FindWithin(query, d);
+                Check(found.Length == oracle.Length, "EditDistanceIndex FindWithin returned the wrong number of matches");
+                for (int i = 0; i < oracle.Length; i++)
+                    Check(found[i] == oracle[i], "EditDistanceIndex FindWithin disagreed on a match or its order");
+
+                Check(sut.CountWithin(query, d) == oracle.Length, "EditDistanceIndex CountWithin disagreed");
+                Check(sut.ContainsWithin(query, d) == oracle.Length > 0, "EditDistanceIndex ContainsWithin disagreed");
+
+                bool any = sut.TryFindNearest(query, d, out FuzzyMatch nearest);
+                Check(any == oracle.Length > 0, "EditDistanceIndex TryFindNearest disagreed on presence");
+                Check(any ? nearest == oracle[0] : nearest == default,
+                    "EditDistanceIndex TryFindNearest did not return the closest, lowest-id word");
+
+                // A buffer with room for only some of the matches, at an offset: the ones written must be the
+                // closest, in order, and nothing outside the written range may be touched.
+                int room = rng.Next(0, oracle.Length + 2);
+                int offset = rng.Next(0, 3);
+                var destination = new FuzzyMatch[offset + room + 1];
+                var sentinel = new FuzzyMatch(-1, -1);
+                Array.Fill(destination, sentinel);
+                int written = sut.CopyWithin(query, d, destination, offset);
+                Check(written == Math.Min(oracle.Length, room + 1),
+                    "EditDistanceIndex CopyWithin wrote the wrong number of matches");
+                for (int i = 0; i < offset; i++)
+                    Check(destination[i] == sentinel, "EditDistanceIndex CopyWithin wrote before the destination index");
+                for (int i = 0; i < written; i++)
+                    Check(destination[offset + i] == oracle[i], "EditDistanceIndex CopyWithin did not write the closest matches in order");
+                for (int i = offset + written; i < destination.Length; i++)
+                    Check(destination[i] == sentinel, "EditDistanceIndex CopyWithin wrote past the matches it reported");
+            }
+        }
+    }
+
+    private static string RandomWord(Random rng, int alphabet, int length)
+    {
+        var word = new char[length];
+        for (int i = 0; i < length; i++)
+            word[i] = (char)('a' + rng.Next(alphabet));
+
+        return new string(word);
+    }
+
+    // `edits` random insertions, deletions and substitutions, so the result is within `edits` of the source and
+    // usually exactly that far.
+    private static string Perturb(Random rng, string source, int alphabet, int edits)
+    {
+        var text = new StringBuilder(source);
+        for (int e = 0; e < edits; e++)
+        {
+            int kind = text.Length == 0 ? 0 : rng.Next(3);
+            char letter = (char)('a' + rng.Next(alphabet));
+            switch (kind)
+            {
+                case 0:
+                    text.Insert(rng.Next(text.Length + 1), letter);
+                    break;
+                case 1:
+                    text.Remove(rng.Next(text.Length), 1);
+                    break;
+                default:
+                    text[rng.Next(text.Length)] = letter;
+                    break;
+            }
+        }
+
+        return text.ToString();
+    }
+
+    // The textbook full-table Levenshtein distance, with no bound, no early exit and no prefix stripping — the
+    // independent answer the index's bounded verifier is checked against.
+    private static int Levenshtein(string a, string b)
+    {
+        var previous = new int[b.Length + 1];
+        var current = new int[b.Length + 1];
+        for (int j = 0; j <= b.Length; j++)
+            previous[j] = j;
+
+        for (int i = 1; i <= a.Length; i++)
+        {
+            current[0] = i;
+            for (int j = 1; j <= b.Length; j++)
+            {
+                int substitution = previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
+                current[j] = Math.Min(substitution, Math.Min(previous[j] + 1, current[j - 1] + 1));
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[b.Length];
+    }
+
+    // Every distinct string reachable from `word` by deleting at most `deletions` characters, the word included.
+    private static HashSet<string> DeletionVariants(string word, int deletions)
+    {
+        var all = new HashSet<string>(StringComparer.Ordinal) { word };
+        var frontier = new List<string> { word };
+        for (int level = 0; level < deletions; level++)
+        {
+            var next = new List<string>();
+            foreach (string current in frontier)
+            {
+                for (int position = 0; position < current.Length; position++)
+                {
+                    string child = current.Remove(position, 1);
+                    if (all.Add(child))
+                        next.Add(child);
+                }
+            }
+
+            frontier = next;
+        }
+
+        return all;
     }
 
     // ---- rope ----------------------------------------------------------------
