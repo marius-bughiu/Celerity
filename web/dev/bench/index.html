@@ -604,8 +604,8 @@ function escapeHtml(s) {
     // has nothing, so Array_* is the careful linear scan over a string[] — a length filter, then the same bounded,
     // row-early-exit Levenshtein the index verifies with, so the ratio is the distance computations the index
     // avoids. FindWithin1/FindWithin2/Nearest carry the issue's pre-registered bars. Build is NOT a win and has no
-    // bar: its baseline is ONE scan query, so the ratio is how many scan queries the build costs.
-    { key: 'EditDistanceIndex',   title: 'EditDistanceIndex (fuzzy word lookup)',    vs: 'a length-filtered bounded-Levenshtein scan over a string[]; one scan query on the Build card', ops: ['FindWithin1', 'FindWithin2', 'Nearest', 'Build'] },
+    // bar: its baseline is the same 64 scan queries, so the ratio times 64 is how many scan queries the build costs.
+    { key: 'EditDistanceIndex',   title: 'EditDistanceIndex (fuzzy word lookup)',    vs: 'a length-filtered bounded-Levenshtein scan over a string[]; the same 64 scan queries on the Build card', ops: ['FindWithin1', 'FindWithin2', 'Nearest', 'Build'] },
     // Rope is the mutable text tree, benchmarked against StringBuilder — the type a caller reaches for when a
     // block of text has to change, and the one that is linear in the document on every operation but appending.
     // Edit is the whole workload (paired insertions and removals at scattered positions); Insert and Remove take

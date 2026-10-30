@@ -9033,7 +9033,7 @@ This is the one question none of the other text types answers. [`Trie<TValue>`](
 
 ### When to reach for it
 
-Spell-check suggestions and did-you-mean, fuzzy lookup of product names, commands, identifiers or SKUs typed by a person, OCR and transcription clean-up against a vocabulary, and near-duplicate detection over short keys. **Two things decide**: how many words there are, and how much memory the index may take. The query margin grows with the word count, because the scan is `O(n)` and a lookup is not. The memory cost grows with the word length and steeply with `MaxDistance`. Up to distance 2 over words, the trade is usually right; distance 3 over long strings is not what this is for.
+Spell-check suggestions and did-you-mean, fuzzy lookup of product names, commands, identifiers or SKUs typed by a person, OCR and transcription clean-up against a vocabulary, and near-duplicate detection over short keys. **Two things decide**: how many words there are, and how much memory the index may take. The query margin grows with the word count: the scan is `O(n)`, while a lookup's cost tracks the words that share a deletion variant with the query, which grows far more slowly. The memory cost grows with the word length and steeply with `MaxDistance`. Up to distance 2 over words, the trade is usually right; distance 3 over long strings is not what this is for.
 
 ### How it works
 
@@ -9066,12 +9066,14 @@ Two measurements, because the word list decides the margin and either one alone 
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1,000 | 1 | 16.2 ms | 0.82 ms | **20x** | 10,382 | ~116 B / word |
 | 1,000 | 2 | 35.9 ms | 5.22 ms | **7x** | 53,877 | ~562 B / word |
+| 1,000 | 2, nearest | 19.8 ms | 1.78 ms | **11x** | 53,877 | ~562 B / word |
 | 100,000 | 1 | 1,684 ms | 0.91 ms | **1,850x** | 1.04 M | 10.4 MB |
 | 100,000 | 2 | 3,654 ms | 6.08 ms | **600x** | 5.35 M | 59.6 MB |
+| 100,000 | 2, nearest | 1,836 ms | 5.47 ms | **336x** | 5.35 M | 59.6 MB |
 
-Real words are longer than the synthetic ones (so a query generates more variants), and a real vocabulary is denser (so more candidates need verifying). That is why the small-list margin drops from 83x to 7x at distance 2. The query cost barely moves with the list size, about 5–6 µs per query at distance 2 for both 1,000 and 100,000 words, while the scan grows linearly. So the margin is a function of the word count, and a list of a few hundred short words is where reaching for this stops being worth the memory. Every pre-registered bar in [#584](https://github.com/marius-bughiu/Celerity/issues/584) (distance 1: 5x at 1,000 and 100x at 100,000; distance 2: 3x and 50x; nearest: 3x at 1,000) clears on both word lists.
+Real words are longer than the synthetic ones (so a query generates more variants), and a real vocabulary is denser (so more candidates need verifying). That is why the small-list margin drops from 83x to 7x at distance 2. A second run measured 18x and 6x at 1,000 words, so read the small-list figures as ±10%. On this word list the query cost barely moved with the list size, about 5–6 µs per query at distance 2 for both 1,000 and 100,000 words, while the scan grew linearly. That is not a general law: on the benchmark's denser synthetic families the same query grew 8.5x across the same range, because verification is paid per candidate and a denser vocabulary has more of them. So the margin is a function of the word count, and a list of a few hundred short words is where reaching for this stops being worth the memory. Every pre-registered bar in [#584](https://github.com/marius-bughiu/Celerity/issues/584) (distance 1: 5x at 1,000 and 100x at 100,000; distance 2: 3x and 50x; nearest: 3x at 1,000) clears on both word lists; the nearest rows are from a second probe run.
 
-**The build is the price, and it carries no bar.** On the benchmark's words, building at distance 2 costs as much as **57–64 scan queries**: 1.78 ms for 1,000 words and 258 ms for 100,000. The 100,000-word build allocates 77.7 MB in total, including the transient posting array before deduplication and the duplicate set. The retained index is the posting array (8 bytes a posting) and the directory (2–4 bytes a posting). An index queried fewer times than that is cheaper as a scan.
+**The build is the price, and it carries no bar.** On the benchmark's words, building at distance 2 costs as much as **52–75 scan queries**, measured against the mean of its 64: 1.78 ms for 1,000 words (a scan query averages 34 µs) and 258 ms for 100,000 (3.4 ms). The 100,000-word build allocates 77.7 MB in total, including the transient posting array before deduplication and the duplicate set. The retained index is the posting array (8 bytes a posting) and the directory (2–4 bytes a posting). An index queried fewer times than that is cheaper as a scan.
 
 ### API
 

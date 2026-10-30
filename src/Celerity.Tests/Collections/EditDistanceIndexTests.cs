@@ -358,6 +358,75 @@ public class EditDistanceIndexTests
         Assert.Empty(index.FindWithin("applexxx", 2));
     }
 
+    [Fact]
+    public void TheLengthGate_ShouldCheckTheRangeOfLengths_NotEachLength()
+    {
+        // Words of length 2 and 20 leave a gap: a 10-character query is more than one edit from both, but inside
+        // the range, so it is looked up (and correctly finds nothing) rather than turned away by the gate.
+        var index = new EditDistanceIndex(["ab", new string('c', 20)], 1);
+
+        Assert.Empty(index.FindWithin(new string('c', 10), 1));
+        Assert.Equal([new FuzzyMatch(1, 1)], index.FindWithin(new string('c', 19), 1));
+    }
+
+    // ---- an unbounded distance --------------------------------------------------------------------
+
+    [Fact]
+    public void IntMaxValueAsTheDistance_ShouldStillReportTrueDistances()
+    {
+        // int.MaxValue is what a caller passes to mean "any distance". The verifier's bound + 1 must not wrap
+        // to a negative distance, which would report every word at int.MinValue and pick the wrong nearest.
+        var index = new EditDistanceIndex(["abc", "xyz"], int.MaxValue);
+
+        Assert.Equal([new FuzzyMatch(0, 1), new FuzzyMatch(1, 3)], index.FindWithin("abd", int.MaxValue));
+        Assert.True(index.TryFindNearest("abd", int.MaxValue, out FuzzyMatch nearest));
+        Assert.Equal(new FuzzyMatch(0, 1), nearest);
+        Assert.Equal(2, index.CountWithin("abd", int.MaxValue));
+    }
+
+    // ---- code units ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void ASurrogatePair_ShouldCountAsTwoCodeUnits()
+    {
+        // U+1F600 and U+1F601 share a high surrogate and differ in the low one: one edit, not two characters
+        // of difference. U+1F600 against "ab" is two substitutions of code units.
+        var index = new EditDistanceIndex(["\U0001F600"], 2);
+
+        Assert.Equal([new FuzzyMatch(0, 1)], index.FindWithin("\U0001F601", 2));
+        Assert.Equal([new FuzzyMatch(0, 2)], index.FindWithin("ab", 2));
+    }
+
+    // ---- allocation ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void TheNonAllocatingTiers_ShouldAllocateNothing_OnceWarm()
+    {
+        var index = new EditDistanceIndex(Fruit, 2);
+        var destination = new FuzzyMatch[8];
+
+        // Warm the pool and the JIT before measuring.
+        for (int i = 0; i < 3; i++)
+        {
+            index.ContainsWithin("aple", 2);
+            index.CountWithin("aple", 2);
+            index.TryFindNearest("aple", 2, out _);
+            index.CopyWithin("aple", 2, destination);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool contains = index.ContainsWithin("aple", 2);
+        int count = index.CountWithin("aple", 2);
+        bool found = index.TryFindNearest("aple", 2, out _);
+        int written = index.CopyWithin("aple", 2, destination);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.True(contains && found);
+        Assert.Equal(5, count);
+        Assert.Equal(5, written);
+    }
+
     // ---- the distance argument every query shares ---------------------------------------------------
 
     public static TheoryData<string> Queries => ["ContainsWithin", "CountWithin", "TryFindNearest", "FindWithin", "CopyWithin"];

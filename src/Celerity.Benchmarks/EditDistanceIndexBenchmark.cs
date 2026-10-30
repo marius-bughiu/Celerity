@@ -35,9 +35,11 @@ using Celerity.Collections;
 // Nearest is the did-you-mean shape: the single closest word within 2 edits, lowest id among ties. Both sides
 // tighten the bound to one below the best distance found so far, and both stop at an exact match.
 //
-// Build carries no bar and is NOT a win: the scan has no build, so the baseline is one scan pass for a single
-// query at k = 2, and the ratio reads as the number of scan queries the build costs — the break-even point
-// before the index has paid for itself. Its allocation column is the index's footprint plus the build's
+// Build carries no bar and is NOT a win: the scan has no build, so the baseline is the same 64 scan queries
+// at k = 2 that Array_FindWithin2 runs, and the ratio times 64 is the number of scan queries the build costs —
+// the break-even point before the index has paid for itself. All 64 rather than one, because one query's scan
+// cost depends on how many words share its length, and a single arbitrary query made the break-even figure
+// an accident of which word it was. Its allocation column is the index's footprint plus the build's
 // transient deduplication set and posting array; PostingCount is the size it is proportional to. The query
 // arms use indexes built once in GlobalSetup and never pay for it.
 [MemoryDiagnoser]
@@ -189,11 +191,11 @@ public class EditDistanceIndexBenchmark
         return total;
     }
 
-    // ---- Build: the price of the index, against one scan query it has to outlast ----
+    // ---- Build: the price of the index, against the 64 scan queries it has to outlast ----
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Build")]
-    public int Array_Build() => Scan(queries[0], 2).Length;
+    public int Array_Build() => ScanAll(2);
 
     [Benchmark]
     [BenchmarkCategory("Build")]
@@ -257,6 +259,10 @@ public class EditDistanceIndexBenchmark
     // exactly the algorithm the index does: the exact distance when it is at most `bound`, otherwise bound + 1.
     private static int BoundedDistance(ReadOnlySpan<char> a, ReadOnlySpan<char> b, int bound)
     {
+        // No two strings are further apart than the longer one's length, so a bound above that admits nothing
+        // more, and clamping it keeps bound + 1 from wrapping when a caller passes int.MaxValue for "any".
+        bound = Math.Min(bound, Math.Max(a.Length, b.Length));
+
         int prefix = a.CommonPrefixLength(b);
         a = a[prefix..];
         b = b[prefix..];

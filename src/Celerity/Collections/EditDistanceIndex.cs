@@ -35,9 +35,9 @@ namespace Celerity.Collections;
 /// 56 at <c>k = 2</c> for a ten-letter word, each stored as one 8-byte posting under a directory of 2 to 4
 /// bytes more. <see cref="PostingCount"/> reports the total. Building is a sort of those postings. A query
 /// generates <c>C(m, 0) + … + C(m, d)</c> variants of its own length <c>m</c>, so it is cheap for words and
-/// short phrases and not intended for long documents. A query whose length is more than <c>d</c> from every
-/// word's length is answered at once without generating any, so a long input against a list of short words
-/// costs nothing. Every measured ratio is in
+/// short phrases and not intended for long documents. A query whose length lies more than <c>d</c> outside the
+/// range from the shortest word's length to the longest's is answered at once without generating any, so a
+/// long input against a list of short words costs nothing. Every measured ratio is in
 /// <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
@@ -234,8 +234,9 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
     /// <remarks>
     /// The size the footprint is proportional to, at 8 bytes a posting plus a directory of 2 to 4 bytes per
     /// posting more. A word of length <c>L</c> contributes up to <c>C(L, 0) + … + C(L, MaxDistance)</c> of them,
-    /// and fewer when it repeats a letter, since deleting either of two equal neighbours yields the same variant,
-    /// or in the rare case that two of its variants share a 32-bit hash.
+    /// and fewer when it repeats a letter, since two different sets of deletions can then leave the same string
+    /// (deleting either <c>a</c> of <c>"aab"</c> gives <c>"ab"</c>), or in the rare case that two of its variants
+    /// share a 32-bit hash.
     /// </remarks>
     public int PostingCount => _postings.Length;
 
@@ -474,6 +475,10 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
     // the walk stops as soon as a whole row exceeds the bound, because a row's minimum never decreases.
     private static int BoundedDistance(ReadOnlySpan<char> a, ReadOnlySpan<char> b, int bound)
     {
+        // No two strings are further apart than the longer one's length, so a bound above that admits nothing
+        // more, and clamping it keeps bound + 1 from wrapping when a caller passes int.MaxValue for "any".
+        bound = Math.Min(bound, Math.Max(a.Length, b.Length));
+
         int prefix = a.CommonPrefixLength(b);
         a = a[prefix..];
         b = b[prefix..];
