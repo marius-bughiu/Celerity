@@ -9021,6 +9021,124 @@ if (alerts.TryFindFirst(line, out PatternMatch first))
     Console.WriteLine(alerts[first.PatternId]);        // Timeout
 ```
 
+## EditDistanceIndex
+
+```csharp
+public sealed class EditDistanceIndex : IReadOnlyList<string>
+```
+
+A **symmetric-delete index**: a build-once, immutable index over a fixed set of words that finds every word within a Levenshtein distance of a query, **exactly**, without computing a distance to each word.
+
+This is the one question none of the other text types answers. [`Trie<TValue>`](#trietvalue) and [`SuccinctTrie<TValue>`](#succincttrietvalue) match exact prefixes, [`AhoCorasick`](#ahocorasick) finds exact patterns inside a text, and [`SuffixArray`](#suffixarray) finds exact substrings. The BCL has nothing for approximate matching at all. The caller's option is a **linear scan**: a bounded Levenshtein distance to every word. A careful scan skips words whose length differs by more than `k` and stops a row early once the distance must exceed `k`, but it still pays one distance computation per word of a plausible length. That careful scan is the baseline below, not a naive one.
+
+### When to reach for it
+
+Spell-check suggestions and did-you-mean, fuzzy lookup of product names, commands, identifiers or SKUs typed by a person, OCR and transcription clean-up against a vocabulary, and near-duplicate detection over short keys. **Two things decide**: how many words there are, and how much memory the index may take. The query margin grows with the word count: the scan is `O(n)`, while a lookup's cost tracks the words that share a deletion variant with the query, which grows far more slowly. The memory cost grows with the word length and steeply with `MaxDistance`. Up to distance 2 over words, the trade is usually right; distance 3 over long strings is not what this is for.
+
+### How it works
+
+If two strings are within distance `k`, some string can be reached from **each** of them by deleting at most `k` characters. A substitution is one deletion from each side, an insertion into one is a deletion from the other, and a deletion is a deletion. So the build generates every **deletion variant** of every word, every string reachable by removing up to `MaxDistance` of its characters. A query generates its own variants and looks each one up. The words found that way are the **candidates**, and each one is verified with an exact bounded Levenshtein distance. Every word within the distance is a candidate, so nothing is missed, and verification removes the rest, so nothing is reported falsely.
+
+The variants are not stored as strings. Each is hashed to 32 bits and paired with its word id as one `ulong` **posting**, `hash << 32 | id`. The postings are sorted, which groups each hash's word ids together and puts them in id order, and deduplicated, which collapses the repeats a word with a repeated letter produces (deleting either `a` of `"aab"` gives `"ab"`). A **radix directory** over the hash's top `floor(log2 P)` bits then maps a hash to its bucket, so a lookup is one directory read and a scan of one or two adjacent postings. A hash collision can only add a candidate, which verification rejects, so the hash affects speed and never correctness. The hash is `string.GetHashCode(ReadOnlySpan<char>)`, which is seeded per process, so a crafted word list cannot aim collisions at one bucket.
+
+Verification trims the shared prefix and suffix first, since they never cost an edit, rejects a length gap wider than the bound outright, and otherwise keeps one row of the table and stops as soon as a whole row exceeds the bound.
+
+<a id="measured-editdistanceindex"></a>
+
+### Measured
+
+Two measurements, because the word list decides the margin and either one alone would mislead.
+
+**BenchmarkDotNet** (the CI suite and the dashboard), 64 queries per call, each one a word of the set with one random substitution. The words are synthetic: stems drawn with English letter frequencies and inflected into families (`-s`, `-ed`, `-ing`, `-er`, …), so neighbours one to three edits apart exist as they do in a dictionary. The baseline is the careful scan, verifying with a verbatim copy of the index's own bounded distance, so the ratio is purely the distance computations the index avoids.
+
+| Workload | Words | Scan | `EditDistanceIndex` | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| `FindWithin`, distance 1 | 1,000 | 1.09 ms | 6.40 µs | **170x** |
+| `FindWithin`, distance 1 | 100,000 | 122.7 ms | 9.88 µs | **12,400x** |
+| `FindWithin`, distance 2 | 1,000 | 2.18 ms | 26.2 µs | **83x** |
+| `FindWithin`, distance 2 | 100,000 | 219.7 ms | 221.7 µs | **991x** |
+| `TryFindNearest`, distance 2 | 1,000 | 1.11 ms | 24.1 µs | **46x** |
+| `TryFindNearest`, distance 2 | 100,000 | 113.3 ms | 138.6 µs | **817x** |
+
+**A real dictionary** is harder, and these are the numbers to plan with. A Stopwatch probe over `/usr/share/dict/words` (net10.0 Release, Apple Silicon), shuffled, with 1,000 queries of the same one-substitution shape, against the same careful scan:
+
+| Words | Distance | Scan | `EditDistanceIndex` | Ratio | Postings | Index size |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 1 | 16.2 ms | 0.82 ms | **20x** | 10,382 | ~116 B / word |
+| 1,000 | 2 | 35.9 ms | 5.22 ms | **7x** | 53,877 | ~562 B / word |
+| 1,000 | 2, nearest | 19.8 ms | 1.78 ms | **11x** | 53,877 | ~562 B / word |
+| 100,000 | 1 | 1,684 ms | 0.91 ms | **1,850x** | 1.04 M | 10.4 MB |
+| 100,000 | 2 | 3,654 ms | 6.08 ms | **600x** | 5.35 M | 59.6 MB |
+| 100,000 | 2, nearest | 1,836 ms | 5.47 ms | **336x** | 5.35 M | 59.6 MB |
+
+Real words are longer than the synthetic ones (so a query generates more variants), and a real vocabulary is denser (so more candidates need verifying). That is why the small-list margin drops from 83x to 7x at distance 2. A second run measured 18x and 6x at 1,000 words, so read the small-list figures as ±10%. On this word list the query cost barely moved with the list size, about 5–6 µs per query at distance 2 for both 1,000 and 100,000 words, while the scan grew linearly. That is not a general law: on the benchmark's denser synthetic families the same query grew 8.5x across the same range, because verification is paid per candidate and a denser vocabulary has more of them. So the margin is a function of the word count, and a list of a few hundred short words is where reaching for this stops being worth the memory. Every pre-registered bar in [#584](https://github.com/marius-bughiu/Celerity/issues/584) (distance 1: 5x at 1,000 and 100x at 100,000; distance 2: 3x and 50x; nearest: 3x at 1,000) clears on both word lists; the nearest rows are from a second probe run.
+
+**The build is the price, and it carries no bar.** On the benchmark's words, building at distance 2 costs as much as **52–75 scan queries**, measured against the mean of its 64: 1.78 ms for 1,000 words (a scan query averages 34 µs) and 258 ms for 100,000 (3.4 ms). The 100,000-word build allocates 77.7 MB in total, including the transient posting array before deduplication and the duplicate set. The retained index is the posting array (8 bytes a posting) and the directory (2–4 bytes a posting). An index queried fewer times than that is cheaper as a scan.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `EditDistanceIndex(IEnumerable<string> words, int maxDistance)` | Build, `O(P log P)` in the posting count. Duplicates collapse to one entry, keeping the id of the first appearance. The empty string is a legal word. `ArgumentNullException` on a `null` sequence; `ArgumentException` on a `null` word; `ArgumentOutOfRangeException` on a negative `maxDistance`, or when the postings would exceed `Array.MaxLength` (counted before anything is allocated). |
+| `int Count { get; }` | The number of **distinct** words, which can be smaller than what was supplied. |
+| `int MaxDistance { get; }` | The largest distance a query may ask for. Every query's `maxDistance` must be within `[0, MaxDistance]`. |
+| `int PostingCount { get; }` | The number of `(variant, word)` postings, which is what the footprint is proportional to. |
+| `ReadOnlySpan<string> Words { get; }` | The words in id order, copying nothing. |
+| `string this[int wordId] { get; }` | The word with that id, which is how a `FuzzyMatch` is turned back into a word. `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `bool ContainsWithin(ReadOnlySpan<char> query, int maxDistance)` | Is any word within the distance? The cheapest tier: candidates are verified unsorted, and verification stops at the first that is close enough. |
+| `int CountWithin(ReadOnlySpan<char> query, int maxDistance)` | How many distinct words are within the distance. |
+| `bool TryFindNearest(ReadOnlySpan<char> query, int maxDistance, out FuzzyMatch match)` | The closest word, and the **lowest id** among words at that distance. The verification bound tightens as closer words are found, and an exact match ends the search. |
+| `FuzzyMatch[] FindWithin(ReadOnlySpan<char> query, int maxDistance)` | Every word within the distance, in ascending distance and then ascending id. Allocates the result. |
+| `int CopyWithin(ReadOnlySpan<char> query, int maxDistance, FuzzyMatch[] destination, int destinationIndex = 0)` | The same sequence into a caller-owned buffer, allocating nothing. When there are more matches than room, the ones written are the **closest**: a buffer of five holds the five best suggestions. |
+| `Enumerator GetEnumerator()` | Struct enumerator over the **words**, in id order. |
+
+Every query throws `ArgumentOutOfRangeException` for a `maxDistance` outside `[0, MaxDistance]`. `CopyWithin` also throws `ArgumentNullException` on a `null` buffer and `ArgumentOutOfRangeException` for a `destinationIndex` outside `[0, destination.Length]`. Queries rent their scratch from `ArrayPool<T>` and return it, and write nothing else, so concurrent readers need no synchronization.
+
+### The result type: `FuzzyMatch`
+
+```csharp
+public readonly struct FuzzyMatch : IEquatable<FuzzyMatch>
+```
+
+| Member | Behaviour |
+| --- | --- |
+| `int WordId { get; }` | The id of the word that matched, an index into the index over `[0, Count)`. |
+| `int Distance { get; }` | The exact Levenshtein distance between the query and that word. Zero means the word is the query. |
+| `void Deconstruct(out int wordId, out int distance)` | Destructuring, plus `==` / `!=` / `Equals` / `GetHashCode` / `ToString`. |
+
+### Caveats
+
+- **Memory is the price.** A word of length `L` contributes `C(L, 0) + C(L, 1) + … + C(L, MaxDistance)` postings, fewer when it repeats a letter: about 11 at distance 1 and about 56 at distance 2 for a ten-letter word. Each posting is 8 bytes, and the directory adds 2 to 4 bytes per posting more. Over a real English word list that is about 104 bytes per word at distance 1 and about 596 at distance 2: 59.6 MB for 100,000 words. Check `PostingCount` against your budget before choosing `MaxDistance`.
+- **A query's cost grows with its own length.** It generates `C(m, 0) + … + C(m, d)` variants of a length-`m` query, so it is cheap for words and short phrases. A 400-character query at distance 2 hashes about 80,000 variants. This is not a document-search structure.
+- **Levenshtein, not Damerau.** A transposition is two edits: `"teh"` is distance 2 from `"the"`. Build for distance 2 when swapped letters matter.
+- **Ordinal, over UTF-16 code units.** Characters are compared by value, and a surrogate pair is two code units. There is no culture-aware or case-insensitive mode: fold the words and the query the same way when case should not count.
+- **Duplicates collapse; the empty string is a word.** The same word supplied twice yields one entry, keeping the id of its first appearance. An empty word is within distance `d` of every query of length `d` or less.
+- **Build-once.** The index is immutable; changing the word set means building a new one, as with [`AhoCorasick`](#ahocorasick) and [`SuffixArray`](#suffixarray).
+
+### Usage example
+
+```csharp
+var index = new EditDistanceIndex(["apple", "apply", "ample", "maple", "angle"], maxDistance: 2);
+
+Console.WriteLine(index.ContainsWithin("appel", 1));   // False - a swapped pair is two edits
+Console.WriteLine(index.CountWithin("aple", 1));       // 3
+
+foreach (FuzzyMatch match in index.FindWithin("aple", 2))
+    Console.WriteLine($"{index[match.WordId]} at {match.Distance}");
+// apple at 1
+// ample at 1
+// maple at 1
+// apply at 2
+// angle at 2
+
+if (index.TryFindNearest("appl", 2, out FuzzyMatch nearest))
+    Console.WriteLine(index[nearest.WordId]);          // apple - apply is as close, and came later
+
+// The five best suggestions, allocating nothing.
+var suggestions = new FuzzyMatch[5];
+int written = index.CopyWithin("aple", 2, suggestions);
+```
+
 ## TimerWheel&lt;TValue&gt;
 
 ```csharp
