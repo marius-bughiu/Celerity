@@ -5654,6 +5654,199 @@ Console.WriteLine(big.Depth);  // 4
 ```
 
 
+## SegmentedList&lt;T&gt;
+
+A **growable list stored in fixed-size segments**, each one below the 85,000-byte Large Object Heap
+threshold. Appending never copies an element already stored and never allocates on the LOH. It is the
+list for **a large sequence built by appending** when the final size is not known up front: a result
+set, a parsed file, a log, an index under construction.
+
+```csharp
+public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
+```
+
+### Why not `List<T>`
+
+`List<T>` keeps one contiguous array and doubles it when it fills. For a list built by `Add` to *n*
+elements that means:
+
+- **About *2n* slots allocated and *n* copied.** Each growth copies everything stored so far into an array
+  twice the size, and the old array becomes garbage.
+- **Three times the data at the peak.** While a growth copies, the old array and the new one are both live.
+- **Gen-2 collections.** Every array past 85,000 bytes (about 21,000 `int`s or 10,600 references) is
+  allocated on the Large Object Heap, zeroed, and charged to the gen-2 budget. A workload that builds large
+  lists keeps triggering **full** collections, even when every list dies young.
+
+Pre-sizing with `new List<T>(capacity)` avoids all three, but only when the final count is known before the
+first `Add`. Roslyn hit exactly this shape and keeps an internal `SegmentedList<T>`. The BCL ships nothing
+equivalent. [`Deque<T>`](#dequet) and [`BTreeList<T>`](#btreelistt) solve other shapes (both-ends churn and
+middle edits).
+
+### How it works
+
+- **A spine of segments.** Every segment holds `SegmentLength` elements: the largest power of two whose
+  array fits in 64 KB. That is 16,384 `int`s, 8,192 references or `long`s, and 65,536 `byte`s, so every
+  array stays in the small-object heap. Element `i` lives at segment `i >> k`, slot `i & (SegmentLength - 1)`:
+  two dependent loads.
+- **Growth adds a segment.** When the last segment is full, `Add` allocates one more and copies nothing.
+  A full segment is never reallocated.
+- **The first segment grows like a `List<T>`.** It starts at 4 slots and doubles until it reaches
+  `SegmentLength`, so a short list costs what a short `List<T>` costs. Only after that does the second
+  segment appear.
+- **`Clear` keeps the segments**, as `List<T>.Clear` keeps its array, and the next `Add`s reuse them.
+  `TrimExcess` releases them.
+- **`GetSegment(i)` hands out a segment as a `ReadOnlySpan<T>`.** Walking segments `0` to `SegmentCount - 1`
+  visits every element in order at array speed, and is the way to feed span-based or vectorized code.
+
+An element wider than 32 KB gets a one-element segment, which still stays under the LOH threshold (the
+runtime cannot make an array of a value type of 64 KB or more at all). The list holds at most
+`2^31 - SegmentLength` elements.
+
+### Constructors
+
+```csharp
+public SegmentedList()
+public SegmentedList(int capacity)
+public SegmentedList(IEnumerable<T> collection)
+```
+
+- The parameterless constructor allocates nothing until the first `Add`.
+- The `capacity` overload reserves room for at least `capacity` elements. Past `SegmentLength` it allocates
+  whole segments.
+- The `collection` overload appends the elements in enumeration order, as `AddRange` does.
+
+**Throws:** `ArgumentOutOfRangeException` if `capacity` is negative or above the element ceiling;
+`ArgumentNullException` if `collection` is `null`.
+
+### Methods and properties
+
+| Member | Cost | Behaviour |
+| --- | --- | --- |
+| `int Count` | `O(1)` | The number of elements. |
+| `int Capacity` | `O(1)` | The slots across the allocated segments. |
+| `int SegmentLength` | `O(1)` | Elements in one full segment for this `T`. |
+| `int SegmentCount` | `O(1)` | Segments holding elements; `0` for an empty list. Segments retained by `Clear` are not counted. |
+| `T this[int index] { get; set; }` | `O(1)` | Get and set by position: two dependent loads. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set replaces the element in place and does **not** invalidate an active enumerator (see below). |
+| `void Add(T item)` | `O(1)` | Appends at the end. Allocates one segment when the last is full, and copies nothing except while the first segment is still growing. |
+| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` reserves its count first. Adding a list to itself appends one copy of its current elements. Throws `ArgumentNullException` for `null`. |
+| `void Insert(int index, T item)` | `O(n - index)` | Inserts at `index`, shifting every later element up a position across segment boundaries. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
+| `void RemoveAt(int index)` | `O(n - index)` | Removes the element at `index`. Removing the last element is `O(1)`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
+| `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. |
+| `int IndexOf(T item)` / `bool Contains(T item)` | `O(n)` | A linear scan, one `Array.IndexOf` per segment, under `EqualityComparer<T>.Default`. |
+| `void Clear()` | `O(n)` for references, `O(1)` otherwise | Removes every element and keeps the segments for reuse. Clearing an **already-empty** list is a true no-op and leaves enumerators valid, like the rest of the library. |
+| `int EnsureCapacity(int capacity)` | `O(capacity)` | Reserves room and returns the new `Capacity`. Throws `ArgumentOutOfRangeException` when `capacity` is negative or above the element ceiling. |
+| `void TrimExcess()` | `O(1)`, or `O(n)` within one segment | Releases the segments past the last one in use, and shrinks a list that fits in one segment to exactly `Count` slots. |
+| `ReadOnlySpan<T> GetSegment(int segmentIndex)` | `O(1)` | Segment `segmentIndex`'s elements as a span, valid until the list is next modified. Throws `ArgumentOutOfRangeException` when `segmentIndex` is negative or not less than `SegmentCount`. |
+| `T[] ToArray()` | `O(n)` | One `Array.Copy` per segment. |
+| `void CopyTo(T[] array, int arrayIndex)` | `O(n)` | Under [the library's `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | `O(1)` per step | An allocation-free struct enumerator that walks the segments front to back. |
+
+**What invalidates an enumerator.** Every structural mutation does: `Add`, `AddRange`, `Insert`,
+`RemoveAt`, a `Remove` that finds its element, a `Clear` that had something to clear, and an
+`EnsureCapacity` or `TrimExcess` that changed the capacity. Assignment through the indexer does **not**,
+because it replaces one element in place. That is the rule [`Deque<T>`](#dequet) and
+[`BTreeList<T>`](#btreelistt) follow, and the one place this type deliberately differs from `List<T>`,
+whose indexer setter does invalidate.
+
+### When not to reach for it
+
+- **If you know the final size, pre-size a `List<T>`.** `new List<T>(n)` allocates once, copies nothing,
+  and reads with one load. This type wins only when growth is unavoidable.
+- **If the list stays small, use `List<T>`.** Below `SegmentLength` this type is a `List<T>` with an extra
+  indirection, and it builds slightly slower (see [Measured](#measured-segmentedlist)).
+- **If reads dominate, measure first.** A random read is two dependent loads, and `foreach` through the
+  struct enumerator is slower than `List<T>`'s. A hot sequential loop should walk `GetSegment` instead.
+- **If you edit the middle, use [`BTreeList<T>`](#btreelistt).** `Insert` and `RemoveAt` here are
+  `O(n)`, exactly as on `List<T>`.
+- **If you need one contiguous `Span<T>` over everything, use `List<T>`.** There is no
+  `CollectionsMarshal.AsSpan` equivalent: the elements are not contiguous by design.
+
+### Thread safety
+
+`SegmentedList<T>` is not thread-safe. Concurrent callers must synchronize externally.
+
+<a id="measured-segmentedlist"></a>
+
+### Measured
+
+The bars were pre-registered in [#586](https://github.com/marius-bughiu/Celerity/issues/586) before the
+benchmark ran, against a `List<int>` that is **not** pre-sized. Pre-sizing is the fix when the size is known,
+and this type is for when it is not. Five bars clear and one is missed. **These are development-machine
+numbers** (Apple M4, .NET 10). CI publishes its own on
+[the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=SegmentedList) at each merge to
+`main`.
+
+| Build by `Add` | `List<int>` | `SegmentedList<int>` | Ratio | Allocated | Gen-2 per 1,000 builds | Bar |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 1,000 | 878 ns | 1,113 ns | **a 1.27x loss** | 8.4 KB vs 8.5 KB | 0 vs 0 | ≤1.25x loss: **missed** |
+| 100,000 | 109 µs | 85 µs | **1.28x** | 1,050 KB vs 525 KB (0.50x) | 200 vs **0** | ≤0.6x allocation: met |
+| 1,000,000 | 1,069 µs | 832 µs | **1.28x** | 8,389 KB vs 4,132 KB (0.49x) | 598 vs **0** | ≥1.15x, ≤0.6x, zero gen-2: met |
+
+| Reads | 1,000 | 100,000 | 1,000,000 | Bar |
+| --- | ---: | ---: | ---: | --- |
+| 10,000 random indexed reads | a 1.39x loss | a 1.23x loss | a 1.24x loss | ≤1.5x loss: met |
+| `GetSegment` walk vs a `CollectionsMarshal.AsSpan` scan | 1.01x | 0.99x | 1.00x | within 1.1x: met |
+| `foreach` vs `List<int>`'s `foreach` | a 1.51x loss | a 1.51x loss | a 1.52x loss | published, no bar |
+
+**The small-list miss** is what the layout costs below `SegmentLength`. There the type does the same work a
+`List<T>` does, plus a separate fill count for the tail segment that every `Add` updates, and it has nothing
+to win back. A list that stays small should be a `List<T>`.
+
+**The gen-2 column is the point.** A `List<int>` past about 21,000 elements allocates each new array on the
+Large Object Heap, and the measured run paid about 600 full collections for every 1,000 one-million-element
+builds. This type's segments all stay in the small-object heap and never trigger one.
+
+**`foreach` was first measured at 5x slower.** The first enumerator called an out-of-line helper on its end
+path and passed it the enumerator's address, which kept the JIT from holding the enumerator's fields in
+registers, so every element paid a store and reload. Inlining that path and throwing through a static helper
+brought it to 1.5x.
+
+### Name clash with Roslyn
+
+Some `Microsoft.CodeAnalysis` versions expose a `System.Collections.Generic.SegmentedList<T>` (4.1.0, which
+BenchmarkDotNet 0.14 pulls in, is one). A project that references such a version and imports both namespaces
+gets a `CS0104` ambiguity. Qualify the name, or alias it:
+
+```csharp
+using SegmentedList = Celerity.Collections.SegmentedList<int>;
+```
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var log = new SegmentedList<int>();
+for (int i = 0; i < 100_000; i++)
+    log.Add(i);                          // no element is ever copied once its segment is full
+
+log.AddRange(new[] { 100_000, 100_001 });
+
+Console.WriteLine(log.Count);            // 100002
+Console.WriteLine(log.SegmentLength);    // 16384 — 64 KB of ints, under the LOH threshold
+Console.WriteLine(log.SegmentCount);     // 7
+Console.WriteLine(log[54_321]);          // 54321
+
+// Walk the storage a segment at a time, at array speed.
+long sum = 0;
+for (int s = 0; s < log.SegmentCount; s++)
+    foreach (int x in log.GetSegment(s))
+        sum += x;
+Console.WriteLine(sum);                  // 5000150001
+
+log.Insert(0, -1);                       // O(n), shifting across every segment
+log.RemoveAt(1);                         // removes the 0 that the insert pushed to position 1
+Console.WriteLine(log[0]);               // -1
+Console.WriteLine(log[1]);               // 1
+
+while (log.Count > 20_000)
+    log.RemoveAt(log.Count - 1);         // removing the last element is O(1)
+Console.WriteLine(log.Capacity);         // 114688 — emptied segments are kept for reuse
+log.TrimExcess();
+Console.WriteLine(log.Capacity);         // 32768 — two segments in use, the rest released
+```
+
+
 ## PersistentVector&lt;T&gt;
 
 An **immutable indexed sequence** backed by a **32-way bit-partitioned trie** with a tail buffer:

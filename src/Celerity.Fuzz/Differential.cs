@@ -84,6 +84,7 @@ internal static class Differential
         ("AhoCorasick", AhoCorasickCase),
         ("Rope", RopeCase),
         ("BTreeList", BTreeListCase),
+        ("SegmentedList", SegmentedListCase),
         ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
@@ -3604,6 +3605,272 @@ internal static class Differential
                 minimum *= 16;
         }
         Check(expected.Count >= minimum, $"{label} is {actual.Depth} levels deep at only {expected.Count} elements");
+    }
+
+    // ---- segmented list -----------------------------------------------------
+
+    // SegmentedList against the List<int> it replaces. Its correctness lives at the segment boundaries: an
+    // Insert or RemoveAt carries one element across every boundary between the edit and the end, an Add past a
+    // full segment opens the next one, the first segment doubles from 4 up to SegmentLength before a second
+    // exists, and a Clear or a drain keeps segments that a later Add must reuse rather than reallocate. A
+    // boundary carry that drops or duplicates one element leaves every other element intact, so every edit is
+    // followed by reads around the position it touched and on both sides of the nearest boundary, and the
+    // whole sequence is reconciled through the indexer, the enumerator, GetSegment, ToArray and CopyTo on a
+    // schedule and at the end.
+    //
+    // One case in four starts across two to four segments of 16,384 ints, so the boundary carries are real;
+    // the rest start small and run long, so the first segment's doubling and its hand-off to the second are
+    // reached by Add. Positions are skewed to both ends and to segment boundaries.
+    private static void SegmentedListCase(Random rng)
+    {
+        const int SegmentInts = 16_384;
+        bool large = rng.Next(0, 4) == 0;
+        int initial = large
+            ? SegmentInts * rng.Next(1, 4) + rng.Next(-3, 4)
+            : rng.Next(0, 600);
+        var oracle = new List<int>(initial);
+        for (int i = 0; i < initial; i++)
+            oracle.Add(Value(rng));
+
+        SegmentedList<int> sut;
+        switch (rng.Next(0, 5))
+        {
+            case 0:
+                sut = new SegmentedList<int>(oracle);
+                break;
+            case 1:
+                sut = new SegmentedList<int>();
+                foreach (int value in oracle)
+                    sut.Add(value);
+                break;
+            case 2:
+                // A lazy sequence takes the one-at-a-time AddRange path; a pre-sized list must still report it.
+                sut = new SegmentedList<int>(rng.Next(0, initial + 2));
+                sut.AddRange(oracle.Select(v => v));
+                break;
+            case 3:
+                // Built from another segmented list, which copies segment by segment.
+                sut = new SegmentedList<int>(new SegmentedList<int>(oracle.ToArray()));
+                break;
+            default:
+                sut = new SegmentedList<int>();
+                for (int i = oracle.Count - 1; i >= 0; i--)
+                    sut.Insert(0, oracle[i]);
+                break;
+        }
+
+        Check(sut.SegmentLength == SegmentInts, $"SegmentedList<int> segment length is {sut.SegmentLength}");
+        CheckSegmentedList(sut, oracle, "SegmentedList build");
+
+        int operations = large ? rng.Next(0, 300) : rng.Next(0, 1500);
+        int fullCheckEvery = large ? 60 : 40;
+
+        for (int op = 0; op < operations; op++)
+        {
+            int touched;
+            switch (rng.Next(0, 100))
+            {
+                case < 22:
+                {
+                    int index = SegmentedListPosition(rng, oracle.Count + 1);
+                    int value = Value(rng);
+                    sut.Insert(index, value);
+                    oracle.Insert(index, value);
+                    touched = index;
+                    break;
+                }
+                case < 42:
+                {
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                case < 47:
+                {
+                    // AddRange from each source shape, including the list itself.
+                    int length = rng.Next(0, large ? 20_000 : 80);
+                    var batch = new int[length];
+                    for (int i = 0; i < length; i++)
+                        batch[i] = Value(rng);
+                    touched = oracle.Count;
+                    switch (rng.Next(0, 5))
+                    {
+                        case 0: sut.AddRange(batch); oracle.AddRange(batch); break;
+                        case 1: sut.AddRange(new List<int>(batch)); oracle.AddRange(batch); break;
+                        case 2: sut.AddRange(new SegmentedList<int>(batch)); oracle.AddRange(batch); break;
+                        case 3: sut.AddRange(new HashSet<int>(batch)); oracle.AddRange(new HashSet<int>(batch)); break;
+                        default:
+                            if (oracle.Count <= 40_000)
+                            {
+                                sut.AddRange(sut);
+                                oracle.AddRange(oracle.ToArray());
+                            }
+                            break;
+                    }
+                    break;
+                }
+                case < 69:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = SegmentedListPosition(rng, oracle.Count);
+                    sut.RemoveAt(index);
+                    oracle.RemoveAt(index);
+                    touched = index;
+                    break;
+                }
+                case < 79:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = SegmentedListPosition(rng, oracle.Count);
+                    int value = Value(rng);
+                    sut[index] = value;
+                    oracle[index] = value;
+                    touched = index;
+                    break;
+                }
+                case < 86:
+                {
+                    // Most removes hit and some miss; both remove the first occurrence.
+                    int value = Value(rng);
+                    touched = oracle.IndexOf(value);
+                    Check(sut.IndexOf(value) == touched, $"SegmentedList IndexOf({value}) disagreed");
+                    Check(sut.Contains(value) == (touched >= 0), $"SegmentedList Contains({value}) disagreed");
+                    Check(sut.Remove(value) == oracle.Remove(value), $"SegmentedList Remove({value}) disagreed");
+                    if (touched < 0)
+                        touched = 0;
+                    break;
+                }
+                case < 92:
+                {
+                    // Capacity: EnsureCapacity must report at least what was asked and never lose elements;
+                    // TrimExcess must keep every element and leave no more than one partly empty segment.
+                    if (rng.Next(0, 2) == 0)
+                    {
+                        int want = oracle.Count + rng.Next(0, large ? 40_000 : 2_000);
+                        int got = sut.EnsureCapacity(want);
+                        Check(got >= want && got == sut.Capacity, $"SegmentedList EnsureCapacity({want}) returned {got}");
+                    }
+                    else
+                    {
+                        sut.TrimExcess();
+                        int bound = oracle.Count <= SegmentInts ? oracle.Count : sut.SegmentCount * SegmentInts;
+                        Check(sut.Capacity == bound, $"SegmentedList TrimExcess left capacity {sut.Capacity} at {oracle.Count}");
+                    }
+                    Check(sut.Capacity >= oracle.Count, "SegmentedList capacity fell below its count");
+                    touched = oracle.Count == 0 ? 0 : oracle.Count - 1;
+                    break;
+                }
+                case < 99:
+                {
+                    // Enumerator invalidation: an in-place set leaves a live enumerator usable and a structural
+                    // edit tears it down — the rule this type deliberately does not share with List<T>.
+                    var enumerator = sut.GetEnumerator();
+                    if (oracle.Count > 0)
+                    {
+                        int index = SegmentedListPosition(rng, oracle.Count);
+                        sut[index] = oracle[index];
+                        Check(enumerator.MoveNext() && enumerator.Current == oracle[0], "SegmentedList set invalidated an enumerator");
+                    }
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    bool threw = false;
+                    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+                    Check(threw, "SegmentedList Add did not invalidate an enumerator");
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                default:
+                {
+                    // Clear keeps the allocated segments, which the Adds that follow must reuse.
+                    int capacity = sut.Capacity;
+                    sut.Clear();
+                    oracle.Clear();
+                    Check(sut.Capacity == capacity && sut.SegmentCount == 0, "SegmentedList Clear changed its capacity");
+                    touched = 0;
+                    break;
+                }
+            }
+
+            Check(sut.Count == oracle.Count, $"SegmentedList count diverged after op {op}");
+            for (int i = Math.Max(0, touched - 2); i < Math.Min(oracle.Count, touched + 3); i++)
+                Check(sut[i] == oracle[i], $"SegmentedList indexer diverged at {i} next to an edit at {touched}");
+            if (oracle.Count > 0)
+            {
+                Check(sut[0] == oracle[0] && sut[^1] == oracle[^1], "SegmentedList ends diverged");
+                int boundary = (rng.Next(0, oracle.Count) / SegmentInts) * SegmentInts;
+                for (int i = Math.Max(0, boundary - 1); i < Math.Min(oracle.Count, boundary + 1); i++)
+                    Check(sut[i] == oracle[i], $"SegmentedList indexer diverged at {i} across a segment boundary");
+                int probe = rng.Next(0, oracle.Count);
+                Check(sut[probe] == oracle[probe], $"SegmentedList indexer diverged at {probe}");
+            }
+
+            if (op % fullCheckEvery == fullCheckEvery - 1)
+                CheckSegmentedList(sut, oracle, $"SegmentedList after op {op}");
+        }
+
+        CheckSegmentedList(sut, oracle, "SegmentedList final");
+        CheckSegmentedList(new SegmentedList<int>(sut), oracle, "SegmentedList rebuilt from itself");
+    }
+
+    // A third of positions land within a few slots of either end, a third within a few slots of a segment
+    // boundary, and the rest are uniform. `bound` is exclusive.
+    private static int SegmentedListPosition(Random rng, int bound) => rng.Next(0, 4) switch
+    {
+        0 => rng.Next(0, Math.Min(bound, 4)),
+        1 => bound - 1 - rng.Next(0, Math.Min(bound, 4)),
+        2 => Math.Clamp((rng.Next(0, bound) / 16_384) * 16_384 + rng.Next(-2, 3), 0, bound - 1),
+        _ => rng.Next(0, bound),
+    };
+
+    // Reconciles the indexer, the enumerator, the segment spans and both bulk copies, then checks the segment
+    // accounting: SegmentCount covers exactly Count, every segment but the last is full, and the capacity
+    // holds at least Count.
+    private static void CheckSegmentedList(SegmentedList<int> actual, List<int> expected, string label)
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+        Check(actual.Capacity >= expected.Count, $"{label} capacity {actual.Capacity} below count {expected.Count}");
+
+        for (int i = 0; i < expected.Count; i++)
+            Check(actual[i] == expected[i], $"{label} indexer diverged at {i}");
+
+        int position = 0;
+        foreach (int value in actual)
+        {
+            Check(position < expected.Count && value == expected[position], $"{label} enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} enumeration length diverged");
+
+        int segmentLength = actual.SegmentLength;
+        int segments = actual.SegmentCount;
+        Check(segments == (expected.Count + segmentLength - 1) / segmentLength, $"{label} SegmentCount {segments} for {expected.Count}");
+        int start = 0;
+        for (int s = 0; s < segments; s++)
+        {
+            ReadOnlySpan<int> span = actual.GetSegment(s);
+            Check(s == segments - 1 || span.Length == segmentLength, $"{label} segment {s} holds {span.Length}");
+            Check(span.SequenceEqual(CollectionsMarshal.AsSpan(expected).Slice(start, span.Length)), $"{label} GetSegment({s}) diverged");
+            start += span.Length;
+        }
+        Check(start == expected.Count, $"{label} segments cover {start} of {expected.Count}");
+
+        Check(actual.ToArray().AsSpan().SequenceEqual(CollectionsMarshal.AsSpan(expected)), $"{label} ToArray diverged");
+
+        var copy = new int[expected.Count + 2];
+        actual.CopyTo(copy, 1);
+        Check(copy.AsSpan(1, expected.Count).SequenceEqual(CollectionsMarshal.AsSpan(expected)) && copy[0] == 0 && copy[^1] == 0,
+            $"{label} CopyTo diverged");
     }
 
     // ---- interval tree -------------------------------------------------------

@@ -415,6 +415,14 @@ public class CopyToArgumentGuardTests
         AssertCopyToContract<int>(3, list.CopyTo);
     }
 
+    [Fact]
+    public void SegmentedList_ShouldValidateCopyToArguments()
+    {
+        SegmentedList<int> list = new(new[] { 1, 2, 3 });
+
+        AssertCopyToContract<int>(3, list.CopyTo);
+    }
+
     // ── The completeness gate ─────────────────────────────────────────────────
 
     // Every public declaration of `void CopyTo(T[], int)` in the shipped collections assembly,
@@ -424,7 +432,7 @@ public class CopyToArgumentGuardTests
     {
         "BitPackedArray", "BTreeList", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
         "HierarchicalBitSet", "IntSet", "LinkedSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet",
-        "RobinHoodSet", "SmallSet", "SparseSet", "SwissSet",
+        "RobinHoodSet", "SegmentedList", "SmallSet", "SparseSet", "SwissSet",
 
         "BiDictionary", "BiDictionary.KeyCollection", "BiDictionary.ValueCollection",
         "BTreeDictionary", "BTreeDictionary.KeyCollection", "BTreeDictionary.ValueCollection",
