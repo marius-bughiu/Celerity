@@ -504,6 +504,10 @@ function escapeHtml(s) {
     // InsertAvl / IndexAvl arms are deliberately absent from `ops`: they use ImmutableList's Builder as their
     // baseline, and `vs` is rendered once per collection, so a card for them would carry the wrong label.
     { key: 'BTreeList',           title: 'BTreeList<int>',                           vs: 'List<int>',             ops: ['Insert', 'RemoveAt', 'Index', 'Enumerate'] },
+    // SegmentedList is the append-built list, benchmarked against a List<int> that is NOT pre-sized: Add is where
+    // List's doubling copies and LOH arrays lose; Index and Enumerate are the price of the segments, and SpanScan
+    // pairs a GetSegment walk with a CollectionsMarshal.AsSpan scan. It sweeps up to 1M, where the LOH cost shows.
+    { key: 'SegmentedList',       title: 'SegmentedList<int>',                       vs: 'List<int> (no pre-size)', ops: ['Add', 'Index', 'Enumerate', 'SpanScan'], items: [1000, 100000, 1000000] },
     // PersistentVector is the immutable sequence, benchmarked against ImmutableList — the BCL's only immutable
     // sequence that appends in better than O(n), and an AVL tree with one heap node per element. Its
     // AppendAtMost10k arms are deliberately absent from `ops`: they use ImmutableArray as their baseline, and

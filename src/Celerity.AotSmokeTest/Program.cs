@@ -702,6 +702,69 @@ void Check(bool condition, string message)
     Check(bulk.Count == 0 && bulk.Depth == 1 && !bulk.Contains(0), "BTreeList Clear");
 }
 
+// SegmentedList — growable list in fixed 64 KB segments. Exercise an Add-built list across three segments
+// (the first segment's doubling and the hand-off to whole segments), the two-load indexer, Insert / RemoveAt
+// carrying an element across every later segment boundary, the AddRange fast paths, GetSegment spans,
+// CopyTo / ToArray, Clear keeping capacity and TrimExcess releasing it, and the struct enumerator — including
+// the in-place set that, unlike List<T>'s, does not invalidate it. A string instantiation covers the
+// per-type segment length (Unsafe.SizeOf<T> in a static initializer) and the reference-clearing path.
+{
+    var list = new SegmentedList<int>();
+    for (int i = 0; i < 40_000; i++) list.Add(i);
+    Check(list.SegmentLength == 16_384 && list.SegmentCount == 3 && list.Capacity == 3 * 16_384,
+        "SegmentedList Add-built three segments");
+    Check(list[0] == 0 && list[16_383] == 16_383 && list[16_384] == 16_384 && list[^1] == 39_999,
+        "SegmentedList indexer across segment boundaries");
+
+    list.Insert(1, -1);
+    Check(list.Count == 40_001 && list[1] == -1 && list[16_384] == 16_383 && list[32_768] == 32_767 && list[^1] == 39_999,
+        "SegmentedList Insert carries across boundaries");
+    list.RemoveAt(1);
+    Check(list.Count == 40_000 && list[1] == 1 && list[16_384] == 16_384 && list[^1] == 39_999,
+        "SegmentedList RemoveAt carries back");
+    Check(list.Remove(39_999) && !list.Remove(39_999) && list.IndexOf(20_000) == 20_000 && list.Contains(0),
+        "SegmentedList Remove / IndexOf / Contains");
+
+    list.AddRange(new[] { 1, 2 });
+    list.AddRange(new List<int> { 3 });
+    list.AddRange(new SegmentedList<int>(Enumerable.Range(4, 2)));
+    Check(list.Count == 40_004 && list[39_999] == 1 && list[^1] == 5, "SegmentedList AddRange array / List / SegmentedList");
+
+    long spanSum = 0;
+    for (int s = 0; s < list.SegmentCount; s++)
+        foreach (int x in list.GetSegment(s)) spanSum += x;
+    long sum = 0;
+    foreach (int x in list) sum += x;
+    Check(spanSum == sum && list.GetSegment(0).Length == 16_384 && list.GetSegment(2).Length == 40_004 - 32_768,
+        "SegmentedList GetSegment spans match enumeration");
+
+    var copy = new int[40_006];
+    list.CopyTo(copy, 1);
+    Check(copy[0] == 0 && copy[1] == 0 && copy[16_385] == 16_384 && copy[40_004] == 5 && copy[40_005] == 0
+        && list.ToArray().Length == 40_004, "SegmentedList CopyTo / ToArray");
+
+    var enumerator = list.GetEnumerator();
+    list[0] = 42;
+    Check(enumerator.MoveNext() && enumerator.Current == 42, "SegmentedList set keeps an enumerator valid");
+    list.Add(7);
+    bool threw = false;
+    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+    Check(threw, "SegmentedList Add invalidates an enumerator");
+
+    int capacity = list.Capacity;
+    list.Clear();
+    Check(list.Count == 0 && list.SegmentCount == 0 && list.Capacity == capacity, "SegmentedList Clear keeps capacity");
+    list.TrimExcess();
+    Check(list.Capacity == 0, "SegmentedList TrimExcess releases segments");
+
+    var names = new SegmentedList<string>();
+    for (int i = 0; i < 9_000; i++) names.Add(i.ToString());
+    Check(names.SegmentLength == 64 * 1024 / IntPtr.Size && names.SegmentCount == (IntPtr.Size == 8 ? 2 : 1)
+        && names[8_999] == "8999", "SegmentedList<string> segment length");
+    names.Clear();
+    Check(names.Count == 0 && names.IndexOf("0") == -1, "SegmentedList<string> Clear");
+}
+
 // PersistentVector - immutable indexed sequence over a 32-way bit-partitioned trie. Exercise the
 // IEnumerable constructor, the tail and trie read paths, all three persistent operations across the
 // 1,057-element root-growth boundary, the builder's owned tail, and the chunked struct enumerator.

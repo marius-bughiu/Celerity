@@ -86,6 +86,7 @@ internal class Program
         typeof(EliasFanoSequenceBenchmark),
         typeof(BitPackedArrayBenchmark),
         typeof(BTreeListBenchmark),
+        typeof(SegmentedListBenchmark),
         typeof(RadixSortBenchmark),
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),
