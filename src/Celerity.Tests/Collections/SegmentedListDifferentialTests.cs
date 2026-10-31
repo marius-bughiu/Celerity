@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Celerity.Collections;
 using CsCheck;
 
@@ -14,7 +15,7 @@ namespace Celerity.Tests.Collections;
 ///
 /// <para>
 /// It runs twice. Over <see cref="int"/>, whose segments hold 16,384 elements, the starting sizes straddle the
-/// first one and two segment boundaries. Over the 16 KB <see cref="SegmentedBig"/>, whose segments hold four,
+/// first one and two segment boundaries. Over the 2 KB <see cref="SegmentedMid"/>, whose segments hold 32,
 /// every few operations cross a boundary, so the multi-segment shift, the reuse of segments retained by
 /// <c>Clear</c> and removal, and the trim of a partly used spine are all driven densely. Edit positions are
 /// skewed toward both ends because the first and last slots of a segment are where the shifts hand an element
@@ -59,12 +60,14 @@ public class SegmentedListDifferentialTests
     }
 
     [Fact]
-    public void SegmentedList_OfASixteenKilobyteStruct_ShouldMatch_AList()
+    public void SegmentedList_OfATwoKilobyteStruct_ShouldMatch_AList()
     {
-        // Four per segment: any of these sizes already spans several segments.
-        var genScript = Gen.Select(Gen.Int[0, 24], Gen.Bool, GenOp.List[0, 120]);
+        // 32 per segment: most of these sizes already span several segments. Not the 16 KB SegmentedBig the
+        // other suites use: List<T>.Remove's IndexOf copies the element through several frames, and on macOS's
+        // smaller worker-thread stacks, where CsCheck runs its samples, 16 KB values overflowed the stack.
+        var genScript = Gen.Select(Gen.Int[0, 200], Gen.Bool, GenOp.List[0, 120]);
 
-        genScript.Sample(script => Run(script.Item1, script.Item2, script.Item3, SegmentedBig.Of, b => b.Value, maxRange: 10),
+        genScript.Sample(script => Run(script.Item1, script.Item2, script.Item3, SegmentedMid.Of, m => m.Value, maxRange: 80),
             iter: 60);
     }
 
@@ -210,4 +213,27 @@ public class SegmentedListDifferentialTests
         1 => range - 1,
         _ => (int)(position % (uint)range),
     };
+}
+
+// A 2 KB element: 32 per segment, small enough to pass by value through List<T>'s search frames on any stack.
+[InlineArray(256)]
+internal struct SegmentedMid : IEquatable<SegmentedMid>
+{
+    private long _element;
+
+    public readonly int Value => (int)this[0];
+
+    public static SegmentedMid Of(int value)
+    {
+        SegmentedMid mid = default;
+        mid[0] = value;
+        mid[255] = value;
+        return mid;
+    }
+
+    public readonly bool Equals(SegmentedMid other) => this[0] == other[0] && this[255] == other[255];
+
+    public override readonly bool Equals(object? obj) => obj is SegmentedMid other && Equals(other);
+
+    public override readonly int GetHashCode() => this[0].GetHashCode();
 }
