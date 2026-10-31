@@ -5657,7 +5657,8 @@ Console.WriteLine(big.Depth);  // 4
 ## SegmentedList&lt;T&gt;
 
 A **growable list stored in fixed-size segments**, each one below the 85,000-byte Large Object Heap
-threshold. Appending never copies an element already stored and never allocates on the LOH. It is the
+threshold. Once the first segment is full, appending never copies an element already stored, and no segment
+is ever allocated on the LOH. It is the
 list for **a large sequence built by appending** when the final size is not known up front: a result
 set, a parsed file, a log, an index under construction.
 
@@ -5686,7 +5687,8 @@ middle edits).
 
 - **A spine of segments.** Every segment holds `SegmentLength` elements: the largest power of two whose
   array fits in 64 KB. That is 16,384 `int`s, 8,192 references or `long`s, and 65,536 `byte`s, so every
-  array stays in the small-object heap. Element `i` lives at segment `i >> k`, slot `i & (SegmentLength - 1)`:
+  segment stays in the small-object heap. The spine itself, one reference per segment, is the only array
+  that grows by doubling; it reaches the LOH only past 8,192 segments (about 134 million `int`s). Element `i` lives at segment `i >> k`, slot `i & (SegmentLength - 1)`:
   two dependent loads.
 - **Growth adds a segment.** When the last segment is full, `Add` allocates one more and copies nothing.
   A full segment is never reallocated.
@@ -5728,7 +5730,7 @@ public SegmentedList(IEnumerable<T> collection)
 | `int SegmentCount` | `O(1)` | Segments holding elements; `0` for an empty list. Segments retained by `Clear` are not counted. |
 | `T this[int index] { get; set; }` | `O(1)` | Get and set by position: two dependent loads. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set replaces the element in place and does **not** invalidate an active enumerator (see below). |
 | `void Add(T item)` | `O(1)` | Appends at the end. Allocates one segment when the last is full, and copies nothing except while the first segment is still growing. |
-| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` reserves its count first. Adding a list to itself appends one copy of its current elements. Throws `ArgumentNullException` for `null`. |
+| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` is snapshotted through its `CopyTo` first, as `List<T>` does. Adding a list to itself, or a collection that wraps it, appends one copy of its current elements. A total past the element ceiling throws `OverflowException` before anything is appended. Throws `ArgumentNullException` for `null`. |
 | `void Insert(int index, T item)` | `O(n - index)` | Inserts at `index`, shifting every later element up a position across segment boundaries. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
 | `void RemoveAt(int index)` | `O(n - index)` | Removes the element at `index`. Removing the last element is `O(1)`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
 | `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. |

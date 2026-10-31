@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -7,10 +8,10 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A <b>growable list stored in fixed-size segments</b>, each kept below the 85,000-byte Large Object Heap
-/// threshold. Appending never copies the elements already stored and never allocates on the Large Object
-/// Heap, where <see cref="List{T}"/> doubles one contiguous array — copying every element on each growth and,
-/// past about 21,000 <see cref="int"/>s, allocating every new array on the LOH, where it counts toward a
-/// full gen-2 collection. It is the list for <i>a large sequence built by appending</i>: a result set, a
+/// threshold. Once the first segment is full, appending never copies an element already stored, and no
+/// segment is ever allocated on the Large Object Heap — where <see cref="List{T}"/> doubles one contiguous
+/// array, copying every element on each growth and, past about 21,000 <see cref="int"/>s, allocating every
+/// new array on the LOH, where it counts toward a full gen-2 collection. It is the list for <i>a large sequence built by appending</i>: a result set, a
 /// log, a parsed file, an index under construction.
 /// </summary>
 /// <typeparam name="T">The type of the elements.</typeparam>
@@ -29,8 +30,10 @@ namespace Celerity.Collections;
 /// the old and the new array at once while it copies — three times the data at the peak. Every array past
 /// the LOH threshold is allocated there, zeroed, and charged to the gen-2 budget, so building large lists
 /// triggers full collections that a gen-0-only workload would never see. Pre-sizing avoids all of that only
-/// when the final size is known in advance. This type allocates each slot once, copies nothing on growth,
-/// keeps every array in the small-object heap, and holds at most one partly empty segment.
+/// when the final size is known in advance. Past the first segment, this type allocates each slot once,
+/// copies nothing on growth, keeps every segment in the small-object heap, and holds at most one partly
+/// empty segment. The one array that does grow by doubling is the spine of segment references, a single
+/// reference per segment: it reaches the LOH only past 8,192 segments (about 134 million <see cref="int"/>s).
 /// </para>
 /// <para>
 /// <b>What this costs you.</b> An indexed read is two dependent loads (the segment, then the element) where
@@ -203,8 +206,9 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     /// <summary>
     /// Appends the elements of <paramref name="collection"/> in enumeration order. An array, a
     /// <see cref="List{T}"/> or another <see cref="SegmentedList{T}"/> is copied a block at a time after one
-    /// capacity check; any other <see cref="ICollection{T}"/> reserves its count first. Adding a list to
-    /// itself appends one copy of its current elements.
+    /// capacity check; any other <see cref="ICollection{T}"/> is snapshotted through its
+    /// <see cref="ICollection{T}.CopyTo"/> first, as <see cref="List{T}"/> does. Adding a list to itself, or a
+    /// collection that wraps it, appends one copy of its current elements.
     /// </summary>
     /// <param name="collection">The elements to append.</param>
     /// <exception cref="ArgumentNullException"><paramref name="collection"/> is <c>null</c>.</exception>
@@ -225,9 +229,12 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
                 break;
             default:
                 if (collection is ICollection<T> sized)
-                    EnsureCapacityCore(_count + sized.Count);
-                foreach (T item in collection)
-                    Add(item);
+                    AppendCollection(sized);
+                else
+                {
+                    foreach (T item in collection)
+                        Add(item);
+                }
                 break;
         }
     }
@@ -408,7 +415,7 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
             if (_capacity == _count)
                 return;
             ReleaseSegmentsFrom(_count == 0 ? 0 : 1);
-            if (_count > 0)
+            if (_count > 0 && _segments[0].Length != _count)
                 ResizeFirst(_count);
         }
         else
@@ -613,7 +620,9 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         if (source.IsEmpty)
             return;
 
-        EnsureCapacityCore(_count + source.Length);
+        // Checked, so a total past int.MaxValue throws here rather than wrapping negative, skipping the
+        // reservation and running the copy off the end of the allocated segments.
+        EnsureCapacityCore(checked(_count + source.Length));
         while (!source.IsEmpty)
         {
             T[] segment = _segments[_count >> Shift];
@@ -628,6 +637,24 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         SetTail();
     }
 
+    // Appends any other ICollection<T> through its CopyTo into a pooled buffer, as List<T> does: a snapshot
+    // taken before anything is appended, so a collection that wraps this list (a ReadOnlyCollection<T> over
+    // it, say) appends one copy rather than invalidating its own enumeration halfway through.
+    private void AppendCollection(ICollection<T> source)
+    {
+        int n = source.Count;
+        T[] buffer = ArrayPool<T>.Shared.Rent(n);
+        try
+        {
+            source.CopyTo(buffer, 0);
+            AppendSpan(new ReadOnlySpan<T>(buffer, 0, n));
+        }
+        finally
+        {
+            ArrayPool<T>.Shared.Return(buffer, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
+        }
+    }
+
     // Appends `other` segment by segment. Safe when `other` is this list: the count is captured first, the
     // capacity is reserved before any span is taken, and the destination slots all lie past the source ones.
     private void AppendSegments(SegmentedList<T> other)
@@ -636,7 +663,7 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         if (n == 0)
             return;
 
-        EnsureCapacityCore(_count + n);
+        EnsureCapacityCore(checked(_count + n));
         for (int s = 0, copied = 0; copied < n; s++)
         {
             ReadOnlySpan<T> segment = new(other._segments[s], 0, Math.Min(n - copied, Length));

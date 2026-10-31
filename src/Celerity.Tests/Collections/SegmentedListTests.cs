@@ -505,6 +505,23 @@ public class SegmentedListTests
     }
 
     [Fact]
+    public void TrimExcess_ShouldKeepTheFirstSegment_WhenItIsExactlyFullAndLaterOnesAreReleased()
+    {
+        // Regression: with Count == SegmentLength and spare segments allocated, TrimExcess used to replace the
+        // full first segment with an identical copy of the same length.
+        var list = new SegmentedList<int>(Enumerable.Range(0, 2 * IntSegment));
+        while (list.Count > IntSegment)
+            list.RemoveAt(list.Count - 1);
+        ref readonly int firstBefore = ref MemoryMarshal.GetReference(list.GetSegment(0));
+
+        list.TrimExcess();
+
+        Assert.Equal(IntSegment, list.Capacity);
+        Assert.True(Unsafe.AreSame(ref Unsafe.AsRef(in firstBefore), ref MemoryMarshal.GetReference(list.GetSegment(0))));
+        Assert.Equal(Enumerable.Range(0, IntSegment), list);
+    }
+
+    [Fact]
     public void TrimExcess_ShouldReleaseOnlyTheUnusedSegments_WhenSeveralAreInUse()
     {
         var list = new SegmentedList<SegmentedBig>();
@@ -875,6 +892,18 @@ public class SegmentedListTests
 
         list.AddRange(new Collection<int> { 101, 102 });
         Assert.Equal(Enumerable.Range(0, 103), list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendOneCopy_WhenTheSourceIsACollectionWrappingTheList()
+    {
+        // Regression: a ReadOnlyCollection<T> over the list used to be enumerated while Add mutated the list
+        // underneath it, so it threw after appending one element. List<T> snapshots through CopyTo instead.
+        var list = new SegmentedList<int>(new[] { 1, 2, 3 });
+
+        list.AddRange(new ReadOnlyCollection<int>(list));
+
+        Assert.Equal(new[] { 1, 2, 3, 1, 2, 3 }, list);
     }
 
     [Fact]
