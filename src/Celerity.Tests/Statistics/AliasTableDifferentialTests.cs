@@ -26,8 +26,13 @@ public class AliasTableDifferentialTests
         Gen.Double[0d, 1d],
         Gen.Int[-30, 30].Select(e => Math.Pow(10d, e)));
 
+    // Every weight scaled by one common factor, from the subnormal range to near double.MaxValue, so the
+    // normalization is exercised at every magnitude a maximum can take.
+    private static readonly Gen<double> Magnitude = Gen.Int[-323, 307].Select(e => Math.Pow(10d, e));
+
     private static readonly Gen<double[]> Weights =
-        Weight.Array[1, 48].Where(w => w.Any(x => x > 0d));
+        Gen.Select(Weight.Array[1, 48], Gen.OneOf(Gen.Const(1d), Magnitude), (w, m) => w.Select(x => x * m).ToArray())
+            .Where(w => w.Any(x => x > 0d) && w.All(double.IsFinite));
 
     [Fact]
     public void Sample_ShouldMatchTheWeights_ForAnyWeightVector()

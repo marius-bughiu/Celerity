@@ -132,9 +132,11 @@ public sealed class AliasTable
         sum += compensation;
 
         ulong total = (ulong)n << 32;
-        // Not folded into one factor with the lift: for a subnormal maximum, lift * inverseMax is about
-        // 1 / maxWeight, which overflows.
-        double factor = inverseMax * (total / sum);
+
+        // Applied to the normalized weight, never folded into inverseMax: for a small maximum, inverseMax is
+        // close to double.MaxValue and its product with this scale overflows. The normalized weight is in
+        // [0, 1] and the scale at most n * 2^32, so their product cannot.
+        double scale = total / sum;
 
         // Each outcome's share in fixed point, rounded down. The remainder (at most about n units either way)
         // goes to the largest weight so the shares sum to exactly n * One. That share is at least about One, and the
@@ -145,7 +147,7 @@ public sealed class AliasTable
         {
             // A share is below 2^63 (n < 2^31 buckets of 2^32), so the signed conversion is exact and it is
             // the cheaper instruction on x64.
-            ulong share = (ulong)(long)(weights[i] * lift * factor);
+            ulong share = (ulong)(long)(weights[i] * lift * inverseMax * scale);
             table[i] = share;
             assigned += share;
         }

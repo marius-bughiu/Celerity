@@ -427,7 +427,7 @@ onto `n` buckets adds a bias below `n / 2^64`.
 The BCL has no weighted sampler. The idiom is a `double[]` of prefix sums and an
 `Array.BinarySearch` per draw. That is `O(log n)` probes, each depending on the last, so once the array
 leaves cache, every probe is a miss. Against that idiom on the same `Pcg32` stream, a local run
-(Apple M-series, .NET 10) measured draws **3.9× faster at 100 outcomes, 7.9× at 10,000 and 11.5× at
+(Apple M-series, the `net8.0` benchmark build rolled forward onto .NET 10) measured draws **3.9× faster at 100 outcomes, 7.9× at 10,000 and 11.5× at
 1,000,000**: 8, 8 and 11 ns a draw, against 31, 65 and 122. The build is slower than the prefix-sum
 pass (8.6× at 100 outcomes, 8.7× at 10,000 and 12× at 1,000,000). It pays for itself after roughly
 `n / 10` draws: 18 at 100 outcomes, about 800 at 10,000 and about 84,000 at a million.

@@ -5270,6 +5270,26 @@ internal static class Differential
 
         weights[rng.Next(n)] = rng.NextDouble() + 1e-6d;
 
+        // Half the cases scale every weight by one common factor, so the maximum
+        // the build normalizes by takes every magnitude a double can hold, including the tiny-but-normal
+        // range that once overflowed the share scale.
+        if (rng.Next(2) == 0)
+        {
+            // A third of those aim the largest weight just above the subnormal boundary, a window too narrow
+            // for a uniform exponent to land in by chance.
+            double magnitude = rng.Next(3) == 0
+                ? Math.Pow(10d, rng.Next(-308, -298)) / weights.Max()
+                : Math.Pow(10d, rng.Next(-323, 308));
+            for (int i = 0; i < n; i++)
+            {
+                double scaled = weights[i] * magnitude;
+                weights[i] = double.IsFinite(scaled) ? scaled : double.MaxValue;
+            }
+
+            if (!weights.Any(w => w > 0d))
+                weights[rng.Next(n)] = 1d;
+        }
+
         var sut = new AliasTable(weights);
         Check(sut.Count == n, "AliasTable Count disagreed");
 

@@ -180,6 +180,21 @@ public class AliasTableTests
         AliasTableOracle.AssertSweepMatchesWeights([double.Epsilon, double.Epsilon * 3d]);
     }
 
+    [Theory]
+    [InlineData(new[] { 1e-300d, 0.5e-300d })]
+    [InlineData(new[] { 3e-300d, 1e-300d, 1e-300d, 1e-300d })]
+    [InlineData(new[] { 1e-305d, 1e-306d, 0d })]
+    [InlineData(new[] { 2.2250738585072014e-308d, 1.1125369292536007e-308d })]
+    [InlineData(new[] { 1e-299d, 0.25e-299d })]
+    [InlineData(new[] { 1e-300d, 0d })]
+    public void Constructor_ShouldKeepTheDistribution_WhenTheLargestWeightIsTinyButNormal(double[] weights)
+    {
+        // Regression: a normal maximum below about 4e-299 once overflowed the scale factor to infinity, which
+        // saturated every share and drew the positive weights uniformly (and, on net8.0 x64, could draw a
+        // zero weight).
+        AliasTableOracle.AssertSweepMatchesWeights(weights);
+    }
+
     [Fact]
     public void Constructor_ShouldNotRetainTheWeightSpan()
     {
