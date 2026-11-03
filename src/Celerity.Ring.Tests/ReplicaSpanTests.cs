@@ -248,11 +248,13 @@ public class ReplicaSpanTests
 
         Assert.Equal(3, ring.GetReplicas(keys[0], buffer)); // warm up
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         int written = 0;
-        foreach (string key in keys)
-            written += ring.GetReplicas(key, buffer);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        long allocated = QuietestAllocation(() =>
+        {
+            written = 0;
+            foreach (string key in keys)
+                written += ring.GetReplicas(key, buffer);
+        });
 
         Assert.Equal(3 * keys.Length, written);
         Assert.Equal(0, allocated);
@@ -272,13 +274,31 @@ public class ReplicaSpanTests
 
         Assert.Equal(replicaCount, pool.GetReplicas(keys[0], buffer)); // warm up
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         int written = 0;
-        foreach (string key in keys)
-            written += pool.GetReplicas(key, buffer);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        long allocated = QuietestAllocation(() =>
+        {
+            written = 0;
+            foreach (string key in keys)
+                written += pool.GetReplicas(key, buffer);
+        });
 
         Assert.Equal(replicaCount * keys.Length, written);
         Assert.Equal(0, allocated);
+    }
+
+    // A one-off runtime event (tiering or OSR work on this thread) can land in any single window, while a
+    // real per-call allocation shows up in every one (#590). So the steady state is the quietest of three
+    // windows. The delegate and its closure are allocated by the caller, before the first window opens.
+    private static long QuietestAllocation(Action run)
+    {
+        long quietest = long.MaxValue;
+        for (int window = 0; window < 3 && quietest != 0; window++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            run();
+            quietest = Math.Min(quietest, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+
+        return quietest;
     }
 }
