@@ -246,7 +246,9 @@ public class ReplicaSpanTests
         string[] keys = Enumerable.Range(0, 1000).Select(i => $"key-{i}").ToArray();
         var buffer = new string[3];
 
-        Assert.Equal(3, ring.GetReplicas(keys[0], buffer)); // warm up
+        // Warm every key, so a once-per-key allocation lands here and not only in the first measured window.
+        foreach (string key in keys)
+            Assert.Equal(3, ring.GetReplicas(key, buffer));
 
         int written = 0;
         long allocated = QuietestAllocation(() =>
@@ -272,7 +274,9 @@ public class ReplicaSpanTests
         string[] keys = Enumerable.Range(0, 1000).Select(i => $"key-{i}").ToArray();
         var buffer = new string[replicaCount];
 
-        Assert.Equal(replicaCount, pool.GetReplicas(keys[0], buffer)); // warm up
+        // Warm every key, so a once-per-key allocation lands here and not only in the first measured window.
+        foreach (string key in keys)
+            Assert.Equal(replicaCount, pool.GetReplicas(key, buffer));
 
         int written = 0;
         long allocated = QuietestAllocation(() =>
@@ -288,7 +292,7 @@ public class ReplicaSpanTests
 
     // A one-off runtime event (tiering or OSR work on this thread) can land in any single window, while a
     // real per-call allocation shows up in every one (#590). So the steady state is the quietest of three
-    // windows. The delegate and its closure are allocated by the caller, before the first window opens.
+    // windows; callers warm every input first, so nothing first-time is left to fall in window one alone. The delegate and its closure are allocated by the caller, before the first window opens.
     private static long QuietestAllocation(Action run)
     {
         long quietest = long.MaxValue;
