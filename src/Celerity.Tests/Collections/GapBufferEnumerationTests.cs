@@ -85,7 +85,10 @@ public class GapBufferEnumerationTests
     [InlineData("TrimExcess")]
     public void StructuralMutation_ShouldInvalidateTheEnumerator(string mutation)
     {
-        var list = new GapBuffer<int>(Enumerable.Range(0, 300));
+        // Spare capacity before the enumerator is taken, so each case below is the only mutation it sees —
+        // in particular TrimExcess has something to release without a removal invalidating it first.
+        var list = new GapBuffer<int>(512);
+        list.InsertRange(0, Enumerable.Range(0, 300).ToArray());
         GapBuffer<int>.Enumerator e = list.GetEnumerator();
         Assert.True(e.MoveNext());
 
@@ -100,7 +103,7 @@ public class GapBufferEnumerationTests
             case "InsertRange": list.InsertRange(10, new[] { -1, -2 }); break;
             case "RemoveRange": list.RemoveRange(10, 2); break;
             case "EnsureCapacity": list.EnsureCapacity(list.Capacity + 1); break;
-            case "TrimExcess": list.RemoveAt(0); list.TrimExcess(); break;
+            case "TrimExcess": list.TrimExcess(); break;
         }
 
         InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => e.MoveNext());
