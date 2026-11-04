@@ -5564,6 +5564,8 @@ differs from `List<T>`, whose indexer setter does invalidate.
 
 ### When not to reach for it
 
+- **If the edits cluster around a cursor, use [`GapBuffer<T>`](#gapbuffert).** An edit next to the
+  previous one is `O(1)` there, and a read is an array load rather than a descent.
 - **If you only append and read, use `List<T>`.** A read here is a descent of three or four levels
   where `List<T>` does one array load. Random reads lose by the factor in the table below, and nothing
   in this type wins it back if you never edit the middle.
@@ -5651,6 +5653,192 @@ for (int i = 0; i < 1_000; i++)
 
 Console.WriteLine(big.Count);  // 1001000
 Console.WriteLine(big.Depth);  // 4
+```
+
+
+## GapBuffer&lt;T&gt;
+
+A **positional list** laid out as a **gap buffer**: one array whose free space is kept where the caller
+is editing, so an insert or removal next to the previous edit is `O(1)`, where `List<T>` shifts every
+later element and pays `O(n)`. It is the list for **a sequence edited around a moving cursor**, and it
+reads at the speed of an array.
+
+```csharp
+public sealed class GapBuffer<T> : IList<T>, IReadOnlyList<T>
+```
+
+### Why not `List<T>`, `LinkedList<T>` or `BTreeList<T>`
+
+Edits in a text or token buffer behind a caret, a timeline edited at a playhead, or any sequence
+changed in bursts around one spot land next to each other. Three types could hold that sequence, and
+each pays somewhere:
+
+- `List<T>` indexes in `O(1)`, but `Insert` and `RemoveAt` move every later element, however close
+  together the edits are. At 100,000 elements an edit near the middle shifts about 50,000 of them.
+- `LinkedList<T>` edits in `O(1)` once you hold a node, but it has no indexer and allocates a node per
+  element.
+- [`BTreeList<T>`](#btreelistt) edits anywhere in `O(log n)`, but every read is a tree descent, which
+  loses random reads to `List<T>` by about 12x at 100,000 elements.
+
+A gap buffer keeps `List<T>`'s read path and makes the clustered edit cheap. Emacs and most editor
+buffers are built this way. [`Rope`](#rope) is the `char`-only structure for text edited *anywhere*.
+`GapBuffer<char>` is the cheaper choice when edits follow a cursor.
+
+### How it works
+
+- **One array, split by a gap.** Elements `[0, GapPosition)` sit at the front of the backing array and the
+  rest sit at its end. The slots between them are the gap, and they hold `default(T)`, so a removed or
+  moved reference type is not kept alive.
+- **An edit at the gap moves nothing.** `Insert(GapPosition, x)` writes into the gap's first slot.
+  `RemoveAt` of the element on either side of the gap (a backspace or a delete at the cursor) widens the
+  gap by one.
+- **An edit elsewhere moves the gap first.** The move copies exactly the elements between the old and the
+  new position, so an edit costs `O(distance from the previous edit)`, not `O(n)`.
+- **A read never branches on the gap.** The indexer adds the gap's length to positions past it with a
+  mask rather than an `if`. With the gap in the middle a branch would mispredict on about half of all
+  random reads. That measured 2.5x a `List<T>` read in the prototype. With the mask, reads come in at
+  1.14–1.28x. The mapped slot is also the range check: it lands inside the array exactly when the position
+  is inside `[0, Count)`, so a read costs the one bounds check the array access makes anyway.
+- **Growth reopens the gap at the edit.** When the gap is used up the array doubles, and the copy puts the
+  gap at the insert position, so a growth costs one copy of the elements rather than a copy and a move.
+- **`RemoveRange` absorbs a range that touches or straddles the gap** without moving any element.
+  Otherwise the gap moves to the range's nearer end first.
+
+`GapPosition` is public, so the cost of the next edit can be observed rather than taken on trust.
+
+### Constructors
+
+```csharp
+public GapBuffer()
+public GapBuffer(int capacity)
+public GapBuffer(IEnumerable<T> collection)
+```
+
+- The parameterless constructor allocates nothing until the first insert.
+- The `capacity` overload pre-sizes the backing array, all of it gap. `0` allocates nothing yet.
+- The `collection` overload copies the elements in enumeration order, with the gap at the end. An
+  `ICollection<T>` source is copied into an array of exactly its size, so the gap starts empty and the
+  first insert grows it.
+
+**Throws:** `ArgumentOutOfRangeException` if `capacity` is negative; `ArgumentNullException` if
+`collection` is `null`.
+
+### Methods and properties
+
+| Member | Cost | Behaviour |
+| --- | --- | --- |
+| `int Count` | `O(1)` | The number of elements. |
+| `int Capacity` | `O(1)` | The length of the backing array. |
+| `int GapPosition` | `O(1)` | The number of elements before the gap. An edit at position `p` first copies `\|p - GapPosition\|` elements. |
+| `T this[int index] { get; set; }` | `O(1)`, 1.14–1.28x `List<T>` | Get and set by position, wherever the gap is. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set does **not** invalidate an active enumerator (see below). |
+| `void Add(T item)` | `O(1)` amortized at the end | Appends. The first append after editing elsewhere moves the gap to the end. |
+| `void Insert(int index, T item)` | `O(1)` amortized at the gap, `O(distance)` elsewhere | Inserts at `index`. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
+| `void InsertRange(int index, ReadOnlySpan<T> items)` | gap move + `O(items.Length)` | Inserts the run in order and leaves the gap just after it. The span may come from this buffer's own `GetSpans`. An empty span changes nothing. |
+| `void RemoveAt(int index)` | `O(1)` either side of the gap, `O(distance)` elsewhere | Removes the element at `index`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
+| `void RemoveRange(int index, int count)` | `O(count)` touching the gap, plus the move otherwise | Removes `count` elements from `index`. Validates like `List<T>.RemoveRange`: `ArgumentOutOfRangeException` for a negative argument, `ArgumentException` for a range past the end. A `count` of `0` changes nothing. |
+| `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. The search is linear, as on `List<T>`. |
+| `int IndexOf(T item)` / `bool Contains(T item)` | `O(n)` | A linear scan of both halves under `EqualityComparer<T>.Default`. The gap does not move. |
+| `void Clear()` | `O(n)` for references, `O(1)` otherwise | Keeps the array and makes all of it the gap, at position `0`. Clearing an **already-empty** buffer is a true no-op and leaves enumerators valid, like the rest of the library. |
+| `void GetSpans(out ReadOnlySpan<T> beforeGap, out ReadOnlySpan<T> afterGap)` | `O(1)` | The elements without copying, as the run before the gap and the run after it. The gap does not move; the next structural edit invalidates the spans. |
+| `int EnsureCapacity(int capacity)` | `O(n)` if it grows | Grows the array to at least `capacity`, keeping the gap's position. Returns the new capacity. |
+| `void TrimExcess()` | `O(n)` | Shrinks the array to `Count`. The gap keeps its position but becomes empty, so the next insert grows the array again. |
+| `T[] ToArray()` | `O(n)` | Two `Array.Copy` runs, either side of the gap. |
+| `void CopyTo(T[] array, int arrayIndex)` | `O(n)` | Under [the library's `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | `O(1)` per step | An allocation-free struct enumerator, front to back. |
+
+**What invalidates an enumerator.** Every structural mutation does: `Add`, `Insert`, a non-empty
+`InsertRange`, `RemoveAt`, a non-empty `RemoveRange`, a `Remove` that finds its element, a `Clear` that
+had something to clear, and a reallocation by `EnsureCapacity` or `TrimExcess`. Assignment through the
+indexer does **not**, because it replaces one slot and moves neither the gap nor any element. That is
+the rule [`BTreeList<T>`](#btreelistt) and [`Deque<T>`](#dequet) follow, and it is the one place this
+type deliberately differs from `List<T>`.
+
+### When not to reach for it
+
+- **If the edits jump around, use [`BTreeList<T>`](#btreelistt).** An edit at a random position moves the
+  gap about a third of the list on average. That is the same order of cost as `List<T>`'s shift, and far
+  worse than `BTreeList<T>`'s `O(log n)`.
+- **If you only append and read, use `List<T>`.** It does the same thing with no gap arithmetic on the
+  read.
+- **If you edit text anywhere in a large document, use [`Rope`](#rope).** It edits at any position in
+  `O(log n)` and has text operations on top.
+- **If you need a snapshot, use [`PersistentVector<T>`](#persistentvectort) or `ImmutableList<T>`.**
+  This type is mutable.
+
+### Thread safety
+
+`GapBuffer<T>` is not thread-safe. Concurrent callers must synchronize externally.
+
+<a id="measured-gapbuffer"></a>
+
+### Measured
+
+The bars were pre-registered in [#592](https://github.com/marius-bughiu/Celerity/issues/592) before
+implementation, on `int`. The edit rows are a thousand edits alternating `Insert` and `RemoveAt` at a
+cursor that starts in the middle and drifts by a random step in [-8, 8]. The positions are drawn once, so
+every arm edits the same positions in the same order, and each iteration gets a freshly built list. The read
+and enumerate rows run with the gap in the **middle**, the read path's worst case. **These are
+development-machine numbers** (Apple Silicon, BenchmarkDotNet default job). CI publishes its own on
+[the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=GapBuffer) at each merge to
+`main`.
+
+| At 100,000 | Baseline | `GapBuffer<int>` | Ratio | Bar |
+| --- | ---: | ---: | ---: | ---: |
+| Cursor edit ×1,000 vs `List<int>` | 2.34 ms | 9.11 µs | **~257x** | 50x |
+| Cursor edit ×1,000 vs `BTreeList<int>` | 26.9 µs | 9.11 µs | **2.95x** | 2x |
+| **Random read ×1,000 vs `List<int>`** | 487 ns | 553 ns | **a 1.14x loss** | ≤1.25x |
+| Enumerate vs `List<int>` | 40.6 µs | 31.3 µs | 1.30x | — |
+| `Add` ×100,000 from empty vs `List<int>` | 117 µs | 119 µs | 1.01x loss | — |
+
+| At 1,000 | Baseline | `GapBuffer<int>` | Ratio |
+| --- | ---: | ---: | ---: |
+| Cursor edit ×1,000 vs `List<int>` | 31.8 µs | 6.21 µs | 5.1x |
+| Cursor edit ×1,000 vs `BTreeList<int>` | 17.9 µs | 6.21 µs | 2.9x |
+| **Random read ×1,000 vs `List<int>`** | 428 ns | 550 ns | **a 1.28x loss** |
+| Enumerate vs `List<int>` | 341 ns | 323 ns | 1.06x |
+| `Add` ×1,000 from empty vs `List<int>` | 890 ns | 976 ns | 1.10x loss |
+
+**The read bar is met at 100,000 and missed at 1,000**, by 0.03. A read does the gap arithmetic that
+`List<T>` does not, and at a thousand elements, where every read hits L1, that arithmetic is a
+visible share of the cost. The enumerator walks the two runs as physical slots and skips the gap
+once, so it does no arithmetic per element and runs slightly ahead of `List<T>`'s. The cursor-edit arms run
+one invocation per iteration, because each needs its list rebuilt. Read their ratios as directions, not
+as three-figure ratios. None of the arms allocates during an edit.
+
+**Two layout lessons from getting `Add` to `List<T>`'s speed.** The first version of `Add` measured 3.7x
+`List<T>.Add`, and the reason was store-to-load forwarding on Arm64. The JIT pairs adjacent `int` fields
+into one 8-byte load or store. When an append's 4-byte store to the gap's start was followed by the next
+append's paired load of the gap's start and end, the load could not be forwarded from that store and
+waited for it to retire. `Add` now bumps the version first, as `List<T>.Add` does, and the version field
+is declared between the gap's two bounds, so nothing pairs.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var text = new GapBuffer<char>("hello world");
+
+// Type ", dear" after "hello": every keystroke lands next to the previous one.
+int caret = 5;
+foreach (char c in ", dear")
+    text.Insert(caret++, c);
+Console.WriteLine(new string(text.ToArray()));  // hello, dear world
+Console.WriteLine(text.GapPosition);            // 11 — the gap followed the caret
+
+// Backspace over "dear" and type "friend" instead. Nothing but the edited slots moves.
+for (int i = 0; i < 4; i++)
+    text.RemoveAt(--caret);
+foreach (char c in "friend")
+    text.Insert(caret++, c);
+Console.WriteLine(new string(text.ToArray()));  // hello, friend world
+
+// Reads are one array load wherever the gap is.
+Console.WriteLine(text[7]);                     // f
+
+// Zero-copy access to both halves, e.g. to write the buffer out.
+text.GetSpans(out ReadOnlySpan<char> before, out ReadOnlySpan<char> after);
+Console.WriteLine($"{before.Length} + {after.Length}");  // 13 + 6
 ```
 
 

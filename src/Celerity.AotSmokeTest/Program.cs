@@ -702,6 +702,74 @@ void Check(bool condition, string message)
     Check(bulk.Count == 0 && bulk.Depth == 1 && !bulk.Contains(0), "BTreeList Clear");
 }
 
+// GapBuffer — positional list over one array with a movable gap. Exercise the ICollection and capacity
+// constructors, a cursor edit at the gap and a gap move in each direction, the growth that reopens the gap
+// at the edit, the branch-free indexer either side of a mid-list gap, a RemoveRange straddling the gap, an
+// InsertRange fed a span over the buffer's own storage, GetSpans, EnsureCapacity / TrimExcess keeping the
+// gap, CopyTo, and the struct enumerator — including the in-place set that does not invalidate it. A string
+// instantiation covers the slot-clearing paths only a reference type compiles in.
+{
+    var gb = new GapBuffer<int>(Enumerable.Range(0, 1_000).ToArray());
+    Check(gb.Count == 1_000 && gb.Capacity == 1_000 && gb.GapPosition == 1_000 && gb[999] == 999,
+        "GapBuffer ICollection constructor");
+
+    gb.Insert(500, -1);
+    Check(gb.GapPosition == 501 && gb.Capacity == 2_000 && gb[500] == -1 && gb[501] == 500 && gb[499] == 499,
+        "GapBuffer growth reopens the gap at the edit");
+    gb.Insert(501, -2);
+    Check(gb.GapPosition == 502 && gb[501] == -2 && gb[502] == 500, "GapBuffer insert at the gap");
+    gb.RemoveAt(100);
+    gb.Insert(900, -3);
+    Check(gb.GapPosition == 901 && gb[99] == 99 && gb[100] == 101 && gb[900] == -3 && gb[^1] == 999,
+        "GapBuffer gap moves left and right");
+
+    gb.RemoveRange(899, 3);
+    Check(gb.GapPosition == 899 && gb.Count == 999 && gb[898] == 897 && gb[899] == 900,
+        "GapBuffer RemoveRange straddling the gap");
+
+    gb.GetSpans(out ReadOnlySpan<int> beforeGap, out ReadOnlySpan<int> afterGap);
+    Check(beforeGap.Length == 899 && afterGap.Length == 100 && beforeGap[0] == 0 && afterGap[^1] == 999,
+        "GapBuffer GetSpans");
+    gb.InsertRange(0, afterGap.Slice(0, 4));
+    Check(gb.Count == 1_003 && gb.GapPosition == 4 && gb[0] == 900 && gb[3] == 903 && gb[4] == 0,
+        "GapBuffer InsertRange of its own span");
+
+    Check(gb.IndexOf(-2) == 504 && gb.Remove(-2) && !gb.Contains(-2) && gb.GapPosition == 504,
+        "GapBuffer IndexOf / Remove");
+
+    Check(gb.EnsureCapacity(5_000) >= 5_000 && gb.GapPosition == 504, "GapBuffer EnsureCapacity keeps the gap");
+    gb.TrimExcess();
+    Check(gb.Capacity == gb.Count && gb.GapPosition == 504 && gb[504] == 500, "GapBuffer TrimExcess keeps the gap");
+
+    var copy = new int[gb.Count + 2];
+    gb.CopyTo(copy, 1);
+    Check(copy[0] == 0 && copy[1] == 900 && copy[^2] == 999 && copy[^1] == 0 && gb.ToArray().Length == gb.Count,
+        "GapBuffer CopyTo / ToArray");
+
+    long sum = 0;
+    foreach (int x in gb) sum += x;
+    long expected = 0;
+    for (int i = 0; i < gb.Count; i++) expected += gb[i];
+    Check(sum == expected, "GapBuffer struct enumeration");
+
+    var enumerator = gb.GetEnumerator();
+    gb[0] = 42;
+    Check(enumerator.MoveNext() && enumerator.Current == 42, "GapBuffer set keeps an enumerator valid");
+    gb.Insert(10, 7);
+    bool threw = false;
+    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+    Check(threw, "GapBuffer Insert invalidates an enumerator");
+
+    var text = new GapBuffer<string>(8);
+    text.InsertRange(0, new[] { "a", "b", "c", "d", "e" });
+    text.RemoveAt(4);
+    text.Insert(1, "x");
+    text.RemoveRange(2, 2);
+    Check(string.Join("", text) == "axd" && text.GapPosition == 2, "GapBuffer<string> cursor edits");
+    text.Clear();
+    Check(text.Count == 0 && text.GapPosition == 0 && text.Capacity == 8, "GapBuffer<string> Clear");
+}
+
 // PersistentVector - immutable indexed sequence over a 32-way bit-partitioned trie. Exercise the
 // IEnumerable constructor, the tail and trie read paths, all three persistent operations across the
 // 1,057-element root-growth boundary, the builder's owned tail, and the chunked struct enumerator.
