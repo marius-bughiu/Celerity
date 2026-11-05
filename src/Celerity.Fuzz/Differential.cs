@@ -55,6 +55,7 @@ internal static class Differential
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
         ("RankedSet", RankedSetCase),
+        ("RankedMultiSet", RankedMultiSetCase),
         ("LfuCache", LfuCacheCase),
         ("SieveCache", SieveCacheCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
@@ -1569,6 +1570,67 @@ internal static class Differential
 
         int from = OrderedKey(rng);
         int to = from + rng.Next(0, 120);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to),
+            oracle.Where(v => v >= from && v < to),
+            $"range[{from},{to})");
+    }
+
+    // RankedMultiSet vs a sorted List: duplicates kept and counted. Keys come from a small domain whose width
+    // is drawn per case (1..64), and the op count reaches several thousand, so runs of copies grow long
+    // enough to span buckets that share one maximum. Elements are plain ints, so this checks content and
+    // ranks; FIFO order among equal elements is covered by the (Key, Id) CsCheck suite.
+    private static void RankedMultiSetCase(Random rng)
+    {
+        var sut = new RankedMultiSet<int>();
+        var oracle = new List<int>();
+        int width = rng.Next(1, 65);
+        int ops = rng.Next(0, 6000);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = rng.Next(0, width);
+            switch (rng.Next(0, 20))
+            {
+                case < 12:
+                    sut.Add(item);
+                    int at = oracle.BinarySearch(item);
+                    oracle.Insert(at < 0 ? ~at : at, item);
+                    break;
+                case < 17: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                case < 18:
+                    int all = oracle.RemoveAll(v => v == item);
+                    Check(sut.RemoveAll(item) == all, $"RemoveAll({item}) != {all}");
+                    break;
+                case < 19 when oracle.Count > 0:
+                    int rank = rng.Next(0, oracle.Count);
+                    Check(sut[rank] == oracle[rank], $"[{rank}] {sut[rank]} != {oracle[rank]}");
+                    sut.RemoveAt(rank);
+                    oracle.RemoveAt(rank);
+                    break;
+                case < 19: break;
+                case < 20 when rng.Next(0, 50) != 0: sut.TrimExcess(); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+
+        for (int k = -2; k <= width + 1; k++)
+        {
+            Check(sut.CountOf(k) == oracle.Count(v => v == k), $"CountOf({k})");
+            Check(sut.CountLessThan(k) == oracle.Count(v => v < k), $"CountLessThan({k})");
+            Check(sut.IndexOf(k) == oracle.IndexOf(k), $"IndexOf({k})");
+            Check(sut.LastIndexOf(k) == oracle.LastIndexOf(k), $"LastIndexOf({k})");
+        }
+
+        CheckSameSequence(sut, oracle, "enumeration");
+
+        for (int index = 0; index < oracle.Count; index++)
+            Check(sut[index] == oracle[index], $"[{index}] {sut[index]} != {oracle[index]}");
+
+        int from = rng.Next(-1, width + 1);
+        int to = from + rng.Next(0, 4);
         CheckSameSequence(
             sut.EnumerateRange(from, to),
             oracle.Where(v => v >= from && v < to),

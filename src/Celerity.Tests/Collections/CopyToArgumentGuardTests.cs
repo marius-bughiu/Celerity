@@ -204,6 +204,14 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void RankedMultiSet_ShouldValidateCopyToArguments()
+    {
+        RankedMultiSet<int> set = new(new[] { 1, 2, 2 });
+
+        AssertCopyToContract<int>(3, set.CopyTo);
+    }
+
+    [Fact]
     public void PooledCeleritySet_ShouldValidateCopyToArguments()
     {
         using PooledCeleritySet<int, Int32WangNaiveHasher> set = new();
@@ -423,7 +431,7 @@ public class CopyToArgumentGuardTests
     private static readonly HashSet<string> Covered = new(StringComparer.Ordinal)
     {
         "BitPackedArray", "BTreeList", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
-        "HierarchicalBitSet", "IntSet", "LinkedSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet",
+        "HierarchicalBitSet", "IntSet", "LinkedSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedMultiSet", "RankedSet",
         "RobinHoodSet", "SmallSet", "SparseSet", "SwissSet",
 
         "BiDictionary", "BiDictionary.KeyCollection", "BiDictionary.ValueCollection",

@@ -62,6 +62,12 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// exact percentiles over a moving window, a sweep line that needs the median of its active set.
 /// </para>
 /// <para>
+/// This is a <i>set</i>, so those workloads need distinct elements. A window of samples with repeated values,
+/// or a leaderboard with tied scores, loses its repeats here, and its percentiles come out wrong. Use
+/// <see cref="RankedMultiSet{T, TComparer}"/> for those: the same layout, with every copy kept in insertion
+/// order.
+/// </para>
+/// <para>
 /// <b>The layout.</b> Elements live in a jagged array of sorted buckets — <b>sqrt decomposition</b>, with a
 /// Fenwick tree over the bucket lengths carrying the positional half. Finding an element is a binary search
 /// over the per-bucket maxima followed by a binary search inside one contiguous, prefetch-friendly array;
