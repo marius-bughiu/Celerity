@@ -8678,7 +8678,7 @@ The layout is `RankedSet`'s: sorted buckets of `Θ(√n)` capacity (never below 
 | --- | --- |
 | `Contains`, `CountOf`, `IndexOf`, `LastIndexOf`, `CountLessThan`, `CountLessThanOrEqual`, the bounds, `this[int]` | `O(log n)` |
 | `Add`, `Remove`, `RemoveAt` | **`O(√n)`**: an `O(log n)` search (two binary searches, or a Fenwick descent for `RemoveAt`) and an `O(log b)` Fenwick update, plus a memmove of at most one bucket |
-| `RemoveAll(item)` | One memmove per bucket the run of `k` copies spans: `O(√n + k)`, not `k` separate removals |
+| `RemoveAll(item)` | One pass over a run of `k` copies: trim its two end buckets, drop the buckets between in one shift, rebuild the index once. `O(√n + k)`, not `k` separate removals |
 | `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)`, over contiguous arrays |
 
 ### When to choose it, and when not to
@@ -8727,7 +8727,7 @@ There is no capacity and no load factor. The `IEnumerable` overloads throw `Argu
 | `int IndexOf(T item)` / `int LastIndexOf(T item)` | The position of the first / last equal element, `O(log n)`, or `-1` when there is none. |
 | `int CountLessThan(T item)` / `int CountLessThanOrEqual(T item)` | The rank `item` would take, before / after its own copies, whether or not it is present. |
 | `bool Remove(T item)` | Remove one copy, the earliest added, `O(√n)`. Returns `false` when none is equal. |
-| `int RemoveAll(T item)` | Remove every copy, one memmove per bucket the run spans. Returns the number removed. |
+| `int RemoveAll(T item)` | Remove every copy in one pass, however many buckets the run spans. Returns the number removed. |
 | `void RemoveAt(int index)` | Remove by rank, `O(√n)`. |
 | `void Clear()` | Drop every element and release every bucket and slot array. A no-op on an empty multiset does not invalidate enumerators. |
 | `void TrimExcess()` | Rebuild at the capacity the current count calls for, `O(n)`, preserving the order of equal elements. Invalidates active enumerators. |

@@ -75,8 +75,9 @@ public class RankedMultiSet<T> : RankedMultiSet<T, DefaultComparer<T>>
 /// <see cref="this[int]"/> are <c>O(log n)</c>. <see cref="Add"/>, <see cref="Remove"/> and
 /// <see cref="RemoveAt"/> are <c>O(√n)</c>: an <c>O(log n)</c> search (two binary searches, or a Fenwick
 /// descent for <see cref="RemoveAt"/>), an <c>O(log b)</c> Fenwick update and a memmove of at most one bucket.
-/// <see cref="RemoveAll"/> removes a run of <c>k</c> equal elements with one memmove per bucket the run spans,
-/// so it is <c>O(√n + k)</c> rather than <c>k</c> separate removals. The high-water caveat <see cref="RankedSet{T, TComparer}"/> documents applies unchanged: bucket
+/// <see cref="RemoveAll"/> removes a run of <c>k</c> equal elements in one pass: it trims the run's two end
+/// buckets, drops the buckets between with one shift and rebuilds the positional index once, so it is
+/// <c>O(√n + k)</c> rather than <c>k</c> separate removals. The high-water caveat <see cref="RankedSet{T, TComparer}"/> documents applies unchanged: bucket
 /// arrays are never narrowed as elements leave, and <see cref="TrimExcess"/> is the remedy after a sharp
 /// contraction.
 /// </para>
@@ -376,33 +377,79 @@ public class RankedMultiSet<T, TComparer> : ICollection<T>, IReadOnlyList<T>
     }
 
     /// <summary>
-    /// Removes every element equal to <paramref name="item"/>. The run is removed with one memmove per
-    /// bucket it spans, not one removal per copy.
+    /// Removes every element equal to <paramref name="item"/>. A run spanning several buckets is cut out in
+    /// one pass: the two partial buckets at its ends are trimmed, the buckets between are dropped with one
+    /// shift, and the positional index is rebuilt once.
     /// </summary>
     /// <param name="item">The element to remove every copy of.</param>
     /// <returns>The number of elements removed.</returns>
     public int RemoveAll(T item)
     {
-        int removed = 0;
+        int first = LocateBucket(item);
+        if (first == _bucketCount)
+            return 0;
 
-        // Each pass removes the part of the run held by one bucket. The run starts at the lower bound, so
-        // after a pass either the run is gone or it continues at the start of what is now the next bucket.
-        while (true)
+        int from = LowerBoundInBucket(_buckets[first], _lengths[first], item);
+
+        // The run ends in the bucket holding the upper bound, or at the very end when nothing orders after
+        // `item`.
+        int last = LocateBucketAbove(item);
+        int to;
+        if (last == _bucketCount)
         {
-            int bucket = LocateBucket(item);
-            if (bucket == _bucketCount)
-                return removed;
-
-            T[] target = _buckets[bucket];
-            int length = _lengths[bucket];
-            int from = LowerBoundInBucket(target, length, item);
-            int to = UpperBoundInBucket(target, length, item);
-            if (from == to)
-                return removed;
-
-            Delete(bucket, from, to - from);
-            removed += to - from;
+            last--;
+            to = _lengths[last];
         }
+        else
+        {
+            to = UpperBoundInBucket(_buckets[last], _lengths[last], item);
+        }
+
+        if (first == last)
+        {
+            if (from == to)
+                return 0;
+
+            Delete(first, from, to - from);
+            return to - from;
+        }
+
+        // The run spans buckets: it is the tail of `first`, every bucket strictly between, and the head of
+        // `last`. A bucket before `last` whose maximum is not above `item` can only hold copies past the lower
+        // bound, so the run is not empty here.
+        int removed = _lengths[first] - from + to;
+        for (int i = first + 1; i < last; i++)
+            removed += _lengths[i];
+
+        T[] tail = _buckets[last];
+        int tailLength = _lengths[last] - to;
+        Array.Copy(tail, to, tail, 0, tailLength);
+        Array.Clear(tail, tailLength, to);
+        _lengths[last] = tailLength;
+
+        T[] head = _buckets[first];
+        Array.Clear(head, from, _lengths[first] - from);
+        _lengths[first] = from;
+        if (from > 0)
+            _maxes[first] = head[from - 1];
+
+        // Every bucket the run emptied goes in one shift, and the Fenwick tree is rebuilt once, rather than
+        // once per dropped bucket.
+        int dropFrom = from == 0 ? first : first + 1;
+        int dropTo = tailLength == 0 ? last + 1 : last;
+        RemoveBucketRange(dropFrom, dropTo);
+        _count -= removed;
+        _version++;
+
+        // The two buckets now meeting at the seam merge when their union fits in half the left one, the
+        // same bound Delete merges at.
+        int seam = dropFrom - 1;
+        if (seam >= 0 && seam + 1 < _bucketCount && _lengths[seam] + _lengths[seam + 1] <= _buckets[seam].Length / 2)
+            MergeBuckets(seam, seam + 1);
+        else
+            RebuildTree();
+
+        return removed;
     }
 
     /// <summary>
@@ -836,6 +883,22 @@ public class RankedMultiSet<T, TComparer> : ICollection<T>, IReadOnlyList<T>
         _maxes[_bucketCount] = default!;
 
         RebuildTree();
+    }
+
+    // Removes the bucket slots [from, to) with one shift of the three parallel arrays. The caller rebuilds
+    // the Fenwick tree.
+    private void RemoveBucketRange(int from, int to)
+    {
+        int dropped = to - from;
+        int tail = _bucketCount - to;
+        Array.Copy(_buckets, to, _buckets, from, tail);
+        Array.Copy(_lengths, to, _lengths, from, tail);
+        Array.Copy(_maxes, to, _maxes, from, tail);
+
+        _bucketCount -= dropped;
+        Array.Clear(_buckets, _bucketCount, dropped);
+        Array.Clear(_lengths, _bucketCount, dropped);
+        Array.Clear(_maxes, _bucketCount, dropped);
     }
 
     private void AllocateSlots(int slots)

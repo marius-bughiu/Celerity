@@ -530,6 +530,52 @@ public class RankedMultiSetTests
         Assert.Equal([4], Items(set));
     }
 
+    // The cross-bucket path trims the run's two end buckets and drops everything between in one shift. Each
+    // case below pins one shape of that: where the run starts and ends relative to bucket boundaries, and
+    // whether the buckets meeting at the seam merge.
+    [Theory]
+    [InlineData(300, 1500, 299)]  // starts mid-bucket, ends mid-bucket
+    [InlineData(0, 1500, 300)]    // starts at the very first element: no bucket left before the seam
+    [InlineData(300, 1500, 0)]    // runs to the very end: the last bucket empties, nothing after the seam
+    [InlineData(1000, 1500, 1000)] // large neighbours on both sides: no merge at the seam
+    [InlineData(20, 1500, 20)]    // small remnants on both sides: they merge at the seam
+    public void RemoveAll_ShouldCutOutARunThatSpansBuckets_WhateverItsBoundaries(int before, int run, int after)
+    {
+        int[] source = [.. Enumerable.Range(0, before), .. Enumerable.Repeat(before, run),
+            .. Enumerable.Range(before + 1, after)];
+        var set = new RankedMultiSet<int>(source);
+        var live = set.GetEnumerator();
+
+        Assert.Equal(run, set.RemoveAll(before));
+
+        Assert.Equal(before + after, set.Count);
+        Assert.Equal([.. Enumerable.Range(0, before), .. Enumerable.Range(before + 1, after)], Items(set));
+        Assert.False(set.Contains(before));
+        Assert.Throws<InvalidOperationException>(() => live.MoveNext());
+        AssertRanksAgreeWithOrder(set);
+
+        // The rebuilt index has to take further edits on both sides of the seam.
+        set.Add(before);
+        set.Add(-1);
+        set.Add(before + after + 5);
+        Assert.Equal(before + 1, set.IndexOf(before));
+        AssertRanksAgreeWithOrder(set);
+    }
+
+    [Fact]
+    public void RemoveAll_ShouldLeaveTheSlotsBehind_LikeRemove_WhenItEmptiesAMultiBucketMultiSet()
+    {
+        var set = new RankedMultiSet<int>(Enumerable.Repeat(3, 2000));
+
+        Assert.Equal(2000, set.RemoveAll(3));
+
+        Assert.Equal(0, set.Count);
+        Assert.NotEqual(0, SlotCount(set));
+        Assert.False(set.TryGetMin(out _));
+        set.Add(1);
+        Assert.Equal([1], Items(set));
+    }
+
     [Fact]
     public void RemoveAll_ShouldInvalidateEnumerators_OnlyWhenItRemovesSomething()
     {
