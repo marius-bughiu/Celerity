@@ -1728,6 +1728,34 @@ void Check(bool condition, string message)
     Check(descendingRanked[0] == 99 && descendingRanked.IndexOf(0) == 99, "RankedSet custom struct comparer order");
 }
 
+// RankedMultiSet — RankedSet's layout with duplicates kept. A run of equal values spanning several buckets
+// is what ILC has to get right here: the lower- and upper-bound descents, and the per-bucket run removal.
+{
+    var multi = new RankedMultiSet<int>(Enumerable.Range(0, 1500).Select(i => i / 3));
+    Check(multi.Count == 1500 && multi.Min == 0 && multi.Max == 499, "RankedMultiSet source ctor keeps duplicates");
+    Check(multi[0] == 0 && multi[2] == 0 && multi[3] == 1 && multi[1499] == 499, "RankedMultiSet select by rank");
+    Check(multi.CountOf(250) == 3 && multi.IndexOf(250) == 750 && multi.LastIndexOf(250) == 752, "RankedMultiSet run of copies");
+    Check(multi.CountLessThan(250) == 750 && multi.CountLessThanOrEqual(250) == 753, "RankedMultiSet counts");
+
+    for (int i = 0; i < 1000; i++) multi.Add(100);
+    Check(multi.CountOf(100) == 1003 && multi.IndexOf(101) == 1303, "RankedMultiSet run across buckets");
+    Check(multi.Remove(100) && multi.CountOf(100) == 1002, "RankedMultiSet remove one copy");
+    Check(multi.RemoveAll(100) == 1002 && !multi.Contains(100) && multi.Count == 1497, "RankedMultiSet remove every copy");
+
+    var inRange = 0;
+    foreach (int item in multi.EnumerateRange(10, 20)) inRange++;
+    Check(inRange == 30, "RankedMultiSet range scan");
+
+    multi.TrimExcess();
+    Check(multi.Count == 1497 && multi[1496] == 499, "RankedMultiSet TrimExcess");
+
+    // A second instantiation through a hand-written struct comparer; equal elements keep arrival order.
+    var descendingMulti = new RankedMultiSet<int, DescendingIntComparer>();
+    for (int i = 0; i < 100; i++) descendingMulti.Add(i % 10);
+    Check(descendingMulti[0] == 9 && descendingMulti.CountOf(0) == 10 && descendingMulti.IndexOf(0) == 90,
+        "RankedMultiSet custom struct comparer order");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.
