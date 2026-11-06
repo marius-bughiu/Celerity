@@ -182,14 +182,17 @@ public class StringSortTests
     [Theory]
     [InlineData(200)]
     [InlineData(5_000)]
-    public void Sort_ShouldNotAllocate_OnceThePoolIsWarm(int length)
+    public void Sort_ShouldNotAllocatePerCall_OnceThePoolIsWarm(int length)
     {
-        // Duplicate-heavy, so every entry point runs the ended-string split many times per call, on
-        // groups both small (insertion sort) and large (pooled radix of positions). A boxed comparer
-        // or a fresh buffer anywhere in that path costs bytes per group, and 20 sorts of a few hundred
-        // groups each would show up as kilobytes. 200 keys keep their entries on the stack buffer
-        // (the duplicate runs still rent position buffers), 5,000 use the pooled one. The budget absorbs one-off runtime noise; the quietest of three windows absorbs
-        // a stray GC-internal allocation landing in one of them.
+        // Duplicate-heavy, so each sort runs the ended-string split many times, on groups both small
+        // (insertion sort) and large (pooled radix of positions). A boxed comparer or a fresh buffer
+        // anywhere in that path allocates on every call; an earlier draft did, at about 10 KB a call.
+        //
+        // ArrayPool<T>.Shared is not a zero-allocation guarantee: it drops cached arrays when a gen-2
+        // GC runs under memory pressure, which other tests in the same process trigger, and the next
+        // call refills it (about 400 KB at 5,000 keys on a CI runner). So each window here is a single
+        // call and the assertion is on the quietest of 30. A trim costs one call; a per-call
+        // allocation shows up in all thirty.
         var rand = new Random(5);
         string[] distinct = Enumerable.Range(0, 40).Select(i => "value-" + i.ToString("D3")).ToArray();
         string[] source = new string[length];
@@ -214,18 +217,14 @@ public class StringSortTests
         SortAll();
 
         long quietest = long.MaxValue;
-        for (int window = 0; window < 3; window++)
+        for (int window = 0; window < 30; window++)
         {
             long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 20; i++)
-            {
-                SortAll();
-            }
-
+            SortAll();
             quietest = Math.Min(quietest, GC.GetAllocatedBytesForCurrentThread() - before);
         }
 
-        Assert.InRange(quietest, 0, 512);
+        Assert.InRange(quietest, 0, 256);
     }
 
     [Fact]

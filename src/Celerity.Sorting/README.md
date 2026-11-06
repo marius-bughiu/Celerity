@@ -51,7 +51,7 @@ Celerity documents its tradeoffs rather than claiming a blanket win:
   which sweeps from 100 to 1,000,000 elements precisely so it can be read off.
 - **`CountingSort` loses once `range` approaches `n`** — the histogram costs
   `range` no matter how few elements there are. Rule of thumb: `range ≲ n`.
-- **`StringSort` loses by up to 16% on input that is nearly, but not exactly, in
+- **`StringSort` is up to 19% slower (0.84x) on input that is nearly, but not exactly, in
   order** (exactly ordered input is caught by one scan and left alone), and gains
   only about 1.4x on mostly-duplicate input against 2.4–2.9x on distinct keys. It is ordinal only: for a
   culture-aware or case-insensitive order, use `Array.Sort` with a comparer.

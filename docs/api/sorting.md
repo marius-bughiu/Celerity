@@ -286,7 +286,7 @@ comparison sort re-reads the whole shared prefix on every one of its `O(n log n)
 
 **Where it does not win.** Input that is exactly in order is recognized by one linear scan and left
 alone, but input that is only *nearly* in order pays for that scan, then sorts in full, and loses to
-the BCL's introsort by up to 16%. Mostly-duplicate input gains less than distinct
+the BCL's introsort: up to 19% slower (0.84x). Mostly-duplicate input gains less than distinct
 keys, because a run of equal strings has to be read to its end before it is known to be equal.
 Measured figures for both are below and on the
 [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
@@ -309,7 +309,7 @@ dashboard supersede these.
 The "already in order" row measures the ordered-input check, not the sort: the input is recognized
 in one linear pass and left alone. The row below it is the honest sorted-input case. That input
 fails the check only at its last key and is then sorted in full, and there introsort's cheapness on
-almost-ordered data wins by up to 16%. Once the pool is warm, every row allocates nothing.
+almost-ordered data makes the BCL up to 19% faster. Once the pool is warm, every row allocates nothing.
 
 ```csharp
 using Celerity.Sorting;
