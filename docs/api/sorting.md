@@ -1,9 +1,11 @@
 # Sorting API reference
 
-`Celerity.Sorting` ships **non-comparison sorts and selection over primitive keys** — the paths the
-BCL has no equivalent for. `Array.Sort` and `MemoryExtensions.Sort<T>` run a scalar comparison
-introsort for primitive keys on every current runtime, and `Array.Sort` is contractually in-place
-while a radix sort needs `O(n)` scratch, so this is a gap the BCL structurally cannot close.
+`Celerity.Sorting` ships **non-comparison sorts and selection over primitive keys, plus an ordinal
+string sort** — the paths the BCL has no equivalent for. `Array.Sort` and `MemoryExtensions.Sort<T>`
+run a scalar comparison introsort for primitive keys on every current runtime, and `Array.Sort` is
+contractually in-place while a radix sort needs `O(n)` scratch, so this is a gap the BCL
+structurally cannot close. For strings the BCL offers only comparison sorts, whose every comparison
+dereferences two strings and re-reads the prefix they share.
 
 ```bash
 dotnet add package Celerity.Sorting
@@ -22,6 +24,7 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 - [RadixSort](#radixsort)
 - [CountingSort](#countingsort)
 - [PartialSort](#partialsort)
+- [StringSort](#stringsort)
 - [Floating-point ordering](#floating-point-ordering)
 
 ## Choosing a sort
@@ -35,6 +38,9 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 | Only the *k* smallest of *n* are wanted, order within them irrelevant | `PartialSort.Select` | `O(n)` introselect instead of an `O(n log n)` sort of everything. |
 | Only the *k* smallest are wanted, **in order** | `PartialSort.Sort` | The same selection, then a sort of just the `k`. |
 | The *k* largest of a span you **must not reorder** | `PartialSort.TopK` | `O(n log k)` bounded heap into a caller-supplied destination; the source is never written. |
+| Sorting many **strings** by ordinal order — ids, URLs, file paths, composite keys like `tenant:42:user:000123` | `StringSort.Sort` | A multikey quicksort that partitions on four characters at a time packed into one integer, so a shared prefix is read once per partition level instead of once per comparison. Stable, and nulls sort first like `StringComparer.Ordinal`. |
+| Strings that carry a payload, or ranking strings without moving them | `StringSort.Sort(keys, values)` / `StringSort.ArgSort` | The same sort; equal keys keep their payload order, which `Array.Sort(keys, items, comparer)` does not promise. |
+| Culture-aware or case-insensitive string order | `Array.Sort` with a `StringComparer` | `StringSort` is ordinal only. With a comparer in the loop, the BCL's introsort is the right tool. |
 | Fewer than a few hundred elements | `Array.Sort` | Below the crossover the histogram's fixed cost dominates. This is measured, not assumed — see the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/). |
 | A key range as wide as (or wider than) the element count | `RadixSort` or `Array.Sort` | `CountingSort`'s histogram costs `range` regardless of `n`. Rule of thumb: `range ≲ n`. |
 
@@ -230,6 +236,106 @@ readonly struct ByLength : IComparer<string>
 
 string[] longest = new string[5];
 PartialSort.TopK<string, ByLength>(words, longest, default);
+```
+
+## StringSort
+
+`StringSort` is a static class over spans of `string`. It orders by **UTF-16 code unit**, exactly as
+`StringComparer.Ordinal` and `string.CompareOrdinal` do: a proper prefix sorts before every string
+that extends it, `"B"` sorts before `"a"`, and nothing is culture-aware.
+
+| Member | Description |
+|---|---|
+| `Sort(Span<string> keys)` | Sorts the keys ascending, in place. |
+| `Sort<TValue>(Span<string> keys, Span<TValue> values)` | Sorts the keys, permuting `values` to match. |
+| `ArgSort(ReadOnlySpan<string> keys, Span<int> indices)` | Writes into `indices` the permutation that sorts `keys` ascending. `keys` is not modified. |
+
+**Exceptions.** `ArgumentException` when `values` or `indices` is shorter than `keys`, or when a
+`values` span of strings shares storage with `keys`. Disjoint slices of one array are fine.
+
+**How it works.** Each key becomes a 16-byte entry: the next four characters packed into one
+`ulong` (first character in the high 16 bits, a position past the end packing as zero), and its
+input position. A three-way partition on that integer splits a range into less, equal and greater;
+the equal part moves four characters deeper and is re-packed. Comparisons are integer compares, and
+each string is dereferenced once per four characters of the prefix that tells it apart, where a
+comparison sort re-reads the whole shared prefix on every one of its `O(n log n)` comparisons.
+
+**Properties worth relying on.**
+
+- **Stable**, in every form. Ties are broken by input position, so equal strings keep their input
+  order, the key+payload form keeps equal-keyed payloads in order, and `ArgSort` lists the indices of
+  equal keys ascending. `Array.Sort(keys, items, comparer)` guarantees neither.
+- **Nulls are allowed and sort first**, before the empty string, matching `StringComparer.Ordinal`.
+  The parameters are annotated non-nullable so a `string[]` call site needs no suppression; pass a
+  `string?[]` with the null-forgiving operator, `StringSort.Sort(keys.AsSpan()!)`.
+- **U+0000 is an ordinary character.** A position past the end of a string and a literal U+0000 pack
+  the same, so when a window's last lane is zero the group is split by how far each string actually
+  reaches before going deeper. `"a" < "a\0" < "a\0\0"` comes out right.
+- **No quadratic case.** Partitioning carries an introsort-style depth budget (two levels per halving)
+  that falls back to an in-place heap sort, and the stack is `O(log n)` deep however long the shared
+  prefixes are: the loop always continues with the largest part and recurses only into parts of at
+  most half the range.
+- **Allocation.** 16 bytes of working state per key, stack-allocated up to 256 keys and rented from
+  `ArrayPool<T>` above that; a run of more than 32 identical strings also rents 8 bytes per string
+  to radix-sort their positions. `Sort` gathers the result from a pooled copy of the keys (and of
+  the payload), cleared before it is returned to the pool. Once the pool is warm, a call does not
+  allocate. There is no `SortWithScratch` form, because the working state is an internal entry type.
+
+**Where it does not win.** Input that is exactly in order is recognized by one linear scan and left
+alone, but input that is only *nearly* in order pays for that scan, then sorts in full, and loses to
+the BCL's introsort by up to 16%. Mostly-duplicate input gains less than distinct
+keys, because a run of equal strings has to be read to its end before it is known to be equal.
+Measured figures for both are below and on the
+[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
+
+Measured with BenchmarkDotNet against `Array.Sort(keys, StringComparer.Ordinal)` (and the two-array
+`Array.Sort(keys, items, StringComparer.Ordinal)` for the payload and argsort rows), on a development
+machine (Apple Silicon, .NET 10 runtime). Higher is better for `StringSort`; the CI figures on the
+dashboard supersede these.
+
+| Shape | 100 | 1,000 | 100,000 | 1,000,000 |
+|---|---|---|---|---|
+| Random alphanumerics, 8–20 chars | 1.72x | 1.93x | 2.44x | 2.36x |
+| Shared prefix (`tenant:42:user:%09d`) | 2.01x | 2.53x | 2.90x | 2.84x |
+| 100 distinct values, repeated | 1.39x | 1.32x | 1.37x | 1.43x |
+| Already in order (one scan, then return) | 5.73x | 8.38x | 9.54x | 7.54x |
+| ⚠️ In order but for the last two keys | 0.94x | **0.88x** | 1.04x | **0.84x** |
+| Random keys + `int` payload | 1.48x | 1.79x | 2.56x | 2.48x |
+| `ArgSort` of random keys | 2.00x | 2.23x | 2.76x | 2.66x |
+
+The "already in order" row measures the ordered-input check, not the sort: the input is recognized
+in one linear pass and left alone. The row below it is the honest sorted-input case. That input
+fails the check only at its last key and is then sorted in full, and there introsort's cheapness on
+almost-ordered data wins by up to 16%. Once the pool is warm, every row allocates nothing.
+
+```csharp
+using Celerity.Sorting;
+
+// Keys only: ordinal, so upper case sorts before lower case.
+string[] names = ["pear", "Apple", "apple", "fig"];
+StringSort.Sort(names.AsSpan());
+// names is now ["Apple", "apple", "fig", "pear"]
+
+// Keys carrying a payload, stable.
+string[] tags = ["db", "api", "db", "api"];
+int[] requestIds = [10, 11, 12, 13];
+StringSort.Sort(tags.AsSpan(), requestIds.AsSpan());
+// tags: ["api", "api", "db", "db"]   requestIds: [11, 13, 10, 12]   (input order kept within ties)
+
+// Rank without moving a wide payload: sort once, then gather.
+Document[] docs = LoadDocuments();
+string[] paths = docs.Select(d => d.Path).ToArray();
+int[] byPath = new int[docs.Length];
+StringSort.ArgSort(paths, byPath);
+foreach (int i in byPath)
+{
+    Emit(docs[i]);   // docs and paths are untouched
+}
+
+// A string?[] goes in with the null-forgiving operator; nulls sort first.
+string?[] maybe = ["b", null, "a"];
+StringSort.Sort(maybe.AsSpan()!);
+// maybe is now [null, "a", "b"]
 ```
 
 ## Floating-point ordering

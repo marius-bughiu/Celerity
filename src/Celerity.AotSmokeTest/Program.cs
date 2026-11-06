@@ -3433,7 +3433,7 @@ void Check(bool condition, string message)
         "EnumMap as IDictionary: boxed key view");
 }
 
-// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309).
+// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596).
 //
 // Every shape that forces a distinct native instantiation: both radix widths, both signed and
 // IEEE-754 key transforms, the key+payload generic over a reference payload (which is where the
@@ -3508,6 +3508,27 @@ void Check(bool condition, string message)
 
     int[] top = new int[3];
     Check(PartialSort.TopK<int>(selection, top.AsSpan()) == 3 && top[0] == 9 && top[^1] == 7, "PartialSort.TopK");
+
+    // StringSort: the keys-only sort on the stack buffer and on the pooled one (above 256 keys), the
+    // key+payload generic over a value-typed payload, and the argsort.
+    string[] words = ["pear", "Apple", "apple", "", "pea", "pear\0"];
+    StringSort.Sort(words.AsSpan());
+    Check(words[0] == "" && words[1] == "Apple" && words[^1] == "pear\0", "StringSort ordinal order");
+
+    string[] many = new string[1_000];
+    for (int i = 0; i < many.Length; i++)
+        many[i] = "key:" + ((i * 7_919) % many.Length).ToString("D4");
+    StringSort.Sort(many.AsSpan());
+    Check(many[0] == "key:0000" && many[^1] == "key:0999", "StringSort pooled working state");
+
+    string[] wordKeys = ["b", "a", "b"];
+    int[] wordValues = [0, 1, 2];
+    StringSort.Sort(wordKeys.AsSpan(), wordValues.AsSpan());
+    Check(wordValues[0] == 1 && wordValues[1] == 0 && wordValues[2] == 2, "StringSort stable key+payload");
+
+    int[] wordRanks = new int[3];
+    StringSort.ArgSort(["z", "x", "y"], wordRanks.AsSpan());
+    Check(wordRanks[0] == 1 && wordRanks[1] == 2 && wordRanks[2] == 0, "StringSort.ArgSort");
 }
 
 // Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile.
