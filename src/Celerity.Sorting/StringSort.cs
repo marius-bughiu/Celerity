@@ -55,10 +55,17 @@ namespace Celerity.Sorting;
 /// identical strings also rents 8 bytes per string in the run, to radix-sort their input positions.
 /// <c>Sort</c> also rents a copy of the keys (and of the payload) to gather the result from; the
 /// copies are cleared before they go back to the pool, so it never holds the caller's references.
-/// Every buffer comes from the pool, so once the pool is warm a call allocates nothing. Partitioning compares integers and reads each distinguishing prefix about once
-/// per four characters. It carries an introsort-style depth budget that falls back to a heap sort, so
-/// no input, adversarial or otherwise, makes the number of partition steps or comparisons quadratic
-/// in <c>n</c>; a fallback comparison between strings whose packed windows tie does read their tails.
+/// Every buffer comes from the pool, so once the pool is warm a call allocates nothing.
+/// </para>
+/// <para>
+/// <b>Work bound.</b> Partitioning compares integers. Each key is re-packed once per four characters
+/// of the prefix that tells it apart from its neighbours. At each four-character depth, an
+/// introsort-style budget bounds a group of <c>m</c> keys to <c>O(m log m)</c> partition steps,
+/// falling back to a heap sort, so an adversarial pivot sequence cannot make one depth quadratic.
+/// The budget restarts at each depth, so total work grows with the length of the shared prefixes.
+/// <c>n</c> unordered keys sharing a <c>4n</c>-character prefix take about <c>n²</c> integer
+/// comparisons, which is proportional to the <c>4n²</c> characters of input, not quadratic in it. A
+/// heap-sort comparison between keys whose packed windows tie also reads their tails.
 /// </para>
 /// </remarks>
 public static class StringSort

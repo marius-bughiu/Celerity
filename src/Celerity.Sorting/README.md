@@ -29,7 +29,7 @@ scratch. That is exactly the flexibility-for-speed trade Celerity exists to make
   the next four characters packed into one integer, so a shared prefix such as
   `tenant:42:user:` is read once per partition level rather than once per
   comparison. Keys alone, keys with a payload, or `ArgSort`. **Stable**, nulls
-  first, and no quadratic case.
+  first, and a per-depth budget so no pivot sequence makes it quadratic.
 
 `RadixSort` and `CountingSort` provide **`SortWithScratch` forms that allocate
 nothing** for their sorts that need pooled buffers, so a hot loop supplies its

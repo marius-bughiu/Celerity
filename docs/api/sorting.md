@@ -271,10 +271,13 @@ comparison sort re-reads the whole shared prefix on every one of its `O(n log n)
 - **U+0000 is an ordinary character.** A position past the end of a string and a literal U+0000 pack
   the same, so when a window's last lane is zero the group is split by how far each string actually
   reaches before going deeper. `"a" < "a\0" < "a\0\0"` comes out right.
-- **No quadratic case.** Partitioning carries an introsort-style depth budget (two levels per halving)
-  that falls back to an in-place heap sort, and the stack is `O(log n)` deep however long the shared
-  prefixes are: the loop always continues with the largest part and recurses only into parts of at
-  most half the range.
+- **No adversarial pivot blow-up.** At each four-character depth, partitioning carries an
+  introsort-style budget (two levels per halving) that falls back to an in-place heap sort, so a
+  group of `m` keys costs `O(m log m)` steps there. The budget restarts at each depth, so total work
+  grows with the length of the shared prefixes. `n` keys sharing a `4n`-character prefix take about
+  `n²` integer comparisons, which is proportional to the input's `4n²` characters, not quadratic in
+  it. The stack is `O(log n)` deep however long the prefixes are: the loop always continues with the
+  largest part and recurses only into parts of at most half the range.
 - **Allocation.** 16 bytes of working state per key, stack-allocated up to 256 keys and rented from
   `ArrayPool<T>` above that; a run of more than 32 identical strings also rents 8 bytes per string
   to radix-sort their positions. `Sort` gathers the result from a pooled copy of the keys (and of
