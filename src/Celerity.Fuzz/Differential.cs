@@ -103,6 +103,7 @@ internal static class Differential
         ("PersistentHashMap", PersistentHashMapCase),
         ("PersistentHashSet", PersistentHashSetCase),
         ("RadixSort", RadixSortCase),
+        ("StringSort", StringSortCase),
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
         ("SpaceFillingCurve", SpaceFillingCurveCase),
@@ -4818,6 +4819,71 @@ internal static class Differential
         RadixSort.Sort(reals.AsSpan());
         for (int i = 0; i < length; i++)
             Check(reals[i] == expectedReals[i], $"RadixSort double order diverged from Array.Sort at {i}");
+    }
+
+    // StringSort's risky part is the packed four-character window: a string that ends inside it and
+    // a string holding U+0000 there pack the same, and the split between them is where a wrong
+    // branch yields a plausible order with one block misplaced. So the alphabets make those
+    // collisions common: a tiny one with NUL, the full code-unit range weighted to U+0000 and
+    // U+FFFF, and shared-prefix keys long enough to take many windows. The oracle is LINQ's stable
+    // OrderBy with the ordinal comparer, which is the exact order all three entry points promise.
+    private static void StringSortCase(Random rng)
+    {
+        int length = rng.Next(0, 600);
+        int shape = rng.Next(0, 4);
+
+        string?[] keys = new string?[length];
+        for (int i = 0; i < length; i++)
+        {
+            keys[i] = shape switch
+            {
+                0 => RandomString(rng, rng.Next(0, 13), "\0ab"),
+                1 => RandomCodeUnits(rng, rng.Next(0, 10)),
+                2 => "https://api.example.com/v2/" + RandomString(rng, rng.Next(0, 12), "ab/"),
+                _ => rng.Next(0, 6) == 0 ? null : RandomString(rng, rng.Next(0, 6), "abc"),
+            };
+        }
+
+        int[] expected = Enumerable.Range(0, length).OrderBy(i => keys[i], StringComparer.Ordinal).ToArray();
+
+        string?[] sorted = (string?[])keys.Clone();
+        StringSort.Sort(sorted.AsSpan()!);
+        for (int i = 0; i < length; i++)
+            Check(ReferenceEquals(sorted[i], keys[expected[i]]), $"StringSort keys diverged from a stable ordinal sort at {i}");
+
+        string?[] pairKeys = (string?[])keys.Clone();
+        int[] pairValues = Enumerable.Range(0, length).ToArray();
+        StringSort.Sort(pairKeys.AsSpan()!, pairValues.AsSpan());
+        for (int i = 0; i < length; i++)
+        {
+            Check(pairValues[i] == expected[i], $"StringSort key+payload diverged at {i}");
+            Check(ReferenceEquals(pairKeys[i], keys[expected[i]]), $"StringSort key+payload keys diverged at {i}");
+        }
+
+        int[] indices = new int[length];
+        StringSort.ArgSort(keys!, indices.AsSpan());
+        for (int i = 0; i < length; i++)
+            Check(indices[i] == expected[i], $"StringSort.ArgSort diverged at {i}");
+
+        static string RandomString(Random rng, int length, string alphabet)
+        {
+            char[] chars = new char[length];
+            for (int i = 0; i < length; i++)
+                chars[i] = alphabet[rng.Next(alphabet.Length)];
+            return new string(chars);
+        }
+
+        static string RandomCodeUnits(Random rng, int length)
+        {
+            char[] chars = new char[length];
+            for (int i = 0; i < length; i++)
+            {
+                int pick = rng.Next(0, 8);
+                chars[i] = pick == 0 ? '\0' : pick == 1 ? '\uFFFF' : (char)rng.Next(0, 0x10000);
+            }
+
+            return new string(chars);
+        }
     }
 
     private static void CountingSortCase(Random rng)

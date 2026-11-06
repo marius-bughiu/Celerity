@@ -87,6 +87,7 @@ internal class Program
         typeof(BitPackedArrayBenchmark),
         typeof(BTreeListBenchmark),
         typeof(RadixSortBenchmark),
+        typeof(StringSortBenchmark),
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),
         typeof(StringKeyProbeBenchmark),
