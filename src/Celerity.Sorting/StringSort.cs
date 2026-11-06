@@ -416,7 +416,7 @@ public static class StringSort
 
     /// <summary>
     /// <see cref="SplitEnded"/> for a run of more than <see cref="SmallGroup"/> entries: placed by
-    /// class, then each class's input positions are radix-sorted, which keeps a million copies of
+    /// class, then each finished class's input positions are radix-sorted, which keeps a million copies of
     /// one string linear.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -452,7 +452,9 @@ public static class StringSort
                 positions[cursor[(int)entry.Key]++] = (uint)entry.Index;
             }
 
-            for (int c = 0; c <= LaneCount; c++)
+            // Only the finished classes need their positions in order. Class 4 goes to the next window,
+            // whose own comparisons break ties by input position.
+            for (int c = 0; c < LaneCount; c++)
             {
                 int start = classStart[c];
                 int count = classStart[c + 1] - start;
