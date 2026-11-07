@@ -89,6 +89,7 @@ internal class Program
         typeof(RadixSortBenchmark),
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),
+        typeof(KWayMergeBenchmark),
         typeof(StringKeyProbeBenchmark),
         typeof(SortedSpanBenchmark),
         typeof(DDSketchBenchmark),

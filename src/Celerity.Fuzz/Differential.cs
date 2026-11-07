@@ -105,6 +105,7 @@ internal static class Differential
         ("RadixSort", RadixSortCase),
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
+        ("KWayMerge", KWayMergeCase),
         ("SpaceFillingCurve", SpaceFillingCurveCase),
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
@@ -4905,6 +4906,38 @@ internal static class Differential
             Check(top[i] == sorted[length - 1 - i], $"PartialSort.TopK disagreed at {i}");
 
         Check(values.AsSpan().SequenceEqual(before), "PartialSort.TopK modified its source");
+    }
+
+    // KWayMerge against a stable LINQ OrderBy of the concatenated runs. Elements carry a tag the comparer
+    // ignores, so the check is of stability as well as order; run counts reach past the 128-run stack limit.
+    private static void KWayMergeCase(Random rng)
+    {
+        int runCount = rng.Next(0, 4) switch { 0 => rng.Next(0, 3), 1 => rng.Next(3, 17), 2 => rng.Next(17, 129), _ => rng.Next(129, 400) };
+        int keyRange = rng.Next(1, 1_000);
+        var runs = new (int Key, int Tag)[runCount][];
+        int tag = 0;
+        for (int r = 0; r < runCount; r++)
+        {
+            var run = new (int Key, int Tag)[rng.Next(4) == 0 ? 0 : rng.Next(1, 30)];
+            for (int i = 0; i < run.Length; i++)
+                run[i] = (rng.Next(keyRange), tag++);
+            runs[r] = run.OrderBy(e => e.Key).ToArray();
+        }
+
+        var source = runs.SelectMany(r => r).ToArray();
+        var expected = source.OrderBy(e => e.Key).ToArray();
+
+        var destination = new (int Key, int Tag)[source.Length];
+        KWayMerge.Merge(source, runs.Select(r => r.Length).ToArray(), destination.AsSpan(), default(TupleKeyComparer));
+        Check(destination.AsSpan().SequenceEqual(expected), "KWayMerge.Merge diverged from a stable sort");
+
+        var lazy = KWayMerge.Merge(runs, default(TupleKeyComparer)).ToArray();
+        Check(lazy.AsSpan().SequenceEqual(expected), "KWayMerge lazy merge diverged from a stable sort");
+    }
+
+    private readonly struct TupleKeyComparer : IComparer<(int Key, int Tag)>
+    {
+        public int Compare((int Key, int Tag) x, (int Key, int Tag) y) => x.Key.CompareTo(y.Key);
     }
 
     // MortonCurve / HilbertCurve against a bit-by-bit interleave and the properties each curve promises.

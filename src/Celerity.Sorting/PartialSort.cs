@@ -415,23 +415,4 @@ public static class PartialSort
     // 2 * log2(n), the classic introsort budget: enough that a well-behaved input never reaches it,
     // small enough that an adversarial one falls back before quickselect's quadratic case bites.
     private static int DepthLimit(int length) => 2 * (31 - BitOperations.LeadingZeroCount((uint)length));
-
-    /// <summary>
-    /// The natural order as a struct comparer, so the <see cref="IComparable{T}"/> overloads share
-    /// one devirtualized implementation with the comparer-parameterized ones. Nulls sort first,
-    /// matching <see cref="Comparer{T}.Default"/>.
-    /// </summary>
-    private readonly struct ComparableComparer<T> : IComparer<T>
-        where T : IComparable<T>
-    {
-        public int Compare(T? x, T? y)
-        {
-            if (x is null)
-            {
-                return y is null ? 0 : -1;
-            }
-
-            return y is null ? 1 : x.CompareTo(y);
-        }
-    }
 }
