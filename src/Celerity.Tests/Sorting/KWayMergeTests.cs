@@ -356,11 +356,15 @@ public class KWayMergeTests
     [Fact]
     public void LazyMerge_ShouldDisposeTheRemainingSources_WhenOneDisposeThrows()
     {
-        var first = new TrackingSequence([1], throwOnDispose: true);
-        var second = new TrackingSequence([2]);
-        var third = new TrackingSequence([3]);
+        // Two elements each, and the merge is abandoned after the first, so no source has run out
+        // and all three are released together by the merge's own Dispose.
+        var first = new TrackingSequence([1, 4], throwOnDispose: true);
+        var second = new TrackingSequence([2, 5]);
+        var third = new TrackingSequence([3, 6]);
+        IEnumerator<int> e = KWayMerge.Merge<int>(new[] { first, second, third }).GetEnumerator();
+        Assert.True(e.MoveNext());
 
-        var ex = Assert.Throws<InvalidOperationException>(() => KWayMerge.Merge<int>(new[] { first, second, third }).ToList());
+        var ex = Assert.Throws<InvalidOperationException>(e.Dispose);
 
         Assert.Equal("dispose 1", ex.Message);
         Assert.Equal(1, second.EnumeratorsDisposed);
@@ -370,14 +374,57 @@ public class KWayMergeTests
     [Fact]
     public void LazyMerge_ShouldReportTheFirstDisposeFailure_WhenSeveralDisposesThrow()
     {
-        var first = new TrackingSequence([1], throwOnDispose: true);
-        var second = new TrackingSequence([2], throwOnDispose: true);
-        var third = new TrackingSequence([3]);
+        var first = new TrackingSequence([1, 4], throwOnDispose: true);
+        var second = new TrackingSequence([2, 5], throwOnDispose: true);
+        var third = new TrackingSequence([3, 6]);
+        IEnumerator<int> e = KWayMerge.Merge<int>(new[] { first, second, third }).GetEnumerator();
+        Assert.True(e.MoveNext());
 
-        var ex = Assert.Throws<InvalidOperationException>(() => KWayMerge.Merge<int>(new[] { first, second, third }).ToList());
+        var ex = Assert.Throws<InvalidOperationException>(e.Dispose);
 
         Assert.Equal("dispose 1", ex.Message);
+        Assert.Equal(1, second.EnumeratorsDisposed);
         Assert.Equal(1, third.EnumeratorsDisposed);
+    }
+
+    [Fact]
+    public void LazyMerge_ShouldDisposeEachSource_AsSoonAsItRunsOut()
+    {
+        var shortRun = new TrackingSequence([1]);
+        var empty = new TrackingSequence([]);
+        var longRun = new TrackingSequence([2, 3, 4]);
+        IEnumerator<int> e = KWayMerge.Merge<int>(new[] { shortRun, empty, longRun }).GetEnumerator();
+
+        Assert.True(e.MoveNext());
+        Assert.Equal(1, empty.EnumeratorsDisposed);
+        Assert.Equal(0, shortRun.EnumeratorsDisposed);
+
+        Assert.True(e.MoveNext());
+        Assert.Equal(1, shortRun.EnumeratorsDisposed);
+        Assert.Equal(0, longRun.EnumeratorsDisposed);
+
+        while (e.MoveNext())
+        {
+        }
+
+        // Drained without ever disposing the merge: every source is already released.
+        Assert.Equal(1, longRun.EnumeratorsDisposed);
+        e.Dispose();
+        Assert.Equal(1, longRun.EnumeratorsDisposed);
+    }
+
+    [Fact]
+    public void LazyMerge_ShouldReleaseTheOpenedSourcesAndStaySpent_WhenStartingFails()
+    {
+        var first = new TrackingSequence([1]);
+        IEnumerator<int> e = KWayMerge.Merge(new IEnumerable<int>[] { first, new ThrowingSequence() }).GetEnumerator();
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+        Assert.Equal(1, first.EnumeratorsDisposed);
+
+        // A retry neither reopens the sources nor yields anything.
+        Assert.False(e.MoveNext());
+        Assert.Equal(1, first.EnumeratorsCreated);
     }
 
     [Fact]

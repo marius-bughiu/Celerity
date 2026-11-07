@@ -213,8 +213,10 @@ public static class KWayMerge
     /// <remarks>
     /// Holds one enumerator and one buffered element per source, so memory is <c>O(k)</c>
     /// whatever the sources' lengths — the shape for merging streams that never fit in memory at
-    /// once. Every source enumerator is disposed when the merge finishes, throws, or is abandoned
-    /// early by disposing its enumerator (as <c>foreach</c> with <c>break</c> does).
+    /// once. Each source enumerator is disposed as soon as that source runs out, and the rest when
+    /// the merge's own enumerator is disposed — which <c>foreach</c> does on completion, on an
+    /// exception and on <c>break</c>. If opening the sources fails, those already opened are
+    /// disposed before the exception propagates.
     /// </remarks>
     public static IEnumerable<T> Merge<T, TComparer>(IEnumerable<IEnumerable<T>> sources, TComparer comparer)
         where TComparer : struct, IComparer<T>
@@ -408,6 +410,7 @@ public static class KWayMerge
                 int k = enumerators.Length;
                 int run = winner;
                 T key;
+                IEnumerator<T>? finished = null;
                 if (run < 0)
                 {
                     run = Start(out key);
@@ -422,6 +425,10 @@ public static class KWayMerge
                     }
                     else
                     {
+                        // Released below, once the tree is consistent, so a throwing Dispose
+                        // cannot leave the merge half-advanced.
+                        finished = source;
+                        enumerators[run] = null;
                         run = leaf;
                         key = default!;
                     }
@@ -436,11 +443,14 @@ public static class KWayMerge
 
                 winner = run;
                 current = key;
+                finished?.Dispose();
                 return run < k;
             }
 
             // Opens every source and plays the first tournament. With no sources the merge is
-            // spent from the start, which the caller reads as winner >= k.
+            // spent from the start, which the caller reads as winner >= k. If opening or reading a
+            // source throws, everything opened so far is released and the merge stays spent, so a
+            // retried MoveNext neither reopens the sources nor leaks the first set.
             private int Start(out T key)
             {
                 int k = enumerators.Length;
@@ -452,19 +462,30 @@ public static class KWayMerge
 
                 var contestantRun = new int[2 * k];
                 var contestantKey = new T[2 * k];
-                for (int i = 0; i < k; i++)
+                try
                 {
-                    IEnumerator<T> source = sources[i].GetEnumerator();
-                    enumerators[i] = source;
-                    if (source.MoveNext())
+                    for (int i = 0; i < k; i++)
                     {
-                        contestantRun[k + i] = i;
-                        contestantKey[k + i] = source.Current;
+                        IEnumerator<T> source = sources[i].GetEnumerator();
+                        enumerators[i] = source;
+                        if (source.MoveNext())
+                        {
+                            contestantRun[k + i] = i;
+                            contestantKey[k + i] = source.Current;
+                        }
+                        else
+                        {
+                            // Empty from the start: released now rather than held to the end.
+                            contestantRun[k + i] = i + k;
+                            enumerators[i] = null;
+                            source.Dispose();
+                        }
                     }
-                    else
-                    {
-                        contestantRun[k + i] = i + k;
-                    }
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
                 }
 
                 nodeRun = new int[k];
