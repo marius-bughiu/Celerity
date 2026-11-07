@@ -1,7 +1,7 @@
 # Sorting API reference
 
-`Celerity.Sorting` ships **non-comparison sorts and selection over primitive keys** — the paths the
-BCL has no equivalent for. `Array.Sort` and `MemoryExtensions.Sort<T>` run a scalar comparison
+`Celerity.Sorting` ships **non-comparison sorts and selection over primitive keys**, and a **k-way
+merge** of already-sorted runs — the paths the BCL has no equivalent for. `Array.Sort` and `MemoryExtensions.Sort<T>` run a scalar comparison
 introsort for primitive keys on every current runtime, and `Array.Sort` is contractually in-place
 while a radix sort needs `O(n)` scratch, so this is a gap the BCL structurally cannot close.
 
@@ -22,6 +22,7 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 - [RadixSort](#radixsort)
 - [CountingSort](#countingsort)
 - [PartialSort](#partialsort)
+- [KWayMerge](#kwaymerge)
 - [Floating-point ordering](#floating-point-ordering)
 
 ## Choosing a sort
@@ -35,6 +36,7 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 | Only the *k* smallest of *n* are wanted, order within them irrelevant | `PartialSort.Select` | `O(n)` introselect instead of an `O(n log n)` sort of everything. |
 | Only the *k* smallest are wanted, **in order** | `PartialSort.Sort` | The same selection, then a sort of just the `k`. |
 | The *k* largest of a span you **must not reorder** | `PartialSort.TopK` | `O(n log k)` bounded heap into a caller-supplied destination; the source is never written. |
+| Combining **already-sorted runs** — per-shard results, sorted files, posting lists, LSM compaction | `KWayMerge.Merge` | A stable loser-tree merge: at most `⌈log₂ k⌉` comparisons per element, against a `PriorityQueue` hand-roll's sift per dequeue and per enqueue. Wins most where comparisons are expensive (strings, records); a lazy form streams sequences that never fit in memory. For in-memory **primitive** keys, `RadixSort` over the concatenation is faster still. |
 | Fewer than a few hundred elements | `Array.Sort` | Below the crossover the histogram's fixed cost dominates. This is measured, not assumed — see the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/). |
 | A key range as wide as (or wider than) the element count | `RadixSort` or `Array.Sort` | `CountingSort`'s histogram costs `range` regardless of `n`. Rule of thumb: `range ≲ n`. |
 
@@ -230,6 +232,84 @@ readonly struct ByLength : IComparer<string>
 
 string[] longest = new string[5];
 PartialSort.TopK<string, ByLength>(words, longest, default);
+```
+
+## KWayMerge
+
+`KWayMerge` merges *k* already-sorted runs into one sorted output through a **loser tree** (a
+tournament tree). Each internal node keeps the run that *lost* the match played there, so when the
+winning run advances, only its leaf-to-root path is replayed — one comparison per level and no
+sibling comparison, at most `⌈log₂ k⌉` per output element. .NET has no multiway merge: the BCL
+answers are to concatenate and `Array.Sort` (which throws the runs' order away and pays
+`O(n log n)` for an `O(n log k)` problem) or to hand-roll the merge on `PriorityQueue<,>`, which
+dequeues and re-enqueues per element, sifting a 4-ary heap each time, and is not stable.
+
+| Member | Description |
+|---|---|
+| `Merge<T>(ReadOnlySpan<T> source, ReadOnlySpan<int> runLengths, Span<T> destination)` | Merges the runs packed back to back in `source` — the first `runLengths[0]` elements are run 0, the next `runLengths[1]` run 1, and so on — into the first `source.Length` elements of `destination`. Zero-length runs are allowed. |
+| `Merge<T, TComparer>(ReadOnlySpan<T> source, ReadOnlySpan<int> runLengths, Span<T> destination, TComparer comparer)` | The same under a custom order. |
+| `Merge<T>(IEnumerable<IEnumerable<T>> sources)` | Lazily merges sorted sequences, pulling the next element from a source only once its previous one has been yielded. |
+| `Merge<T, TComparer>(IEnumerable<IEnumerable<T>> sources, TComparer comparer)` | The same under a custom order. |
+
+As everywhere in the package, each entry point comes in an `IComparable<T>` form and a **`struct`
+comparer** form the JIT devirtualizes. Nulls sort first under the natural order. For `string` the
+natural order is `string.CompareTo`, which is culture-sensitive and slow; pass an ordinal `struct`
+comparer, as the example below does, and sort the runs with the same order.
+
+**Exceptions.** The span form throws `ArgumentOutOfRangeException` for a negative run length, and
+`ArgumentException` when the run lengths do not sum to `source.Length`, when `destination` is shorter
+than `source`, or when `destination` shares storage with `source` (two disjoint slices of one array
+are fine). The lazy form throws `ArgumentNullException` for a `null` `sources` and `ArgumentException`
+for a `null` sequence inside it — both when called, not when enumerated.
+
+**Properties worth relying on.**
+
+- **Stable.** Equal elements come out in run order — every equal element of run `i` before any of
+  run `j > i` — and in their original order within a run. The tie is broken on the run index inside
+  the tree, so it costs no comparison.
+- **The runs are not checked for order**; that would be a full extra pass. An unsorted run gives an
+  unspecified order, but the output is still a permutation of the input.
+- **The span form allocates nothing** once the shared pool is warm. The tree's keys are rented from
+  `ArrayPool<T>.Shared` (and cleared on return when `T` holds references); its run bookkeeping lives
+  on the stack up to 128 runs and is rented past that. One or two runs skip the tree entirely: one
+  is a copy, two a plain two-way merge.
+- **The lazy form holds `O(k)` state** — one enumerator and one buffered element per source —
+  whatever the sources' lengths, reads the outer sequence once when called, and re-enumerates the
+  inner ones each time the result is enumerated. Every source enumerator is disposed when the merge
+  completes, throws, or is abandoned by disposing its enumerator (`break` out of a `foreach`); if
+  several `Dispose` calls throw, all are still attempted and the first exception is reported.
+
+**Where it wins, and where it does not.** At 100,000 elements in 16 runs (a local BenchmarkDotNet run on Apple
+Silicon; CI's same-runner A/B is on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/)): **1.93x** faster than the
+`PriorityQueue` hand-roll on ordinal strings, and **2.75x** faster than concatenating and
+`Array.Sort`-ing them. Strings are the documented workload because there the comparison *is* the cost,
+and the tree does fewer of them. On `int` keys, where a comparison is one instruction and the time goes
+to mispredicted branches instead, the margin over the heap shrinks to **1.15x** (1.29x at 256 runs),
+and the lazy form is only **1.10x** faster than the same heap merge written as an iterator, since both
+pay interface calls per element. ⚠️ For **primitive keys that are all in memory, use `RadixSort`** on the concatenation instead:
+it ignores the runs, does no comparisons at all, and is several times faster than any merge. The merge
+is for keys a radix sort cannot take, for stability across runs, and for runs that arrive as streams.
+
+```csharp
+using Celerity.Sorting;
+
+// Sixteen shards each returned their slice of the result already sorted. Merge them,
+// keeping equal keys in shard order.
+string[] shardResults = Concatenate(shards, out int[] lengths);
+string[] merged = new string[shardResults.Length];
+KWayMerge.Merge(shardResults, lengths, merged.AsSpan(), default(Ordinal));
+
+// Merge sorted log files lazily: memory is one line per file, however large the files are.
+IEnumerable<IEnumerable<string>> files = paths.Select(File.ReadLines);
+foreach (string line in KWayMerge.Merge(files, default(Ordinal)))
+{
+    Process(line);
+}
+
+readonly struct Ordinal : IComparer<string>
+{
+    public int Compare(string? x, string? y) => string.CompareOrdinal(x, y);
+}
 ```
 
 ## Floating-point ordering
