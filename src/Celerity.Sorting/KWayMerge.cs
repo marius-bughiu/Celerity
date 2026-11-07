@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace Celerity.Sorting;
 
@@ -214,9 +215,9 @@ public static class KWayMerge
     /// Holds one enumerator and one buffered element per source, so memory is <c>O(k)</c>
     /// whatever the sources' lengths — the shape for merging streams that never fit in memory at
     /// once. Each source enumerator is disposed as soon as that source runs out, and the rest when
-    /// the merge's own enumerator is disposed — which <c>foreach</c> does on completion, on an
-    /// exception and on <c>break</c>. If opening the sources fails, those already opened are
-    /// disposed before the exception propagates.
+    /// the merge's own enumerator is disposed, which <c>foreach</c> does on <c>break</c>. If a
+    /// source, its <c>Current</c> or the comparer throws, every source is disposed before the
+    /// exception propagates and the merge yields nothing more.
     /// </remarks>
     public static IEnumerable<T> Merge<T, TComparer>(IEnumerable<IEnumerable<T>> sources, TComparer comparer)
         where TComparer : struct, IComparer<T>
@@ -405,7 +406,23 @@ public static class KWayMerge
 
             object? System.Collections.IEnumerator.Current => current;
 
+            // Any exception — from a source, its Current, or the comparer — releases every source and
+            // leaves the merge spent, the way a finally block would in an iterator. The work itself
+            // is in MoveNextCore so its locals stay outside the protected region.
             public bool MoveNext()
+            {
+                try
+                {
+                    return MoveNextCore();
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
+            }
+
+            private bool MoveNextCore()
             {
                 int k = enumerators.Length;
                 int run = winner;
@@ -449,8 +466,8 @@ public static class KWayMerge
 
             // Opens every source and plays the first tournament. With no sources the merge is
             // spent from the start, which the caller reads as winner >= k. If opening or reading a
-            // source throws, everything opened so far is released and the merge stays spent, so a
-            // retried MoveNext neither reopens the sources nor leaks the first set.
+            // source throws, MoveNext releases everything opened so far and leaves the merge spent,
+            // so a retried MoveNext neither reopens the sources nor leaks the first set.
             private int Start(out T key)
             {
                 int k = enumerators.Length;
@@ -462,30 +479,22 @@ public static class KWayMerge
 
                 var contestantRun = new int[2 * k];
                 var contestantKey = new T[2 * k];
-                try
+                for (int i = 0; i < k; i++)
                 {
-                    for (int i = 0; i < k; i++)
+                    IEnumerator<T> source = sources[i].GetEnumerator();
+                    enumerators[i] = source;
+                    if (source.MoveNext())
                     {
-                        IEnumerator<T> source = sources[i].GetEnumerator();
-                        enumerators[i] = source;
-                        if (source.MoveNext())
-                        {
-                            contestantRun[k + i] = i;
-                            contestantKey[k + i] = source.Current;
-                        }
-                        else
-                        {
-                            // Empty from the start: released now rather than held to the end.
-                            contestantRun[k + i] = i + k;
-                            enumerators[i] = null;
-                            source.Dispose();
-                        }
+                        contestantRun[k + i] = i;
+                        contestantKey[k + i] = source.Current;
                     }
-                }
-                catch
-                {
-                    Dispose();
-                    throw;
+                    else
+                    {
+                        // Empty from the start: released now rather than held to the end.
+                        contestantRun[k + i] = i + k;
+                        enumerators[i] = null;
+                        source.Dispose();
+                    }
                 }
 
                 nodeRun = new int[k];
@@ -503,35 +512,30 @@ public static class KWayMerge
                 current = default!;
                 IEnumerator<T>?[] opened = (IEnumerator<T>?[])enumerators.Clone();
                 Array.Clear(enumerators);
-                DisposeAll(opened, 0);
+                DisposeAll(opened);
             }
         }
     }
 
-    // Disposes every enumerator from index start on, and still disposes the rest when one of them
-    // throws — the first exception propagates once all are released.
-    private static void DisposeAll<T>(IEnumerator<T>?[] enumerators, int start)
+    // Disposes every enumerator, still attempting the rest when one throws, and rethrows the first
+    // failure once all have been tried. Iterative, so a wide merge whose sources all fail to dispose
+    // cannot run the stack out the way a recursive retry would.
+    private static void DisposeAll<T>(IEnumerator<T>?[] enumerators)
     {
-        for (int i = start; i < enumerators.Length; i++)
+        ExceptionDispatchInfo? first = null;
+        for (int i = 0; i < enumerators.Length; i++)
         {
             try
             {
                 enumerators[i]?.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
-                try
-                {
-                    DisposeAll(enumerators, i + 1);
-                }
-                catch
-                {
-                    // The first failure is the one reported; a later one must not mask it.
-                }
-
-                throw;
+                first ??= ExceptionDispatchInfo.Capture(ex);
             }
         }
+
+        first?.Throw();
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

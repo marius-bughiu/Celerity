@@ -277,10 +277,10 @@ for a `null` sequence inside it — both when called, not when enumerated.
   whatever the sources' lengths, reads the outer sequence once when called, and re-enumerates the
   inner ones each time the result is enumerated. Each source enumerator is disposed **as soon as
   that source runs out** (so merging files releases each handle at its end of file), and the rest
-  when the merge's own enumerator is disposed — which `foreach` does on completion, on an exception
-  and on `break`. If opening the sources fails, those already opened are disposed before the
-  exception propagates. If several `Dispose` calls throw at once, all are still attempted and the
-  first exception is reported.
+  when the merge's own enumerator is disposed, which `foreach` does on `break`. If a source, its
+  `Current` or the comparer throws, every source is disposed before the exception propagates and the
+  merge yields nothing more. If several `Dispose` calls throw at once, all are still attempted and
+  the first exception is reported.
 
 **Where it wins, and where it does not.** At 100,000 elements in 16 runs (a local BenchmarkDotNet run on Apple
 Silicon; CI's same-runner A/B is on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/)): **1.93x** faster than the

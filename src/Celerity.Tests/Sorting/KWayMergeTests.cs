@@ -428,6 +428,40 @@ public class KWayMergeTests
     }
 
     [Fact]
+    public void LazyMerge_ShouldReleaseEverySourceAndStaySpent_WhenASourceThrowsMidMerge()
+    {
+        static IEnumerable<int> FailsAfterOne()
+        {
+            yield return 1;
+            throw new InvalidOperationException("source failed");
+        }
+
+        var healthy = new TrackingSequence([2, 3]);
+        IEnumerator<int> e = KWayMerge.Merge(new IEnumerable<int>[] { FailsAfterOne(), healthy }).GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+
+        // Released by the failure itself, before the consumer disposes anything.
+        Assert.Equal(1, healthy.EnumeratorsDisposed);
+        Assert.False(e.MoveNext());
+    }
+
+    [Fact]
+    public void LazyMerge_ShouldAttemptEveryDispose_WhenManySourcesThrowOnDispose()
+    {
+        // Wide enough that a recursive retry per failure would be deep; the first failure wins.
+        var sources = Enumerable.Range(1, 5_000).Select(i => new TrackingSequence([i, i + 10_000], throwOnDispose: true)).ToArray();
+        IEnumerator<int> e = KWayMerge.Merge<int>(sources).GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        var ex = Assert.Throws<InvalidOperationException>(e.Dispose);
+
+        Assert.Equal("dispose 1", ex.Message);
+        Assert.All(sources, s => Assert.Equal(1, s.EnumeratorsDisposed));
+    }
+
+    [Fact]
     public void LazyMerge_ShouldKeepReturningFalse_WhenMovedPastTheEnd()
     {
         using IEnumerator<int> e = KWayMerge.Merge(new[] { new[] { 1 }, new[] { 2 } }).GetEnumerator();
