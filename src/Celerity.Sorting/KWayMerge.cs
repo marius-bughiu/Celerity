@@ -522,24 +522,26 @@ public static class KWayMerge
                 // disposed source, and a second Dispose disposes nothing twice.
                 winner = int.MaxValue;
                 current = default!;
-                IEnumerator<T>?[] opened = (IEnumerator<T>?[])enumerators.Clone();
-                Array.Clear(enumerators);
-                DisposeAll(opened);
+                DisposeAll(enumerators);
             }
         }
     }
 
     // Disposes every enumerator, still attempting the rest when one throws, and rethrows the first
-    // failure once all have been tried. Iterative, so a wide merge whose sources all fail to dispose
-    // cannot run the stack out the way a recursive retry would.
+    // failure once all have been tried. Each slot is cleared before its Dispose runs, so a second
+    // call (or a reentrant one from inside a Dispose) finds nothing left to release and allocates
+    // nothing. Iterative, so a wide merge whose sources all fail to dispose cannot run the stack out
+    // the way a recursive retry would.
     private static void DisposeAll<T>(IEnumerator<T>?[] enumerators)
     {
         ExceptionDispatchInfo? first = null;
         for (int i = 0; i < enumerators.Length; i++)
         {
+            IEnumerator<T>? enumerator = enumerators[i];
+            enumerators[i] = null;
             try
             {
-                enumerators[i]?.Dispose();
+                enumerator?.Dispose();
             }
             catch (Exception ex)
             {
