@@ -462,6 +462,50 @@ public class KWayMergeTests
     }
 
     [Fact]
+    public void LazyMerge_ShouldStillDisposeAnExhaustedSource_WhenTheComparerThrowsDuringItsReplay()
+    {
+        // Run 0 runs out on the second MoveNext. Its spent leaf loses to its sibling without a
+        // comparison, so the first comparison of that replay — the one that throws — comes after
+        // the source has been retired, which is exactly where it could be lost.
+        var sources = new[] { new TrackingSequence([1]), new TrackingSequence([2, 5]), new TrackingSequence([3, 6]), new TrackingSequence([4, 7]) };
+        IEnumerator<int> e = KWayMerge.Merge<int, ArmedComparer>(sources, default).GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        ArmedComparer.Armed = true;
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+        }
+        finally
+        {
+            ArmedComparer.Armed = false;
+        }
+
+        Assert.All(sources, s => Assert.Equal(1, s.EnumeratorsDisposed));
+        Assert.False(e.MoveNext());
+    }
+
+    [Fact]
+    public void LazyMerge_ShouldReportTheExhaustedSourcesDisposeFailure_WhenCleanupAlsoFails()
+    {
+        var first = new TrackingSequence([1], throwOnDispose: true);
+        var second = new TrackingSequence([2, 3], throwOnDispose: true);
+        IEnumerator<int> e = KWayMerge.Merge<int>(new[] { first, second }).GetEnumerator();
+        Assert.True(e.MoveNext());
+
+        // The first source runs out and fails to dispose; releasing the second then fails too.
+        var ex = Assert.Throws<InvalidOperationException>(() => e.MoveNext());
+
+        Assert.Equal("dispose 1", ex.Message);
+        Assert.Equal(1, second.EnumeratorsDisposed);
+
+        // Cleanup already ran, so the consumer's own Dispose is inert.
+        e.Dispose();
+        Assert.Equal(1, first.EnumeratorsDisposed);
+        Assert.Equal(1, second.EnumeratorsDisposed);
+    }
+
+    [Fact]
     public void LazyMerge_ShouldKeepReturningFalse_WhenMovedPastTheEnd()
     {
         using IEnumerator<int> e = KWayMerge.Merge(new[] { new[] { 1 }, new[] { 2 } }).GetEnumerator();
@@ -527,6 +571,14 @@ public class KWayMergeTests
         var ex = Assert.Throws<ArgumentException>(
             () => KWayMerge.Merge(new IEnumerable<int>[] { new[] { 1 }, null! }, default(DescendingComparer)));
         Assert.Equal("sources", ex.ParamName);
+    }
+
+    /// <summary>Natural int order that throws on every comparison while <see cref="Armed"/> is set.</summary>
+    private readonly struct ArmedComparer : IComparer<int>
+    {
+        public static bool Armed;
+
+        public int Compare(int x, int y) => Armed ? throw new InvalidOperationException("comparer failed") : x.CompareTo(y);
     }
 
     /// <summary>A sequence that counts the enumerators it hands out and how many were disposed.</summary>

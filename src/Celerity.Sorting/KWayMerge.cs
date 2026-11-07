@@ -417,7 +417,16 @@ public static class KWayMerge
                 }
                 catch
                 {
-                    Dispose();
+                    try
+                    {
+                        Dispose();
+                    }
+                    catch
+                    {
+                        // The failure that ended the merge is the one reported; a source that
+                        // also fails to dispose must not replace it.
+                    }
+
                     throw;
                 }
             }
@@ -442,15 +451,18 @@ public static class KWayMerge
                     }
                     else
                     {
-                        // Released below, once the tree is consistent, so a throwing Dispose
-                        // cannot leave the merge half-advanced.
+                        // Released below, once the replay has succeeded: until then it stays
+                        // registered, so a comparer that throws mid-replay still has it disposed.
                         finished = source;
-                        enumerators[run] = null;
                         run = leaf;
                         key = default!;
                     }
 
                     run = Replay(nodeRun.AsSpan(), nodeKey.AsSpan(), leaf >> 1, run, ref key, k, comparer);
+                    if (finished is not null)
+                    {
+                        enumerators[leaf - k] = null;
+                    }
                 }
                 else
                 {
