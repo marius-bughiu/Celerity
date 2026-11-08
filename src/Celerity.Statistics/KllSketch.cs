@@ -53,9 +53,10 @@ namespace Celerity.Statistics;
 /// Two sketches merge with <see cref="Merge(KllSketch{T})"/>, level by level, so per-shard sketches combine
 /// into one summary of the whole without replaying any input. Adding a value allocates nothing except when
 /// the stack grows a level, which happens <c>O(log Count)</c> times over a stream. A query sorts the retained values
-/// into a cached view — <c>O(K log K)</c>, independent of <see cref="Count"/> — and reads it by binary
+/// into a cached view — <c>O(R log R)</c> over the <c>R</c> = <see cref="RetainedCount"/> values, so it grows
+/// with <see cref="Count"/> only through the footprint's log term — and reads it by binary
 /// search. An <see cref="Add(T)"/> that does not compact inserts its value into that view in place, in
-/// <c>O(K)</c>, so a stream that queries after every value pays the full sort only once every few values
+/// <c>O(R)</c>, so a stream that queries after every value pays the full sort only once every few values
 /// rather than every time.
 /// </para>
 /// <para>

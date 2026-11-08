@@ -425,8 +425,10 @@ not 24, so size a small-`K` sketch by it. All levels share one
 buffer, so adding a value allocates nothing except when the stack grows a level, which happens
 `O(log Count)` times.
 
-A query sorts the retained values with their weights into a cached view, in `O(K log K)`
-independent of `Count`. Every query until the next `Add` then reads that view by binary search.
+A query sorts the retained values with their weights into a cached view, in `O(R log R)` over the
+`R` retained values, so its cost grows with `Count` only through the footprint's log term. Every query
+until the next compaction then reads that view by binary search, and an `Add` that does not compact
+patches it in place in `O(R)`.
 
 ### Accuracy
 
