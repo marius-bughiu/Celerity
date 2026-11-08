@@ -110,6 +110,7 @@ internal static class Differential
         ("RunningStatistics", RunningStatisticsCase),
         ("ReservoirSampler", ReservoirSamplerCase),
         ("RollingQuantile", RollingQuantileCase),
+        ("KllSketch", KllSketchCase),
     ];
 
     private const int MinKey = -8;
@@ -5240,6 +5241,92 @@ internal static class Differential
                 Check(!sut.TryGetValue(out _), "RollingQuantile reported a value after Clear");
             }
         }
+    }
+
+    // KllSketch — the rank-error quantile sketch, against every value it consumed, sorted. The nightly value
+    // over the in-repo suite is breadth: K from the floor to a few hundred, streams long enough to stack a
+    // dozen levels, narrow value ranges where ties span thousands of ranks, and the stream split across shards
+    // of differing K and merged back. The rank bound is twice the worst error a 3,000-case sweep of exactly
+    // this generator produced (3.4 / K, taken against the smallest K involved), so a breach is a defect rather
+    // than an unlucky coin; the exact invariants hold on every draw.
+    private static void KllSketchCase(Random rng)
+    {
+        int k = rng.Next(KllSketch<int>.MinK, 300);
+        int length = rng.Next(0, 30_000);
+        int range = rng.Next(2) == 0 ? 10 : int.MaxValue;
+        var values = new int[length];
+        for (int i = 0; i < length; i++)
+        {
+            values[i] = rng.Next(range);
+        }
+
+        var sut = new KllSketch<int>(k, (ulong)rng.NextInt64());
+        int smallestK = k;
+        int shards = rng.Next(1, 5);
+        int position = 0;
+        for (int shard = 0; shard < shards; shard++)
+        {
+            int end = shard == shards - 1 ? length : rng.Next(position, length + 1);
+            int shardK = rng.Next(KllSketch<int>.MinK, 300);
+            smallestK = Math.Min(smallestK, shardK);
+            var part = new KllSketch<int>(shardK, (ulong)rng.NextInt64());
+            part.Add(values.AsSpan(position, end - position));
+            sut.Merge(part);
+            position = end;
+        }
+
+        Check(sut.Count == length, "KllSketch Count disagreed");
+        if (length == 0)
+        {
+            Check(sut.IsEmpty, "KllSketch reported values it was never given");
+            return;
+        }
+
+        int[] sorted = (int[])values.Clone();
+        Array.Sort(sorted);
+        Check(sut.Min == sorted[0] && sut.Max == sorted[^1], "KllSketch reported the wrong extremes");
+
+        double bound = 8d / smallestK;
+        int previous = int.MinValue;
+        for (int i = 0; i <= 100; i++)
+        {
+            double quantile = i / 100d;
+            int reported = sut.GetQuantile(quantile);
+            Check(reported >= previous, "KllSketch quantiles were not monotone");
+            previous = reported;
+
+            int below = LowerBoundOf(sorted, reported);
+            int atOrBelow = LowerBoundOf(sorted, reported + 1L);
+            Check(atOrBelow > below, "KllSketch reported a value it was never given");
+            // The sketch answers rank ⌊q · (Count − 1)⌋; measuring against the unfloored product would charge
+            // a short exact stream up to a whole rank of error, which at eleven values is 9% of the stream.
+            double target = Math.Floor(quantile * (length - 1));
+            double error = target < below ? below - target : target > atOrBelow - 1 ? target - (atOrBelow - 1) : 0d;
+            Check(
+                error / length <= bound,
+                FormattableString.Invariant($"KllSketch q={quantile} was {error / length:P2} of the stream off at K={smallestK}"));
+        }
+    }
+
+    // The first index whose value is at least `value`; a long probe so that int.MaxValue + 1 is representable.
+    private static int LowerBoundOf(int[] sorted, long value)
+    {
+        int lo = 0;
+        int hi = sorted.Length;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >>> 1;
+            if (sorted[mid] < value)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return lo;
     }
 
     private static bool Close(double actual, double expected, double relative)

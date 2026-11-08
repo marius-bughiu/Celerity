@@ -24,6 +24,7 @@ in the collections.
 - [ReservoirSampler](#reservoirsampler)
 - [RunningStatistics](#runningstatistics)
 - [RollingQuantile](#rollingquantile)
+- [KllSketch](#kllsketch)
 - [Where these lose](#where-these-lose)
 
 ## Choosing a summary
@@ -33,6 +34,9 @@ in the collections.
 | p50 / p90 / p99 latency over a stream that never ends | `DDSketch` | A relative error bound at every quantile, in memory proportional to the log of the value range rather than to the sample count. |
 | Percentiles per shard, combined into a global one | `DDSketch.Merge` | Two sketches of the same accuracy merge without re-reading either input — bucket-exactly, unless an operand has already collapsed. |
 | An exact median of data you already hold and will not add to | `Array.Sort` + index | Nothing beats a pre-sorted array indexed in `O(1)`. The sketch is for the case where you cannot keep the data or it keeps changing. |
+| Percentiles of strings, timestamps, `decimal` or any other comparable type, over a stream | `KllSketch<T>` | A **rank**-error bound (about ±1% of the stream at the default `K = 200`) for any `IComparable<T>`, in about `3K` retained values. `DDSketch` takes only `double`. |
+| "What fraction of the stream is at or below *x*?" — a CDF, an SLO attainment, a rank of a value | `KllSketch<T>.GetRank` | The rank question answered directly, with the same rank-error bound. |
+| Values near zero, mixed signs, or a few distinct values with heavy ties | `KllSketch<T>` | A relative error says little near zero, and discrete data puts thousands of ranks on one value; a rank bound holds for both. |
 | A rolling median or p99 over the last *w* values — a median filter, a "spike over the recent median" alarm | `RollingQuantile<T>` | Exact, `O(log w)` per value and `O(1)` to read. It holds the window, which is what makes it exact; `DDSketch` cannot forget old values. |
 | A bounded sample of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` | `O(k)` memory and `O(k · log(n / k))` random draws, uniform to the precision of the generator, and it never needs to know `n`. |
 | Mean and standard deviation of a stream, or of one bucket among many | `RunningStatistics` | One pass, no allocation, numerically stable, and a `struct` so per-bucket accumulators live inline. |
@@ -378,9 +382,101 @@ number. One instance answers one quantile; for a median *and* a p99 over the sam
 There is no enumerator. The window is a position in the caller's stream, and a caller who needs
 its contents already has them.
 
+## KllSketch
+
+A mergeable quantile sketch with a **rank**-error guarantee, for any `IComparable<T>`: the KLL
+sketch of Karnin, Lang and Liberty (FOCS 2016), the one Apache DataSketches recommends.
+
+```csharp
+// The median and p99 of a day's event timestamps, and the fraction before noon.
+var sketch = new KllSketch<DateTimeOffset>();
+
+foreach (DateTimeOffset seen in events)
+{
+    sketch.Add(seen);
+}
+
+DateTimeOffset median = sketch.GetQuantile(0.5);
+DateTimeOffset p99 = sketch.GetQuantile(0.99);
+double beforeNoon = sketch.GetRank(noon);
+```
+
+`DDSketch` answers half of the quantile question. It takes `double` only, and it promises the
+*value*: the reported p99 is within a relative `α` of the true one. `KllSketch<T>` answers the other
+half. It takes strings, timestamps, `decimal`, version numbers or any other `IComparable<T>`, and it
+promises the *rank*: the value it reports for quantile `q` sits within about `±ε · Count` positions
+of rank `⌊q · (Count − 1)⌋` in the sorted stream. That holds where a relative bound says little:
+near zero, across mixed signs, and on discrete data where one value spans thousands of ranks. It is
+also the bound a "what fraction was below *x*?" question needs, and `GetRank` answers that directly.
+Every value the sketch reports is one it was fed.
+
+### How it works
+
+The sketch is a stack of *compactors*. Level `h` holds values that each stand for `2^h` values of the
+stream. New values go into level 0. When the buffer is full, the lowest level at or over its
+capacity is sorted and every other value of it is kept, with a coin flip choosing the odd or even
+half. The survivors merge into the sorted level above with their weight doubled. An odd value is held
+back at its own weight, so the total weight is always exactly `Count`. Capacities shrink by `2/3` per
+level down from `K` at the top, with a floor of 8, so the whole stack retains about `3K` values however
+long the stream runs: **614 at the default `K = 200` after a million values**. All levels share one
+buffer, so adding a value allocates nothing except when the stack grows a level, which happens
+`O(log Count)` times.
+
+A query sorts the retained values with their weights into a cached view, in `O(K log K)`
+independent of `Count`. Every query until the next `Add` then reads that view by binary search.
+
+### Accuracy
+
+The error is probabilistic over the coin flips and depends only on `K`. Over a million values at the
+default `K = 200`, the worst normalized rank error across uniform, lognormal, ascending, descending
+and 20-value-tie streams was **1.07%** (five seeds each, 1,001 quantiles per run). Doubling `K`
+roughly halves it. Until the stream outgrows the first compaction, after `K` values, nothing has
+been discarded and every answer is exact. `GetQuantile(0)` and `GetQuantile(1)` return the exact
+`Min` and `Max`, which the sketch tracks beside the compactors. `Min` and `Max` are themselves
+exact.
+
+The coin comes from a `Pcg32` seeded at construction. Two sketches built with the same `K` and seed
+and fed the same stream are identical. The unseeded constructors use a fixed default seed. The
+guarantee assumes the stream does not depend on the coin flips: someone who knows the seed can craft
+a stream that defeats it, so seed from a secret when the input is adversarial.
+
+### Surface
+
+| Member | Notes |
+|---|---|
+| `KllSketch<T>()` / `(int k)` / `(int k, ulong seed)` | `k` in `[8, 65535]`, default `200`. `T : IComparable<T>`. |
+| `Add(T value)` / `Add(ReadOnlySpan<T> values)` | `null` is rejected with `ArgumentNullException`; the span form has added the values before it. |
+| `GetQuantile(double quantile)` | A value whose rank is within the error of `⌊q · (Count − 1)⌋`. `q` in `[0, 1]`, `NaN` rejected. |
+| `GetQuantiles(ReadOnlySpan<double>, Span<T>)` | Several at once into a caller-owned span. For `T = double` the destination must not overlap the quantile list. |
+| `GetRank(T value)` | The estimated fraction of the stream at or below `value`, from `0` to `1`. |
+| `Merge(KllSketch<T> other)` | Folds another sketch in, level by level. `other` is unchanged and may be this sketch. A different `K` is accepted: this sketch keeps its own, and the result is no more accurate than the coarser input. |
+| `Count` / `IsEmpty` / `RetainedCount` / `K` | Values consumed, whether there are none, values held (the footprint), and the accuracy parameter. |
+| `Min` / `Max` | Exact. Throw `InvalidOperationException` on an empty sketch, as `GetQuantile` and `GetRank` do. |
+| `Clear()` | Empties the sketch, releases its references and shrinks the buffer back to one level. |
+
+Values are ordered by `Comparer<T>.Default`. For `string` that is the **current culture's** order, as
+it is for `SortedSet<string>`. For `double`, `NaN` sorts below every number. The type is not
+thread-safe, including for concurrent readers, because a query may build the cached view.
+
+### Against the BCL
+
+The BCL has no quantile type. The alternative is the one `DDSketch` is measured against: keep every
+value in a `List<T>`, then sort and index. A local BenchmarkDotNet run (Apple M-series, .NET 8) at
+100,000 lognormal doubles measured:
+
+- **Ingest, then read p50 / p90 / p99**: **2.2× faster**, allocating 44 KB against 2.1 MB.
+- **Query on a moving stream** (one new value, then p99): **2.6× faster**, 2.1 µs against 5.4 µs.
+  The baseline here is the careful one: a list kept sorted, one `BinarySearch` and one `Insert` per
+  value. Re-sorting a copy per query would lose by three orders of magnitude and is not the fair
+  comparison. An `Add` that does not compact patches the sketch's cached view in place, so the cost
+  is mostly the full re-sort that follows each compaction.
+- **Add**: **13× slower** than a list append. See below.
+
+The CI-tracked numbers are on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
+
 ## Where these lose
 
-Celerity documents its tradeoffs rather than claiming a blanket win. All four of these are on the
+Celerity documents its tradeoffs rather than claiming a blanket win. All five of these are on the
 [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), including the arms they
 lose:
 
@@ -405,6 +501,15 @@ lose:
 - **`RollingQuantile` answers one quantile, and holds the window.** It is `w` values plus `2w`
   integers, against `DDSketch`'s fixed footprint. A second quantile over the same window needs a
   second instance and a second copy of the window.
+- **`KllSketch.Add` is 8–13× slower than a `List<T>` append.** Every few values it sorts and
+  halves a level, and that is most of its cost. At a thousand values it also loses the queries:
+  **38× slower** than a sorted list's insert-and-index on a moving-stream p99, and **1.5× slower**
+  end to end, because a thousand-value list is cheap to keep sorted and the sketch's ~600-value view
+  is nearly as large. It pulls ahead once the stream is many times `3K`, and its footprint stays
+  fixed while the list's grows. Against a pre-sorted array, like `DDSketch`, it loses outright.
+- **`KllSketch` is approximate, and its bound is probabilistic.** About 1% of the stream at
+  `K = 200`, but no hard maximum: a run of unlucky coin flips can exceed it. When the values are
+  `double` and a *relative* bound is the one wanted, `DDSketch` is the better fit.
 - **`RunningStatistics` is slower than LINQ, measurably.** CI puts `Moments` at **1.9× the
   two-pass LINQ shape** at both sizes, because the accumulator maintains all four moments on
   every `Add` while that caller reads two. It buys a single pass over a stream it never
@@ -420,6 +525,6 @@ next to the winning ones so the crossovers can be read off rather than guessed.
   `TopKSketch`, `MinHashSketch`) that summarize a stream's *cardinality*, *frequencies* and
   *overlap with another stream* rather than its distribution.
 - [Utilities API](utilities.md) — the seedable struct PRNGs the sampler is parameterized on.
-- [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch`, `RunningStatistics` and
-  `RollingQuantile` reconcile against exact oracles; the sampler's is invariant fuzzing, because uniformity is
+- [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch`, `RunningStatistics`,
+  `RollingQuantile` and `KllSketch` reconcile against exact oracles; the sampler's is invariant fuzzing, because uniformity is
   distributional and no single case can measure it.

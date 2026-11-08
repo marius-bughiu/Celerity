@@ -34,6 +34,10 @@ means keeping the stream, which is the one thing a stream will not let you do.
   of the last `w` values of a stream, `O(log w)` per value and `O(1)` to read.
   Two heaps meet at the quantile, and a slot index replaces the expiring value
   in place, so nothing is searched for.
+- **`KllSketch<T>`** — quantiles with a *rank* error guarantee, for **any**
+  `IComparable<T>`: strings, timestamps, `decimal`. The KLL sketch keeps about
+  `3K` values however long the stream runs, answers `GetRank` ("what fraction
+  was at or below *x*?") as well as quantiles, and merges across shards.
 
 ## Where it wins, and where it does not
 
@@ -57,6 +61,12 @@ means keeping the stream, which is the one thing a stream will not let you do.
 - **`RollingQuantile` holds its window**, `w` values plus `2w` ints, and answers
   one quantile per instance. Against a sorted array plus a queue it is 2.5×
   faster at a 1,000-value window and 32× at 100,000.
+- **`KllSketch` loses on short streams and on `Add`.** At 100,000 values a
+  ingest-then-query is 2.2× faster than a sorted `List<T>`, and a p99 after
+  every new value 2.6× faster than keeping the list sorted by insertion; at a
+  thousand values it loses both, and `Add` is always 8–13× slower than an
+  append. Its bound is probabilistic, about 1%
+  of the stream at the default `K = 200`.
 - **`ReservoirSampler` loses on short streams**, where Algorithm L's
   transcendentals dominate: 6.2× slower than materializing at a thousand items,
   1.7× faster at a hundred thousand. The crossover is around ten thousand.
@@ -102,6 +112,15 @@ foreach (double ms in requestLatencies)
 }
 
 Console.WriteLine($"rolling median {median.Value:F2} ms");
+
+// Percentiles of any comparable type, with a rank-error bound.
+var versions = new KllSketch<Version>();
+foreach (Version v in clientVersions)
+{
+    versions.Add(v);
+}
+
+Console.WriteLine($"median client {versions.GetQuantile(0.5)}");
 ```
 
 ## Documentation
