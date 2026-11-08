@@ -427,7 +427,8 @@ public sealed class KllSketch<T> where T : IComparable<T>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     /// <exception cref="OverflowException">The combined <see cref="Count"/> would overflow.</exception>
     /// <remarks>
-    /// Runs in time proportional to the two sketches' retained values, and allocates a new buffer.
+    /// Combines the two stacks level by level in one linear pass over their retained values, then compacts
+    /// any level left over capacity exactly as <see cref="Add(T)"/> does. Allocates a new buffer.
     /// </remarks>
     public void Merge(KllSketch<T> other)
     {
@@ -456,20 +457,18 @@ public sealed class KllSketch<T> where T : IComparable<T>
             int ownSize = h < _levelCount ? _levels[h + 1] - _levels[h] : 0;
             int otherSize = h < other._levelCount ? other._levels[h + 1] - other._levels[h] : 0;
             int start = end - ownSize - otherSize;
-            if (ownSize > 0)
+            int ownStart = ownSize > 0 ? _levels[h] : 0;
+            int otherStart = otherSize > 0 ? other._levels[h] : 0;
+            if (h == 0)
             {
-                Array.Copy(_items, _levels[h], items, start, ownSize);
+                // Level 0 is in arrival order, so the two halves are simply placed side by side.
+                Array.Copy(_items, ownStart, items, start, ownSize);
+                Array.Copy(other._items, otherStart, items, start + ownSize, otherSize);
             }
-
-            if (otherSize > 0)
+            else
             {
-                Array.Copy(other._items, other._levels[h], items, start + ownSize, otherSize);
-            }
-
-            // Every level but the lowest is kept sorted; two sorted runs side by side are not.
-            if (h > 0 && ownSize > 0 && otherSize > 0)
-            {
-                Array.Sort(items, start, ownSize + otherSize);
+                // Every higher level is sorted, so the two runs merge in one linear pass.
+                MergeRuns(_items, ownStart, ownSize, other._items, otherStart, otherSize, items, start);
             }
 
             levels[h] = start;
@@ -670,6 +669,22 @@ public sealed class KllSketch<T> where T : IComparable<T>
         }
 
         _levels[level + 1] = pairedStart + half;
+    }
+
+    // Merges two sorted runs, which may come from the same array, into a separate destination.
+    private static void MergeRuns(T[] left, int leftStart, int leftCount, T[] right, int rightStart, int rightCount, T[] destination, int write)
+    {
+        int a = leftStart;
+        int aEnd = leftStart + leftCount;
+        int b = rightStart;
+        int bEnd = rightStart + rightCount;
+        while (a < aEnd && b < bEnd)
+        {
+            destination[write++] = Comparer<T>.Default.Compare(right[b], left[a]) < 0 ? right[b++] : left[a++];
+        }
+
+        Array.Copy(left, a, destination, write, aEnd - a);
+        Array.Copy(right, b, destination, write + (aEnd - a), bEnd - b);
     }
 
     private int NextCoin()

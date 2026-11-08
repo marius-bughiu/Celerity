@@ -380,6 +380,32 @@ public class KllSketchTests
     }
 
     [Fact]
+    public void Add_ShouldRebuildTheView_WhenPatchingItThrowsAgainstAnInteriorValue()
+    {
+        var sketch = new KllSketch<Fragile>();
+        sketch.Add(new[] { new Fragile(1), new Fragile(50), new Fragile(100) });
+        Assert.Equal(50, sketch.GetQuantile(0.5d).Value);
+
+        // 60 compares cleanly against both extremes, so it is committed; the patch's binary search then
+        // meets 50 in the cached view and throws.
+        Fragile.Poison = 50;
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => sketch.Add(new Fragile(60)));
+        }
+        finally
+        {
+            Fragile.Poison = 0;
+        }
+
+        // The value went in, and the next query sees it rather than reusing the unpatched view.
+        Assert.Equal(4, sketch.Count);
+        Assert.Equal(0.75d, sketch.GetRank(new Fragile(60)));
+        Assert.Equal(1d, sketch.GetRank(sketch.Max));
+        Assert.Equal(60, sketch.GetQuantile(0.67d).Value);
+    }
+
+    [Fact]
     public void Merge_ShouldLeaveTheSketchUnchanged_WhenComparingTheExtremesThrows()
     {
         var sketch = new KllSketch<Fragile>();
@@ -439,6 +465,9 @@ public class KllSketchTests
         [ThreadStatic]
         private static bool armed;
 
+        [ThreadStatic]
+        private static int poison;
+
         public Fragile(int value) => Value = value;
 
         public static bool Armed
@@ -447,11 +476,18 @@ public class KllSketchTests
             set => armed = value;
         }
 
+        // When non-zero, only comparisons that involve this value throw.
+        public static int Poison
+        {
+            get => poison;
+            set => poison = value;
+        }
+
         public int Value { get; }
 
         public int CompareTo(Fragile other)
         {
-            if (armed)
+            if (armed || (poison != 0 && (Value == poison || other.Value == poison)))
             {
                 throw new InvalidOperationException("Comparison failed.");
             }
