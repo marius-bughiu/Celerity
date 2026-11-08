@@ -36,7 +36,8 @@ means keeping the stream, which is the one thing a stream will not let you do.
   in place, so nothing is searched for.
 - **`KllSketch<T>`** — quantiles with a *rank* error guarantee, for **any**
   `IComparable<T>`: strings, timestamps, `decimal`. The KLL sketch keeps about
-  `3K` values however long the stream runs, answers `GetRank` ("what fraction
+  `3K` values plus 8 per level (614 at the default `K = 200` after a
+  million values), answers `GetRank` ("what fraction
   was at or below *x*?") as well as quantiles, and merges across shards.
 
 ## Where it wins, and where it does not

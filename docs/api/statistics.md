@@ -34,7 +34,7 @@ in the collections.
 | p50 / p90 / p99 latency over a stream that never ends | `DDSketch` | A relative error bound at every quantile, in memory proportional to the log of the value range rather than to the sample count. |
 | Percentiles per shard, combined into a global one | `DDSketch.Merge` | Two sketches of the same accuracy merge without re-reading either input — bucket-exactly, unless an operand has already collapsed. |
 | An exact median of data you already hold and will not add to | `Array.Sort` + index | Nothing beats a pre-sorted array indexed in `O(1)`. The sketch is for the case where you cannot keep the data or it keeps changing. |
-| Percentiles of strings, timestamps, `decimal` or any other comparable type, over a stream | `KllSketch<T>` | A **rank**-error bound (about ±1% of the stream at the default `K = 200`) for any `IComparable<T>`, in about `3K` retained values. `DDSketch` takes only `double`. |
+| Percentiles of strings, timestamps, `decimal` or any other comparable type, over a stream | `KllSketch<T>` | A **rank**-error bound (about ±1% of the stream at the default `K = 200`) for any `IComparable<T>`, in about `3K` retained values (plus 8 per level; 614 at `K = 200` after a million). `DDSketch` takes only `double`. |
 | "What fraction of the stream is at or below *x*?" — a CDF, an SLO attainment, a rank of a value | `KllSketch<T>.GetRank` | The rank question answered directly, with the same rank-error bound. |
 | Values near zero, mixed signs, or a few distinct values with heavy ties | `KllSketch<T>` | A relative error says little near zero, and discrete data puts thousands of ranks on one value; a rank bound holds for both. |
 | A rolling median or p99 over the last *w* values — a median filter, a "spike over the recent median" alarm | `RollingQuantile<T>` | Exact, `O(log w)` per value and `O(1)` to read. It holds the window, which is what makes it exact; `DDSketch` cannot forget old values. |
@@ -417,8 +417,11 @@ stream. New values go into level 0. When the buffer is full, the lowest level at
 capacity is sorted and every other value of it is kept, with a coin flip choosing the odd or even
 half. The survivors merge into the sorted level above with their weight doubled. An odd value is held
 back at its own weight, so the total weight is always exactly `Count`. Capacities shrink by `2/3` per
-level down from `K` at the top, with a floor of 8, so the whole stack retains about `3K` values however
-long the stream runs: **614 at the default `K = 200` after a million values**. All levels share one
+level down from `K` at the top, with a floor of 8. The geometric part sums to under `3K`, and each
+level (one per doubling of the stream past `K`) adds at most the floor, so the stack retains at most
+about `3K + 8 · log₂(Count / K)` values. At the default `K = 200` that is **614 after a million values**
+and 639 after ten million. At a small `K` the log term dominates: `K = 8` retains 156 after ten million,
+not 24, so size a small-`K` sketch by it. All levels share one
 buffer, so adding a value allocates nothing except when the stack grows a level, which happens
 `O(log Count)` times.
 

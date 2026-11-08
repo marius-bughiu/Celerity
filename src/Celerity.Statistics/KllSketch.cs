@@ -6,8 +6,8 @@ namespace Celerity.Statistics;
 
 /// <summary>
 /// A mergeable quantile sketch with a <strong>rank</strong>-error guarantee, over any comparable type: the
-/// KLL sketch of Karnin, Lang and Liberty. It summarizes a stream of any length in about <c>3 · K</c>
-/// retained values, and every answer it gives is one of the values it was fed.
+/// KLL sketch of Karnin, Lang and Liberty. It summarizes a stream of any length in at most about
+/// <c>3 · K + 8 · log2(Count / K)</c> retained values, and every answer it gives is one of the values it was fed.
 /// </summary>
 /// <typeparam name="T">The type of the values. Ordered by <see cref="Comparer{T}.Default"/>.</typeparam>
 /// <remarks>
@@ -28,7 +28,11 @@ namespace Celerity.Statistics;
 /// <c>2^h</c> of the stream; when the buffer fills, the lowest level over its capacity is sorted, every
 /// other value of it is kept (which half is a coin flip), and the survivors are merged one level up with
 /// their weight doubled. Capacities shrink geometrically by <c>2/3</c> down the stack from <c>K</c> at the
-/// top, so the whole sketch retains about <c>3 · K</c> values however long the stream runs.
+/// top with a floor of <see cref="MinK"/>, so the sketch retains at most about
+/// <c>3 · K + 8 · log2(Count / K)</c> values: the geometric part sums to under <c>3 · K</c>, and each level, one
+/// per doubling of the stream past <c>K</c>, adds at most the floor. At the default <c>K = 200</c> the floor
+/// barely shows (614 values after a million); at a small <c>K</c> it dominates (156 at <c>K = 8</c> after ten
+/// million), so size a small-<c>K</c> sketch by the log term.
 /// </para>
 /// <para>
 /// <strong>Accuracy.</strong> The error is probabilistic, over the coin flips, and depends only on
@@ -175,7 +179,8 @@ public sealed class KllSketch<T> where T : IComparable<T>
 
     /// <summary>
     /// Gets the number of values the sketch currently retains — its footprint, in values. About
-    /// <c>3 · K</c> once the stream is long, and <see cref="Count"/> until the first compaction.
+    /// <c>3 · K</c> plus up to 8 per level (<c>O(K + log Count)</c>) once the stream is long, and
+    /// <see cref="Count"/> until the first compaction.
     /// </summary>
     public int RetainedCount => _items.Length - _levels[0];
 
