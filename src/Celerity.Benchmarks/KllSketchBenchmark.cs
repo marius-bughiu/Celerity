@@ -30,11 +30,11 @@ public class KllSketchBenchmark
 {
     private double[] values = null!;
     private double[] presorted = null!;
+    private const int QuerySteps = 1_000;
+
     private List<double> sortedList = null!;
-    private int listCursor;
-    private int pendingIndex;
+    private KllSketch<double> streaming = null!;
     private KllSketch<double> sketch = null!;
-    private int cursor;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -57,13 +57,9 @@ public class KllSketchBenchmark
         presorted = (double[])values.Clone();
         Array.Sort(presorted);
 
-        sortedList = new List<double>(presorted);
-        listCursor = 0;
-        pendingIndex = -1;
 
         sketch = new KllSketch<double>();
         sketch.Add(values);
-        cursor = 0;
     }
 
     [BenchmarkCategory("Add")]
@@ -92,43 +88,58 @@ public class KllSketchBenchmark
         return target.Count;
     }
 
+    // Both Query arms start every iteration from the same state, the ItemCount values ingested, and then
+    // absorb the same QuerySteps further values, reading p99 after each. Rebuilding in IterationSetup keeps
+    // the workload bounded and matched: without it the sketch's stream would grow by one value per
+    // invocation for millions of invocations while the list stayed the same size. The batch is long enough
+    // (milliseconds) that the one-invocation-per-iteration rule IterationSetup imposes costs no precision.
+    [IterationSetup(Target = nameof(List_Query))]
+    public void ResetList()
+    {
+        sortedList = new List<double>(ItemCount + QuerySteps);
+        sortedList.AddRange(presorted);
+    }
+
+    [IterationSetup(Target = nameof(KllSketch_Query))]
+    public void ResetSketch()
+    {
+        streaming = new KllSketch<double>();
+        streaming.Add(values);
+    }
+
     [BenchmarkCategory("Query")]
-    [Benchmark(Baseline = true)]
+    [Benchmark(Baseline = true, OperationsPerInvoke = QuerySteps)]
     public double List_Query()
     {
         // The careful caller's moving-stream query: the list is kept sorted, so a new value is one
         // BinarySearch and one Insert (a memmove of the tail), and the p99 is an index. Re-sorting a copy
-        // per query would be far slower and would flatter the sketch. To keep the list at a steady size
-        // without charging a second memmove, invocations alternate: one inserts the next value, the next
-        // removes it again from the same position. Either way an invocation is one memmove of a
-        // random-length tail plus an index.
-        if (pendingIndex >= 0)
+        // per query would be far slower and would flatter the sketch.
+        double total = 0;
+        for (int i = 0; i < QuerySteps; i++)
         {
-            sortedList.RemoveAt(pendingIndex);
-            pendingIndex = -1;
-        }
-        else
-        {
-            double value = values[listCursor];
-            listCursor = listCursor + 1 == values.Length ? 0 : listCursor + 1;
+            double value = values[i % values.Length];
             int at = sortedList.BinarySearch(value);
-            pendingIndex = at < 0 ? ~at : at;
-            sortedList.Insert(pendingIndex, value);
+            sortedList.Insert(at < 0 ? ~at : at, value);
+            total += sortedList[(int)(0.99d * (sortedList.Count - 1))];
         }
 
-        return sortedList[(int)(0.99d * (sortedList.Count - 1))];
+        return total;
     }
 
     [BenchmarkCategory("Query")]
-    [Benchmark]
+    [Benchmark(OperationsPerInvoke = QuerySteps)]
     public double KllSketch_Query()
     {
-        // One value arrives, which invalidates the cached view, then the p99 is read: the sketch's
-        // counterpart of the baseline's re-sort. The cursor cycles through the same values so every
-        // invocation does the same work.
-        sketch.Add(values[cursor]);
-        cursor = cursor + 1 == values.Length ? 0 : cursor + 1;
-        return sketch.GetQuantile(0.99d);
+        // The same values, each added and followed by a p99 read. Adds that compact force the next query
+        // to re-sort the retained values; the others patch the cached view in place.
+        double total = 0;
+        for (int i = 0; i < QuerySteps; i++)
+        {
+            streaming.Add(values[i % values.Length]);
+            total += streaming.GetQuantile(0.99d);
+        }
+
+        return total;
     }
 
     [BenchmarkCategory("QueryPresorted")]

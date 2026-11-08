@@ -465,11 +465,13 @@ value in a `List<T>`, then sort and index. A local BenchmarkDotNet run (Apple M-
 100,000 lognormal doubles measured:
 
 - **Ingest, then read p50 / p90 / p99**: **2.2× faster**, allocating 44 KB against 2.1 MB.
-- **Query on a moving stream** (one new value, then p99): **2.6× faster**, 2.1 µs against 5.4 µs.
-  The baseline here is the careful one: a list kept sorted, one `BinarySearch` and one `Insert` per
-  value. Re-sorting a copy per query would lose by three orders of magnitude and is not the fair
-  comparison. An `Add` that does not compact patches the sketch's cached view in place, so the cost
-  is mostly the full re-sort that follows each compaction.
+- **Query on a moving stream** (1,000 more values, a p99 after each): **5.5× faster**, 1.06 µs a
+  value against 5.8 µs. The baseline here is the careful one: a list kept sorted, one `BinarySearch`
+  and one `Insert` per value. Re-sorting a copy per query would lose by three orders of magnitude and
+  is not the fair comparison. An `Add` that does not compact patches the sketch's cached view in
+  place, so the cost is mostly the full re-sort that follows each compaction. Deep stacks compact
+  more often: after millions of values the sketch measured about 2 µs a value, while the list's cost
+  keeps growing with its length.
 - **Add**: **13× slower** than a list append. See below.
 
 The CI-tracked numbers are on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
@@ -503,7 +505,7 @@ lose:
   second instance and a second copy of the window.
 - **`KllSketch.Add` is 8–13× slower than a `List<T>` append.** Every few values it sorts and
   halves a level, and that is most of its cost. At a thousand values it also loses the queries:
-  **38× slower** than a sorted list's insert-and-index on a moving-stream p99, and **1.5× slower**
+  **1.9× slower** than a sorted list's insert-and-index on a moving-stream p99, and **1.5× slower**
   end to end, because a thousand-value list is cheap to keep sorted and the sketch's ~600-value view
   is nearly as large. It pulls ahead once the stream is many times `3K`, and its footprint stays
   fixed while the list's grows. Against a pre-sorted array, like `DDSketch`, it loses outright.

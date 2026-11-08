@@ -57,6 +57,11 @@ namespace Celerity.Statistics;
 /// <para>
 /// Not thread-safe, including for concurrent readers: a query may build the cached view.
 /// </para>
+/// <para>
+/// Values are assumed to compare without throwing. <see cref="Add(T)"/> and <see cref="Merge(KllSketch{T})"/>
+/// compare against the extremes before changing anything, but a <see cref="IComparable{T}.CompareTo(T)"/> that
+/// throws part-way through a compaction leaves the sketch's contents unspecified.
+/// </para>
 /// </remarks>
 /// <example>
 /// <code>
@@ -199,6 +204,7 @@ public sealed class KllSketch<T> where T : IComparable<T>
     /// <summary>Adds one value to the sketch.</summary>
     /// <param name="value">The value to add.</param>
     /// <exception cref="ArgumentNullException"><paramref name="value"/> is <c>null</c>.</exception>
+    /// <exception cref="OverflowException"><see cref="Count"/> is already <see cref="long.MaxValue"/>.</exception>
     public void Add(T value)
     {
         if (value is null)
@@ -206,15 +212,26 @@ public sealed class KllSketch<T> where T : IComparable<T>
             throw new ArgumentNullException(nameof(value));
         }
 
+        // Reachable only through merges, which can double the count each time; checked before anything
+        // changes, as Merge checks its own sum.
+        if (_count == long.MaxValue)
+        {
+            throw new OverflowException("The sketch's count would exceed Int64.MaxValue.");
+        }
+
         // The extremes are compared before anything is written, so a CompareTo that throws leaves the
         // sketch exactly as it was.
         bool newMin = _count == 0 || Comparer<T>.Default.Compare(value, _min) < 0;
         bool newMax = _count == 0 || Comparer<T>.Default.Compare(value, _max) > 0;
 
+        // The view is marked stale before anything changes and marked live again only once the patch below
+        // has gone in, so an exception part-way through cannot leave a stale view that looks current.
+        bool patchView = _sortedValid;
+        _sortedValid = false;
         if (_levels[0] == 0)
         {
             CompressOnce();
-            _sortedValid = false;
+            patchView = false;
         }
 
         int slot = --_levels[0];
@@ -234,9 +251,10 @@ public sealed class KllSketch<T> where T : IComparable<T>
 
         // An add that did not compact changes the retained set by one value of weight one, so a live view
         // takes it in place rather than being rebuilt by the next query.
-        if (_sortedValid)
+        if (patchView)
         {
             InsertIntoView(value);
+            _sortedValid = true;
         }
     }
 
@@ -458,20 +476,24 @@ public sealed class KllSketch<T> where T : IComparable<T>
             end = start;
         }
 
+        // The extremes are compared before any field is replaced, so a CompareTo that throws leaves this
+        // sketch exactly as it was.
         bool wasEmpty = _count == 0;
         T otherMin = other._min;
         T otherMax = other._max;
+        bool newMin = wasEmpty || Comparer<T>.Default.Compare(otherMin, _min) < 0;
+        bool newMax = wasEmpty || Comparer<T>.Default.Compare(otherMax, _max) > 0;
 
         _items = items;
         _levels = levels;
         _levelCount = levelCount;
 
-        if (wasEmpty || Comparer<T>.Default.Compare(otherMin, _min) < 0)
+        if (newMin)
         {
             _min = otherMin;
         }
 
-        if (wasEmpty || Comparer<T>.Default.Compare(otherMax, _max) > 0)
+        if (newMax)
         {
             _max = otherMax;
         }

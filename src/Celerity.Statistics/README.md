@@ -63,7 +63,7 @@ means keeping the stream, which is the one thing a stream will not let you do.
   faster at a 1,000-value window and 32× at 100,000.
 - **`KllSketch` loses on short streams and on `Add`.** At 100,000 values a
   ingest-then-query is 2.2× faster than a sorted `List<T>`, and a p99 after
-  every new value 2.6× faster than keeping the list sorted by insertion; at a
+  every new value 5.5× faster than keeping the list sorted by insertion; at a
   thousand values it loses both, and `Add` is always 8–13× slower than an
   append. Its bound is probabilistic, about 1%
   of the stream at the default `K = 200`.

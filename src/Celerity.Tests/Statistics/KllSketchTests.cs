@@ -335,6 +335,75 @@ public class KllSketchTests
     }
 
     [Fact]
+    public void Add_ShouldThrowOnCountOverflow_AndLeaveTheSketchUnchanged()
+    {
+        // Self-merge then add, 62 times, takes a count of 1 to 2^63 − 1 while retaining only a handful.
+        var sketch = new KllSketch<long>(KllSketch<long>.MinK);
+        sketch.Add(5L);
+        for (int i = 0; i < 62; i++)
+        {
+            sketch.Merge(sketch);
+            sketch.Add(5L);
+        }
+
+        Assert.Equal(long.MaxValue, sketch.Count);
+        int retained = sketch.RetainedCount;
+
+        Assert.Throws<OverflowException>(() => sketch.Add(6L));
+        Assert.Equal(long.MaxValue, sketch.Count);
+        Assert.Equal(retained, sketch.RetainedCount);
+        Assert.Equal(5L, sketch.Max);
+        Assert.Equal(1d, sketch.GetRank(5L));
+    }
+
+    [Fact]
+    public void Add_ShouldLeaveTheSketchUnchanged_WhenComparingTheNewValueThrows()
+    {
+        var sketch = new KllSketch<Fragile>();
+        sketch.Add(new[] { new Fragile(1), new Fragile(3), new Fragile(2) });
+        Assert.Equal(2, sketch.GetQuantile(0.5d).Value);
+
+        Fragile.Armed = true;
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => sketch.Add(new Fragile(9)));
+        }
+        finally
+        {
+            Fragile.Armed = false;
+        }
+
+        Assert.Equal(3, sketch.Count);
+        Assert.Equal(3, sketch.RetainedCount);
+        Assert.Equal(3, sketch.Max.Value);
+        Assert.Equal(1d, sketch.GetRank(new Fragile(3)));
+    }
+
+    [Fact]
+    public void Merge_ShouldLeaveTheSketchUnchanged_WhenComparingTheExtremesThrows()
+    {
+        var sketch = new KllSketch<Fragile>();
+        sketch.Add(new Fragile(4));
+        var other = new KllSketch<Fragile>();
+        other.Add(new Fragile(7));
+
+        Fragile.Armed = true;
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => sketch.Merge(other));
+        }
+        finally
+        {
+            Fragile.Armed = false;
+        }
+
+        Assert.Equal(1, sketch.Count);
+        Assert.Equal(1, sketch.RetainedCount);
+        Assert.Equal(1d, sketch.GetRank(new Fragile(4)));
+        Assert.Equal(4, sketch.Max.Value);
+    }
+
+    [Fact]
     public void Clear_ShouldEmptyTheSketch_AndLeaveItReusable()
     {
         var sketch = new KllSketch<string>(KllSketch<string>.MinK);
@@ -362,5 +431,32 @@ public class KllSketchTests
         Assert.Equal("x", sketch.Min);
         Assert.Equal("z", sketch.Max);
         Assert.Equal("y", sketch.GetQuantile(0.5d));
+    }
+
+    // A key whose comparison can be made to throw, to pin which operations change nothing when it does.
+    private readonly struct Fragile : IComparable<Fragile>
+    {
+        [ThreadStatic]
+        private static bool armed;
+
+        public Fragile(int value) => Value = value;
+
+        public static bool Armed
+        {
+            get => armed;
+            set => armed = value;
+        }
+
+        public int Value { get; }
+
+        public int CompareTo(Fragile other)
+        {
+            if (armed)
+            {
+                throw new InvalidOperationException("Comparison failed.");
+            }
+
+            return Value.CompareTo(other.Value);
+        }
     }
 }
