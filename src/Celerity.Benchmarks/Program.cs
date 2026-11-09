@@ -145,6 +145,7 @@ internal class Program
         // "Built with Celerity" showcase packages (separate NuGet packages built on the core family):
         // isolated perf demos, so they ride the extended suite alongside the primitive benchmarks.
         typeof(RingBenchmark),
+        typeof(MaglevVsRingBenchmark),
         typeof(SentinelBenchmark),
         typeof(StripedSentinelBenchmark),
         typeof(CardinalityBenchmark),
