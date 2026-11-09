@@ -95,6 +95,9 @@ internal class Program
         typeof(ReservoirSamplerBenchmark),
         typeof(RollingQuantileBenchmark),
         typeof(RunningStatisticsBenchmark),
+        // Celerity.Ring's charted sweep: Maglev's one-load lookup and its rebuild cost against a hand-rolled
+        // ring. The package's other benchmark (RingBenchmark) stays in the extended suite.
+        typeof(MaglevHashBenchmark),
         // One comparison split by hasher family so the shard packer can spread it; see
         // StringHasherBenchmarkBase.
         typeof(StringHasherBenchmark),

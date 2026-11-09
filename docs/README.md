@@ -23,7 +23,7 @@ This folder contains reference documentation for the Celerity high-performance c
 
 Standalone packages built on top of `Celerity.Collections` — each ships as its own NuGet package, so you add only the one you need. See each package's README for the full API and runnable examples.
 
-- [`Celerity.Ring`](../src/Celerity.Ring/README.md) — deterministic consistent-hash & rendezvous (HRW) rings for sharding and request routing, with byte-identical node assignment across OS / architecture / runtime.
+- [`Celerity.Ring`](../src/Celerity.Ring/README.md) — deterministic consistent-hash, rendezvous (HRW) and Maglev routing for sharding and request routing, with byte-identical node assignment across OS / architecture / runtime.
 - [`Celerity.Sentinel`](../src/Celerity.Sentinel/README.md) — streaming abuse / heavy-hitter detection (top offenders, per-key rate, fan-out cardinality) in a fixed footprint regardless of key cardinality.
 - [`Celerity.Cardinality`](../src/Celerity.Cardinality/README.md) — mergeable approximate `COUNT(DISTINCT)` and windowed dedup over unbounded streams, with deterministic cross-shard merge.
 

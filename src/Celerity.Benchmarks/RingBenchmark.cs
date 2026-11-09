@@ -21,6 +21,8 @@ using Celerity.Ring;
 /// quorum read — three distinct nodes per key — against the same MD5 hand-roll walking its continuum into a
 /// fresh <see cref="List{T}"/>. <c>RendezvousReplicas</c> measures <see cref="StringRendezvousHash{TNode}"/>'s
 /// ranked preference list over the same fifty nodes. Each category's <c>Allocated</c> column is the point.
+/// <c>CelerityMaglev_GetNode</c> routes the same keys through <see cref="StringMaglevHash{TNode}"/>, the
+/// one-load lookup table; its own sweep against a hand-rolled ring is <c>MaglevHashBenchmark</c>.
 /// </remarks>
 [MemoryDiagnoser]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
@@ -34,6 +36,7 @@ public class RingBenchmark
 
     private StringConsistentHashRing<string> ring = null!;
     private StringRendezvousHash<string> pool = null!;
+    private StringMaglevHash<string> maglev = null!;
     private uint[] baselineHashes = null!;
     private string[] baselineNodes = null!;
     private string[] keys = null!;
@@ -48,10 +51,12 @@ public class RingBenchmark
 
         ring = new StringConsistentHashRing<string>(VirtualNodesPerNode);
         pool = new StringRendezvousHash<string>();
+        maglev = new StringMaglevHash<string>();
         foreach (var id in nodeIds)
         {
             ring.Add(id, id);
             pool.Add(id, id);
+            maglev.Add(id, id);
         }
 
         // Baseline ring: MD5-hashed virtual nodes on a flat sorted continuum (the textbook hand-roll).
@@ -92,6 +97,16 @@ public class RingBenchmark
         int acc = 0;
         foreach (var key in keys)
             acc += ring.GetNode(key).Length;
+        return acc;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("GetNode")]
+    public int CelerityMaglev_GetNode()
+    {
+        int acc = 0;
+        foreach (var key in keys)
+            acc += maglev.GetNode(key).Length;
         return acc;
     }
 
