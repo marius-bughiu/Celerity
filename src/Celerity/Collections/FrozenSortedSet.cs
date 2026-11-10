@@ -45,7 +45,9 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Space.</b> The leaves are the keys themselves, padded to a whole node with <c>T.MaxValue</c>. The internal
 /// levels add about one key in <c>B + 1</c>: 6% for <see cref="int"/> and 11% for <see cref="long"/>. So the
-/// set costs about <c>1 + 1 / B</c> times the sorted array it replaces, plus at most one node of padding.
+/// set costs about <c>1 + 1 / B</c> times the sorted array it replaces, plus padding: every level, leaves
+/// included, rounds up to whole nodes, so each can carry up to one node of unused keys. That matters only for
+/// small sets (273 <see cref="int"/> keys take 1,352 bytes against 1,092 for the array).
 /// <see cref="MemoryUsageInBytes"/> reports the exact figure.
 /// </para>
 /// <para>
@@ -67,7 +69,8 @@ namespace Celerity.Collections;
 ///
 /// // Range partitions: which shard owns key k? The last boundary at or below it.
 /// var boundaries = new FrozenSortedSet&lt;int&gt;(shardStartKeys);
-/// int shard = boundaries.CountLessThan(k + 1) - 1;
+/// // k + 1 would wrap at int.MaxValue, where every boundary qualifies.
+/// int shard = k == int.MaxValue ? boundaries.Count - 1 : boundaries.CountLessThan(k + 1) - 1;
 ///
 /// // Every key in [from, to), as a span over the sorted keys, without copying.
 /// ReadOnlySpan&lt;int&gt; window = boundaries.SliceRange(from, to);

@@ -9865,7 +9865,9 @@ layout and scan each node with a scalar loop. That path is correct but is not th
 measurements above describe.
 
 **Space.** The internal levels add about one key in `B + 1`: 6% for `int` and 11% for `long`.
-On top of that comes at most one node of padding. `MemoryUsageInBytes` reports the payload,
+On top of that comes padding: every level, leaves included, rounds up to whole nodes, so each can
+carry up to one node of unused keys. That matters only for small sets: 273 `int` keys take 1,352
+bytes against the array's 1,092. `MemoryUsageInBytes` reports the payload,
 which is the leaves, the internal levels and the level index. It excludes the CLR's per-array
 headers, the same accounting `EliasFanoSequence` uses.
 
