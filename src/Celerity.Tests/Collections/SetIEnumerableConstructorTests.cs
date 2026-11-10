@@ -9,7 +9,8 @@ namespace Celerity.Tests.Collections;
 /// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
 /// <see cref="LinkedSet{T, THasher}"/>,
-/// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/>, and the
+/// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/> and
+/// <see cref="FrozenSortedSet{T}"/>, and the
 /// immutable <see cref="PersistentHashSet{T, THasher}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
@@ -2072,5 +2073,70 @@ public class SetIEnumerableConstructorTests
         Assert.Equal(3, set.Count);
         foreach (int item in new[] { 1, 2, 3 })
             Assert.True(set.Contains(item));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  FrozenSortedSet — the IEnumerable-source contract
+    // ──────────────────────────────────────────────────────────────
+    //
+    //  FrozenSortedSet is immutable and integer-only, with a single
+    //  IEnumerable<T> constructor and no capacity / loadFactor, so only the
+    //  source contract applies: null rejection, dedupe, the counted and the
+    //  uncounted path, and independence from the source. It has no null or
+    //  default-key slot to dedupe.
+
+    [Fact]
+    public void FrozenSortedSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new FrozenSortedSet<int>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldSupportEmptySource()
+    {
+        var set = new FrozenSortedSet<int>(Array.Empty<int>());
+
+        Assert.Empty(set);
+        Assert.False(set.Contains(0));
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldSilentlyDedupe_DuplicateElements_FromBothSourcePaths()
+    {
+        int[] source = [3, 0, 3, -1, 0, 3];
+
+        var counted = new FrozenSortedSet<int>(source);
+        var uncounted = new FrozenSortedSet<int>(source.Select(x => x));
+
+        Assert.Equal(new[] { -1, 0, 3 }, counted.ToArray());
+        Assert.Equal(new[] { -1, 0, 3 }, uncounted.ToArray());
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 3 };
+
+        var set = new FrozenSortedSet<int>(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        foreach (int item in new[] { 1, 2, 3 })
+            Assert.True(set.Contains(item));
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldRoundtrip_FromAnotherFrozenSortedSet()
+    {
+        var original = new FrozenSortedSet<int>(Enumerable.Range(0, 300).Select(i => i * 7));
+
+        var copy = new FrozenSortedSet<int>(original);
+
+        Assert.Equal(original.ToArray(), copy.ToArray());
+        Assert.True(copy.SetEquals(original));
     }
 }

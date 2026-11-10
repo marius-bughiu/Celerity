@@ -9744,3 +9744,198 @@ int record = offsets.CountLessThan(7_000_000_001) - 1;
 // How many records start inside the first gigabyte?
 int inFirstGiB = offsets.CountLessThan(1L << 30);
 ```
+
+## FrozenSortedSet&lt;T&gt;
+
+```csharp
+public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
+    where T : unmanaged, IBinaryInteger<T>, IMinMaxValue<T>
+```
+
+An **immutable** sorted set of integer keys, laid out so that membership, rank and successor
+queries are several times faster than a binary search over the same sorted array. Use it for a
+key set that is read far more often than it changes: an allow or deny list of IDs, the
+boundaries of a range partition, a sorted dimension table, a timestamp index.
+
+- **`Contains` / `IndexOf`**: exact lookups.
+- **`CountLessThan(x)`**: the rank of `x`, which is also the position of the first key at or
+  above it (`lower_bound`).
+- **`TryGetLowerBound` / `TryGetUpperBound`**: the successor at or above `x`, or strictly above
+  it. These are named after [`BTreeSet`](#btreesett-tcomparer).
+- **`SliceRange(from, toExclusive)`**: the keys in `[from, toExclusive)` as a `ReadOnlySpan<T>`
+  over the set's own storage. The span's `Length` is the count in the range.
+- **`this[i]`, `AsSpan()`, `Min`, `Max`**: positional reads straight from the sorted keys.
+
+### The gap it fills
+
+The BCL's frozen collections are **unordered**. `FrozenSet<T>` answers membership, but it cannot
+answer "the first key at or above `x`", "how many keys are below `x`" or "the keys in `[a, b)`".
+`SortedSet<T>` and [`BTreeSet`](#btreesett-tcomparer) answer all three, but they are built to be
+mutated and pay for that on every read.
+
+The honest baseline for a key set that has stopped changing is therefore a sorted `T[]` searched
+with `MemoryExtensions.BinarySearch`. A binary search is bound by **latency, not work**. It makes
+`log2(n)` loads, each depending on the one before it and each a likely cache miss once the array
+outgrows L1, and it takes a branch at every step that mispredicts about half the time.
+
+### When *not* to use this — read first
+
+- **The set must be final.** Construction sorts, deduplicates and lays out the keys, and there is
+  no mutating member. A changed set means a new build, which costs a sort (see the `Build` row
+  below). For a key set that keeps changing, use [`BTreeSet`](#btreesett-tcomparer).
+- **Integers only.** The key type must be an unmanaged `IBinaryInteger<T>` with a `MaxValue`, so
+  the type's own order is the only order and no comparer can be supplied. For strings or custom
+  orders, use a `BTreeSet<T, TComparer>`.
+- **Membership alone is a hash set's job.** If you never ask an ordered question, a hash set
+  answers `Contains` in about one probe. An [`IntSet`](#intset) or a `FrozenSet<int>` is the
+  better fit there.
+
+### Measured
+
+BenchmarkDotNet default job, .NET 10, Apple M4, `FrozenSortedSetBenchmark`. There are 1,000,
+100,000 and 1,000,000 random distinct `int` keys spread over the whole range. The baseline is the
+same keys as a sorted `int[]`, searched with `MemoryExtensions.BinarySearch` (span overload, no
+comparer call). Each invocation runs 2^18 probes; the figures below are per lookup. `Contains`
+probes are half keys and half non-keys, shuffled together. `LowerBound` probes are uniform random
+`int`s.
+
+| Op | Keys | `int[]` + `BinarySearch` | `FrozenSortedSet` | Speedup |
+| --- | --- | --- | --- | --- |
+| `Contains` (hits counted branch-free) | 1,000 | 33.6 ns | 3.1 ns | **10.9×** |
+| `Contains` (hits counted branch-free) | 100,000 | 64.9 ns | 6.9 ns | **9.5×** |
+| `Contains` (hits counted branch-free) | 1,000,000 | 89.5 ns | 8.4 ns | **10.7×** |
+| `ContainsBranching` (`if (set.Contains(x))`) | 1,000 | 33.8 ns | 17.2 ns | **1.96×** |
+| `ContainsBranching` (`if (set.Contains(x))`) | 100,000 | 64.6 ns | 26.5 ns | **2.44×** |
+| `ContainsBranching` (`if (set.Contains(x))`) | 1,000,000 | 90.2 ns | 28.2 ns | **3.20×** |
+| `LowerBound` (`CountLessThan`) | 1,000 | 33.8 ns | 2.7 ns | **12.5×** |
+| `LowerBound` (`CountLessThan`) | 100,000 | 67.5 ns | 6.3 ns | **10.7×** |
+| `LowerBound` (`CountLessThan`) | 1,000,000 | 92.4 ns | 7.8 ns | **11.9×** |
+| `Build` (from unsorted; baseline is copy + `Array.Sort`) | 1,000 | 6.28 µs | 6.96 µs | 1.11× *slower* |
+| `Build` | 1,000,000 | 45.1 ms | 45.8 ms | 1.01× *slower* |
+
+**The two `Contains` rows are the same lookups consumed two ways, and the gap between them is
+the honest range.** The search itself has no branch, so a batch of independent lookups lets the
+CPU overlap several searches at once. That is the 10× row. When each answer feeds an `if` that
+mispredicts (a shuffled half-hit stream is the worst case), every mispredict throws the
+overlapped work away. What remains is one search's latency, about 20–25 cycles a level, and
+the win narrows to 2–3×. A binary search is limited by latency either way, so it barely notices.
+A stream whose answers mostly agree (almost all hits, or almost all misses) predicts well and
+lands near the branch-free row.
+
+**The probe batch is 2^18 long on purpose.** With the usual 1,000 probes replayed millions of
+times, the M4's branch predictor memorized the binary search's own branch paths. The array then
+ran 3.4× faster than on fresh input, and the `ContainsBranching` row turned into a loss for the
+tree, which no real query stream would reproduce.
+
+The pre-registered kill criterion (issue #604) was `Contains` at least **2×** the span binary
+search at 1k, 100k and 1M keys. It is **cleared** at 10.9× / 9.5× / 10.7×. The latency-bound
+`ContainsBranching` shape just misses 2× at 1,000 keys (1.96×), and that figure is published,
+not rounded up. The build costs about the sort it contains. **Retained memory** is the leaves
+plus about 1/17 of them for the internal levels: 1.063× the sorted `int[]` at a million keys.
+
+These are local figures. The CI series on the dashboard is the contract.
+
+### How it works, and what it costs
+
+This is the static B+ tree that Algorithmica calls the *S+ tree*.
+
+- **Leaves.** The sorted, distinct keys are cut into nodes of `B = 64 / sizeof(T)` keys, one
+  64-byte cache line each: 16 for `int`, 8 for `long`, 64 for `byte`. The last node is padded
+  with `T.MaxValue`. The leaves stay in order in one array, which is what `AsSpan()`, the indexer
+  and the enumerator read.
+- **Internal levels.** Each internal node holds `B` separator keys for `B + 1` children.
+  Separator `i` is the smallest key under child `i + 1`. Node `k`'s children are the
+  consecutive nodes `k · (B + 1) + 0 … B` of the level below, so every subtree covers a
+  contiguous run of leaves and the tree needs no pointers.
+- **A search** reads one node per level and counts the keys in it that are strictly below the
+  probe. That takes four `Vector128` compares and one horizontal add, with no branch. The count
+  is the child to descend into, and at the leaf it is the answer's position. When the probe is
+  above everything in the chosen subtree, the count runs off the end of the leaf onto the
+  first key of the next one, which is exactly the right answer because the leaves are
+  contiguous.
+- **Padding is never counted**, because no key is strictly below itself. That is why
+  `T.MaxValue` can pad the nodes and still be a valid key.
+
+The depth is `ceil(log_(B+1)(n / B)) + 1` node reads: 3 for a thousand `int` keys, 5 for a
+million and 6 for ten million. A binary search over the same keys takes 10, 20 and 24 dependent
+steps. `Depth` reports the figure for an instance.
+
+Key types without hardware `Vector128<T>` support (`char`, `Int128`, `UInt128`) use the same
+layout and scan each node with a scalar loop. That path is correct but is not the one the
+measurements above describe.
+
+**Space.** The internal levels add about one key in `B + 1`: 6% for `int` and 11% for `long`.
+On top of that comes at most one node of padding. `MemoryUsageInBytes` reports the payload,
+which is the leaves, the internal levels and the level index. It excludes the CLR's per-array
+headers, the same accounting `EliasFanoSequence` uses.
+
+### Constructor
+
+```csharp
+public FrozenSortedSet(IEnumerable<T> source)
+```
+
+Builds the set from `source`, which may be in **any order** and may **repeat** keys. Repeats are
+dropped. A counted source (any `ICollection<T>`, including an array) is copied straight into the
+leaf array, so it costs one allocation for the keys. Any other sequence is materialized first.
+The build is one sort, `O(n log n)`, then a pass to deduplicate and a pass over the internal
+levels, which hold about `n / B` keys. A source with many repeats may be copied once more into a
+smaller leaf array.
+
+There is deliberately no `ReadOnlySpan<T>` overload. On `net8.0` and `net9.0` an array argument
+would be ambiguous between the two.
+
+The constructor throws in two cases:
+
+- `ArgumentNullException` when `source` is `null`;
+- `ArgumentException` (`source`) when `source` holds more keys than one padded array can hold,
+  a little under `Array.MaxLength`. A counted source is checked before anything is allocated.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `static int NodeSize { get; }` | Keys per node, `64 / sizeof(T)`: one cache line. Internal nodes have `NodeSize + 1` children. |
+| `int Count { get; }` | The number of distinct keys. |
+| `int Depth { get; }` | Nodes read per search, root to leaf: `1` while every key fits in one node. |
+| `long MemoryUsageInBytes { get; }` | The payload: padded leaves, internal levels and level index. Compare against `Count * sizeof(T)`. |
+| `T Min { get; }` / `T Max { get; }` | The smallest and largest key. `InvalidOperationException` when the set is empty. |
+| `T this[int index] { get; }` | The `index`-th smallest key, one array read. `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `ReadOnlySpan<T> AsSpan()` | The keys, ascending and distinct, without copying. They are ready for [`SortedSpan`](utilities.md#sortedspan-sorted-span-set-algebra)'s set algebra. |
+| `bool Contains(T item)` | Whether the key is present: `Depth` node reads and one compare. |
+| `int IndexOf(T item)` | The key's position in ascending order, or `-1`. |
+| `int CountLessThan(T value)` | How many keys are strictly below `value`, which is also the position of the first key at or above it. Any value is accepted, and the result is in `[0, Count]`. |
+| `bool TryGetLowerBound(T value, out T bound)` | The smallest key `>= value`. Returns `false` with `bound = default` when every key is smaller. |
+| `bool TryGetUpperBound(T value, out T bound)` | The smallest key `> value`. Returns `false` when none is larger, including for `value == T.MaxValue`. |
+| `ReadOnlySpan<T> SliceRange(T fromInclusive, T toExclusive)` | The keys in `[fromInclusive, toExclusive)`, as a span over the set's storage. Two searches, no copy. `ArgumentException` when `toExclusive < fromInclusive`. A range ending at `T.MaxValue` inclusive is `AsSpan()[CountLessThan(from)..]`. |
+| `Enumerator GetEnumerator()` | Ascending, allocation-free. After the last key, `MoveNext` keeps returning `false` and `Current` is `default`. |
+| `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps` | The `IReadOnlySet<T>` algebra. `IsSupersetOf` and `Overlaps` stream `other` against `Contains` and may stop early. The other four use another `FrozenSortedSet<T>` as it stands, and copy, sort and deduplicate any other `other` once. All four then count the common keys with one merge. `ArgumentNullException` for a `null` `other`. |
+
+The type holds no mutable state after construction, so instances are safe to share across
+threads.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Range partitioning: shard i owns the keys from shardStarts[i] up to the next start.
+var shardStarts = new FrozenSortedSet<long>(new long[] { 0, 1_000_000, 5_000_000, 20_000_000 });
+
+// The last start at or below key. key + 1 would wrap at long.MaxValue, where every start qualifies.
+int ShardOf(long key) => key == long.MaxValue ? shardStarts.Count - 1 : shardStarts.CountLessThan(key + 1) - 1;
+Console.WriteLine(ShardOf(4_999_999));   // 1
+Console.WriteLine(ShardOf(5_000_000));   // 2
+
+// An allow-list of account ids, checked on every request.
+var allowed = new FrozenSortedSet<int>(LoadAllowedIds());
+bool ok = allowed.Contains(accountId);
+
+// Every allowed id in [10_000, 20_000), without copying.
+ReadOnlySpan<int> band = allowed.SliceRange(10_000, 20_000);
+Console.WriteLine($"{band.Length} allowed ids in the band; the first is {(band.IsEmpty ? 0 : band[0])}");
+
+// The next allowed id after this one.
+if (allowed.TryGetUpperBound(accountId, out int next))
+    Console.WriteLine($"next allowed id: {next}");
+```
