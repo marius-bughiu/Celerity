@@ -42,7 +42,7 @@ Because the public dictionary interfaces are `IDictionary<TKey, TValue?>` and `I
 
 ### Does the zero key / `null` key / `Guid.Empty` work?
 
-Yes. `default(TKey)` would normally collide with the empty-slot sentinel used during probing, so the open-addressed tables store it **out-of-band** in a dedicated slot. The chained tables (`LinkedDictionary`, `LinkedSet`, `BiDictionary`) have no empty-slot sentinel, so they store it in the table like any other key, without passing it to the hasher. That way it keeps its place in insertion order. `dict[0]`, `dict[null]`, and `dict[Guid.Empty]` round-trip correctly and appear in enumeration. This is one of the most-tested areas of the library.
+Yes. `default(TKey)` would normally collide with the empty-slot sentinel used during probing, so the open-addressed tables store it **out-of-band** in a dedicated slot. The chained tables (`LinkedDictionary`, `LinkedSet`, `BiDictionary`) have no empty-slot sentinel, so they store it in the table like any other key, without passing it to the hasher, so in `LinkedDictionary` and `LinkedSet` it keeps its place in insertion order like any other key. `dict[0]`, `dict[null]`, and `dict[Guid.Empty]` round-trip correctly and appear in enumeration. This is one of the most-tested areas of the library.
 
 ### What happens when I `Add` a duplicate key?
 
