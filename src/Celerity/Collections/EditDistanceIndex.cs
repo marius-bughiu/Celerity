@@ -35,9 +35,11 @@ namespace Celerity.Collections;
 /// 56 at <c>k = 2</c> for a ten-letter word, each stored as one 8-byte posting under a directory of 2 to 4
 /// bytes more. <see cref="PostingCount"/> reports the total. Building is a sort of those postings. A query
 /// generates <c>C(m, 0) + … + C(m, d)</c> variants of its own length <c>m</c>, so it is cheap for words and
-/// short phrases and not intended for long documents. A query whose length lies more than <c>d</c> outside the
-/// range from the shortest word's length to the longest's is answered at once without generating any, so a
-/// long input against a list of short words costs nothing. Every measured ratio is in
+/// short phrases and not intended for long documents. When that count would exceed the number of words, the
+/// query verifies every word instead, so no query costs more than one pass over the list, however large
+/// <c>d</c> is. A query whose length lies more than <c>d</c> outside the range from the shortest word's
+/// length to the longest's is answered at once without generating any, so a long input against a list of
+/// short words costs nothing. Every measured ratio is in
 /// <c>docs/api/collections.md</c>.
 /// </para>
 /// <para>
@@ -591,9 +593,23 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
     // include all of those.
     private CandidateBuffer Gather(ReadOnlySpan<char> query, int maxDistance)
     {
-        var candidates = new CandidateBuffer(this, InitialCandidates);
         if (query.Length > (long)_longest + maxDistance || query.Length < (long)_shortest - maxDistance)
-            return candidates;
+            return new CandidateBuffer(this, InitialCandidates);
+
+        // The walk below visits C(m, 0) + … + C(m, d) variants, which grows like 2^m once d reaches the query's
+        // length m. Past the number of words, handing every word to the verifier is cheaper and just as exact.
+        // It also bounds a large distance (int.MaxValue for "any") at one pass over the words, where the walk
+        // would make 2^m lookups and recurse m levels deep.
+        if (VariantCount(query.Length, maxDistance) > _words.Length)
+        {
+            var everyWord = new CandidateBuffer(this, Math.Max(_words.Length, 1));
+            for (int id = 0; id < _words.Length; id++)
+                everyWord.Add(id);
+
+            return everyWord;
+        }
+
+        var candidates = new CandidateBuffer(this, InitialCandidates);
 
         char[]? rented = null;
         int scratchLength = ScratchLength(query.Length, maxDistance);

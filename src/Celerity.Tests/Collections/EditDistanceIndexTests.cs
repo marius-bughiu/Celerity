@@ -384,6 +384,31 @@ public class EditDistanceIndexTests
         Assert.Equal(2, index.CountWithin("abd", int.MaxValue));
     }
 
+    [Fact]
+    public void ALongQueryAtAnUnboundedDistance_ShouldVerifyEveryWord_InsteadOfWalkingItsVariants()
+    {
+        // Regression: a 12,000-character query at int.MaxValue walked its 2^12000 deletion variants, recursing
+        // once per character until the stack overflowed. More variants than words now means every word is
+        // verified directly, which is exact and costs one pass over the list.
+        var index = new EditDistanceIndex(["abc", "xyz"], int.MaxValue);
+        string query = new('q', 12_000);
+
+        Assert.Equal([new FuzzyMatch(0, 12_000), new FuzzyMatch(1, 12_000)], index.FindWithin(query, int.MaxValue));
+        Assert.True(index.TryFindNearest(query, int.MaxValue, out FuzzyMatch nearest));
+        Assert.Equal(new FuzzyMatch(0, 12_000), nearest);
+        Assert.False(index.ContainsWithin(query, 11_999));
+    }
+
+    [Fact]
+    public void AnEmptyIndex_AtAnUnboundedDistance_ShouldAnswerWithoutWalkingVariants()
+    {
+        var index = new EditDistanceIndex([], int.MaxValue);
+
+        Assert.False(index.ContainsWithin(new string('q', 40), int.MaxValue));
+        Assert.Equal(0, index.CountWithin(new string('q', 40), int.MaxValue));
+        Assert.Empty(index.FindWithin(new string('q', 40), int.MaxValue));
+    }
+
     // ---- code units ---------------------------------------------------------------------------------
 
     [Fact]
