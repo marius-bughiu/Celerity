@@ -113,24 +113,28 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
     /// <param name="comparer">
     /// The comparer used to order priorities, or <c>null</c> to use <see cref="Comparer{T}.Default"/>.
     /// </param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or more than the element index's largest table
+    /// (2<sup>30</sup> slots) can hold.
+    /// </exception>
     public IndexedPriorityQueue(int capacity, IComparer<TPriority>? comparer)
     {
         if (capacity < 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be non-negative.");
 
+        // Size the index for `capacity` entries in a single allocation. Passing `capacity` to the ctor would
+        // size the table by NextPowerOfTwo(capacity), which is too small to hold that many entries under the
+        // load factor — EnsureCapacity would then reallocate and rehash. Building it empty and sizing once via
+        // EnsureCapacity does the entry-count-with-headroom math a single time. It runs first so a capacity
+        // the index cannot hold (#570) throws before the heap arrays are allocated.
+        _index = new CelerityDictionary<TElement, int, THasher>();
+        if (capacity > 0)
+            _index.EnsureCapacity(capacity);
+
         int initial = capacity == 0 ? 0 : Math.Max(capacity, DefaultCapacity);
         _elements = initial == 0 ? Array.Empty<TElement>() : new TElement[initial];
         _priorities = initial == 0 ? Array.Empty<TPriority>() : new TPriority[initial];
         _comparer = comparer ?? Comparer<TPriority>.Default;
-
-        // Size the index for `capacity` entries in a single allocation. Passing `capacity` to the ctor would
-        // size the table by NextPowerOfTwo(capacity), which is too small to hold that many entries under the
-        // load factor — EnsureCapacity would then reallocate and rehash. Building it empty and sizing once via
-        // EnsureCapacity does the entry-count-with-headroom math a single time.
-        _index = new CelerityDictionary<TElement, int, THasher>();
-        if (capacity > 0)
-            _index.EnsureCapacity(capacity);
     }
 
     /// <summary>
@@ -403,7 +407,10 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
     /// </summary>
     /// <param name="capacity">The minimum capacity to ensure. Must be non-negative.</param>
     /// <returns>The queue's capacity after the call (at least <paramref name="capacity"/>).</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or more than the element index's largest table
+    /// (2<sup>30</sup> slots) can hold. The queue is left unchanged.
+    /// </exception>
     public int EnsureCapacity(int capacity)
     {
         if (capacity < 0)
@@ -411,8 +418,9 @@ public sealed class IndexedPriorityQueue<TElement, TPriority, THasher>
 
         if (_elements.Length < capacity)
         {
-            Resize(capacity);
+            // The index first: if it rejects the capacity (#570), the heap arrays are still untouched.
             _index.EnsureCapacity(capacity);
+            Resize(capacity);
             _version++;
         }
 
