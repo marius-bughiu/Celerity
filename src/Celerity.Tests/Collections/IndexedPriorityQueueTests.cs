@@ -317,6 +317,43 @@ public class IndexedPriorityQueueTests
         Assert.Throws<ArgumentOutOfRangeException>(() => pq.EnsureCapacity(-1));
     }
 
+    // Above 805,306,368 the element index's 2^30-slot table cannot hold the capacity at its 0.75 load
+    // factor (#570). The queue must reject it before growing its own arrays (#577).
+    private const int BeyondIndexCap = 805_306_369;
+
+    [Fact]
+    public void EnsureCapacity_BeyondIndexCap_Throws_AndLeavesQueueUnchanged()
+    {
+        var pq = NewIntQueue();
+        pq.Enqueue(1, 1);
+        int before = pq.Capacity;
+        var e = pq.GetEnumerator();
+        long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => pq.EnsureCapacity(BeyondIndexCap));
+
+        Assert.Equal("capacity", ex.ParamName);
+        // Rejected before the heap arrays grow: growing them first would allocate about 6.4 GB.
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - allocatedBefore < 1_000_000);
+        Assert.Equal(before, pq.Capacity);
+        Assert.True(e.MoveNext()); // no version bump
+        Assert.Equal(1, pq.Dequeue());
+    }
+
+    [Fact]
+    public void Constructor_BeyondIndexCap_Throws_BeforeAllocatingArrays()
+    {
+        // The unfixed constructor threw the same exception, but only after allocating both heap arrays
+        // (about 6.4 GB), so on a runner with the memory the exception alone does not pin the order.
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new IndexedPriorityQueue<int, int, Int32WangHasher>(BeyondIndexCap));
+
+        Assert.Equal("capacity", ex.ParamName);
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 1_000_000);
+    }
+
     [Fact]
     public void TrimExcess_ShrinksToCount()
     {
