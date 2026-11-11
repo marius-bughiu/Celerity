@@ -926,6 +926,53 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- SlidingHyperLogLog (probabilistic) vs Dictionary<int, long> ---------
+
+    // The windowed counterpart of the HyperLogLog model above: the oracle is a dictionary of each
+    // key's latest timestamp, and "distinct since t" is the number of entries at or after t. Same
+    // small domain and collision-free hasher, so every window must land within the same slack.
+    // Timestamps are drawn out of order on purpose; the sketch keeps the maximum per cell, exactly
+    // as the oracle keeps the maximum per key.
+    private enum ShllOp { Add, Clear }
+
+    private static readonly Gen<(List<(ShllOp, int, long)> Ops, long Since)> GenShllOps =
+        Gen.Select(
+            Gen.Select(
+                Gen.Int[0, 99].Select(n => n < 95 ? ShllOp.Add : ShllOp.Clear),
+                Gen.Int[-8, 24],
+                Gen.Long[0, 40])
+            .List[0, 120],
+            Gen.Long[-1, 41]);
+
+    [Fact]
+    public void SlidingHyperLogLog_ShouldEstimateWindowedDistinctCount_VsBclDictionary()
+    {
+        GenShllOps.Sample(c =>
+        {
+            // Precision 10 (~450 KB) rather than HyperLogLog's 14: at 14 each iteration would
+            // allocate ~6.7 MB of timestamps, and 33 keys over 1,024 registers still sit deep in
+            // the linear-counting regime the slack is sized for.
+            var sut = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(10);
+            var oracle = new Dictionary<int, long>();
+
+            foreach (var (op, item, time) in c.Ops)
+            {
+                switch (op)
+                {
+                    case ShllOp.Add:
+                        sut.Add(item, time);
+                        oracle[item] = oracle.TryGetValue(item, out long seen) ? Math.Max(seen, time) : time;
+                        break;
+                    case ShllOp.Clear: sut.Clear(); oracle.Clear(); break;
+                }
+            }
+
+            int exact = oracle.Values.Count(t => t >= c.Since);
+            Assert.InRange(sut.EstimateCardinality(c.Since), exact - 3, exact + 1);
+            Assert.InRange(sut.EstimateCardinality(), oracle.Count - 3, oracle.Count + 1);
+        }, iter: 1000);
+    }
+
     // ---- MinHashSketch (probabilistic) vs two HashSet<int> -----------------
 
     // MinHash estimates a Jaccard similarity, which is only approximate in general — but with a

@@ -2929,6 +2929,37 @@ void Check(bool condition, string message)
     Check(guidHll.EstimateCardinality() == 1, "HyperLogLog<Guid> empty-guid element");
 }
 
+// SlidingHyperLogLog — windowed distinct count. Exercise Add / EstimateCardinality(since) /
+// UnionWith / Clear and the null-reference path, so the AOT publish compiles the per-rank timestamp
+// store, the walk-down query, and the estimator shared with HyperLogLog.
+{
+    var sliding = new SlidingHyperLogLog<int, Int32WangNaiveHasher>();
+    for (int i = 0; i < 20_000; i++) sliding.Add(i, i);
+    Check(sliding.Precision == SlidingHyperLogLog<int, Int32WangNaiveHasher>.DefaultPrecision,
+        "SlidingHyperLogLog default precision");
+    long lastHalf = sliding.EstimateCardinality(10_000);
+    Check(Math.Abs(lastHalf - 10_000) / 10_000.0 <= sliding.StandardError * 4 + 0.01,
+        "SlidingHyperLogLog windowed estimate within bound");
+    Check(sliding.EstimateCardinality(20_000) == 0, "SlidingHyperLogLog empty window");
+
+    var plain = new HyperLogLog<int, Int32WangNaiveHasher>(sliding.Precision);
+    for (int i = 10_000; i < 20_000; i++) plain.Add(i);
+    Check(plain.EstimateCardinality() == lastHalf, "SlidingHyperLogLog matches HyperLogLog of the window");
+
+    var later = new SlidingHyperLogLog<int, Int32WangNaiveHasher>();
+    later.Add(7, 30_000);
+    sliding.UnionWith(later);
+    Check(sliding.EstimateCardinality(25_000) == 1, "SlidingHyperLogLog UnionWith");
+
+    var strSliding = new SlidingHyperLogLog<string, StringFnV1AHasher>();
+    strSliding.Add("alice", 1);
+    strSliding.Add(null!, 2);
+    Check(strSliding.EstimateCardinality(2) == 1, "SlidingHyperLogLog<string> null element");
+
+    sliding.Clear();
+    Check(sliding.EstimateCardinality() == 0, "SlidingHyperLogLog clear");
+}
+
 // MinHashSketch — Jaccard-similarity sketch (no out-of-band slot; default(T) is an
 // ordinary element, a null reference is mapped to a fixed base hash so the hasher is never
 // called with null). Exercise Add / EstimateJaccard / UnionWith / Clear / IsEmpty and the
