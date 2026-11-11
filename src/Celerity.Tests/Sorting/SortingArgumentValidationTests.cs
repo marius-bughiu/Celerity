@@ -437,4 +437,37 @@ public class SortingArgumentValidationTests
             () => CountingSort.Sort(keys.AsSpan(), values.AsSpan(), 0, 5));
         Assert.Equal("values", ex.ParamName);
     }
+
+    [Fact]
+    public void StringSort_ShouldThrow_WhenThePayloadIsShorterThanTheKeys()
+    {
+        string?[] keys = ["c", "b", "a"];
+        int[] values = new int[2];
+
+        var ex = Assert.Throws<ArgumentException>(() => StringSort.Sort(keys.AsSpan()!, values.AsSpan()));
+        Assert.Equal("values", ex.ParamName);
+        StringSortTests.AssertKeys(["c", "b", "a"], keys);
+    }
+
+    [Fact]
+    public void StringSort_ShouldThrow_WhenAStringPayloadSharesStorageWithTheKeys()
+    {
+        string?[] buffer = ["d", "c", "b", "a"];
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => StringSort.Sort<string?>(buffer.AsSpan(0, 3)!, buffer.AsSpan(1, 3)));
+        Assert.Equal("values", ex.ParamName);
+        StringSortTests.AssertKeys(["d", "c", "b", "a"], buffer);
+    }
+
+    [Fact]
+    public void StringSort_ShouldThrow_WhenTheIndexBufferIsShorterThanTheKeys()
+    {
+        string?[] keys = ["c", "b", "a"];
+        int[] indices = [-1, -1];
+
+        var ex = Assert.Throws<ArgumentException>(() => StringSort.ArgSort(keys!, indices.AsSpan()));
+        Assert.Equal("indices", ex.ParamName);
+        Assert.Equal([-1, -1], indices);
+    }
 }
