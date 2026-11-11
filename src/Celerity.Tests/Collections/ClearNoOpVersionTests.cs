@@ -485,6 +485,16 @@ public class ClearNoOpVersionTests
             () => buffer.GetEnumerator(), buffer.Clear, () => buffer.Count, () => buffer.Add(1));
     }
 
+    [Fact]
+    public void SegmentedListClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        // Clear keeps the segments, so the third state (drained by removal, segments still allocated) is the
+        // one this type can get wrong: its _count is zero but its capacity is not.
+        var list = new SegmentedList<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => list.GetEnumerator(), list.Clear, () => list.Count, () => list.Add(1));
+    }
+
     // ---- The four documented exceptions -----------------------------------------------------------
 
     [Fact]
