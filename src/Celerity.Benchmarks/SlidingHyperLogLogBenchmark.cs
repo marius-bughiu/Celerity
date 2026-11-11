@@ -16,6 +16,11 @@ using Celerity.Hashing;
 // window holds.
 //
 // - Add: ingest ItemCount events (cycling through the key space) into the warm window.
+// - HyperLogLog_PlainAdd: the same keys into a warm plain HyperLogLog at the same precision and with
+//   the same hasher — the cost of windowing, which #606 bounded at 2x. It shares the "Add" category so
+//   BenchmarkDotNet reports it beside the other two, but has an op name of its own: the dashboard
+//   charts exactly one BCL and one Celerity series per op, and a third arm under "Add" would
+//   overwrite the SlidingHyperLogLog series.
 // - CountWindow: the distinct count over the most recent half of the timeline. The dictionary must
 //   visit every key; the sketch visits its 4,096 registers, so it loses at small windows and wins
 //   once the window holds more distinct keys than that.
@@ -27,6 +32,7 @@ public class SlidingHyperLogLogBenchmark
     private int[] keys = null!;
     private Dictionary<int, long> lastSeen = null!;
     private SlidingHyperLogLog<int, Int32WangNaiveHasher> sketch = null!;
+    private HyperLogLog<int, Int32WangNaiveHasher> plain = null!;
     private long clock;
     private long windowStart;
 
@@ -39,6 +45,7 @@ public class SlidingHyperLogLogBenchmark
         keys = new int[ItemCount];
         lastSeen = new Dictionary<int, long>(ItemCount);
         sketch = new SlidingHyperLogLog<int, Int32WangNaiveHasher>();
+        plain = new HyperLogLog<int, Int32WangNaiveHasher>(sketch.Precision);
 
         // Distinct keys, so the window really holds ItemCount of them and "half the timeline" is
         // exactly half the keys.
@@ -58,6 +65,7 @@ public class SlidingHyperLogLogBenchmark
             long t = clock++;
             lastSeen[keys[i]] = t;
             sketch.Add(keys[i], t);
+            plain.Add(keys[i]);
         }
 
         windowStart = clock - ItemCount / 2;
@@ -85,6 +93,16 @@ public class SlidingHyperLogLogBenchmark
             s.Add(key, t++);
         clock = t;
         return t;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Add")]
+    public long HyperLogLog_PlainAdd()
+    {
+        HyperLogLog<int, Int32WangNaiveHasher> h = plain;
+        foreach (int key in keys)
+            h.Add(key);
+        return h.Precision;
     }
 
     [Benchmark(Baseline = true)]

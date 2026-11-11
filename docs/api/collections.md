@@ -4438,7 +4438,9 @@ and allocation-free (`SlidingHyperLogLogBenchmark`, Apple M-series, .NET 10):
 | 1,000,000 | **5.9x faster** | **88x faster** (6.3 µs vs 555 µs) |
 
 The windowed count costs the same at every size because it visits the 4,096 registers, not the keys.
-That is why it loses below a few thousand keys. `Add` pulls ahead as the dictionary outgrows the
+That is why it loses below a few thousand keys. Against a warm plain `HyperLogLog` at the same precision and with the
+same hasher, windowing makes `Add` 1.40x slower at 1,000 keys and 1.53x slower at 100,000 and
+1,000,000: that is the cost of the timestamp store. `Add` pulls ahead as the dictionary outgrows the
 cache, while the sketch's hot rows stay put. Memory is the larger gap and does not show in
 `[MemoryDiagnoser]`, because neither side allocates while measured: at a million keys the dictionary
 retains about 28&#160;MB and grows with the window, while the sketch stays at 1.7&#160;MB.
