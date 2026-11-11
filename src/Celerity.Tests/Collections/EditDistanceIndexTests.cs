@@ -516,6 +516,72 @@ public class EditDistanceIndexTests
     }
 
     [Fact]
+    public void ManyIdenticalVariants_ShouldVerifyEveryWordOnce_InsteadOfGatheringTheirPostingsAgain()
+    {
+        // Regression: the variant cap counted visits, not the postings each visit appends. Every word here is 38
+        // 'a's and two other letters, so all 1,024 share the variant of 38 'a's, and deleting any two of the
+        // query's 40 'a's reaches it: 780 identical variants, each appending all 1,024 postings. The query passes
+        // the 821-variant check, so it gathered about 800,000 candidates. Past the word count it now verifies
+        // every word once.
+        var words = new List<string>();
+        for (char first = 'b'; first < 'b' + 32; first++)
+        {
+            for (char second = 'b'; second < 'b' + 32; second++)
+                words.Add(new string('a', 38) + first + second);
+        }
+
+        var index = new EditDistanceIndex(words, 2);
+        string query = new('a', 40);
+        Assert.Equal(1_024, index.CountWithin(query, 2)); // warm the pooled buffers
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        int count = index.CountWithin(query, 2);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(1_024, count);
+        Assert.True(allocated < 256 * 1024, $"allocated {allocated} bytes");
+        Assert.True(index.ContainsWithin(query, 2));
+        FuzzyMatch[] found = index.FindWithin(query, 2);
+        Assert.Equal(1_024, found.Length);
+        Assert.All(found, match => Assert.Equal(2, match.Distance));
+    }
+
+    [Fact]
+    public void LongWordsAtDistanceOne_ShouldWalkWithPooledScratch_AndMatchTheOracle()
+    {
+        // 300 distinct 258-character words: a distance-1 query has 259 variants, fewer than the word count, so
+        // it walks them rather than verifying every word, and its 257 characters of variant scratch are past the
+        // stack limit, so they are rented.
+        var rng = new Random(23);
+        var distinct = new HashSet<string>(StringComparer.Ordinal);
+        while (distinct.Count < 300)
+        {
+            char[] chars = new char[258];
+            for (int i = 0; i < chars.Length; i++)
+                chars[i] = (char)('a' + rng.Next(4));
+            distinct.Add(new string(chars));
+        }
+
+        string[] words = [.. distinct];
+        var index = new EditDistanceIndex(words, 1);
+
+        char[] edited = words[7].ToCharArray();
+        edited[129] = edited[129] == 'z' ? 'y' : 'z';
+        string[] queries = [words[7], new string(edited), words[299][1..]];
+        foreach (string query in queries)
+        {
+            FuzzyMatch[] expected = Enumerable.Range(0, words.Length)
+                .Select(id => new FuzzyMatch(id, EditDistanceIndexDifferentialTests.Levenshtein(query, words[id])))
+                .Where(match => match.Distance <= 1)
+                .OrderBy(match => match.Distance)
+                .ThenBy(match => match.WordId)
+                .ToArray();
+
+            Assert.Equal(expected, index.FindWithin(query, 1));
+        }
+    }
+
+    [Fact]
     public void ManyCandidates_ShouldOutgrowTheInitialCandidateBuffer()
     {
         // Every two-letter word over a 26-letter alphabet is within two edits of the empty query, and each one

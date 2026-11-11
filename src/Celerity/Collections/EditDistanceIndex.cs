@@ -15,9 +15,9 @@ namespace Celerity.Collections;
 /// inside a text, and <see cref="SuffixArray"/> finds exact substrings. Spell-check suggestions, did-you-mean,
 /// fuzzy lookup over product names or identifiers and near-duplicate detection all need <i>approximate</i>
 /// matching, and the BCL has nothing for it. The caller's option is a linear scan that computes a bounded
-/// distance to every word. A careful scan skips words whose length differs by more than <c>k</c> and stops a
-/// row early once the distance must exceed <c>k</c>, but it still pays one distance computation per word of a
-/// plausible length.
+/// distance to every word. A careful scan skips words whose length differs by more than <c>k</c>, computes only
+/// the band of each row within <c>k</c> of the diagonal, and stops a row early once the distance must exceed
+/// <c>k</c>, but it still pays one distance computation per word of a plausible length.
 /// </para>
 /// <para>
 /// <b>How it works.</b> If two strings are within Levenshtein distance <c>k</c>, some string can be reached
@@ -474,7 +474,10 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
     // The exact Levenshtein distance between a and b when it is at most `bound`, otherwise bound + 1. Shared
     // prefixes and suffixes are stripped first, since they never cost an edit, and a length gap wider than the
     // bound is rejected without a table. Otherwise one row of the table is kept, over the shorter string, and
-    // the walk stops as soon as a whole row exceeds the bound, because a row's minimum never decreases.
+    // only its band is computed: the at most 2 * bound + 1 cells within `bound` of the diagonal, since a cell
+    // further out holds more than `bound` (Ukkonen). A cell outside the band reads as bound + 1, which is all
+    // the comparison needs. The walk stops as soon as a whole band exceeds the bound, because a row's minimum
+    // never decreases.
     private static int BoundedDistance(ReadOnlySpan<char> a, ReadOnlySpan<char> b, int bound)
     {
         // No two strings are further apart than the longer one's length, so a bound above that admits nothing
@@ -511,16 +514,21 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
             : (rented = ArrayPool<int>.Shared.Rent(b.Length + 1));
         try
         {
+            int over = bound + 1;
             for (int j = 0; j <= b.Length; j++)
-                row[j] = j;
+                row[j] = Math.Min(j, over);
 
             for (int i = 1; i <= a.Length; i++)
             {
+                int low = Math.Max(1, i - bound);
+                int high = Math.Min(b.Length, i + bound);
                 char value = a[i - 1];
-                int diagonal = row[0];
-                row[0] = i;
-                int rowMinimum = i;
-                for (int j = 1; j <= b.Length; j++)
+
+                // The cell left of the band: column 0, which costs i deletions, or a cell outside the band.
+                int diagonal = row[low - 1];
+                row[low - 1] = low == 1 ? Math.Min(i, over) : over;
+                int rowMinimum = row[low - 1];
+                for (int j = low; j <= high; j++)
                 {
                     int above = row[j];
                     int cell = diagonal + (value == b[j - 1] ? 0 : 1);
@@ -531,11 +539,15 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
                     rowMinimum = Math.Min(rowMinimum, cell);
                 }
 
+                // The next row's band reaches one cell further right, and its value from this row is out of band.
+                if (high < b.Length)
+                    row[high + 1] = over;
+
                 if (rowMinimum > bound)
-                    return bound + 1;
+                    return over;
             }
 
-            return Math.Min(row[b.Length], bound + 1);
+            return Math.Min(row[b.Length], over);
         }
         finally
         {
@@ -594,22 +606,19 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
     private CandidateBuffer Gather(ReadOnlySpan<char> query, int maxDistance)
     {
         if (query.Length > (long)_longest + maxDistance || query.Length < (long)_shortest - maxDistance)
-            return new CandidateBuffer(this, InitialCandidates);
+            return new CandidateBuffer(this, InitialCandidates, _words.Length);
 
         // The walk below visits C(m, 0) + … + C(m, d) variants, which grows like 2^m once d reaches the query's
         // length m. Past the number of words, handing every word to the verifier is cheaper and just as exact.
         // It also bounds a large distance (int.MaxValue for "any") at one pass over the words, where the walk
         // would make 2^m lookups and recurse m levels deep.
         if (VariantCount(query.Length, maxDistance) > _words.Length)
-        {
-            var everyWord = new CandidateBuffer(this, Math.Max(_words.Length, 1));
-            for (int id = 0; id < _words.Length; id++)
-                everyWord.Add(id);
+            return EveryWord();
 
-            return everyWord;
-        }
-
-        var candidates = new CandidateBuffer(this, InitialCandidates);
+        // The candidates are capped too, at the word count: many variants of one query can be the same string
+        // (deleting any two of forty 'a's gives the same 38), and each repeat appends that string's whole
+        // posting run again. Past the cap the walk stops gathering and every word is verified once instead.
+        var candidates = new CandidateBuffer(this, InitialCandidates, _words.Length);
 
         char[]? rented = null;
         int scratchLength = ScratchLength(query.Length, maxDistance);
@@ -619,19 +628,37 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
         try
         {
             VisitVariants(query, 0, maxDistance, scratch, ref candidates);
-            return candidates;
         }
         finally
         {
             if (rented is not null)
                 ArrayPool<char>.Shared.Return(rented);
         }
+
+        if (!candidates.Overflowed)
+            return candidates;
+
+        candidates.Dispose();
+        return EveryWord();
+    }
+
+    // Every word id once, in id order, for a query that is cheaper to verify against the whole list.
+    private CandidateBuffer EveryWord()
+    {
+        var everyWord = new CandidateBuffer(this, Math.Max(_words.Length, 1), _words.Length);
+        for (int id = 0; id < _words.Length; id++)
+            everyWord.Add(id);
+
+        return everyWord;
     }
 
     // Appends every word id posted under `hash` to the buffer. The postings of one hash are contiguous and
     // sorted, and they all sit in the one directory bucket the hash's top bits name.
     private void AppendPostings(uint hash, ref CandidateBuffer candidates)
     {
+        if (candidates.Overflowed)
+            return;
+
         int bucket = (int)((ulong)hash >> _shift);
         int end = _directory[bucket + 1];
         for (int position = _directory[bucket]; position < end; position++)
@@ -728,16 +755,22 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
     private struct CandidateBuffer : IVariantVisitor, IDisposable
     {
         private readonly EditDistanceIndex _index;
+        private readonly int _limit;
         private int[] _items;
 
-        public CandidateBuffer(EditDistanceIndex index, int capacity)
+        public CandidateBuffer(EditDistanceIndex index, int capacity, int limit)
         {
             _index = index;
+            _limit = limit;
             _items = ArrayPool<int>.Shared.Rent(capacity);
             Count = 0;
+            Overflowed = false;
         }
 
         public int Count { get; private set; }
+
+        // Set, and further adds ignored, once an add would take Count past the limit.
+        public bool Overflowed { get; private set; }
 
         public readonly ReadOnlySpan<int> Items => _items.AsSpan(0, Count);
 
@@ -745,6 +778,12 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
 
         public void Add(int wordId)
         {
+            if (Count == _limit)
+            {
+                Overflowed = true;
+                return;
+            }
+
             if (Count == _items.Length)
             {
                 int[] bigger = ArrayPool<int>.Shared.Rent(_items.Length * 2);

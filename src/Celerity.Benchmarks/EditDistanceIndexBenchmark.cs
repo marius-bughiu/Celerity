@@ -8,9 +8,10 @@ using Celerity.Collections;
 // word. The baseline arms are named Array_* so the dashboard classifies them as the reference series.
 //
 // The scan is the careful one, not a strawman: it skips every word whose length differs from the query's by
-// more than k without touching its characters, and its distance is the SAME bounded, row-early-exit algorithm
-// the index verifies candidates with — BoundedDistance below is a copy of EditDistanceIndex.BoundedDistance,
-// which is private. So the two sides pay an identical price per distance computed, and the ratio isolates the
+// more than k without touching its characters, and its distance is the SAME bounded algorithm the index
+// verifies candidates with, computing only each row's band of 2k + 1 cells around the diagonal and stopping
+// once a whole band exceeds k — BoundedDistance below is a copy of EditDistanceIndex.BoundedDistance, which
+// is private. So the two sides pay an identical price per distance computed, and the ratio isolates the
 // one thing the index changes: how many words get a distance computed at all. The scan computes one for every
 // word of a plausible length; the index computes one for each word that shares a deletion variant with the
 // query, after generating and looking up that query's C(m, 0) + ... + C(m, k) variants.
@@ -236,8 +237,8 @@ public class EditDistanceIndexBenchmark
         return total;
     }
 
-    // The careful hand-roll: a length filter before any character is read, then a bounded distance that stops
-    // a row early, with the matches ordered the way FindWithin orders them.
+    // The careful hand-roll: a length filter before any character is read, then a banded, bounded distance that
+    // stops a row early, with the matches ordered the way FindWithin orders them.
     private FuzzyMatch[] Scan(string query, int maxDistance)
     {
         var found = new List<FuzzyMatch>();
@@ -310,16 +311,21 @@ public class EditDistanceIndexBenchmark
             : (rented = ArrayPool<int>.Shared.Rent(b.Length + 1));
         try
         {
+            int over = bound + 1;
             for (int j = 0; j <= b.Length; j++)
-                row[j] = j;
+                row[j] = Math.Min(j, over);
 
             for (int i = 1; i <= a.Length; i++)
             {
+                int low = Math.Max(1, i - bound);
+                int high = Math.Min(b.Length, i + bound);
                 char value = a[i - 1];
-                int diagonal = row[0];
-                row[0] = i;
-                int rowMinimum = i;
-                for (int j = 1; j <= b.Length; j++)
+
+                // The cell left of the band: column 0, which costs i deletions, or a cell outside the band.
+                int diagonal = row[low - 1];
+                row[low - 1] = low == 1 ? Math.Min(i, over) : over;
+                int rowMinimum = row[low - 1];
+                for (int j = low; j <= high; j++)
                 {
                     int above = row[j];
                     int cell = diagonal + (value == b[j - 1] ? 0 : 1);
@@ -330,11 +336,15 @@ public class EditDistanceIndexBenchmark
                     rowMinimum = Math.Min(rowMinimum, cell);
                 }
 
+                // The next row's band reaches one cell further right, and its value from this row is out of band.
+                if (high < b.Length)
+                    row[high + 1] = over;
+
                 if (rowMinimum > bound)
-                    return bound + 1;
+                    return over;
             }
 
-            return Math.Min(row[b.Length], bound + 1);
+            return Math.Min(row[b.Length], over);
         }
         finally
         {

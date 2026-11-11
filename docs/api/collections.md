@@ -9029,7 +9029,7 @@ public sealed class EditDistanceIndex : IReadOnlyList<string>
 
 A **symmetric-delete index**: a build-once, immutable index over a fixed set of words that finds every word within a Levenshtein distance of a query, **exactly**, without computing a distance to each word.
 
-This is the one question none of the other text types answers. [`Trie<TValue>`](#trietvalue) and [`SuccinctTrie<TValue>`](#succincttrietvalue) match exact prefixes, [`AhoCorasick`](#ahocorasick) finds exact patterns inside a text, and [`SuffixArray`](#suffixarray) finds exact substrings. The BCL has nothing for approximate matching at all. The caller's option is a **linear scan**: a bounded Levenshtein distance to every word. A careful scan skips words whose length differs by more than `k` and stops a row early once the distance must exceed `k`, but it still pays one distance computation per word of a plausible length. That careful scan is the baseline below, not a naive one.
+This is the one question none of the other text types answers. [`Trie<TValue>`](#trietvalue) and [`SuccinctTrie<TValue>`](#succincttrietvalue) match exact prefixes, [`AhoCorasick`](#ahocorasick) finds exact patterns inside a text, and [`SuffixArray`](#suffixarray) finds exact substrings. The BCL has nothing for approximate matching at all. The caller's option is a **linear scan**: a bounded Levenshtein distance to every word. A careful scan skips words whose length differs by more than `k`, computes only the band of each row within `k` of the diagonal, and stops a row early once the distance must exceed `k`, but it still pays one distance computation per word of a plausible length. That careful scan is the baseline below, not a naive one.
 
 ### When to reach for it
 
@@ -9041,7 +9041,7 @@ If two strings are within distance `k`, some string can be reached from **each**
 
 The variants are not stored as strings. Each is hashed to 32 bits and paired with its word id as one `ulong` **posting**, `hash << 32 | id`. The postings are sorted, which groups each hash's word ids together and puts them in id order, and deduplicated, which collapses the repeats a word with a repeated letter produces (deleting either `a` of `"aab"` gives `"ab"`). A **radix directory** over the hash's top `floor(log2 P)` bits then maps a hash to its bucket, so a lookup is one directory read and a scan of one or two adjacent postings. A hash collision can only add a candidate, which verification rejects, so the hash affects speed and never correctness. The hash is `string.GetHashCode(ReadOnlySpan<char>)`, which is seeded per process, so a crafted word list cannot aim collisions at one bucket.
 
-Verification trims the shared prefix and suffix first, since they never cost an edit, rejects a length gap wider than the bound outright, and otherwise keeps one row of the table and stops as soon as a whole row exceeds the bound.
+Verification trims the shared prefix and suffix first, since they never cost an edit, and rejects a length gap wider than the bound outright. Otherwise it keeps one row of the table and computes only its band, the at most `2k + 1` cells within `k` of the diagonal, since a cell further out exceeds the bound (Ukkonen's cutoff). It stops as soon as a whole band exceeds the bound.
 
 <a id="measured-editdistanceindex"></a>
 
