@@ -2584,4 +2584,89 @@ public class IEnumerableConstructorTests
         Assert.Equal(2, map.Count);
         Assert.Equal(10, map[1]);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  PersistentSortedMap — the immutable sorted member of the family
+    // ──────────────────────────────────────────────────────────────
+    // The argument contract PersistentHashMap's block pins, minus the out-of-band slot: the zero key is an
+    // ordinary inline entry here, so the extra row is that an unsorted source comes out in key order.
+
+    [Fact]
+    public void PersistentSortedMap_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => new PersistentSortedMap<int, string, DefaultComparer<int>>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(1, "one"),
+            new KeyValuePair<int, string>(1, "uno"),
+        };
+
+        Assert.Throws<ArgumentException>(
+            () => new PersistentSortedMap<int, string, DefaultComparer<int>>(source));
+    }
+
+    [Fact]
+    public void PersistentSortedMap_ShouldSupportEmptySource()
+    {
+        var map = new PersistentSortedMap<int, string, DefaultComparer<int>>(
+            Array.Empty<KeyValuePair<int, string>>());
+
+        Assert.Equal(0, map.Count);
+        Assert.True(map.IsEmpty);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_ShouldCopyAllEntries_FromArraySource_InKeyOrder()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, int>(2, 20),
+            new KeyValuePair<int, int>(1, 10),
+            new KeyValuePair<int, int>(0, 99),
+        };
+
+        var map = new PersistentSortedMap<int, int, DefaultComparer<int>>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(new[] { 0, 1, 2 }, map.Keys.ToArray());
+        Assert.Equal(99, map[0]);
+        Assert.Equal(20, map[2]);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_ShouldCopyAllEntries_FromNonCollectionEnumerableSource()
+    {
+        var map = new PersistentSortedMap<int, int, DefaultComparer<int>>(
+            Enumerable.Range(0, 500).Reverse().Select(i => new KeyValuePair<int, int>(i, i * 2)));
+
+        Assert.Equal(500, map.Count);
+        Assert.Equal(Enumerable.Range(0, 500), map.Select(e => e.Key));
+        Assert.Equal(998, map[499]);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<KeyValuePair<int, int>>
+        {
+            new KeyValuePair<int, int>(1, 10),
+            new KeyValuePair<int, int>(2, 20),
+        };
+
+        var map = new PersistentSortedMap<int, int, DefaultComparer<int>>(source);
+        source.Clear();
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(10, map[1]);
+    }
 }

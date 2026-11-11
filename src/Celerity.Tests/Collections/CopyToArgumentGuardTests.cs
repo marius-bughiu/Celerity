@@ -204,6 +204,14 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void RankedMultiSet_ShouldValidateCopyToArguments()
+    {
+        RankedMultiSet<int> set = new(new[] { 1, 2, 2 });
+
+        AssertCopyToContract<int>(3, set.CopyTo);
+    }
+
+    [Fact]
     public void PooledCeleritySet_ShouldValidateCopyToArguments()
     {
         using PooledCeleritySet<int, Int32WangNaiveHasher> set = new();
@@ -415,6 +423,24 @@ public class CopyToArgumentGuardTests
         AssertCopyToContract<int>(3, list.CopyTo);
     }
 
+    [Fact]
+    public void GapBuffer_ShouldValidateCopyToArguments()
+    {
+        // The gap sits in the middle, so a valid copy is two runs; the checks must run before either.
+        GapBuffer<int> buffer = new(new[] { 1, 3 });
+        buffer.Insert(1, 2);
+
+        AssertCopyToContract<int>(3, buffer.CopyTo);
+    }
+
+    [Fact]
+    public void SegmentedList_ShouldValidateCopyToArguments()
+    {
+        SegmentedList<int> list = new(new[] { 1, 2, 3 });
+
+        AssertCopyToContract<int>(3, list.CopyTo);
+    }
+
     // ── The completeness gate ─────────────────────────────────────────────────
 
     // Every public declaration of `void CopyTo(T[], int)` in the shipped collections assembly,
@@ -422,9 +448,10 @@ public class CopyToArgumentGuardTests
     // name it is missing, not as silent divergence.
     private static readonly HashSet<string> Covered = new(StringComparer.Ordinal)
     {
-        "BitPackedArray", "BTreeList", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "HashCachingSet",
-        "HierarchicalBitSet", "IntSet", "LinkedSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedSet",
-        "RobinHoodSet", "SmallSet", "SparseSet", "SwissSet",
+        "BitPackedArray", "BTreeList", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "GapBuffer",
+        "HashCachingSet",
+        "HierarchicalBitSet", "IntSet", "LinkedSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedMultiSet", "RankedSet",
+        "RobinHoodSet", "SegmentedList", "SmallSet", "SparseSet", "SwissSet",
 
         "BiDictionary", "BiDictionary.KeyCollection", "BiDictionary.ValueCollection",
         "BTreeDictionary", "BTreeDictionary.KeyCollection", "BTreeDictionary.ValueCollection",

@@ -411,6 +411,85 @@ public class EnumeratorInvalidationAndClearCoverageTests
         Assert.Equal(new[] { 1, 2, 30 }, list);
     }
 
+    [Fact]
+    public void GapBufferEnumeratorReset_ShouldThrowInvalidOperationException_WhenBufferModified()
+    {
+        var buffer = new GapBuffer<int>(new[] { 1, 2, 3 });
+
+        GapBuffer<int>.Enumerator enumerator = buffer.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        buffer.Insert(1, 9);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        GapBuffer<int>.Enumerator second = buffer.GetEnumerator();
+        buffer.RemoveAt(0);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    /// <summary>
+    /// The same deliberate exception <see cref="BTreeList{T}"/> makes: assigning through the indexer replaces
+    /// one slot and moves neither the gap nor any element, so the sequence an enumerator is walking keeps its
+    /// shape.
+    /// </summary>
+    [Fact]
+    public void GapBufferIndexerSet_ShouldNotBumpTheVersion_BecauseTheSequenceIsUnchanged()
+    {
+        var buffer = new GapBuffer<int>(new[] { 1, 2, 3 });
+        buffer.Insert(1, 5);
+        buffer.RemoveAt(1); // gap in the middle
+
+        GapBuffer<int>.Enumerator enumerator = buffer.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        buffer[2] = 30;
+
+        enumerator.Reset();
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal(1, enumerator.Current);
+        Assert.Equal(new[] { 1, 2, 30 }, buffer);
+    }
+
+    [Fact]
+    public void SegmentedListEnumeratorReset_ShouldThrowInvalidOperationException_WhenListModified()
+    {
+        var list = new SegmentedList<int>(new[] { 1, 2, 3 });
+
+        SegmentedList<int>.Enumerator enumerator = list.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        list.Insert(1, 9);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("Collection was modified", ex.Message);
+
+        SegmentedList<int>.Enumerator second = list.GetEnumerator();
+        list.RemoveAt(0);
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    /// <summary>
+    /// The same deliberate exception <see cref="BTreeList{T}"/> and <see cref="Deque{T}"/> make: assigning
+    /// through the indexer stores into one slot of one segment and moves no segment boundary.
+    /// </summary>
+    [Fact]
+    public void SegmentedListIndexerSet_ShouldNotBumpTheVersion_BecauseTheSequenceIsUnchanged()
+    {
+        var list = new SegmentedList<int>(new[] { 1, 2, 3 });
+
+        SegmentedList<int>.Enumerator enumerator = list.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        list[2] = 30;
+
+        enumerator.Reset();
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal(1, enumerator.Current);
+        Assert.Equal(new[] { 1, 2, 30 }, list);
+    }
+
     /// <summary>
     /// The wheel's own deliberate exception to the rule, alongside <see cref="SpatialGrid{TValue}"/>'s
     /// <c>Move</c>: an advance that fires nothing can still <i>relocate</i> timers, cascading a level-1 slot's

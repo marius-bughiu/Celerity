@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Celerity.Collections;
@@ -55,6 +56,7 @@ internal static class Differential
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
         ("RankedSet", RankedSetCase),
+        ("RankedMultiSet", RankedMultiSetCase),
         ("LfuCache", LfuCacheCase),
         ("SieveCache", SieveCacheCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
@@ -69,6 +71,7 @@ internal static class Differential
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("WaveletTree", WaveletTreeCase),
         ("EliasFanoSequence", EliasFanoSequenceCase),
+        ("FrozenSortedSet", FrozenSortedSetCase),
         ("SegmentTree", SegmentTreeCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
@@ -85,6 +88,8 @@ internal static class Differential
         ("EditDistanceIndex", EditDistanceIndexCase),
         ("Rope", RopeCase),
         ("BTreeList", BTreeListCase),
+        ("GapBuffer", GapBufferCase),
+        ("SegmentedList", SegmentedListCase),
         ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
@@ -93,6 +98,7 @@ internal static class Differential
         ("BloomFilterMerge", BloomFilterMergeCase),
         ("CuckooFilterMerge", CuckooFilterMergeCase),
         ("HyperLogLogMerge", HyperLogLogMergeCase),
+        ("SlidingHyperLogLog", SlidingHyperLogLogCase),
         ("MinHashSketchMerge", MinHashSketchMergeCase),
         ("CountMinSketchMerge", CountMinSketchMergeCase),
         ("BloomFilterHash64", BloomFilterHash64Case),
@@ -102,15 +108,20 @@ internal static class Differential
         ("CountMinSketchHash64", CountMinSketchHash64Case),
         ("PersistentVector", PersistentVectorCase),
         ("PersistentHashMap", PersistentHashMapCase),
+        ("PersistentSortedMap", PersistentSortedMapCase),
         ("PersistentHashSet", PersistentHashSetCase),
         ("RadixSort", RadixSortCase),
+        ("StringSort", StringSortCase),
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
+        ("KWayMerge", KWayMergeCase),
         ("SpaceFillingCurve", SpaceFillingCurveCase),
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
         ("ReservoirSampler", ReservoirSamplerCase),
         ("RollingQuantile", RollingQuantileCase),
+        ("AliasTable", AliasTableCase),
+        ("KllSketch", KllSketchCase),
     ];
 
     private const int MinKey = -8;
@@ -1576,6 +1587,67 @@ internal static class Differential
             $"range[{from},{to})");
     }
 
+    // RankedMultiSet vs a sorted List: duplicates kept and counted. Keys come from a small domain whose width
+    // is drawn per case (1..64), and the op count reaches several thousand, so runs of copies grow long
+    // enough to span buckets that share one maximum. Elements are plain ints, so this checks content and
+    // ranks; FIFO order among equal elements is covered by the (Key, Id) CsCheck suite.
+    private static void RankedMultiSetCase(Random rng)
+    {
+        var sut = new RankedMultiSet<int>();
+        var oracle = new List<int>();
+        int width = rng.Next(1, 65);
+        int ops = rng.Next(0, 6000);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = rng.Next(0, width);
+            switch (rng.Next(0, 20))
+            {
+                case < 12:
+                    sut.Add(item);
+                    int at = oracle.BinarySearch(item);
+                    oracle.Insert(at < 0 ? ~at : at, item);
+                    break;
+                case < 17: Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})"); break;
+                case < 18:
+                    int all = oracle.RemoveAll(v => v == item);
+                    Check(sut.RemoveAll(item) == all, $"RemoveAll({item}) != {all}");
+                    break;
+                case < 19 when oracle.Count > 0:
+                    int rank = rng.Next(0, oracle.Count);
+                    Check(sut[rank] == oracle[rank], $"[{rank}] {sut[rank]} != {oracle[rank]}");
+                    sut.RemoveAt(rank);
+                    oracle.RemoveAt(rank);
+                    break;
+                case < 19: break;
+                case < 20 when rng.Next(0, 50) != 0: sut.TrimExcess(); break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+
+        for (int k = -2; k <= width + 1; k++)
+        {
+            Check(sut.CountOf(k) == oracle.Count(v => v == k), $"CountOf({k})");
+            Check(sut.CountLessThan(k) == oracle.Count(v => v < k), $"CountLessThan({k})");
+            Check(sut.IndexOf(k) == oracle.IndexOf(k), $"IndexOf({k})");
+            Check(sut.LastIndexOf(k) == oracle.LastIndexOf(k), $"LastIndexOf({k})");
+        }
+
+        CheckSameSequence(sut, oracle, "enumeration");
+
+        for (int index = 0; index < oracle.Count; index++)
+            Check(sut[index] == oracle[index], $"[{index}] {sut[index]} != {oracle[index]}");
+
+        int from = rng.Next(-1, width + 1);
+        int to = from + rng.Next(0, 4);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to),
+            oracle.Where(v => v >= from && v < to),
+            $"range[{from},{to})");
+    }
+
     // SieveCache vs a list-based reference SIEVE: a List in insertion order (newest first), a set of
     // visited keys, and a hand held as a key rather than a slot. SIEVE is deterministic, so membership
     // after every insert pins the eviction choice exactly — where the hand resumed, which bits it
@@ -2262,6 +2334,154 @@ internal static class Differential
             Check(sut.TryGetLowerBound(probe, out long bound) == expected < length
                 && bound == (expected < length ? values[expected] : 0),
                 $"EliasFanoSequence TryGetLowerBound({probe}) disagreed");
+        }
+    }
+
+    // ---- frozen sorted set ---------------------------------------------------
+
+    // FrozenSortedSet is immutable, so the randomization is in the source: a length that straddles one leaf,
+    // several leaves and several internal levels (the node holds 16 ints, 8 longs or 4 Int128s, so the same
+    // length gives each key type a different depth), drawn from either a narrow range (dense, many repeats) or
+    // the whole range, in random order, sometimes with T.MinValue and T.MaxValue mixed in. T.MaxValue is also
+    // the padding value, which is what makes it the interesting key. The source is passed as an array (the
+    // counted path) or as a lazy sequence (the ToArray path). Every query is then reconciled against the
+    // sorted, distinct T[] oracle, and the set algebra against a HashSet<T>. Int128 has no hardware
+    // Vector128 support, so it exercises the scalar node scan.
+    private static void FrozenSortedSetCase(Random rng)
+    {
+        switch (rng.Next(3))
+        {
+            case 0:
+                FrozenSortedSetCheck(rng, static v => (int)v);
+                break;
+            case 1:
+                FrozenSortedSetCheck(rng, static v => v);
+                break;
+            default:
+                // Spread the 64-bit draw across the high half too, so a key's upper 64 bits matter.
+                FrozenSortedSetCheck(rng, static v => ((Int128)v << 40) ^ (Int128)(ulong)v);
+                break;
+        }
+    }
+
+    private static void FrozenSortedSetCheck<T>(Random rng, Func<long, T> make)
+        where T : unmanaged, IBinaryInteger<T>, IMinMaxValue<T>
+    {
+        int length = rng.Next(4) switch
+        {
+            0 => rng.Next(0, 20),
+            1 => rng.Next(0, 300),
+            _ => rng.Next(0, 5000),
+        };
+        bool narrow = rng.Next(2) == 0;
+        long origin = rng.NextInt64();
+        long span = Math.Max(1, length / (rng.Next(1, 4)));
+        T Draw() => make(narrow ? unchecked(origin + rng.NextInt64(0, span)) : rng.NextInt64(long.MinValue, long.MaxValue));
+
+        var source = new T[length];
+        for (int i = 0; i < length; i++)
+            source[i] = Draw();
+        if (length > 0 && rng.Next(3) == 0)
+            source[rng.Next(length)] = T.MaxValue;
+        if (length > 0 && rng.Next(3) == 0)
+            source[rng.Next(length)] = T.MinValue;
+
+        T[] oracle = source.Distinct().Order().ToArray();
+        int count = oracle.Length;
+        var sut = rng.Next(2) == 0
+            ? new FrozenSortedSet<T>(source)
+            : new FrozenSortedSet<T>(source.Select(static x => x));
+        string type = typeof(T).Name;
+
+        Check(sut.Count == count, $"FrozenSortedSet<{type}> Count disagreed");
+        Check(sut.AsSpan().SequenceEqual(oracle), $"FrozenSortedSet<{type}> AsSpan disagreed");
+        Check(sut.ToArray().SequenceEqual(oracle), $"FrozenSortedSet<{type}> enumeration disagreed");
+        for (int i = 0; i < count; i++)
+            Check(sut[i] == oracle[i], $"FrozenSortedSet<{type}> indexer at {i} disagreed");
+        Check(sut.MemoryUsageInBytes >= (long)count * Unsafe.SizeOf<T>() && sut.Depth >= 1,
+            $"FrozenSortedSet<{type}> footprint or depth out of range");
+        if (count > 0)
+            Check(sut.Min == oracle[0] && sut.Max == oracle[^1], $"FrozenSortedSet<{type}> Min/Max disagreed");
+
+        T Probe()
+        {
+            switch (rng.Next(6))
+            {
+                case 0:
+                    return T.MinValue;
+                case 1:
+                    return T.MaxValue;
+                case 2:
+                case 3:
+                    if (count == 0)
+                        return Draw();
+                    T key = oracle[rng.Next(count)];
+                    int step = rng.Next(-1, 2);
+                    if (step < 0 && key != T.MinValue)
+                        return key - T.One;
+                    if (step > 0 && key != T.MaxValue)
+                        return key + T.One;
+                    return key;
+                default:
+                    return Draw();
+            }
+        }
+
+        int LowerBound(T value)
+        {
+            int index = Array.BinarySearch(oracle, value);
+            return index >= 0 ? index : ~index;
+        }
+
+        for (int trial = 0; trial < 200; trial++)
+        {
+            T probe = Probe();
+            int expected = LowerBound(probe);
+            bool present = expected < count && oracle[expected] == probe;
+
+            Check(sut.CountLessThan(probe) == expected, $"FrozenSortedSet<{type}> CountLessThan({probe}) disagreed");
+            Check(sut.Contains(probe) == present, $"FrozenSortedSet<{type}> Contains({probe}) disagreed");
+            Check(sut.IndexOf(probe) == (present ? expected : -1), $"FrozenSortedSet<{type}> IndexOf({probe}) disagreed");
+            Check(sut.TryGetLowerBound(probe, out T lower) == expected < count
+                && lower == (expected < count ? oracle[expected] : T.Zero),
+                $"FrozenSortedSet<{type}> TryGetLowerBound({probe}) disagreed");
+
+            int above = present ? expected + 1 : expected;
+            Check(sut.TryGetUpperBound(probe, out T upper) == above < count
+                && upper == (above < count ? oracle[above] : T.Zero),
+                $"FrozenSortedSet<{type}> TryGetUpperBound({probe}) disagreed");
+
+            T other = Probe();
+            (T from, T to) = probe <= other ? (probe, other) : (other, probe);
+            int start = LowerBound(from);
+            Check(sut.SliceRange(from, to).SequenceEqual(oracle.AsSpan(start, LowerBound(to) - start)),
+                $"FrozenSortedSet<{type}> SliceRange({from}, {to}) disagreed");
+        }
+
+        // Set algebra against a HashSet<T>, with `other` drawn mostly from the set's own keys so that the
+        // subset, superset and equality answers are not all trivially false.
+        var model = new HashSet<T>(oracle);
+        for (int trial = 0; trial < 8; trial++)
+        {
+            int size = rng.Next(0, Math.Min(count, 50) + 3);
+            var other = new List<T>(size);
+            int mode = rng.Next(3);
+            if (mode == 0)
+                other.AddRange(oracle);
+            for (int i = 0; i < size; i++)
+                other.Add(count > 0 && rng.Next(4) != 0 ? oracle[rng.Next(count)] : Probe());
+            if (mode == 1 && other.Count > 0)
+                other.RemoveAt(rng.Next(other.Count));
+
+            IEnumerable<T> arg = rng.Next(4) == 0 ? new FrozenSortedSet<T>(other) : other;
+            Check(sut.SetEquals(arg) == model.SetEquals(other), $"FrozenSortedSet<{type}> SetEquals disagreed");
+            Check(sut.IsSubsetOf(arg) == model.IsSubsetOf(other), $"FrozenSortedSet<{type}> IsSubsetOf disagreed");
+            Check(sut.IsProperSubsetOf(arg) == model.IsProperSubsetOf(other),
+                $"FrozenSortedSet<{type}> IsProperSubsetOf disagreed");
+            Check(sut.IsSupersetOf(arg) == model.IsSupersetOf(other), $"FrozenSortedSet<{type}> IsSupersetOf disagreed");
+            Check(sut.IsProperSupersetOf(arg) == model.IsProperSupersetOf(other),
+                $"FrozenSortedSet<{type}> IsProperSupersetOf disagreed");
+            Check(sut.Overlaps(arg) == model.Overlaps(other), $"FrozenSortedSet<{type}> Overlaps disagreed");
         }
     }
 
@@ -3790,6 +4010,604 @@ internal static class Differential
         Check(expected.Count >= minimum, $"{label} is {actual.Depth} levels deep at only {expected.Count} elements");
     }
 
+    // ---- segmented list -----------------------------------------------------
+
+    // SegmentedList against the List<int> it replaces. Its correctness lives at the segment boundaries: an
+    // Insert or RemoveAt carries one element across every boundary between the edit and the end, an Add past a
+    // full segment opens the next one, the first segment doubles from 4 up to SegmentLength before a second
+    // exists, and a Clear or a drain keeps segments that a later Add must reuse rather than reallocate. A
+    // boundary carry that drops or duplicates one element leaves every other element intact, so every edit is
+    // followed by reads around the position it touched and on both sides of the nearest boundary, and the
+    // whole sequence is reconciled through the indexer, the enumerator, GetSegment, ToArray and CopyTo on a
+    // schedule and at the end.
+    //
+    // One case in four starts across two to four segments of 16,384 ints, so the boundary carries are real;
+    // the rest start small and run long, so the first segment's doubling and its hand-off to the second are
+    // reached by Add. Positions are skewed to both ends and to segment boundaries.
+    private static void SegmentedListCase(Random rng)
+    {
+        const int SegmentInts = 16_384;
+        bool large = rng.Next(0, 4) == 0;
+        int initial = large
+            ? SegmentInts * rng.Next(1, 4) + rng.Next(-3, 4)
+            : rng.Next(0, 600);
+        var oracle = new List<int>(initial);
+        for (int i = 0; i < initial; i++)
+            oracle.Add(Value(rng));
+
+        SegmentedList<int> sut;
+        switch (rng.Next(0, 5))
+        {
+            case 0:
+                sut = new SegmentedList<int>(oracle);
+                break;
+            case 1:
+                sut = new SegmentedList<int>();
+                foreach (int value in oracle)
+                    sut.Add(value);
+                break;
+            case 2:
+                // A lazy sequence takes the one-at-a-time AddRange path; a pre-sized list must still report it.
+                sut = new SegmentedList<int>(rng.Next(0, initial + 2));
+                sut.AddRange(oracle.Select(v => v));
+                break;
+            case 3:
+                // Built from another segmented list, which copies segment by segment.
+                sut = new SegmentedList<int>(new SegmentedList<int>(oracle.ToArray()));
+                break;
+            default:
+                sut = new SegmentedList<int>();
+                for (int i = oracle.Count - 1; i >= 0; i--)
+                    sut.Insert(0, oracle[i]);
+                break;
+        }
+
+        Check(sut.SegmentLength == SegmentInts, $"SegmentedList<int> segment length is {sut.SegmentLength}");
+        CheckSegmentedList(sut, oracle, "SegmentedList build");
+
+        int operations = large ? rng.Next(0, 300) : rng.Next(0, 1500);
+        int fullCheckEvery = large ? 60 : 40;
+
+        for (int op = 0; op < operations; op++)
+        {
+            int touched;
+            switch (rng.Next(0, 100))
+            {
+                case < 22:
+                {
+                    int index = SegmentedListPosition(rng, oracle.Count + 1);
+                    int value = Value(rng);
+                    sut.Insert(index, value);
+                    oracle.Insert(index, value);
+                    touched = index;
+                    break;
+                }
+                case < 42:
+                {
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                case < 47:
+                {
+                    // AddRange from each source shape, including the list itself.
+                    int length = rng.Next(0, large ? 20_000 : 80);
+                    var batch = new int[length];
+                    for (int i = 0; i < length; i++)
+                        batch[i] = Value(rng);
+                    touched = oracle.Count;
+                    switch (rng.Next(0, 5))
+                    {
+                        case 0: sut.AddRange(batch); oracle.AddRange(batch); break;
+                        case 1: sut.AddRange(new List<int>(batch)); oracle.AddRange(batch); break;
+                        case 2: sut.AddRange(new SegmentedList<int>(batch)); oracle.AddRange(batch); break;
+                        case 3: sut.AddRange(new HashSet<int>(batch)); oracle.AddRange(new HashSet<int>(batch)); break;
+                        default:
+                            if (oracle.Count <= 40_000)
+                            {
+                                sut.AddRange(sut);
+                                oracle.AddRange(oracle.ToArray());
+                            }
+                            break;
+                    }
+                    break;
+                }
+                case < 69:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = SegmentedListPosition(rng, oracle.Count);
+                    sut.RemoveAt(index);
+                    oracle.RemoveAt(index);
+                    touched = index;
+                    break;
+                }
+                case < 79:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = SegmentedListPosition(rng, oracle.Count);
+                    int value = Value(rng);
+                    sut[index] = value;
+                    oracle[index] = value;
+                    touched = index;
+                    break;
+                }
+                case < 86:
+                {
+                    // Most removes hit and some miss; both remove the first occurrence.
+                    int value = Value(rng);
+                    touched = oracle.IndexOf(value);
+                    Check(sut.IndexOf(value) == touched, $"SegmentedList IndexOf({value}) disagreed");
+                    Check(sut.Contains(value) == (touched >= 0), $"SegmentedList Contains({value}) disagreed");
+                    Check(sut.Remove(value) == oracle.Remove(value), $"SegmentedList Remove({value}) disagreed");
+                    if (touched < 0)
+                        touched = 0;
+                    break;
+                }
+                case < 92:
+                {
+                    // Capacity: EnsureCapacity must report at least what was asked and never lose elements;
+                    // TrimExcess must keep every element and leave no more than one partly empty segment.
+                    if (rng.Next(0, 2) == 0)
+                    {
+                        int want = oracle.Count + rng.Next(0, large ? 40_000 : 2_000);
+                        int got = sut.EnsureCapacity(want);
+                        Check(got >= want && got == sut.Capacity, $"SegmentedList EnsureCapacity({want}) returned {got}");
+                    }
+                    else
+                    {
+                        sut.TrimExcess();
+                        int bound = oracle.Count <= SegmentInts ? oracle.Count : sut.SegmentCount * SegmentInts;
+                        Check(sut.Capacity == bound, $"SegmentedList TrimExcess left capacity {sut.Capacity} at {oracle.Count}");
+                    }
+                    Check(sut.Capacity >= oracle.Count, "SegmentedList capacity fell below its count");
+                    touched = oracle.Count == 0 ? 0 : oracle.Count - 1;
+                    break;
+                }
+                case < 99:
+                {
+                    // Enumerator invalidation: an in-place set leaves a live enumerator usable and a structural
+                    // edit tears it down — the rule this type deliberately does not share with List<T>.
+                    var enumerator = sut.GetEnumerator();
+                    if (oracle.Count > 0)
+                    {
+                        int index = SegmentedListPosition(rng, oracle.Count);
+                        sut[index] = oracle[index];
+                        Check(enumerator.MoveNext() && enumerator.Current == oracle[0], "SegmentedList set invalidated an enumerator");
+                    }
+                    int value = Value(rng);
+                    sut.Add(value);
+                    oracle.Add(value);
+                    bool threw = false;
+                    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+                    Check(threw, "SegmentedList Add did not invalidate an enumerator");
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                default:
+                {
+                    // Clear keeps the allocated segments, which the Adds that follow must reuse.
+                    int capacity = sut.Capacity;
+                    sut.Clear();
+                    oracle.Clear();
+                    Check(sut.Capacity == capacity && sut.SegmentCount == 0, "SegmentedList Clear changed its capacity");
+                    touched = 0;
+                    break;
+                }
+            }
+
+            Check(sut.Count == oracle.Count, $"SegmentedList count diverged after op {op}");
+            for (int i = Math.Max(0, touched - 2); i < Math.Min(oracle.Count, touched + 3); i++)
+                Check(sut[i] == oracle[i], $"SegmentedList indexer diverged at {i} next to an edit at {touched}");
+            if (oracle.Count > 0)
+            {
+                Check(sut[0] == oracle[0] && sut[^1] == oracle[^1], "SegmentedList ends diverged");
+                int boundary = (rng.Next(0, oracle.Count) / SegmentInts) * SegmentInts;
+                for (int i = Math.Max(0, boundary - 1); i < Math.Min(oracle.Count, boundary + 1); i++)
+                    Check(sut[i] == oracle[i], $"SegmentedList indexer diverged at {i} across a segment boundary");
+                int probe = rng.Next(0, oracle.Count);
+                Check(sut[probe] == oracle[probe], $"SegmentedList indexer diverged at {probe}");
+            }
+
+            if (op % fullCheckEvery == fullCheckEvery - 1)
+                CheckSegmentedList(sut, oracle, $"SegmentedList after op {op}");
+        }
+
+        CheckSegmentedList(sut, oracle, "SegmentedList final");
+        CheckSegmentedList(new SegmentedList<int>(sut), oracle, "SegmentedList rebuilt from itself");
+    }
+
+    // A third of positions land within a few slots of either end, a third within a few slots of a segment
+    // boundary, and the rest are uniform. `bound` is exclusive.
+    private static int SegmentedListPosition(Random rng, int bound) => rng.Next(0, 4) switch
+    {
+        0 => rng.Next(0, Math.Min(bound, 4)),
+        1 => bound - 1 - rng.Next(0, Math.Min(bound, 4)),
+        2 => Math.Clamp((rng.Next(0, bound) / 16_384) * 16_384 + rng.Next(-2, 3), 0, bound - 1),
+        _ => rng.Next(0, bound),
+    };
+
+    // Reconciles the indexer, the enumerator, the segment spans and both bulk copies, then checks the segment
+    // accounting: SegmentCount covers exactly Count, every segment but the last is full, and the capacity
+    // holds at least Count.
+    private static void CheckSegmentedList(SegmentedList<int> actual, List<int> expected, string label)
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+        Check(actual.Capacity >= expected.Count, $"{label} capacity {actual.Capacity} below count {expected.Count}");
+
+        for (int i = 0; i < expected.Count; i++)
+            Check(actual[i] == expected[i], $"{label} indexer diverged at {i}");
+
+        int position = 0;
+        foreach (int value in actual)
+        {
+            Check(position < expected.Count && value == expected[position], $"{label} enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} enumeration length diverged");
+
+        int segmentLength = actual.SegmentLength;
+        int segments = actual.SegmentCount;
+        Check(segments == (expected.Count + segmentLength - 1) / segmentLength, $"{label} SegmentCount {segments} for {expected.Count}");
+        int start = 0;
+        for (int s = 0; s < segments; s++)
+        {
+            ReadOnlySpan<int> span = actual.GetSegment(s);
+            Check(s == segments - 1 || span.Length == segmentLength, $"{label} segment {s} holds {span.Length}");
+            Check(span.SequenceEqual(CollectionsMarshal.AsSpan(expected).Slice(start, span.Length)), $"{label} GetSegment({s}) diverged");
+            start += span.Length;
+        }
+        Check(start == expected.Count, $"{label} segments cover {start} of {expected.Count}");
+
+        Check(actual.ToArray().AsSpan().SequenceEqual(CollectionsMarshal.AsSpan(expected)), $"{label} ToArray diverged");
+
+        var copy = new int[expected.Count + 2];
+        actual.CopyTo(copy, 1);
+        Check(copy.AsSpan(1, expected.Count).SequenceEqual(CollectionsMarshal.AsSpan(expected)) && copy[0] == 0 && copy[^1] == 0,
+            $"{label} CopyTo diverged");
+    }
+
+    // ---- gap buffer ----------------------------------------------------------
+
+    // GapBuffer against the List<T> it replaces. Every element is in one of two runs either side of a movable
+    // gap, so what is on trial is the bookkeeping that moves it: a gap move that copies one element too few, a
+    // growth that reopens the gap at the wrong position, or a range removal that absorbs the wrong side all
+    // leave the count right and surface as a read from the wrong slot. Positions are therefore skewed to sit
+    // next to GapPosition (the O(1) cursor edits the type exists for, and the boundary the position mapping
+    // pivots on), to both ends, and uniform; every edit is followed by reads around the position it touched,
+    // and the whole sequence is reconciled through every read path — indexer, enumerator, ToArray, CopyTo and
+    // the GetSpans halves — on a schedule and at the end.
+    //
+    // The documented GapPosition contract (an insert leaves the gap just after what it inserted, a removal
+    // leaves it at the removed position, EnsureCapacity and TrimExcess keep it) is checked directly, since the
+    // oracle has no gap. One case in four runs over strings, so the slot-clearing paths a reference type
+    // takes are reached too; InsertRange is fed spans over the buffer's own storage, which the type promises
+    // to handle.
+    private static void GapBufferCase(Random rng)
+    {
+        if (rng.Next(0, 4) == 0)
+            GapBufferRun(rng, static v => v.ToString());
+        else
+            GapBufferRun(rng, static v => v);
+    }
+
+    private static void GapBufferRun<T>(Random rng, Func<int, T> make)
+    {
+        var comparer = EqualityComparer<T>.Default;
+        int initial = rng.Next(0, 8) == 0 ? rng.Next(600, 5_001) : rng.Next(0, 200);
+        var oracle = new List<T>(initial);
+        for (int i = 0; i < initial; i++)
+            oracle.Add(make(Value(rng)));
+
+        GapBuffer<T> sut;
+        switch (rng.Next(0, 5))
+        {
+            case 0:
+                sut = new GapBuffer<T>(oracle);
+                break;
+            case 1:
+                sut = new GapBuffer<T>(oracle.Select(static v => v));
+                break;
+            case 2:
+                sut = new GapBuffer<T>(rng.Next(0, 2 * initial + 2));
+                sut.InsertRange(0, CollectionsMarshal.AsSpan(oracle));
+                break;
+            case 3:
+                sut = new GapBuffer<T>();
+                foreach (T value in oracle)
+                    sut.Add(value);
+                break;
+            default:
+                sut = new GapBuffer<T>();
+                for (int i = oracle.Count - 1; i >= 0; i--)
+                    sut.Insert(0, oracle[i]);
+                break;
+        }
+        CheckGapBuffer(sut, oracle, "GapBuffer build");
+
+        int operations = rng.Next(0, 1500);
+        int fullCheckEvery = 40;
+
+        for (int op = 0; op < operations; op++)
+        {
+            int touched;
+            switch (rng.Next(0, 100))
+            {
+                case < 25:
+                {
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    T value = make(Value(rng));
+                    sut.Insert(index, value);
+                    oracle.Insert(index, value);
+                    Check(sut.GapPosition == index + 1, $"GapBuffer Insert({index}) left the gap at {sut.GapPosition}");
+                    touched = index;
+                    break;
+                }
+                case < 32:
+                {
+                    T value = make(Value(rng));
+                    sut.Add(value);
+                    oracle.Add(value);
+                    Check(sut.GapPosition == oracle.Count, $"GapBuffer Add left the gap at {sut.GapPosition}");
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                case < 54:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count);
+                    sut.RemoveAt(index);
+                    oracle.RemoveAt(index);
+                    Check(sut.GapPosition == index, $"GapBuffer RemoveAt({index}) left the gap at {sut.GapPosition}");
+                    touched = index;
+                    break;
+                }
+                case < 60:
+                {
+                    // Ranges that sit wholly before the gap, wholly after it, touch it, or straddle it — the four
+                    // shapes RemoveCore resolves differently — fall out of a start near the gap and a short length.
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    int count = rng.Next(0, Math.Min(oracle.Count - index, 12) + 1);
+                    if (rng.Next(0, 16) == 0)
+                        count = oracle.Count - index;
+                    int gapBefore = sut.GapPosition;
+                    sut.RemoveRange(index, count);
+                    oracle.RemoveRange(index, count);
+                    int expectedGap = count == 0 ? gapBefore : index;
+                    Check(sut.GapPosition == expectedGap,
+                        $"GapBuffer RemoveRange({index}, {count}) left the gap at {sut.GapPosition}, expected {expectedGap}");
+                    touched = index;
+                    break;
+                }
+                case < 67:
+                {
+                    // A fresh run, sometimes longer than the gap so InsertRange has to grow.
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    var run = new T[rng.Next(0, rng.Next(0, 4) == 0 ? 64 : 6)];
+                    for (int i = 0; i < run.Length; i++)
+                        run[i] = make(Value(rng));
+                    int gapBefore = sut.GapPosition;
+                    sut.InsertRange(index, run);
+                    oracle.InsertRange(index, run);
+                    int expectedGap = run.Length == 0 ? gapBefore : index + run.Length;
+                    Check(sut.GapPosition == expectedGap,
+                        $"GapBuffer InsertRange({index}, {run.Length}) left the gap at {sut.GapPosition}, expected {expectedGap}");
+                    touched = index;
+                    break;
+                }
+                case < 72:
+                {
+                    // A run over the buffer's own storage: a slice of either GetSpans half, inserted anywhere. The
+                    // gap move or growth that precedes the copy rewrites that storage, so the type must have read
+                    // the span out first. The slice is capped so repeated self-inserts cannot grow a case
+                    // geometrically.
+                    sut.GetSpans(out ReadOnlySpan<T> beforeGap, out ReadOnlySpan<T> afterGap);
+                    int gap = sut.GapPosition;
+                    bool fromAfter = rng.Next(0, 2) == 0;
+                    ReadOnlySpan<T> half = fromAfter ? afterGap : beforeGap;
+                    int start = rng.Next(0, half.Length + 1);
+                    int length = rng.Next(0, Math.Min(half.Length - start, 64) + 1);
+                    ReadOnlySpan<T> slice = half.Slice(start, length);
+                    T[] expectedRun = oracle.GetRange((fromAfter ? gap : 0) + start, length).ToArray();
+                    Check(slice.SequenceEqual(expectedRun, comparer), "GapBuffer GetSpans slice disagreed before a self-insert");
+
+                    int index = GapBufferPosition(rng, gap, oracle.Count + 1);
+                    sut.InsertRange(index, slice);
+                    oracle.InsertRange(index, expectedRun);
+                    int expectedGap = length == 0 ? gap : index + length;
+                    Check(sut.GapPosition == expectedGap,
+                        $"GapBuffer self-InsertRange({index}, {length}) left the gap at {sut.GapPosition}, expected {expectedGap}");
+                    touched = index;
+                    break;
+                }
+                case < 80:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int gapBefore = sut.GapPosition;
+                    int index = GapBufferPosition(rng, gapBefore, oracle.Count);
+                    T value = make(Value(rng));
+                    sut[index] = value;
+                    oracle[index] = value;
+                    Check(sut.GapPosition == gapBefore, "GapBuffer indexer set moved the gap");
+                    touched = index;
+                    break;
+                }
+                case < 86:
+                {
+                    // A value drawn from the element domain, so most removes hit and some miss; both remove the
+                    // first occurrence, so the oracle's IndexOf is also the position the buffer edited.
+                    T value = make(Value(rng));
+                    int gapBefore = sut.GapPosition;
+                    touched = oracle.IndexOf(value);
+                    Check(sut.IndexOf(value) == touched, $"GapBuffer IndexOf({value}) disagreed");
+                    Check(sut.Contains(value) == (touched >= 0), $"GapBuffer Contains({value}) disagreed");
+                    Check(sut.GapPosition == gapBefore, "GapBuffer IndexOf / Contains moved the gap");
+                    Check(sut.Remove(value) == oracle.Remove(value), $"GapBuffer Remove({value}) disagreed");
+                    Check(sut.GapPosition == (touched >= 0 ? touched : gapBefore),
+                        $"GapBuffer Remove({value}) left the gap at {sut.GapPosition}");
+                    if (touched < 0)
+                        touched = 0;
+                    break;
+                }
+                case < 91:
+                {
+                    int gapBefore = sut.GapPosition;
+                    int requested = rng.Next(0, 3) == 0 ? rng.Next(0, sut.Capacity + 1) : sut.Count + rng.Next(0, 300);
+                    int capacity = sut.EnsureCapacity(requested);
+                    Check(capacity == sut.Capacity && capacity >= requested && capacity >= sut.Count,
+                        $"GapBuffer EnsureCapacity({requested}) returned {capacity} with capacity {sut.Capacity}");
+                    Check(sut.GapPosition == gapBefore, "GapBuffer EnsureCapacity moved the gap");
+                    touched = gapBefore;
+                    break;
+                }
+                case < 94:
+                {
+                    int gapBefore = sut.GapPosition;
+                    sut.TrimExcess();
+                    Check(sut.Capacity == oracle.Count, $"GapBuffer TrimExcess left capacity {sut.Capacity} at {oracle.Count}");
+                    Check(sut.GapPosition == gapBefore, "GapBuffer TrimExcess moved the gap");
+                    touched = gapBefore;
+                    break;
+                }
+                case < 99:
+                {
+                    // Enumerator invalidation: an in-place set, and every edit documented as changing nothing,
+                    // must leave a live enumerator usable; a structural edit must tear it down. The set rule is
+                    // the one this type deliberately does not share with List<T>, so it is checked directly.
+                    var enumerator = sut.GetEnumerator();
+                    if (oracle.Count > 0)
+                    {
+                        int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count);
+                        sut[index] = oracle[index];
+                    }
+                    sut.InsertRange(GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1), ReadOnlySpan<T>.Empty);
+                    sut.RemoveRange(rng.Next(0, oracle.Count + 1), 0);
+                    sut.EnsureCapacity(rng.Next(0, sut.Capacity + 1));
+                    if (sut.Count == sut.Capacity)
+                        sut.TrimExcess();
+                    if (oracle.Count == 0)
+                        sut.Clear();
+                    T missing = make(-1);
+                    Check(!sut.Remove(missing), "GapBuffer removed a value outside the element domain");
+                    if (oracle.Count > 0)
+                        Check(enumerator.MoveNext() && comparer.Equals(enumerator.Current, oracle[0]),
+                            "GapBuffer no-op edit invalidated an enumerator");
+
+                    int at = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    T value = make(Value(rng));
+                    sut.Insert(at, value);
+                    oracle.Insert(at, value);
+                    bool threw = false;
+                    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+                    Check(threw, "GapBuffer Insert did not invalidate an enumerator");
+                    touched = at;
+                    break;
+                }
+                default:
+                {
+                    sut.Clear();
+                    oracle.Clear();
+                    Check(sut.GapPosition == 0, "GapBuffer Clear left the gap off position 0");
+                    touched = 0;
+                    break;
+                }
+            }
+
+            Check(sut.Count == oracle.Count, $"GapBuffer count diverged after op {op}");
+            Check(sut.GapPosition >= 0 && sut.GapPosition <= sut.Count && sut.Capacity >= sut.Count,
+                $"GapBuffer gap {sut.GapPosition} / capacity {sut.Capacity} out of range at count {sut.Count}");
+            for (int i = Math.Max(0, touched - 2); i < Math.Min(oracle.Count, touched + 3); i++)
+                Check(comparer.Equals(sut[i], oracle[i]), $"GapBuffer indexer diverged at {i} next to an edit at {touched}");
+            if (oracle.Count > 0)
+            {
+                int gap = sut.GapPosition;
+                Check(comparer.Equals(sut[0], oracle[0]) && comparer.Equals(sut[^1], oracle[^1]), "GapBuffer ends diverged");
+                if (gap > 0)
+                    Check(comparer.Equals(sut[gap - 1], oracle[gap - 1]), $"GapBuffer diverged just before the gap at {gap}");
+                if (gap < oracle.Count)
+                    Check(comparer.Equals(sut[gap], oracle[gap]), $"GapBuffer diverged just after the gap at {gap}");
+                int probe = rng.Next(0, oracle.Count);
+                Check(comparer.Equals(sut[probe], oracle[probe]), $"GapBuffer indexer diverged at {probe}");
+            }
+
+            if (op % fullCheckEvery == fullCheckEvery - 1)
+                CheckGapBuffer(sut, oracle, $"GapBuffer after op {op}");
+        }
+
+        CheckGapBuffer(sut, oracle, "GapBuffer final");
+        CheckGapBuffer(new GapBuffer<T>(sut), oracle, "GapBuffer rebuilt from itself");
+    }
+
+    // A quarter of positions land within a few slots of the gap, a quarter within a few of either end, and the
+    // rest are uniform. `bound` is exclusive and at least 1.
+    private static int GapBufferPosition(Random rng, int gap, int bound) => rng.Next(0, 4) switch
+    {
+        0 => Math.Clamp(gap + rng.Next(-3, 4), 0, bound - 1),
+        1 => rng.Next(0, Math.Min(bound, 3)),
+        2 => bound - 1 - rng.Next(0, Math.Min(bound, 3)),
+        _ => rng.Next(0, bound),
+    };
+
+    // Reconciles every read path against the oracle. None of them depends on where the gap is, which is the
+    // point: the same elements must come back whatever the edit history left the gap at.
+    private static void CheckGapBuffer<T>(GapBuffer<T> actual, List<T> expected, string label)
+    {
+        var comparer = EqualityComparer<T>.Default;
+        ReadOnlySpan<T> oracle = CollectionsMarshal.AsSpan(expected);
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        for (int i = 0; i < expected.Count; i++)
+            Check(comparer.Equals(actual[i], expected[i]), $"{label} indexer diverged at {i}");
+
+        int position = 0;
+        foreach (T value in actual)
+        {
+            Check(position < expected.Count && comparer.Equals(value, expected[position]), $"{label} enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} enumeration length diverged");
+
+        position = 0;
+        foreach (T value in (IEnumerable<T>)actual)
+        {
+            Check(position < expected.Count && comparer.Equals(value, expected[position]), $"{label} interface enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} interface enumeration length diverged");
+
+        Check(actual.ToArray().AsSpan().SequenceEqual(oracle, comparer), $"{label} ToArray diverged");
+
+        var copy = new T[expected.Count + 2];
+        actual.CopyTo(copy, 1);
+        Check(copy.AsSpan(1, expected.Count).SequenceEqual(oracle, comparer)
+                && comparer.Equals(copy[0], default) && comparer.Equals(copy[^1], default),
+            $"{label} CopyTo diverged");
+
+        actual.GetSpans(out ReadOnlySpan<T> beforeGap, out ReadOnlySpan<T> afterGap);
+        Check(beforeGap.Length == actual.GapPosition, $"{label} GetSpans before-gap length {beforeGap.Length} is not GapPosition {actual.GapPosition}");
+        Check(beforeGap.Length + afterGap.Length == expected.Count, $"{label} GetSpans lengths do not add up to Count");
+        Check(beforeGap.SequenceEqual(oracle[..beforeGap.Length], comparer)
+                && afterGap.SequenceEqual(oracle[beforeGap.Length..], comparer),
+            $"{label} GetSpans halves diverged");
+    }
+
     // ---- interval tree -------------------------------------------------------
 
     // The oracle is the linear scan the type replaces: filter every interval by the overlap predicate. What
@@ -4539,6 +5357,46 @@ internal static class Differential
     // key domain (<= 33 distinct values) keeps the union deep in the linear-counting regime, and
     // the collision-free Murmur3 hasher (as in the single-estimator case) keeps the estimate exact
     // apart from the rare register collision that can undercount by a register.
+    // SlidingHyperLogLog routes and estimates through HyperLogLog's own code, so its oracle is exact: for
+    // every window, a HyperLogLog of the same precision fed only the in-window events must give the same
+    // integer. Low precision forces register collisions, the narrow time range forces equal and
+    // out-of-order timestamps, and a random split exercises UnionWith against the same oracle.
+    private static void SlidingHyperLogLogCase(Random rng)
+    {
+        int precision = rng.Next(4, 11);
+        var left = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(precision);
+        var right = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(precision);
+        var events = new List<(int Key, long Time)>();
+
+        int ops = OrderedOpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int k = OrderedKey(rng);
+            long t = rng.Next(-40, 41);
+            events.Add((k, t));
+            (rng.Next(2) == 0 ? left : right).Add(k, t);
+        }
+
+        left.UnionWith(right);
+
+        for (long since = -41; since <= 41; since += rng.Next(1, 12))
+        {
+            var oracle = new HyperLogLog<int, Int32Murmur3Hasher>(precision);
+            foreach (var (k, t) in events)
+            {
+                if (t >= since)
+                    oracle.Add(k);
+            }
+
+            long expected = oracle.EstimateCardinality();
+            long actual = left.EstimateCardinality(since);
+            Check(expected == actual, $"SlidingHyperLogLog(p={precision}) since {since}: estimate {actual}, oracle {expected}");
+        }
+
+        Check(left.EstimateCardinality(long.MinValue) == left.EstimateCardinality(),
+            "SlidingHyperLogLog: EstimateCardinality() differs from EstimateCardinality(long.MinValue)");
+    }
+
     private static void HyperLogLogMergeCase(Random rng)
     {
         var a = new HyperLogLog<int, Int32Murmur3Hasher>();
@@ -5004,6 +5862,71 @@ internal static class Differential
             Check(reals[i] == expectedReals[i], $"RadixSort double order diverged from Array.Sort at {i}");
     }
 
+    // StringSort's risky part is the packed four-character window: a string that ends inside it and
+    // a string holding U+0000 there pack the same, and the split between them is where a wrong
+    // branch yields a plausible order with one block misplaced. So the alphabets make those
+    // collisions common: a tiny one with NUL, the full code-unit range weighted to U+0000 and
+    // U+FFFF, and shared-prefix keys long enough to take many windows. The oracle is LINQ's stable
+    // OrderBy with the ordinal comparer, which is the exact order all three entry points promise.
+    private static void StringSortCase(Random rng)
+    {
+        int length = rng.Next(0, 600);
+        int shape = rng.Next(0, 4);
+
+        string?[] keys = new string?[length];
+        for (int i = 0; i < length; i++)
+        {
+            keys[i] = shape switch
+            {
+                0 => RandomString(rng, rng.Next(0, 13), "\0ab"),
+                1 => RandomCodeUnits(rng, rng.Next(0, 10)),
+                2 => "https://api.example.com/v2/" + RandomString(rng, rng.Next(0, 12), "ab/"),
+                _ => rng.Next(0, 6) == 0 ? null : RandomString(rng, rng.Next(0, 6), "abc"),
+            };
+        }
+
+        int[] expected = Enumerable.Range(0, length).OrderBy(i => keys[i], StringComparer.Ordinal).ToArray();
+
+        string?[] sorted = (string?[])keys.Clone();
+        StringSort.Sort(sorted.AsSpan()!);
+        for (int i = 0; i < length; i++)
+            Check(ReferenceEquals(sorted[i], keys[expected[i]]), $"StringSort keys diverged from a stable ordinal sort at {i}");
+
+        string?[] pairKeys = (string?[])keys.Clone();
+        int[] pairValues = Enumerable.Range(0, length).ToArray();
+        StringSort.Sort(pairKeys.AsSpan()!, pairValues.AsSpan());
+        for (int i = 0; i < length; i++)
+        {
+            Check(pairValues[i] == expected[i], $"StringSort key+payload diverged at {i}");
+            Check(ReferenceEquals(pairKeys[i], keys[expected[i]]), $"StringSort key+payload keys diverged at {i}");
+        }
+
+        int[] indices = new int[length];
+        StringSort.ArgSort(keys!, indices.AsSpan());
+        for (int i = 0; i < length; i++)
+            Check(indices[i] == expected[i], $"StringSort.ArgSort diverged at {i}");
+
+        static string RandomString(Random rng, int length, string alphabet)
+        {
+            char[] chars = new char[length];
+            for (int i = 0; i < length; i++)
+                chars[i] = alphabet[rng.Next(alphabet.Length)];
+            return new string(chars);
+        }
+
+        static string RandomCodeUnits(Random rng, int length)
+        {
+            char[] chars = new char[length];
+            for (int i = 0; i < length; i++)
+            {
+                int pick = rng.Next(0, 8);
+                chars[i] = pick == 0 ? '\0' : pick == 1 ? '\uFFFF' : (char)rng.Next(0, 0x10000);
+            }
+
+            return new string(chars);
+        }
+    }
+
     private static void CountingSortCase(Random rng)
     {
         int length = rng.Next(0, 400);
@@ -5089,6 +6012,38 @@ internal static class Differential
             Check(top[i] == sorted[length - 1 - i], $"PartialSort.TopK disagreed at {i}");
 
         Check(values.AsSpan().SequenceEqual(before), "PartialSort.TopK modified its source");
+    }
+
+    // KWayMerge against a stable LINQ OrderBy of the concatenated runs. Elements carry a tag the comparer
+    // ignores, so the check is of stability as well as order; run counts reach past the 128-run stack limit.
+    private static void KWayMergeCase(Random rng)
+    {
+        int runCount = rng.Next(0, 4) switch { 0 => rng.Next(0, 3), 1 => rng.Next(3, 17), 2 => rng.Next(17, 129), _ => rng.Next(129, 400) };
+        int keyRange = rng.Next(1, 1_000);
+        var runs = new (int Key, int Tag)[runCount][];
+        int tag = 0;
+        for (int r = 0; r < runCount; r++)
+        {
+            var run = new (int Key, int Tag)[rng.Next(4) == 0 ? 0 : rng.Next(1, 30)];
+            for (int i = 0; i < run.Length; i++)
+                run[i] = (rng.Next(keyRange), tag++);
+            runs[r] = run.OrderBy(e => e.Key).ToArray();
+        }
+
+        var source = runs.SelectMany(r => r).ToArray();
+        var expected = source.OrderBy(e => e.Key).ToArray();
+
+        var destination = new (int Key, int Tag)[source.Length];
+        KWayMerge.Merge(source, runs.Select(r => r.Length).ToArray(), destination.AsSpan(), default(TupleKeyComparer));
+        Check(destination.AsSpan().SequenceEqual(expected), "KWayMerge.Merge diverged from a stable sort");
+
+        var lazy = KWayMerge.Merge(runs, default(TupleKeyComparer)).ToArray();
+        Check(lazy.AsSpan().SequenceEqual(expected), "KWayMerge lazy merge diverged from a stable sort");
+    }
+
+    private readonly struct TupleKeyComparer : IComparer<(int Key, int Tag)>
+    {
+        public int Compare((int Key, int Tag) x, (int Key, int Tag) y) => x.Key.CompareTo(y.Key);
     }
 
     // MortonCurve / HilbertCurve against a bit-by-bit interleave and the properties each curve promises.
@@ -5426,6 +6381,174 @@ internal static class Differential
         }
     }
 
+    // AliasTable — the weighted sampler, against the weights it was built from. The oracle drives the table
+    // with an evenly spaced sweep of 64-bit generator outputs instead of random ones, so each outcome's
+    // frequency is its exact probability up to the sweep's spacing and there is no sampling noise to budget.
+    // The nightly value over the in-repo suite is breadth: up to a few thousand outcomes with clustered zeros,
+    // ties and magnitudes over sixty orders, so Vose's two stacks trade outcomes back and forth many times
+    // and the rounding remainder lands on every kind of maximum.
+    private static void AliasTableCase(Random rng)
+    {
+        const int SweepBits = 18;
+        const int Points = 1 << SweepBits;
+
+        int n = rng.Next(1, 3_000);
+        var weights = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            weights[i] = rng.Next(5) switch
+            {
+                0 => 0d,
+                1 => 1d,
+                2 => rng.Next(1, 4),
+                3 => rng.NextDouble(),
+                _ => Math.Pow(10d, rng.Next(-30, 31)),
+            };
+        }
+
+        weights[rng.Next(n)] = rng.NextDouble() + 1e-6d;
+
+        // Half the cases scale every weight by one common factor, so the maximum
+        // the build normalizes by takes every magnitude a double can hold, including the tiny-but-normal
+        // range that once overflowed the share scale.
+        if (rng.Next(2) == 0)
+        {
+            // A third of those aim the largest weight just above the subnormal boundary, a window too narrow
+            // for a uniform exponent to land in by chance.
+            double magnitude = rng.Next(3) == 0
+                ? Math.Pow(10d, rng.Next(-308, -298)) / weights.Max()
+                : Math.Pow(10d, rng.Next(-323, 308));
+            for (int i = 0; i < n; i++)
+            {
+                double scaled = weights[i] * magnitude;
+                weights[i] = double.IsFinite(scaled) ? scaled : double.MaxValue;
+            }
+
+            if (!weights.Any(w => w > 0d))
+                weights[rng.Next(n)] = 1d;
+        }
+
+        var sut = new AliasTable(weights);
+        Check(sut.Count == n, "AliasTable Count disagreed");
+
+        var counts = new int[n];
+        for (int k = 0; k < Points; k++)
+        {
+            var point = new FixedRandom((ulong)k << (64 - SweepBits));
+            counts[sut.Sample(ref point)]++;
+        }
+
+        double max = weights.Max();
+        double total = 0d;
+        foreach (double w in weights)
+            total += w / max;
+
+        double tolerance = (2d * n / Points) + 1e-9d;
+        for (int i = 0; i < n; i++)
+        {
+            double expected = weights[i] / max / total;
+            Check(Math.Abs(((double)counts[i] / Points) - expected) <= tolerance, "AliasTable frequency disagreed with the weights");
+            Check(weights[i] != 0d || counts[i] == 0, "AliasTable drew a zero weight");
+        }
+
+        var random = new Pcg32((ulong)rng.NextInt64());
+        Span<int> drawn = stackalloc int[64];
+        sut.Sample(ref random, drawn);
+        foreach (int index in drawn)
+            Check((uint)index < (uint)n && weights[index] != 0d, "AliasTable drew an index outside the support");
+    }
+
+    private readonly struct FixedRandom(ulong value) : IRandomSource
+    {
+        public ulong NextUInt64() => value;
+    }
+
+    // KllSketch — the rank-error quantile sketch, against every value it consumed, sorted. The nightly value
+    // over the in-repo suite is breadth: K from the floor to a few hundred, streams long enough to stack a
+    // dozen levels, narrow value ranges where ties span thousands of ranks, and the stream split across shards
+    // of differing K and merged back. The rank bound is twice the worst error a 3,000-case sweep of exactly
+    // this generator produced (3.4 / K, taken against the smallest K involved), so a breach is a defect rather
+    // than an unlucky coin; the exact invariants hold on every draw.
+    private static void KllSketchCase(Random rng)
+    {
+        int k = rng.Next(KllSketch<int>.MinK, 300);
+        int length = rng.Next(0, 30_000);
+        int range = rng.Next(2) == 0 ? 10 : int.MaxValue;
+        var values = new int[length];
+        for (int i = 0; i < length; i++)
+        {
+            values[i] = rng.Next(range);
+        }
+
+        var sut = new KllSketch<int>(k, (ulong)rng.NextInt64());
+        int smallestK = k;
+        int shards = rng.Next(1, 5);
+        int position = 0;
+        for (int shard = 0; shard < shards; shard++)
+        {
+            int end = shard == shards - 1 ? length : rng.Next(position, length + 1);
+            int shardK = rng.Next(KllSketch<int>.MinK, 300);
+            smallestK = Math.Min(smallestK, shardK);
+            var part = new KllSketch<int>(shardK, (ulong)rng.NextInt64());
+            part.Add(values.AsSpan(position, end - position));
+            sut.Merge(part);
+            position = end;
+        }
+
+        Check(sut.Count == length, "KllSketch Count disagreed");
+        if (length == 0)
+        {
+            Check(sut.IsEmpty, "KllSketch reported values it was never given");
+            return;
+        }
+
+        int[] sorted = (int[])values.Clone();
+        Array.Sort(sorted);
+        Check(sut.Min == sorted[0] && sut.Max == sorted[^1], "KllSketch reported the wrong extremes");
+
+        double bound = 8d / smallestK;
+        int previous = int.MinValue;
+        for (int i = 0; i <= 100; i++)
+        {
+            double quantile = i / 100d;
+            int reported = sut.GetQuantile(quantile);
+            Check(reported >= previous, "KllSketch quantiles were not monotone");
+            previous = reported;
+
+            int below = LowerBoundOf(sorted, reported);
+            int atOrBelow = LowerBoundOf(sorted, reported + 1L);
+            Check(atOrBelow > below, "KllSketch reported a value it was never given");
+            // The sketch answers rank ⌊q · (Count − 1)⌋; measuring against the unfloored product would charge
+            // a short exact stream up to a whole rank of error, which at eleven values is 9% of the stream.
+            double target = Math.Floor(quantile * (length - 1));
+            double error = target < below ? below - target : target > atOrBelow - 1 ? target - (atOrBelow - 1) : 0d;
+            Check(
+                error / length <= bound,
+                FormattableString.Invariant($"KllSketch q={quantile} was {error / length:P2} of the stream off at K={smallestK}"));
+        }
+    }
+
+    // The first index whose value is at least `value`; a long probe so that int.MaxValue + 1 is representable.
+    private static int LowerBoundOf(int[] sorted, long value)
+    {
+        int lo = 0;
+        int hi = sorted.Length;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >>> 1;
+            if (sorted[mid] < value)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return lo;
+    }
+
     private static bool Close(double actual, double expected, double relative)
         => Math.Abs(actual - expected) <= (Math.Abs(expected) * relative) + 1e-9;
 
@@ -5611,6 +6734,185 @@ internal static class Differential
         }
 
         Check(seen == expected.Count, $"{label} enumeration length diverged");
+    }
+
+    // PersistentSortedMap — the immutable B+ tree, against a SortedDictionary<int, int> oracle. It carries
+    // the PersistentHashMap case's two concerns — a builder driven through the same sequence, and snapshots
+    // re-checked at the end so a path copy that wrote into an earlier map's storage is caught — and adds the
+    // B-tree one: the enumerated *sequence* and the ordered queries must agree, because a tree that has
+    // dropped a separator in a split, borrow or merge can still answer exact lookups correctly. Keys span
+    // negative values and zero, which this type stores inline rather than in an out-of-band slot.
+    private static void PersistentSortedMapCase(Random rng)
+    {
+        var sut = PersistentSortedMap<int, int, DefaultComparer<int>>.Empty;
+        var builder = new PersistentSortedMap<int, int, DefaultComparer<int>>.Builder();
+
+        var oracle = new SortedDictionary<int, int>();
+        var snapshots =
+            new List<(PersistentSortedMap<int, int, DefaultComparer<int>> Map, SortedDictionary<int, int> Oracle)>();
+        var builderSnapshots =
+            new List<(PersistentSortedMap<int, int, DefaultComparer<int>> Map, SortedDictionary<int, int> Oracle)>();
+
+        int removeWeight = rng.Next(0, 51);
+
+        // A key space of a few thousand builds three levels at fan-out 32; a small one keeps the root a leaf
+        // and churns it. The offset puts zero and negative keys in play.
+        int keySpace = rng.Next(1, 4000);
+        int keyOffset = rng.Next(-keySpace, 1);
+        int operations = rng.Next(0, 2500);
+
+        for (int op = 0; op < operations; op++)
+        {
+            int key = keyOffset + rng.Next(0, keySpace);
+            int roll = rng.Next(0, 100);
+
+            if (roll < removeWeight)
+            {
+                var before = sut;
+                sut = sut.Remove(key);
+                bool inOracle = oracle.Remove(key);
+
+                if (!inOracle)
+                    Check(ReferenceEquals(before, sut), "PersistentSortedMap Remove of an absent key allocated");
+
+                Check(builder.Remove(key) == inOracle, "PersistentSortedMap builder Remove diverged");
+            }
+            else if (roll < removeWeight + 5)
+            {
+                // The batch paths run through an internal builder seeded from the receiver, a third route into
+                // the tree. Later entries in a batch win, as they do when replayed into the oracle in order.
+                var batch = new List<KeyValuePair<int, int>>();
+                int batchSize = rng.Next(0, 40);
+                for (int i = 0; i < batchSize; i++)
+                    batch.Add(new KeyValuePair<int, int>(keyOffset + rng.Next(0, keySpace), Value(rng)));
+
+                bool removeBatch = rng.Next(0, 2) == 0;
+                var before = sut;
+                bool changed = false;
+
+                if (removeBatch)
+                {
+                    sut = sut.RemoveRange(batch.Select(entry => entry.Key));
+                    foreach (KeyValuePair<int, int> entry in batch)
+                    {
+                        changed |= oracle.Remove(entry.Key);
+                        builder.Remove(entry.Key);
+                    }
+                }
+                else
+                {
+                    sut = sut.SetItems(batch);
+                    foreach (KeyValuePair<int, int> entry in batch)
+                    {
+                        changed |= !oracle.TryGetValue(entry.Key, out int old) || old != entry.Value;
+                        oracle[entry.Key] = entry.Value;
+                        builder[entry.Key] = entry.Value;
+                    }
+                }
+
+                if (!changed)
+                    Check(ReferenceEquals(before, sut), "PersistentSortedMap no-op batch allocated");
+            }
+            else
+            {
+                int value = Value(rng);
+                sut = sut.SetItem(key, value);
+                builder[key] = value;
+                oracle[key] = value;
+            }
+
+            Check(sut.Count == oracle.Count, "PersistentSortedMap count diverged");
+            Check(sut.IsEmpty == (oracle.Count == 0), "PersistentSortedMap IsEmpty diverged");
+            Check(builder.Count == oracle.Count, "PersistentSortedMap builder count diverged");
+
+            if (op % 64 == 0)
+            {
+                snapshots.Add((sut, new SortedDictionary<int, int>(oracle)));
+                builderSnapshots.Add((builder.ToImmutable(), new SortedDictionary<int, int>(oracle)));
+            }
+        }
+
+        CheckSortedEntries(sut, oracle, keyOffset, keySpace, rng, "PersistentSortedMap");
+        CheckSortedEntries(builder.ToImmutable(), oracle, keyOffset, keySpace, rng, "PersistentSortedMap builder");
+
+        foreach ((PersistentSortedMap<int, int, DefaultComparer<int>> snapshot, SortedDictionary<int, int> expected) in snapshots)
+            CheckSortedEntries(snapshot, expected, keyOffset, keySpace, rng, "PersistentSortedMap snapshot");
+
+        foreach ((PersistentSortedMap<int, int, DefaultComparer<int>> snapshot, SortedDictionary<int, int> expected) in builderSnapshots)
+            CheckSortedEntries(snapshot, expected, keyOffset, keySpace, rng, "PersistentSortedMap builder snapshot");
+    }
+
+    // Reconciles every read surface: TryGetValue and the four seeks descend the tree, while enumeration and
+    // EnumerateRange walk the leaves. The seeks are probed against a binary search over the oracle's keys, at
+    // a sample of points that includes both ends of the key space and one past each.
+    private static void CheckSortedEntries(
+        PersistentSortedMap<int, int, DefaultComparer<int>> actual,
+        SortedDictionary<int, int> expected,
+        int keyOffset,
+        int keySpace,
+        Random rng,
+        string label)
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        foreach (KeyValuePair<int, int> entry in expected)
+        {
+            Check(actual.TryGetValue(entry.Key, out int value), $"{label} lost key {entry.Key}");
+            Check(value == entry.Value, $"{label} value diverged at key {entry.Key}");
+        }
+
+        CheckSameSequence(actual.Keys, expected.Keys, $"{label} key order");
+        CheckSameSequence(actual.Values, expected.Values, $"{label} value order");
+
+        int[] keys = expected.Keys.ToArray();
+
+        Check(actual.TryGetMin(out KeyValuePair<int, int> min) == (keys.Length > 0), $"{label} TryGetMin diverged");
+        Check(actual.TryGetMax(out KeyValuePair<int, int> max) == (keys.Length > 0), $"{label} TryGetMax diverged");
+        if (keys.Length > 0)
+        {
+            Check(min.Key == keys[0], $"{label} Min {min.Key} != {keys[0]}");
+            Check(max.Key == keys[^1], $"{label} Max {max.Key} != {keys[^1]}");
+        }
+
+        for (int probe = 0; probe < 64; probe++)
+        {
+            int k = probe switch
+            {
+                0 => keyOffset - 1,
+                1 => keyOffset,
+                2 => keyOffset + keySpace - 1,
+                3 => keyOffset + keySpace,
+                _ => keyOffset + rng.Next(0, keySpace),
+            };
+
+            // Index of the first key >= k; the other three bounds follow from it.
+            int at = Array.BinarySearch(keys, k);
+            bool exact = at >= 0;
+            int ceiling = exact ? at : ~at;
+            int higher = exact ? at + 1 : ceiling;
+            int floor = exact ? at : ceiling - 1;
+            int lower = ceiling - 1;
+
+            CheckSeek(actual.TryGetLowerBound(k, out KeyValuePair<int, int> e), e, keys, ceiling, $"{label} lower({k})");
+            CheckSeek(actual.TryGetUpperBound(k, out e), e, keys, higher, $"{label} upper({k})");
+            CheckSeek(actual.TryGetFloor(k, out e), e, keys, floor, $"{label} floor({k})");
+            CheckSeek(actual.TryGetPredecessor(k, out e), e, keys, lower, $"{label} predecessor({k})");
+        }
+
+        int from = keyOffset + rng.Next(-2, keySpace + 2);
+        int to = from + rng.Next(0, 200);
+        CheckSameSequence(
+            actual.EnumerateRange(from, to).Select(entry => entry.Key),
+            expected.Keys.Where(key => key >= from && key < to),
+            $"{label} range[{from},{to})");
+
+        static void CheckSeek(bool found, KeyValuePair<int, int> entry, int[] keys, int index, string what)
+        {
+            bool expectFound = index >= 0 && index < keys.Length;
+            Check(found == expectFound, $"{what} found {found} != {expectFound}");
+            if (expectFound)
+                Check(entry.Key == keys[index], $"{what} key {entry.Key} != {keys[index]}");
+        }
     }
 
     // PersistentHashSet — the set half of the same trie, against a HashSet<int> oracle. The nightly value is

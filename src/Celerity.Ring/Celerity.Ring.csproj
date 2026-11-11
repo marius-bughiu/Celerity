@@ -23,9 +23,9 @@
 		-->
 		<WarningsAsErrors>$(WarningsAsErrors);CS1591;CS1570</WarningsAsErrors>
 		<PackageId>Celerity.Ring</PackageId>
-		<Description>Deterministic consistent-hashing and rendezvous (HRW) rings for sharding and request routing, generic over the caller's key type and a zero-cost inlined Celerity hasher. Fills a literal BCL gap (there is no ConsistentHashRing in .NET) and produces byte-identical shard assignments across runtimes and architectures (x64 / arm64 / Blazor WASM). Part of the Celerity family.</Description>
+		<Description>Deterministic consistent-hashing, rendezvous (HRW) and Maglev routing for sharding and request routing, generic over the caller's key type and a zero-cost inlined Celerity hasher. Fills a literal BCL gap (there is no ConsistentHashRing in .NET) and produces byte-identical shard assignments across runtimes and architectures (x64 / arm64 / Blazor WASM). Part of the Celerity family.</Description>
 		<PackageIcon>icon.png</PackageIcon>
-		<PackageTags>celerity;consistent-hashing;rendezvous;hrw;sharding;partitioning;ring;routing;performance</PackageTags>
+		<PackageTags>celerity;consistent-hashing;rendezvous;hrw;maglev;load-balancing;sharding;partitioning;ring;routing;performance</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 

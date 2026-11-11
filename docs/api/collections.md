@@ -1319,7 +1319,7 @@ Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); t
 | Remove every element, shuffled order | 2.1x faster | 2.2x faster | 2.3x faster |
 | Enumerate after removing half | **2.7x slower** | **2.4x slower** | **2.7x slower** |
 
-The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. A `TrimExcess` after heavy churn compacts the entries into order, which makes the walk sequential again.
+The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. Growth copies the live entries into a fresh array in order, which makes the walk sequential again. A `TrimExcess` does the same only when it changes the table size. One that leaves the bucket count unchanged rebuilds nothing, so it does not restore sequential layout after steady churn.
 
 ### Constructors
 
@@ -2659,8 +2659,13 @@ Two caveats about these figures:
 - **Memory is the size of the structure, not a transient allocation.** Both sides are allocated
   once and have nothing to resize, so the allocated bytes are the retained bytes.
   `SortedSet<int>` spends about 40 bytes per element, and this type spends `Universe / 8`. They
-  break even at about one value per 320 of the universe. Below that density `SortedSet<int>`,
-  [`BTreeSet`](#btreesett-tcomparer) or [`CompressedIntSet`](#compressedintset) use less memory.
+  break even at about one value per 320 of the universe, and below that density `SortedSet<int>`
+  uses less memory. The other sorted alternatives cross over much sooner. In a local measurement
+  of live heap bytes over an 8,000,000 universe, [`BTreeSet`](#btreesett-tcomparer) held 9.5–13
+  bytes a value (the high end for ascending inserts, which leave nodes half full), so it is
+  smaller below about one value per 75–105. [`CompressedIntSet`](#compressedintset) stores two
+  bytes a value in a sparse chunk and is smaller below about one value per 16. Check
+  `CompressedIntSet.MemoryUsageInBytes` for your data.
 
 ### Usage example
 
@@ -3263,7 +3268,7 @@ enumeration 1.12x, and the fill is a tie (1.00x), still at 0.55x the allocation.
 ([#527](https://github.com/marius-bughiu/Celerity/issues/527)) set a 2x bar on lookup and a 1.5x
 bar on churn at 100,000 values; they came in at 1.90x and 1.46x. The case rests on the other limb of
 the hard rule. No BCL type issues stable handles, so this is a genuine gap rather than a faster
-counterpart. It also wins every arm it is measured on and loses none.
+counterpart. It also wins or ties every arm it is measured on.
 
 How it got there is worth recording. The first implementation kept the values **packed** in a dense
 array, with a back-pointer per position, so a sweep over them could be a contiguous span. That
@@ -3930,7 +3935,7 @@ compresses further, but only a **sorted** sequence, and it is immutable.
 **Layout.** Element `i` occupies bits `[i * w, (i + 1) * w)` of the word array,
 least-significant bit first, so an element straddles two words whenever `w` does not
 divide 64. One spare word past the last data word is kept zero. Because of it, every read
-takes the same two loads, two shifts and a mask, and never branches on whether the element
+takes the same two loads, three shifts, an OR and a mask, and never branches on whether the element
 straddles. Bits past the last element are also kept zero. The payload is
 `ceil(Count * w / 64) + 1` words, which `MemoryUsageInBytes` reports.
 
@@ -4015,7 +4020,7 @@ the dashboard is the contract.
 | Sequential pass (`foreach`) | 2.96x slower | 2.78x slower |
 | Build from a `ulong[]` | on par (1.00x), 0.64x the allocation | **1.30x faster**, 0.63x the allocation |
 
-Every access path pays for the packing: a read is two loads and three bit operations where
+Every access path pays for the packing: a read is two loads, three shifts, an OR and a mask where
 the array's is one load, and a write is a read-modify-write of two words. A sequential pass
 pays most, about 2.8–3x, because it decodes each element separately where the array's loop
 is a plain load. Building is the exception: packing a `ulong[]` streams whole words, so it
@@ -4334,6 +4339,148 @@ var shardA = new HyperLogLog<long, Int64Murmur3Hasher>(shardAIds);
 var shardB = new HyperLogLog<long, Int64Murmur3Hasher>(shardBIds);
 shardA.UnionWith(shardB);
 Console.WriteLine(shardA.EstimateCardinality());         // distinct across A ∪ B
+```
+
+## SlidingHyperLogLog&lt;T, THasher&gt;
+
+A fixed-memory **distinct count over a time window**. It answers "roughly how many distinct
+elements have I seen since *t*?" — unique users in the last five minutes, distinct source IPs in
+the last hour — for any *t* chosen **at query time**, from memory that never grows with the stream.
+
+```csharp
+public class SlidingHyperLogLog<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+[`HyperLogLog`](#hyperloglogt-thasher) counts since construction and cannot forget, so a windowed
+figure from it means a fresh sketch per window, or a ring of per-bucket sketches that answers only
+at bucket granularity. The exact answer is a `Dictionary<TKey, long>` of last-seen timestamps:
+memory that grows with every distinct key, and a full scan per windowed count. This type is a
+**sliding HyperLogLog** (Chabchoub &amp; Hébrail, 2010) in its rank-indexed form.
+
+- **Any window, chosen per query.** `EstimateCardinality(since)` counts the distinct elements added
+  with a timestamp at or after `since`. The sketch is not built for one window length.
+- **Same answer as HyperLogLog.** Elements are routed to registers and ranks exactly as
+  `HyperLogLog` routes them, and the estimate is computed by the same code.
+  `EstimateCardinality()` equals, bit for bit, a `HyperLogLog` of the same precision fed the same
+  elements. `EstimateCardinality(since)` equals one fed only the in-window elements. The relative
+  standard error is the HyperLogLog one, `≈ 1.04 / sqrt(2^precision)`, for every window.
+- **Order-independent and exactly mergeable.** Each cell keeps the maximum timestamp it has seen,
+  so adds may arrive out of order and `UnionWith` (an element-wise maximum) gives exactly the
+  sketch of the combined stream. Given a deterministic hasher, the merge is byte-identical across
+  runtimes.
+- **Fixed but larger memory.** `2^precision · (65 − precision)` eight-byte timestamps plus one byte
+  per register: **about 1.7&#160;MB at the default precision 12** (≈1.6% error). A plain
+  `HyperLogLog` needs 4&#160;KB at that precision. The figure is set at construction and is the same
+  whether the window holds a thousand distinct elements or a billion.
+
+### How it works
+
+For each of the `m = 2^precision` registers, and for each rank that register could hold, the sketch
+remembers the **latest timestamp** at which an element produced that rank. `Add` hashes once and
+does at most two stores: it raises that cell's timestamp, and it raises the register's all-time
+rank. A query walks each register down from its all-time rank to the largest rank whose timestamp
+is at or after `since`. That walk is about `log2(all-time distinct / in-window distinct)` steps per
+register: around 8 for a five-minute window over a day of history, and never more than `65 − precision`. The
+resulting ranks go into the ordinary HyperLogLog estimator, including its linear-counting and
+large-range corrections. Old timestamps are never purged, because they never need to be: a query
+just ignores cells older than its window.
+
+**Timestamps are opaque `long` values that only need to be ordered**: `DateTime.Ticks`, Unix
+milliseconds, `Environment.TickCount64`, or an event sequence number all work, and every `long` is
+valid, including `long.MinValue`. The window has no upper bound. Each cell keeps only its latest
+timestamp, so an element added later than the caller's "now" is still counted.
+
+### Constructor
+
+```csharp
+public SlidingHyperLogLog(int precision = 12)
+```
+
+`precision` must be between `MinPrecision` (4, `m = 16`) and `MaxPrecision` (16, `m = 65536`,
+about 25&#160;MB) inclusive. Each step up roughly doubles the memory and divides the standard error
+by √2. The default is lower than `HyperLogLog`'s 14 because every register here carries a timestamp
+per possible rank.
+
+There is no `IEnumerable<T>` constructor, because every element needs a timestamp.
+
+**Throws:** `ArgumentOutOfRangeException` if `precision` is outside `[MinPrecision, MaxPrecision]`.
+
+### Methods and properties
+
+- `void Add(T item, long timestamp)` — records `item` as seen at `timestamp`. Never allocates. A
+  timestamp older than one already recorded for the item's cell changes nothing.
+- `long EstimateCardinality(long since)` — the estimated number of distinct elements added at or
+  after `since` (inclusive), rounded to the nearest whole number. It visits all `m` registers, each
+  walked down a few ranks as described above, and does not allocate. It returns `0` exactly when nothing was added at or after `since`.
+- `long EstimateCardinality()` — the all-time estimate, the same as `EstimateCardinality(long.MinValue)`.
+- `void UnionWith(SlidingHyperLogLog<T, THasher> other)` — merges another sketch in place, so that
+  every window afterwards covers the union of both streams. It adds no error beyond the usual
+  estimate of the union. Throws `ArgumentNullException` on a `null` argument and
+  `ArgumentException` if the precisions differ.
+- `void Clear()` — forgets every timestamp, keeping the precision.
+- `int Precision`, `int RegisterCount`, `double StandardError` — as on `HyperLogLog`.
+
+### Default-element handling and hashing
+
+The same as `HyperLogLog`. There is no empty-slot sentinel, so `default(T)` (a zero `int`,
+`Guid.Empty`, the empty string) is counted like any other element. A `null` reference is mapped to
+a fixed hash, so the hasher is never called with `null`. A hasher implementing
+[`IHashProvider64<T>`](hashing.md#ihashprovider64t) supplies all 64 hash bits, which matters past
+~10<sup>8</sup> distinct elements in a window. See
+[the HyperLogLog hash-space note](#the-hash-space-and-why-the-hasher-choice-matters-past-108).
+
+### Performance
+
+Against the exact alternative, a `Dictionary<int, long>` of last-seen timestamps written through one
+`CollectionsMarshal.GetValueRefOrAddDefault` lookup and counted by a scan over its values, both warm
+and allocation-free (`SlidingHyperLogLogBenchmark`, Apple M-series, .NET 10):
+
+| Distinct keys in the window | `Add` (per event stream) | Windowed count |
+|---|---|---|
+| 1,000 | a tie (1.66 µs both) | **5.0x slower** (2.8 µs vs 0.56 µs) |
+| 100,000 | **3.1x faster** | **9.0x faster** (6.1 µs vs 55 µs) |
+| 1,000,000 | **5.9x faster** | **88x faster** (6.3 µs vs 555 µs) |
+
+The windowed count costs the same at every size because it visits the 4,096 registers, not the keys.
+That is why it loses below a few thousand keys. Against a warm plain `HyperLogLog` at the same precision and with the
+same hasher, windowing makes `Add` 1.40x slower at 1,000 keys and 1.53x slower at 100,000 and
+1,000,000: that is the cost of the timestamp store. `Add` pulls ahead as the dictionary outgrows the
+cache, while the sketch's hot rows stay put. Memory is the larger gap and does not show in
+`[MemoryDiagnoser]`, because neither side allocates while measured: at a million keys the dictionary
+retains about 28&#160;MB and grows with the window, while the sketch stays at 1.7&#160;MB.
+
+### Choosing it
+
+Reach for `SlidingHyperLogLog` when the question is **how many distinct, recently**: active users
+over a trailing window, distinct keys per time slice in a dashboard, or a cardinality alert that
+fires when distinct sources in the last minute exceed a threshold. The same sketch serves every
+window length. If the window never moves (count since start-up), a plain
+[`HyperLogLog`](#hyperloglogt-thasher) is 400x smaller at the same precision. If you need to know
+whether a *specific* element was seen recently, use a removable membership filter
+(`CuckooFilter`, or `DedupFilter` in `Celerity.Cardinality`). If you need the exact count and the
+window holds only a few thousand keys, a last-seen `Dictionary<TKey, long>` is simpler and faster.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Distinct visitors over trailing windows, from a fixed ~1.7 MB.
+var visitors = new SlidingHyperLogLog<long, Int64Murmur3Hasher>();
+
+foreach (var e in eventStream)
+    visitors.Add(e.VisitorId, e.Timestamp.Ticks);
+
+long now = DateTime.UtcNow.Ticks;
+long last5Min = visitors.EstimateCardinality(now - TimeSpan.FromMinutes(5).Ticks);
+long lastHour = visitors.EstimateCardinality(now - TimeSpan.FromHours(1).Ticks);
+long allTime  = visitors.EstimateCardinality();
+
+// Merge per-node sketches; every window of the result covers both streams exactly.
+nodeA.UnionWith(nodeB);
+long clusterLast5Min = nodeA.EstimateCardinality(now - TimeSpan.FromMinutes(5).Ticks);
 ```
 
 ## MinHashSketch&lt;T, THasher&gt;
@@ -5521,8 +5668,10 @@ tree like this one). [`Rope`](#rope) is the same idea specialized to `char`, wit
   out with its neighbour so it never starts below the floor.
 
 `Depth` is public, so the cost of a descent can be observed rather than taken on trust. It is `1` while
-the whole list fits in one leaf, `2` to a few thousand elements, `3` to a few hundred thousand and `4`
-at a million. The exact thresholds depend on how full the edit history has left the nodes.
+the root is a single leaf, `2` to a few thousand elements, `3` to a few hundred thousand and `4` at a
+million. A leaf holds up to 128 elements, but a list that small can still be at depth `2`: the
+`IEnumerable<T>` constructor fills leaves to 96, and two leaves merge back into one only once one drops
+below 32. The exact thresholds depend on how full the edit history has left the nodes.
 
 ### Constructors
 
@@ -5564,6 +5713,8 @@ differs from `List<T>`, whose indexer setter does invalidate.
 
 ### When not to reach for it
 
+- **If the edits cluster around a cursor, use [`GapBuffer<T>`](#gapbuffert).** An edit next to the
+  previous one is `O(1)` there, and a read is an array load rather than a descent.
 - **If you only append and read, use `List<T>`.** A read here is a descent of three or four levels
   where `List<T>` does one array load. Random reads lose by the factor in the table below, and nothing
   in this type wins it back if you never edit the middle.
@@ -5651,6 +5802,390 @@ for (int i = 0; i < 1_000; i++)
 
 Console.WriteLine(big.Count);  // 1001000
 Console.WriteLine(big.Depth);  // 4
+```
+
+
+## GapBuffer&lt;T&gt;
+
+A **positional list** laid out as a **gap buffer**: one array whose free space is kept where the caller
+is editing, so an insert or removal next to the previous edit is `O(1)`, where `List<T>` shifts every
+later element and pays `O(n)`. It is the list for **a sequence edited around a moving cursor**, and it
+reads at the speed of an array.
+
+```csharp
+public sealed class GapBuffer<T> : IList<T>, IReadOnlyList<T>
+```
+
+### Why not `List<T>`, `LinkedList<T>` or `BTreeList<T>`
+
+Edits in a text or token buffer behind a caret, a timeline edited at a playhead, or any sequence
+changed in bursts around one spot land next to each other. Three types could hold that sequence, and
+each pays somewhere:
+
+- `List<T>` indexes in `O(1)`, but `Insert` and `RemoveAt` move every later element, however close
+  together the edits are. At 100,000 elements an edit near the middle shifts about 50,000 of them.
+- `LinkedList<T>` edits in `O(1)` once you hold a node, but it has no indexer and allocates a node per
+  element.
+- [`BTreeList<T>`](#btreelistt) edits anywhere in `O(log n)`, but every read is a tree descent, which
+  loses random reads to `List<T>` by about 12x at 100,000 elements.
+
+A gap buffer keeps `List<T>`'s read path and makes the clustered edit cheap. Emacs and most editor
+buffers are built this way. [`Rope`](#rope) is the `char`-only structure for text edited *anywhere*.
+`GapBuffer<char>` is the cheaper choice when edits follow a cursor.
+
+### How it works
+
+- **One array, split by a gap.** Elements `[0, GapPosition)` sit at the front of the backing array and the
+  rest sit at its end. The slots between them are the gap, and they hold `default(T)`, so a removed or
+  moved reference type is not kept alive.
+- **An edit at the gap moves nothing.** `Insert(GapPosition, x)` writes into the gap's first slot.
+  `RemoveAt` of the element on either side of the gap (a backspace or a delete at the cursor) widens the
+  gap by one.
+- **An edit elsewhere moves the gap first.** The move copies exactly the elements between the old and the
+  new position, so an edit costs `O(distance from the previous edit)`, not `O(n)`.
+- **A read never branches on the gap.** The indexer adds the gap's length to positions past it with a
+  mask rather than an `if`. With the gap in the middle a branch would mispredict on about half of all
+  random reads. That measured 2.5x a `List<T>` read in the prototype. With the mask, reads come in at
+  1.14–1.28x. The mapped slot is also the range check: it lands inside the array exactly when the position
+  is inside `[0, Count)`, so a read costs the one bounds check the array access makes anyway.
+- **Growth reopens the gap at the edit.** When the gap is used up the array doubles, and the copy puts the
+  gap at the insert position, so a growth costs one copy of the elements rather than a copy and a move.
+- **`RemoveRange` absorbs a range that touches or straddles the gap** without moving any element.
+  Otherwise the gap moves to the range's nearer end first.
+
+`GapPosition` is public, so the cost of the next edit can be observed rather than taken on trust.
+
+### Constructors
+
+```csharp
+public GapBuffer()
+public GapBuffer(int capacity)
+public GapBuffer(IEnumerable<T> collection)
+```
+
+- The parameterless constructor allocates nothing until the first insert.
+- The `capacity` overload pre-sizes the backing array, all of it gap. `0` allocates nothing yet.
+- The `collection` overload copies the elements in enumeration order, with the gap at the end. An
+  `ICollection<T>` source is copied into an array of exactly its size, so the gap starts empty and the
+  first insert grows it.
+
+**Throws:** `ArgumentOutOfRangeException` if `capacity` is negative; `ArgumentNullException` if
+`collection` is `null`.
+
+### Methods and properties
+
+| Member | Cost | Behaviour |
+| --- | --- | --- |
+| `int Count` | `O(1)` | The number of elements. |
+| `int Capacity` | `O(1)` | The length of the backing array. |
+| `int GapPosition` | `O(1)` | The number of elements before the gap. An edit at position `p` first copies `\|p - GapPosition\|` elements. |
+| `T this[int index] { get; set; }` | `O(1)`, 1.14–1.28x `List<T>` | Get and set by position, wherever the gap is. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set does **not** invalidate an active enumerator (see below). |
+| `void Add(T item)` | `O(1)` amortized at the end | Appends. The first append after editing elsewhere moves the gap to the end. |
+| `void Insert(int index, T item)` | `O(1)` amortized at the gap, `O(distance)` elsewhere | Inserts at `index`. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
+| `void InsertRange(int index, ReadOnlySpan<T> items)` | gap move + `O(items.Length)` | Inserts the run in order and leaves the gap just after it. The span may come from this buffer's own `GetSpans`. An empty span changes nothing. |
+| `void RemoveAt(int index)` | `O(1)` either side of the gap, `O(distance)` elsewhere | Removes the element at `index`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
+| `void RemoveRange(int index, int count)` | `O(count)` touching the gap, plus the move otherwise | Removes `count` elements from `index`. Validates like `List<T>.RemoveRange`: `ArgumentOutOfRangeException` for a negative argument, `ArgumentException` for a range past the end. A `count` of `0` changes nothing. |
+| `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. The search is linear, as on `List<T>`. |
+| `int IndexOf(T item)` / `bool Contains(T item)` | `O(n)` | A linear scan of both halves under `EqualityComparer<T>.Default`. The gap does not move. |
+| `void Clear()` | `O(n)` for references, `O(1)` otherwise | Keeps the array and makes all of it the gap, at position `0`. Clearing an **already-empty** buffer is a true no-op and leaves enumerators valid, like the rest of the library. |
+| `void GetSpans(out ReadOnlySpan<T> beforeGap, out ReadOnlySpan<T> afterGap)` | `O(1)` | The elements without copying, as the run before the gap and the run after it. The gap does not move; the next structural edit invalidates the spans. |
+| `int EnsureCapacity(int capacity)` | `O(n)` if it grows | Grows the array to at least `capacity`, keeping the gap's position. Returns the new capacity. |
+| `void TrimExcess()` | `O(n)` | Shrinks the array to `Count`. The gap keeps its position but becomes empty, so the next insert grows the array again. |
+| `T[] ToArray()` | `O(n)` | Two `Array.Copy` runs, either side of the gap. |
+| `void CopyTo(T[] array, int arrayIndex)` | `O(n)` | Under [the library's `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | `O(1)` per step | An allocation-free struct enumerator, front to back. |
+
+**What invalidates an enumerator.** Every structural mutation does: `Add`, `Insert`, a non-empty
+`InsertRange`, `RemoveAt`, a non-empty `RemoveRange`, a `Remove` that finds its element, a `Clear` that
+had something to clear, and a reallocation by `EnsureCapacity` or `TrimExcess`. Assignment through the
+indexer does **not**, because it replaces one slot and moves neither the gap nor any element. That is
+the rule [`BTreeList<T>`](#btreelistt) and [`Deque<T>`](#dequet) follow, and it is the one place this
+type deliberately differs from `List<T>`.
+
+### When not to reach for it
+
+- **If the edits jump around, use [`BTreeList<T>`](#btreelistt).** An edit at a random position moves the
+  gap about a third of the list on average. That is the same order of cost as `List<T>`'s shift, and far
+  worse than `BTreeList<T>`'s `O(log n)`.
+- **If you only append and read, use `List<T>`.** It does the same thing with no gap arithmetic on the
+  read.
+- **If you edit text anywhere in a large document, use [`Rope`](#rope).** It edits at any position in
+  `O(log n)` and has text operations on top.
+- **If you need a snapshot, use [`PersistentVector<T>`](#persistentvectort) or `ImmutableList<T>`.**
+  This type is mutable.
+
+### Thread safety
+
+`GapBuffer<T>` is not thread-safe. Concurrent callers must synchronize externally.
+
+<a id="measured-gapbuffer"></a>
+
+### Measured
+
+The bars were pre-registered in [#592](https://github.com/marius-bughiu/Celerity/issues/592) before
+implementation, on `int`. The edit rows are a thousand edits alternating `Insert` and `RemoveAt` at a
+cursor that starts in the middle and drifts by a random step in [-8, 8]. The positions are drawn once, so
+every arm edits the same positions in the same order, and each iteration gets a freshly built list. The read
+and enumerate rows run with the gap in the **middle**, the read path's worst case. **These are
+development-machine numbers** (Apple Silicon, BenchmarkDotNet default job). CI publishes its own on
+[the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=GapBuffer) at each merge to
+`main`.
+
+| At 100,000 | Baseline | `GapBuffer<int>` | Ratio | Bar |
+| --- | ---: | ---: | ---: | ---: |
+| Cursor edit ×1,000 vs `List<int>` | 2.34 ms | 9.11 µs | **~257x** | 50x |
+| Cursor edit ×1,000 vs `BTreeList<int>` | 26.9 µs | 9.11 µs | **2.95x** | 2x |
+| **Random read ×1,000 vs `List<int>`** | 487 ns | 553 ns | **a 1.14x loss** | ≤1.25x |
+| Enumerate vs `List<int>` | 40.6 µs | 31.3 µs | 1.30x | — |
+| `Add` ×100,000 from empty vs `List<int>` | 117 µs | 119 µs | 1.01x loss | — |
+
+| At 1,000 | Baseline | `GapBuffer<int>` | Ratio |
+| --- | ---: | ---: | ---: |
+| Cursor edit ×1,000 vs `List<int>` | 31.8 µs | 6.21 µs | 5.1x |
+| Cursor edit ×1,000 vs `BTreeList<int>` | 17.9 µs | 6.21 µs | 2.9x |
+| **Random read ×1,000 vs `List<int>`** | 428 ns | 550 ns | **a 1.28x loss** |
+| Enumerate vs `List<int>` | 341 ns | 323 ns | 1.06x |
+| `Add` ×1,000 from empty vs `List<int>` | 890 ns | 976 ns | 1.10x loss |
+
+**The read bar is met at 100,000 and missed at 1,000**, by 0.03. A read does the gap arithmetic that
+`List<T>` does not, and at a thousand elements, where every read hits L1, that arithmetic is a
+visible share of the cost. The enumerator walks the two runs as physical slots and skips the gap
+once, so it does no arithmetic per element and runs slightly ahead of `List<T>`'s. The cursor-edit arms run
+one invocation per iteration, because each needs its list rebuilt. Read their ratios as directions, not
+as three-figure ratios. None of the arms allocates during an edit.
+
+**Two layout lessons from getting `Add` to `List<T>`'s speed.** The first version of `Add` measured 3.7x
+`List<T>.Add`, and the reason was store-to-load forwarding on Arm64. The JIT pairs adjacent `int` fields
+into one 8-byte load or store. When an append's 4-byte store to the gap's start was followed by the next
+append's paired load of the gap's start and end, the load could not be forwarded from that store and
+waited for it to retire. `Add` now bumps the version first, as `List<T>.Add` does, and the version field
+is declared between the gap's two bounds, so nothing pairs.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var text = new GapBuffer<char>("hello world");
+
+// Type ", dear" after "hello": every keystroke lands next to the previous one.
+int caret = 5;
+foreach (char c in ", dear")
+    text.Insert(caret++, c);
+Console.WriteLine(new string(text.ToArray()));  // hello, dear world
+Console.WriteLine(text.GapPosition);            // 11 — the gap followed the caret
+
+// Backspace over "dear" and type "friend" instead. Nothing but the edited slots moves.
+for (int i = 0; i < 4; i++)
+    text.RemoveAt(--caret);
+foreach (char c in "friend")
+    text.Insert(caret++, c);
+Console.WriteLine(new string(text.ToArray()));  // hello, friend world
+
+// Reads are one array load wherever the gap is.
+Console.WriteLine(text[7]);                     // f
+
+// Zero-copy access to both halves, e.g. to write the buffer out.
+text.GetSpans(out ReadOnlySpan<char> before, out ReadOnlySpan<char> after);
+Console.WriteLine($"{before.Length} + {after.Length}");  // 13 + 6
+```
+
+
+## SegmentedList&lt;T&gt;
+
+A **growable list stored in fixed-size segments**, each one below the 85,000-byte Large Object Heap
+threshold. Once the first segment is full, appending never copies an element already stored, and no segment
+is ever allocated on the LOH. It is the
+list for **a large sequence built by appending** when the final size is not known up front: a result
+set, a parsed file, a log, an index under construction.
+
+```csharp
+public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
+```
+
+### Why not `List<T>`
+
+`List<T>` keeps one contiguous array and doubles it when it fills. For a list built by `Add` to *n*
+elements that means:
+
+- **About *2n* slots allocated and *n* copied.** Each growth copies everything stored so far into an array
+  twice the size, and the old array becomes garbage.
+- **Three times the data at the peak.** While a growth copies, the old array and the new one are both live.
+- **Gen-2 collections.** Every array past 85,000 bytes (about 21,000 `int`s or 10,600 references) is
+  allocated on the Large Object Heap, zeroed, and charged to the gen-2 budget. A workload that builds large
+  lists keeps triggering **full** collections, even when every list dies young.
+
+Pre-sizing with `new List<T>(capacity)` avoids all three, but only when the final count is known before the
+first `Add`. Roslyn hit exactly this shape and keeps an internal `SegmentedList<T>`. The BCL ships nothing
+equivalent. [`Deque<T>`](#dequet) and [`BTreeList<T>`](#btreelistt) solve other shapes (both-ends churn and
+middle edits).
+
+### How it works
+
+- **A spine of segments.** Every segment holds `SegmentLength` elements: the largest power of two whose
+  array fits in 64 KB. That is 16,384 `int`s, 8,192 references or `long`s, and 65,536 `byte`s, so every
+  segment stays in the small-object heap. The spine itself, one reference per segment, is the only array
+  that grows by doubling; it reaches the LOH only past 8,192 segments (about 134 million `int`s). Element `i` lives at segment `i >> k`, slot `i & (SegmentLength - 1)`:
+  two dependent loads.
+- **Growth adds a segment.** When the last segment is full, `Add` allocates one more and copies nothing.
+  A full segment is never reallocated.
+- **The first segment grows like a `List<T>`.** It starts at 4 slots and doubles until it reaches
+  `SegmentLength`, so a short list costs what a short `List<T>` costs. Only after that does the second
+  segment appear.
+- **`Clear` keeps the segments**, as `List<T>.Clear` keeps its array, and the next `Add`s reuse them.
+  `TrimExcess` releases them.
+- **`GetSegment(i)` hands out a segment as a `ReadOnlySpan<T>`.** Walking segments `0` to `SegmentCount - 1`
+  visits every element in order at array speed, and is the way to feed span-based or vectorized code.
+
+An element wider than 32 KB gets a one-element segment, which still stays under the LOH threshold (the
+runtime cannot make an array of a value type of 64 KB or more at all). One runtime exception: a 32-bit x86
+process allocates every `double` array of 1,000 or more elements on the LOH to align it, so there the full
+segments of a `SegmentedList<double>` land on it too, as `List<double>`'s arrays would. The list holds at
+most `2^31 - SegmentLength` elements.
+
+### Constructors
+
+```csharp
+public SegmentedList()
+public SegmentedList(int capacity)
+public SegmentedList(IEnumerable<T> collection)
+```
+
+- The parameterless constructor allocates nothing until the first `Add`.
+- The `capacity` overload reserves room for at least `capacity` elements. Past `SegmentLength` it allocates
+  whole segments.
+- The `collection` overload appends the elements in enumeration order, as `AddRange` does.
+
+**Throws:** `ArgumentOutOfRangeException` if `capacity` is negative or above the element ceiling;
+`ArgumentNullException` if `collection` is `null`.
+
+### Methods and properties
+
+| Member | Cost | Behaviour |
+| --- | --- | --- |
+| `int Count` | `O(1)` | The number of elements. |
+| `int Capacity` | `O(1)` | The slots across the allocated segments. |
+| `int SegmentLength` | `O(1)` | Elements in one full segment for this `T`. |
+| `int SegmentCount` | `O(1)` | Segments holding elements; `0` for an empty list. Segments retained by `Clear` are not counted. |
+| `T this[int index] { get; set; }` | `O(1)` | Get and set by position: two dependent loads. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set replaces the element in place and does **not** invalidate an active enumerator (see below). |
+| `void Add(T item)` | `O(1)` | Appends at the end. Allocates one segment when the last is full, and copies nothing except while the first segment is still growing. |
+| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` is enumerated once into capacity reserved for its `Count`, with its elements published only when that enumeration finishes, so no temporary copy of it is made. Adding a list to itself, or a collection that wraps it, appends one copy of its current elements, as on `List<T>`. A counted source that would pass the element ceiling throws `OverflowException` before anything is reserved or appended. Throws `ArgumentNullException` for `null`. |
+| `void Insert(int index, T item)` | `O(n - index)` | Inserts at `index`, shifting every later element up a position across segment boundaries. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
+| `void RemoveAt(int index)` | `O(n - index)` | Removes the element at `index`. Removing the last element is `O(1)`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
+| `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. |
+| `int IndexOf(T item)` / `bool Contains(T item)` | `O(n)` | A linear scan, one `Array.IndexOf` per segment, under `EqualityComparer<T>.Default`. |
+| `void Clear()` | `O(n)` for references, `O(1)` otherwise | Removes every element and keeps the segments for reuse. Clearing an **already-empty** list is a true no-op and leaves enumerators valid, like the rest of the library. |
+| `int EnsureCapacity(int capacity)` | `O(capacity)` | Reserves room and returns the new `Capacity`. Throws `ArgumentOutOfRangeException` when `capacity` is negative or above the element ceiling. |
+| `void TrimExcess()` | `O(1)`, or `O(n)` within one segment | Releases the segments past the last one in use, and shrinks a list that fits in one segment to exactly `Count` slots. |
+| `ReadOnlySpan<T> GetSegment(int segmentIndex)` | `O(1)` | Segment `segmentIndex`'s elements as a span, valid until the list is next modified. Throws `ArgumentOutOfRangeException` when `segmentIndex` is negative or not less than `SegmentCount`. |
+| `T[] ToArray()` | `O(n)` | One `Array.Copy` per segment. |
+| `void CopyTo(T[] array, int arrayIndex)` | `O(n)` | Under [the library's `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | `O(1)` per step | An allocation-free struct enumerator that walks the segments front to back. |
+
+**What invalidates an enumerator.** Every structural mutation does: `Add`, `AddRange`, `Insert`,
+`RemoveAt`, a `Remove` that finds its element, a `Clear` that had something to clear, and an
+`EnsureCapacity` or `TrimExcess` that changed the capacity. Assignment through the indexer does **not**,
+because it replaces one element in place. That is the rule [`Deque<T>`](#dequet) and
+[`BTreeList<T>`](#btreelistt) follow, where `List<T>`'s indexer setter does invalidate. The family rule
+also departs from `List<T>` in two quieter places: a `TrimExcess` that releases capacity invalidates here
+and not there, and a `Clear` of an empty list invalidates there and not here.
+
+### When not to reach for it
+
+- **If you know the final size, pre-size a `List<T>`.** `new List<T>(n)` allocates once, copies nothing,
+  and reads with one load. This type wins only when growth is unavoidable.
+- **If the list stays small, use `List<T>`.** Below `SegmentLength` this type is a `List<T>` with an extra
+  indirection, and it builds slightly slower (see [Measured](#measured-segmentedlist)).
+- **If reads dominate, measure first.** A random read is two dependent loads, and `foreach` through the
+  struct enumerator is slower than `List<T>`'s. A hot sequential loop should walk `GetSegment` instead.
+- **If you edit the middle, use [`BTreeList<T>`](#btreelistt).** `Insert` and `RemoveAt` here are
+  `O(n)`, exactly as on `List<T>`.
+- **If you need one contiguous `Span<T>` over everything, use `List<T>`.** There is no
+  `CollectionsMarshal.AsSpan` equivalent: the elements are not contiguous by design.
+
+### Thread safety
+
+`SegmentedList<T>` is not thread-safe. Concurrent callers must synchronize externally.
+
+<a id="measured-segmentedlist"></a>
+
+### Measured
+
+The bars were pre-registered in [#586](https://github.com/marius-bughiu/Celerity/issues/586) before the
+benchmark ran, against a `List<int>` that is **not** pre-sized. Pre-sizing is the fix when the size is known,
+and this type is for when it is not. Five bars clear and one is missed. **These are development-machine
+numbers** (Apple M4, .NET 10). CI publishes its own on
+[the dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=SegmentedList) at each merge to
+`main`.
+
+| Build by `Add` | `List<int>` | `SegmentedList<int>` | Ratio | Allocated | Gen-2 per 1,000 builds | Bar |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 1,000 | 878 ns | 1,113 ns | **a 1.27x loss** | 8.4 KB vs 8.5 KB | 0 vs 0 | ≤1.25x loss: **missed** |
+| 100,000 | 109 µs | 85 µs | **1.28x** | 1,050 KB vs 525 KB (0.50x) | 200 vs **0** | ≤0.6x allocation: met |
+| 1,000,000 | 1,069 µs | 832 µs | **1.28x** | 8,389 KB vs 4,132 KB (0.49x) | 598 vs **0** | ≥1.15x, ≤0.6x, zero gen-2: met |
+
+| Reads | 1,000 | 100,000 | 1,000,000 | Bar |
+| --- | ---: | ---: | ---: | --- |
+| 10,000 random indexed reads | a 1.39x loss | a 1.23x loss | a 1.24x loss | ≤1.5x loss: met |
+| `GetSegment` walk vs a `CollectionsMarshal.AsSpan` scan | 1.01x | 0.99x | 1.00x | within 1.1x: met |
+| `foreach` vs `List<int>`'s `foreach` | a 1.51x loss | a 1.51x loss | a 1.52x loss | published, no bar |
+
+**The small-list miss** is what the layout costs below `SegmentLength`. There the type does the same work a
+`List<T>` does, plus a separate fill count for the tail segment that every `Add` updates, and it has nothing
+to win back. A list that stays small should be a `List<T>`.
+
+**The gen-2 column is the point.** A `List<int>` past about 21,000 elements allocates each new array on the
+Large Object Heap, and the measured run paid about 600 full collections for every 1,000 one-million-element
+builds. This type's segments all stay in the small-object heap and never trigger one.
+
+**`foreach` was first measured at 5x slower.** The first enumerator called an out-of-line helper on its end
+path and passed it the enumerator's address, which kept the JIT from holding the enumerator's fields in
+registers, so every element paid a store and reload. Inlining that path and throwing through a static helper
+brought it to 1.5x.
+
+### Name clash with TraceEvent
+
+`Microsoft.Diagnostics.Tracing.TraceEvent` ships a public `System.Collections.Generic.SegmentedList<T>` in
+its `Microsoft.Diagnostics.FastSerialization.dll`, and BenchmarkDotNet pulls that package in. A project
+that references it and imports both namespaces gets a `CS0104` ambiguity. Qualify the name, or alias it:
+
+```csharp
+using SegmentedList = Celerity.Collections.SegmentedList<int>;
+```
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+var log = new SegmentedList<int>();
+for (int i = 0; i < 100_000; i++)
+    log.Add(i);                          // no element is ever copied once its segment is full
+
+log.AddRange(new[] { 100_000, 100_001 });
+
+Console.WriteLine(log.Count);            // 100002
+Console.WriteLine(log.SegmentLength);    // 16384 — 64 KB of ints, under the LOH threshold
+Console.WriteLine(log.SegmentCount);     // 7
+Console.WriteLine(log[54_321]);          // 54321
+
+// Walk the storage a segment at a time, at array speed.
+long sum = 0;
+for (int s = 0; s < log.SegmentCount; s++)
+    foreach (int x in log.GetSegment(s))
+        sum += x;
+Console.WriteLine(sum);                  // 5000150001
+
+log.Insert(0, -1);                       // O(n), shifting across every segment
+log.RemoveAt(1);                         // removes the 0 that the insert pushed to position 1
+Console.WriteLine(log[0]);               // -1
+Console.WriteLine(log[1]);               // 1
+
+while (log.Count > 20_000)
+    log.RemoveAt(log.Count - 1);         // removing the last element is O(1)
+Console.WriteLine(log.Capacity);         // 114688 — emptied segments are kept for reuse
+log.TrimExcess();
+Console.WriteLine(log.Capacity);         // 32768 — two segments in use, the rest released
 ```
 
 
@@ -6083,8 +6618,8 @@ when the map is written to as well as read.
 there is nothing to share with, and every write here allocates a root-to-leaf path where
 `CelerityDictionary` writes one slot.
 
-**If you need ordered iteration or range queries, use `BTreeDictionary`.** A hash trie's enumeration
-order is unspecified.
+**If you need ordered iteration or range queries, use `PersistentSortedMap`** — or `BTreeDictionary`
+when nobody holds an old version. A hash trie's enumeration order is unspecified.
 
 ### Thread safety
 
@@ -6418,6 +6953,230 @@ for (int i = 0; i < 100_000; i++)
 
 PersistentHashSet<int, Int32WangNaiveHasher> numbers = builder.ToImmutable();
 Console.WriteLine(numbers.Contains(99_999));        // True
+```
+
+
+## PersistentSortedMap&lt;TKey, TValue, TComparer&gt;
+
+An **immutable sorted map** backed by a **persistent B+ tree**: a **single-key edit** returns a new
+map that **shares** all but one root-to-leaf path of the old one's storage (plus a neighbour per
+level on a removal that rebalances) — while a write that changes nothing hands back the receiver —
+and the ordered queries the BCL's immutable sorted
+dictionary does not have (`Min`, `Max`, lower and upper bound, floor and predecessor, range
+enumeration) each cost one `O(log n)` descent. The sorted sibling of
+[`PersistentHashMap`](#persistenthashmaptkey-tvalue-thasher), and the immutable sibling of
+[`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer).
+
+```csharp
+public sealed class PersistentSortedMap<TKey, TValue, TComparer> : IReadOnlyDictionary<TKey, TValue?>
+    where TComparer : struct, IComparer<TKey>
+```
+
+`System.Collections.Immutable.ImmutableSortedDictionary<TKey, TValue>` is the BCL's only immutable
+sorted map, and it has two problems:
+
+- **It is an AVL tree with one heap node per entry.** Its branching factor is two, so a lookup is a
+  pointer chase per level — about seventeen at 100,000 entries — and every comparison is an
+  interface call through the `IComparer<TKey>` it holds.
+- **It answers only exact questions.** There is no `Min` / `Max`, no floor or ceiling, and no range
+  enumeration, so on it "the first key at or after *x*" — or "the value as of time *t*" — is an `O(n)`
+  scan from the start. The BCL's `O(log n)` route is a different type: an `ImmutableSortedSet<T>` of the
+  pairs ordered by key alone, where `IndexOf` returns the complement of the next larger element's index
+  for a miss and the indexer reads it, two descents of an AVL tree. It has no range view either, and
+  changing a value there is a remove and an add.
+
+`PersistentSortedMap<TKey, TValue, TComparer>` is a **B+ tree of fan-out 32**. Every entry lives in a
+leaf of up to 32 entries held in two flat arrays; a branch holds up to 32 children and the separator
+keys between them. 100,000 entries are four levels deep rather than seventeen, a level costs one
+binary search over a contiguous key array, and in-order enumeration walks leaf arrays rather than a
+node per entry. `TComparer` is a struct type argument, as in `BTreeDictionary`, so the comparison is
+inlined rather than dispatched.
+
+The documented BCL-beating workload is the one `PersistentHashMap` serves, when the reader also needs
+**order**: a sorted snapshot read far more often than it is written, that must still be updatable
+without copying, and that is queried by **position in the order** as well as by key — a versioned
+order book or price ladder, a time-indexed state answering "the value as of *t*" with `TryGetFloor`,
+a route or range table swapped atomically, or a sorted symbol table threaded through a compiler pass.
+
+### How it works
+
+A leaf holds keys and values in `[0, Count)` of two arrays. A branch holds `Count` children and the
+`Count - 1` separators between them; separator *i* is a lower bound on every key under child *i + 1*
+and orders after every key under child *i*, so a descent picks the child by counting the separators
+at or below the key. Every node except the root holds between **16 and 32** entries or children, so
+the tree is at most eight levels deep for any count an `int` can hold — the structural bound the
+enumerator's inline path is sized from.
+
+A single-key mutation is **path copying**. An insert that overflows a leaf to 33 entries splits it
+into 16 and 17 and inserts the new separator into the parent, which may split in turn; a root that
+splits gains a level. A removal that drops a node below 16 **borrows** from a neighbour, sharing the
+pair's entries out evenly, or **merges** with it when the two fit in one node; a root branch left
+with one child is dropped. Each copied node gets exact-length arrays, and a copy whose separators did
+not change — overwriting a value, or replacing one child — **shares** the old node's key array,
+since nothing ever writes through a node a published map can reach. A rebalancing removal copies the
+neighbour too, so it copies up to two nodes per level it reaches.
+
+There is **no out-of-band `default(TKey)` slot**, unlike the hashed persistent types. A comparer
+orders `null` and `0` like any other key, so they are stored inline: `Comparer<TKey>.Default` puts
+`null` before every non-`null` key, and a value-type `default(TKey)` sorts wherever the comparer puts
+it, exactly as in `BTreeDictionary`.
+
+**The comparer is `default(TComparer)`.** Every map — `Empty` included — orders by the default value
+of `TComparer`, because the type shares one static empty map and every node operation is static. A
+comparer must carry its configuration in its *type* rather than in fields, as `DefaultComparer<T>`
+does. Unlike `BTreeDictionary`, there is no constructor taking a comparer instance.
+
+### Constructors
+
+```csharp
+public PersistentSortedMap(IEnumerable<KeyValuePair<TKey, TValue>> source)
+public static readonly PersistentSortedMap<TKey, TValue, TComparer> Empty
+```
+
+- `Empty` is the empty map, and is the instance `Remove` returns when it takes the last entry.
+- The `source` constructor inserts through a `Builder`, so no intermediate map is allocated per entry
+  and no root-to-leaf path is copied per entry either. The source does not need to be sorted.
+
+**Throws:**
+
+- `ArgumentNullException` if `source` is `null`.
+- `ArgumentException` if `source` contains duplicate keys.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `bool IsEmpty { get; }` | The number of entries, and whether there are none. |
+| `TValue this[TKey key] { get; }` | The value stored under `key`; throws `KeyNotFoundException` if absent. There is no setter: `SetItem` returns a new map instead. |
+| `KeyCollection Keys { get; }` / `ValueCollection Values { get; }` | Allocation-free struct views in ascending key order, each with a `Count`. |
+| `bool ContainsKey(TKey key)` / `bool TryGetValue(TKey key, out TValue? value)` | `O(log n)`: one binary search per level, four levels at 100,000 entries and never more than eight. |
+| `bool ContainsValue(TValue? value)` | `O(n)` scan with `EqualityComparer<TValue>.Default` — the tree is ordered by key. |
+| `KeyValuePair<TKey, TValue?> Min { get; }` / `Max { get; }` | First / last entry in key order, `O(log n)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out ...)` / `TryGetMax(out ...)` | The non-throwing forms. |
+| `bool TryGetLowerBound(TKey key, out ...)` | First entry with a key **≥** `key` (`lower_bound`, the ceiling); an exact match is its own lower bound. |
+| `bool TryGetUpperBound(TKey key, out ...)` | First entry with a key **>** `key` (`upper_bound`). |
+| `bool TryGetFloor(TKey key, out ...)` | Last entry with a key **≤** `key` — the "value as of *t*" query. |
+| `bool TryGetPredecessor(TKey key, out ...)` | Last entry with a key **<** `key`. |
+| `RangeEnumerable EnumerateRange(TKey fromInclusive, TKey toExclusive)` | The entries of `[fromInclusive, toExclusive)`, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `PersistentSortedMap<...> Add(TKey key, TValue value)` | A map with the entry added; throws `ArgumentException` if the key is present — matching `Dictionary<,>.Add`, and stricter than `ImmutableSortedDictionary<,>.Add`, which tolerates a duplicate with an equal value. |
+| `PersistentSortedMap<...> SetItem(TKey key, TValue value)` | A map with the entry inserted or overwritten; returns **the receiver** when the key already maps to an equal value. |
+| `PersistentSortedMap<...> SetItems(IEnumerable<KeyValuePair<TKey, TValue>> items)` | The same for many entries, through one `Builder`; later entries win. Returns the receiver when nothing changed. |
+| `PersistentSortedMap<...> Remove(TKey key)` | A map without the key; returns **the receiver** when it was absent and `Empty` when it was the last entry. |
+| `PersistentSortedMap<...> RemoveRange(IEnumerable<TKey> keys)` | The same for many keys, ignoring absent ones; returns the receiver when none was present. |
+| `Builder ToBuilder()` | A mutable builder seeded with this map's entries. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending key order. Nothing can invalidate it, so it has no version check; `Reset` replays the sequence. The root-to-leaf path is held inline in the struct. |
+
+#### Builder
+
+```csharp
+public sealed class Builder
+```
+
+The builder works as `PersistentHashMap`'s does: it **stamps every node it creates with an ownership
+token** and edits such a node in place rather than copying it. A write that reaches a node shared
+with a published map copies it once — into arrays one slot past full, so the node can take the next
+insert in place — and owns the copy from then on. `ToImmutable()` takes a **new** token, which makes
+every node the builder has handed out read-only again in one assignment; it is `O(1)`.
+
+- `Builder()` — a new, empty builder.
+- `int Count` — the number of entries the builder holds.
+- `TValue this[TKey key]` — get **and set**; the setter inserts when the key is absent.
+- `bool ContainsKey(TKey key)` / `bool TryGetValue(TKey key, out TValue? value)` — the read surface.
+- `void Add(TKey key, TValue value)` — insert; throws `ArgumentException` if the key is present.
+- `bool Remove(TKey key)` — remove, reporting whether the key was there.
+- `PersistentSortedMap<...> ToImmutable()` — a map holding the builder's current entries.
+
+### Two deliberate omissions
+
+Both mirror `PersistentHashMap`. **There is no `Clear()`**: everywhere else in this library
+`Clear()` means in-place mutation, so the empty map is spelled `Empty`. And it **does not implement
+`IImmutableDictionary<TKey, TValue>`**, whose `Clear()` and duplicate-tolerant `Add` contradict those
+decisions. It implements `IReadOnlyDictionary<TKey, TValue?>`.
+
+### When not to reach for it
+
+**If nobody holds an old version, use `BTreeDictionary`.** Structural sharing buys nothing when there
+is nothing to share with: the mutable B-tree writes into one node where this allocates a path.
+
+**If the map never needs order, use `PersistentHashMap`.** A hash trie looks a key up with a popcount
+per level instead of a binary search per level.
+
+**If the map never changes after it is built, a sorted array is hard to beat.** `Array.BinarySearch`
+over a sorted key array answers lookups and bounds with no tree at all.
+
+### Thread safety
+
+Concurrent readers need no synchronization: no published map is ever mutated after it is returned.
+A shared *variable* holding successive maps still needs the usual publication rules, and the
+guarantee covers the map's own state only — every lookup calls `TComparer`, and `ContainsValue`
+calls `EqualityComparer<TValue>.Default`, so a comparer, key or value whose comparison is not
+thread-safe makes concurrent reads unsafe however immutable the map is. `Builder` is **not**
+thread-safe; the maps it produces are.
+
+### Measured
+
+`int` keys and `string` values, against `ImmutableSortedDictionary<int, string>`, as speedups (BCL
+time ÷ this type's time; below 1x is a loss):
+
+| Operation | 1,000 entries | 100,000 entries |
+| --- | --- | --- |
+| `LowerBound` — `TryGetLowerBound` at random keys, against `ImmutableSortedSet` `IndexOf` + indexer over the pairs | **1.38x** | **3.07x** |
+| `Enumerate` — every entry in order | **2.3x** | **3.9x** |
+| `Insert` — build the whole map one entry at a time | 1.13x | **1.85x** |
+| `Update` — `SetItem` over an existing key | 1.10x | **1.48x** |
+| `Lookup` — `TryGetValue` at random keys | ⚠️ **0.71x** (1.40x slower) | **1.29x** |
+
+**The type's case rests on the ordered queries**, which `ImmutableSortedDictionary` does not have at
+all: code that holds one can only scan it in key order, `O(n)` a seek. The `LowerBound` row measures
+the BCL's best answer instead, the key-ordered `ImmutableSortedSet` of the pairs, so it compares one
+`O(log n)` descent with two; against the scan the ratio would only measure *n*. The timings for the queries both types share are mixed, and the issue's pre-registered bars
+were missed at 1,000 entries for all three of them: **a lookup there is 1.40x slower**, because a
+1,000-entry AVL tree is about ten levels deep and fits in cache, where its ten comparisons beat three
+binary searches over 32-wide nodes. At 100,000 entries the AVL tree's pointer chase costs more and
+the B+ tree wins every shared operation.
+
+**Writes allocate more**: 1.36x the BCL's bytes when building at 1,000 entries, and 1.23x on
+`Update` at 100,000, while running faster. A path copy here rebuilds about four nodes of up to 32
+slots, where an AVL path copy rebuilds about seventeen nodes of a few fields: fewer objects, more
+bytes.
+
+Every ratio above was measured on a development machine (Apple Silicon, .NET 10). The CI series that
+is the project's contract is published to the
+[benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=PersistentSortedMap)
+and refreshes on merge to `main`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A price ladder: bids keyed by price, republished to readers on every change.
+PersistentSortedMap<decimal, int, DefaultComparer<decimal>> bids =
+    PersistentSortedMap<decimal, int, DefaultComparer<decimal>>.Empty
+        .Add(99.50m, 300)
+        .Add(99.75m, 120)
+        .Add(100.00m, 40);
+
+PersistentSortedMap<decimal, int, DefaultComparer<decimal>> snapshot = bids; // hand to a reader
+bids = bids.SetItem(99.60m, 75);                    // snapshot is untouched
+
+Console.WriteLine(bids.Max.Key);                    // 100.00 — best bid
+bids.TryGetLowerBound(99.55m, out var atOrAbove);   // 99.60 — first level at or above
+bids.TryGetFloor(99.70m, out var atOrBelow);        // 99.60 — last level at or below
+
+foreach (KeyValuePair<decimal, int> level in bids.EnumerateRange(99.50m, 100.00m))
+    Console.WriteLine($"{level.Key}: {level.Value}");  // 99.50, 99.60, 99.75 in ascending order
+
+Console.WriteLine(snapshot.ContainsKey(99.60m));    // False
+
+// A version history: the value as of any point in time is a floor query.
+var history = new PersistentSortedMap<long, string, DefaultComparer<long>>.Builder();
+history.Add(1_000, "v1");
+history.Add(2_000, "v2");
+history.Add(3_000, "v3");
+
+PersistentSortedMap<long, string, DefaultComparer<long>> versions = history.ToImmutable();
+versions.TryGetFloor(2_500, out var asOf);          // (2000, "v2")
 ```
 
 
@@ -7116,7 +7875,7 @@ var frozen = new SuccinctTrie<string>(built);
 
 ## Span-keyed lookups
 
-Every string-keyed Celerity collection can be probed with a `ReadOnlySpan<char>` — a slice of a buffer the caller already holds — without first materializing a `string`.
+The string-keyed collections below can be probed with a `ReadOnlySpan<char>` — a slice of a buffer the caller already holds — without first materializing a `string`.
 
 | Type | Span members |
 |------|--------------|
@@ -8474,7 +9233,7 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 
 An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *where does this element rank?* (`IndexOf` for one that is present, `CountLessThan` for the rank one *would* take whether or not it is) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
 
-The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#how-it-is-laid-out) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
+The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#layout-rankedset) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
 
 ### The gap it fills
 
@@ -8489,7 +9248,9 @@ The BCL has no answer either, and this is a genuine gap rather than a "we are fa
 | A hand-rolled sorted `List<T>` | `O(n)` memmove | `O(log n)` (`BinarySearch`) | `O(1)` |
 | `RankedSet<T, TComparer>` | `O(√n)` memmove | `O(log n)` | `O(log n)` |
 
-Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one, and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
+Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one, and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched. Those workloads need **distinct** elements here, because this is a set: a window of samples with repeated values, or a leaderboard with tied scores, would lose its repeats and report wrong percentiles. [`RankedMultiSet`](#rankedmultisett-tcomparer) is the same layout with every copy kept.
+
+<a id="layout-rankedset"></a>
 
 ### How it is laid out
 
@@ -8614,8 +9375,8 @@ using Celerity.Collections;
 
 // The top N *distinct* scores, kept live as they arrive. This is a set, so an equal score is not a second
 // entry — which is what makes evicting by rank 0 exactly right here: the lowest distinct score is the one
-// that falls out of the top N. To keep every sample instead, make the element a composite the comparer
-// orders by score, e.g. (score, sampleId), so equal scores stay distinct and can be evicted individually.
+// that falls out of the top N. To keep every sample instead, use RankedMultiSet<int>, which keeps equal
+// scores as separate entries in arrival order.
 var top = new RankedSet<int>();
 
 foreach (int score in arriving)
@@ -8638,6 +9399,139 @@ Console.WriteLine(top[top.Count - 10]);           // the tenth from the top
 foreach (int score in top.EnumerateRange(1000, 2000))
 {
     Process(score);
+}
+```
+
+## RankedMultiSet&lt;T, TComparer&gt;
+
+```csharp
+public class RankedMultiSet<T, TComparer> : ICollection<T>, IReadOnlyList<T>
+    where TComparer : struct, IComparer<T>
+
+// Ordered by Comparer<T>.Default:
+public class RankedMultiSet<T> : RankedMultiSet<T, DefaultComparer<T>>
+```
+
+An **order-statistics multiset**: [`RankedSet`](#rankedsett-tcomparer) with duplicates kept. `Add` never rejects an element. `CountOf` says how many copies there are, `CountLessThan` gives the rank a value would take, and `this[int]` gives the k-th smallest counting every copy. All three are `O(log n)` on a collection that is still being inserted into and removed from.
+
+### The gap it fills
+
+.NET has no sorted collection that keeps duplicates. `SortedSet<T>`, `SortedList<TKey, TValue>` and `SortedDictionary<TKey, TValue>` all reject a second equal element. `RankedSet` rejects it too, which matters because its two headline workloads are full of ties. A window of latency samples repeats values, and a leaderboard has tied scores. A set silently drops the repeats, so its percentiles are wrong.
+
+| The workaround | Duplicates | Mutation | Rank | Select |
+| --- | --- | --- | --- | --- |
+| `SortedSet<(T, long Seq)>`: a tie-break sequence number in every element | yes, by widening the element | `O(log n)` | none, `O(n)` | none, `O(k)` |
+| `SortedDictionary<T, int>`: a count per distinct value | counts only, not the elements | `O(log n)` | none, `O(n)` | none, `O(n)` |
+| A hand-rolled sorted `List<T>` with lower- and upper-bound searches | yes | `O(n)` memmove | `O(log n)` | `O(1)` |
+| `RankedMultiSet<T, TComparer>` | yes | `O(√n)` memmove | `O(log n)` | `O(log n)` |
+
+### Equal elements keep insertion order
+
+`Add` places a new element **after** every element the comparer orders equal to it, and `Remove` takes the **earliest-added** of them. So the type is stable: among ties it is first in, first out. Enumeration, `this[int]`, `Min` and the bounds all see equal elements in arrival order, and splits, merges and `TrimExcess` preserve it. That matters when the comparer looks at only part of the element. For example, events ordered by timestamp keep their arrival order within one timestamp, and `Remove` with any event of that timestamp takes the oldest one. The `IEnumerable` constructors insert in enumeration order, so they are stable too.
+
+### How it is laid out
+
+The layout is `RankedSet`'s: sorted buckets of `Θ(√n)` capacity (never below 512), with a Fenwick tree over the bucket lengths for the positional half. See [how RankedSet is laid out](#layout-rankedset) for the capacity rule and the high-water caveat. Both apply unchanged, and `TrimExcess()` is the remedy after a sharp contraction. One thing differs: a run of equal elements can span several buckets, and several buckets can then share the same maximum. So every query searches for a **boundary**, either the first element not less than the probe or the first element greater than it, rather than for any match.
+
+| | |
+| --- | --- |
+| `Contains`, `CountOf`, `IndexOf`, `LastIndexOf`, `CountLessThan`, `CountLessThanOrEqual`, the bounds, `this[int]` | `O(log n)` |
+| `Add`, `Remove`, `RemoveAt` | **`O(√n)`**: an `O(log n)` search (two binary searches, or a Fenwick descent for `RemoveAt`) and an `O(log b)` Fenwick update, plus a memmove of at most one bucket |
+| `RemoveAll(item)` | One pass over a run of `k` copies: trim its two end buckets, drop the buckets between in one shift, rebuild the index once. `O(√n + k)`, not `k` separate removals |
+| `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)`, over contiguous arrays |
+
+### When to choose it, and when not to
+
+Reach for it when a sorted collection has to keep repeats and answer rank or select questions while it changes: a sliding-window percentile over raw samples, a leaderboard with ties, or the "sorted list with duplicate keys" the BCL does not have. Reach for [`RankedSet`](#rankedsett-tcomparer) when the elements really are distinct, since it adds the `ISet<T>` algebra. Use [`RollingQuantile`](statistics.md#rollingquantile) when only one fixed quantile of a window is needed. Use a sorted array when the data is built once and only queried, because indexing one array is `O(1)`. At about a thousand elements the hand-rolled sorted `List<T>` wins the mixed workload, because its memmove fits in cache.
+
+<a id="measured-rankedmultiset"></a>
+
+### Measured
+
+A local short-job run (Apple M-series, .NET 8), `int` elements drawn from `ItemCount / 320` distinct values (at least 16). So the `Mixed` window holds about sixteen copies of each value at 100,000. Every group has three arms: `SortedSet<(int, long)>` (the composite workaround, and the baseline), a sorted `List<int>` with hand-written lower- and upper-bound searches, and this type. The ratios are *this type against that arm*, so above 1 means it is faster. The CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedMultiSet) is the contract.
+
+| Group | vs `SortedSet<(T, long)>` @100k | vs sorted `List<T>` @100k | vs `SortedSet<(T, long)>` @1k | vs sorted `List<T>` @1k |
+| --- | ---: | ---: | ---: | ---: |
+| **Mixed** (sliding window + a rank and a select per step) | **166x** | **1.82x** | **8.6x** | ⚠️ 0.76x |
+| Select (k-th smallest) | 57,700x | 0.08x | 920x | 0.14x |
+| Rank (`CountLessThan`) | 16,600x | 0.72x | 262x | 0.78x |
+| CountOf | 72x | 0.75x | 31x | 0.75x |
+| Add | 1.48x | **17.4x** | 1.20x | 0.95x |
+| Remove (one copy per call) | 1.44x | **18.6x** | — | — |
+
+The 1k `Remove` cells are left out because that group runs with `[IterationSetup]`, so BenchmarkDotNet takes one invocation per iteration and a short job is mostly warm-up there.
+
+**The Mixed row is the one that decides anything.** At 100,000 this type beats both pre-registered bars: 1.5x the hand-rolled list and 10x the composite `SortedSet`. At a thousand elements the list wins (0.76x), because a 50-element window fits in cache. This is a large-collection type. On pure queries the sorted list is ahead, since it indexes one array and searches one contiguous span. It loses only where it has to move elements, at 17–19x on `Add` and `Remove` at 100,000.
+
+### Constructors
+
+```csharp
+public RankedMultiSet()
+public RankedMultiSet(TComparer comparer)
+public RankedMultiSet(IEnumerable<T> source)
+public RankedMultiSet(IEnumerable<T> source, TComparer comparer)
+```
+
+There is no capacity and no load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and keep every element, with equal elements in enumeration order.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `TComparer Comparer { get; }` | Element count, counting every copy; the comparer defining the order. |
+| `T this[int index] { get; }` | The `index`-th smallest counting duplicates, `O(log n)`. Throws `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `void Add(T item)` | Insert after every equal element, `O(√n)`. Never rejects. `ICollection<T>.Add` is the same call. |
+| `bool Contains(T item)` | Whether at least one equal element is present, `O(log n)`. |
+| `int CountOf(T item)` | How many elements are equal to `item`, `O(log n)` however many there are. |
+| `int IndexOf(T item)` / `int LastIndexOf(T item)` | The position of the first / last equal element, `O(log n)`, or `-1` when there is none. |
+| `int CountLessThan(T item)` / `int CountLessThanOrEqual(T item)` | The rank `item` would take, before / after its own copies, whether or not it is present. |
+| `bool Remove(T item)` | Remove one copy, the earliest added, `O(√n)`. Returns `false` when none is equal. |
+| `int RemoveAll(T item)` | Remove every copy in one pass, however many buckets the run spans. Returns the number removed. |
+| `void RemoveAt(int index)` | Remove by rank, `O(√n)`. |
+| `void Clear()` | Drop every element and release every bucket and slot array. A no-op on an empty multiset does not invalidate enumerators. |
+| `void TrimExcess()` | Rebuild at the capacity the current count calls for, `O(n)`, preserving the order of equal elements. Invalidates active enumerators. |
+| `T Min { get; }` / `T Max { get; }` | Smallest (earliest of its ties) / largest (latest of its ties), `O(1)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
+| `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | First element **≥** / **>** `item`, `O(log n)`. |
+| `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | Every element of the half-open range, duplicates included, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order, one array copy per bucket. Follows [the `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
+
+Equality is defined by `TComparer`: two elements are copies of the same value when the comparer orders them equal, even if they differ otherwise. Under `DefaultComparer<T>`, `null` orders first and is an ordinary element, and it can repeat like any other. Adding (always), a `Remove` that finds a copy, a `RemoveAll` that finds at least one, `RemoveAt`, a `Clear` that removes something, and `TrimExcess` on a non-empty multiset invalidate active enumerators. Lookups and a removal that finds nothing do not. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// The last 1,000 latency samples, ties and all, with any percentile on demand.
+var window = new RankedMultiSet<int>();
+var arrivals = new Queue<int>();
+
+foreach (int latency in samples)
+{
+    window.Add(latency);
+    arrivals.Enqueue(latency);
+    if (arrivals.Count > 1_000)
+    {
+        window.Remove(arrivals.Dequeue());   // one copy, not every equal sample
+    }
+}
+
+Console.WriteLine(window[(window.Count - 1) / 2]);          // p50
+Console.WriteLine(window[(window.Count - 1) * 99 / 100]);   // p99
+Console.WriteLine(window.CountOf(250));                      // samples at exactly 250 ms
+Console.WriteLine(window.Count - window.CountLessThan(250)); // samples at or above 250 ms
+
+// Stability: events ordered by timestamp alone keep their arrival order within a timestamp.
+var timeline = new RankedMultiSet<(long At, string Name), ByTimestamp>();
+timeline.Add((10, "first"));
+timeline.Add((10, "second"));
+Console.WriteLine(timeline[0].Name);   // first
+
+readonly struct ByTimestamp : IComparer<(long At, string Name)>
+{
+    public int Compare((long At, string Name) x, (long At, string Name) y) => x.At.CompareTo(y.At);
 }
 ```
 
@@ -9647,7 +10541,11 @@ arms do the same job there.
 
 The ordered containers ([`BTreeSet`](#btreesett-tcomparer), [`RankedSet`](#rankedsett-tcomparer))
 hold sorted values and answer a lower bound, but they spend *more* than 64 bits a value, not
-less. Nothing else in this library compresses the shape:
+less. Nothing else in this library compresses the shape as tightly:
+
+- [`BitPackedArray`](#bitpackedarray) stores each value in a fixed `w` bits with `O(1)` random
+  access, but `w` must cover the *largest* value: a million offsets about 100 apart need 27 bits a
+  value against Elias–Fano's 10 or so. It has no lower-bound query either.
 
 - [`CompressedIntSet`](#compressedintset) is a 32-bit **set**. It has no duplicates and no
   positional access, and it cannot hold a 64-bit offset.
@@ -9861,4 +10759,201 @@ int record = offsets.CountLessThan(7_000_000_001) - 1;
 
 // How many records start inside the first gigabyte?
 int inFirstGiB = offsets.CountLessThan(1L << 30);
+```
+
+## FrozenSortedSet&lt;T&gt;
+
+```csharp
+public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
+    where T : unmanaged, IBinaryInteger<T>, IMinMaxValue<T>
+```
+
+An **immutable** sorted set of integer keys, laid out so that membership, rank and successor
+queries are several times faster than a binary search over the same sorted array. Use it for a
+key set that is read far more often than it changes: an allow or deny list of IDs, the
+boundaries of a range partition, a sorted dimension table, a timestamp index.
+
+- **`Contains` / `IndexOf`**: exact lookups.
+- **`CountLessThan(x)`**: the rank of `x`, which is also the position of the first key at or
+  above it (`lower_bound`).
+- **`TryGetLowerBound` / `TryGetUpperBound`**: the successor at or above `x`, or strictly above
+  it. These are named after [`BTreeSet`](#btreesett-tcomparer).
+- **`SliceRange(from, toExclusive)`**: the keys in `[from, toExclusive)` as a `ReadOnlySpan<T>`
+  over the set's own storage. The span's `Length` is the count in the range.
+- **`this[i]`, `AsSpan()`, `Min`, `Max`**: positional reads straight from the sorted keys.
+
+### The gap it fills
+
+The BCL's frozen collections are **unordered**. `FrozenSet<T>` answers membership, but it cannot
+answer "the first key at or above `x`", "how many keys are below `x`" or "the keys in `[a, b)`".
+`SortedSet<T>` and [`BTreeSet`](#btreesett-tcomparer) answer all three, but they are built to be
+mutated and pay for that on every read.
+
+The honest baseline for a key set that has stopped changing is therefore a sorted `T[]` searched
+with `MemoryExtensions.BinarySearch`. A binary search is bound by **latency, not work**. It makes
+`log2(n)` loads, each depending on the one before it and each a likely cache miss once the array
+outgrows L1, and it takes a branch at every step that mispredicts about half the time.
+
+### When *not* to use this — read first
+
+- **The set must be final.** Construction sorts, deduplicates and lays out the keys, and there is
+  no mutating member. A changed set means a new build, which costs a sort (see the `Build` row
+  below). For a key set that keeps changing, use [`BTreeSet`](#btreesett-tcomparer).
+- **Integers only.** The key type must be an unmanaged `IBinaryInteger<T>` with a `MaxValue`, so
+  the type's own order is the only order and no comparer can be supplied. For strings or custom
+  orders, use a `BTreeSet<T, TComparer>`.
+- **Membership alone is a hash set's job.** If you never ask an ordered question, a hash set
+  answers `Contains` in about one probe. An [`IntSet`](#intset) or a `FrozenSet<int>` is the
+  better fit there.
+
+### Measured
+
+BenchmarkDotNet default job, .NET 10, Apple M4, `FrozenSortedSetBenchmark`. There are 1,000,
+100,000 and 1,000,000 random distinct `int` keys spread over the whole range. The baseline is the
+same keys as a sorted `int[]`, searched with `MemoryExtensions.BinarySearch` (span overload, no
+comparer call). Each invocation runs 2^18 probes; the figures below are per lookup. `Contains`
+probes are half keys and half non-keys, shuffled together. `LowerBound` probes are uniform random
+`int`s.
+
+| Op | Keys | `int[]` + `BinarySearch` | `FrozenSortedSet` | Speedup |
+| --- | --- | --- | --- | --- |
+| `Contains` (hits counted branch-free) | 1,000 | 33.6 ns | 3.1 ns | **10.9×** |
+| `Contains` (hits counted branch-free) | 100,000 | 64.9 ns | 6.9 ns | **9.5×** |
+| `Contains` (hits counted branch-free) | 1,000,000 | 89.5 ns | 8.4 ns | **10.7×** |
+| `ContainsBranching` (`if (set.Contains(x))`) | 1,000 | 33.8 ns | 17.2 ns | **1.96×** |
+| `ContainsBranching` (`if (set.Contains(x))`) | 100,000 | 64.6 ns | 26.5 ns | **2.44×** |
+| `ContainsBranching` (`if (set.Contains(x))`) | 1,000,000 | 90.2 ns | 28.2 ns | **3.20×** |
+| `LowerBound` (`CountLessThan`) | 1,000 | 33.8 ns | 2.7 ns | **12.5×** |
+| `LowerBound` (`CountLessThan`) | 100,000 | 67.5 ns | 6.3 ns | **10.7×** |
+| `LowerBound` (`CountLessThan`) | 1,000,000 | 92.4 ns | 7.8 ns | **11.9×** |
+| `Build` (from unsorted; baseline is copy + `Array.Sort`) | 1,000 | 6.28 µs | 6.96 µs | 1.11× *slower* |
+| `Build` | 1,000,000 | 45.1 ms | 45.8 ms | 1.01× *slower* |
+
+**The two `Contains` rows are the same lookups consumed two ways, and the gap between them is
+the honest range.** The search itself has no branch, so a batch of independent lookups lets the
+CPU overlap several searches at once. That is the 10× row. When each answer feeds an `if` that
+mispredicts (a shuffled half-hit stream is the worst case), every mispredict throws the
+overlapped work away. What remains is one search's latency, about 20–25 cycles a level, and
+the win narrows to 2–3×. A binary search is limited by latency either way, so it barely notices.
+A stream whose answers mostly agree (almost all hits, or almost all misses) predicts well and
+lands near the branch-free row.
+
+**The probe batch is 2^18 long on purpose.** With the usual 1,000 probes replayed millions of
+times, the M4's branch predictor memorized the binary search's own branch paths. The array then
+ran 3.4× faster than on fresh input, and the `ContainsBranching` row turned into a loss for the
+tree, which no real query stream would reproduce.
+
+The pre-registered kill criterion (issue #604) was `Contains` at least **2×** the span binary
+search at 1k, 100k and 1M keys. It is **cleared** at 10.9× / 9.5× / 10.7×. The latency-bound
+`ContainsBranching` shape just misses 2× at 1,000 keys (1.96×), and that figure is published,
+not rounded up. The build costs about the sort it contains. **Retained memory** is the leaves
+plus about 1/17 of them for the internal levels: 1.063× the sorted `int[]` at a million keys.
+
+These are local figures. The CI series on the dashboard is the contract.
+
+### How it works, and what it costs
+
+This is the static B+ tree that Algorithmica calls the *S+ tree*.
+
+- **Leaves.** The sorted, distinct keys are cut into nodes of `B = 64 / sizeof(T)` keys, one
+  64-byte cache line each: 16 for `int`, 8 for `long`, 64 for `byte`. The last node is padded
+  with `T.MaxValue`. The leaves stay in order in one array, which is what `AsSpan()`, the indexer
+  and the enumerator read.
+- **Internal levels.** Each internal node holds `B` separator keys for `B + 1` children.
+  Separator `i` is the smallest key under child `i + 1`. Node `k`'s children are the
+  consecutive nodes `k · (B + 1) + 0 … B` of the level below, so every subtree covers a
+  contiguous run of leaves and the tree needs no pointers.
+- **A search** reads one node per level and counts the keys in it that are strictly below the
+  probe. That takes four `Vector128` compares and one horizontal add, with no branch. The count
+  is the child to descend into, and at the leaf it is the answer's position. When the probe is
+  above everything in the chosen subtree, the count runs off the end of the leaf onto the
+  first key of the next one, which is exactly the right answer because the leaves are
+  contiguous.
+- **Padding is never counted**, because no key is strictly below itself. That is why
+  `T.MaxValue` can pad the nodes and still be a valid key.
+
+The depth is `ceil(log_(B+1)(n / B)) + 1` node reads: 3 for a thousand `int` keys, 5 for a
+million and 6 for ten million. A binary search over the same keys takes 10, 20 and 24 dependent
+steps. `Depth` reports the figure for an instance.
+
+Key types without hardware `Vector128<T>` support (`char`, `Int128`, `UInt128`) use the same
+layout and scan each node with a scalar loop. That path is correct but is not the one the
+measurements above describe.
+
+**Space.** The internal levels add about one key in `B + 1`: 6% for `int` and 11% for `long`.
+On top of that comes padding: every level, leaves included, rounds up to whole nodes, so each can
+carry up to one node of unused keys. That matters only for small sets: 273 `int` keys take 1,352
+bytes against the array's 1,092. `MemoryUsageInBytes` reports the payload,
+which is the leaves, the internal levels and the level index. It excludes the CLR's per-array
+headers, the same accounting `EliasFanoSequence` uses.
+
+### Constructor
+
+```csharp
+public FrozenSortedSet(IEnumerable<T> source)
+```
+
+Builds the set from `source`, which may be in **any order** and may **repeat** keys. Repeats are
+dropped. A counted source (any `ICollection<T>`, including an array) is copied straight into the
+leaf array, so it costs one allocation for the keys. Any other sequence is materialized first.
+The build is one sort, `O(n log n)`, then a pass to deduplicate and a pass over the internal
+levels, which hold about `n / B` keys. A source with many repeats may be copied once more into a
+smaller leaf array.
+
+There is deliberately no `ReadOnlySpan<T>` overload. On `net8.0` and `net9.0` an array argument
+would be ambiguous between the two.
+
+The constructor throws in two cases:
+
+- `ArgumentNullException` when `source` is `null`;
+- `ArgumentException` (`source`) when `source` holds more keys than one padded array can hold,
+  a little under `Array.MaxLength`. A counted source is checked before anything is allocated.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `static int NodeSize { get; }` | Keys per node, `64 / sizeof(T)`: one cache line. Internal nodes have `NodeSize + 1` children. |
+| `int Count { get; }` | The number of distinct keys. |
+| `int Depth { get; }` | Nodes read per search, root to leaf: `1` while every key fits in one node. |
+| `long MemoryUsageInBytes { get; }` | The payload: padded leaves, internal levels and level index. Compare against `Count * sizeof(T)`. |
+| `T Min { get; }` / `T Max { get; }` | The smallest and largest key. `InvalidOperationException` when the set is empty. |
+| `T this[int index] { get; }` | The `index`-th smallest key, one array read. `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `ReadOnlySpan<T> AsSpan()` | The keys, ascending and distinct, without copying. They are ready for [`SortedSpan`](utilities.md#sortedspan-sorted-span-set-algebra)'s set algebra. |
+| `bool Contains(T item)` | Whether the key is present: `Depth` node reads and one compare. |
+| `int IndexOf(T item)` | The key's position in ascending order, or `-1`. |
+| `int CountLessThan(T value)` | How many keys are strictly below `value`, which is also the position of the first key at or above it. Any value is accepted, and the result is in `[0, Count]`. |
+| `bool TryGetLowerBound(T value, out T bound)` | The smallest key `>= value`. Returns `false` with `bound = default` when every key is smaller. |
+| `bool TryGetUpperBound(T value, out T bound)` | The smallest key `> value`. Returns `false` when none is larger, including for `value == T.MaxValue`. |
+| `ReadOnlySpan<T> SliceRange(T fromInclusive, T toExclusive)` | The keys in `[fromInclusive, toExclusive)`, as a span over the set's storage. Two searches, no copy. `ArgumentException` when `toExclusive < fromInclusive`. A range ending at `T.MaxValue` inclusive is `AsSpan()[CountLessThan(from)..]`. |
+| `Enumerator GetEnumerator()` | Ascending, allocation-free. After the last key, `MoveNext` keeps returning `false` and `Current` is `default`. |
+| `SetEquals`, `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`, `IsProperSupersetOf`, `Overlaps` | The `IReadOnlySet<T>` algebra. `IsSupersetOf` and `Overlaps` stream `other` against `Contains` and may stop early. The other four use another `FrozenSortedSet<T>` as it stands, and copy, sort and deduplicate any other `other` once. All four then count the common keys with one merge. `ArgumentNullException` for a `null` `other`. |
+
+The type holds no mutable state after construction, so instances are safe to share across
+threads.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Range partitioning: shard i owns the keys from shardStarts[i] up to the next start.
+var shardStarts = new FrozenSortedSet<long>(new long[] { 0, 1_000_000, 5_000_000, 20_000_000 });
+
+// The last start at or below key. key + 1 would wrap at long.MaxValue, where every start qualifies.
+int ShardOf(long key) => key == long.MaxValue ? shardStarts.Count - 1 : shardStarts.CountLessThan(key + 1) - 1;
+Console.WriteLine(ShardOf(4_999_999));   // 1
+Console.WriteLine(ShardOf(5_000_000));   // 2
+
+// An allow-list of account ids, checked on every request.
+var allowed = new FrozenSortedSet<int>(LoadAllowedIds());
+bool ok = allowed.Contains(accountId);
+
+// Every allowed id in [10_000, 20_000), without copying.
+ReadOnlySpan<int> band = allowed.SliceRange(10_000, 20_000);
+Console.WriteLine($"{band.Length} allowed ids in the band; the first is {(band.IsEmpty ? 0 : band[0])}");
+
+// The next allowed id after this one.
+if (allowed.TryGetUpperBound(accountId, out int next))
+    Console.WriteLine($"next allowed id: {next}");
 ```

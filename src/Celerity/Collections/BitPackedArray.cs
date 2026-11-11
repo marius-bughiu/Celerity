@@ -25,7 +25,7 @@ namespace Celerity.Collections;
 /// <see cref="EliasFanoSequence"/> compresses further, but only a sorted sequence, and it is immutable.
 /// </para>
 /// <para>
-/// <b>The price.</b> A read is two loads, two shifts and a mask, where an <c>int[]</c> read is one load. Writes
+/// <b>The price.</b> A read is two loads, three shifts, an OR and a mask, where an <c>int[]</c> read is one load. Writes
 /// are a read-modify-write of two words. When the array is small enough to stay in cache, every access is
 /// therefore slower than the primitive array's. When it is not, the smaller footprint means fewer cache misses,
 /// and the gap narrows. The API reference publishes the measured ratios.

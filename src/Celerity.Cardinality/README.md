@@ -47,6 +47,8 @@ if (dedup.TryMarkSeen(evt.Id))     // true the first time, false for a repeat
 dedup.Remove(agedOutId);           // keep the fill bounded to the live window
 ```
 
+To *count* the distinct keys in a sliding window ("unique users in the last 5 minutes") rather than test one key, use `SlidingHyperLogLog<T, THasher>` from `Celerity.Collections`, which this package already references. It answers any window chosen at query time from fixed memory.
+
 ## Why managed (and not a native binding / Redis)
 
 The hot loop is per-element hashing of a managed key through an inlined struct hasher — tens of millions of events/sec that a native HyperLogLog would have to marshal one at a time, and that Redis `PFADD` would send over the wire per element. Cross-shard merge **requires** byte-identical register computation, so a fixed managed hasher that hashes identically on every RID is a genuine correctness feature. These run in trimmed / AOT / WASM sidecars where a per-RID native `.so` is pure tax.

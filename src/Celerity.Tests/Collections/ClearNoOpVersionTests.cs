@@ -33,10 +33,11 @@ namespace Celerity.Tests.Collections;
 /// clear it would be trying to skip. All four therefore bump the version every time, they agree with each
 /// other, and the four tests at the bottom pin that judgement so it reads as a decision rather than as the
 /// same oversight. The probabilistic sketches (<c>BloomFilter</c>,
-/// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>MinHashSketch</c>, <c>TopKSketch</c>) are out of scope
+/// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>SlidingHyperLogLog</c>, <c>MinHashSketch</c>, <c>TopKSketch</c>) are out of scope
 /// entirely: they track no version and expose no enumerator, so there is nothing for a redundant
 /// <c>Clear()</c> to invalidate. The <b>build-once</b> types are out of scope one step further still —
-/// <see cref="WaveletTree"/>, <see cref="SparseTable{T, TMonoid}"/> and <see cref="EliasFanoSequence"/> are
+/// <see cref="WaveletTree"/>, <see cref="SparseTable{T, TMonoid}"/>, <see cref="EliasFanoSequence"/> and
+/// <see cref="FrozenSortedSet{T}"/> are
 /// immutable after construction, so
 /// they expose no <c>Clear()</c> to be redundant and carry no version for one to bump; their enumerators
 /// cannot be invalidated by anything and are pinned on that basis in their own suites.
@@ -46,7 +47,9 @@ namespace Celerity.Tests.Collections;
 /// this family. The empty vector is <c>PersistentVector&lt;T&gt;.Empty</c>, and
 /// <see cref="PersistentHashMap{TKey, TValue, THasher}"/> is out of scope on exactly that reasoning —
 /// its empty map is <c>PersistentHashMap&lt;TKey, TValue, THasher&gt;.Empty</c> — as is
-/// <see cref="PersistentHashSet{T, THasher}"/>, whose empty set is <c>PersistentHashSet&lt;T, THasher&gt;.Empty</c>.
+/// <see cref="PersistentHashSet{T, THasher}"/>, whose empty set is <c>PersistentHashSet&lt;T, THasher&gt;.Empty</c>,
+/// and <see cref="PersistentSortedMap{TKey, TValue, TComparer}"/>, whose empty map is
+/// <c>PersistentSortedMap&lt;TKey, TValue, TComparer&gt;.Empty</c>.
 /// </para>
 /// </summary>
 public class ClearNoOpVersionTests
@@ -311,6 +314,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void RankedMultiSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var set = new RankedMultiSet<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
+    }
+
+    [Fact]
     public void SparseSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var set = new SparseSet(universe: 16);
@@ -463,6 +474,25 @@ public class ClearNoOpVersionTests
     public void BTreeListClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var list = new BTreeList<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => list.GetEnumerator(), list.Clear, () => list.Count, () => list.Add(1));
+    }
+
+    [Fact]
+    public void GapBufferClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        // Empty but with a backing array: "already empty" is Count == 0, not "never allocated".
+        var buffer = new GapBuffer<int>(16);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => buffer.GetEnumerator(), buffer.Clear, () => buffer.Count, () => buffer.Add(1));
+    }
+
+    [Fact]
+    public void SegmentedListClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        // Clear keeps the segments, so the third state (drained by removal, segments still allocated) is the
+        // one this type can get wrong: its _count is zero but its capacity is not.
+        var list = new SegmentedList<int>();
         AssertClearBumpsVersionOnlyWhenItRemovesSomething(
             () => list.GetEnumerator(), list.Clear, () => list.Count, () => list.Add(1));
     }

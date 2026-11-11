@@ -491,6 +491,7 @@ function escapeHtml(s) {
     // and the three Rank arms sweep the query position, where that loop's O(index / 64) cost lives.
     { key: 'RankSelectBitVector', title: 'RankSelectBitVector',                      vs: 'ulong[] popcount loop', ops: ['RankEarly', 'RankMid', 'RankLate', 'Select', 'Build'], items: [1024, 1000000] },
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                      vs: 'HashSet<int>',          ops: ['Add', 'Estimate'] },
+    { key: 'SlidingHyperLogLog',  title: 'SlidingHyperLogLog<T, ...>',               vs: 'Dictionary<int, long>', ops: ['Add', 'CountWindow'], items: [1000, 100000, 1000000] },
     { key: 'MinHashSketch',       title: 'MinHashSketch<T, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Jaccard'] },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                   vs: 'Dictionary<int, int>',  ops: ['Add', 'Estimate'] },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                       vs: 'Dictionary<int, int>',  ops: ['Add', 'TopK'] },
@@ -504,6 +505,16 @@ function escapeHtml(s) {
     // InsertAvl / IndexAvl arms are deliberately absent from `ops`: they use ImmutableList's Builder as their
     // baseline, and `vs` is rendered once per collection, so a card for them would carry the wrong label.
     { key: 'BTreeList',           title: 'BTreeList<int>',                           vs: 'List<int>',             ops: ['Insert', 'RemoveAt', 'Index', 'Enumerate'] },
+    // GapBuffer is the cursor-edit list, benchmarked against the same List<int>: CursorEdit alternates Insert and
+    // RemoveAt at a cursor that drifts a few slots per edit, where List shifts half the list and the gap moves a
+    // few slots. RandomRead and Enumerate run with the gap in the middle, the read path's worst case. Its
+    // CrossCursorEdit arm (BTreeList on the same edits) is deliberately absent from `ops`: it is a second
+    // Celerity arm, not a List baseline, so a card for it would carry the wrong `vs` label.
+    { key: 'GapBuffer',           title: 'GapBuffer<int>',                           vs: 'List<int>',             ops: ['CursorEdit', 'RandomRead', 'Enumerate', 'Append'] },
+    // SegmentedList is the append-built list, benchmarked against a List<int> that is NOT pre-sized: Add is where
+    // List's doubling copies and LOH arrays lose; Index and Enumerate are the price of the segments, and SpanScan
+    // pairs a GetSegment walk with a CollectionsMarshal.AsSpan scan. It sweeps up to 1M, where the LOH cost shows.
+    { key: 'SegmentedList',       title: 'SegmentedList<int>',                       vs: 'List<int> (no pre-size)', ops: ['Add', 'Index', 'Enumerate', 'SpanScan'], items: [1000, 100000, 1000000] },
     // PersistentVector is the immutable sequence, benchmarked against ImmutableList — the BCL's only immutable
     // sequence that appends in better than O(n), and an AVL tree with one heap node per element. Its
     // AppendAtMost10k arms are deliberately absent from `ops`: they use ImmutableArray as their baseline, and
@@ -514,6 +525,10 @@ function escapeHtml(s) {
     // and an AVL tree keyed by hash with one heap node per entry, so its branching factor is two where this
     // one's is 32.
     { key: 'PersistentHashMap',   title: 'PersistentHashMap<int, string, ...>',      vs: 'ImmutableDictionary<int, string>', ops: ['Lookup', 'Insert', 'Update', 'Enumerate'] },
+    // PersistentSortedMap is the immutable ordered map, benchmarked against ImmutableSortedDictionary — the BCL's
+    // only one, an AVL tree with one heap node per entry. LowerBound is charted too. ImmutableSortedDictionary has
+    // no seek, so that card's BCL arm is the seekable workaround, an ImmutableSortedSet of the pairs ordered by key.
+    { key: 'PersistentSortedMap', title: 'PersistentSortedMap<int, string, ...>',    vs: 'ImmutableSortedDictionary<int, string> (LowerBound: ImmutableSortedSet of pairs)', ops: ['Lookup', 'Insert', 'Update', 'Enumerate', 'LowerBound'] },
     // PersistentHashSet is the set half of the same trie, benchmarked against ImmutableHashSet — likewise the
     // BCL's only one, and likewise an AVL tree keyed by hash with a heap node per distinct hash.
     { key: 'PersistentHashSet',   title: 'PersistentHashSet<int, ...>',              vs: 'ImmutableHashSet<int>', ops: ['Contains', 'Insert', 'Remove', 'Enumerate'] },
@@ -618,8 +633,16 @@ function escapeHtml(s) {
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
     // asserted. PartialSort's four ops each carry a different baseline — see PartialSortBenchmark.
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                     vs: 'Array.Sort',            ops: ['Keys', 'Pairs', 'ArgSort'], items: [100, 1000, 100000, 1000000] },
+    // StringSort's ops are data shapes. Presorted is a short-circuit (one ordered scan, then return), so the honest
+    // sorted-input row is NearlySorted (last two keys swapped), which pays the scan and a full sort. Duplicates gain
+    // least among the shapes that sort in full. The baseline is the ordinal comparer, not the culture-aware default.
+    { key: 'StringSort',          title: 'StringSort (ordinal strings)',             vs: 'Array.Sort(StringComparer.Ordinal)', ops: ['Random', 'SharedPrefix', 'Duplicates', 'Presorted', 'NearlySorted', 'Pairs', 'ArgSort'], items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',                 vs: 'Array.Sort',            ops: ['Keys', 'Pairs'], items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',                vs: 'Array.Sort / LINQ / PriorityQueue heap', ops: ['Select', 'SortPrefix', 'TopK', 'TopKHeap'], items: [100, 1000, 100000, 1000000] },
+    // KWayMerge has no BCL counterpart, so every card pairs it with the PriorityQueue hand-roll except ConcatSort,
+    // which is the other answer: concatenate and Array.Sort. Items is the total across all runs (16, or 256 on
+    // MergeWide). Int keys are where the merge's smaller comparison count matters least; MergeStrings is the win.
+    { key: 'KWayMerge',           title: 'KWayMerge (16 sorted runs)',               vs: 'PriorityQueue hand-roll; concatenate + Array.Sort on the ConcatSort card', ops: ['Merge', 'MergeWide', 'MergeStrings', 'ConcatSort', 'Lazy'], items: [1000, 100000, 1000000] },
     // BTreeDictionary / BTreeSet are the ordered containers, benchmarked against the BCL's red-black trees.
     // Mixed (interleaved insert + lookup + in-order range scan) is the documented win workload; RangeScan is
     // the operation SortedDictionary cannot express at all.
@@ -630,6 +653,9 @@ function escapeHtml(s) {
     // same benchmark carry their own op names (SelectByIndex, RankBinarySearch, ...) so they stay out of
     // these buckets and each card still resolves to exactly one BCL and one Celerity measurement.
     { key: 'RankedSet',           title: 'RankedSet<int>',                           vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Select', 'Rank', 'Mixed'] },
+    // RankedMultiSet is RankedSet with duplicates kept. Its BCL arm is the usual tie-break workaround,
+    // SortedSet<(int, long Seq)>; the sorted List<int> arms carry their own op names, as in RankedSet's.
+    { key: 'RankedMultiSet',      title: 'RankedMultiSet<int>',                      vs: 'SortedSet<(int, long)>', ops: ['Add', 'Remove', 'Select', 'Rank', 'CountOf', 'Mixed'] },
     // WaveletTree is the build-once index over a sequence of ints, benchmarked against what a caller
     // writes over the same int[]: a copy plus Array.Sort of the window for a quantile, a counting loop
     // for the rest. The window is 1% of the sequence, so the 1024 arm is where the fixed ten-level
@@ -640,6 +666,12 @@ function escapeHtml(s) {
     // Build. Every card is the price of the compression; the footprint it buys is retained memory, which a
     // timing benchmark does not show, so it lives in the API reference rather than on a card.
     { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                        vs: 'long[]',                ops: ['Access', 'LowerBound', 'Enumerate', 'Build'], items: [1024, 1000000] },
+    // FrozenSortedSet is a static B+ tree over sorted distinct ints, benchmarked against the sorted int[] it
+    // replaces: span BinarySearch for Contains (half hits, half misses, counted branch-free) and ContainsBranching
+    // (the same batch behind an if, whose mispredicts cost the tree its overlap past the caches), for LowerBound (~index on a miss),
+    // and a copy plus Array.Sort for Build. The million-key arm is where the array outgrows the caches and its
+    // twenty dependent loads are each a likely miss, against the tree's five.
+    { key: 'FrozenSortedSet',     title: 'FrozenSortedSet<int>',                     vs: 'sorted int[] + BinarySearch', ops: ['Contains', 'ContainsBranching', 'LowerBound', 'Build'], items: [1000, 100000, 1000000] },
     // BitPackedArray stores 20-bit values in 20 bits each, benchmarked against the int[] a caller would
     // otherwise use: an indexed load for Access, an indexed store for Set, a foreach for Enumerate, and a
     // narrowing copy from the same ulong[] for Build. As with EliasFanoSequence, every card is the price of the
@@ -666,20 +698,35 @@ function escapeHtml(s) {
     { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',      vs: 'List<double> sort + index', ops: ['Add', 'Query', 'QueryPresorted', 'Mixed'] },
     // The sampler's baseline is the good hand-roll — materialize the stream, partial Fisher-Yates — not
     // the OrderBy(random).Take(k) that would flatter it. The win is the footprint, not the asymptotics.
+    // The KLL sketch against the same retain-sort-index baseline as DDSketch, over the same lognormal doubles
+    // and the same four ops. It loses Add and both 1,000-value queries; at 100,000 it wins Mixed and the moving-stream
+    // query against a list kept sorted by insertion. Its reason to exist is any IComparable<T> and a rank bound, which a chart of
+    // doubles cannot show.
+    { key: 'KllSketch',           title: 'KllSketch<T> (rank-error quantiles)',      vs: 'List<double> sort + index', ops: ['Add', 'Query', 'QueryPresorted', 'Mixed'] },
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',        vs: 'List<T> + partial Fisher-Yates', ops: ['Sample', 'Accumulate'] },
     // The rolling median's baseline is the careful hand-roll — a sorted int[] beside a Queue<int>, one span
     // shift per sample between the expiring value and the new one — not a re-sort per read. ItemCount is the
     // window: the shift is linear in it and the heaps logarithmic, so the gap widens with the window.
     { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', ops: ['Slide'], items: [1000, 10000, 100000] },
+    // The weighted sampler's baseline is the idiom a caller writes: a double[] of prefix sums searched with
+    // Array.BinarySearch per draw, on the same Pcg32 stream. ItemCount is the number of outcomes: the search
+    // is O(log n) dependent loads and the alias draw one load, so the gap widens as the sums leave cache.
+    // Build is expected to lose; it is charted so the break-even draw count can be read off it.
+    { key: 'AliasTable',          title: 'AliasTable (weighted sampling)',           vs: 'prefix sums + Array.BinarySearch', ops: ['Sample', 'Build'], items: [100, 10000, 1000000] },
     // Welford against the LINQ two-pass. Expect a factor near one on Moments: the reason to prefer this
     // type is that the faster one-pass shortcut is numerically wrong, which a chart cannot show.
-    { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',      vs: 'LINQ two-pass mean / variance', ops: ['Moments', 'Accumulate'] }
+    { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',      vs: 'LINQ two-pass mean / variance', ops: ['Moments', 'Accumulate'] },
+    // Celerity.Ring. ItemCount is the node count. The baseline is the hand-rolled ring (a sorted uint[] of 160
+    // virtual nodes per node and Array.BinarySearch) with the same key hash, so GetNode isolates the structure.
+    // Churn (one node leaves and rejoins) is the cost Maglev pays for its one-load lookup, and it loses there:
+    // the whole table is refilled whatever the node count. Charted so the trade stays visible.
+    { key: 'MaglevHash',          title: 'MaglevHash<TNode, TKey, THasher>',         vs: 'sorted uint[] ring + Array.BinarySearch', ops: ['GetNode', 'Churn'], items: [10, 100, 1000] }
   ];
 
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;
