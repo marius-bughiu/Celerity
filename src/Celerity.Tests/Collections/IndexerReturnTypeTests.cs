@@ -304,4 +304,35 @@ public class IndexerReturnTypeTests
             keyType: typeof(string),
             valueGenericIndex: 1);
     }
+
+    [Fact]
+    public void PersistentSortedMap_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(
+            typeof(PersistentSortedMap<string, int, DefaultComparer<string>>),
+            keyType: typeof(string),
+            valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void PersistentSortedMap_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        PersistentSortedMap<int, string, DefaultComparer<int>> map =
+            PersistentSortedMap<int, string, DefaultComparer<int>>.Empty.Add(1, "hello");
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
+    public void PersistentSortedMapBuilder_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        // Pinned for the reason the PersistentHashMap builder's is: the builder's indexer is the writable one,
+        // and drifting it to TValue? would carry the map's surface along through ToImmutable.
+        AssertPrimaryIndexerReturnsTValue(
+            typeof(PersistentSortedMap<string, int, DefaultComparer<string>>.Builder),
+            keyType: typeof(string),
+            valueGenericIndex: 1);
+    }
 }

@@ -8,9 +8,10 @@ namespace Celerity.Tests.Collections;
 /// out-of-band <c>null</c>-key contract shared by the collections exercised here — the hash-based family
 /// plus <see cref="PersistentHashMap{TKey, TValue, THasher}"/> and <see cref="PersistentHashSet{T, THasher}"/>.
 /// The ordered types are deliberately not in
-/// scope: <see cref="BTreeDictionary{TKey, TValue, TComparer}"/> and its siblings store a
-/// <c>default(TKey)</c> inline and sort it wherever the comparer puts it, so they have no out-of-band slot
-/// to pin.
+/// scope: <see cref="BTreeDictionary{TKey, TValue, TComparer}"/> and its siblings — and
+/// <see cref="PersistentSortedMap{TKey, TValue, TComparer}"/>, the sorted sibling of
+/// <see cref="PersistentHashMap{TKey, TValue, THasher}"/> — store a <c>default(TKey)</c> inline and sort it
+/// wherever the comparer puts it, so they have no out-of-band slot to pin.
 /// </summary>
 /// <remarks>
 /// <para>
