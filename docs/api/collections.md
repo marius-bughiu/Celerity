@@ -8669,7 +8669,7 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 
 An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *where does this element rank?* (`IndexOf` for one that is present, `CountLessThan` for the rank one *would* take whether or not it is) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
 
-The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#how-it-is-laid-out) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
+The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#layout-rankedset) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
 
 ### The gap it fills
 
@@ -8684,7 +8684,9 @@ The BCL has no answer either, and this is a genuine gap rather than a "we are fa
 | A hand-rolled sorted `List<T>` | `O(n)` memmove | `O(log n)` (`BinarySearch`) | `O(1)` |
 | `RankedSet<T, TComparer>` | `O(√n)` memmove | `O(log n)` | `O(log n)` |
 
-Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one, and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched.
+Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one, and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched. Those workloads need **distinct** elements here, because this is a set: a window of samples with repeated values, or a leaderboard with tied scores, would lose its repeats and report wrong percentiles. [`RankedMultiSet`](#rankedmultisett-tcomparer) is the same layout with every copy kept.
+
+<a id="layout-rankedset"></a>
 
 ### How it is laid out
 
@@ -8809,8 +8811,8 @@ using Celerity.Collections;
 
 // The top N *distinct* scores, kept live as they arrive. This is a set, so an equal score is not a second
 // entry — which is what makes evicting by rank 0 exactly right here: the lowest distinct score is the one
-// that falls out of the top N. To keep every sample instead, make the element a composite the comparer
-// orders by score, e.g. (score, sampleId), so equal scores stay distinct and can be evicted individually.
+// that falls out of the top N. To keep every sample instead, use RankedMultiSet<int>, which keeps equal
+// scores as separate entries in arrival order.
 var top = new RankedSet<int>();
 
 foreach (int score in arriving)
@@ -8833,6 +8835,139 @@ Console.WriteLine(top[top.Count - 10]);           // the tenth from the top
 foreach (int score in top.EnumerateRange(1000, 2000))
 {
     Process(score);
+}
+```
+
+## RankedMultiSet&lt;T, TComparer&gt;
+
+```csharp
+public class RankedMultiSet<T, TComparer> : ICollection<T>, IReadOnlyList<T>
+    where TComparer : struct, IComparer<T>
+
+// Ordered by Comparer<T>.Default:
+public class RankedMultiSet<T> : RankedMultiSet<T, DefaultComparer<T>>
+```
+
+An **order-statistics multiset**: [`RankedSet`](#rankedsett-tcomparer) with duplicates kept. `Add` never rejects an element. `CountOf` says how many copies there are, `CountLessThan` gives the rank a value would take, and `this[int]` gives the k-th smallest counting every copy. All three are `O(log n)` on a collection that is still being inserted into and removed from.
+
+### The gap it fills
+
+.NET has no sorted collection that keeps duplicates. `SortedSet<T>`, `SortedList<TKey, TValue>` and `SortedDictionary<TKey, TValue>` all reject a second equal element. `RankedSet` rejects it too, which matters because its two headline workloads are full of ties. A window of latency samples repeats values, and a leaderboard has tied scores. A set silently drops the repeats, so its percentiles are wrong.
+
+| The workaround | Duplicates | Mutation | Rank | Select |
+| --- | --- | --- | --- | --- |
+| `SortedSet<(T, long Seq)>`: a tie-break sequence number in every element | yes, by widening the element | `O(log n)` | none, `O(n)` | none, `O(k)` |
+| `SortedDictionary<T, int>`: a count per distinct value | counts only, not the elements | `O(log n)` | none, `O(n)` | none, `O(n)` |
+| A hand-rolled sorted `List<T>` with lower- and upper-bound searches | yes | `O(n)` memmove | `O(log n)` | `O(1)` |
+| `RankedMultiSet<T, TComparer>` | yes | `O(√n)` memmove | `O(log n)` | `O(log n)` |
+
+### Equal elements keep insertion order
+
+`Add` places a new element **after** every element the comparer orders equal to it, and `Remove` takes the **earliest-added** of them. So the type is stable: among ties it is first in, first out. Enumeration, `this[int]`, `Min` and the bounds all see equal elements in arrival order, and splits, merges and `TrimExcess` preserve it. That matters when the comparer looks at only part of the element. For example, events ordered by timestamp keep their arrival order within one timestamp, and `Remove` with any event of that timestamp takes the oldest one. The `IEnumerable` constructors insert in enumeration order, so they are stable too.
+
+### How it is laid out
+
+The layout is `RankedSet`'s: sorted buckets of `Θ(√n)` capacity (never below 512), with a Fenwick tree over the bucket lengths for the positional half. See [how RankedSet is laid out](#layout-rankedset) for the capacity rule and the high-water caveat. Both apply unchanged, and `TrimExcess()` is the remedy after a sharp contraction. One thing differs: a run of equal elements can span several buckets, and several buckets can then share the same maximum. So every query searches for a **boundary**, either the first element not less than the probe or the first element greater than it, rather than for any match.
+
+| | |
+| --- | --- |
+| `Contains`, `CountOf`, `IndexOf`, `LastIndexOf`, `CountLessThan`, `CountLessThanOrEqual`, the bounds, `this[int]` | `O(log n)` |
+| `Add`, `Remove`, `RemoveAt` | **`O(√n)`**: an `O(log n)` search (two binary searches, or a Fenwick descent for `RemoveAt`) and an `O(log b)` Fenwick update, plus a memmove of at most one bucket |
+| `RemoveAll(item)` | One pass over a run of `k` copies: trim its two end buckets, drop the buckets between in one shift, rebuild the index once. `O(√n + k)`, not `k` separate removals |
+| `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)`, over contiguous arrays |
+
+### When to choose it, and when not to
+
+Reach for it when a sorted collection has to keep repeats and answer rank or select questions while it changes: a sliding-window percentile over raw samples, a leaderboard with ties, or the "sorted list with duplicate keys" the BCL does not have. Reach for [`RankedSet`](#rankedsett-tcomparer) when the elements really are distinct, since it adds the `ISet<T>` algebra. Use [`RollingQuantile`](statistics.md#rollingquantile) when only one fixed quantile of a window is needed. Use a sorted array when the data is built once and only queried, because indexing one array is `O(1)`. At about a thousand elements the hand-rolled sorted `List<T>` wins the mixed workload, because its memmove fits in cache.
+
+<a id="measured-rankedmultiset"></a>
+
+### Measured
+
+A local short-job run (Apple M-series, .NET 8), `int` elements drawn from `ItemCount / 320` distinct values (at least 16). So the `Mixed` window holds about sixteen copies of each value at 100,000. Every group has three arms: `SortedSet<(int, long)>` (the composite workaround, and the baseline), a sorted `List<int>` with hand-written lower- and upper-bound searches, and this type. The ratios are *this type against that arm*, so above 1 means it is faster. The CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedMultiSet) is the contract.
+
+| Group | vs `SortedSet<(T, long)>` @100k | vs sorted `List<T>` @100k | vs `SortedSet<(T, long)>` @1k | vs sorted `List<T>` @1k |
+| --- | ---: | ---: | ---: | ---: |
+| **Mixed** (sliding window + a rank and a select per step) | **166x** | **1.82x** | **8.6x** | ⚠️ 0.76x |
+| Select (k-th smallest) | 57,700x | 0.08x | 920x | 0.14x |
+| Rank (`CountLessThan`) | 16,600x | 0.72x | 262x | 0.78x |
+| CountOf | 72x | 0.75x | 31x | 0.75x |
+| Add | 1.48x | **17.4x** | 1.20x | 0.95x |
+| Remove (one copy per call) | 1.44x | **18.6x** | — | — |
+
+The 1k `Remove` cells are left out because that group runs with `[IterationSetup]`, so BenchmarkDotNet takes one invocation per iteration and a short job is mostly warm-up there.
+
+**The Mixed row is the one that decides anything.** At 100,000 this type beats both pre-registered bars: 1.5x the hand-rolled list and 10x the composite `SortedSet`. At a thousand elements the list wins (0.76x), because a 50-element window fits in cache. This is a large-collection type. On pure queries the sorted list is ahead, since it indexes one array and searches one contiguous span. It loses only where it has to move elements, at 17–19x on `Add` and `Remove` at 100,000.
+
+### Constructors
+
+```csharp
+public RankedMultiSet()
+public RankedMultiSet(TComparer comparer)
+public RankedMultiSet(IEnumerable<T> source)
+public RankedMultiSet(IEnumerable<T> source, TComparer comparer)
+```
+
+There is no capacity and no load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and keep every element, with equal elements in enumeration order.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `TComparer Comparer { get; }` | Element count, counting every copy; the comparer defining the order. |
+| `T this[int index] { get; }` | The `index`-th smallest counting duplicates, `O(log n)`. Throws `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `void Add(T item)` | Insert after every equal element, `O(√n)`. Never rejects. `ICollection<T>.Add` is the same call. |
+| `bool Contains(T item)` | Whether at least one equal element is present, `O(log n)`. |
+| `int CountOf(T item)` | How many elements are equal to `item`, `O(log n)` however many there are. |
+| `int IndexOf(T item)` / `int LastIndexOf(T item)` | The position of the first / last equal element, `O(log n)`, or `-1` when there is none. |
+| `int CountLessThan(T item)` / `int CountLessThanOrEqual(T item)` | The rank `item` would take, before / after its own copies, whether or not it is present. |
+| `bool Remove(T item)` | Remove one copy, the earliest added, `O(√n)`. Returns `false` when none is equal. |
+| `int RemoveAll(T item)` | Remove every copy in one pass, however many buckets the run spans. Returns the number removed. |
+| `void RemoveAt(int index)` | Remove by rank, `O(√n)`. |
+| `void Clear()` | Drop every element and release every bucket and slot array. A no-op on an empty multiset does not invalidate enumerators. |
+| `void TrimExcess()` | Rebuild at the capacity the current count calls for, `O(n)`, preserving the order of equal elements. Invalidates active enumerators. |
+| `T Min { get; }` / `T Max { get; }` | Smallest (earliest of its ties) / largest (latest of its ties), `O(1)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out T item)` / `TryGetMax(out T item)` | The non-throwing forms. |
+| `bool TryGetLowerBound(T item, out T bound)` / `TryGetUpperBound(T item, out T bound)` | First element **≥** / **>** `item`, `O(log n)`. |
+| `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | Every element of the half-open range, duplicates included, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `void CopyTo(T[] array, int arrayIndex)` | Copy every element in ascending order, one array copy per bucket. Follows [the `CopyTo` argument contract](#the-copyto-argument-contract). |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. |
+
+Equality is defined by `TComparer`: two elements are copies of the same value when the comparer orders them equal, even if they differ otherwise. Under `DefaultComparer<T>`, `null` orders first and is an ordinary element, and it can repeat like any other. Adding (always), a `Remove` that finds a copy, a `RemoveAll` that finds at least one, `RemoveAt`, a `Clear` that removes something, and `TrimExcess` on a non-empty multiset invalidate active enumerators. Lookups and a removal that finds nothing do not. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// The last 1,000 latency samples, ties and all, with any percentile on demand.
+var window = new RankedMultiSet<int>();
+var arrivals = new Queue<int>();
+
+foreach (int latency in samples)
+{
+    window.Add(latency);
+    arrivals.Enqueue(latency);
+    if (arrivals.Count > 1_000)
+    {
+        window.Remove(arrivals.Dequeue());   // one copy, not every equal sample
+    }
+}
+
+Console.WriteLine(window[(window.Count - 1) / 2]);          // p50
+Console.WriteLine(window[(window.Count - 1) * 99 / 100]);   // p99
+Console.WriteLine(window.CountOf(250));                      // samples at exactly 250 ms
+Console.WriteLine(window.Count - window.CountLessThan(250)); // samples at or above 250 ms
+
+// Stability: events ordered by timestamp alone keep their arrival order within a timestamp.
+var timeline = new RankedMultiSet<(long At, string Name), ByTimestamp>();
+timeline.Add((10, "first"));
+timeline.Add((10, "second"));
+Console.WriteLine(timeline[0].Name);   // first
+
+readonly struct ByTimestamp : IComparer<(long At, string Name)>
+{
+    public int Compare((long At, string Name) x, (long At, string Name) y) => x.At.CompareTo(y.At);
 }
 ```
 

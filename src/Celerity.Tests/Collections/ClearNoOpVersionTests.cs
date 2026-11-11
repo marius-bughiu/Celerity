@@ -311,6 +311,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void RankedMultiSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var set = new RankedMultiSet<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
+    }
+
+    [Fact]
     public void SparseSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var set = new SparseSet(universe: 16);
