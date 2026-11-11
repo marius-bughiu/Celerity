@@ -33,10 +33,11 @@ namespace Celerity.Collections;
 /// <para>
 /// <strong>Precondition:</strong> the shared instance is <c>default(THasher)</c>, so a caller
 /// may only use this type when it hashes through <c>default(THasher)</c> itself. Every sketch
-/// does: each assigns <c>_hasher = default</c> in its constructor, the field is
-/// <c>readonly</c>, and none of them exposes a constructor that accepts a hasher instance — so
-/// the shared instance is indistinguishable from the field they hold, even for a hasher struct
-/// that carries state. Should a sketch ever gain a hasher-instance constructor, that
+/// does: each either assigns <c>_hasher = default</c> in its constructor and keeps the field
+/// <c>readonly</c>, or (the HyperLogLog pair, through <c>HyperLogLogHash</c>) calls
+/// <c>default(THasher)</c> directly, and none of them exposes a constructor that accepts a hasher
+/// instance — so the shared instance is indistinguishable from the one they hash through, even
+/// for a hasher struct that carries state. Should a sketch ever gain a hasher-instance constructor, that
 /// equivalence breaks and the 64-bit path would silently hash with the default instead; the
 /// invariant is pinned by <c>SketchHashProvider64Tests.Sketches_DoNotExposeAHasherInstanceConstructor</c>
 /// so it cannot rot unnoticed.

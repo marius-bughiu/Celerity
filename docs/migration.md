@@ -12,34 +12,21 @@ Celerity is designed to be a near drop-in for the parts of the BCL collection AP
 | `Dictionary<long, V>` | `LongDictionary<V>` | Defaults to `Int64WangNaiveHasher`. |
 | `Dictionary<K, V>` (other keys) | `CelerityDictionary<K, V, THasher>` | Pick a struct hasher for `K`. |
 | `FrozenDictionary<string, V>` | `FrozenCelerityDictionary<V>` | Build-once, read-many; perfect hashing. |
-| `HashSet<int>` | `IntSet` | Membership only. |
-| `HashSet<long>` | `LongSet` | Membership only. |
+| `HashSet<int>` | `IntSet` | Full `ISet<int>` / `IReadOnlySet<int>`. |
+| `HashSet<long>` | `LongSet` | Full `ISet<long>` / `IReadOnlySet<long>`. |
 | `HashSet<T>` (other) | `CeleritySet<T, THasher>` | Pick a struct hasher for `T`. |
 | `ILookup<K, V>` / `IEnumerable.ToLookup` | `CelerityMultiMap<K, V, THasher>` | One key → many values; mutable. |
 | `ConcurrentDictionary<,>` | *(stay on BCL)* | Celerity is single-threaded. |
 
-## The three differences that affect every migration
+## The two differences that affect every migration
 
 These apply to **all** Celerity dictionaries and sets. Internalize them once.
 
-### 1. Read-only interface, not `IDictionary<,>`
+The interfaces are not one of them. The mutable dictionaries implement both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`, and the mutable sets implement both `ISet<T>` and `IReadOnlySet<T>`. Code that passes a collection around as any of those interfaces keeps compiling after the swap.
 
-Celerity dictionaries implement `IReadOnlyDictionary<TKey, TValue?>` — **not** the mutable `IDictionary<TKey, TValue>`. The concrete type is fully mutable (indexer set, `Add`, `Remove`, `Clear`), but code that passes the dictionary around as `IDictionary<,>` won't compile.
+### 1. Values are nullable (`TValue?`)
 
-```csharp
-// Before
-IDictionary<int, string> map = new Dictionary<int, string>();
-
-// After — either keep the concrete type, or use the read-only interface
-IntDictionary<string> map = new IntDictionary<string>();   // mutable via concrete API
-IReadOnlyDictionary<int, string?> ro = map;                // read-only view
-```
-
-If you have a method signature `void Consume(IDictionary<int,string> d)`, change it to take the concrete `IntDictionary<string>` or `IReadOnlyDictionary<int, string?>`.
-
-### 2. Values are nullable (`TValue?`)
-
-The read interface is `IReadOnlyDictionary<TKey, TValue?>`, and `TryGetValue`, the indexer getter, and enumeration all surface `TValue?`. For reference types under nullable-aware code this means an extra null check (or `!`) at the call site:
+The dictionary interfaces are `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`, and `TryGetValue`, the indexer getter, and enumeration all surface `TValue?`. For reference types under nullable-aware code this means an extra null check (or `!`) at the call site:
 
 ```csharp
 if (dict.TryGetValue(key, out string? value))   // note: string?, not string
@@ -48,13 +35,15 @@ if (dict.TryGetValue(key, out string? value))   // note: string?, not string
 
 For value types this is just `Nullable<T>` ergonomics and usually needs no change.
 
-### 3. No guaranteed iteration order
+### 2. No guaranteed iteration order — except `LinkedDictionary` and `LinkedSet`
 
-BCL `Dictionary<,>` has an *incidental* insertion-ish order that people sometimes rely on. Celerity's iteration order is **unspecified and may change between versions** (it reflects the open-addressed probe layout). If you depend on order, sort explicitly or keep the BCL type:
+BCL `Dictionary<,>` has an *incidental* insertion-ish order that people sometimes rely on. The iteration order of Celerity's hash dictionaries and sets is **unspecified and may change between versions** (it reflects the probe layout). If you depend on order, sort explicitly:
 
 ```csharp
 foreach (var kvp in dict.OrderBy(k => k.Key)) { ... }   // make the order explicit
 ```
+
+If the order you depend on is **insertion order**, switch to [`LinkedDictionary<TKey, TValue, THasher>`](api/collections.md#linkeddictionarytkey-tvalue-thasher) or [`LinkedSet<T, THasher>`](api/collections.md#linkedsett-thasher). They are hash-based and guarantee insertion order, even through removals, which the BCL `Dictionary<,>` does not. For sorted order, use `BTreeDictionary` / `BTreeSet`.
 
 ## `Dictionary<int, V>` → `IntDictionary<V>`
 
@@ -161,7 +150,7 @@ seen.Contains(1);
 seen.Remove(2);
 ```
 
-**Gotcha:** Celerity sets expose `Add` (insert) and `TryAdd` (returns the BCL `HashSet.Add` boolean). Where you used `HashSet<T>.Add`'s return value to detect first-insertion, switch to `TryAdd`. Celerity sets are membership-only — there are no set-algebra operations (`UnionWith`, `IntersectWith`, etc.); compose those manually or stay on `HashSet<T>` if you need them.
+**Gotcha:** Celerity sets expose `Add` (insert) and `TryAdd` (returns the BCL `HashSet.Add` boolean). Where you used `HashSet<T>.Add`'s return value to detect first-insertion, switch to `TryAdd`. The `ISet<T>` set algebra (`UnionWith`, `IntersectWith`, `IsSubsetOf`, …) follows `HashSet<T>` semantics, with one exception: `s.ExceptWith(s.Where(...))` throws `InvalidOperationException` on every mutable Celerity set, because `Remove` invalidates the enumerator the lazy view is reading, while `HashSet<T>` completes. Materialize the view first: `s.ExceptWith(s.Where(...).ToList())`.
 
 ## `ILookup<K, V>` / `ToLookup` → `CelerityMultiMap<K, V, THasher>`
 
@@ -188,9 +177,7 @@ The indexer returns an **empty group** for an absent key (it never throws — un
 Keep the BCL type when any of these hold — Celerity explicitly does not target them:
 
 - **Concurrent access from multiple threads.** Celerity is single-threaded. Use `ConcurrentDictionary<,>` or your own locking around a BCL `Dictionary<,>`.
-- **You need the mutable `IDictionary<,>` interface** at an API boundary you don't control.
-- **You depend on a specific or stable iteration order.**
-- **You need set-algebra operations** (`UnionWith`, `IntersectWith`, `IsSubsetOf`, …) — use `HashSet<T>`.
+- **You depend on the BCL's incidental iteration order** and it is not insertion order (which `LinkedDictionary` / `LinkedSet` guarantee) or sorted order (which the B-trees give).
 - **Custom *equality* semantics** (not just custom hashing) via `IEqualityComparer<TKey>`.
 - **The collection isn't on a documented winning shape.** If Celerity doesn't beat the BCL on your workload, there's nothing to gain.
 
@@ -198,11 +185,10 @@ Keep the BCL type when any of these hold — Celerity explicitly does not target
 
 1. ☐ Confirm the workload is a shape Celerity wins on (see the [decision table](../README.md#choosing-a-collection)).
 2. ☐ Swap the type; for non-`int`/`long` keys, choose a struct hasher.
-3. ☐ Change `IDictionary<,>` parameters/fields to the concrete type or `IReadOnlyDictionary<,>`.
-4. ☐ Add `?`/null handling where `TryGetValue` / the indexer / enumeration now yield `TValue?`.
-5. ☐ Replace any reliance on iteration order with an explicit sort.
-6. ☐ For sets, switch first-insertion checks from `Add` to `TryAdd`.
-7. ☐ Pre-size `capacity` and validate the swap with a benchmark — see the [performance guide](performance.md).
+3. ☐ Add `?`/null handling where `TryGetValue` / the indexer / enumeration now yield `TValue?`.
+4. ☐ Replace any reliance on iteration order with an explicit sort, or with `LinkedDictionary` / `LinkedSet` if it is insertion order.
+5. ☐ For sets, switch first-insertion checks from `Add` to `TryAdd`, and materialize a lazy view of the set before passing it to its own `ExceptWith`.
+6. ☐ Pre-size `capacity` and validate the swap with a benchmark — see the [performance guide](performance.md).
 
 ## 2.0.0 — the package split
 

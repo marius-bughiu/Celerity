@@ -363,4 +363,47 @@ public class RingCoverageGapTests
         Assert.Equal("fresh", pool.GetNode("some-key"));
         Assert.Equal(new[] { "fresh" }, pool.GetReplicas("some-key", 3));
     }
+
+    // ---------------------------------------------------------------------------------------------------
+    // MaglevHash
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>The forward replica walk wraps off the end of the lookup table back to slot 0.</summary>
+    [Fact]
+    public void Maglev_GetReplicas_ShouldWrapPastTheLastSlot_WhenTheKeysSlotIsTheLast()
+    {
+        // Identity-hashed key TableSize - 1 lands in the last slot, so any second replica can only come from
+        // slot 0 onwards.
+        const int TableSize = 31;
+        var maglev = new MaglevHash<string, uint, UInt32IdentityHasher>(TableSize);
+        for (int i = 0; i < 4; i++)
+            maglev.Add($"n{i}", $"n{i}");
+
+        string[] table = MaglevTable.Read(maglev);
+        IReadOnlyList<string> replicas = maglev.GetReplicas(TableSize - 1, 4);
+
+        Assert.Equal(table[TableSize - 1], replicas[0]);
+        Assert.Equal(table.Skip(TableSize - 1).Concat(table).Distinct().Take(4), replicas);
+    }
+
+    /// <summary><c>NodeCount</c> follows adds and removes, and a miss on <c>Remove</c> changes nothing.</summary>
+    [Fact]
+    public void Maglev_NodeCountAndRouting_ShouldTrackMembership_WhenNodesJoinAndLeave()
+    {
+        var maglev = new StringMaglevHash<string>(tableSize: 1_009);
+        Assert.Equal(0, maglev.NodeCount);
+
+        maglev.Add("a", "a");
+        maglev.Add("b", "b", weight: 2);
+        Assert.Equal(2, maglev.NodeCount);
+
+        string[] before = Enumerable.Range(0, 300).Select(i => maglev.GetNode($"k{i}")).ToArray();
+        Assert.False(maglev.Remove("never-added"));
+        Assert.Equal(2, maglev.NodeCount);
+        Assert.Equal(before, Enumerable.Range(0, 300).Select(i => maglev.GetNode($"k{i}")).ToArray());
+
+        Assert.True(maglev.Remove("a"));
+        Assert.Equal(1, maglev.NodeCount);
+        Assert.All(Enumerable.Range(0, 300), i => Assert.Equal("b", maglev.GetNode($"k{i}")));
+    }
 }

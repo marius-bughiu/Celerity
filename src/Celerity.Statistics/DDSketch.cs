@@ -36,7 +36,8 @@ namespace Celerity.Statistics;
 /// say about either. The mirror is a true one: a negative value is filed under the
 /// <em>negated</em> index of its magnitude, so the second ladder runs in ascending value order
 /// like the first and its bin budget discards the most negative values rather than the ones
-/// nearest zero. Only NaN and the infinities are rejected.
+/// nearest zero. Only NaN and the infinities are rejected as values; an <c>Add</c> that would
+/// overflow the exact <see cref="Count"/> is rejected too.
 /// </para>
 /// <para>
 /// <strong>Memory is capped, and the cap is visible.</strong> A stream spanning an
