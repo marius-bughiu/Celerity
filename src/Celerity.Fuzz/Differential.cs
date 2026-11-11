@@ -84,6 +84,7 @@ internal static class Differential
         ("AhoCorasick", AhoCorasickCase),
         ("Rope", RopeCase),
         ("BTreeList", BTreeListCase),
+        ("GapBuffer", GapBufferCase),
         ("SuccinctTrie", SuccinctTrieCase),
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
@@ -3605,6 +3606,338 @@ internal static class Differential
                 minimum *= 16;
         }
         Check(expected.Count >= minimum, $"{label} is {actual.Depth} levels deep at only {expected.Count} elements");
+    }
+
+    // ---- gap buffer ----------------------------------------------------------
+
+    // GapBuffer against the List<T> it replaces. Every element is in one of two runs either side of a movable
+    // gap, so what is on trial is the bookkeeping that moves it: a gap move that copies one element too few, a
+    // growth that reopens the gap at the wrong position, or a range removal that absorbs the wrong side all
+    // leave the count right and surface as a read from the wrong slot. Positions are therefore skewed to sit
+    // next to GapPosition (the O(1) cursor edits the type exists for, and the boundary the position mapping
+    // pivots on), to both ends, and uniform; every edit is followed by reads around the position it touched,
+    // and the whole sequence is reconciled through every read path — indexer, enumerator, ToArray, CopyTo and
+    // the GetSpans halves — on a schedule and at the end.
+    //
+    // The documented GapPosition contract (an insert leaves the gap just after what it inserted, a removal
+    // leaves it at the removed position, EnsureCapacity and TrimExcess keep it) is checked directly, since the
+    // oracle has no gap. One case in four runs over strings, so the slot-clearing paths a reference type
+    // takes are reached too; InsertRange is fed spans over the buffer's own storage, which the type promises
+    // to handle.
+    private static void GapBufferCase(Random rng)
+    {
+        if (rng.Next(0, 4) == 0)
+            GapBufferRun(rng, static v => v.ToString());
+        else
+            GapBufferRun(rng, static v => v);
+    }
+
+    private static void GapBufferRun<T>(Random rng, Func<int, T> make)
+    {
+        var comparer = EqualityComparer<T>.Default;
+        int initial = rng.Next(0, 8) == 0 ? rng.Next(600, 5_001) : rng.Next(0, 200);
+        var oracle = new List<T>(initial);
+        for (int i = 0; i < initial; i++)
+            oracle.Add(make(Value(rng)));
+
+        GapBuffer<T> sut;
+        switch (rng.Next(0, 5))
+        {
+            case 0:
+                sut = new GapBuffer<T>(oracle);
+                break;
+            case 1:
+                sut = new GapBuffer<T>(oracle.Select(static v => v));
+                break;
+            case 2:
+                sut = new GapBuffer<T>(rng.Next(0, 2 * initial + 2));
+                sut.InsertRange(0, CollectionsMarshal.AsSpan(oracle));
+                break;
+            case 3:
+                sut = new GapBuffer<T>();
+                foreach (T value in oracle)
+                    sut.Add(value);
+                break;
+            default:
+                sut = new GapBuffer<T>();
+                for (int i = oracle.Count - 1; i >= 0; i--)
+                    sut.Insert(0, oracle[i]);
+                break;
+        }
+        CheckGapBuffer(sut, oracle, "GapBuffer build");
+
+        int operations = rng.Next(0, 1500);
+        int fullCheckEvery = 40;
+
+        for (int op = 0; op < operations; op++)
+        {
+            int touched;
+            switch (rng.Next(0, 100))
+            {
+                case < 25:
+                {
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    T value = make(Value(rng));
+                    sut.Insert(index, value);
+                    oracle.Insert(index, value);
+                    Check(sut.GapPosition == index + 1, $"GapBuffer Insert({index}) left the gap at {sut.GapPosition}");
+                    touched = index;
+                    break;
+                }
+                case < 32:
+                {
+                    T value = make(Value(rng));
+                    sut.Add(value);
+                    oracle.Add(value);
+                    Check(sut.GapPosition == oracle.Count, $"GapBuffer Add left the gap at {sut.GapPosition}");
+                    touched = oracle.Count - 1;
+                    break;
+                }
+                case < 54:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count);
+                    sut.RemoveAt(index);
+                    oracle.RemoveAt(index);
+                    Check(sut.GapPosition == index, $"GapBuffer RemoveAt({index}) left the gap at {sut.GapPosition}");
+                    touched = index;
+                    break;
+                }
+                case < 60:
+                {
+                    // Ranges that sit wholly before the gap, wholly after it, touch it, or straddle it — the four
+                    // shapes RemoveCore resolves differently — fall out of a start near the gap and a short length.
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    int count = rng.Next(0, Math.Min(oracle.Count - index, 12) + 1);
+                    if (rng.Next(0, 16) == 0)
+                        count = oracle.Count - index;
+                    int gapBefore = sut.GapPosition;
+                    sut.RemoveRange(index, count);
+                    oracle.RemoveRange(index, count);
+                    int expectedGap = count == 0 ? gapBefore : index;
+                    Check(sut.GapPosition == expectedGap,
+                        $"GapBuffer RemoveRange({index}, {count}) left the gap at {sut.GapPosition}, expected {expectedGap}");
+                    touched = index;
+                    break;
+                }
+                case < 67:
+                {
+                    // A fresh run, sometimes longer than the gap so InsertRange has to grow.
+                    int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    var run = new T[rng.Next(0, rng.Next(0, 4) == 0 ? 64 : 6)];
+                    for (int i = 0; i < run.Length; i++)
+                        run[i] = make(Value(rng));
+                    int gapBefore = sut.GapPosition;
+                    sut.InsertRange(index, run);
+                    oracle.InsertRange(index, run);
+                    int expectedGap = run.Length == 0 ? gapBefore : index + run.Length;
+                    Check(sut.GapPosition == expectedGap,
+                        $"GapBuffer InsertRange({index}, {run.Length}) left the gap at {sut.GapPosition}, expected {expectedGap}");
+                    touched = index;
+                    break;
+                }
+                case < 72:
+                {
+                    // A run over the buffer's own storage: a slice of either GetSpans half, inserted anywhere. The
+                    // gap move or growth that precedes the copy rewrites that storage, so the type must have read
+                    // the span out first. The slice is capped so repeated self-inserts cannot grow a case
+                    // geometrically.
+                    sut.GetSpans(out ReadOnlySpan<T> beforeGap, out ReadOnlySpan<T> afterGap);
+                    int gap = sut.GapPosition;
+                    bool fromAfter = rng.Next(0, 2) == 0;
+                    ReadOnlySpan<T> half = fromAfter ? afterGap : beforeGap;
+                    int start = rng.Next(0, half.Length + 1);
+                    int length = rng.Next(0, Math.Min(half.Length - start, 64) + 1);
+                    ReadOnlySpan<T> slice = half.Slice(start, length);
+                    T[] expectedRun = oracle.GetRange((fromAfter ? gap : 0) + start, length).ToArray();
+                    Check(slice.SequenceEqual(expectedRun, comparer), "GapBuffer GetSpans slice disagreed before a self-insert");
+
+                    int index = GapBufferPosition(rng, gap, oracle.Count + 1);
+                    sut.InsertRange(index, slice);
+                    oracle.InsertRange(index, expectedRun);
+                    int expectedGap = length == 0 ? gap : index + length;
+                    Check(sut.GapPosition == expectedGap,
+                        $"GapBuffer self-InsertRange({index}, {length}) left the gap at {sut.GapPosition}, expected {expectedGap}");
+                    touched = index;
+                    break;
+                }
+                case < 80:
+                {
+                    if (oracle.Count == 0)
+                    {
+                        touched = 0;
+                        break;
+                    }
+                    int gapBefore = sut.GapPosition;
+                    int index = GapBufferPosition(rng, gapBefore, oracle.Count);
+                    T value = make(Value(rng));
+                    sut[index] = value;
+                    oracle[index] = value;
+                    Check(sut.GapPosition == gapBefore, "GapBuffer indexer set moved the gap");
+                    touched = index;
+                    break;
+                }
+                case < 86:
+                {
+                    // A value drawn from the element domain, so most removes hit and some miss; both remove the
+                    // first occurrence, so the oracle's IndexOf is also the position the buffer edited.
+                    T value = make(Value(rng));
+                    int gapBefore = sut.GapPosition;
+                    touched = oracle.IndexOf(value);
+                    Check(sut.IndexOf(value) == touched, $"GapBuffer IndexOf({value}) disagreed");
+                    Check(sut.Contains(value) == (touched >= 0), $"GapBuffer Contains({value}) disagreed");
+                    Check(sut.GapPosition == gapBefore, "GapBuffer IndexOf / Contains moved the gap");
+                    Check(sut.Remove(value) == oracle.Remove(value), $"GapBuffer Remove({value}) disagreed");
+                    Check(sut.GapPosition == (touched >= 0 ? touched : gapBefore),
+                        $"GapBuffer Remove({value}) left the gap at {sut.GapPosition}");
+                    if (touched < 0)
+                        touched = 0;
+                    break;
+                }
+                case < 91:
+                {
+                    int gapBefore = sut.GapPosition;
+                    int requested = rng.Next(0, 3) == 0 ? rng.Next(0, sut.Capacity + 1) : sut.Count + rng.Next(0, 300);
+                    int capacity = sut.EnsureCapacity(requested);
+                    Check(capacity == sut.Capacity && capacity >= requested && capacity >= sut.Count,
+                        $"GapBuffer EnsureCapacity({requested}) returned {capacity} with capacity {sut.Capacity}");
+                    Check(sut.GapPosition == gapBefore, "GapBuffer EnsureCapacity moved the gap");
+                    touched = gapBefore;
+                    break;
+                }
+                case < 94:
+                {
+                    int gapBefore = sut.GapPosition;
+                    sut.TrimExcess();
+                    Check(sut.Capacity == oracle.Count, $"GapBuffer TrimExcess left capacity {sut.Capacity} at {oracle.Count}");
+                    Check(sut.GapPosition == gapBefore, "GapBuffer TrimExcess moved the gap");
+                    touched = gapBefore;
+                    break;
+                }
+                case < 99:
+                {
+                    // Enumerator invalidation: an in-place set, and every edit documented as changing nothing,
+                    // must leave a live enumerator usable; a structural edit must tear it down. The set rule is
+                    // the one this type deliberately does not share with List<T>, so it is checked directly.
+                    var enumerator = sut.GetEnumerator();
+                    if (oracle.Count > 0)
+                    {
+                        int index = GapBufferPosition(rng, sut.GapPosition, oracle.Count);
+                        sut[index] = oracle[index];
+                    }
+                    sut.InsertRange(GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1), ReadOnlySpan<T>.Empty);
+                    sut.RemoveRange(rng.Next(0, oracle.Count + 1), 0);
+                    sut.EnsureCapacity(rng.Next(0, sut.Capacity + 1));
+                    if (sut.Count == sut.Capacity)
+                        sut.TrimExcess();
+                    if (oracle.Count == 0)
+                        sut.Clear();
+                    T missing = make(-1);
+                    Check(!sut.Remove(missing), "GapBuffer removed a value outside the element domain");
+                    if (oracle.Count > 0)
+                        Check(enumerator.MoveNext() && comparer.Equals(enumerator.Current, oracle[0]),
+                            "GapBuffer no-op edit invalidated an enumerator");
+
+                    int at = GapBufferPosition(rng, sut.GapPosition, oracle.Count + 1);
+                    T value = make(Value(rng));
+                    sut.Insert(at, value);
+                    oracle.Insert(at, value);
+                    bool threw = false;
+                    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+                    Check(threw, "GapBuffer Insert did not invalidate an enumerator");
+                    touched = at;
+                    break;
+                }
+                default:
+                {
+                    sut.Clear();
+                    oracle.Clear();
+                    Check(sut.GapPosition == 0, "GapBuffer Clear left the gap off position 0");
+                    touched = 0;
+                    break;
+                }
+            }
+
+            Check(sut.Count == oracle.Count, $"GapBuffer count diverged after op {op}");
+            Check(sut.GapPosition >= 0 && sut.GapPosition <= sut.Count && sut.Capacity >= sut.Count,
+                $"GapBuffer gap {sut.GapPosition} / capacity {sut.Capacity} out of range at count {sut.Count}");
+            for (int i = Math.Max(0, touched - 2); i < Math.Min(oracle.Count, touched + 3); i++)
+                Check(comparer.Equals(sut[i], oracle[i]), $"GapBuffer indexer diverged at {i} next to an edit at {touched}");
+            if (oracle.Count > 0)
+            {
+                int gap = sut.GapPosition;
+                Check(comparer.Equals(sut[0], oracle[0]) && comparer.Equals(sut[^1], oracle[^1]), "GapBuffer ends diverged");
+                if (gap > 0)
+                    Check(comparer.Equals(sut[gap - 1], oracle[gap - 1]), $"GapBuffer diverged just before the gap at {gap}");
+                if (gap < oracle.Count)
+                    Check(comparer.Equals(sut[gap], oracle[gap]), $"GapBuffer diverged just after the gap at {gap}");
+                int probe = rng.Next(0, oracle.Count);
+                Check(comparer.Equals(sut[probe], oracle[probe]), $"GapBuffer indexer diverged at {probe}");
+            }
+
+            if (op % fullCheckEvery == fullCheckEvery - 1)
+                CheckGapBuffer(sut, oracle, $"GapBuffer after op {op}");
+        }
+
+        CheckGapBuffer(sut, oracle, "GapBuffer final");
+        CheckGapBuffer(new GapBuffer<T>(sut), oracle, "GapBuffer rebuilt from itself");
+    }
+
+    // A quarter of positions land within a few slots of the gap, a quarter within a few of either end, and the
+    // rest are uniform. `bound` is exclusive and at least 1.
+    private static int GapBufferPosition(Random rng, int gap, int bound) => rng.Next(0, 4) switch
+    {
+        0 => Math.Clamp(gap + rng.Next(-3, 4), 0, bound - 1),
+        1 => rng.Next(0, Math.Min(bound, 3)),
+        2 => bound - 1 - rng.Next(0, Math.Min(bound, 3)),
+        _ => rng.Next(0, bound),
+    };
+
+    // Reconciles every read path against the oracle. None of them depends on where the gap is, which is the
+    // point: the same elements must come back whatever the edit history left the gap at.
+    private static void CheckGapBuffer<T>(GapBuffer<T> actual, List<T> expected, string label)
+    {
+        var comparer = EqualityComparer<T>.Default;
+        ReadOnlySpan<T> oracle = CollectionsMarshal.AsSpan(expected);
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+
+        for (int i = 0; i < expected.Count; i++)
+            Check(comparer.Equals(actual[i], expected[i]), $"{label} indexer diverged at {i}");
+
+        int position = 0;
+        foreach (T value in actual)
+        {
+            Check(position < expected.Count && comparer.Equals(value, expected[position]), $"{label} enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} enumeration length diverged");
+
+        position = 0;
+        foreach (T value in (IEnumerable<T>)actual)
+        {
+            Check(position < expected.Count && comparer.Equals(value, expected[position]), $"{label} interface enumeration diverged at {position}");
+            position++;
+        }
+        Check(position == expected.Count, $"{label} interface enumeration length diverged");
+
+        Check(actual.ToArray().AsSpan().SequenceEqual(oracle, comparer), $"{label} ToArray diverged");
+
+        var copy = new T[expected.Count + 2];
+        actual.CopyTo(copy, 1);
+        Check(copy.AsSpan(1, expected.Count).SequenceEqual(oracle, comparer)
+                && comparer.Equals(copy[0], default) && comparer.Equals(copy[^1], default),
+            $"{label} CopyTo diverged");
+
+        actual.GetSpans(out ReadOnlySpan<T> beforeGap, out ReadOnlySpan<T> afterGap);
+        Check(beforeGap.Length == actual.GapPosition, $"{label} GetSpans before-gap length {beforeGap.Length} is not GapPosition {actual.GapPosition}");
+        Check(beforeGap.Length + afterGap.Length == expected.Count, $"{label} GetSpans lengths do not add up to Count");
+        Check(beforeGap.SequenceEqual(oracle[..beforeGap.Length], comparer)
+                && afterGap.SequenceEqual(oracle[beforeGap.Length..], comparer),
+            $"{label} GetSpans halves diverged");
     }
 
     // ---- interval tree -------------------------------------------------------
