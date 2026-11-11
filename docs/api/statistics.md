@@ -24,6 +24,7 @@ in the collections.
 - [ReservoirSampler](#reservoirsampler)
 - [RunningStatistics](#runningstatistics)
 - [RollingQuantile](#rollingquantile)
+- [AliasTable](#aliastable)
 - [Where these lose](#where-these-lose)
 
 ## Choosing a summary
@@ -35,6 +36,7 @@ in the collections.
 | An exact median of data you already hold and will not add to | `Array.Sort` + index | Nothing beats a pre-sorted array indexed in `O(1)`. The sketch is for the case where you cannot keep the data or it keeps changing. |
 | A rolling median or p99 over the last *w* values — a median filter, a "spike over the recent median" alarm | `RollingQuantile<T>` | Exact, `O(log w)` per value and `O(1)` to read. It holds the window, which is what makes it exact; `DDSketch` cannot forget old values. |
 | A bounded sample of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` | `O(k)` memory and `O(k · log(n / k))` random draws, uniform to the precision of the generator, and it never needs to know `n`. |
+| Draw outcomes at random in proportion to fixed weights — a traffic split, a loot table, a Monte-Carlo step, negative sampling | `AliasTable` | `O(1)` a draw after an `O(n)` build, where the prefix-sum search everyone writes is `O(log n)` dependent loads a draw. The BCL's `Random.GetItems` is uniform only. |
 | Mean and standard deviation of a stream, or of one bucket among many | `RunningStatistics` | One pass, no allocation, numerically stable, and a `struct` so per-bucket accumulators live inline. |
 | Skewness / kurtosis | `RunningStatistics` | Welford extended to the fourth moment (Terriberry). There is no BCL equivalent at all. |
 | Mean of a sequence you can enumerate twice and that fits in memory | `Enumerable.Average` | If the two-pass shape is available and the magnitudes are ordinary, LINQ is fine. |
@@ -334,7 +336,9 @@ foreach (double latency in samples)
 
 Each `Add` appends to a fixed-size sliding window, evicting the oldest value once the window is
 full. `Value` is the window's element of zero-based rank `⌊q · (n − 1)⌋` in sorted order, where `q`
-is the quantile and `n` the window's count. NumPy calls this the `"lower"` method. A median over an
+is the quantile and `n` the window's count. NumPy calls this the `"lower"` method. The product is
+taken in `double`, as NumPy takes it, so a quantile with no exact binary form can land one rank
+below the exact-arithmetic answer: `0.29 · 100` is `28.999…`, so rank 28, not 29. A median over an
 even window is therefore the lower of the two middle values, `q = 0` is the window minimum, and
 `q = 1` the maximum. The answer is always a value from the window, never an interpolation or an
 estimate.
@@ -378,9 +382,77 @@ number. One instance answers one quantile; for a median *and* a p99 over the sam
 There is no enumerator. The window is a position in the caller's stream, and a caller who needs
 its contents already has them.
 
+## AliasTable
+
+Weighted random sampling from a fixed discrete distribution. You build it once from `n` non-negative
+weights in `O(n)`. Each draw after that returns index `i` with probability `weights[i] / Σ weights` in
+`O(1)`: one 64-bit random value, one multiply and one table load, whatever the size of `n`.
+
+```csharp
+using Celerity.Primitives;
+using Celerity.Statistics;
+
+// A 70 / 20 / 10 traffic split across three backends.
+string[] backends = ["blue", "green", "canary"];
+var split = new AliasTable([70d, 20d, 10d]);
+
+var rng = new Pcg32(seed: 42);
+string target = backends[split.Sample(ref rng)];
+
+// Or fill a buffer: one draw per element, and no allocation.
+Span<int> batch = stackalloc int[256];
+split.Sample(ref rng, batch);
+```
+
+Only the ratios between weights matter, so the weights do not have to sum to 1. Zero weights are
+allowed and are never drawn. A weight that is negative, `NaN` or infinite is rejected, and so is a span
+that is empty or all zeros. Weights near `double.MaxValue`, whose sum would overflow, are fine. The
+generator is any struct `IRandomSource` from `Celerity.Primitives`, passed by `ref` and advanced in
+place. The table is immutable, so threads can share it, as long as each one brings its own generator.
+
+### How it works
+
+This is Vose's version of Walker's **alias method**. The `n` outcomes are dealt into `n` buckets of
+equal probability. Each bucket holds one outcome's own share and names a single *alias* that owns the
+rest of that bucket. Pairing each under-full outcome with an over-full one fills every bucket exactly,
+in one pass. A draw takes the high word of `random × n` as the bucket. The low word is the position
+within the bucket, so a single 64-bit value picks both the bucket and the side of its threshold, with
+no rejection loop. Each entry packs a 32-bit threshold and a 32-bit alias into 8 bytes, so a draw
+touches one cache line.
+
+The build works in exact integer arithmetic. Each outcome's share is rounded down to a multiple of
+`2^-32 / n`, and the largest weight absorbs the remainder, so the probabilities sum to exactly 1 and
+every outcome is within about `2^-32` of its exact probability. One visible consequence: a positive
+weight whose share is below `2^-32 / n` rounds to zero and is never drawn. Mapping 2^64 random values
+onto `n` buckets adds a bias below `n / 2^64`.
+
+The BCL has no weighted sampler. The idiom is a `double[]` of prefix sums and an
+`Array.BinarySearch` per draw. That is `O(log n)` probes, each depending on the last, so once the array
+leaves cache, every probe is a miss. Against that idiom on the same `Pcg32` stream, a local run
+(Apple M-series, the `net8.0` benchmark build rolled forward onto .NET 10) measured draws **3.9× faster at 100 outcomes, 7.9× at 10,000 and 11.5× at
+1,000,000**: 8, 8 and 11 ns a draw, against 31, 65 and 122. The build is slower than the prefix-sum
+pass (8.6× at 100 outcomes, 8.7× at 10,000 and 12× at 1,000,000). It pays for itself after roughly
+`n / 10` draws: 18 at 100 outcomes, about 800 at 10,000 and about 84,000 at a million.
+Neither side allocates per draw. The CI-tracked numbers are on the
+[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
+
+### Surface
+
+| Member | Notes |
+|---|---|
+| `AliasTable(ReadOnlySpan<double> weights)` | `O(n)`. Throws `ArgumentException` (`ParamName` `"weights"`) on an empty span, a negative / `NaN` / infinite weight, or all zeros. The span is not retained. |
+| `Sample<TRng>(ref TRng rng)` | One draw, `O(1)`, using exactly one `NextUInt64()`. `TRng : struct, IRandomSource`. |
+| `Sample<TRng>(ref TRng rng, Span<int> destination)` | Fills the span with independent draws, one `NextUInt64()` per element. An empty span leaves the generator untouched. |
+| `Count` | The number of outcomes. |
+
+Draws are reproducible: the same table, generator and seed give the same sequence. The draw uses only
+integer arithmetic, so unlike `ReservoirSampler` the sequence does not depend on the runtime's last-bit
+behaviour for `Math.Log`. The weights are fixed at construction. A distribution that changes between
+draws needs an `O(log n)` structure, such as a Fenwick-tree walk, and rebuilding this table costs `O(n)`.
+
 ## Where these lose
 
-Celerity documents its tradeoffs rather than claiming a blanket win. All four of these are on the
+Celerity documents its tradeoffs rather than claiming a blanket win. All five of these are on the
 [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), including the arms they
 lose:
 
@@ -405,6 +477,9 @@ lose:
 - **`RollingQuantile` answers one quantile, and holds the window.** It is `w` values plus `2w`
   integers, against `DDSketch`'s fixed footprint. A second quantile over the same window needs a
   second instance and a second copy of the window.
+- **`AliasTable`'s build loses to the prefix-sum pass**: 8.6× at 100 outcomes, 8.7× at 10,000 and
+  12× at 1,000,000. It normalizes, sums, rounds and pairs, where the idiom just accumulates. Below roughly `n / 10` draws per build, the prefix
+  sums are cheaper overall. The table is also fixed: changing a single weight means rebuilding it.
 - **`RunningStatistics` is slower than LINQ, measurably.** CI puts `Moments` at **1.9× the
   two-pass LINQ shape** at both sizes, because the accumulator maintains all four moments on
   every `Add` while that caller reads two. It buys a single pass over a stream it never
@@ -419,7 +494,8 @@ next to the winning ones so the crossovers can be read off rather than guessed.
 - [Collections API](collections.md) — including the sketches (`HyperLogLog`, `CountMinSketch`,
   `TopKSketch`, `MinHashSketch`) that summarize a stream's *cardinality*, *frequencies* and
   *overlap with another stream* rather than its distribution.
-- [Utilities API](utilities.md) — the seedable struct PRNGs the sampler is parameterized on.
+- [Utilities API](utilities.md) — the seedable struct PRNGs that the sampler and `AliasTable` draw from.
 - [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch`, `RunningStatistics` and
-  `RollingQuantile` reconcile against exact oracles; the sampler's is invariant fuzzing, because uniformity is
+  `RollingQuantile` reconcile against exact oracles, and `AliasTable` against its weights over an
+  evenly spaced sweep of generator outputs. The sampler's is invariant fuzzing, because uniformity is
   distributional and no single case can measure it.

@@ -3578,13 +3578,14 @@ void Check(bool condition, string message)
     Check(PartialSort.TopK<int>(selection, top.AsSpan()) == 3 && top[0] == 9 && top[^1] == 7, "PartialSort.TopK");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile.
+// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
 // generator, so the struct-PRNG generic is closed twice), the moment accumulator, which is a
 // mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
-// quantile over a value type and a reference type, whose heap entries are a generic struct.
+// quantile over a value type and a reference type, whose heap entries are a generic struct, and the alias
+// table's constrained-generic draw closed over two generators.
 {
     var sketch = new DDSketch(0.01d, 1024);
     for (int i = 1; i <= 1_000; i++)
@@ -3636,6 +3637,15 @@ void Check(bool condition, string message)
     var lowest = new RollingQuantile<string>(windowSize: 2, quantile: 0d);
     lowest.Add(["pear", "apple", "fig"]);
     Check(lowest.TryGetValue(out string? first) && first == "apple", "RollingQuantile over a reference type");
+
+    var weighted = new AliasTable([0d, 3d, 1d]);
+    var aliasRng = new Pcg32(5UL);
+    int[] draws = new int[2_000];
+    weighted.Sample(ref aliasRng, draws);
+    int ones = draws.Count(d => d == 1);
+    Check(weighted.Count == 3 && !draws.Contains(0) && ones > 1_300 && ones < 1_700, "AliasTable bulk draws follow the weights");
+    var otherRng = new Xoshiro256StarStar(9UL);
+    Check(weighted.Sample(ref otherRng) is 1 or 2, "AliasTable over a second generator");
 }
 
 // Celerity.Ring — ConsistentHashRing / RendezvousHash.

@@ -95,6 +95,7 @@ internal class Program
         typeof(DDSketchBenchmark),
         typeof(ReservoirSamplerBenchmark),
         typeof(RollingQuantileBenchmark),
+        typeof(AliasTableBenchmark),
         typeof(RunningStatisticsBenchmark),
         // One comparison split by hasher family so the shard packer can spread it; see
         // StringHasherBenchmarkBase.
