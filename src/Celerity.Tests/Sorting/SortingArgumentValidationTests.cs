@@ -170,6 +170,68 @@ public class SortingArgumentValidationTests
     }
 
     [Fact]
+    public void Merge_ShouldThrow_WhenTheDestinationIsShorterThanTheSource()
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => KWayMerge.Merge<int>([1, 2, 3], [1, 1, 1], new int[2]));
+        Assert.Equal("destination", ex.ParamName);
+    }
+
+    [Fact]
+    public void Merge_ShouldThrow_WhenTheDestinationSharesStorageWithTheSource()
+    {
+        int[] buffer = [1, 3, 2, 4, 0, 0];
+
+        var whole = Assert.Throws<ArgumentException>(
+            () => KWayMerge.Merge<int>(buffer.AsSpan(0, 4), [2, 2], buffer.AsSpan()));
+        Assert.Equal("destination", whole.ParamName);
+
+        var partial = Assert.Throws<ArgumentException>(
+            () => KWayMerge.Merge<int>(buffer.AsSpan(0, 4), [2, 2], buffer.AsSpan(2, 4)));
+        Assert.Equal("destination", partial.ParamName);
+    }
+
+    [Fact]
+    public void Merge_ShouldSucceed_WhenTheDestinationOnlyNeighboursTheSource()
+    {
+        int[] buffer = [1, 3, 2, 4, 0, 0, 0, 0];
+
+        KWayMerge.Merge<int>(buffer.AsSpan(0, 4), [2, 2], buffer.AsSpan(4));
+
+        Assert.Equal([1, 2, 3, 4], buffer.AsSpan(4).ToArray());
+    }
+
+    [Theory]
+    [InlineData(new[] { 1, 1 })]
+    [InlineData(new[] { 2, 2 })]
+    [InlineData(new int[0])]
+    public void Merge_ShouldThrow_WhenTheRunLengthsDoNotSumToTheSourceLength(int[] runLengths)
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => KWayMerge.Merge<int>([1, 2, 3], runLengths, new int[3]));
+        Assert.Equal("runLengths", ex.ParamName);
+    }
+
+    [Fact]
+    public void Merge_ShouldThrow_WhenARunLengthIsNegative()
+    {
+        // -1 and 4 sum to the source length, so only the per-run check can catch it.
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => KWayMerge.Merge<int>([1, 2, 3], [-1, 4], new int[3]));
+        Assert.Equal("runLengths", ex.ParamName);
+        Assert.Equal(-1, ex.ActualValue);
+    }
+
+    [Fact]
+    public void Merge_ShouldThrow_WhenTheRunLengthsOverflowAnInt()
+    {
+        // Summed in 32 bits these would wrap to 3 and be accepted.
+        var ex = Assert.Throws<ArgumentException>(
+            () => KWayMerge.Merge<int>([1, 2, 3], [int.MaxValue, int.MaxValue, 5], new int[3]));
+        Assert.Equal("runLengths", ex.ParamName);
+    }
+
+    [Fact]
     public void ArgSort_ShouldThrow_WhenTheIndexBufferSharesStorageWithTheKeys()
     {
         int[] buffer = [3, 1, 2];

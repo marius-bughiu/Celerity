@@ -427,6 +427,7 @@
     { key: 'StringSort',          title: 'StringSort (ordinal strings)',          vs: 'Array.Sort(StringComparer.Ordinal)', items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },
+    { key: 'KWayMerge',           title: 'KWayMerge (16 sorted runs)',            vs: 'PriorityQueue hand-roll; concatenate + Array.Sort on the ConcatSort card', items: [1000, 100000, 1000000] },
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',             vs: 'SortedDictionary<int, int>' },
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
     { key: 'RankedSet',           title: 'RankedSet<int>',                        vs: 'SortedSet<int>' },

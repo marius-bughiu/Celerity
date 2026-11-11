@@ -126,7 +126,7 @@ The **core** five are layered, so `dotnet add package Celerity.Collections` tran
 - **`Celerity.Collections`** — dictionaries, sets, frozen/perfect-hash collections, streaming sketches.
 - **`Celerity.Hashing`** — `IHashProvider<T>` / `IHashProvider64<T>`, the struct hashers, `HashQualityEvaluator`.
 - **`Celerity.Primitives`** — `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve`.
-- **`Celerity.Sorting`** (v2.6.0) — `RadixSort`, `CountingSort`, `PartialSort`: non-comparison sorts and selection over primitive keys; `StringSort`: a stable ordinal string sort.
+- **`Celerity.Sorting`** (v2.6.0) — `RadixSort`, `CountingSort`, `PartialSort`: non-comparison sorts and selection over primitive keys; `StringSort`: a stable ordinal string sort; `KWayMerge`: a stable k-way merge of already-sorted runs.
 - **`Celerity.Statistics`** (v2.7.0) — `DDSketch`, `ReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable`: streaming quantiles, sampling and moments in bounded memory, exact quantiles over a sliding window, and `O(1)` weighted random sampling.
 
 `Celerity.Sorting` and `Celerity.Statistics` sit *alongside* the collections rather than under them — both depend only on `Celerity.Primitives` — so add either one explicitly.

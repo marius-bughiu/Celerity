@@ -3529,7 +3529,7 @@ void Check(bool condition, string message)
         "EnumMap as IDictionary: boxed key view");
 }
 
-// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596).
+// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596) / KWayMerge.
 //
 // Every shape that forces a distinct native instantiation: both radix widths, both signed and
 // IEEE-754 key transforms, the key+payload generic over a reference payload (which is where the
@@ -3625,6 +3625,20 @@ void Check(bool condition, string message)
     int[] wordRanks = new int[3];
     StringSort.ArgSort(["z", "x", "y"], wordRanks.AsSpan());
     Check(wordRanks[0] == 1 && wordRanks[1] == 2 && wordRanks[2] == 0, "StringSort.ArgSort");
+
+    // KWayMerge: the span merge through the tree (three runs) over a value type and over a reference
+    // type, whose pooled key buffer is cleared on return, and the lazy merge, an iterator state
+    // machine closed over a struct comparer.
+    int[] merged = new int[7];
+    KWayMerge.Merge<int>([1, 4, 7, 2, 5, 3, 6], [3, 2, 2], merged);
+    Check(merged.AsSpan().SequenceEqual([1, 2, 3, 4, 5, 6, 7]), "KWayMerge.Merge int runs");
+
+    string[] mergedWords = new string[4];
+    KWayMerge.Merge<string>(["ant", "fox", "bee", "cat"], [2, 1, 1], mergedWords);
+    Check(mergedWords[0] == "ant" && mergedWords[^1] == "fox", "KWayMerge.Merge string runs");
+
+    int[] lazy = KWayMerge.Merge(new[] { new[] { 9, 1 }, new[] { 8 }, new[] { 7, 0 } }, default(DescendingIntComparer)).ToArray();
+    Check(lazy.AsSpan().SequenceEqual([9, 8, 7, 1, 0]), "KWayMerge.Merge lazy with a struct comparer");
 }
 
 // Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable.
