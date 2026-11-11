@@ -665,6 +665,11 @@ function escapeHtml(s) {
     // shift per sample between the expiring value and the new one — not a re-sort per read. ItemCount is the
     // window: the shift is linear in it and the heaps logarithmic, so the gap widens with the window.
     { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', ops: ['Slide'], items: [1000, 10000, 100000] },
+    // The weighted sampler's baseline is the idiom a caller writes: a double[] of prefix sums searched with
+    // Array.BinarySearch per draw, on the same Pcg32 stream. ItemCount is the number of outcomes: the search
+    // is O(log n) dependent loads and the alias draw one load, so the gap widens as the sums leave cache.
+    // Build is expected to lose; it is charted so the break-even draw count can be read off it.
+    { key: 'AliasTable',          title: 'AliasTable (weighted sampling)',           vs: 'prefix sums + Array.BinarySearch', ops: ['Sample', 'Build'], items: [100, 10000, 1000000] },
     // Welford against the LINQ two-pass. Expect a factor near one on Moments: the reason to prefer this
     // type is that the faster one-pass shortcut is numerically wrong, which a chart cannot show.
     { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',      vs: 'LINQ two-pass mean / variance', ops: ['Moments', 'Accumulate'] }
