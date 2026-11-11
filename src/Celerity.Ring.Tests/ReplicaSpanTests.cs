@@ -411,18 +411,19 @@ public class ReplicaSpanTests
         string[] keys = Enumerable.Range(0, 1000).Select(i => $"key-{i}").ToArray();
         var buffer = new string[replicaCount];
 
+        // Warm every key, so a once-per-key allocation lands here and not only in the first measured window.
         foreach (string key in keys)
-            Assert.Equal(replicaCount, maglev.GetReplicas(key, buffer)); // warm up every key
+            Assert.Equal(replicaCount, maglev.GetReplicas(key, buffer));
 
-        long quietest = long.MaxValue;
-        for (int window = 0; window < 3; window++)
+        int written = 0;
+        long allocated = QuietestAllocation(() =>
         {
-            long before = GC.GetAllocatedBytesForCurrentThread();
+            written = 0;
             foreach (string key in keys)
-                maglev.GetReplicas(key, buffer);
-            quietest = Math.Min(quietest, GC.GetAllocatedBytesForCurrentThread() - before);
-        }
+                written += maglev.GetReplicas(key, buffer);
+        });
 
-        Assert.Equal(0, quietest);
+        Assert.Equal(replicaCount * keys.Length, written);
+        Assert.Equal(0, allocated);
     }
 }
