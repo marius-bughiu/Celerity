@@ -110,6 +110,7 @@ internal static class Differential
         ("RunningStatistics", RunningStatisticsCase),
         ("ReservoirSampler", ReservoirSamplerCase),
         ("RollingQuantile", RollingQuantileCase),
+        ("AliasTable", AliasTableCase),
     ];
 
     private const int MinKey = -8;
@@ -5240,6 +5241,88 @@ internal static class Differential
                 Check(!sut.TryGetValue(out _), "RollingQuantile reported a value after Clear");
             }
         }
+    }
+
+    // AliasTable — the weighted sampler, against the weights it was built from. The oracle drives the table
+    // with an evenly spaced sweep of 64-bit generator outputs instead of random ones, so each outcome's
+    // frequency is its exact probability up to the sweep's spacing and there is no sampling noise to budget.
+    // The nightly value over the in-repo suite is breadth: up to a few thousand outcomes with clustered zeros,
+    // ties and magnitudes over sixty orders, so Vose's two stacks trade outcomes back and forth many times
+    // and the rounding remainder lands on every kind of maximum.
+    private static void AliasTableCase(Random rng)
+    {
+        const int SweepBits = 18;
+        const int Points = 1 << SweepBits;
+
+        int n = rng.Next(1, 3_000);
+        var weights = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            weights[i] = rng.Next(5) switch
+            {
+                0 => 0d,
+                1 => 1d,
+                2 => rng.Next(1, 4),
+                3 => rng.NextDouble(),
+                _ => Math.Pow(10d, rng.Next(-30, 31)),
+            };
+        }
+
+        weights[rng.Next(n)] = rng.NextDouble() + 1e-6d;
+
+        // Half the cases scale every weight by one common factor, so the maximum
+        // the build normalizes by takes every magnitude a double can hold, including the tiny-but-normal
+        // range that once overflowed the share scale.
+        if (rng.Next(2) == 0)
+        {
+            // A third of those aim the largest weight just above the subnormal boundary, a window too narrow
+            // for a uniform exponent to land in by chance.
+            double magnitude = rng.Next(3) == 0
+                ? Math.Pow(10d, rng.Next(-308, -298)) / weights.Max()
+                : Math.Pow(10d, rng.Next(-323, 308));
+            for (int i = 0; i < n; i++)
+            {
+                double scaled = weights[i] * magnitude;
+                weights[i] = double.IsFinite(scaled) ? scaled : double.MaxValue;
+            }
+
+            if (!weights.Any(w => w > 0d))
+                weights[rng.Next(n)] = 1d;
+        }
+
+        var sut = new AliasTable(weights);
+        Check(sut.Count == n, "AliasTable Count disagreed");
+
+        var counts = new int[n];
+        for (int k = 0; k < Points; k++)
+        {
+            var point = new FixedRandom((ulong)k << (64 - SweepBits));
+            counts[sut.Sample(ref point)]++;
+        }
+
+        double max = weights.Max();
+        double total = 0d;
+        foreach (double w in weights)
+            total += w / max;
+
+        double tolerance = (2d * n / Points) + 1e-9d;
+        for (int i = 0; i < n; i++)
+        {
+            double expected = weights[i] / max / total;
+            Check(Math.Abs(((double)counts[i] / Points) - expected) <= tolerance, "AliasTable frequency disagreed with the weights");
+            Check(weights[i] != 0d || counts[i] == 0, "AliasTable drew a zero weight");
+        }
+
+        var random = new Pcg32((ulong)rng.NextInt64());
+        Span<int> drawn = stackalloc int[64];
+        sut.Sample(ref random, drawn);
+        foreach (int index in drawn)
+            Check((uint)index < (uint)n && weights[index] != 0d, "AliasTable drew an index outside the support");
+    }
+
+    private readonly struct FixedRandom(ulong value) : IRandomSource
+    {
+        public ulong NextUInt64() => value;
     }
 
     private static bool Close(double actual, double expected, double relative)
