@@ -25,8 +25,8 @@ src/
 │   └── TypeForwarders.cs     [TypeForwardedTo] for every type moved to a lower package (binary back-compat).
 ├── Celerity.Hashing/         The Celerity.Hashing package. IHashProvider<T>, the hashers, the evaluators.
 ├── Celerity.Primitives/      The Celerity.Primitives package. FastUtils, struct PRNGs, VarInt, FastGuid.
-├── Celerity.Sorting/         The Celerity.Sorting package. RadixSort, CountingSort, PartialSort.
-├── Celerity.Statistics/      The Celerity.Statistics package. DDSketch, KllSketch, ReservoirSampler, RunningStatistics, RollingQuantile.
+├── Celerity.Sorting/         The Celerity.Sorting package. RadixSort, CountingSort, PartialSort, StringSort, KWayMerge.
+├── Celerity.Statistics/      The Celerity.Statistics package. DDSketch, KllSketch, ReservoirSampler, RunningStatistics, RollingQuantile, AliasTable.
 ├── Celerity.Ring/            The Celerity.Ring package. Consistent-hash and rendezvous rings.
 ├── Celerity.Sentinel/        The Celerity.Sentinel package. Streaming abuse / heavy-hitter detection.
 ├── Celerity.Cardinality/     The Celerity.Cardinality package. Approximate COUNT(DISTINCT) and windowed dedup.

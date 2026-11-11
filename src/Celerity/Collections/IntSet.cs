@@ -415,7 +415,7 @@ public class IntSet<THasher> : ISet<int>, IReadOnlySet<int> where THasher : stru
     // ── ISet<int> / ICollection<int> set-algebra surface ──────────────────────
     // The set-algebra logic is shared across the mutable set family via
     // SetOperations, written once against the ISet<T> primitives every set
-    // exposes; the semantics match BCL HashSet<int> exactly.
+    // exposes; the semantics match BCL HashSet<int> (bar ExceptWith over a lazy self-view).
 
     /// <summary>
     /// Modifies the set to contain all elements that are present in itself, in

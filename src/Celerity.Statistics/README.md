@@ -34,6 +34,10 @@ means keeping the stream, which is the one thing a stream will not let you do.
   of the last `w` values of a stream, `O(log w)` per value and `O(1)` to read.
   Two heaps meet at the quantile, and a slot index replaces the expiring value
   in place, so nothing is searched for.
+- **`AliasTable`** — **weighted random sampling** from fixed weights: an `O(n)`
+  build, then `O(1)` per draw with one 64-bit random value, one multiply and one
+  load, using Vose's alias method. Exact integer build, so zero weights are never
+  drawn. Immutable, so threads can share it, each with its own generator.
 - **`KllSketch<T>`** — quantiles with a *rank* error guarantee, for **any**
   `IComparable<T>`: strings, timestamps, `decimal`. The KLL sketch keeps about
   `3K` values plus 8 per level (614 at the default `K = 200` after a
@@ -62,6 +66,10 @@ means keeping the stream, which is the one thing a stream will not let you do.
 - **`RollingQuantile` holds its window**, `w` values plus `2w` ints, and answers
   one quantile per instance. Against a sorted array plus a queue it is 2.5×
   faster at a 1,000-value window and 32× at 100,000.
+- **`AliasTable`'s build loses** to the prefix-sum pass it replaces: 8.6×
+  at 100 outcomes, 8.7× at 10,000 and 12× at a million. It pays off after
+  about `n / 10` draws, since the draws themselves are 3.9×, 7.9× and 11.5×
+  faster than prefix sums plus `Array.BinarySearch`. The weights are fixed.
 - **`KllSketch` loses on short streams and on `Add`.** At 100,000 values a
   ingest-then-query is 2.2× faster than a sorted `List<T>`, and a p99 after
   every new value 5.5× faster than keeping the list sorted by insertion; at a
@@ -113,6 +121,11 @@ foreach (double ms in requestLatencies)
 }
 
 Console.WriteLine($"rolling median {median.Value:F2} ms");
+
+// O(1) weighted draws: a 70 / 20 / 10 split across three backends.
+var split = new AliasTable([70d, 20d, 10d]);
+var rng = new Celerity.Primitives.Pcg32(seed: 42);
+int backend = split.Sample(ref rng);
 
 // Percentiles of any comparable type, with a rank-error bound.
 var versions = new KllSketch<Version>();

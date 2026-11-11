@@ -456,7 +456,7 @@ public class LinkedSet<T, THasher> : ISet<T>, IReadOnlySet<T>
     // ── ISet<T> / ICollection<T> set-algebra surface ──────────────────────────
     // The set-algebra logic is shared across the mutable set family via
     // SetOperations, written once against the ISet<T> primitives every set
-    // exposes; the semantics match BCL HashSet<T> exactly. Elements an operation
+    // exposes; the semantics match BCL HashSet<T> (bar ExceptWith over a lazy self-view). Elements an operation
     // adds are appended in the order it adds them, and the survivors of a removal
     // keep their relative order.
 

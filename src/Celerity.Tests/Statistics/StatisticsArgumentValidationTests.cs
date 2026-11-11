@@ -190,6 +190,38 @@ public class StatisticsArgumentValidationTests
         Assert.Equal(1d, new RollingQuantile<int>(1, 1d).Quantile);
     }
 
+    [Fact]
+    public void AliasTableConstructor_ShouldThrow_WhenThereAreNoWeights()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new AliasTable(ReadOnlySpan<double>.Empty));
+        Assert.Equal("weights", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(-1d)]
+    [InlineData(-double.Epsilon)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void AliasTableConstructor_ShouldThrow_WhenAWeightIsNegativeOrNotFinite(double weight)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new AliasTable([1d, weight, 2d]));
+        Assert.Equal("weights", ex.ParamName);
+    }
+
+    [Fact]
+    public void AliasTableConstructor_ShouldThrow_WhenEveryWeightIsZero()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new AliasTable([0d, -0d, 0d]));
+        Assert.Equal("weights", ex.ParamName);
+    }
+
+    [Fact]
+    public void AliasTableConstructor_ShouldAcceptZeroWeights_NegativeZero_AndTheLargestFiniteWeight()
+    {
+        Assert.Equal(3, new AliasTable([0d, -0d, double.MaxValue]).Count);
+    }
+
     [Theory]
     [InlineData(KllSketch<int>.MinK - 1)]
     [InlineData(KllSketch<int>.MaxK + 1)]

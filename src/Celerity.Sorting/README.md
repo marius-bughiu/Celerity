@@ -1,6 +1,7 @@
 # Celerity.Sorting
 
-Non-comparison sorts and selection over primitive keys. Part of the
+Non-comparison sorts and selection over primitive keys, an ordinal string
+sort, and a stable k-way merge of sorted runs. Part of the
 [Celerity](https://github.com/marius-bughiu/Celerity) family of high-performance
 .NET libraries.
 
@@ -23,6 +24,17 @@ scratch. That is exactly the flexibility-for-speed trade Celerity exists to make
   keys-only forms never move an element twice.
 - **`PartialSort`** — `Select` / `Sort` are an `O(n)` in-place introselect for
   the *k* smallest; `TopK` is an `O(n log k)` bounded heap over a read-only span.
+- **`StringSort`** — an **ordinal** sort for strings (UTF-16 code unit order,
+  the same as `StringComparer.Ordinal`): a multikey quicksort that partitions on
+  the next four characters packed into one integer, so a shared prefix such as
+  `tenant:42:user:` is read once per partition level rather than once per
+  comparison. Keys alone, keys with a payload, or `ArgSort`. **Stable**, nulls
+  first, and a per-depth budget so no pivot sequence makes it quadratic.
+- **`KWayMerge`** — a **stable** k-way merge of already-sorted runs through a
+  loser tree, at most `⌈log₂ k⌉` comparisons per element: runs packed in a span
+  into a destination span, or sequences lazily in `O(k)` memory. .NET has no
+  multiway merge; the hand-roll is a `PriorityQueue` that sifts on every
+  dequeue and enqueue and is not stable.
 
 `RadixSort` and `CountingSort` provide **`SortWithScratch` forms that allocate
 nothing** for their sorts that need pooled buffers, so a hot loop supplies its
@@ -44,10 +56,18 @@ Celerity documents its tradeoffs rather than claiming a blanket win:
   which sweeps from 100 to 1,000,000 elements precisely so it can be read off.
 - **`CountingSort` loses once `range` approaches `n`** — the histogram costs
   `range` no matter how few elements there are. Rule of thumb: `range ≲ n`.
+- **`StringSort` is up to 19% slower (0.84x) on input that is nearly, but not exactly, in
+  order** (exactly ordered input is caught by one scan and left alone), and gains
+  only about 1.4x on mostly-duplicate input against 2.4–2.9x on distinct keys. It is ordinal only: for a
+  culture-aware or case-insensitive order, use `Array.Sort` with a comparer.
 - **`PartialSort` is not asymptotically better than LINQ.** `OrderBy().Take(k)`
   has applied its own partial-sort optimization since .NET 6. The win is that
   this works on a span in place, allocates nothing, boxes no comparer, and
   materializes no intermediate sequence.
+- **`KWayMerge` wins where a comparison costs something** — 1.93x over the
+  `PriorityQueue` hand-roll on 16 runs of strings — but only 1.15x on `int`
+  keys, and for in-memory primitive keys `RadixSort` over the concatenation
+  beats any merge.
 
 ## Two deliberate floating-point divergences
 
@@ -81,9 +101,17 @@ RadixSort.SortWithScratch(ids.AsSpan(), names.AsSpan(), keyScratch, valueScratch
 int[] order = new int[ids.Length];
 RadixSort.ArgSort(ids, order);
 
+// A million URLs, ordinal order, stable.
+StringSort.Sort(urls.AsSpan());
+
 // The 10 worst offenders out of a million, without touching the source.
 int[] worst = new int[10];
 PartialSort.TopK<int>(latencies, worst);
+
+// Merge 16 shards' already-sorted results, keeping equal keys in shard order.
+string[] merged = new string[shardRows.Length];
+// OrdinalComparer is a struct IComparer<string> calling string.CompareOrdinal.
+KWayMerge.Merge(shardRows, shardLengths, merged.AsSpan(), default(OrdinalComparer));
 ```
 
 See the [sorting API reference](https://github.com/marius-bughiu/Celerity/blob/main/docs/api/sorting.md)

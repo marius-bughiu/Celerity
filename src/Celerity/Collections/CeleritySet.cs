@@ -359,7 +359,7 @@ public class CeleritySet<T, THasher> : ISet<T>, IReadOnlySet<T> where THasher : 
     // ── ISet<T> / ICollection<T> set-algebra surface ──────────────────────────
     // The set-algebra logic is shared across the mutable set family via
     // SetOperations, written once against the ISet<T> primitives every set
-    // exposes; the semantics match BCL HashSet<T> exactly.
+    // exposes; the semantics match BCL HashSet<T> (bar ExceptWith over a lazy self-view).
 
     /// <summary>
     /// Modifies the set to contain all elements that are present in itself, in
