@@ -364,11 +364,19 @@ public class SieveCacheTests
 
         // Warm every path (hit, miss, evicting insert, overwrite, remove, re-add) before measuring.
         Churn(cache, 1000);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        Churn(cache, 10_000);
-        long after = GC.GetAllocatedBytesForCurrentThread();
 
-        Assert.Equal(0, after - before);
+        // A one-off runtime event (tiering or OSR work on this thread) can land in any single window and
+        // once did (#590), while a real per-operation allocation shows up in every one. So the steady state
+        // is the quietest of three windows, and that must be exactly zero.
+        long quietest = long.MaxValue;
+        for (int window = 0; window < 3 && quietest != 0; window++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            Churn(cache, 10_000);
+            quietest = Math.Min(quietest, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+
+        Assert.Equal(0, quietest);
 
         static void Churn(SieveCache<int, int, Int32WangHasher> c, int ops)
         {
