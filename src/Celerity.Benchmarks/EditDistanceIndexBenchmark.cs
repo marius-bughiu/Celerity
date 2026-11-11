@@ -20,9 +20,14 @@ using Celerity.Collections;
 // with endings like -s, -ed, -ing and -er. Families matter. Independent random strings have almost no close
 // neighbours, so every query would find only its source word and the candidate lists the index verifies would
 // be unrealistically short, which flatters it. A family puts real words one to three edits apart, as plurals
-// and tenses do in a dictionary, and that is what the verification cost is made of. The 64 queries are
-// words of the set with ONE random substitution each — the spell-check shape: most have the original word at
-// distance 1 and a few neighbours further out, and some substitutions land on another word of the set.
+// and tenses do in a dictionary, and that is what the verification cost is made of. Each query is a word of
+// the set with ONE random substitution — the spell-check shape: most have the original word at distance 1 and
+// a few neighbours further out, and some substitutions land on another word of the set.
+//
+// Every invocation answers 64 queries: the next 64 of a pool of 65,536 distinct ones, so no invocation replays
+// the last one's. Replaying one fixed batch of 64 let the caches and the branch predictor learn the index's
+// lookups, and flattered it 2.5-7x, while the scan, which reads every word whatever the query, barely moved.
+// Every arm advances the same cursor by the same 64, so each invocation's work is statistically identical.
 //
 // FindWithin1 and FindWithin2 are the arms the pre-registered kill criteria (issue #584) are read off. Both
 // sides produce the same thing — every match as a FuzzyMatch, ordered by distance and then id, as an array per
@@ -49,6 +54,9 @@ public class EditDistanceIndexBenchmark
 {
     private const int QueryCount = 64;
 
+    // Distinct queries the invocations rotate through: far more than a predictor or a cache can memorize.
+    private const int QueryPoolSize = 1 << 16;
+
     // Matches EditDistanceIndex's own stack limit, so the copied verifier rents at the same point.
     private const int StackLimit = 256;
 
@@ -64,7 +72,8 @@ public class EditDistanceIndexBenchmark
     private static readonly string[] Endings = ["", "s", "es", "ed", "ing", "er", "ers", "ly", "ness"];
 
     private string[] words = null!;
-    private string[] queries = null!;
+    private string[] queryPool = null!;
+    private int cursor;
 
     private EditDistanceIndex index1 = null!;
     private EditDistanceIndex index2 = null!;
@@ -102,8 +111,8 @@ public class EditDistanceIndexBenchmark
 
         words = [.. chosen];
 
-        queries = new string[QueryCount];
-        for (int q = 0; q < QueryCount; q++)
+        queryPool = new string[QueryPoolSize];
+        for (int q = 0; q < QueryPoolSize; q++)
         {
             char[] query = words[rand.Next(words.Length)].ToCharArray();
             int position = rand.Next(query.Length);
@@ -115,7 +124,7 @@ public class EditDistanceIndexBenchmark
             while (replacement == query[position]);
 
             query[position] = replacement;
-            queries[q] = new string(query);
+            queryPool[q] = new string(query);
         }
 
         index1 = new EditDistanceIndex(words, maxDistance: 1);
@@ -149,7 +158,7 @@ public class EditDistanceIndexBenchmark
     public int Array_Nearest()
     {
         int total = 0;
-        foreach (string query in queries)
+        foreach (string query in NextQueries())
         {
             int bound = 2;
             int bestId = -1;
@@ -182,7 +191,7 @@ public class EditDistanceIndexBenchmark
     public int EditDistanceIndex_Nearest()
     {
         int total = 0;
-        foreach (string query in queries)
+        foreach (string query in NextQueries())
         {
             if (index2.TryFindNearest(query, 2, out FuzzyMatch match))
                 total += match.WordId + 1;
@@ -201,10 +210,18 @@ public class EditDistanceIndexBenchmark
     [BenchmarkCategory("Build")]
     public EditDistanceIndex EditDistanceIndex_Build() => new(words, maxDistance: 2);
 
+    // The next QueryCount queries of the pool, wrapping at its end.
+    private ReadOnlySpan<string> NextQueries()
+    {
+        int start = cursor;
+        cursor = (start + QueryCount) & (QueryPoolSize - 1);
+        return queryPool.AsSpan(start, QueryCount);
+    }
+
     private int FindAll(EditDistanceIndex index, int maxDistance)
     {
         int total = 0;
-        foreach (string query in queries)
+        foreach (string query in NextQueries())
             total += index.FindWithin(query, maxDistance).Length;
 
         return total;
@@ -213,7 +230,7 @@ public class EditDistanceIndexBenchmark
     private int ScanAll(int maxDistance)
     {
         int total = 0;
-        foreach (string query in queries)
+        foreach (string query in NextQueries())
             total += Scan(query, maxDistance).Length;
 
         return total;
