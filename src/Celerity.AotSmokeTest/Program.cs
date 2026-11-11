@@ -3641,14 +3641,15 @@ void Check(bool condition, string message)
     Check(lazy.AsSpan().SequenceEqual([9, 8, 7, 1, 0]), "KWayMerge.Merge lazy with a struct comparer");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable.
+// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable / KllSketch.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
 // generator, so the struct-PRNG generic is closed twice), the moment accumulator, which is a
 // mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
-// quantile over a value type and a reference type, whose heap entries are a generic struct, and the alias
-// table's constrained-generic draw closed over two generators.
+// quantile over a value type and a reference type, whose heap entries are a generic struct, the alias
+// table's constrained-generic draw closed over two generators, and the KLL sketch over both, whose sorted
+// view pairs a generic key array with a weight array in one Array.Sort.
 {
     var sketch = new DDSketch(0.01d, 1024);
     for (int i = 1; i <= 1_000; i++)
@@ -3709,6 +3710,24 @@ void Check(bool condition, string message)
     Check(weighted.Count == 3 && !draws.Contains(0) && ones > 1_300 && ones < 1_700, "AliasTable bulk draws follow the weights");
     var otherRng = new Xoshiro256StarStar(9UL);
     Check(weighted.Sample(ref otherRng) is 1 or 2, "AliasTable over a second generator");
+
+    var kll = new KllSketch<double>(k: KllSketch<double>.MinK, seed: 7UL);
+    for (int i = 1; i <= 1_000; i++)
+    {
+        kll.Add(i);
+    }
+
+    Check(kll.Count == 1_000 && kll.RetainedCount < 1_000, "KllSketch compacts");
+    Check(kll.GetQuantile(0d) == 1d && kll.GetQuantile(1d) == 1_000d, "KllSketch exact extremes");
+    double kllMedian = kll.GetQuantile(0.5d);
+    Check(kllMedian > 250d && kllMedian < 750d, "KllSketch median");
+
+    var fruit = new KllSketch<string>();
+    fruit.Add(["pear", "apple", "fig"]);
+    var moreFruit = new KllSketch<string>();
+    moreFruit.Add("kiwi");
+    fruit.Merge(moreFruit);
+    Check(fruit.Count == 4 && fruit.Min == "apple" && fruit.GetRank("fig") == 0.5d, "KllSketch over a reference type, merged");
 }
 
 // Celerity.Ring — ConsistentHashRing / RendezvousHash.

@@ -677,6 +677,11 @@ function escapeHtml(s) {
     { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',      vs: 'List<double> sort + index', ops: ['Add', 'Query', 'QueryPresorted', 'Mixed'] },
     // The sampler's baseline is the good hand-roll — materialize the stream, partial Fisher-Yates — not
     // the OrderBy(random).Take(k) that would flatter it. The win is the footprint, not the asymptotics.
+    // The KLL sketch against the same retain-sort-index baseline as DDSketch, over the same lognormal doubles
+    // and the same four ops. It loses Add and both 1,000-value queries; at 100,000 it wins Mixed and the moving-stream
+    // query against a list kept sorted by insertion. Its reason to exist is any IComparable<T> and a rank bound, which a chart of
+    // doubles cannot show.
+    { key: 'KllSketch',           title: 'KllSketch<T> (rank-error quantiles)',      vs: 'List<double> sort + index', ops: ['Add', 'Query', 'QueryPresorted', 'Mixed'] },
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',        vs: 'List<T> + partial Fisher-Yates', ops: ['Sample', 'Accumulate'] },
     // The rolling median's baseline is the careful hand-roll — a sorted int[] beside a Queue<int>, one span
     // shift per sample between the expiring value and the new one — not a re-sort per read. ItemCount is the

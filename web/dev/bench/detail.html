@@ -443,6 +443,7 @@
     // Celerity.Statistics: streaming summaries with no BCL counterpart, so the reference series are the
     // idioms a caller writes instead (List / Array / Linq) rather than a type name.
     { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',   vs: 'List<double> sort + index' },
+    { key: 'KllSketch',           title: 'KllSketch<T> (rank-error quantiles)',   vs: 'List<double> sort + index' },
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',     vs: 'List<T> + partial Fisher-Yates' },
     { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', items: [1000, 10000, 100000] },
     { key: 'AliasTable',          title: 'AliasTable (weighted sampling)',        vs: 'prefix sums + Array.BinarySearch', items: [100, 10000, 1000000] },

@@ -97,6 +97,7 @@ internal class Program
         typeof(SortedSpanBenchmark),
         typeof(DDSketchBenchmark),
         typeof(ReservoirSamplerBenchmark),
+        typeof(KllSketchBenchmark),
         typeof(RollingQuantileBenchmark),
         typeof(AliasTableBenchmark),
         typeof(RunningStatisticsBenchmark),
