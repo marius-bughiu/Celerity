@@ -87,6 +87,7 @@ internal class Program
         typeof(EliasFanoSequenceBenchmark),
         typeof(BitPackedArrayBenchmark),
         typeof(BTreeListBenchmark),
+        typeof(GapBufferBenchmark),
         typeof(RadixSortBenchmark),
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),
@@ -95,6 +96,7 @@ internal class Program
         typeof(DDSketchBenchmark),
         typeof(ReservoirSamplerBenchmark),
         typeof(RollingQuantileBenchmark),
+        typeof(AliasTableBenchmark),
         typeof(RunningStatisticsBenchmark),
         // One comparison split by hasher family so the shard packer can spread it; see
         // StringHasherBenchmarkBase.

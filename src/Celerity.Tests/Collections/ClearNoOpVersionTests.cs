@@ -475,6 +475,15 @@ public class ClearNoOpVersionTests
             () => list.GetEnumerator(), list.Clear, () => list.Count, () => list.Add(1));
     }
 
+    [Fact]
+    public void GapBufferClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        // Empty but with a backing array: "already empty" is Count == 0, not "never allocated".
+        var buffer = new GapBuffer<int>(16);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => buffer.GetEnumerator(), buffer.Clear, () => buffer.Count, () => buffer.Add(1));
+    }
+
     // ---- The four documented exceptions -----------------------------------------------------------
 
     [Fact]
