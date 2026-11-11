@@ -103,4 +103,70 @@ public class DeterminismTests
             Assert.Equal(direct.GetNode(key), churned.GetNode(key));
         }
     }
+
+    [Fact]
+    public void MaglevHash_MappingIsIndependentOfInsertionOrder()
+    {
+        string[] nodeIds = Enumerable.Range(0, 12).Select(i => $"node-{i}").ToArray();
+
+        var forward = new StringMaglevHash<string>();
+        foreach (string id in nodeIds)
+            forward.Add(id, id, 1 + id.Length % 3);
+
+        var reverse = new StringMaglevHash<string>();
+        foreach (string id in nodeIds.Reverse())
+            reverse.Add(id, id, 1 + id.Length % 3);
+
+        for (int i = 0; i < 20_000; i++)
+        {
+            string key = $"user:{i}";
+            Assert.Equal(forward.GetNode(key), reverse.GetNode(key));
+        }
+    }
+
+    [Fact]
+    public void MaglevHash_RebuildAfterAddRemove_IsPathIndependent()
+    {
+        var direct = new StringMaglevHash<string>();
+        foreach (string id in new[] { "a", "b", "c" })
+            direct.Add(id, id);
+
+        var churned = new StringMaglevHash<string>();
+        churned.Add("a", "a");
+        churned.Add("x", "x", weight: 5);
+        churned.Add("b", "b");
+        churned.Add("c", "c");
+        churned.Remove("x");
+
+        for (int i = 0; i < 10_000; i++)
+        {
+            string key = $"k{i}";
+            Assert.Equal(direct.GetNode(key), churned.GetNode(key));
+        }
+    }
+
+    [Fact]
+    public void MaglevHash_GoldenTable_LocksThePermutationAndFillContract()
+    {
+        // The whole 1,009-slot table for a fixed weighted node set, fingerprinted with FNV-1a over each slot's
+        // owner. It is a pure function of the node identities (StringXxHash3Hasher.Hash64), the table size and
+        // the fill order, so it changes only if one of those does — the event that would make two versions of a
+        // fleet route differently.
+        var maglev = new MaglevHash<string, uint, UInt32IdentityHasher>(tableSize: 1_009);
+        maglev.Add("alpha", "a", 1);
+        maglev.Add("beta", "b", 2);
+        maglev.Add("gamma", "g", 3);
+        maglev.Add("delta", "d", 4);
+
+        string table = string.Concat(MaglevTable.Read(maglev));
+        ulong fingerprint = 14695981039346656037UL;
+        foreach (char c in table)
+        {
+            fingerprint ^= c;
+            fingerprint *= 1099511628211UL;
+        }
+
+        Assert.StartsWith("ddbbgaddabbdgagdbdbggdddbgddggbaddbggbdbggdddbgd", table);
+        Assert.Equal(0xFD11F85B56292FE8UL, fingerprint);
+    }
 }

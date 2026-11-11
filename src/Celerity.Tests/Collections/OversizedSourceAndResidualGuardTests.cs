@@ -31,6 +31,8 @@ namespace Celerity.Tests.Collections;
 /// <see cref="List{T}"/>, checking it before the one copy it makes. Its limit depends on the <i>width</i>, because
 /// it counts 64-bit words: below 64 bits a value every <see cref="int"/> length fits, and at 64 bits the padding
 /// word puts <see cref="int.MaxValue"/> elements past <see cref="Array.MaxLength"/>.
+/// <see cref="FrozenSortedSet{T}"/> checks a counted source against its own ceiling, the largest whole number of
+/// cache-line nodes one array holds, before it allocates the padded leaf array it copies into.
 /// </para>
 ///
 /// <para>
@@ -228,6 +230,34 @@ public class OversizedSourceAndResidualGuardTests
 
         Assert.Equal("values", ex.ParamName);
         Assert.Contains("more words than one array can hold", ex.Message);
+    }
+
+    // ---- FrozenSortedSet: the counted-source ceiling, checked before the leaf array ------------------
+
+    [Fact]
+    public void FrozenSortedSetConstructor_ShouldThrowArgumentException_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        // The padded leaf array is allocated at the source's Count and filled by CopyTo, so reaching the
+        // ArgumentException rather than a NotSupportedException proves the ceiling runs before both.
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => new FrozenSortedSet<int>(oversized));
+
+        Assert.Equal("source", ex.ParamName);
+        Assert.Contains("holds at most", ex.Message);
+    }
+
+    [Fact]
+    public void FrozenSortedSetConstructor_ShouldThrowArgumentException_WhenCountedSourceIsOneOverTheCeiling()
+    {
+        // The ceiling is Array.MaxLength rounded down to a whole node; one key past it would need one more node
+        // than an array can hold. Byte keys have 64-key nodes, the widest rounding of any key type.
+        int ceiling = Array.MaxLength / FrozenSortedSet<byte>.NodeSize * FrozenSortedSet<byte>.NodeSize;
+        var oversized = new LyingCountCollection<byte>(ceiling + 1);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => new FrozenSortedSet<byte>(oversized));
+
+        Assert.Equal("source", ex.ParamName);
     }
 
     // ---- Trie.Enumerator: the exhausted state latches ----------------------------------------------

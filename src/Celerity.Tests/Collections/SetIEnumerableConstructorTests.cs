@@ -9,7 +9,8 @@ namespace Celerity.Tests.Collections;
 /// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
 /// <see cref="LinkedSet{T, THasher}"/>,
-/// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/>, and the
+/// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/> and
+/// <see cref="FrozenSortedSet{T}"/>, and the
 /// immutable <see cref="PersistentHashSet{T, THasher}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
@@ -1959,6 +1960,79 @@ public class SetIEnumerableConstructorTests
             Assert.True(set.Contains(item));
     }
 
+    // --------------------------------------------------------------
+    //  RankedMultiSet - RankedSet's layout with duplicates kept. It is not
+    //  an ISet<T>, but it takes the same IEnumerable source, and the one
+    //  row that differs is the dedupe row: here every copy has to survive,
+    //  in the order the source enumerates it.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void RankedMultiSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new RankedMultiSet<string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldSupportEmptySource()
+    {
+        var set = new RankedMultiSet<string>(Array.Empty<string>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldCopyAllElements_FromArraySource_InOrder()
+    {
+        var set = new RankedMultiSet<string>(new[] { "c", "a", "b" });
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(new[] { "a", "b", "c" }, set);
+        Assert.Equal(1, set.IndexOf("b"));
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Range is not an ICollection<int>, and 1,500 elements split buckets several times while
+        // the constructor fills the multiset.
+        var set = new RankedMultiSet<int>(Enumerable.Range(0, 1500).Reverse());
+
+        Assert.Equal(1500, set.Count);
+        Assert.Equal(Enumerable.Range(0, 1500), set);
+        Assert.Equal(1234, set[1234]);
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldKeepEveryDuplicate_IncludingDefaultAndNullElements()
+    {
+        var ints = new RankedMultiSet<int>(new[] { 0, 1, 0, 1, 2 });
+
+        Assert.Equal(new[] { 0, 0, 1, 1, 2 }, ints);
+
+        var strings = new RankedMultiSet<string>(new[] { "a", null!, "a", null! });
+
+        Assert.Equal(4, strings.Count);
+        Assert.Equal(new string?[] { null, null, "a", "a" }, strings);
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 2 };
+
+        var set = new RankedMultiSet<int>(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(2, set.CountOf(2));
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  CompressedIntSet — the chunk-compressed integer set
     // ──────────────────────────────────────────────────────────────
@@ -2072,5 +2146,70 @@ public class SetIEnumerableConstructorTests
         Assert.Equal(3, set.Count);
         foreach (int item in new[] { 1, 2, 3 })
             Assert.True(set.Contains(item));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  FrozenSortedSet — the IEnumerable-source contract
+    // ──────────────────────────────────────────────────────────────
+    //
+    //  FrozenSortedSet is immutable and integer-only, with a single
+    //  IEnumerable<T> constructor and no capacity / loadFactor, so only the
+    //  source contract applies: null rejection, dedupe, the counted and the
+    //  uncounted path, and independence from the source. It has no null or
+    //  default-key slot to dedupe.
+
+    [Fact]
+    public void FrozenSortedSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new FrozenSortedSet<int>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldSupportEmptySource()
+    {
+        var set = new FrozenSortedSet<int>(Array.Empty<int>());
+
+        Assert.Empty(set);
+        Assert.False(set.Contains(0));
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldSilentlyDedupe_DuplicateElements_FromBothSourcePaths()
+    {
+        int[] source = [3, 0, 3, -1, 0, 3];
+
+        var counted = new FrozenSortedSet<int>(source);
+        var uncounted = new FrozenSortedSet<int>(source.Select(x => x));
+
+        Assert.Equal(new[] { -1, 0, 3 }, counted.ToArray());
+        Assert.Equal(new[] { -1, 0, 3 }, uncounted.ToArray());
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 3 };
+
+        var set = new FrozenSortedSet<int>(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        foreach (int item in new[] { 1, 2, 3 })
+            Assert.True(set.Contains(item));
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldRoundtrip_FromAnotherFrozenSortedSet()
+    {
+        var original = new FrozenSortedSet<int>(Enumerable.Range(0, 300).Select(i => i * 7));
+
+        var copy = new FrozenSortedSet<int>(original);
+
+        Assert.Equal(original.ToArray(), copy.ToArray());
+        Assert.True(copy.SetEquals(original));
     }
 }

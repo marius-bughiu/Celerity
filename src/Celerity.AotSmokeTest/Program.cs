@@ -702,6 +702,74 @@ void Check(bool condition, string message)
     Check(bulk.Count == 0 && bulk.Depth == 1 && !bulk.Contains(0), "BTreeList Clear");
 }
 
+// GapBuffer — positional list over one array with a movable gap. Exercise the ICollection and capacity
+// constructors, a cursor edit at the gap and a gap move in each direction, the growth that reopens the gap
+// at the edit, the branch-free indexer either side of a mid-list gap, a RemoveRange straddling the gap, an
+// InsertRange fed a span over the buffer's own storage, GetSpans, EnsureCapacity / TrimExcess keeping the
+// gap, CopyTo, and the struct enumerator — including the in-place set that does not invalidate it. A string
+// instantiation covers the slot-clearing paths only a reference type compiles in.
+{
+    var gb = new GapBuffer<int>(Enumerable.Range(0, 1_000).ToArray());
+    Check(gb.Count == 1_000 && gb.Capacity == 1_000 && gb.GapPosition == 1_000 && gb[999] == 999,
+        "GapBuffer ICollection constructor");
+
+    gb.Insert(500, -1);
+    Check(gb.GapPosition == 501 && gb.Capacity == 2_000 && gb[500] == -1 && gb[501] == 500 && gb[499] == 499,
+        "GapBuffer growth reopens the gap at the edit");
+    gb.Insert(501, -2);
+    Check(gb.GapPosition == 502 && gb[501] == -2 && gb[502] == 500, "GapBuffer insert at the gap");
+    gb.RemoveAt(100);
+    gb.Insert(900, -3);
+    Check(gb.GapPosition == 901 && gb[99] == 99 && gb[100] == 101 && gb[900] == -3 && gb[^1] == 999,
+        "GapBuffer gap moves left and right");
+
+    gb.RemoveRange(899, 3);
+    Check(gb.GapPosition == 899 && gb.Count == 999 && gb[898] == 897 && gb[899] == 900,
+        "GapBuffer RemoveRange straddling the gap");
+
+    gb.GetSpans(out ReadOnlySpan<int> beforeGap, out ReadOnlySpan<int> afterGap);
+    Check(beforeGap.Length == 899 && afterGap.Length == 100 && beforeGap[0] == 0 && afterGap[^1] == 999,
+        "GapBuffer GetSpans");
+    gb.InsertRange(0, afterGap.Slice(0, 4));
+    Check(gb.Count == 1_003 && gb.GapPosition == 4 && gb[0] == 900 && gb[3] == 903 && gb[4] == 0,
+        "GapBuffer InsertRange of its own span");
+
+    Check(gb.IndexOf(-2) == 504 && gb.Remove(-2) && !gb.Contains(-2) && gb.GapPosition == 504,
+        "GapBuffer IndexOf / Remove");
+
+    Check(gb.EnsureCapacity(5_000) >= 5_000 && gb.GapPosition == 504, "GapBuffer EnsureCapacity keeps the gap");
+    gb.TrimExcess();
+    Check(gb.Capacity == gb.Count && gb.GapPosition == 504 && gb[504] == 500, "GapBuffer TrimExcess keeps the gap");
+
+    var copy = new int[gb.Count + 2];
+    gb.CopyTo(copy, 1);
+    Check(copy[0] == 0 && copy[1] == 900 && copy[^2] == 999 && copy[^1] == 0 && gb.ToArray().Length == gb.Count,
+        "GapBuffer CopyTo / ToArray");
+
+    long sum = 0;
+    foreach (int x in gb) sum += x;
+    long expected = 0;
+    for (int i = 0; i < gb.Count; i++) expected += gb[i];
+    Check(sum == expected, "GapBuffer struct enumeration");
+
+    var enumerator = gb.GetEnumerator();
+    gb[0] = 42;
+    Check(enumerator.MoveNext() && enumerator.Current == 42, "GapBuffer set keeps an enumerator valid");
+    gb.Insert(10, 7);
+    bool threw = false;
+    try { enumerator.MoveNext(); } catch (InvalidOperationException) { threw = true; }
+    Check(threw, "GapBuffer Insert invalidates an enumerator");
+
+    var text = new GapBuffer<string>(8);
+    text.InsertRange(0, new[] { "a", "b", "c", "d", "e" });
+    text.RemoveAt(4);
+    text.Insert(1, "x");
+    text.RemoveRange(2, 2);
+    Check(string.Join("", text) == "axd" && text.GapPosition == 2, "GapBuffer<string> cursor edits");
+    text.Clear();
+    Check(text.Count == 0 && text.GapPosition == 0 && text.Capacity == 8, "GapBuffer<string> Clear");
+}
+
 // PersistentVector - immutable indexed sequence over a 32-way bit-partitioned trie. Exercise the
 // IEnumerable constructor, the tail and trie read paths, all three persistent operations across the
 // 1,057-element root-growth boundary, the builder's owned tail, and the chunked struct enumerator.
@@ -1728,6 +1796,34 @@ void Check(bool condition, string message)
     Check(descendingRanked[0] == 99 && descendingRanked.IndexOf(0) == 99, "RankedSet custom struct comparer order");
 }
 
+// RankedMultiSet — RankedSet's layout with duplicates kept. A run of equal values spanning several buckets
+// is what ILC has to get right here: the lower- and upper-bound descents, and the per-bucket run removal.
+{
+    var multi = new RankedMultiSet<int>(Enumerable.Range(0, 1500).Select(i => i / 3));
+    Check(multi.Count == 1500 && multi.Min == 0 && multi.Max == 499, "RankedMultiSet source ctor keeps duplicates");
+    Check(multi[0] == 0 && multi[2] == 0 && multi[3] == 1 && multi[1499] == 499, "RankedMultiSet select by rank");
+    Check(multi.CountOf(250) == 3 && multi.IndexOf(250) == 750 && multi.LastIndexOf(250) == 752, "RankedMultiSet run of copies");
+    Check(multi.CountLessThan(250) == 750 && multi.CountLessThanOrEqual(250) == 753, "RankedMultiSet counts");
+
+    for (int i = 0; i < 1000; i++) multi.Add(100);
+    Check(multi.CountOf(100) == 1003 && multi.IndexOf(101) == 1303, "RankedMultiSet run across buckets");
+    Check(multi.Remove(100) && multi.CountOf(100) == 1002, "RankedMultiSet remove one copy");
+    Check(multi.RemoveAll(100) == 1002 && !multi.Contains(100) && multi.Count == 1497, "RankedMultiSet remove every copy");
+
+    var inRange = 0;
+    foreach (int item in multi.EnumerateRange(10, 20)) inRange++;
+    Check(inRange == 30, "RankedMultiSet range scan");
+
+    multi.TrimExcess();
+    Check(multi.Count == 1497 && multi[1496] == 499, "RankedMultiSet TrimExcess");
+
+    // A second instantiation through a hand-written struct comparer; equal elements keep arrival order.
+    var descendingMulti = new RankedMultiSet<int, DescendingIntComparer>();
+    for (int i = 0; i < 100; i++) descendingMulti.Add(i % 10);
+    Check(descendingMulti[0] == 9 && descendingMulti.CountOf(0) == 10 && descendingMulti.IndexOf(0) == 90,
+        "RankedMultiSet custom struct comparer order");
+}
+
 // SmallDictionary — flat-array, linear-scan dictionary (default key inline, no
 // hasher). Exercise the indexer, TryAdd/Add, TryGetValue, Remove, the swap-remove
 // path, the inline default/zero key, and the struct enumerator.
@@ -2702,6 +2798,54 @@ void Check(bool condition, string message)
     Check(none.Count == 0 && none.CountLessThan(1) == 0, "EliasFanoSequence empty sequence");
 }
 
+// FrozenSortedSet — immutable static B+ tree (S+ tree) over sorted, distinct integer keys. Exercise
+// the build (sort, dedup, internal levels) over enough keys for three levels, the SIMD node count
+// behind every search at int, the scalar node scan at Int128 (no hardware Vector128<Int128>), the
+// T.MaxValue padding as a real key, the range slice, and the set algebra.
+{
+    int[] source = new int[3000];
+    for (int i = 0; i < source.Length; i++) source[i] = (i * 7919 % 1500) * 3 - 2000;   // every key twice
+    source[0] = int.MaxValue;
+    var frozenSorted = new FrozenSortedSet<int>(source);
+
+    Check(frozenSorted.Count == 1501 && frozenSorted.Depth == 3, "FrozenSortedSet count and depth");
+    Check(frozenSorted.Min == -2000 && frozenSorted.Max == int.MaxValue, "FrozenSortedSet min and max");
+    Check(frozenSorted.MemoryUsageInBytes >= 1501 * sizeof(int), "FrozenSortedSet memory usage");
+
+    bool sortedOk = true;
+    for (int i = 0; i < 1500; i++) sortedOk &= frozenSorted[i] == i * 3 - 2000;
+    Check(sortedOk, "FrozenSortedSet indexer");
+
+    Check(frozenSorted.Contains(1) && !frozenSorted.Contains(2) && frozenSorted.Contains(int.MaxValue)
+        && !frozenSorted.Contains(int.MinValue), "FrozenSortedSet contains");
+    Check(frozenSorted.IndexOf(-2000) == 0 && frozenSorted.IndexOf(int.MaxValue) == 1500
+        && frozenSorted.IndexOf(0) == -1, "FrozenSortedSet index of");
+    Check(frozenSorted.CountLessThan(int.MinValue) == 0 && frozenSorted.CountLessThan(2) == 668
+        && frozenSorted.CountLessThan(int.MaxValue) == 1500, "FrozenSortedSet count less than");
+    Check(frozenSorted.TryGetLowerBound(2, out int fsLower) && fsLower == 4
+        && frozenSorted.TryGetUpperBound(4, out int fsUpper) && fsUpper == 7
+        && !frozenSorted.TryGetUpperBound(int.MaxValue, out _), "FrozenSortedSet lower and upper bound");
+    Check(frozenSorted.SliceRange(0, 10).SequenceEqual(new[] { 1, 4, 7 }), "FrozenSortedSet slice range");
+
+    long fsSum = 0;
+    foreach (int key in frozenSorted) fsSum += key;
+    Check(fsSum == source.Distinct().Sum(k => (long)k), "FrozenSortedSet enumeration");
+
+    Check(frozenSorted.IsSupersetOf(new[] { 1, 4, int.MaxValue }) && frozenSorted.Overlaps(new[] { 2, 4 })
+        && frozenSorted.SetEquals(source) && frozenSorted.IsProperSubsetOf(source.Append(5))
+        && !frozenSorted.IsSubsetOf(new[] { 1 }), "FrozenSortedSet set algebra");
+
+    var wide = new FrozenSortedSet<Int128>(new[] { Int128.MaxValue, (Int128)5 << 80, -(Int128)1, (Int128)5 << 80, Int128.MinValue, 9 });
+    Check(wide.Count == 5 && wide.Depth == 2 && wide.IndexOf(9) == 2, "FrozenSortedSet<Int128> build");
+    Check(wide.Contains(Int128.MaxValue) && !wide.Contains(10) && wide.CountLessThan((Int128)5 << 80) == 3
+        && wide.TryGetLowerBound(10, out Int128 wideLower) && wideLower == (Int128)5 << 80,
+        "FrozenSortedSet<Int128> scalar search");
+
+    var noKeys = new FrozenSortedSet<int>(Array.Empty<int>());
+    Check(noKeys.Count == 0 && noKeys.Depth == 1 && !noKeys.Contains(0) && noKeys.CountLessThan(int.MaxValue) == 0,
+        "FrozenSortedSet empty set");
+}
+
 // BitPackedArray — fixed-width unsigned integers packed end to end into 64-bit words.
 // Exercise the branch-free straddling read and write at a width that does not divide 64,
 // the streaming constructor pack, the bulk GetRange / SetRange paths, Fill, the width
@@ -3464,7 +3608,7 @@ void Check(bool condition, string message)
         "EnumMap as IDictionary: boxed key view");
 }
 
-// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309).
+// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596) / KWayMerge.
 //
 // Every shape that forces a distinct native instantiation: both radix widths, both signed and
 // IEEE-754 key transforms, the key+payload generic over a reference payload (which is where the
@@ -3539,15 +3683,52 @@ void Check(bool condition, string message)
 
     int[] top = new int[3];
     Check(PartialSort.TopK<int>(selection, top.AsSpan()) == 3 && top[0] == 9 && top[^1] == 7, "PartialSort.TopK");
+
+    // StringSort: the keys-only sort on the stack buffer and on the pooled one (above 256 keys), the
+    // key+payload generic over a value-typed payload, and the argsort.
+    string[] words = ["pear", "Apple", "apple", "", "pea", "pear\0"];
+    StringSort.Sort(words.AsSpan());
+    Check(words[0] == "" && words[1] == "Apple" && words[^1] == "pear\0", "StringSort ordinal order");
+
+    string[] many = new string[1_000];
+    for (int i = 0; i < many.Length; i++)
+        many[i] = "key:" + ((i * 7_919) % many.Length).ToString("D4");
+    StringSort.Sort(many.AsSpan());
+    Check(many[0] == "key:0000" && many[^1] == "key:0999", "StringSort pooled working state");
+
+    string[] wordKeys = ["b", "a", "b"];
+    int[] wordValues = [0, 1, 2];
+    StringSort.Sort(wordKeys.AsSpan(), wordValues.AsSpan());
+    Check(wordValues[0] == 1 && wordValues[1] == 0 && wordValues[2] == 2, "StringSort stable key+payload");
+
+    int[] wordRanks = new int[3];
+    StringSort.ArgSort(["z", "x", "y"], wordRanks.AsSpan());
+    Check(wordRanks[0] == 1 && wordRanks[1] == 2 && wordRanks[2] == 0, "StringSort.ArgSort");
+
+    // KWayMerge: the span merge through the tree (three runs) over a value type and over a reference
+    // type, whose pooled key buffer is cleared on return, and the lazy merge, an iterator state
+    // machine closed over a struct comparer.
+    int[] merged = new int[7];
+    KWayMerge.Merge<int>([1, 4, 7, 2, 5, 3, 6], [3, 2, 2], merged);
+    Check(merged.AsSpan().SequenceEqual([1, 2, 3, 4, 5, 6, 7]), "KWayMerge.Merge int runs");
+
+    string[] mergedWords = new string[4];
+    KWayMerge.Merge<string>(["ant", "fox", "bee", "cat"], [2, 1, 1], mergedWords);
+    Check(mergedWords[0] == "ant" && mergedWords[^1] == "fox", "KWayMerge.Merge string runs");
+
+    int[] lazy = KWayMerge.Merge(new[] { new[] { 9, 1 }, new[] { 8 }, new[] { 7, 0 } }, default(DescendingIntComparer)).ToArray();
+    Check(lazy.AsSpan().SequenceEqual([9, 8, 7, 1, 0]), "KWayMerge.Merge lazy with a struct comparer");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile.
+// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable / KllSketch.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
 // generator, so the struct-PRNG generic is closed twice), the moment accumulator, which is a
 // mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
-// quantile over a value type and a reference type, whose heap entries are a generic struct.
+// quantile over a value type and a reference type, whose heap entries are a generic struct, the alias
+// table's constrained-generic draw closed over two generators, and the KLL sketch over both, whose sorted
+// view pairs a generic key array with a weight array in one Array.Sort.
 {
     var sketch = new DDSketch(0.01d, 1024);
     for (int i = 1; i <= 1_000; i++)
@@ -3599,9 +3780,36 @@ void Check(bool condition, string message)
     var lowest = new RollingQuantile<string>(windowSize: 2, quantile: 0d);
     lowest.Add(["pear", "apple", "fig"]);
     Check(lowest.TryGetValue(out string? first) && first == "apple", "RollingQuantile over a reference type");
+
+    var weighted = new AliasTable([0d, 3d, 1d]);
+    var aliasRng = new Pcg32(5UL);
+    int[] draws = new int[2_000];
+    weighted.Sample(ref aliasRng, draws);
+    int ones = draws.Count(d => d == 1);
+    Check(weighted.Count == 3 && !draws.Contains(0) && ones > 1_300 && ones < 1_700, "AliasTable bulk draws follow the weights");
+    var otherRng = new Xoshiro256StarStar(9UL);
+    Check(weighted.Sample(ref otherRng) is 1 or 2, "AliasTable over a second generator");
+
+    var kll = new KllSketch<double>(k: KllSketch<double>.MinK, seed: 7UL);
+    for (int i = 1; i <= 1_000; i++)
+    {
+        kll.Add(i);
+    }
+
+    Check(kll.Count == 1_000 && kll.RetainedCount < 1_000, "KllSketch compacts");
+    Check(kll.GetQuantile(0d) == 1d && kll.GetQuantile(1d) == 1_000d, "KllSketch exact extremes");
+    double kllMedian = kll.GetQuantile(0.5d);
+    Check(kllMedian > 250d && kllMedian < 750d, "KllSketch median");
+
+    var fruit = new KllSketch<string>();
+    fruit.Add(["pear", "apple", "fig"]);
+    var moreFruit = new KllSketch<string>();
+    moreFruit.Add("kiwi");
+    fruit.Merge(moreFruit);
+    Check(fruit.Count == 4 && fruit.Min == "apple" && fruit.GetRank("fig") == 0.5d, "KllSketch over a reference type, merged");
 }
 
-// Celerity.Ring — ConsistentHashRing / RendezvousHash.
+// Celerity.Ring — ConsistentHashRing / RendezvousHash / MaglevHash.
 //
 // The first of the three showcase-tier packages. They set IsAotCompatible like the rest of the family,
 // so the analyzers already covered them, but until they were referenced here no native binary closed
@@ -3675,6 +3883,39 @@ void Check(bool condition, string message)
     var stringHrw = new StringRendezvousHash<int>();
     stringHrw.Add("only", 7);
     Check(stringHrw.GetNode("anything") == 7, "StringRendezvousHash single node owns every key");
+
+    // Maglev: a prime-sized lookup table filled by node permutations, closed over a value-typed key and its
+    // identity hasher, so a key's slot is its own value and the table can be read back slot by slot.
+    var maglev = new MaglevHash<string, uint, UInt32IdentityHasher>(tableSize: 31);
+    maglev.Add("a", "a");
+    maglev.Add("b", "b", weight: 2);
+    maglev.Add("c", "c");
+    Check(maglev.NodeCount == 3 && maglev.TableSize == 31 && maglev.Contains("b"), "MaglevHash registry");
+    int maglevA = 0, maglevB = 0, maglevC = 0;
+    for (uint slot = 0; slot < 31; slot++)
+    {
+        switch (maglev.GetNode(slot))
+        {
+            case "a": maglevA++; break;
+            case "b": maglevB++; break;
+            case "c": maglevC++; break;
+        }
+    }
+
+    // 31 slots over a total weight of 4 is 7 full rounds (28 slots) plus a partial one.
+    Check(maglevA + maglevB + maglevC == 31 && maglevA is 7 or 8 && maglevC is 7 or 8 && maglevB is >= 14 and <= 16,
+        "MaglevHash fills its table in weighted turns");
+    IReadOnlyList<string> maglevReplicas = maglev.GetReplicas(5u, 3);
+    var maglevBuffer = new string[4];
+    Check(maglevReplicas.Count == 3 && maglevReplicas[0] == maglev.GetNode(5u)
+        && maglev.GetReplicas(5u, maglevBuffer) == 3 && maglevBuffer[2] == maglevReplicas[2] && maglevBuffer[3] is null,
+        "MaglevHash span replica walk matches the list");
+    Check(maglev.Remove("b") && maglev.NodeCount == 2 && maglev.TryGetNode(5u, out string? maglevOwner)
+        && maglevOwner is "a" or "c", "MaglevHash.Remove");
+
+    var stringMaglev = new StringMaglevHash<int>(tableSize: 7);
+    stringMaglev.Add("only", 7);
+    Check(stringMaglev.GetNode("anything") == 7, "StringMaglevHash single node owns every key");
 }
 
 // Celerity.Sentinel — AbuseTracker / StripedAbuseTracker.

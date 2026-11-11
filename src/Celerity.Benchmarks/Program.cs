@@ -83,19 +83,29 @@ internal class Program
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
         typeof(RankedSetBenchmark),
+        typeof(RankedMultiSetBenchmark),
         typeof(WaveletTreeBenchmark),
         typeof(EliasFanoSequenceBenchmark),
+        typeof(FrozenSortedSetBenchmark),
         typeof(BitPackedArrayBenchmark),
         typeof(BTreeListBenchmark),
+        typeof(GapBufferBenchmark),
         typeof(RadixSortBenchmark),
+        typeof(StringSortBenchmark),
         typeof(CountingSortBenchmark),
         typeof(PartialSortBenchmark),
+        typeof(KWayMergeBenchmark),
         typeof(StringKeyProbeBenchmark),
         typeof(SortedSpanBenchmark),
         typeof(DDSketchBenchmark),
         typeof(ReservoirSamplerBenchmark),
+        typeof(KllSketchBenchmark),
         typeof(RollingQuantileBenchmark),
+        typeof(AliasTableBenchmark),
         typeof(RunningStatisticsBenchmark),
+        // Celerity.Ring's charted sweep: Maglev's one-load lookup and its rebuild cost against a hand-rolled
+        // ring. The package's other benchmark (RingBenchmark) stays in the extended suite.
+        typeof(MaglevHashBenchmark),
         // One comparison split by hasher family so the shard packer can spread it; see
         // StringHasherBenchmarkBase.
         typeof(StringHasherBenchmark),
@@ -143,6 +153,7 @@ internal class Program
         // "Built with Celerity" showcase packages (separate NuGet packages built on the core family):
         // isolated perf demos, so they ride the extended suite alongside the primitive benchmarks.
         typeof(RingBenchmark),
+        typeof(MaglevVsRingBenchmark),
         typeof(SentinelBenchmark),
         typeof(StripedSentinelBenchmark),
         typeof(CardinalityBenchmark),
