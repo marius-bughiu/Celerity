@@ -110,6 +110,32 @@ public class SketchMergeDifferentialTests
         }
     }
 
+    // SlidingHyperLogLog: merge takes the element-wise maximum of every timestamp, which is exactly the
+    // state a single sketch fed both streams would hold — so every window of the merged sketch must
+    // equal that single sketch's answer exactly, not merely within slack.
+    [Fact]
+    public void SlidingHyperLogLog_UnionWith_EqualsTheSketchOfBothStreams()
+    {
+        for (int seed = 0; seed < Seeds; seed++)
+        {
+            var rng = new Random(seed);
+            var a = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(8);
+            var b = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(8);
+            var both = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(8);
+
+            int opsA = OpCount(rng);
+            for (int i = 0; i < opsA; i++) { int k = Key(rng); long t = rng.Next(100); a.Add(k, t); both.Add(k, t); }
+            int opsB = OpCount(rng);
+            for (int i = 0; i < opsB; i++) { int k = Key(rng); long t = rng.Next(100); b.Add(k, t); both.Add(k, t); }
+
+            a.UnionWith(b);
+
+            for (long since = -1; since <= 100; since += 10)
+                Assert.True(both.EstimateCardinality(since) == a.EstimateCardinality(since),
+                    $"seed {seed}: merged window since {since} differs from the single-stream sketch");
+        }
+    }
+
     // MinHash: merge takes the per-register minimum, which is exactly the register state a single
     // sketch fed both streams would hold — so the merged sketch must compare as identical (an
     // estimate of exactly 1) to one built directly from the union, and its similarity to a third

@@ -154,6 +154,11 @@ public class StatisticsArgumentValidationTests
         var rolling = new RollingQuantile<int>(windowSize: 4, quantile: 0.5d);
         rolling.Add(ReadOnlySpan<int>.Empty);
         Assert.Equal(0, rolling.Count);
+
+        var kll = new KllSketch<int>();
+        kll.Add(ReadOnlySpan<int>.Empty);
+        Assert.Equal(0, kll.Count);
+        kll.GetQuantiles(ReadOnlySpan<double>.Empty, Span<int>.Empty);
     }
 
     [Theory]
@@ -183,5 +188,109 @@ public class StatisticsArgumentValidationTests
     {
         Assert.Equal(0d, new RollingQuantile<int>(1, 0d).Quantile);
         Assert.Equal(1d, new RollingQuantile<int>(1, 1d).Quantile);
+    }
+
+    [Fact]
+    public void AliasTableConstructor_ShouldThrow_WhenThereAreNoWeights()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new AliasTable(ReadOnlySpan<double>.Empty));
+        Assert.Equal("weights", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(-1d)]
+    [InlineData(-double.Epsilon)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void AliasTableConstructor_ShouldThrow_WhenAWeightIsNegativeOrNotFinite(double weight)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new AliasTable([1d, weight, 2d]));
+        Assert.Equal("weights", ex.ParamName);
+    }
+
+    [Fact]
+    public void AliasTableConstructor_ShouldThrow_WhenEveryWeightIsZero()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new AliasTable([0d, -0d, 0d]));
+        Assert.Equal("weights", ex.ParamName);
+    }
+
+    [Fact]
+    public void AliasTableConstructor_ShouldAcceptZeroWeights_NegativeZero_AndTheLargestFiniteWeight()
+    {
+        Assert.Equal(3, new AliasTable([0d, -0d, double.MaxValue]).Count);
+    }
+
+    [Theory]
+    [InlineData(KllSketch<int>.MinK - 1)]
+    [InlineData(KllSketch<int>.MaxK + 1)]
+    [InlineData(0)]
+    [InlineData(int.MinValue)]
+    public void KllSketchConstructor_ShouldThrow_WhenKIsOutOfRange(int k)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new KllSketch<int>(k));
+        Assert.Equal("k", ex.ParamName);
+
+        ex = Assert.Throws<ArgumentOutOfRangeException>(() => new KllSketch<int>(k, seed: 1UL));
+        Assert.Equal("k", ex.ParamName);
+    }
+
+    [Fact]
+    public void KllSketchConstructor_ShouldAcceptBothEndsOfTheKRange()
+    {
+        Assert.Equal(KllSketch<int>.MinK, new KllSketch<int>(KllSketch<int>.MinK).K);
+        Assert.Equal(KllSketch<int>.MaxK, new KllSketch<int>(KllSketch<int>.MaxK, seed: 0UL).K);
+        Assert.Equal(KllSketch<int>.DefaultK, new KllSketch<int>().K);
+    }
+
+    [Theory]
+    [InlineData(-0.01d)]
+    [InlineData(1.01d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void KllSketchGetQuantile_ShouldThrow_WhenTheQuantileIsOutsideTheUnitInterval(double quantile)
+    {
+        var sketch = new KllSketch<int>();
+        sketch.Add(1);
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => sketch.GetQuantile(quantile));
+        Assert.Equal("quantile", ex.ParamName);
+        Assert.Throws<ArgumentOutOfRangeException>(() => sketch.GetQuantiles(new[] { 0.5d, quantile }, new int[2]));
+    }
+
+    [Fact]
+    public void KllSketch_ShouldRejectNullValues_AndANullMergeSource()
+    {
+        var sketch = new KllSketch<string>();
+
+        Assert.Equal("value", Assert.Throws<ArgumentNullException>(() => sketch.Add((string)null!)).ParamName);
+        Assert.Equal("value", Assert.Throws<ArgumentNullException>(() => sketch.GetRank(null!)).ParamName);
+        Assert.Equal("other", Assert.Throws<ArgumentNullException>(() => sketch.Merge(null!)).ParamName);
+
+        // The span form has added the values before the null when it throws.
+        Assert.Throws<ArgumentNullException>(() => sketch.Add(new[] { "a", null!, "c" }));
+        Assert.Equal(1, sketch.Count);
+    }
+
+    [Fact]
+    public void KllSketchGetQuantiles_ShouldThrow_WhenTheDestinationIsShortOrOverlaps()
+    {
+        var sketch = new KllSketch<double>();
+        sketch.Add(new[] { 1d, 2d, 3d });
+
+        Assert.Equal(
+            "destination",
+            Assert.Throws<ArgumentException>(() => sketch.GetQuantiles(new[] { 0.1d, 0.5d }, new double[1])).ParamName);
+
+        double[] shared = { 0.5d, 1d, 0d, 0d };
+        Assert.Equal(
+            "destination",
+            Assert.Throws<ArgumentException>(() => sketch.GetQuantiles(shared.AsSpan(0, 2), shared.AsSpan(1, 2))).ParamName);
+
+        // Disjoint slices of one array are fine.
+        sketch.GetQuantiles(shared.AsSpan(0, 2), shared.AsSpan(2, 2));
+        Assert.Equal(new[] { 0.5d, 1d, 2d, 3d }, shared);
     }
 }

@@ -73,6 +73,18 @@ public class SketchHashProvider64Tests
     }
 
     [Fact]
+    public void SlidingHyperLogLog_UsesHash64_WhenTheHasherProvidesOne()
+    {
+        var sketch = new SlidingHyperLogLog<long, DisagreeingHasher>();
+        for (long i = 0; i < N; i++)
+            sketch.Add(i, i);
+
+        // On the 32-bit path every element would land in one register with one rank.
+        Assert.InRange(sketch.EstimateCardinality(), N * 0.9, N * 1.1);
+        Assert.InRange(sketch.EstimateCardinality(N / 2), N / 2 * 0.9, N / 2 * 1.1);
+    }
+
+    [Fact]
     public void MinHashSketch_UsesHash64_WhenTheHasherProvidesOne()
     {
         // [0, N) against [N/2, 3N/2): J = 1/3. On the 32-bit path every element would land in
@@ -204,7 +216,7 @@ public class SketchHashProvider64Tests
     /// The 64-bit dispatch calls through one <c>default(THasher)</c> boxed per closed generic
     /// instantiation rather than through each sketch's own <c>_hasher</c> field. That is only
     /// sound while every sketch hashes through <c>default(THasher)</c> itself — which holds
-    /// today because each assigns <c>_hasher = default</c> and none accepts a hasher instance.
+    /// today because each hashes through <c>default(THasher)</c> and none accepts a hasher instance.
     /// </summary>
     /// <remarks>
     /// If a sketch ever gained a hasher-instance constructor, a stateful (for example seeded)
@@ -219,6 +231,7 @@ public class SketchHashProvider64Tests
         Type[] sketches =
         [
             typeof(HyperLogLog<,>),
+            typeof(SlidingHyperLogLog<,>),
             typeof(BloomFilter<,>),
             typeof(CuckooFilter<,>),
             typeof(XorFilter<,>),

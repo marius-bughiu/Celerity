@@ -391,6 +391,7 @@
     { key: 'BitSet',              title: 'BitSet',                                vs: 'BitArray', items: [1024, 1000000] },
     { key: 'RankSelectBitVector', title: 'RankSelectBitVector',                   vs: 'ulong[] popcount loop', items: [1024, 1000000] },
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                   vs: 'HashSet<int>' },
+    { key: 'SlidingHyperLogLog',  title: 'SlidingHyperLogLog<T, ...>',            vs: 'Dictionary<int, long>', items: [1000, 100000, 1000000] },
     { key: 'MinHashSketch',       title: 'MinHashSketch<T, ...>',                 vs: 'HashSet<int>' },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                vs: 'Dictionary<int, int>' },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                    vs: 'Dictionary<int, int>' },
@@ -399,6 +400,8 @@
     { key: 'SieveCache',          title: 'SieveCache<int, int, ...>',             vs: 'Dictionary + LinkedList LRU' },
     { key: 'Deque',               title: 'Deque<int>',                            vs: 'LinkedList<int>' },
     { key: 'BTreeList',           title: 'BTreeList<int>',                        vs: 'List<int>' },
+    { key: 'GapBuffer',           title: 'GapBuffer<int>',                        vs: 'List<int>' },
+    { key: 'SegmentedList',       title: 'SegmentedList<int>',                    vs: 'List<int> (no pre-size)', items: [1000, 100000, 1000000] },
     { key: 'PersistentVector',    title: 'PersistentVector<int>',                 vs: 'ImmutableList<int>' },
     { key: 'PersistentHashMap',   title: 'PersistentHashMap<int, string, ...>',   vs: 'ImmutableDictionary<int, string>' },
     { key: 'PersistentSortedMap', title: 'PersistentSortedMap<int, string, ...>', vs: 'ImmutableSortedDictionary<int, string> (LowerBound: ImmutableSortedSet of pairs)' },
@@ -424,13 +427,17 @@
     { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',      vs: 'a k-IndexOf loop over 256 patterns on the Contains/Count cards and eight on CountFew; one Regex alternation on the ContainsRegex/EnumerateMatches/Build cards — compiled on the query cards, uncompiled on Build, since compiling emits IL' },
     { key: 'Rope',                title: 'Rope (mutable text)',                   vs: 'StringBuilder', items: [10000, 1000000] },
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                  vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
+    { key: 'StringSort',          title: 'StringSort (ordinal strings)',          vs: 'Array.Sort(StringComparer.Ordinal)', items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },
+    { key: 'KWayMerge',           title: 'KWayMerge (16 sorted runs)',            vs: 'PriorityQueue hand-roll; concatenate + Array.Sort on the ConcatSort card', items: [1000, 100000, 1000000] },
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',             vs: 'SortedDictionary<int, int>' },
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
     { key: 'RankedSet',           title: 'RankedSet<int>',                        vs: 'SortedSet<int>' },
+    { key: 'RankedMultiSet',      title: 'RankedMultiSet<int>',                   vs: 'SortedSet<(int, long)>' },
     { key: 'WaveletTree',         title: 'WaveletTree',                           vs: 'int[] sort / count loop', items: [1024, 1000000] },
     { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                     vs: 'long[]', items: [1024, 1000000] },
+    { key: 'FrozenSortedSet',     title: 'FrozenSortedSet<int>',                  vs: 'sorted int[] + BinarySearch', items: [1000, 100000, 1000000] },
     { key: 'BitPackedArray',      title: 'BitPackedArray',                        vs: 'int[]', items: [1024, 1000000] },
     // StringKeyProbe is the reference-type-key probe path (every other card here keys on int/long).
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.
@@ -440,9 +447,12 @@
     // Celerity.Statistics: streaming summaries with no BCL counterpart, so the reference series are the
     // idioms a caller writes instead (List / Array / Linq) rather than a type name.
     { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',   vs: 'List<double> sort + index' },
+    { key: 'KllSketch',           title: 'KllSketch<T> (rank-error quantiles)',   vs: 'List<double> sort + index' },
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',     vs: 'List<T> + partial Fisher-Yates' },
     { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', items: [1000, 10000, 100000] },
-    { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',   vs: 'LINQ two-pass mean / variance' }
+    { key: 'AliasTable',          title: 'AliasTable (weighted sampling)',        vs: 'prefix sums + Array.BinarySearch', items: [100, 10000, 1000000] },
+    { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',   vs: 'LINQ two-pass mean / variance' },
+    { key: 'MaglevHash',          title: 'MaglevHash<TNode, TKey, THasher>',      vs: 'sorted uint[] ring + Array.BinarySearch', items: [10, 100, 1000] }
   ];
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
