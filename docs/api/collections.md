@@ -5701,8 +5701,10 @@ middle edits).
   visits every element in order at array speed, and is the way to feed span-based or vectorized code.
 
 An element wider than 32 KB gets a one-element segment, which still stays under the LOH threshold (the
-runtime cannot make an array of a value type of 64 KB or more at all). The list holds at most
-`2^31 - SegmentLength` elements.
+runtime cannot make an array of a value type of 64 KB or more at all). One runtime exception: a 32-bit x86
+process allocates every `double` array of 1,000 or more elements on the LOH to align it, so there the full
+segments of a `SegmentedList<double>` land on it too, as `List<double>`'s arrays would. The list holds at
+most `2^31 - SegmentLength` elements.
 
 ### Constructors
 
@@ -5730,7 +5732,7 @@ public SegmentedList(IEnumerable<T> collection)
 | `int SegmentCount` | `O(1)` | Segments holding elements; `0` for an empty list. Segments retained by `Clear` are not counted. |
 | `T this[int index] { get; set; }` | `O(1)` | Get and set by position: two dependent loads. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set replaces the element in place and does **not** invalidate an active enumerator (see below). |
 | `void Add(T item)` | `O(1)` | Appends at the end. Allocates one segment when the last is full, and copies nothing except while the first segment is still growing. |
-| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` is snapshotted through its `CopyTo` first, as `List<T>` does. Adding a list to itself, or a collection that wraps it, appends one copy of its current elements. A total past the element ceiling throws `OverflowException` before anything is appended. Throws `ArgumentNullException` for `null`. |
+| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` is enumerated once into capacity reserved for its `Count`, with its elements published only when that enumeration finishes, so no temporary copy of it is made. Adding a list to itself, or a collection that wraps it, appends one copy of its current elements, as on `List<T>`. A counted source that would pass the element ceiling throws `OverflowException` before anything is reserved or appended. Throws `ArgumentNullException` for `null`. |
 | `void Insert(int index, T item)` | `O(n - index)` | Inserts at `index`, shifting every later element up a position across segment boundaries. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
 | `void RemoveAt(int index)` | `O(n - index)` | Removes the element at `index`. Removing the last element is `O(1)`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
 | `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. |
@@ -5747,8 +5749,9 @@ public SegmentedList(IEnumerable<T> collection)
 `RemoveAt`, a `Remove` that finds its element, a `Clear` that had something to clear, and an
 `EnsureCapacity` or `TrimExcess` that changed the capacity. Assignment through the indexer does **not**,
 because it replaces one element in place. That is the rule [`Deque<T>`](#dequet) and
-[`BTreeList<T>`](#btreelistt) follow, and the one place this type deliberately differs from `List<T>`,
-whose indexer setter does invalidate.
+[`BTreeList<T>`](#btreelistt) follow, where `List<T>`'s indexer setter does invalidate. The family rule
+also departs from `List<T>` in two quieter places: a `TrimExcess` that releases capacity invalidates here
+and not there, and a `Clear` of an empty list invalidates there and not here.
 
 ### When not to reach for it
 
@@ -5803,11 +5806,11 @@ path and passed it the enumerator's address, which kept the JIT from holding the
 registers, so every element paid a store and reload. Inlining that path and throwing through a static helper
 brought it to 1.5x.
 
-### Name clash with Roslyn
+### Name clash with TraceEvent
 
-Some `Microsoft.CodeAnalysis` versions expose a `System.Collections.Generic.SegmentedList<T>` (4.1.0, which
-BenchmarkDotNet 0.14 pulls in, is one). A project that references such a version and imports both namespaces
-gets a `CS0104` ambiguity. Qualify the name, or alias it:
+`Microsoft.Diagnostics.Tracing.TraceEvent` ships a public `System.Collections.Generic.SegmentedList<T>` in
+its `Microsoft.Diagnostics.FastSerialization.dll`, and BenchmarkDotNet pulls that package in. A project
+that references it and imports both namespaces gets a `CS0104` ambiguity. Qualify the name, or alias it:
 
 ```csharp
 using SegmentedList = Celerity.Collections.SegmentedList<int>;

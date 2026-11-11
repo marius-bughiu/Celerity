@@ -950,6 +950,76 @@ public class SegmentedListTests
         Assert.Throws<InvalidOperationException>(() => e.MoveNext());
     }
 
+    [Fact]
+    public void AddRange_ShouldAcceptAnEmptyCountedSource_ThatHasNoBackingArray()
+    {
+        // Regression: an empty ICollection<T> was still asked to CopyTo, and a default ArraySegment<T> throws
+        // there because its array is null. List<T> skips the copy when the count is zero.
+        var list = new SegmentedList<int>(new[] { 1 });
+
+        list.AddRange(default(ArraySegment<int>));
+
+        Assert.Equal(new[] { 1 }, list);
+        Assert.Empty(new SegmentedList<int>(default(ArraySegment<int>)));
+    }
+
+    [Fact]
+    public void AddRange_ShouldThrowOverflowException_BeforeReservingAnything_WhenACountedSourcePassesTheCeiling()
+    {
+        // Regression: the ceiling was checked against int.MaxValue rather than the list's own maximum, and only
+        // once the reservation was under way, so a total just past it allocated up to the ceiling before
+        // throwing, and a counted source rented a buffer of its full count first.
+        var list = new SegmentedList<int>(new[] { 1, 2, 3 });
+        int capacity = list.Capacity;
+        SegmentedList<int>.Enumerator e = list.GetEnumerator();
+        int maxCount = (int)((1u << 31) - (uint)list.SegmentLength);
+
+        Assert.Throws<OverflowException>(() => list.AddRange(new CountedSource<int>(maxCount - 2, [])));
+        Assert.Throws<OverflowException>(() => list.AddRange(new CountedSource<int>(int.MaxValue, [])));
+
+        Assert.Equal(capacity, list.Capacity);
+        Assert.True(e.MoveNext()); // nothing was reserved, so the enumerator is still valid
+        list.Add(4);
+        Assert.Equal(new[] { 1, 2, 3, 4 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendAtMostCount_WhenACountedSourceYieldsMore()
+    {
+        var list = new SegmentedList<int>(new[] { 0 });
+
+        list.AddRange(new CountedSource<int>(2, [1, 2, 3, 4]));
+
+        Assert.Equal(new[] { 0, 1, 2 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendWhatItYields_WhenACountedSourceYieldsFewer()
+    {
+        var list = new SegmentedList<int>(new[] { 0 });
+
+        list.AddRange(new CountedSource<int>(5, [1, 2]));
+        list.Add(3);
+
+        Assert.Equal(new[] { 0, 1, 2, 3 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldLeaveTheListUnchanged_AndDropWhatItWrote_WhenACountedSourceThrows()
+    {
+        var list = new SegmentedList<string>(new[] { "a" });
+
+        Assert.Throws<InvalidOperationException>(
+            () => list.AddRange(new CountedSource<string>(3, ["b", "c", "x"], throwAfter: 2)));
+
+        Assert.Equal(new[] { "a" }, list);
+        var first = (string?[])Segments(list)[0]!;
+        Assert.Null(first[1]); // written past Count before the throw, then cleared
+        Assert.Null(first[2]);
+        list.Add("d");
+        Assert.Equal(new[] { "a", "d" }, list);
+    }
+
     // ---- Clear / ToArray / CopyTo ---------------------------------------------------------------------
 
     [Fact]
@@ -1113,6 +1183,37 @@ public class SegmentedListTests
     }
 
     private static int[] Values(SegmentedList<SegmentedBig> list) => list.Select(b => b.Value).ToArray();
+
+    // An ICollection<T> whose Count need not match what it yields, and which can throw partway through: the
+    // shapes AddRange's counted-source path has to survive. That path reads only Count and GetEnumerator.
+    private sealed class CountedSource<T>(int count, T[] items, int throwAfter = -1) : ICollection<T>
+    {
+        public int Count => count;
+
+        public bool IsReadOnly => true;
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            for (int i = 0; i < items.Length; i++)
+            {
+                if (i == throwAfter)
+                    throw new InvalidOperationException("The source failed partway.");
+                yield return items[i];
+            }
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public void Add(T item) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Contains(T item) => throw new NotSupportedException();
+
+        public void CopyTo(T[] array, int arrayIndex) => throw new NotSupportedException();
+
+        public bool Remove(T item) => throw new NotSupportedException();
+    }
 
     private static object?[] Segments<T>(SegmentedList<T> list) =>
         (object?[])Field(list, "_segments")!;

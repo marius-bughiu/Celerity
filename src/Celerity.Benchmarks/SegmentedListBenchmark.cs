@@ -1,8 +1,9 @@
 using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
-// Microsoft.CodeAnalysis 4.1.0 (a BenchmarkDotNet dependency) exposes a System.Collections.Generic.SegmentedList<T>,
-// which the implicit using of that namespace makes ambiguous with Celerity's, so the type is aliased here.
+// Microsoft.Diagnostics.Tracing.TraceEvent (a BenchmarkDotNet dependency) exposes a public
+// System.Collections.Generic.SegmentedList<T> in Microsoft.Diagnostics.FastSerialization.dll, which the implicit
+// using of that namespace makes ambiguous with Celerity's, so the type is aliased here.
 using SegmentedIntList = Celerity.Collections.SegmentedList<int>;
 
 // SegmentedList<int> vs the List<int> a caller builds by appending when the final size is not known up front.

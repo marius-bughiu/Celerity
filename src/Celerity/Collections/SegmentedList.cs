@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Collections;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -44,7 +43,10 @@ namespace Celerity.Collections;
 /// <see cref="Remove"/> shift every later element, crossing segment boundaries, and are <c>O(n)</c>
 /// exactly as <see cref="List{T}"/>'s are; a sequence edited in the middle belongs in
 /// <see cref="BTreeList{T}"/>. An element larger than 32 KB is stored one per segment, which still stays under
-/// the LOH threshold, since the runtime refuses arrays of any value type of 64 KB or more.
+/// the LOH threshold, since the runtime refuses arrays of any value type of 64 KB or more. One runtime
+/// exception: a 32-bit x86 process allocates every <see cref="double"/> array of 1,000 or more elements on the
+/// LOH to align it, so there the full segments of a <c>SegmentedList&lt;double&gt;</c> land on it too, as
+/// <see cref="List{T}"/>'s arrays would.
 /// </para>
 /// <para>
 /// <b>Capacity.</b> <see cref="Clear"/> keeps the allocated segments, as <see cref="List{T}.Clear"/> keeps
@@ -57,8 +59,10 @@ namespace Celerity.Collections;
 /// a <see cref="Clear"/> that had something to clear, and an <see cref="EnsureCapacity"/> or
 /// <see cref="TrimExcess"/> that changed the capacity. Assignment through the indexer changes an element in
 /// place and does <b>not</b> invalidate — the rule <see cref="Deque{T}"/> and <see cref="BTreeList{T}"/>
-/// follow, and the one place this type deliberately differs from <see cref="List{T}"/>. This type is not
-/// thread-safe; concurrent callers must synchronize externally.
+/// follow, where <see cref="List{T}"/> invalidates on every set. That family rule also departs from
+/// <see cref="List{T}"/> in two quieter places: a <see cref="TrimExcess"/> that releases capacity invalidates
+/// here and not there, and a <see cref="Clear"/> of an empty list invalidates there and not here. This type is
+/// not thread-safe; concurrent callers must synchronize externally.
 /// </para>
 /// </remarks>
 public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
@@ -206,12 +210,17 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     /// <summary>
     /// Appends the elements of <paramref name="collection"/> in enumeration order. An array, a
     /// <see cref="List{T}"/> or another <see cref="SegmentedList{T}"/> is copied a block at a time after one
-    /// capacity check; any other <see cref="ICollection{T}"/> is snapshotted through its
-    /// <see cref="ICollection{T}.CopyTo"/> first, as <see cref="List{T}"/> does. Adding a list to itself, or a
-    /// collection that wraps it, appends one copy of its current elements.
+    /// capacity check. Any other <see cref="ICollection{T}"/> is enumerated once into capacity reserved for its
+    /// <see cref="ICollection{T}.Count"/>, and its elements are published only when that enumeration finishes,
+    /// so no temporary copy of it is made. Adding a list to itself, or a collection that wraps it, appends one
+    /// copy of its current elements, as on <see cref="List{T}"/>.
     /// </summary>
     /// <param name="collection">The elements to append.</param>
     /// <exception cref="ArgumentNullException"><paramref name="collection"/> is <c>null</c>.</exception>
+    /// <exception cref="OverflowException">
+    /// A counted <paramref name="collection"/> would take the list past the most elements it can hold. Nothing is
+    /// reserved or appended.
+    /// </exception>
     public void AddRange(IEnumerable<T> collection)
     {
         ArgumentNullException.ThrowIfNull(collection);
@@ -384,7 +393,8 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
 
     /// <summary>
     /// Ensures the list can hold at least <paramref name="capacity"/> elements without allocating again. Past
-    /// <see cref="SegmentLength"/> this allocates whole segments and copies nothing already stored.
+    /// <see cref="SegmentLength"/> this allocates whole segments; the only elements it copies are those of a
+    /// first segment still shorter than <see cref="SegmentLength"/>, which is grown to full length first.
     /// </summary>
     /// <param name="capacity">The minimum capacity to guarantee.</param>
     /// <returns>The capacity of the list after the call (never less than <paramref name="capacity"/>).</returns>
@@ -527,24 +537,32 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         if (capacity <= _capacity)
             return;
 
-        // A capacity below one full segment means at most the first segment is allocated, since a second
-        // only follows a full first one.
-        if (capacity <= Length)
+        // The version bump and the tail re-point run even when an allocation fails partway. By then the first
+        // segment may already be a new array, and an Add through the stale tail would write into the old one
+        // and be lost.
+        try
         {
-            // Everything still fits in the first segment: grow it the way a List<T> grows its array.
-            ResizeFirst(Math.Max(capacity, Math.Min(Math.Max(_capacity * 2, DefaultCapacity), Length)));
+            // A capacity below one full segment means at most the first segment is allocated, since a second
+            // only follows a full first one.
+            if (capacity <= Length)
+            {
+                // Everything still fits in the first segment: grow it the way a List<T> grows its array.
+                ResizeFirst(Math.Max(capacity, Math.Min(Math.Max(_capacity * 2, DefaultCapacity), Length)));
+            }
+            else
+            {
+                if (_allocated > 0 && _segments[0].Length < Length)
+                    ResizeFirst(Length);
+                int needed = (int)(((uint)capacity + (uint)Mask) >> Shift);
+                while (_allocated < needed)
+                    AllocateSegment();
+            }
         }
-        else
+        finally
         {
-            if (_allocated > 0 && _segments[0].Length < Length)
-                ResizeFirst(Length);
-            int needed = (int)(((uint)capacity + (uint)Mask) >> Shift);
-            while (_allocated < needed)
-                AllocateSegment();
+            _version++;
+            SetTail();
         }
-
-        _version++;
-        SetTail();
     }
 
     // Replaces the first segment with one of `length` slots, keeping its elements. The caller re-points the
@@ -569,8 +587,9 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         _capacity += length;
     }
 
-    // Appends one full-length segment. The checked add is the only guard on the element ceiling: it can
-    // only fail once the capacity is within one segment of 2^31, which nothing short of an Add loop reaches.
+    // Appends one full-length segment. The checked add is the Add path's guard on the element ceiling: it can
+    // only fail once the capacity is within one segment of 2^31. The bulk appends check the ceiling up front,
+    // through CheckedTotal, before they reserve anything.
     private void AllocateSegment()
     {
         int capacity = checked(_capacity + Length);
@@ -620,9 +639,7 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         if (source.IsEmpty)
             return;
 
-        // Checked, so a total past int.MaxValue throws here rather than wrapping negative, skipping the
-        // reservation and running the copy off the end of the allocated segments.
-        EnsureCapacityCore(checked(_count + source.Length));
+        EnsureCapacityCore(CheckedTotal(source.Length));
         while (!source.IsEmpty)
         {
             T[] segment = _segments[_count >> Shift];
@@ -637,21 +654,69 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         SetTail();
     }
 
-    // Appends any other ICollection<T> through its CopyTo into a pooled buffer, as List<T> does: a snapshot
-    // taken before anything is appended, so a collection that wraps this list (a ReadOnlyCollection<T> over
-    // it, say) appends one copy rather than invalidating its own enumeration halfway through.
+    // Appends any other ICollection<T> by enumerating it straight into capacity reserved past Count, and
+    // publishes the new elements only once the enumeration has finished. A collection that wraps this list (a
+    // ReadOnlyCollection<T> over it, say) therefore enumerates only the elements already present and appends
+    // one copy of them, as List<T>'s CopyTo snapshot does, without a second array the size of the source,
+    // which for a large source would sit on the large object heap and copy every element twice. At most
+    // Count elements are appended, and fewer if the enumeration yields fewer.
     private void AppendCollection(ICollection<T> source)
     {
         int n = source.Count;
-        T[] buffer = ArrayPool<T>.Shared.Rent(n);
+        if (n == 0)
+            return;
+
+        EnsureCapacityCore(CheckedTotal(n));
+        int start = _count;
+        int written = 0;
         try
         {
-            source.CopyTo(buffer, 0);
-            AppendSpan(new ReadOnlySpan<T>(buffer, 0, n));
+            foreach (T item in source)
+            {
+                if (written == n)
+                    break;
+
+                int position = start + written;
+                _segments[position >> Shift][position & Mask] = item;
+                written++;
+            }
         }
-        finally
+        catch
         {
-            ArrayPool<T>.Shared.Return(buffer, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
+            // Nothing was published. Drop what was written, so its references do not outlive the call.
+            ClearSlots(start, written);
+            throw;
+        }
+
+        _count = start + written;
+        _version++;
+        SetTail();
+    }
+
+    // The count after appending `n` elements, or an OverflowException when that passes the element ceiling,
+    // thrown before anything is reserved or copied so the list is left as it was.
+    private int CheckedTotal(int n)
+    {
+        if (n > MaxCount - _count)
+        {
+            throw new OverflowException(
+                $"A {nameof(SegmentedList<T>)} of this element type holds at most {MaxCount} elements.");
+        }
+
+        return _count + n;
+    }
+
+    // Clears `length` slots from `position` on, across segment boundaries.
+    private void ClearSlots(int position, int length)
+    {
+        while (length > 0)
+        {
+            T[] segment = _segments[position >> Shift];
+            int offset = position & Mask;
+            int n = Math.Min(segment.Length - offset, length);
+            Array.Clear(segment, offset, n);
+            position += n;
+            length -= n;
         }
     }
 
@@ -663,7 +728,7 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         if (n == 0)
             return;
 
-        EnsureCapacityCore(checked(_count + n));
+        EnsureCapacityCore(CheckedTotal(n));
         for (int s = 0, copied = 0; copied < n; s++)
         {
             ReadOnlySpan<T> segment = new(other._segments[s], 0, Math.Min(n - copied, Length));
