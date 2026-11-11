@@ -85,6 +85,7 @@ internal class Program
         typeof(RankedMultiSetBenchmark),
         typeof(WaveletTreeBenchmark),
         typeof(EliasFanoSequenceBenchmark),
+        typeof(FrozenSortedSetBenchmark),
         typeof(BitPackedArrayBenchmark),
         typeof(BTreeListBenchmark),
         typeof(GapBufferBenchmark),

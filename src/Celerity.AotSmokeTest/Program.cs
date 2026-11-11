@@ -2798,6 +2798,54 @@ void Check(bool condition, string message)
     Check(none.Count == 0 && none.CountLessThan(1) == 0, "EliasFanoSequence empty sequence");
 }
 
+// FrozenSortedSet — immutable static B+ tree (S+ tree) over sorted, distinct integer keys. Exercise
+// the build (sort, dedup, internal levels) over enough keys for three levels, the SIMD node count
+// behind every search at int, the scalar node scan at Int128 (no hardware Vector128<Int128>), the
+// T.MaxValue padding as a real key, the range slice, and the set algebra.
+{
+    int[] source = new int[3000];
+    for (int i = 0; i < source.Length; i++) source[i] = (i * 7919 % 1500) * 3 - 2000;   // every key twice
+    source[0] = int.MaxValue;
+    var frozenSorted = new FrozenSortedSet<int>(source);
+
+    Check(frozenSorted.Count == 1501 && frozenSorted.Depth == 3, "FrozenSortedSet count and depth");
+    Check(frozenSorted.Min == -2000 && frozenSorted.Max == int.MaxValue, "FrozenSortedSet min and max");
+    Check(frozenSorted.MemoryUsageInBytes >= 1501 * sizeof(int), "FrozenSortedSet memory usage");
+
+    bool sortedOk = true;
+    for (int i = 0; i < 1500; i++) sortedOk &= frozenSorted[i] == i * 3 - 2000;
+    Check(sortedOk, "FrozenSortedSet indexer");
+
+    Check(frozenSorted.Contains(1) && !frozenSorted.Contains(2) && frozenSorted.Contains(int.MaxValue)
+        && !frozenSorted.Contains(int.MinValue), "FrozenSortedSet contains");
+    Check(frozenSorted.IndexOf(-2000) == 0 && frozenSorted.IndexOf(int.MaxValue) == 1500
+        && frozenSorted.IndexOf(0) == -1, "FrozenSortedSet index of");
+    Check(frozenSorted.CountLessThan(int.MinValue) == 0 && frozenSorted.CountLessThan(2) == 668
+        && frozenSorted.CountLessThan(int.MaxValue) == 1500, "FrozenSortedSet count less than");
+    Check(frozenSorted.TryGetLowerBound(2, out int fsLower) && fsLower == 4
+        && frozenSorted.TryGetUpperBound(4, out int fsUpper) && fsUpper == 7
+        && !frozenSorted.TryGetUpperBound(int.MaxValue, out _), "FrozenSortedSet lower and upper bound");
+    Check(frozenSorted.SliceRange(0, 10).SequenceEqual(new[] { 1, 4, 7 }), "FrozenSortedSet slice range");
+
+    long fsSum = 0;
+    foreach (int key in frozenSorted) fsSum += key;
+    Check(fsSum == source.Distinct().Sum(k => (long)k), "FrozenSortedSet enumeration");
+
+    Check(frozenSorted.IsSupersetOf(new[] { 1, 4, int.MaxValue }) && frozenSorted.Overlaps(new[] { 2, 4 })
+        && frozenSorted.SetEquals(source) && frozenSorted.IsProperSubsetOf(source.Append(5))
+        && !frozenSorted.IsSubsetOf(new[] { 1 }), "FrozenSortedSet set algebra");
+
+    var wide = new FrozenSortedSet<Int128>(new[] { Int128.MaxValue, (Int128)5 << 80, -(Int128)1, (Int128)5 << 80, Int128.MinValue, 9 });
+    Check(wide.Count == 5 && wide.Depth == 2 && wide.IndexOf(9) == 2, "FrozenSortedSet<Int128> build");
+    Check(wide.Contains(Int128.MaxValue) && !wide.Contains(10) && wide.CountLessThan((Int128)5 << 80) == 3
+        && wide.TryGetLowerBound(10, out Int128 wideLower) && wideLower == (Int128)5 << 80,
+        "FrozenSortedSet<Int128> scalar search");
+
+    var noKeys = new FrozenSortedSet<int>(Array.Empty<int>());
+    Check(noKeys.Count == 0 && noKeys.Depth == 1 && !noKeys.Contains(0) && noKeys.CountLessThan(int.MaxValue) == 0,
+        "FrozenSortedSet empty set");
+}
+
 // BitPackedArray — fixed-width unsigned integers packed end to end into 64-bit words.
 // Exercise the branch-free straddling read and write at a width that does not divide 64,
 // the streaming constructor pack, the bulk GetRange / SetRange paths, Fill, the width

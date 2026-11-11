@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Celerity.Collections;
@@ -70,6 +71,7 @@ internal static class Differential
         ("RankSelectBitVector", RankSelectBitVectorCase),
         ("WaveletTree", WaveletTreeCase),
         ("EliasFanoSequence", EliasFanoSequenceCase),
+        ("FrozenSortedSet", FrozenSortedSetCase),
         ("SegmentTree", SegmentTreeCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
@@ -2328,6 +2330,154 @@ internal static class Differential
             Check(sut.TryGetLowerBound(probe, out long bound) == expected < length
                 && bound == (expected < length ? values[expected] : 0),
                 $"EliasFanoSequence TryGetLowerBound({probe}) disagreed");
+        }
+    }
+
+    // ---- frozen sorted set ---------------------------------------------------
+
+    // FrozenSortedSet is immutable, so the randomization is in the source: a length that straddles one leaf,
+    // several leaves and several internal levels (the node holds 16 ints, 8 longs or 4 Int128s, so the same
+    // length gives each key type a different depth), drawn from either a narrow range (dense, many repeats) or
+    // the whole range, in random order, sometimes with T.MinValue and T.MaxValue mixed in. T.MaxValue is also
+    // the padding value, which is what makes it the interesting key. The source is passed as an array (the
+    // counted path) or as a lazy sequence (the ToArray path). Every query is then reconciled against the
+    // sorted, distinct T[] oracle, and the set algebra against a HashSet<T>. Int128 has no hardware
+    // Vector128 support, so it exercises the scalar node scan.
+    private static void FrozenSortedSetCase(Random rng)
+    {
+        switch (rng.Next(3))
+        {
+            case 0:
+                FrozenSortedSetCheck(rng, static v => (int)v);
+                break;
+            case 1:
+                FrozenSortedSetCheck(rng, static v => v);
+                break;
+            default:
+                // Spread the 64-bit draw across the high half too, so a key's upper 64 bits matter.
+                FrozenSortedSetCheck(rng, static v => ((Int128)v << 40) ^ (Int128)(ulong)v);
+                break;
+        }
+    }
+
+    private static void FrozenSortedSetCheck<T>(Random rng, Func<long, T> make)
+        where T : unmanaged, IBinaryInteger<T>, IMinMaxValue<T>
+    {
+        int length = rng.Next(4) switch
+        {
+            0 => rng.Next(0, 20),
+            1 => rng.Next(0, 300),
+            _ => rng.Next(0, 5000),
+        };
+        bool narrow = rng.Next(2) == 0;
+        long origin = rng.NextInt64();
+        long span = Math.Max(1, length / (rng.Next(1, 4)));
+        T Draw() => make(narrow ? unchecked(origin + rng.NextInt64(0, span)) : rng.NextInt64(long.MinValue, long.MaxValue));
+
+        var source = new T[length];
+        for (int i = 0; i < length; i++)
+            source[i] = Draw();
+        if (length > 0 && rng.Next(3) == 0)
+            source[rng.Next(length)] = T.MaxValue;
+        if (length > 0 && rng.Next(3) == 0)
+            source[rng.Next(length)] = T.MinValue;
+
+        T[] oracle = source.Distinct().Order().ToArray();
+        int count = oracle.Length;
+        var sut = rng.Next(2) == 0
+            ? new FrozenSortedSet<T>(source)
+            : new FrozenSortedSet<T>(source.Select(static x => x));
+        string type = typeof(T).Name;
+
+        Check(sut.Count == count, $"FrozenSortedSet<{type}> Count disagreed");
+        Check(sut.AsSpan().SequenceEqual(oracle), $"FrozenSortedSet<{type}> AsSpan disagreed");
+        Check(sut.ToArray().SequenceEqual(oracle), $"FrozenSortedSet<{type}> enumeration disagreed");
+        for (int i = 0; i < count; i++)
+            Check(sut[i] == oracle[i], $"FrozenSortedSet<{type}> indexer at {i} disagreed");
+        Check(sut.MemoryUsageInBytes >= (long)count * Unsafe.SizeOf<T>() && sut.Depth >= 1,
+            $"FrozenSortedSet<{type}> footprint or depth out of range");
+        if (count > 0)
+            Check(sut.Min == oracle[0] && sut.Max == oracle[^1], $"FrozenSortedSet<{type}> Min/Max disagreed");
+
+        T Probe()
+        {
+            switch (rng.Next(6))
+            {
+                case 0:
+                    return T.MinValue;
+                case 1:
+                    return T.MaxValue;
+                case 2:
+                case 3:
+                    if (count == 0)
+                        return Draw();
+                    T key = oracle[rng.Next(count)];
+                    int step = rng.Next(-1, 2);
+                    if (step < 0 && key != T.MinValue)
+                        return key - T.One;
+                    if (step > 0 && key != T.MaxValue)
+                        return key + T.One;
+                    return key;
+                default:
+                    return Draw();
+            }
+        }
+
+        int LowerBound(T value)
+        {
+            int index = Array.BinarySearch(oracle, value);
+            return index >= 0 ? index : ~index;
+        }
+
+        for (int trial = 0; trial < 200; trial++)
+        {
+            T probe = Probe();
+            int expected = LowerBound(probe);
+            bool present = expected < count && oracle[expected] == probe;
+
+            Check(sut.CountLessThan(probe) == expected, $"FrozenSortedSet<{type}> CountLessThan({probe}) disagreed");
+            Check(sut.Contains(probe) == present, $"FrozenSortedSet<{type}> Contains({probe}) disagreed");
+            Check(sut.IndexOf(probe) == (present ? expected : -1), $"FrozenSortedSet<{type}> IndexOf({probe}) disagreed");
+            Check(sut.TryGetLowerBound(probe, out T lower) == expected < count
+                && lower == (expected < count ? oracle[expected] : T.Zero),
+                $"FrozenSortedSet<{type}> TryGetLowerBound({probe}) disagreed");
+
+            int above = present ? expected + 1 : expected;
+            Check(sut.TryGetUpperBound(probe, out T upper) == above < count
+                && upper == (above < count ? oracle[above] : T.Zero),
+                $"FrozenSortedSet<{type}> TryGetUpperBound({probe}) disagreed");
+
+            T other = Probe();
+            (T from, T to) = probe <= other ? (probe, other) : (other, probe);
+            int start = LowerBound(from);
+            Check(sut.SliceRange(from, to).SequenceEqual(oracle.AsSpan(start, LowerBound(to) - start)),
+                $"FrozenSortedSet<{type}> SliceRange({from}, {to}) disagreed");
+        }
+
+        // Set algebra against a HashSet<T>, with `other` drawn mostly from the set's own keys so that the
+        // subset, superset and equality answers are not all trivially false.
+        var model = new HashSet<T>(oracle);
+        for (int trial = 0; trial < 8; trial++)
+        {
+            int size = rng.Next(0, Math.Min(count, 50) + 3);
+            var other = new List<T>(size);
+            int mode = rng.Next(3);
+            if (mode == 0)
+                other.AddRange(oracle);
+            for (int i = 0; i < size; i++)
+                other.Add(count > 0 && rng.Next(4) != 0 ? oracle[rng.Next(count)] : Probe());
+            if (mode == 1 && other.Count > 0)
+                other.RemoveAt(rng.Next(other.Count));
+
+            IEnumerable<T> arg = rng.Next(4) == 0 ? new FrozenSortedSet<T>(other) : other;
+            Check(sut.SetEquals(arg) == model.SetEquals(other), $"FrozenSortedSet<{type}> SetEquals disagreed");
+            Check(sut.IsSubsetOf(arg) == model.IsSubsetOf(other), $"FrozenSortedSet<{type}> IsSubsetOf disagreed");
+            Check(sut.IsProperSubsetOf(arg) == model.IsProperSubsetOf(other),
+                $"FrozenSortedSet<{type}> IsProperSubsetOf disagreed");
+            Check(sut.IsSupersetOf(arg) == model.IsSupersetOf(other), $"FrozenSortedSet<{type}> IsSupersetOf disagreed");
+            Check(sut.IsProperSupersetOf(arg) == model.IsProperSupersetOf(other),
+                $"FrozenSortedSet<{type}> IsProperSupersetOf disagreed");
+            Check(sut.Overlaps(arg) == model.Overlaps(other), $"FrozenSortedSet<{type}> Overlaps disagreed");
         }
     }
 

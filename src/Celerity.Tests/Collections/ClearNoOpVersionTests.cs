@@ -36,7 +36,8 @@ namespace Celerity.Tests.Collections;
 /// <c>CountMinSketch</c>, <c>CuckooFilter</c>, <c>HyperLogLog</c>, <c>MinHashSketch</c>, <c>TopKSketch</c>) are out of scope
 /// entirely: they track no version and expose no enumerator, so there is nothing for a redundant
 /// <c>Clear()</c> to invalidate. The <b>build-once</b> types are out of scope one step further still —
-/// <see cref="WaveletTree"/>, <see cref="SparseTable{T, TMonoid}"/> and <see cref="EliasFanoSequence"/> are
+/// <see cref="WaveletTree"/>, <see cref="SparseTable{T, TMonoid}"/>, <see cref="EliasFanoSequence"/> and
+/// <see cref="FrozenSortedSet{T}"/> are
 /// immutable after construction, so
 /// they expose no <c>Clear()</c> to be redundant and carry no version for one to bump; their enumerators
 /// cannot be invalidated by anything and are pinned on that basis in their own suites.
