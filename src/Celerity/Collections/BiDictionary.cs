@@ -571,7 +571,10 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
     /// </summary>
     /// <param name="capacity">The minimum number of entries the dictionary must hold without resizing.</param>
     /// <returns>The number of entries the dictionary can now hold before the next resize.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="capacity"/> is negative, or more than the largest table (2<sup>30</sup> buckets) can
+    /// hold at this load factor.
+    /// </exception>
     public int EnsureCapacity(int capacity)
     {
         if (capacity < 0)
@@ -579,7 +582,7 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
 
         if (_entries.Length < capacity)
         {
-            Resize(Math.Max(_keyBuckets.Length, BucketsFor(capacity, _loadFactor)), capacity);
+            Resize(Math.Max(_keyBuckets.Length, CheckedBucketsFor(capacity)), capacity);
             _version++;
         }
 
@@ -600,14 +603,15 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
     /// The number of entries to size the table for. Must be at least the current <see cref="Count"/>.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>.
+    /// <paramref name="capacity"/> is less than the current <see cref="Count"/>, or more than the largest
+    /// table (2<sup>30</sup> buckets) can hold at this load factor.
     /// </exception>
     public void TrimExcess(int capacity)
     {
         if (capacity < _count)
             throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity must be at least the current Count.");
 
-        int buckets = BucketsFor(capacity, _loadFactor);
+        int buckets = CheckedBucketsFor(capacity);
         int entries = Math.Max(1, capacity);
         if (buckets != _keyBuckets.Length || entries != _entries.Length)
         {
@@ -1106,6 +1110,15 @@ public class BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>
     // reach the load factor, which a tiny one makes large.
     private static int BucketsFor(int entries, float loadFactor) =>
         entries <= 1 ? 1 : FastUtils.MinTableSizeFor(entries, loadFactor);
+
+    // BucketsFor for EnsureCapacity and TrimExcess(int), which promise the table holds `capacity`:
+    // rejects a count that even the capped table cannot hold at this load factor (#570).
+    private int CheckedBucketsFor(int capacity)
+    {
+        int buckets = BucketsFor(capacity, _loadFactor);
+        TableSizeGuard.ThrowIfUnreachable(EntryCapacityFor(buckets, _loadFactor), capacity, _loadFactor);
+        return buckets;
+    }
 
     // default(TKey) / default(TValue) — a null reference, a Nullable<T> without a value, or 0 for an
     // integer — never reaches its hasher, which may not accept it. Hash code 0 puts it in the table like
