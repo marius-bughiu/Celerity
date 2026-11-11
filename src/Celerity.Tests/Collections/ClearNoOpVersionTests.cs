@@ -312,6 +312,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void RankedMultiSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var set = new RankedMultiSet<int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => set.GetEnumerator(), set.Clear, () => set.Count, () => set.Add(1));
+    }
+
+    [Fact]
     public void SparseSetClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var set = new SparseSet(universe: 16);
@@ -466,6 +474,15 @@ public class ClearNoOpVersionTests
         var list = new BTreeList<int>();
         AssertClearBumpsVersionOnlyWhenItRemovesSomething(
             () => list.GetEnumerator(), list.Clear, () => list.Count, () => list.Add(1));
+    }
+
+    [Fact]
+    public void GapBufferClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        // Empty but with a backing array: "already empty" is Count == 0, not "never allocated".
+        var buffer = new GapBuffer<int>(16);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => buffer.GetEnumerator(), buffer.Clear, () => buffer.Count, () => buffer.Add(1));
     }
 
     // ---- The four documented exceptions -----------------------------------------------------------

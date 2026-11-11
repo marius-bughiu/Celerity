@@ -29,17 +29,11 @@ struct MyHasher : IHashProvider<string>          // struct, not class
 
 **Fix:** Supply a struct hasher, e.g. `new CelerityDictionary<Guid, string, GuidHasher>()`. If you don't have a purpose-built hasher for the key type, use `DefaultHasher<TKey>`. For `int` / `long` keys, prefer the `IntDictionary<TValue>` / `LongDictionary<TValue>` convenience types, which pick the hasher for you.
 
-### `'IntDictionary<int>' does not contain a definition for 'UnionWith'` (and similar)
+### `InvalidOperationException` from `ExceptWith` over a filtered view of the same set
 
-**Cause:** Celerity sets are membership-only; they don't implement set-algebra operations, and the dictionaries implement `IReadOnlyDictionary<,>`, not `IDictionary<,>`.
+**Cause:** `s.ExceptWith(s.Where(...))` removes from `s` while the lazy `Where` view is still enumerating it, and every mutable Celerity set's enumerator fails fast on modification. `HashSet<T>` completes the same call.
 
-**Fix:** Compose the operation manually, or keep the BCL `HashSet<T>` / `Dictionary<,>` for that code path. See the [migration guide](migration.md#what-not-to-migrate).
-
-### `Cannot implicitly convert 'IntDictionary<string>' to 'IDictionary<int, string>'`
-
-**Cause:** Celerity dictionaries implement the **read-only** `IReadOnlyDictionary<TKey, TValue?>`, not the mutable `IDictionary<,>`.
-
-**Fix:** Use the concrete type (it's fully mutable) or `IReadOnlyDictionary<TKey, TValue?>` at the boundary. Change method signatures that demand `IDictionary<,>` accordingly. See [migration §1](migration.md#1-read-only-interface-not-idictionary).
+**Fix:** Materialize the view first: `s.ExceptWith(s.Where(...).ToList())`.
 
 ### Nullable warnings: `Converting null literal or possible null value` after `TryGetValue`
 
@@ -118,13 +112,13 @@ foreach (var k in toRemove) dict.Remove(k);
 
 **Cause:** *It does work* — this is a frequently-suspected non-bug. `default(TKey)` (zero for `int`/`long`, `null` for reference types, `Guid.Empty` for `Guid`) would normally collide with the empty-slot sentinel used during probing.
 
-**Fix:** Nothing to fix. Celerity stores the default/zero key **out-of-band** in a dedicated slot, so `dict[0]`, `dict[null]`, and `dict[Guid.Empty]` round-trip correctly and are surfaced through enumeration and every interface member. If you see corruption around the zero key, it's a bug worth [filing](https://github.com/marius-bughiu/Celerity/issues) — the older corruption bugs in this area are fixed and regression-tested.
+**Fix:** Nothing to fix. The open-addressed tables store the default/zero key **out-of-band** in a dedicated slot (the chained `LinkedDictionary`, `LinkedSet` and `BiDictionary` keep it in the table without hashing it), so `dict[0]`, `dict[null]`, and `dict[Guid.Empty]` round-trip correctly and are surfaced through enumeration and every interface member. If you see corruption around the zero key, it's a bug worth [filing](https://github.com/marius-bughiu/Celerity/issues) — the older corruption bugs in this area are fixed and regression-tested.
 
 ### Enumeration order differs from `Dictionary<,>` / changed after an upgrade
 
-**Cause:** Celerity's iteration order reflects the open-addressed probe layout and is **unspecified** — it can differ from the BCL and may change between versions or after a resize.
+**Cause:** The hash collections' iteration order reflects the probe layout and is **unspecified**. It can differ from the BCL and may change between versions or after a resize.
 
-**Fix:** Never rely on iteration order. Sort explicitly when you need a stable order: `foreach (var kvp in dict.OrderBy(k => k.Key))`.
+**Fix:** Never rely on a hash collection's iteration order. Sort explicitly when you need a stable order: `foreach (var kvp in dict.OrderBy(k => k.Key))`. If the order you need is insertion order, use `LinkedDictionary` / `LinkedSet`, which guarantee it even through removals.
 
 ### `FrozenCelerityDictionary.IsPerfectlyHashed` is `false`
 

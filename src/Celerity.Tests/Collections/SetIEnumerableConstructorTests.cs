@@ -1960,6 +1960,79 @@ public class SetIEnumerableConstructorTests
             Assert.True(set.Contains(item));
     }
 
+    // --------------------------------------------------------------
+    //  RankedMultiSet - RankedSet's layout with duplicates kept. It is not
+    //  an ISet<T>, but it takes the same IEnumerable source, and the one
+    //  row that differs is the dedupe row: here every copy has to survive,
+    //  in the order the source enumerates it.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void RankedMultiSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<string>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new RankedMultiSet<string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldSupportEmptySource()
+    {
+        var set = new RankedMultiSet<string>(Array.Empty<string>());
+
+        Assert.Equal(0, set.Count);
+        Assert.False(set.Contains("anything"));
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldCopyAllElements_FromArraySource_InOrder()
+    {
+        var set = new RankedMultiSet<string>(new[] { "c", "a", "b" });
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(new[] { "a", "b", "c" }, set);
+        Assert.Equal(1, set.IndexOf("b"));
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Range is not an ICollection<int>, and 1,500 elements split buckets several times while
+        // the constructor fills the multiset.
+        var set = new RankedMultiSet<int>(Enumerable.Range(0, 1500).Reverse());
+
+        Assert.Equal(1500, set.Count);
+        Assert.Equal(Enumerable.Range(0, 1500), set);
+        Assert.Equal(1234, set[1234]);
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldKeepEveryDuplicate_IncludingDefaultAndNullElements()
+    {
+        var ints = new RankedMultiSet<int>(new[] { 0, 1, 0, 1, 2 });
+
+        Assert.Equal(new[] { 0, 0, 1, 1, 2 }, ints);
+
+        var strings = new RankedMultiSet<string>(new[] { "a", null!, "a", null! });
+
+        Assert.Equal(4, strings.Count);
+        Assert.Equal(new string?[] { null, null, "a", "a" }, strings);
+    }
+
+    [Fact]
+    public void RankedMultiSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 1, 2, 2 };
+
+        var set = new RankedMultiSet<int>(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(2, set.CountOf(2));
+    }
+
     // ──────────────────────────────────────────────────────────────
     //  CompressedIntSet — the chunk-compressed integer set
     // ──────────────────────────────────────────────────────────────
