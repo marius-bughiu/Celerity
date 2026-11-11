@@ -1042,9 +1042,10 @@ public class SegmentedListTests
     public void Clear_ShouldReleaseReferences_ForAReferenceElementType()
     {
         var list = new SegmentedList<string>();
-        for (int i = 0; i < 4 * IntSegment + 1; i += 1)
+        // Eight full segments and one element into a ninth, whatever the reference width: a segment holds
+        // 8,192 references in a 64-bit process and 16,384 in a 32-bit one.
+        for (int i = 0; i < 8 * list.SegmentLength + 1; i += 1)
             list.Add(i.ToString());
-        // 8,192 references per segment: the list spans nine segments and ends one into the ninth.
         Assert.Equal(9, list.SegmentCount);
 
         list.Clear();

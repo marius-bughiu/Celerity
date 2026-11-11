@@ -595,7 +595,11 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         int capacity = checked(_capacity + Length);
         if (_allocated == _segments.Length)
             Array.Resize(ref _segments, Math.Max(_segments.Length * 2, DefaultCapacity));
-        _segments[_allocated++] = new T[Length];
+        // Allocated before the slot is claimed: in `_segments[_allocated++] = new T[Length]` the index, and its
+        // increment, are evaluated first, so an OutOfMemoryException would leave a null segment counted.
+        var segment = new T[Length];
+        _segments[_allocated] = segment;
+        _allocated++;
         _capacity = capacity;
     }
 
