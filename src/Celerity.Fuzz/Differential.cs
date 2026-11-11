@@ -92,6 +92,7 @@ internal static class Differential
         ("BloomFilterMerge", BloomFilterMergeCase),
         ("CuckooFilterMerge", CuckooFilterMergeCase),
         ("HyperLogLogMerge", HyperLogLogMergeCase),
+        ("SlidingHyperLogLog", SlidingHyperLogLogCase),
         ("MinHashSketchMerge", MinHashSketchMergeCase),
         ("CountMinSketchMerge", CountMinSketchMergeCase),
         ("BloomFilterHash64", BloomFilterHash64Case),
@@ -4355,6 +4356,46 @@ internal static class Differential
     // key domain (<= 33 distinct values) keeps the union deep in the linear-counting regime, and
     // the collision-free Murmur3 hasher (as in the single-estimator case) keeps the estimate exact
     // apart from the rare register collision that can undercount by a register.
+    // SlidingHyperLogLog routes and estimates through HyperLogLog's own code, so its oracle is exact: for
+    // every window, a HyperLogLog of the same precision fed only the in-window events must give the same
+    // integer. Low precision forces register collisions, the narrow time range forces equal and
+    // out-of-order timestamps, and a random split exercises UnionWith against the same oracle.
+    private static void SlidingHyperLogLogCase(Random rng)
+    {
+        int precision = rng.Next(4, 11);
+        var left = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(precision);
+        var right = new SlidingHyperLogLog<int, Int32Murmur3Hasher>(precision);
+        var events = new List<(int Key, long Time)>();
+
+        int ops = OrderedOpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int k = OrderedKey(rng);
+            long t = rng.Next(-40, 41);
+            events.Add((k, t));
+            (rng.Next(2) == 0 ? left : right).Add(k, t);
+        }
+
+        left.UnionWith(right);
+
+        for (long since = -41; since <= 41; since += rng.Next(1, 12))
+        {
+            var oracle = new HyperLogLog<int, Int32Murmur3Hasher>(precision);
+            foreach (var (k, t) in events)
+            {
+                if (t >= since)
+                    oracle.Add(k);
+            }
+
+            long expected = oracle.EstimateCardinality();
+            long actual = left.EstimateCardinality(since);
+            Check(expected == actual, $"SlidingHyperLogLog(p={precision}) since {since}: estimate {actual}, oracle {expected}");
+        }
+
+        Check(left.EstimateCardinality(long.MinValue) == left.EstimateCardinality(),
+            "SlidingHyperLogLog: EstimateCardinality() differs from EstimateCardinality(long.MinValue)");
+    }
+
     private static void HyperLogLogMergeCase(Random rng)
     {
         var a = new HyperLogLog<int, Int32Murmur3Hasher>();

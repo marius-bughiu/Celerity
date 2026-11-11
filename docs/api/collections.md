@@ -4336,6 +4336,146 @@ shardA.UnionWith(shardB);
 Console.WriteLine(shardA.EstimateCardinality());         // distinct across A ∪ B
 ```
 
+## SlidingHyperLogLog&lt;T, THasher&gt;
+
+A fixed-memory **distinct count over a time window**. It answers "roughly how many distinct
+elements have I seen since *t*?" — unique users in the last five minutes, distinct source IPs in
+the last hour — for any *t* chosen **at query time**, from memory that never grows with the stream.
+
+```csharp
+public class SlidingHyperLogLog<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+[`HyperLogLog`](#hyperloglogt-thasher) counts since construction and cannot forget, so a windowed
+figure from it means a fresh sketch per window, or a ring of per-bucket sketches that answers only
+at bucket granularity. The exact answer is a `Dictionary<TKey, long>` of last-seen timestamps:
+memory that grows with every distinct key, and a full scan per windowed count. This type is a
+**sliding HyperLogLog** (Chabchoub &amp; Hébrail, 2010) in its rank-indexed form.
+
+- **Any window, chosen per query.** `EstimateCardinality(since)` counts the distinct elements added
+  with a timestamp at or after `since`. The sketch is not built for one window length.
+- **Same answer as HyperLogLog.** Elements are routed to registers and ranks exactly as
+  `HyperLogLog` routes them, and the estimate is computed by the same code.
+  `EstimateCardinality()` equals, bit for bit, a `HyperLogLog` of the same precision fed the same
+  elements. `EstimateCardinality(since)` equals one fed only the in-window elements. The relative
+  standard error is the HyperLogLog one, `≈ 1.04 / sqrt(2^precision)`, for every window.
+- **Order-independent and exactly mergeable.** Each cell keeps the maximum timestamp it has seen,
+  so adds may arrive out of order and `UnionWith` (an element-wise maximum) gives exactly the
+  sketch of the combined stream. Given a deterministic hasher, the merge is byte-identical across
+  runtimes.
+- **Fixed but larger memory.** `2^precision · (65 − precision)` eight-byte timestamps plus one byte
+  per register: **about 1.7&#160;MB at the default precision 12** (≈1.6% error). A plain
+  `HyperLogLog` needs 4&#160;KB at that precision. The figure is set at construction and is the same
+  whether the window holds a thousand distinct elements or a billion.
+
+### How it works
+
+For each of the `m = 2^precision` registers, and for each rank that register could hold, the sketch
+remembers the **latest timestamp** at which an element produced that rank. `Add` hashes once and
+does at most two stores: it raises that cell's timestamp, and it raises the register's all-time
+rank. A query walks each register down from its all-time rank to the largest rank whose timestamp
+is at or after `since`. That walk is about `log2(all-time distinct / in-window distinct)` steps per
+register: around 8 for a five-minute window over a day of history, and never more than `65 − precision`. The
+resulting ranks go into the ordinary HyperLogLog estimator, including its linear-counting and
+large-range corrections. Old timestamps are never purged, because they never need to be: a query
+just ignores cells older than its window.
+
+**Timestamps are opaque `long` values that only need to be ordered**: `DateTime.Ticks`, Unix
+milliseconds, `Environment.TickCount64`, or an event sequence number all work, and every `long` is
+valid, including `long.MinValue`. The window has no upper bound. Each cell keeps only its latest
+timestamp, so an element added later than the caller's "now" is still counted.
+
+### Constructor
+
+```csharp
+public SlidingHyperLogLog(int precision = 12)
+```
+
+`precision` must be between `MinPrecision` (4, `m = 16`) and `MaxPrecision` (16, `m = 65536`,
+about 25&#160;MB) inclusive. Each step up roughly doubles the memory and divides the standard error
+by √2. The default is lower than `HyperLogLog`'s 14 because every register here carries a timestamp
+per possible rank.
+
+There is no `IEnumerable<T>` constructor, because every element needs a timestamp.
+
+**Throws:** `ArgumentOutOfRangeException` if `precision` is outside `[MinPrecision, MaxPrecision]`.
+
+### Methods and properties
+
+- `void Add(T item, long timestamp)` — records `item` as seen at `timestamp`. Never allocates. A
+  timestamp older than one already recorded for the item's cell changes nothing.
+- `long EstimateCardinality(long since)` — the estimated number of distinct elements added at or
+  after `since` (inclusive), rounded to the nearest whole number. It visits all `m` registers, each
+  walked down a few ranks as described above, and does not allocate. It returns `0` exactly when nothing was added at or after `since`.
+- `long EstimateCardinality()` — the all-time estimate, the same as `EstimateCardinality(long.MinValue)`.
+- `void UnionWith(SlidingHyperLogLog<T, THasher> other)` — merges another sketch in place, so that
+  every window afterwards covers the union of both streams. It adds no error beyond the usual
+  estimate of the union. Throws `ArgumentNullException` on a `null` argument and
+  `ArgumentException` if the precisions differ.
+- `void Clear()` — forgets every timestamp, keeping the precision.
+- `int Precision`, `int RegisterCount`, `double StandardError` — as on `HyperLogLog`.
+
+### Default-element handling and hashing
+
+The same as `HyperLogLog`. There is no empty-slot sentinel, so `default(T)` (a zero `int`,
+`Guid.Empty`, the empty string) is counted like any other element. A `null` reference is mapped to
+a fixed hash, so the hasher is never called with `null`. A hasher implementing
+[`IHashProvider64<T>`](hashing.md#ihashprovider64t) supplies all 64 hash bits, which matters past
+~10<sup>8</sup> distinct elements in a window. See
+[the HyperLogLog hash-space note](#the-hash-space-and-why-the-hasher-choice-matters-past-108).
+
+### Performance
+
+Against the exact alternative, a `Dictionary<int, long>` of last-seen timestamps written through one
+`CollectionsMarshal.GetValueRefOrAddDefault` lookup and counted by a scan over its values, both warm
+and allocation-free (`SlidingHyperLogLogBenchmark`, Apple M-series, .NET 10):
+
+| Distinct keys in the window | `Add` (per event stream) | Windowed count |
+|---|---|---|
+| 1,000 | a tie (1.66 µs both) | **5.0x slower** (2.8 µs vs 0.56 µs) |
+| 100,000 | **3.1x faster** | **9.0x faster** (6.1 µs vs 55 µs) |
+| 1,000,000 | **5.9x faster** | **88x faster** (6.3 µs vs 555 µs) |
+
+The windowed count costs the same at every size because it visits the 4,096 registers, not the keys.
+That is why it loses below a few thousand keys. `Add` pulls ahead as the dictionary outgrows the
+cache, while the sketch's hot rows stay put. Memory is the larger gap and does not show in
+`[MemoryDiagnoser]`, because neither side allocates while measured: at a million keys the dictionary
+retains about 28&#160;MB and grows with the window, while the sketch stays at 1.7&#160;MB.
+
+### Choosing it
+
+Reach for `SlidingHyperLogLog` when the question is **how many distinct, recently**: active users
+over a trailing window, distinct keys per time slice in a dashboard, or a cardinality alert that
+fires when distinct sources in the last minute exceed a threshold. The same sketch serves every
+window length. If the window never moves (count since start-up), a plain
+[`HyperLogLog`](#hyperloglogt-thasher) is 400x smaller at the same precision. If you need to know
+whether a *specific* element was seen recently, use a removable membership filter
+(`CuckooFilter`, or `DedupFilter` in `Celerity.Cardinality`). If you need the exact count and the
+window holds only a few thousand keys, a last-seen `Dictionary<TKey, long>` is simpler and faster.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Distinct visitors over trailing windows, from a fixed ~1.7 MB.
+var visitors = new SlidingHyperLogLog<long, Int64Murmur3Hasher>();
+
+foreach (var e in eventStream)
+    visitors.Add(e.VisitorId, e.Timestamp.Ticks);
+
+long now = DateTime.UtcNow.Ticks;
+long last5Min = visitors.EstimateCardinality(now - TimeSpan.FromMinutes(5).Ticks);
+long lastHour = visitors.EstimateCardinality(now - TimeSpan.FromHours(1).Ticks);
+long allTime  = visitors.EstimateCardinality();
+
+// Merge per-node sketches; every window of the result covers both streams exactly.
+nodeA.UnionWith(nodeB);
+long clusterLast5Min = nodeA.EstimateCardinality(now - TimeSpan.FromMinutes(5).Ticks);
+```
+
 ## MinHashSketch&lt;T, THasher&gt;
 
 A fixed-size, mergeable **similarity sketch** parameterized on a custom hash provider. It
