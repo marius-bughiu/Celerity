@@ -424,6 +424,7 @@
     { key: 'AhoCorasick',         title: 'AhoCorasick (multi-pattern scan)',      vs: 'a k-IndexOf loop over 256 patterns on the Contains/Count cards and eight on CountFew; one Regex alternation on the ContainsRegex/EnumerateMatches/Build cards — compiled on the query cards, uncompiled on Build, since compiling emits IL' },
     { key: 'Rope',                title: 'Rope (mutable text)',                   vs: 'StringBuilder', items: [10000, 1000000] },
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                  vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
+    { key: 'StringSort',          title: 'StringSort (ordinal strings)',          vs: 'Array.Sort(StringComparer.Ordinal)', items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',              vs: 'Array.Sort', items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',             vs: 'Array.Sort / LINQ / PriorityQueue heap', items: [100, 1000, 100000, 1000000] },
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',             vs: 'SortedDictionary<int, int>' },

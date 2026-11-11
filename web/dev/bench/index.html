@@ -618,6 +618,10 @@ function escapeHtml(s) {
     // LOSE below a few hundred elements, and the card is where that crossover is read off rather than
     // asserted. PartialSort's four ops each carry a different baseline — see PartialSortBenchmark.
     { key: 'RadixSort',           title: 'RadixSort (int keys)',                     vs: 'Array.Sort',            ops: ['Keys', 'Pairs', 'ArgSort'], items: [100, 1000, 100000, 1000000] },
+    // StringSort's ops are data shapes. Presorted is a short-circuit (one ordered scan, then return), so the honest
+    // sorted-input row is NearlySorted (last two keys swapped), which pays the scan and a full sort. Duplicates gain
+    // least among the shapes that sort in full. The baseline is the ordinal comparer, not the culture-aware default.
+    { key: 'StringSort',          title: 'StringSort (ordinal strings)',             vs: 'Array.Sort(StringComparer.Ordinal)', ops: ['Random', 'SharedPrefix', 'Duplicates', 'Presorted', 'NearlySorted', 'Pairs', 'ArgSort'], items: [100, 1000, 100000, 1000000] },
     { key: 'CountingSort',        title: 'CountingSort (byte keys)',                 vs: 'Array.Sort',            ops: ['Keys', 'Pairs'], items: [100, 1000, 100000, 1000000] },
     { key: 'PartialSort',         title: 'PartialSort (k = 1% of n)',                vs: 'Array.Sort / LINQ / PriorityQueue heap', ops: ['Select', 'SortPrefix', 'TopK', 'TopKHeap'], items: [100, 1000, 100000, 1000000] },
     // BTreeDictionary / BTreeSet are the ordered containers, benchmarked against the BCL's red-black trees.
