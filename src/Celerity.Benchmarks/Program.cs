@@ -82,10 +82,12 @@ internal class Program
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
         typeof(RankedSetBenchmark),
+        typeof(RankedMultiSetBenchmark),
         typeof(WaveletTreeBenchmark),
         typeof(EliasFanoSequenceBenchmark),
         typeof(BitPackedArrayBenchmark),
         typeof(BTreeListBenchmark),
+        typeof(GapBufferBenchmark),
         typeof(RadixSortBenchmark),
         typeof(StringSortBenchmark),
         typeof(CountingSortBenchmark),
@@ -95,6 +97,7 @@ internal class Program
         typeof(DDSketchBenchmark),
         typeof(ReservoirSamplerBenchmark),
         typeof(RollingQuantileBenchmark),
+        typeof(AliasTableBenchmark),
         typeof(RunningStatisticsBenchmark),
         // One comparison split by hasher family so the shard packer can spread it; see
         // StringHasherBenchmarkBase.

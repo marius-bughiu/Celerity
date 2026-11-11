@@ -399,6 +399,7 @@
     { key: 'SieveCache',          title: 'SieveCache<int, int, ...>',             vs: 'Dictionary + LinkedList LRU' },
     { key: 'Deque',               title: 'Deque<int>',                            vs: 'LinkedList<int>' },
     { key: 'BTreeList',           title: 'BTreeList<int>',                        vs: 'List<int>' },
+    { key: 'GapBuffer',           title: 'GapBuffer<int>',                        vs: 'List<int>' },
     { key: 'PersistentVector',    title: 'PersistentVector<int>',                 vs: 'ImmutableList<int>' },
     { key: 'PersistentHashMap',   title: 'PersistentHashMap<int, string, ...>',   vs: 'ImmutableDictionary<int, string>' },
     { key: 'PersistentHashSet',   title: 'PersistentHashSet<int, ...>',           vs: 'ImmutableHashSet<int>' },
@@ -429,6 +430,7 @@
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',             vs: 'SortedDictionary<int, int>' },
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
     { key: 'RankedSet',           title: 'RankedSet<int>',                        vs: 'SortedSet<int>' },
+    { key: 'RankedMultiSet',      title: 'RankedMultiSet<int>',                   vs: 'SortedSet<(int, long)>' },
     { key: 'WaveletTree',         title: 'WaveletTree',                           vs: 'int[] sort / count loop', items: [1024, 1000000] },
     { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                     vs: 'long[]', items: [1024, 1000000] },
     { key: 'BitPackedArray',      title: 'BitPackedArray',                        vs: 'int[]', items: [1024, 1000000] },
@@ -442,6 +444,7 @@
     { key: 'DDSketch',            title: 'DDSketch (relative-error quantiles)',   vs: 'List<double> sort + index' },
     { key: 'ReservoirSampler',    title: 'ReservoirSampler<T> (Algorithm L)',     vs: 'List<T> + partial Fisher-Yates' },
     { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', items: [1000, 10000, 100000] },
+    { key: 'AliasTable',          title: 'AliasTable (weighted sampling)',        vs: 'prefix sums + Array.BinarySearch', items: [100, 10000, 1000000] },
     { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',   vs: 'LINQ two-pass mean / variance' }
   ];
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
