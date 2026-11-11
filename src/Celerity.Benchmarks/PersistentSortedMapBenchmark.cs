@@ -12,10 +12,14 @@ using Celerity.Collections;
 // The first four categories mirror PersistentHashMapBenchmark: the read the workload is dominated by, the two
 // writes that path-copy, and the enumeration a snapshot consumer pays. The fifth, LowerBound, is the ordered
 // query the type exists for. ImmutableSortedDictionary has no seek at all — no lower bound, no range view — so
-// the cheapest correct BCL answer is to enumerate from the smallest key until the first key >= the probe, an
-// O(n) scan per query against the tree's O(log n) descent.
+// code that holds one can only scan it in key order, O(n) a query. That is not the BCL's best answer, though,
+// and is not the baseline: an ImmutableSortedSet<KeyValuePair<TKey, TValue>> ordered by key alone gives an
+// immutable O(log n) lower bound, since IndexOf returns the bitwise complement of the next larger element's
+// index for a miss and the indexer is O(log n). It is the workaround a careful caller reaches for, and the
+// LowerBound baseline here, so that card compares tree with tree rather than a descent with a scan.
 //
-// The baseline arms are named ImmutableSortedDictionary_* so the dashboard classifies them as the BCL reference.
+// The baseline arms are named ImmutableSortedDictionary_* and ImmutableSortedSet_* so the dashboard classifies
+// them as the BCL reference.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
@@ -26,10 +30,6 @@ public class PersistentSortedMapBenchmark
     // the cost of one operation, not how many fit in an iteration.
     private const int ProbeCount = 10_000;
 
-    // The LowerBound category uses far fewer probes, identically in both arms: the BCL arm is an O(n) scan per
-    // probe, so 10,000 of them at ItemCount = 100,000 would be ~500 million node visits per invocation. The
-    // per-probe cost is what the ratio reports, and it is unaffected by the count.
-    private const int LowerBoundProbeCount = 100;
 
     private int[] keys = null!;
     private int[] probes = null!;
@@ -44,6 +44,9 @@ public class PersistentSortedMapBenchmark
 
     private PersistentSortedMap<int, string, DefaultComparer<int>> map = null!;
     private ImmutableSortedDictionary<int, string> immutable = null!;
+
+    // The BCL's seekable stand-in for an immutable sorted map: the same entries in a set ordered by key alone.
+    private ImmutableSortedSet<KeyValuePair<int, string>> pairSet = null!;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -76,8 +79,8 @@ public class PersistentSortedMapBenchmark
 
         // Uniform over [0, 2 * ItemCount], so about half are exact hits, half land between keys, and the top
         // value lands past the largest key.
-        lowerBoundProbes = new int[LowerBoundProbeCount];
-        for (int i = 0; i < LowerBoundProbeCount; i++)
+        lowerBoundProbes = new int[ProbeCount];
+        for (int i = 0; i < ProbeCount; i++)
             lowerBoundProbes[i] = rand.Next(2 * ItemCount + 1);
 
         var builder = new PersistentSortedMap<int, string, DefaultComparer<int>>.Builder();
@@ -90,6 +93,11 @@ public class PersistentSortedMapBenchmark
 
         map = builder.ToImmutable();
         immutable = bclBuilder.ToImmutable();
+
+        ImmutableSortedSet<KeyValuePair<int, string>>.Builder pairBuilder = ImmutableSortedSet.CreateBuilder(KeyOrder.Instance);
+        foreach (int key in keys)
+            pairBuilder.Add(new KeyValuePair<int, string>(key, "v"));
+        pairSet = pairBuilder.ToImmutable();
     }
 
     // ---- Lookup: the axis the workload is dominated by --------------------------------------------
@@ -199,24 +207,24 @@ public class PersistentSortedMapBenchmark
     }
 
     // ---- LowerBound: the first key >= a probe, the ordered query the type exists for --------------
-    // ImmutableSortedDictionary has no seek, so its arm scans in key order from the smallest key and stops at
-    // the first key that is not below the probe — the cheapest answer it can give without copying the keys out.
+    // ImmutableSortedDictionary has no seek, so the baseline is the key-ordered ImmutableSortedSet of the same
+    // pairs: IndexOf finds the probe's position (the complement of the next larger element's index on a miss)
+    // and the indexer reads the entry there, two O(log n) descents of an AVL tree. A probe past the largest key
+    // has no bound in either arm.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("LowerBound")]
-    public long ImmutableSortedDictionary_LowerBound()
+    public long ImmutableSortedSet_LowerBound()
     {
         long sum = 0;
+        int count = pairSet.Count;
         foreach (int probe in lowerBoundProbes)
         {
-            foreach (KeyValuePair<int, string> entry in immutable)
-            {
-                if (entry.Key >= probe)
-                {
-                    sum += entry.Key;
-                    break;
-                }
-            }
+            int index = pairSet.IndexOf(new KeyValuePair<int, string>(probe, null!));
+            if (index < 0)
+                index = ~index;
+            if (index < count)
+                sum += pairSet[index].Key;
         }
 
         return sum;
@@ -234,5 +242,14 @@ public class PersistentSortedMapBenchmark
         }
 
         return sum;
+    }
+
+    // Orders the pairs by key alone, which is what makes the set usable as a map: a probe pair with any value
+    // lands where its key would.
+    private sealed class KeyOrder : IComparer<KeyValuePair<int, string>>
+    {
+        public static readonly KeyOrder Instance = new();
+
+        public int Compare(KeyValuePair<int, string> x, KeyValuePair<int, string> y) => x.Key.CompareTo(y.Key);
     }
 }
