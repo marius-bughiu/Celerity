@@ -44,6 +44,14 @@ public class ReplicaSpanTests
         return pool;
     }
 
+    private static StringMaglevHash<string> WeightedMaglev(int nodeCount = 10)
+    {
+        var maglev = new StringMaglevHash<string>();
+        for (int i = 0; i < nodeCount; i++)
+            maglev.Add($"n{i}", $"n{i}", i == 3 ? 3 : 1);
+        return maglev;
+    }
+
     private static string[] SpanReplicas(Func<string[], int> getReplicas, int length)
     {
         var buffer = new string[length];
@@ -304,5 +312,118 @@ public class ReplicaSpanTests
         }
 
         return quietest;
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // MaglevHash
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>Maglev's replica sets match the pinned table, through both overloads.</summary>
+    [Theory]
+    [InlineData("user:42", "n5", "n3", "n2", "n0")]
+    [InlineData("tenant:7", "n1", "n3", "n4", "n8")]
+    [InlineData("session:0", "n4", "n5", "n1", "n3")]
+    [InlineData("a", "n9", "n5", "n2", "n4")]
+    [InlineData("", "n2", "n5", "n9", "n3")]
+    [InlineData("user:42", "n5", "n3", "n2", "n0", "n4", "n1", "n8", "n9", "n7", "n6")]
+    public void Maglev_ShouldReturnTheGoldenReplicaSet_ThroughBothOverloads(string key, params string[] expected)
+    {
+        var maglev = WeightedMaglev();
+
+        Assert.Equal(expected, maglev.GetReplicas(key, expected.Length));
+        Assert.Equal(expected, SpanReplicas(buffer => maglev.GetReplicas(key, buffer), expected.Length));
+    }
+
+    /// <summary>Maglev's span overload writes the list overload's nodes, in order, for every count.</summary>
+    [Fact]
+    public void Maglev_SpanOverload_ShouldWriteTheListOverloadsNodes_ForEveryCount()
+    {
+        var maglev = WeightedMaglev();
+        for (int i = 0; i < 200; i++)
+        {
+            string key = $"key-{i}";
+            for (int count = 1; count <= 10; count++)
+                Assert.Equal(maglev.GetReplicas(key, count), SpanReplicas(buffer => maglev.GetReplicas(key, buffer), count));
+        }
+    }
+
+    /// <summary>
+    /// Past 1,024 nodes the walk's seen-set is rented rather than stack-allocated; the replicas must still be the
+    /// distinct owners read forward through the table, and every node must appear exactly once in a full walk.
+    /// </summary>
+    [Fact]
+    public void Maglev_Replicas_ShouldMatchTheTableWalk_WhenTheNodeCountOutgrowsTheStackSeenSet()
+    {
+        // 1,025 nodes is one past the stack seen-set's 1,024; a small prime table keeps the 1,025 rebuilds cheap.
+        const int Nodes = 1_025;
+        const int TableSize = 1_031;
+        var maglev = new MaglevHash<string, uint, UInt32IdentityHasher>(TableSize);
+        for (int i = 0; i < Nodes; i++)
+            maglev.Add($"n{i}", $"n{i}");
+
+        string[] table = MaglevTable.Read(maglev);
+        foreach (uint key in new uint[] { 0, 77, TableSize - 1 })
+        {
+            var expected = new List<string>();
+            var seen = new HashSet<string>();
+            for (long s = key; expected.Count < 5; s++)
+            {
+                string owner = table[s % TableSize];
+                if (seen.Add(owner))
+                    expected.Add(owner);
+            }
+
+            Assert.Equal(expected, maglev.GetReplicas(key, 5));
+            Assert.Equal(expected, SpanReplicas(buffer => maglev.GetReplicas(key, buffer), 5));
+        }
+
+        IReadOnlyList<string> all = maglev.GetReplicas(345u, Nodes);
+        Assert.Equal(Nodes, all.Distinct().Count());
+    }
+
+    /// <summary>Maglev's span overload writes only what exists and leaves the tail of the buffer untouched.</summary>
+    [Fact]
+    public void Maglev_SpanOverload_ShouldWriteOnlyWhatExists_WhenTheBufferOrTableIsShort()
+    {
+        var maglev = WeightedMaglev(nodeCount: 3);
+        var buffer = Enumerable.Repeat(Sentinel, 5).ToArray();
+
+        Assert.Equal(3, maglev.GetReplicas("user:42", buffer));
+        Assert.Equal(maglev.GetReplicas("user:42", 3), buffer.Take(3));
+        Assert.Equal(new[] { Sentinel, Sentinel }, buffer.Skip(3));
+
+        var empty = new StringMaglevHash<string>();
+        Assert.Equal(0, empty.GetReplicas("user:42", buffer));
+        Assert.Equal(0, maglev.GetReplicas("user:42", Span<string>.Empty));
+    }
+
+    /// <summary>
+    /// Maglev's span overload allocates nothing. The quietest of three windows is taken, so a one-off runtime
+    /// allocation on the test thread cannot fail it, while an allocation per call still would.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(50)]
+    public void Maglev_SpanOverload_ShouldNotAllocate(int replicaCount)
+    {
+        var maglev = WeightedMaglev(50);
+        string[] keys = Enumerable.Range(0, 1000).Select(i => $"key-{i}").ToArray();
+        var buffer = new string[replicaCount];
+
+        // Warm every key, so a once-per-key allocation lands here and not only in the first measured window.
+        foreach (string key in keys)
+            Assert.Equal(replicaCount, maglev.GetReplicas(key, buffer));
+
+        int written = 0;
+        long allocated = QuietestAllocation(() =>
+        {
+            written = 0;
+            foreach (string key in keys)
+                written += maglev.GetReplicas(key, buffer);
+        });
+
+        Assert.Equal(replicaCount * keys.Length, written);
+        Assert.Equal(0, allocated);
     }
 }

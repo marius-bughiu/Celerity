@@ -3730,7 +3730,7 @@ void Check(bool condition, string message)
     Check(fruit.Count == 4 && fruit.Min == "apple" && fruit.GetRank("fig") == 0.5d, "KllSketch over a reference type, merged");
 }
 
-// Celerity.Ring — ConsistentHashRing / RendezvousHash.
+// Celerity.Ring — ConsistentHashRing / RendezvousHash / MaglevHash.
 //
 // The first of the three showcase-tier packages. They set IsAotCompatible like the rest of the family,
 // so the analyzers already covered them, but until they were referenced here no native binary closed
@@ -3804,6 +3804,39 @@ void Check(bool condition, string message)
     var stringHrw = new StringRendezvousHash<int>();
     stringHrw.Add("only", 7);
     Check(stringHrw.GetNode("anything") == 7, "StringRendezvousHash single node owns every key");
+
+    // Maglev: a prime-sized lookup table filled by node permutations, closed over a value-typed key and its
+    // identity hasher, so a key's slot is its own value and the table can be read back slot by slot.
+    var maglev = new MaglevHash<string, uint, UInt32IdentityHasher>(tableSize: 31);
+    maglev.Add("a", "a");
+    maglev.Add("b", "b", weight: 2);
+    maglev.Add("c", "c");
+    Check(maglev.NodeCount == 3 && maglev.TableSize == 31 && maglev.Contains("b"), "MaglevHash registry");
+    int maglevA = 0, maglevB = 0, maglevC = 0;
+    for (uint slot = 0; slot < 31; slot++)
+    {
+        switch (maglev.GetNode(slot))
+        {
+            case "a": maglevA++; break;
+            case "b": maglevB++; break;
+            case "c": maglevC++; break;
+        }
+    }
+
+    // 31 slots over a total weight of 4 is 7 full rounds (28 slots) plus a partial one.
+    Check(maglevA + maglevB + maglevC == 31 && maglevA is 7 or 8 && maglevC is 7 or 8 && maglevB is >= 14 and <= 16,
+        "MaglevHash fills its table in weighted turns");
+    IReadOnlyList<string> maglevReplicas = maglev.GetReplicas(5u, 3);
+    var maglevBuffer = new string[4];
+    Check(maglevReplicas.Count == 3 && maglevReplicas[0] == maglev.GetNode(5u)
+        && maglev.GetReplicas(5u, maglevBuffer) == 3 && maglevBuffer[2] == maglevReplicas[2] && maglevBuffer[3] is null,
+        "MaglevHash span replica walk matches the list");
+    Check(maglev.Remove("b") && maglev.NodeCount == 2 && maglev.TryGetNode(5u, out string? maglevOwner)
+        && maglevOwner is "a" or "c", "MaglevHash.Remove");
+
+    var stringMaglev = new StringMaglevHash<int>(tableSize: 7);
+    stringMaglev.Add("only", 7);
+    Check(stringMaglev.GetNode("anything") == 7, "StringMaglevHash single node owns every key");
 }
 
 // Celerity.Sentinel — AbuseTracker / StripedAbuseTracker.

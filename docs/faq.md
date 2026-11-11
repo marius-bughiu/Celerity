@@ -133,7 +133,7 @@ The **core** five are layered, so `dotnet add package Celerity.Collections` tran
 
 The **showcase tier** is three standalone libraries built *on top of* `Celerity.Collections`, all shipped in v2.3.0. They depend on the core, but you don't get them by installing it — reach for one only when its problem is yours:
 
-- **`Celerity.Ring`** — consistent-hash and rendezvous (HRW) rings for sharding and request routing, with byte-identical node assignment across OS / architecture / runtime.
+- **`Celerity.Ring`** — consistent-hash, rendezvous (HRW) and Maglev routing for sharding and request routing, with byte-identical node assignment across OS / architecture / runtime.
 - **`Celerity.Sentinel`** — streaming abuse / heavy-hitter detection in a footprint that stays fixed however many distinct keys arrive.
 - **`Celerity.Cardinality`** — mergeable approximate `COUNT(DISTINCT)` and windowed dedup over unbounded streams.
 

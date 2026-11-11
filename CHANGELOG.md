@@ -19,6 +19,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - **`KWayMerge`** (in `Celerity.Sorting`), a stable k-way merge of already-sorted runs: runs packed in one span merge into a destination span with no allocation once the shared pool is warm, and sequences merge lazily in `O(k)` memory. .NET has no multiway merge. On 16 runs of strings it is 1.93x faster than a `PriorityQueue` merge and 2.75x faster than concatenating and sorting. ⚠️ On `int` keys it is only 1.15x faster, and `RadixSort` over the concatenation beats any merge. Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #598.
 
+- **`MaglevHash<TNode, TKey, THasher>`** (in `Celerity.Ring`), Maglev consistent hashing: a key routes to its node with one table load, and every node's share is exact to within one round of the fill. Against a hand-rolled ring of 160 virtual nodes per node, lookups are 3.6x faster at 10 nodes, 5.1x at 100 and 7.0x at 1,000. ⚠️ A membership change refills the whole table: 1.4 ms at 10 nodes, 290x the ring's cost. It also moves about 0.6% of the other nodes' keys when one of 100 leaves, where the ring moves none. Ships with tests, a benchmark, dashboard cards, an AOT check and docs. Closes [#602](https://github.com/marius-bughiu/Celerity/issues/602).
+
 ### Fixed
 
 - `TopKSketch`'s constructor now throws `ArgumentOutOfRangeException` for a capacity beyond its element index's largest table (above about 805 million) before allocating its arrays, and it no longer allocates that index twice. Closes #579.
