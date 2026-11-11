@@ -9047,33 +9047,33 @@ Verification trims the shared prefix and suffix first, since they never cost an 
 
 ### Measured
 
-Two measurements, because the word list decides the margin and either one alone would mislead.
+Two measurements: the CI suite's synthetic words, and a real dictionary. Both answer fresh queries, since a batch replayed call after call lets the caches and the branch predictor learn the index's lookups and flatters it several times over.
 
-**BenchmarkDotNet** (the CI suite and the dashboard), 64 queries per call, each one a word of the set with one random substitution. The words are synthetic: stems drawn with English letter frequencies and inflected into families (`-s`, `-ed`, `-ing`, `-er`, …), so neighbours one to three edits apart exist as they do in a dictionary. The baseline is the careful scan, verifying with a verbatim copy of the index's own bounded distance, so the ratio is purely the distance computations the index avoids.
+**BenchmarkDotNet** (the CI suite and the dashboard), 64 queries per call: the next 64 of a pool of 65,536 distinct ones, each a word of the set with one random substitution. The words are synthetic: stems drawn with English letter frequencies and inflected into families (`-s`, `-ed`, `-ing`, `-er`, …), so neighbours one to three edits apart exist as they do in a dictionary. The baseline is the careful scan, verifying with a verbatim copy of the index's own bounded distance, so the ratio is purely the distance computations the index avoids. Times are per call of 64 queries.
 
 | Workload | Words | Scan | `EditDistanceIndex` | Ratio |
 | --- | ---: | ---: | ---: | ---: |
-| `FindWithin`, distance 1 | 1,000 | 1.09 ms | 6.40 µs | **170x** |
-| `FindWithin`, distance 1 | 100,000 | 122.7 ms | 9.88 µs | **12,400x** |
-| `FindWithin`, distance 2 | 1,000 | 2.18 ms | 26.2 µs | **83x** |
-| `FindWithin`, distance 2 | 100,000 | 219.7 ms | 221.7 µs | **991x** |
-| `TryFindNearest`, distance 2 | 1,000 | 1.11 ms | 24.1 µs | **46x** |
-| `TryFindNearest`, distance 2 | 100,000 | 113.3 ms | 138.6 µs | **817x** |
+| `FindWithin`, distance 1 | 1,000 | 1.23 ms | 15.1 µs | **81x** |
+| `FindWithin`, distance 1 | 100,000 | 118.6 ms | 37.1 µs | **3,200x** |
+| `FindWithin`, distance 2 | 1,000 | 2.26 ms | 84.0 µs | **27x** |
+| `FindWithin`, distance 2 | 100,000 | 212.8 ms | 621 µs | **342x** |
+| `TryFindNearest`, distance 2 | 1,000 | 1.29 ms | 80.3 µs | **16x** |
+| `TryFindNearest`, distance 2 | 100,000 | 113.7 ms | 487 µs | **234x** |
 
-**A real dictionary** is harder, and these are the numbers to plan with. A Stopwatch probe over `/usr/share/dict/words` (net10.0 Release, Apple Silicon), shuffled, with 1,000 queries of the same one-substitution shape, against the same careful scan:
+**A real dictionary** gives margins of the same order. A Stopwatch probe over `/usr/share/dict/words` (net10.0 Release, Apple Silicon), shuffled, with one-substitution queries drawn fresh from a pool of 131,072 and never replayed, against the same careful scan, taking the fastest of 15 interleaved rounds. Times are per query:
 
 | Words | Distance | Scan | `EditDistanceIndex` | Ratio | Postings | Index size |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 1 | 16.2 ms | 0.82 ms | **20x** | 10,382 | ~116 B / word |
-| 1,000 | 2 | 35.9 ms | 5.22 ms | **7x** | 53,877 | ~562 B / word |
-| 1,000 | 2, nearest | 19.8 ms | 1.78 ms | **11x** | 53,877 | ~562 B / word |
-| 100,000 | 1 | 1,684 ms | 0.91 ms | **1,850x** | 1.04 M | 10.4 MB |
-| 100,000 | 2 | 3,654 ms | 6.08 ms | **600x** | 5.35 M | 59.6 MB |
-| 100,000 | 2, nearest | 1,836 ms | 5.47 ms | **336x** | 5.35 M | 59.6 MB |
+| 1,000 | 1 | 15.0 µs | 0.31 µs | **49x** | 10,327 | ~115 B / word |
+| 1,000 | 2 | 29.3 µs | 1.72 µs | **17x** | 53,034 | ~555 B / word |
+| 1,000 | 2, nearest | 17.2 µs | 1.72 µs | **10x** | 53,034 | ~555 B / word |
+| 100,000 | 1 | 1,366 µs | 0.75 µs | **1,820x** | 1.03 M | 10.4 MB |
+| 100,000 | 2 | 2,277 µs | 5.68 µs | **400x** | 5.34 M | 59.5 MB |
+| 100,000 | 2, nearest | 1,366 µs | 5.23 µs | **261x** | 5.34 M | 59.5 MB |
 
-Real words are longer than the synthetic ones (so a query generates more variants), and a real vocabulary is denser (so more candidates need verifying). That is why the small-list margin drops from 83x to 7x at distance 2. A second run measured 18x and 6x at 1,000 words, so read the small-list figures as ±10%. On this word list the query cost barely moved with the list size, about 5–6 µs per query at distance 2 for both 1,000 and 100,000 words, while the scan grew linearly. That is not a general law: on the benchmark's denser synthetic families the same query grew 8.5x across the same range, because verification is paid per candidate and a denser vocabulary has more of them. So the margin is a function of the word count, and a list of a few hundred short words is where reaching for this stops being worth the memory. Every pre-registered bar in [#584](https://github.com/marius-bughiu/Celerity/issues/584) (distance 1: 5x at 1,000 and 100x at 100,000; distance 2: 3x and 50x; nearest: 3x at 1,000) clears on both word lists; the nearest rows are from a second probe run.
+Real words are longer than the synthetic ones, 9.6 characters on average, so a query generates more variants, and at 1,000 words that costs about 40% of the margin: 49x and 17x against the benchmark's 81x and 27x. At 100,000 words the two lists agree within a factor of two either way. The query cost grows with the word count far more slowly than the scan does. On the real list it is about 1.7 µs at distance 2 for 1,000 words and 5.7 µs for 100,000, while the scan grew 78-fold. Verification is paid per candidate, though, so a denser vocabulary costs more per query: on the benchmark's synthetic families the same query grew 7.4x across the same range. The margin is therefore a function of the word count. For a list of a few hundred short words a scan already takes microseconds, and that is where the index stops being worth its memory. Every pre-registered bar in [#584](https://github.com/marius-bughiu/Celerity/issues/584) (distance 1: 5x at 1,000 and 100x at 100,000; distance 2: 3x and 50x; nearest: 3x at 1,000) clears on both word lists.
 
-**The build is the price, and it carries no bar.** On the benchmark's words, building at distance 2 costs as much as **52–75 scan queries**, measured against the mean of its 64: 1.78 ms for 1,000 words (a scan query averages 34 µs) and 258 ms for 100,000 (3.4 ms). The 100,000-word build allocates 77.7 MB in total, including the transient posting array before deduplication and the duplicate set. The retained index is the posting array (8 bytes a posting) and the directory (2–4 bytes a posting). An index queried fewer times than that is cheaper as a scan.
+**The build is the price, and it carries no bar.** On the benchmark's words, building at distance 2 costs as much as **51–73 scan queries**, measured against the mean of its 64: 1.76 ms for 1,000 words (a scan query averages 35 µs) and 241 ms for 100,000 (3.3 ms). On the real dictionary's longer words it costs about **120**: 3.8 ms against a 31 µs scan query at 1,000 words, and 358 ms against 3.0 ms at 100,000. The 100,000-word synthetic build allocates 77.7 MB in total, including the transient posting array before deduplication and the duplicate set. The retained index is the posting array (8 bytes a posting) and the directory (2–4 bytes a posting). An index queried fewer times than that is cheaper as a scan.
 
 ### API
 
