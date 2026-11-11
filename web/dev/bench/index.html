@@ -491,7 +491,7 @@ function escapeHtml(s) {
     // and the three Rank arms sweep the query position, where that loop's O(index / 64) cost lives.
     { key: 'RankSelectBitVector', title: 'RankSelectBitVector',                      vs: 'ulong[] popcount loop', ops: ['RankEarly', 'RankMid', 'RankLate', 'Select', 'Build'], items: [1024, 1000000] },
     { key: 'HyperLogLog',         title: 'HyperLogLog<T, ...>',                      vs: 'HashSet<int>',          ops: ['Add', 'Estimate'] },
-    { key: 'SlidingHyperLogLog',  title: 'SlidingHyperLogLog<T, ...>',               vs: 'Dictionary<int, long>', ops: ['Add', 'CountWindow'] },
+    { key: 'SlidingHyperLogLog',  title: 'SlidingHyperLogLog<T, ...>',               vs: 'Dictionary<int, long>', ops: ['Add', 'CountWindow'], items: [1000, 100000, 1000000] },
     { key: 'MinHashSketch',       title: 'MinHashSketch<T, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Jaccard'] },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                   vs: 'Dictionary<int, int>',  ops: ['Add', 'Estimate'] },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                       vs: 'Dictionary<int, int>',  ops: ['Add', 'TopK'] },
