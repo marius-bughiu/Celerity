@@ -5521,8 +5521,10 @@ tree like this one). [`Rope`](#rope) is the same idea specialized to `char`, wit
   out with its neighbour so it never starts below the floor.
 
 `Depth` is public, so the cost of a descent can be observed rather than taken on trust. It is `1` while
-the whole list fits in one leaf, `2` to a few thousand elements, `3` to a few hundred thousand and `4`
-at a million. The exact thresholds depend on how full the edit history has left the nodes.
+the root is a single leaf, `2` to a few thousand elements, `3` to a few hundred thousand and `4` at a
+million. A leaf holds up to 128 elements, but a list that small can still be at depth `2`: the
+`IEnumerable<T>` constructor fills leaves to 96, and two leaves merge back into one only once one drops
+below 32. The exact thresholds depend on how full the edit history has left the nodes.
 
 ### Constructors
 
