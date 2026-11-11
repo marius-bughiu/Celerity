@@ -6444,8 +6444,11 @@ sorted map, and it has two problems:
   pointer chase per level — about seventeen at 100,000 entries — and every comparison is an
   interface call through the `IComparer<TKey>` it holds.
 - **It answers only exact questions.** There is no `Min` / `Max`, no floor or ceiling, and no range
-  enumeration, so "the first key at or after *x*" — or "the value as of time *t*" — on an immutable
-  sorted map is an `O(n)` scan from the start.
+  enumeration, so on it "the first key at or after *x*" — or "the value as of time *t*" — is an `O(n)`
+  scan from the start. The BCL's `O(log n)` route is a different type: an `ImmutableSortedSet<T>` of the
+  pairs ordered by key alone, where `IndexOf` returns the complement of the next larger element's index
+  for a miss and the indexer reads it, two descents of an AVL tree. It has no range view either, and
+  changing a value there is a remove and an add.
 
 `PersistentSortedMap<TKey, TValue, TComparer>` is a **B+ tree of fan-out 32**. Every entry lives in a
 leaf of up to 32 entries held in two flat arrays; a branch holds up to 32 children and the separator
@@ -6582,15 +6585,16 @@ time ÷ this type's time; below 1x is a loss):
 
 | Operation | 1,000 entries | 100,000 entries |
 | --- | --- | --- |
-| `LowerBound` — `TryGetLowerBound` at random keys, against the BCL's only option, an in-order scan | **~170x** | **~17,000x** |
+| `LowerBound` — `TryGetLowerBound` at random keys, against `ImmutableSortedSet` `IndexOf` + indexer over the pairs | **1.38x** | **3.07x** |
 | `Enumerate` — every entry in order | **2.3x** | **3.9x** |
 | `Insert` — build the whole map one entry at a time | 1.13x | **1.85x** |
 | `Update` — `SetItem` over an existing key | 1.10x | **1.48x** |
 | `Lookup` — `TryGetValue` at random keys | ⚠️ **0.71x** (1.40x slower) | **1.29x** |
 
 **The type's case rests on the ordered queries**, which `ImmutableSortedDictionary` does not have at
-all, so the `LowerBound` row compares an `O(log n)` descent against an `O(n)` scan and grows with the
-map. The timings for the queries both types share are mixed, and the issue's pre-registered bars
+all: code that holds one can only scan it in key order, `O(n)` a seek. The `LowerBound` row measures
+the BCL's best answer instead, the key-ordered `ImmutableSortedSet` of the pairs, so it compares one
+`O(log n)` descent with two; against the scan the ratio would only measure *n*. The timings for the queries both types share are mixed, and the issue's pre-registered bars
 were missed at 1,000 entries for all three of them: **a lookup there is 1.40x slower**, because a
 1,000-entry AVL tree is about ten levels deep and fits in cache, where its ten comparisons beat three
 binary searches over 32-wide nodes. At 100,000 entries the AVL tree's pointer chase costs more and

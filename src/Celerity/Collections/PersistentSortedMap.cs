@@ -24,8 +24,10 @@ namespace Celerity.Collections;
 /// one heap node per entry. Its branching factor is two, so a lookup is a pointer chase per level — about
 /// seventeen node dereferences at 100,000 entries — and every comparison is an interface call through the
 /// <see cref="IComparer{T}"/> it holds. It also answers only <i>exact</i> questions: it has no
-/// <c>Min</c> / <c>Max</c>, no floor or ceiling, and no range enumeration, so "the first key at or after
-/// <i>x</i>" on an immutable sorted map is an <c>O(n)</c> scan from the start.
+/// <c>Min</c> / <c>Max</c>, no floor or ceiling, and no range enumeration, so on it "the first key at or after
+/// <i>x</i>" is an <c>O(n)</c> scan from the start. The BCL's <c>O(log n)</c> route is a different type: an
+/// <c>ImmutableSortedSet&lt;T&gt;</c> of the pairs ordered by key alone, whose <c>IndexOf</c> and indexer find
+/// the bound in two descents. It has no range view either, and changing a value there is a remove and an add.
 /// </para>
 /// <para>
 /// <see cref="PersistentSortedMap{TKey, TValue, TComparer}"/> is a B+ tree of fan-out 32: every entry lives in a
