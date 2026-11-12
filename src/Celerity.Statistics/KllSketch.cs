@@ -283,8 +283,8 @@ public sealed class KllSketch<T> where T : IComparable<T>
     }
 
     /// <summary>
-    /// Gets the value at a quantile of the stream: a retained value whose rank is within the sketch's error
-    /// of zero-based rank <c>⌊quantile · (Count − 1)⌋</c>.
+    /// Gets the value at a quantile of the stream: a value the sketch was fed, whose rank is within the sketch's
+    /// error of zero-based rank <c>⌊quantile · (Count − 1)⌋</c>.
     /// </summary>
     /// <param name="quantile">
     /// The fraction of the stream at or below the answer, from <c>0</c> (the exact <see cref="Min"/>) to
