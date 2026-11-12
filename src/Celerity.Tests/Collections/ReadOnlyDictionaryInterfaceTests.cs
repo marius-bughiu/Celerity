@@ -2145,4 +2145,50 @@ public class ReadOnlyDictionaryInterfaceTests
 
         Assert.Equal(map.Count, ro.Count());
     }
+
+    // -------- FrozenSortedMap --------
+    // Build-once / read-many, so the mutation-detection test does not apply. Integer-keyed, so there is no null
+    // key slot. Unlike a hash map, the interface views enumerate in ascending key order, so the order is asserted.
+
+    private static FrozenSortedMap<int, TValue> FrozenSorted<TValue>(params KeyValuePair<int, TValue>[] pairs)
+        => new(pairs);
+
+    [Fact]
+    public void FrozenSortedMap_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        IReadOnlyDictionary<int, string?> ro = FrozenSorted(new KeyValuePair<int, string?>(1, "1"));
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1));
+        Assert.Equal("1", ro[1]);
+    }
+
+    [Fact]
+    public void FrozenSortedMap_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = FrozenSorted<string?>();
+
+        Assert.Throws<KeyNotFoundException>(() => ro[1]);
+    }
+
+    [Fact]
+    public void FrozenSortedMap_InterfaceTryGetValue_ShouldReportMissingAndPresentKeys()
+    {
+        IReadOnlyDictionary<int, string?> ro = FrozenSorted(new KeyValuePair<int, string?>(7, "7"));
+
+        Assert.False(ro.TryGetValue(8, out string? missing));
+        Assert.Null(missing);
+        Assert.True(ro.TryGetValue(7, out string? present));
+        Assert.Equal("7", present);
+    }
+
+    [Fact]
+    public void FrozenSortedMap_InterfaceKeysAndValues_ShouldYieldEveryEntryInKeyOrder()
+    {
+        IReadOnlyDictionary<int, int> ro = FrozenSorted(
+            new[] { 5, 3, 1, 4, 2 }.Select(i => new KeyValuePair<int, int>(i, i * 10)).ToArray());
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, ro.Keys.ToArray());
+        Assert.Equal(new[] { 10, 20, 30, 40, 50 }, ro.Values.ToArray());
+    }
 }

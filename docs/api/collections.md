@@ -10805,6 +10805,9 @@ outgrows L1, and it takes a branch at every step that mispredicts about half the
 - **Membership alone is a hash set's job.** If you never ask an ordered question, a hash set
   answers `Contains` in about one probe. An [`IntSet`](#intset) or a `FrozenSet<int>` is the
   better fit there.
+- **A value per key** belongs in [`FrozenSortedMap<TKey, TValue>`](#frozensortedmaptkey-tvalue), the
+  same tree with a parallel value array. Do not keep a value array in step with this set by hand:
+  the set drops a repeated key, and every later value then lands one position off its key.
 
 ### Measured
 
@@ -10956,4 +10959,166 @@ Console.WriteLine($"{band.Length} allowed ids in the band; the first is {(band.I
 // The next allowed id after this one.
 if (allowed.TryGetUpperBound(accountId, out int next))
     Console.WriteLine($"next allowed id: {next}");
+```
+
+## FrozenSortedMap&lt;TKey, TValue&gt;
+
+```csharp
+public sealed class FrozenSortedMap<TKey, TValue> : IReadOnlyDictionary<TKey, TValue>
+    where TKey : unmanaged, IBinaryInteger<TKey>, IMinMaxValue<TKey>
+```
+
+An **immutable** sorted map from integer keys to values: the map sibling of
+[`FrozenSortedSet<T>`](#frozensortedsett). The keys sit in that type's static B+ tree and the
+values in a parallel array, so the position a search finds indexes the value directly. Use it for
+a key-to-value table that is read far more often than it changes and that is queried by **where a
+key falls**, not only by exact key:
+
+- range partitions to their shard ("which shard owns key *k*"),
+- effective dates or versions to a price, a config or a schema ("the value as of *t*"),
+- IP or account-number ranges to their owner,
+- a sorted dimension table.
+
+The members:
+
+- **`TryGetFloor(key, out entry)`**: the entry with the largest key `<= key`. This is the "as of" and
+  "which range owns *k*" query. `TryGetPredecessor` is the strict form (`< key`).
+- **`TryGetLowerBound` / `TryGetUpperBound`**: the entry with the smallest key `>= key`, or `> key`.
+- **`GetIndexRange(from, toExclusive)`**: the positions of the entries in `[from, toExclusive)` as a
+  `Range`. It slices both `Keys.AsSpan()` and `Values`, with two searches and no copy.
+- **`this[key]`, `TryGetValue`, `ContainsKey`**: exact lookups, through `IReadOnlyDictionary<TKey, TValue>`.
+- **`CountLessThan`, `IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `Min`, `Max`**: rank and
+  positional reads. The names follow `SortedList<TKey, TValue>`.
+- **`Keys`**: the map's own `FrozenSortedSet<TKey>`. Its rank, successor, `SliceRange` and set algebra
+  apply to the keys without a copy. **`Values`** is a `ReadOnlySpan<TValue>` in key order.
+
+### The gap it fills
+
+The BCL has no ordered frozen map. `FrozenDictionary<TKey, TValue>` is unordered, so "the entry at
+or below *x*" on it is a full scan. `SortedList<TKey, TValue>` keeps the keys sorted but has no
+floor or ceiling member, and `SortedDictionary<,>` and [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer)
+are built to be mutated and pay for it on every read. The usual hand-roll is a sorted `TKey[]` and
+a parallel `TValue[]`, sorted together with `Array.Sort(keys, values)` and searched with
+`MemoryExtensions.BinarySearch`. That search is latency-bound in exactly the way
+[`FrozenSortedSet`](#frozensortedsett) describes.
+
+Before this type, the fast path was a `FrozenSortedSet<TKey>` plus a value array that the caller
+kept in step by hand. The set silently drops a repeated key, so a duplicate in the source pushed
+every later value off its key by one. The map sorts the values with their keys and **rejects** a
+duplicate key, as `Dictionary` and `SortedList` do.
+
+### When *not* to use this — read first
+
+- **Exact lookups alone are a hash map's job.** `FrozenDictionary<int, int>` answers an exact key
+  **2.3–3.6× faster** than this map (table below). Reach for this type when you ask ordered
+  questions; if every query is an exact key, use `FrozenDictionary` or
+  [`FrozenCelerityDictionary`](#frozenceleritydictionarytvalue-thasher) instead.
+- **The map must be final.** There is no mutating member, and a changed map means a new build. For
+  a map that keeps changing, use [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer). For an
+  immutable map that you keep editing and republishing, use
+  [`PersistentSortedMap`](#persistentsortedmaptkey-tvalue-tcomparer).
+- **Integer keys only**, as for `FrozenSortedSet`. There is no comparer.
+
+### Measured
+
+BenchmarkDotNet default job, .NET 10, Apple M4, `FrozenSortedMapBenchmark`. There are 1,000,
+100,000 and 1,000,000 random distinct `int` keys spread over the whole range, each mapped to an
+`int`. Each invocation runs 2^18 probes, and the figures are per lookup. `Floor` probes are uniform
+random `int`s. `TryGetValue` probes are half keys and half non-keys, shuffled together.
+
+| Op | Keys | Baseline | Baseline | `FrozenSortedMap` | Ratio |
+| --- | --- | --- | --- | --- | --- |
+| `Floor` (`TryGetFloor`) | 1,000 | sorted `int[]` + `BinarySearch` | 32.6 ns | 3.6 ns | **8.97×** faster |
+| `Floor` | 100,000 | sorted `int[]` + `BinarySearch` | 72.4 ns | 8.1 ns | **9.00×** faster |
+| `Floor` | 1,000,000 | sorted `int[]` + `BinarySearch` | 96.8 ns | 10.3 ns | **9.39×** faster |
+| `TryGetValue` | 1,000 | `FrozenDictionary<int, int>` | 6.2 ns | 14.3 ns | 2.31× *slower* |
+| `TryGetValue` | 100,000 | `FrozenDictionary<int, int>` | 7.9 ns | 28.2 ns | 3.59× *slower* |
+| `TryGetValue` | 1,000,000 | `FrozenDictionary<int, int>` | 11.3 ns | 29.7 ns | 2.64× *slower* |
+| `Build` (from unsorted pairs; baseline is split + `Array.Sort(keys, values)`) | 1,000 | | 7.07 µs | 7.78 µs | 1.10× *slower* |
+| `Build` | 1,000,000 | | 47.2 ms | 48.0 ms | 1.02× *slower* |
+
+The pre-registered kill criterion (issue #614) was `TryGetFloor` at least **3×** faster than the
+sorted-array hand-roll at 100,000 and 1,000,000 keys. It is **cleared** at 9.00× and 9.39×.
+
+**Why `TryGetValue` is slower than the set's `Contains`.** `TryGetValue` must branch on whether
+the key was found before it reads the value. On a shuffled half-hit stream, that branch
+mispredicts about half the time, which is the latency-bound case that
+[`FrozenSortedSet`'s `ContainsBranching` row](#frozensortedsett) measures (17–28 ns). `Floor`
+does not pay this, because almost every probe has a floor and the branch predicts well. The build
+costs about the sort it contains. It allocates about twice the hand-roll's transient memory,
+because the source is copied once as pairs before it is split. The **retained** memory is the two
+arrays plus the key tree's internal levels, about 6% of the keys for `int`.
+
+These are local figures. The CI series on the dashboard is the contract.
+
+### Constructor
+
+```csharp
+public FrozenSortedMap(IEnumerable<KeyValuePair<TKey, TValue>> source)
+```
+
+Builds the map from `source`, which may be in **any order**. The entries are copied, so the
+caller's collection may be reused. Any `ICollection<T>` (a `Dictionary`, an array, a `List`) is
+sized from its `Count`, and any other sequence is materialized first. The build is one sort of the
+keys with their values alongside, `O(n log n)`, then one pass to reject duplicates and one over the
+key tree's internal levels.
+
+The constructor throws in three cases:
+
+- `ArgumentNullException` when `source` is `null`;
+- `ArgumentException` (`source`) when two entries share a key. The message names the key.
+- `ArgumentException` (`source`) when `source` holds more entries than one padded key array can
+  hold, a little under `Array.MaxLength`. A counted source is checked before anything is allocated.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of entries. |
+| `FrozenSortedSet<TKey> Keys { get; }` | The keys, as the map's own `FrozenSortedSet<TKey>` (the same instance on every read). `Keys[i]` maps to `Values[i]`. `Keys.Depth` and `Keys.MemoryUsageInBytes` describe the search tree. |
+| `ReadOnlySpan<TValue> Values { get; }` | The values in ascending key order, without copying. Through `IReadOnlyDictionary`, `Values` is a read-only wrapper, so it cannot be cast back to the backing array. |
+| `KeyValuePair<TKey, TValue> Min { get; }` / `Max { get; }` | The entries with the smallest and largest key. `InvalidOperationException` when the map is empty. |
+| `TValue this[TKey key] { get; }` | The mapped value. `KeyNotFoundException` when the key is absent. |
+| `bool TryGetValue(TKey key, out TValue value)` | The mapped value, or `default` and `false`. |
+| `bool ContainsKey(TKey key)` | Whether the key is present. |
+| `bool ContainsValue(TValue value)` | Whether any key maps to `value` under `EqualityComparer<TValue>.Default`. This is a linear scan, `O(n)`, as on `Dictionary`. |
+| `int IndexOfKey(TKey key)` | The key's position in ascending order, or `-1`. |
+| `TKey GetKeyAtIndex(int index)` / `TValue GetValueAtIndex(int index)` | The `index`-th entry's key or value. `ArgumentOutOfRangeException` outside `[0, Count)`. |
+| `int CountLessThan(TKey key)` | How many keys are strictly below `key`, which is also the position of the first entry at or above it. |
+| `bool TryGetFloor(TKey key, out KeyValuePair<TKey, TValue> entry)` | The entry with the largest key `<= key`. Returns `false` with `entry = default` when every key is larger. |
+| `bool TryGetPredecessor(TKey key, out KeyValuePair<TKey, TValue> entry)` | The entry with the largest key `< key`. |
+| `bool TryGetLowerBound(TKey key, out KeyValuePair<TKey, TValue> entry)` | The entry with the smallest key `>= key`. |
+| `bool TryGetUpperBound(TKey key, out KeyValuePair<TKey, TValue> entry)` | The entry with the smallest key `> key`. Returns `false` for `key == TKey.MaxValue`. |
+| `Range GetIndexRange(TKey fromInclusive, TKey toExclusive)` | The positions of the entries in `[fromInclusive, toExclusive)`, for slicing `Keys.AsSpan()` and `Values`. Two searches, no copy. `ArgumentException` when `toExclusive < fromInclusive`. A range ending at `TKey.MaxValue` inclusive is `CountLessThan(from)..`. |
+| `Enumerator GetEnumerator()` | Entries in ascending key order, allocation-free. After the last entry, `MoveNext` keeps returning `false` and `Current` is `default`. |
+
+The type holds no mutable state after construction, so instances are safe to share across
+threads, as long as the values themselves are.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Range partitioning: each entry is the first key a shard owns.
+var shards = new FrozenSortedMap<long, string>(new Dictionary<long, string>
+{
+    [long.MinValue] = "shard-a",
+    [1_000_000] = "shard-b",
+    [5_000_000] = "shard-c",
+});
+
+shards.TryGetFloor(4_999_999, out var owner);
+Console.WriteLine(owner.Value);   // shard-b
+
+// Prices by effective date (days since epoch): the price in force on a given day.
+var prices = new FrozenSortedMap<int, decimal>(LoadPriceChanges());
+if (prices.TryGetFloor(today, out var inForce))
+    Console.WriteLine($"price {inForce.Value} since day {inForce.Key}");
+
+// Every price change in [from, to), as two spans over the map's storage.
+Range r = prices.GetIndexRange(from, to);
+ReadOnlySpan<int> days = prices.Keys.AsSpan()[r];
+ReadOnlySpan<decimal> values = prices.Values[r];
+Console.WriteLine($"{days.Length} changes in the window");
 ```

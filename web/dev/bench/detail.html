@@ -439,6 +439,7 @@
     { key: 'WaveletTree',         title: 'WaveletTree',                           vs: 'int[] sort / count loop', items: [1024, 1000000] },
     { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                     vs: 'long[]', items: [1024, 1000000] },
     { key: 'FrozenSortedSet',     title: 'FrozenSortedSet<int>',                  vs: 'sorted int[] + BinarySearch', items: [1000, 100000, 1000000] },
+    { key: 'FrozenSortedMap',     title: 'FrozenSortedMap<int, int>',             vs: 'FrozenDictionary / sorted int[] + BinarySearch', items: [1000, 100000, 1000000] },
     { key: 'BitPackedArray',      title: 'BitPackedArray',                        vs: 'int[]', items: [1024, 1000000] },
     // StringKeyProbe is the reference-type-key probe path (every other card here keys on int/long).
     // Lookup / LookupMissing are CelerityDictionary<string, ...>; Contains is CeleritySet<string, ...>.

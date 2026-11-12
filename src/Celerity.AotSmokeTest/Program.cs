@@ -3009,6 +3009,49 @@ void Check(bool condition, string message)
         "FrozenSortedSet empty set");
 }
 
+// FrozenSortedMap — FrozenSortedSet's static B+ tree over the keys, with the values in a parallel array
+// sorted alongside them. Exercise the build (sort keys with values, reject a duplicate) over enough
+// keys for three levels, exact lookup, the floor / predecessor / ceiling arithmetic at both ends and at
+// int.MaxValue (the padding value) as a real key, the index range, and the scalar search at Int128.
+{
+    var entries = new KeyValuePair<int, string>[1500];
+    for (int i = 0; i < entries.Length; i++)
+    {
+        int key = (i * 7919 % 1499) * 3 - 2000;   // 0..1498 permuted, then 1499 -> int.MaxValue below
+        entries[i] = new(key, "v" + key);
+    }
+    entries[^1] = new(int.MaxValue, "max");
+    var sortedMap = new FrozenSortedMap<int, string>(entries);
+
+    Check(sortedMap.Count == 1500 && sortedMap.Keys.Depth == 3, "FrozenSortedMap count and depth");
+    Check(sortedMap[1] == "v1" && sortedMap[int.MaxValue] == "max" && !sortedMap.ContainsKey(2)
+        && sortedMap.TryGetValue(-2000, out string? fsmMin) && fsmMin == "v-2000", "FrozenSortedMap lookup");
+    Check(sortedMap.TryGetFloor(3, out var fsmFloor) && fsmFloor.Key == 1 && fsmFloor.Value == "v1"
+        && !sortedMap.TryGetFloor(-2001, out _), "FrozenSortedMap floor");
+    Check(sortedMap.TryGetPredecessor(1, out var fsmPred) && fsmPred.Key == -2
+        && sortedMap.TryGetLowerBound(2, out var fsmCeil) && fsmCeil.Value == "v4"
+        && sortedMap.TryGetUpperBound(4, out var fsmUp) && fsmUp.Key == 7
+        && !sortedMap.TryGetUpperBound(int.MaxValue, out _), "FrozenSortedMap predecessor and bounds");
+    Range fsmRange = sortedMap.GetIndexRange(0, 10);
+    Check(sortedMap.Keys.AsSpan()[fsmRange].SequenceEqual(new[] { 1, 4, 7 })
+        && sortedMap.Values[fsmRange].SequenceEqual(new[] { "v1", "v4", "v7" }), "FrozenSortedMap index range");
+    Check(sortedMap.Min.Key == -2000 && sortedMap.Max.Value == "max" && sortedMap.IndexOfKey(int.MaxValue) == 1499
+        && sortedMap.GetValueAtIndex(0) == "v-2000" && sortedMap.ContainsValue("max"), "FrozenSortedMap positional access");
+
+    bool fsmDup = false;
+    try { _ = new FrozenSortedMap<int, string>(new[] { new KeyValuePair<int, string>(1, "a"), new(1, "b") }); }
+    catch (ArgumentException) { fsmDup = true; }
+    Check(fsmDup, "FrozenSortedMap duplicate key");
+
+    int fsmWalked = 0;
+    foreach (KeyValuePair<int, string> entry in sortedMap) fsmWalked += entry.Value == "v" + entry.Key || entry.Key == int.MaxValue ? 1 : 0;
+    Check(fsmWalked == 1500, "FrozenSortedMap enumeration");
+
+    var wideMap = new FrozenSortedMap<Int128, int>(new[] { new KeyValuePair<Int128, int>(Int128.MaxValue, 1), new(-(Int128)1, 2), new((Int128)5 << 80, 3) });
+    Check(wideMap[(Int128)5 << 80] == 3 && wideMap.TryGetFloor(0, out var wideFloor) && wideFloor.Value == 2,
+        "FrozenSortedMap<Int128> scalar search");
+}
+
 // BitPackedArray — fixed-width unsigned integers packed end to end into 64-bit words.
 // Exercise the branch-free straddling read and write at a width that does not divide 64,
 // the streaming constructor pack, the bulk GetRange / SetRange paths, Fill, the width

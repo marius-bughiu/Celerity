@@ -137,6 +137,15 @@ public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
         (_internal, _levelStarts) = BuildInternalLevels(buffer, _count);
     }
 
+    // Takes ownership of `paddedKeys`: its first `count` keys ascending and distinct, the rest T.MaxValue, and its
+    // length PaddedLength(count). FrozenSortedMap sorts its keys alongside their values and builds on this.
+    internal FrozenSortedSet(T[] paddedKeys, int count)
+    {
+        _keys = paddedKeys;
+        _count = count;
+        (_internal, _levelStarts) = BuildInternalLevels(paddedKeys, count);
+    }
+
     /// <summary>
     /// Gets the number of keys a node holds: <c>64 / sizeof(T)</c>, one cache line. Each internal node has one
     /// child more than this.
@@ -406,7 +415,7 @@ public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
     // consecutive leaves, the leaf count simply runs off the end of the node onto it. Padding is T.MaxValue,
     // which is never strictly below anything, so the descent never enters a child that does not exist.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int LowerBound(T value)
+    internal int LowerBound(T value)
     {
         int fanOut = NodeSize + 1;
         int node = 0;
@@ -449,7 +458,7 @@ public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
     // ── Construction ────────────────────────────────────────────────────────
 
     // The largest key count whose padded leaf array still fits in one array.
-    private static int MaxCount => Array.MaxLength / NodeSize * NodeSize;
+    internal static int MaxCount => Array.MaxLength / NodeSize * NodeSize;
 
     private static void ThrowIfTooLong(int length)
     {
@@ -461,7 +470,7 @@ public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
     }
 
     // The leaf array length for `count` keys: whole nodes, and at least one so an empty set still has a leaf.
-    private static int PaddedLength(int count) => Math.Max(1, (count + NodeSize - 1) / NodeSize) * NodeSize;
+    internal static int PaddedLength(int count) => Math.Max(1, (count + NodeSize - 1) / NodeSize) * NodeSize;
 
     // Sorts `keys` and moves the distinct ones to the front; returns how many there are.
     private static int SortDistinct(Span<T> keys)

@@ -35,9 +35,9 @@ namespace Celerity.Tests.Collections;
 /// </para>
 ///
 /// <para>
-/// <b>Out of scope.</b> <see cref="FrozenCelerityDictionary{TValue, THasher}"/> and
-/// <see cref="SuccinctTrie{TValue}"/> are immutable by construction, so both keep the read-only
-/// interface only. <see cref="LruCache{TKey, TValue, THasher}"/>,
+/// <b>Out of scope.</b> <see cref="FrozenCelerityDictionary{TValue, THasher}"/>,
+/// <see cref="FrozenSortedMap{TKey, TValue}"/> and <see cref="SuccinctTrie{TValue}"/> are immutable by
+/// construction, so all three keep the read-only interface only. <see cref="LruCache{TKey, TValue, THasher}"/>,
 /// <see cref="LfuCache{TKey, TValue, THasher}"/> and <see cref="SieveCache{TKey, TValue, THasher}"/>
 /// evict on insert (so <c>Add</c> could silently drop an unrelated entry, which the interface's
 /// contract does not allow), and <see cref="CelerityMultiMap{TKey, TValue, THasher}"/> holds many

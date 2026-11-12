@@ -672,6 +672,12 @@ function escapeHtml(s) {
     // and a copy plus Array.Sort for Build. The million-key arm is where the array outgrows the caches and its
     // twenty dependent loads are each a likely miss, against the tree's five.
     { key: 'FrozenSortedSet',     title: 'FrozenSortedSet<int>',                     vs: 'sorted int[] + BinarySearch', ops: ['Contains', 'ContainsBranching', 'LowerBound', 'Build'], items: [1000, 100000, 1000000] },
+    // FrozenSortedMap is FrozenSortedSet's tree over the keys with a parallel value array. Each op is charted
+    // against the baseline a caller would pick for it: FrozenDictionary for TryGetValue (an exact hash lookup,
+    // which is expected to beat any search tree; the card is there so the loss is visible), and the sorted
+    // int[] + parallel value array searched with span BinarySearch for Floor ("the value as of t", which a hash map
+    // cannot answer) and for Build (Array.Sort(keys, values)).
+    { key: 'FrozenSortedMap',     title: 'FrozenSortedMap<int, int>',                vs: 'FrozenDictionary / sorted int[] + BinarySearch', ops: ['TryGetValue', 'Floor', 'Build'], items: [1000, 100000, 1000000] },
     // BitPackedArray stores 20-bit values in 20 bits each, benchmarked against the int[] a caller would
     // otherwise use: an indexed load for Access, an indexed store for Set, a foreach for Enumerate, and a
     // narrowing copy from the same ulong[] for Build. As with EliasFanoSequence, every card is the price of the
