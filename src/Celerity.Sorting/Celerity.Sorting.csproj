@@ -23,7 +23,7 @@
 		-->
 		<WarningsAsErrors>$(WarningsAsErrors);CS1591;CS1570</WarningsAsErrors>
 		<PackageId>Celerity.Sorting</PackageId>
-		<Description>Non-comparison sorts and selection over primitive keys: LSD RadixSort for (u)int/(u)long/float/double with key+payload and key+index (argsort) forms, CountingSort for bounded key ranges, PartialSort quickselect / bounded-heap top-k, StringSort, a stable ordinal string sort (cached-key multikey quicksort), and KWayMerge, a stable loser-tree merge of sorted runs over spans or lazy sequences. Span-based, with caller-supplied-scratch overloads that allocate nothing. Every entry point documents the crossover below which Array.Sort wins. Part of the Celerity family.</Description>
+		<Description>Non-comparison sorts and selection over primitive keys (LSD RadixSort for (u)int/(u)long/float/double with key+payload and key+index (argsort) forms, CountingSort for bounded key ranges, PartialSort quickselect / bounded-heap top-k), plus StringSort, a stable ordinal string sort (cached-key multikey quicksort), and KWayMerge, a stable loser-tree merge of sorted runs over spans or lazy sequences. Span-based, with caller-supplied-scratch overloads that allocate nothing. Every sort documents the crossover below which Array.Sort wins. Part of the Celerity family.</Description>
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageTags>celerity;sorting;radix-sort;counting-sort;quickselect;top-k;argsort;string-sort;multikey-quicksort;k-way-merge;merge;span;performance</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
