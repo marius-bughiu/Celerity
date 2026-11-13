@@ -18,7 +18,7 @@ Almost, for the common API surface (indexer, `TryGetValue`, `Add`, `TryAdd`, `Re
 
 ### Which collection should I use?
 
-See the [decision table in the README](../README.md#choosing-a-collection). Short version: `IntDictionary`/`LongDictionary` for integer keys, `CelerityDictionary` for other keys (with a struct hasher), `FrozenCelerityDictionary` for build-once string lookups, `CelerityMultiMap` for one-to-many, `LinkedDictionary` / `LinkedSet` when you need insertion order, and the `*Set` types for membership and set algebra.
+See the [decision table](choosing-a-collection.md). Short version: `IntDictionary`/`LongDictionary` for integer keys, `CelerityDictionary` for other keys (with a struct hasher), `FrozenCelerityDictionary` for build-once string lookups, `CelerityMultiMap` for one-to-many, `LinkedDictionary` / `LinkedSet` when you need insertion order, and the `*Set` types for membership and set algebra.
 
 ## Thread safety
 
@@ -64,7 +64,7 @@ For `int` / `long` keys, no — `IntDictionary<TValue>`, `LongDictionary<TValue>
 
 ### Which string hasher should I use?
 
-`StringFnV1AHasher` is the fast default for ASCII identifiers. Escalate only with evidence of clustering. For untrusted/adversarial keys, use a keyed PRF (`StringSipHash13Hasher` / `StringSipHash24Hasher` / `StringHalfSipHash24Hasher`). For non-ASCII keys, use a full-character-fold hasher like `StringFnV1AFullHasher`. The full matrix with rationale is in the [README](../README.md#choosing-a-collection) and [`hashing.md`](api/hashing.md).
+`StringFnV1AHasher` is the fast default for ASCII identifiers. Escalate only with evidence of clustering. For untrusted/adversarial keys, use a keyed PRF (`StringSipHash13Hasher` / `StringSipHash24Hasher` / `StringHalfSipHash24Hasher`). For non-ASCII keys, use a full-character-fold hasher like `StringFnV1AFullHasher`. The full matrix with rationale is in [Choosing a hasher](choosing-a-hasher.md) and [`hashing.md`](api/hashing.md).
 
 ### How do I know if my hasher is good for my keys?
 
@@ -81,7 +81,7 @@ struct MyHasher : IHashProvider<int> {
 }
 ```
 
-The dictionary masks the result to the table size, so negative returns are fine. See [custom hashing](../README.md#custom-hashing).
+The dictionary masks the result to the table size, so negative returns are fine. See [custom hashing](choosing-a-hasher.md#custom-hashing).
 
 ## FrozenCelerityDictionary
 
