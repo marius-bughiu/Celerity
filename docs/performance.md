@@ -192,7 +192,7 @@ Check `IsPerfectlyHashed`. When it is `true`, lookups are single-probe. When the
 
 ## 7. Benchmark on your own machine
 
-The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every collection against its BCL counterpart on each `main` push, with per-PR regression comparisons. It runs on hosted CI runners, which are **noisier than your laptop** — treat the dashboard as a trend and regression guard, not as the absolute number you will see in production.
+The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every collection against its BCL counterpart on each merge to `main` that can move a number; to measure a branch before it merges, run the workflow by hand (see [CONTRIBUTING](../CONTRIBUTING.md#ci)). It runs on hosted CI runners, which are **noisier than your laptop** — treat the dashboard as a trend and regression guard, not as the absolute number you will see in production.
 
 For high-precision local numbers, run the BenchmarkDotNet suite in Release:
 

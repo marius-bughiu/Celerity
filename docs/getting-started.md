@@ -15,8 +15,8 @@ Celerity's core ships as layered NuGet packages. **`Celerity.Collections` pulls 
 | Package | What it adds | Depends on |
 |---|---|---|
 | [`Celerity.Collections`](https://www.nuget.org/packages/Celerity.Collections/) | dictionaries, sets, frozen/perfect-hash collections, streaming sketches | `Celerity.Hashing`, `Celerity.Primitives` |
-| `Celerity.Hashing` | `IHashProvider<T>` / `IHashProvider64<T>`, the struct hashers, `HashQualityEvaluator` | `Celerity.Primitives` |
-| `Celerity.Primitives` | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve` | — |
+| [`Celerity.Hashing`](https://www.nuget.org/packages/Celerity.Hashing/) | `IHashProvider<T>` / `IHashProvider64<T>`, the struct hashers, `HashQualityEvaluator` | `Celerity.Primitives` |
+| [`Celerity.Primitives`](https://www.nuget.org/packages/Celerity.Primitives/) | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve` | — |
 | [`Celerity.Sorting`](https://www.nuget.org/packages/Celerity.Sorting/) | `RadixSort`, `CountingSort`, `PartialSort` — non-comparison sorts and selection over primitive keys; `StringSort` — a stable ordinal string sort; `KWayMerge` — a stable k-way merge of sorted runs | `Celerity.Primitives` |
 | [`Celerity.Statistics`](https://www.nuget.org/packages/Celerity.Statistics/) | `DDSketch`, `KllSketch`, `ReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable` — streaming quantiles (relative-error and rank-error), sampling and moments in bounded memory, exact sliding-window quantiles, and `O(1)` weighted random sampling | `Celerity.Primitives` |
 

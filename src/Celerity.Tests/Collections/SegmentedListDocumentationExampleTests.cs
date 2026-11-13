@@ -3,8 +3,8 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="SegmentedList{T}"/> usage example published in <c>docs/api/collections.md</c> and
-/// <c>docs/collections.md</c>, and asserts what its comments claim.
+/// Runs the <see cref="SegmentedList{T}"/> usage example published in <c>docs/api/collections.md</c>, and
+/// asserts what its comments claim.
 ///
 /// <para>
 /// A published example is documentation a reader will copy, so a wrong comment in it is a defect. The claims
@@ -18,7 +18,7 @@ public class SegmentedListDocumentationExampleTests
     [Fact]
     public void UsageExample_ShouldBehaveAsThePublishedCommentsClaim_WhenRunEndToEnd()
     {
-        // ---- the published example: keep in sync with docs/api/collections.md and docs/collections.md ---
+        // ---- the published example: keep in sync with docs/api/collections.md -----------------------------
         //
         // var log = new SegmentedList<int>();
         // for (int i = 0; i < 100_000; i++)

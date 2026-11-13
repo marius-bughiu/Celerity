@@ -13,7 +13,7 @@ dotnet add package Celerity.Collections
 using Celerity.Collections;
 using Celerity.Hashing;
 
-// int keys: the hasher is built in.
+// int and long keys (IntDictionary, LongDictionary): the hasher is built in.
 var counts = new IntDictionary<int>();
 counts[42] = 1;
 counts[42]++;
@@ -68,9 +68,7 @@ Every package targets `net10.0` and is [Native AOT and trimming compatible](docs
 
 ## Benchmarks
 
-**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations — a *collection-layout* win (open addressing with direct `==` key comparison and no per-call `EqualityComparer<T>` dispatch), independent of the hasher. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its BCL counterpart on every `main` push, and [Benchmarks](docs/benchmarks.md) covers what the suites measure and how to run them locally.
-
-The docs state where each type loses as plainly as where it wins.
+**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations — a *collection-layout* win (open addressing with direct `==` key comparison and no per-call `EqualityComparer<T>` dispatch), independent of the hasher. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its BCL counterpart on each merge to `main` that can move a number, and [Benchmarks](docs/benchmarks.md) covers what the suites measure and how to run them locally.
 
 ## Built with Celerity
 

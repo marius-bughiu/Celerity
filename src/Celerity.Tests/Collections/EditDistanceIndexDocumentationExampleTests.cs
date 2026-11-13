@@ -3,8 +3,8 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="EditDistanceIndex"/> usage examples published in <c>docs/api/collections.md</c>,
-/// <c>docs/collections.md</c> and the type's own XML documentation, and asserts the outputs those pages print in their comments.
+/// Runs the <see cref="EditDistanceIndex"/> usage examples published in <c>docs/api/collections.md</c> and
+/// the type's own XML documentation, and asserts the outputs those pages print in their comments.
 ///
 /// <para>
 /// A published example is documentation a reader will copy, so an incorrect one is a defect rather than a
@@ -15,7 +15,7 @@ namespace Celerity.Tests.Collections;
 /// </summary>
 public class EditDistanceIndexDocumentationExampleTests
 {
-    // Verbatim from the XML documentation on the type, docs/api/collections.md and docs/collections.md.
+    // Verbatim from the XML documentation on the type and docs/api/collections.md.
     private static readonly string[] Fruit = ["apple", "apply", "ample", "maple", "angle"];
 
     [Fact]

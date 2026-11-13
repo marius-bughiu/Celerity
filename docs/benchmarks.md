@@ -1,6 +1,6 @@
 # Benchmarks
 
-**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations — this is a *collection-layout* win (open addressing with direct `==` key comparison and no per-call `EqualityComparer<T>` dispatch), **independent of the hasher**. It does *not* mean the hashers beat `GetHashCode()` on speed (they don't, and for `int` cannot — see [Choosing a hasher](choosing-a-hasher.md)). The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its BCL counterpart on every `main` push, with historical trends; to measure a branch before it merges, run the workflow by hand (see [CONTRIBUTING](../CONTRIBUTING.md#ci)). For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](../src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop.
+**Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations — this is a *collection-layout* win (open addressing with direct `==` key comparison and no per-call `EqualityComparer<T>` dispatch), **independent of the hasher**. It does *not* mean the hashers beat `GetHashCode()` on speed (they don't, and for `int` cannot — see [Choosing a hasher](choosing-a-hasher.md)). The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its BCL counterpart on each merge to `main` that can move a number, with historical trends; to measure a branch before it merges, run the workflow by hand (see [CONTRIBUTING](../CONTRIBUTING.md#ci)). For high-precision local numbers, run `dotnet run -c Release` in [`src/Celerity.Benchmarks`](../src/Celerity.Benchmarks) — hosted CI runners are noisier than your laptop.
 
 The suite also includes the `string` hasher benchmarks (`StringHasherBenchmark` and its per-family siblings) and `IntegerHasherBenchmark` (every built-in hasher bracketed by two baselines — the direct `GetHashCode()` and `EqualityComparer<T>.Default.GetHashCode()`, the per-probe call a BCL `Dictionary<,>` actually makes; rendered under **Hash function throughput** on the dashboard; run locally with `--filter "*HasherBenchmark*"`). Treat these as a **raw-mixing-cost diagnostic only** and read them alongside the distribution metrics from `HashQualityEvaluator` — a fast hasher that clusters is not a win. The isolated `Hash()` number alone is misleading (for `int`, `GetHashCode()` is identity — *zero* work — so no mixer can beat it), so the extended suite adds `HasherEndToEndBenchmark`, which times each hasher **through the dictionary** across all four key shapes, and a deterministic probe-length report (`dotnet run -c Release -- --probe-analysis`) — the cases where a strong hasher "loses" the microbench but wins end-to-end. See [measuring probe length](performance.md#measure-probe-length-not-just-hash-speed).
 
@@ -8,7 +8,7 @@ An **extended local suite** answers the harder questions a single random-key ben
 
 ## Results that depend on the baseline
 
-The three spatial indexes are each measured against two baselines, because which one you compare against changes the headline.
+The three spatial indexes are each measured against two baselines. For `KdTree` and `RTree`, which one you compare against decides the headline; for `SpatialGrid`, the margin depends on how full its cells are.
 
 ### Spatial index
 
@@ -47,7 +47,7 @@ At 1,000 entities the margins are *wider*, not narrower — 11.9x on the frame �
 
 **The margin is a property of how full the cells are, not of the type**, and that belongs next to the headline rather than under it. Both structures walk the same cells and run the same distance test on the same candidates; everything the grid saves is **per cell** — an array index instead of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated `List<T>` — so the ratio is per-cell overhead against per-candidate work, and it collapses as the cells fill:
 
-The shape sweep rides the extended suite, which CI does not run, so unlike the table above these three are development-machine figures — read them against each other rather than against the 5.0x above, which the same machine put at 5.5x:
+The shape sweep rides the extended suite, which CI runs weekly on [its own dashboard](performance.md#extended-benchmark-suite) rather than on each merge. Unlike the table above, these three are development-machine figures — read them against each other rather than against the 5.0x above, which the same machine put at 5.5x:
 
 | Shape at 100,000 entities | Ratio |
 | --- | --- |
