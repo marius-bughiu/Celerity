@@ -125,6 +125,16 @@ node scripts/check_dashboard_coverage.js path/to/joined-report-full.json   # + v
 
 The structural half — the two `COLLECTIONS` arrays agree, every charted collection has a `{Key}Benchmark` registered in `CoreBenchmarks`, and no label reaches an `innerHTML` template unescaped — runs on every PR in `ci.yml`. The full check runs in the aggregate job of `benchmarks.yml`, against the merged report, and additionally asserts that every published name parses and that every card resolves to both a BCL and a Celerity measurement.
 
+## Documentation
+
+`README.md` is the project's landing page and the `Celerity.Collections` NuGet readme, so it stays short: the pitch, a quick start, the family-by-family inventory of types, and links. Guides, examples, decision tables and benchmark results live under [`docs/`](docs/README.md). A new collection is documented in:
+
+- its own section in [`docs/api/collections.md`](docs/api/collections.md) — constructors, members, exceptions, a runnable example, and where it wins and loses;
+- a bullet and a worked example under its family in the [collections guide](docs/collections.md);
+- a row in the [decision table](docs/choosing-a-collection.md);
+- its name in its family's row of the README's *What's inside* table, and in the [`docs/README.md`](docs/README.md) index;
+- the smoke-test list in [`docs/aot.md`](docs/aot.md), next to its block in `src/Celerity.AotSmokeTest`.
+
 ## Documentation links
 
 Anchor links inside the docs are checked in CI, because a broken one is invisible: the markdown is well-formed, the diff looks right, and the only symptom is that clicking the link scrolls nowhere.

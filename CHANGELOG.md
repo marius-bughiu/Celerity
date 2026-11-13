@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The README is now a short landing page — a quick start, the inventory of types by family, and links — which also makes it a lighter NuGet readme for `Celerity.Collections`. Its walkthroughs, decision table, hasher guide and benchmark results moved into `docs/`: `getting-started.md`, `collections.md`, `choosing-a-collection.md`, `choosing-a-hasher.md` and `benchmarks.md`. Closes #613.
+
 ### Removed
 
 - ⚠️ **Breaking:** every package now targets `net10.0` only; the `net8.0` and `net9.0` targets are gone, and no API changed with them. On .NET 8 or 9, stay on 3.6.x, the last line built for them: its security fixes ship from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch. The benchmark dashboard now measures on .NET 10 too, so its figures from before and after this change do not compare directly. See the [migration guide](docs/migration.md#net80--net90--net100--after-36x).
