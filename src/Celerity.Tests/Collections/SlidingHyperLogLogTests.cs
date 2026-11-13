@@ -334,16 +334,30 @@ public class SlidingHyperLogLogTests
         var s = NewSketch();
         long now = 0;
         long estimate = 0;
+        // The timestamp doubles as the key, so every Add brings a key the sketch has never seen and no window
+        // repeats the warm-up's keys: a cost paid once per distinct key cannot be warmed away.
         Action run = () =>
         {
             for (int i = 0; i < 10_000; i++)
-                s.Add(i, ++now);
+            {
+                now++;
+                s.Add((int)now, now);
+            }
+
             estimate = s.EstimateCardinality(now - 5_000);
         };
-        run(); // warm up
 
-        // Quietest of three windows, exactly zero: a fixed 1 KB slack on one window flaked under coverage (#616).
-        Assert.Equal(0, AllocationProbe.Quietest(run));
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        run(); // the cold window: first-call work lands here
+        long quietest = AllocationProbe.Quietest(run);
+        long total = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // The quietest window must be exactly zero; a fixed 1 KB slack on one window flaked under coverage
+        // (#616). The quietest window alone would miss growth that skips a window, such as an occasional
+        // resize, so the total is bounded too, cold window included. A per-key allocation over these 20,000 or
+        // more fresh keys costs at least 480,000 bytes; the one-off noise #616 caught was 1,536.
+        Assert.Equal(0, quietest);
+        Assert.True(total < 64 * 1024, $"allocated {total} bytes over {now} adds");
         Assert.True(estimate > 0);
     }
 
