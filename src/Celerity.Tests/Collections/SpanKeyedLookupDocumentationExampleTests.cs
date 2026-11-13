@@ -46,6 +46,10 @@ public class SpanKeyedLookupDocumentationExampleTests
         Assert.Equal("/api/v1/users", path.ToString());
         Assert.True(routes.TryGetValue(path, out int handler));
         Assert.Equal(1, handler);
+
+        // "no string allocated": the probe finds the route without building the path as a string. A lambda
+        // cannot capture the span, so it slices the same literal again.
+        Assert.Equal(0, AllocationProbe.Quietest(() => routes.TryGetValue("GET /api/v1/users HTTP/1.1".AsSpan(4, 13), out _)));
     }
 
     [Fact]
@@ -77,5 +81,8 @@ public class SpanKeyedLookupDocumentationExampleTests
         Assert.Same(tokens[0], tokens[2]);  // a repeated token comes back as the first occurrence's string
         Assert.Same(tokens[0], tokens[5]);
         Assert.Same(tokens[1], tokens[4]);
+
+        // "allocates only the first time each token is seen": a token already in the table costs nothing.
+        Assert.Equal(0, AllocationProbe.Quietest(() => interned.GetOrAdd("buy".AsSpan())));
     }
 }
