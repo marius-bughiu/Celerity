@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-11-13
+
 ### Added
 
 - **`AliasTable`** (in `Celerity.Statistics`), for weighted random sampling from fixed weights. It is Vose's alias method: an `O(n)` build, then `O(1)` per draw (`Sample(ref rng)`, or a span overload that fills a buffer), with zero weights never drawn. Against prefix sums plus `Array.BinarySearch`, draws are 3.9× faster at 100 outcomes, 7.9× at 10,000 and 11.5× at a million. The build is slower than the prefix-sum pass (8.6× at 100 outcomes, 8.7× at 10,000 and 12× at 1,000,000). Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #588.
@@ -864,7 +866,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.6.0
 [3.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.5.0
 [3.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.4.0
 [3.3.1]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.3.1
