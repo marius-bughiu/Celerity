@@ -27,9 +27,9 @@ namespace Celerity.Collections;
 /// twenty dependent steps. The position a search finds indexes the value array directly.
 /// </para>
 /// <para>
-/// <b>When not to use it.</b> If every lookup is an exact key and order never matters, a hash lookup wins:
-/// <c>FrozenDictionary&lt;TKey, TValue&gt;</c> answers an exact key with one hash and one or two loads, which no
-/// search tree can match. This type's advantage is the ordered queries (<see cref="TryGetFloor"/>,
+/// <b>When not to use it.</b> If every lookup is an exact key and order never matters, use a hash map:
+/// <c>FrozenDictionary&lt;TKey, TValue&gt;</c> answers an exact key with one hash and one or two loads, where this
+/// map runs a tree search, and on a shuffled half-hit stream it is 2.3–3.6x faster. This type's advantage is the ordered queries (<see cref="TryGetFloor"/>,
 /// <see cref="TryGetLowerBound"/>, <see cref="CountLessThan"/>, <see cref="GetIndexRange"/>), which a hash map
 /// cannot answer.
 /// </para>
@@ -97,8 +97,9 @@ public sealed class FrozenSortedMap<TKey, TValue> : IReadOnlyDictionary<TKey, TV
         KeyValuePair<TKey, TValue>[] pairs;
         if (source is ICollection<KeyValuePair<TKey, TValue>> collection)
         {
-            ThrowIfTooLong(collection.Count);
-            pairs = new KeyValuePair<TKey, TValue>[collection.Count];
+            int length = collection.Count;
+            ThrowIfTooLong(length);
+            pairs = new KeyValuePair<TKey, TValue>[length];
             collection.CopyTo(pairs, 0);
         }
         else

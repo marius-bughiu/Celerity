@@ -10988,7 +10988,7 @@ The members:
   `Range`. It slices both `Keys.AsSpan()` and `Values`, with two searches and no copy.
 - **`this[key]`, `TryGetValue`, `ContainsKey`**: exact lookups, through `IReadOnlyDictionary<TKey, TValue>`.
 - **`CountLessThan`, `IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `Min`, `Max`**: rank and
-  positional reads. The names follow `SortedList<TKey, TValue>`.
+  positional reads. `IndexOfKey`, `GetKeyAtIndex` and `GetValueAtIndex` are `SortedList<TKey, TValue>`'s names.
 - **`Keys`**: the map's own `FrozenSortedSet<TKey>`. Its rank, successor, `SliceRange` and set algebra
   apply to the keys without a copy. **`Values`** is a `ReadOnlySpan<TValue>` in key order.
 
@@ -10996,8 +10996,9 @@ The members:
 
 The BCL has no ordered frozen map. `FrozenDictionary<TKey, TValue>` is unordered, so "the entry at
 or below *x*" on it is a full scan. `SortedList<TKey, TValue>` keeps the keys sorted but has no
-floor or ceiling member, and `SortedDictionary<,>` and [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer)
-are built to be mutated and pay for it on every read. The usual hand-roll is a sorted `TKey[]` and
+floor or ceiling member, `SortedDictionary<,>` has neither, and
+[`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer) has the ceiling (`TryGetLowerBound`) but no floor.
+The usual hand-roll is a sorted `TKey[]` and
 a parallel `TValue[]`, sorted together with `Array.Sort(keys, values)` and searched with
 `MemoryExtensions.BinarySearch`. That search is latency-bound in exactly the way
 [`FrozenSortedSet`](#frozensortedsett) describes.
@@ -11009,14 +11010,16 @@ duplicate key, as `Dictionary` and `SortedList` do.
 
 ### When *not* to use this — read first
 
-- **Exact lookups alone are a hash map's job.** `FrozenDictionary<int, int>` answers an exact key
-  **2.3–3.6× faster** than this map (table below). Reach for this type when you ask ordered
-  questions; if every query is an exact key, use `FrozenDictionary` or
-  [`FrozenCelerityDictionary`](#frozenceleritydictionarytvalue-thasher) instead.
+- **Exact lookups alone are a hash map's job.** On a shuffled half-hit stream,
+  `FrozenDictionary<int, int>` answers an exact key **2.3–3.6× faster** than this map (table
+  below). Reach for this type when you ask ordered questions; if every query is an exact key, use
+  `FrozenDictionary<TKey, TValue>`, or an [`IntDictionary`](#intdictionarytvalue) /
+  [`LongDictionary`](#longdictionarytvalue) if the table must change.
 - **The map must be final.** There is no mutating member, and a changed map means a new build. For
-  a map that keeps changing, use [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer). For an
-  immutable map that you keep editing and republishing, use
-  [`PersistentSortedMap`](#persistentsortedmaptkey-tvalue-tcomparer).
+  ranges that keep changing (a shard map, effective-dated configuration edited in place), use
+  [`RangeMap`](#rangemaptkey-tvalue-tcomparer). For an immutable map that you keep editing and
+  republishing, use [`PersistentSortedMap`](#persistentsortedmaptkey-tvalue-tcomparer), which has
+  `TryGetFloor` and `TryGetPredecessor` too. `BTreeDictionary` changes in place but has no floor.
 - **Integer keys only**, as for `FrozenSortedSet`. There is no comparer.
 
 ### Measured
@@ -11045,7 +11048,7 @@ the key was found before it reads the value. On a shuffled half-hit stream, that
 mispredicts about half the time, which is the latency-bound case that
 [`FrozenSortedSet`'s `ContainsBranching` row](#frozensortedsett) measures (17–28 ns). `Floor`
 does not pay this, because almost every probe has a floor and the branch predicts well. The build
-costs about the sort it contains. It allocates about twice the hand-roll's transient memory,
+costs about the sort it contains. It allocates about twice the hand-roll's bytes,
 because the source is copied once as pairs before it is split. The **retained** memory is the two
 arrays plus the key tree's internal levels, about 6% of the keys for `int`.
 

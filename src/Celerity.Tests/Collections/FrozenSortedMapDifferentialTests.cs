@@ -50,6 +50,16 @@ public class FrozenSortedMapDifferentialTests
             iter: 100);
     }
 
+    [Fact]
+    public void EveryQuery_ShouldMatchTheSortedArrayOracle_WhenTheKeysAreInt128()
+    {
+        // Int128 has no hardware vector compare, so this drives the scalar node scan, through several levels at
+        // four keys a node.
+        GenEntries.Sample(spec => AssertMatches(
+            FrozenSortedSetOracle.RandomKeys<Int128>(spec.Length, spec.SpreadBits, spec.Origin, 0, spec.Seed)),
+            iter: 100);
+    }
+
     /// <summary>
     /// Builds a map from the distinct keys of <paramref name="rawKeys"/>, each mapped to its source position as a
     /// string, through both constructor paths, and checks every query against the sorted parallel arrays.
