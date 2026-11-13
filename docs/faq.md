@@ -10,7 +10,7 @@ A .NET library of specialized high-performance collections that beat the BCL on 
 
 ### Is it really faster than `Dictionary<,>`?
 
-On the shapes it targets, yes — **up to 2.4× faster than `Dictionary<int, int>`** on lookups, with zero allocations, tracked on the [live benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) against the BCL on every `main` push. It is **not** universally faster: used through the boxed interface, mis-sized, or paired with a clustering hasher, it can be slower. See the [performance guide](performance.md).
+On the shapes it targets, yes — **up to 2.4× faster than `Dictionary<int, int>`** on lookups, with zero allocations, tracked on the [live benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) against the BCL on each merge to `main` that can move a number. It is **not** universally faster: used through the boxed interface, mis-sized, or paired with a clustering hasher, it can be slower. See the [performance guide](performance.md).
 
 ### Is Celerity a drop-in replacement for `Dictionary<,>`?
 

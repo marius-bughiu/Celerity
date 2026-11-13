@@ -12,9 +12,10 @@ using Celerity.Collections;
 // the margin is the ratio of per-cell overhead to per-candidate work, and it collapses as the cells fill up.
 //
 // Measured at 100,000 entities, one frame = move 10% then one radius query per moved entity, in-process on a
-// development machine, and they stay that way: this class rides the extended suite, which CI does not run,
-// so there is no same-runner A/B to requote them from. Read the ratios against each other rather than against
-// SpatialGridBenchmark's CI figures — the same machine reads about 15-30% more generous than CI does:
+// development machine, and they stay that way: this class rides the extended suite, which CI runs only weekly,
+// on its own dashboard and never as a same-runner A/B, so there is nothing to requote them from. Read the
+// ratios against each other rather than against SpatialGridBenchmark's CI figures — the same machine reads
+// about 15-30% more generous than CI does:
 //
 //                                                 Dictionary   SpatialGrid   KdTree/frame   vs dict   vs tree
 //     Tight      ~1 pt/cell,  ~2 matches            7.67 ms       1.18 ms       17.52 ms       6.5x     14.9x

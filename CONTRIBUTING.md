@@ -34,7 +34,7 @@ src/
 ├── Celerity.Ring.Tests/      The showcase packages' own xUnit suites, one per package.
 ├── Celerity.Sentinel.Tests/
 ├── Celerity.Cardinality.Tests/
-├── Celerity.Benchmarks/      BenchmarkDotNet project. Runs in CI on every PR and main push.
+├── Celerity.Benchmarks/      BenchmarkDotNet project. Runs in CI on merges to main; the extended suite weekly.
 ├── Celerity.Fuzz/            Differential fuzz harness. Nightly soak; reproduces failures from a seed.
 ├── Celerity.AotSmokeTest/    Native AOT publish + run target. Proves AOT/trim compatibility.
 └── Celerity.sln

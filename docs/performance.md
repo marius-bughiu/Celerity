@@ -212,7 +212,7 @@ These hasher sweeps are a **raw-mixing-cost diagnostic**, not the headline metri
 
 ## Extended benchmark suite
 
-The CI dashboard runs a deliberately **lean core suite** on each merge to `main` whose diff can actually move a number — a documentation or comment-only commit is skipped — so the tracked series stays fast and low-variance. A second, heavier set of benchmarks lives in the same project but is **excluded from the CI run** — it exists to answer the questions a single random-key measurement can't, and you run it on demand. Each is a `*Benchmark` class you can target with `--filter`:
+The CI dashboard runs a deliberately **lean core suite** on each merge to `main` whose diff can actually move a number — a documentation or comment-only commit is skipped — so the tracked series stays fast and low-variance. A second, heavier set of benchmarks lives in the same project but is **excluded from the per-merge CI run** — it exists to answer the questions a single random-key measurement can't, and you run it on demand. Each is a `*Benchmark` class you can target with `--filter`:
 
 | Benchmark | Filter | What it measures |
 |---|---|---|
