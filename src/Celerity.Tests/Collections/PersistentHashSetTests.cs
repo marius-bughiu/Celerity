@@ -535,9 +535,7 @@ public class PersistentHashSetTests
         PersistentHashSet<int, Int32IdentityHasher> set = BuildRange(10_000);
         bool[] answers = AskEveryQueryOfItself(set);   // warm up
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        answers = AskEveryQueryOfItself(set);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        long allocated = AllocationProbe.Quietest(() => answers = AskEveryQueryOfItself(set));
 
         Assert.Equal([true, true, false, true, false, true], answers);
         Assert.InRange(allocated, 0, 1_024);

@@ -216,15 +216,7 @@ public class StringSortTests
 
         SortAll();
 
-        long quietest = long.MaxValue;
-        for (int window = 0; window < 30; window++)
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            SortAll();
-            quietest = Math.Min(quietest, GC.GetAllocatedBytesForCurrentThread() - before);
-        }
-
-        Assert.InRange(quietest, 0, 256);
+        Assert.InRange(AllocationProbe.Quietest(SortAll, windows: 30), 0, 256);
     }
 
     [Fact]
