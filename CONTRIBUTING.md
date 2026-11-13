@@ -132,7 +132,7 @@ The structural half — the two `COLLECTIONS` arrays agree, every charted collec
 - its own section in [`docs/api/collections.md`](docs/api/collections.md) — constructors, members, exceptions, a runnable example, and where it wins and loses;
 - a bullet and a worked example under its family in the [collections guide](docs/collections.md);
 - a row in the [decision table](docs/choosing-a-collection.md);
-- its name in its family's row of the README's *What's inside* table, and in the [`docs/README.md`](docs/README.md) index;
+- its name in its family's row of the README's [Collections](README.md#collections) table, and in the [`docs/README.md`](docs/README.md) index;
 - the smoke-test list in [`docs/aot.md`](docs/aot.md), next to its block in `src/Celerity.AotSmokeTest`.
 
 ## Documentation links
