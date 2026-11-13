@@ -432,8 +432,8 @@ function escapeHtml(s) {
     { key: 'SwissDictionary',     title: 'SwissDictionary<int, int, ...>',           vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'HashCachingDictionary', title: 'HashCachingDictionary<int, int, ...>',    vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'PooledCelerityDictionary', title: 'PooledCelerityDictionary<int, int, ...>', vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
-    // LinkedDictionary keeps insertion order, so its baseline is the ordered map a net8.0 caller builds
-    // from BCL parts (.NET 9's generic OrderedDictionary is not on the net8.0 benchmark runner).
+    // LinkedDictionary keeps insertion order, so its baseline is the ordered map a caller builds from BCL
+    // parts with an O(1) remove (.NET 9's generic OrderedDictionary removes in O(n); see the API reference).
     { key: 'LinkedDictionary',    title: 'LinkedDictionary<int, int, ...>',          vs: 'Dictionary + LinkedList', ops: ['Insert', 'Lookup', 'Remove', 'Enumerate'] },
     // BiDictionary's baseline is the hand-roll: a forward and an inverse Dictionary kept in sync, so
     // Insert and Remove touch both, and InverseLookup reads the inverse map.
@@ -458,8 +458,8 @@ function escapeHtml(s) {
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'SwissSet',            title: 'SwissSet<int, ...>',                       vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
-    // LinkedSet keeps insertion order, so its baseline is the ordered set a net8.0 caller builds from
-    // BCL parts: a Dictionary keyed to the nodes of a LinkedList.
+    // LinkedSet keeps insertion order, so its baseline is the ordered set a caller builds from BCL parts:
+    // a Dictionary keyed to the nodes of a LinkedList.
     { key: 'LinkedSet',           title: 'LinkedSet<int, ...>',                      vs: 'Dictionary + LinkedList', ops: ['Add', 'Contains', 'Remove', 'Enumerate'] },
     { key: 'RobinHoodSet',        title: 'RobinHoodSet<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'HashCachingSet',      title: 'HashCachingSet<int, ...>',                 vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
