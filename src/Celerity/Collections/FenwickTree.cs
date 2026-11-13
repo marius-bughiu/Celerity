@@ -104,14 +104,16 @@ public sealed class FenwickTree<T> : IReadOnlyCollection<T>
             ThrowIfSourceTooLong(count, nameof(values));
 
             T[] tree = new T[count + 1];
-            int written = CountedSource.CopyTo(collection, tree.AsSpan(1), nameof(values));
+            int read = CountedSource.Read(collection, ref tree, 1);
+            if (read != count)
+            {
+                // The source changed after it was counted: size the array to what it yielded, keeping
+                // _tree.Length at _length + 1.
+                ThrowIfSourceTooLong(read, nameof(values));
+                Array.Resize(ref tree, read + 1);
+            }
 
-            // The source shrank after it was counted: trim the cells it never filled, keeping _tree.Length at
-            // _length + 1.
-            if (written != count)
-                Array.Resize(ref tree, written + 1);
-
-            _length = written;
+            _length = read;
             _tree = tree;
         }
         else

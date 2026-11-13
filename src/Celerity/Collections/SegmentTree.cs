@@ -165,17 +165,18 @@ public sealed class SegmentTree<T, TMonoid> : IReadOnlyList<T>
             ThrowIfSourceTooLong(count, nameof(values));
 
             T[] tree = new T[2 * count];
-            int written = CountedSource.CopyTo(collection, tree.AsSpan(count), nameof(values));
-            if (written != count)
+            int read = CountedSource.Read(collection, ref tree, count);
+            if (read != count)
             {
-                // The source shrank after it was counted. The leaves of the 2n layout start at n, so they move to
-                // the length the source really had rather than keeping default leaves past it.
-                T[] exact = new T[2 * written];
-                Array.Copy(tree, count, exact, written, written);
+                // The source changed after it was counted. The leaves of the 2n layout start at n, so they move to
+                // the length the source really had: no default leaves past it, and none of its own dropped.
+                ThrowIfSourceTooLong(read, nameof(values));
+                T[] exact = new T[2 * read];
+                Array.Copy(tree, count, exact, read, read);
                 tree = exact;
             }
 
-            _length = written;
+            _length = read;
             _tree = tree;
         }
         else

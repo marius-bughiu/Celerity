@@ -129,10 +129,10 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
 
         // A counted source is sized and copied once, as the sibling build-once types' constructors do; going
         // through a List<T> unconditionally would allocate and copy a second backing array for the commonest
-        // sources of all. CountedSource reads any other collection by enumeration, so one that shrinks after it
+        // sources of all. CountedSource reads any other collection by enumeration, so one that changes after it
         // is counted cannot leave a default 0 -> 0 edge behind. A ReadOnlySpan<GraphEdge> overload alongside
         // this one would be ambiguous for an array argument under C# 12, which a consumer can still pin.
-        GraphEdge[] items = CountedSource.ToArray(edges, nameof(edges));
+        GraphEdge[] items = CountedSource.ToArray(edges);
 
         int[] offsets = new int[vertexCount + 1];
         int[] targets = new int[items.Length];

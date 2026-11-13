@@ -143,11 +143,14 @@ public sealed class BitPackedArray : IReadOnlyList<ulong>
         {
             // Checked before the copy is allocated, so an oversized source reports the documented exception
             // rather than failing inside an impossible allocation. The copy is cut to what the source yielded,
-            // which is fewer than counted if it shrank in between.
+            // which differs from its count only if it changed after it was counted; the check below sees that.
             int counted = collection.Count;
             ThrowIfSourceTooLong(counted, bitsPerValue);
             ulong[] copy = new ulong[counted];
-            source = copy.AsSpan(0, CountedSource.CopyTo(collection, copy, nameof(values)));
+
+            // Read first: it replaces `copy` with a longer array when the source grew.
+            int read = CountedSource.Read(collection, ref copy, 0);
+            source = copy.AsSpan(0, read);
         }
         else
         {

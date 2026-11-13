@@ -102,9 +102,11 @@ public sealed class FrozenSortedMap<TKey, TValue> : IReadOnlyDictionary<TKey, TV
             ThrowIfTooLong(length);
             pairs = new KeyValuePair<TKey, TValue>[length];
 
-            // Fewer than `length` when the source shrank after it was counted: the slots past `count` hold
-            // nothing the caller supplied, and building them in would add a default key.
-            count = CountedSource.CopyTo(collection, pairs, nameof(source));
+            // Differs from `length` only when the source changed after it was counted. The slots past `count` hold
+            // nothing the caller supplied, and building them in would add a default key. A source that grew may
+            // have passed the ceiling meanwhile.
+            count = CountedSource.Read(collection, ref pairs, 0);
+            ThrowIfTooLong(count);
         }
         else
         {

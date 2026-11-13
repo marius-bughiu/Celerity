@@ -165,9 +165,9 @@ public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey
         // A counted source is sized and copied once, as the sibling trees' constructors do. Going through a
         // List<T> unconditionally would allocate and copy a second backing array for the commonest sources of
         // all — an array or a List — on a type whose build cost is already the tradeoff it asks callers to make.
-        // CountedSource reads any other collection by enumeration, so one that shrinks after it is counted
+        // CountedSource reads any other collection by enumeration, so one that changes after it is counted
         // cannot leave a default interval behind.
-        Interval<TKey, TValue>[] items = CountedSource.ToArray(intervals, nameof(intervals));
+        Interval<TKey, TValue>[] items = CountedSource.ToArray(intervals);
 
         _starts = new TKey[items.Length];
         _ends = new TKey[items.Length];

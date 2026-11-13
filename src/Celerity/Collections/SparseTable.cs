@@ -138,19 +138,20 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
             int levels = LevelsFor(count, nameof(values));
             T[] table = new T[levels * count];
 
-            // The span stops at the first row, so a source that grew cannot spill into the rows above it unnoticed.
-            int written = CountedSource.CopyTo(collection, table.AsSpan(0, count), nameof(values));
-            if (written != count)
+            // The source fills the first row. A source that grew after it was counted runs on into the rows above,
+            // which Build has not filled yet, or past them into a longer buffer; either way it is laid out again.
+            int read = CountedSource.Read(collection, ref table, 0);
+            if (read != count)
             {
-                // The source shrank after it was counted, and both the row width and the row count follow the
-                // length it really had. Fewer elements need no more cells, so this cannot throw.
-                levels = LevelsFor(written, nameof(values));
-                T[] exact = new T[levels * written];
-                Array.Copy(table, exact, written);
+                // Both the row width and the row count follow the length the source really had. For one that grew,
+                // this is also where its ceiling is checked again.
+                levels = LevelsFor(read, nameof(values));
+                T[] exact = new T[levels * read];
+                Array.Copy(table, exact, read);
                 table = exact;
             }
 
-            _length = written;
+            _length = read;
             _levelCount = levels;
             _table = table;
         }
