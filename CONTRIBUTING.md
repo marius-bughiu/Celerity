@@ -1,5 +1,7 @@
 # Contributing to Celerity
 
+> **This is the `support/net8` branch:** the 3.6.x line, the last built for `net8.0` and `net9.0` (alongside `net10.0`). It takes security fixes only. Branch off `support/net8`, open pull requests against it (`--base support/net8`), and release a fix by tagging a `v3.6.x` patch on it. New work belongs on `main`, which targets `net10.0` only.
+
 Thanks for your interest in contributing! Celerity is a small, focused library and we try to keep the contribution process light. Reading this whole file should take about five minutes.
 
 ## Getting the code

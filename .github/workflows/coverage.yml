@@ -8,12 +8,12 @@ name: Coverage
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'support/**' ]
     paths:
       - 'src/**'
       - '.github/workflows/coverage.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'support/**' ]
     paths:
       - 'src/**'
       - '.github/workflows/coverage.yml'

@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **This is the `support/net8` branch:** the 3.6.x line, the last built for `net8.0` and `net9.0` (alongside `net10.0`). It takes security fixes only. Branch off `support/net8`, open pull requests against it (`--base support/net8`), and release a fix by tagging a `v3.6.x` patch on it. New work belongs on `main`, which targets `net10.0` only.
+
 Guidance for AI coding agents working in this repository. [`CONTRIBUTING.md`](CONTRIBUTING.md) is the canonical, human-facing contributor guide — read it for the full picture. This file only adds the agent-specific rules and the conventions worth restating up front.
 
 ## What Celerity is
