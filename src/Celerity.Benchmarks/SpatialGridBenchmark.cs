@@ -44,7 +44,7 @@ using Celerity.Collections;
 // of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated List<T> — so the
 // margin is the ratio of per-cell overhead to per-candidate work and it collapses as the cells fill up. At ten
 // points per cell it is 1.12x rather than 5.0x, and on clustered data the grid *loses*. SpatialGridShapeBenchmark
-// in the extended suite carries both of those measurements, and the README and API reference quote them next
+// in the extended suite carries both of those measurements, and docs/benchmarks.md and the API reference quote them next
 // to the headline rather than underneath it.
 //
 // Measured at 100,000 entities on CI's same-runner A/B (ubuntu-latest), which is what this repo quotes — a

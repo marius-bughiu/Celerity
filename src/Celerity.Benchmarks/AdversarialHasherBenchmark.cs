@@ -12,7 +12,7 @@ using Celerity.Hashing;
 ///   mix neutralizes the attack, so it stays O(1).</item>
 /// <item><see cref="IntDictionary{TValue}"/> with the default
 ///   <see cref="Int32WangNaiveHasher"/>: probe chains degrade toward O(n) — the
-///   failure mode the README warns about.</item>
+///   failure mode docs/choosing-a-hasher.md warns about.</item>
 /// <item><see cref="IntDictionary{TValue, THasher}"/> with
 ///   <see cref="Int32Murmur3Hasher"/>: a full finalizer avalanches the same keys
 ///   back to a uniform spread, restoring O(1).</item>

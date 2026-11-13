@@ -3,8 +3,8 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="RTree{TValue}"/> usage examples published in <c>docs/api/collections.md</c> and the
-/// README, and asserts the outputs those pages print in their comments.
+/// Runs the <see cref="RTree{TValue}"/> usage examples published in <c>docs/api/collections.md</c> and
+/// <c>docs/collections.md</c>, and asserts the outputs those pages print in their comments.
 ///
 /// <para>
 /// This exists because one of them was wrong. The map-viewport example claimed three matches where the query
@@ -21,7 +21,7 @@ namespace Celerity.Tests.Collections;
 /// </summary>
 public class RTreeDocumentationExampleTests
 {
-    // Verbatim from docs/api/collections.md and README.md. A country-sized box alongside street-sized ones is
+    // Verbatim from docs/api/collections.md and docs/collections.md. A country-sized box alongside street-sized ones is
     // the shape the type is for, which is why the example is built this way rather than from tidy unit squares.
     private static RTree<string> Features() => new(
     [

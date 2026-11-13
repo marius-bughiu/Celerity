@@ -3,7 +3,7 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="SuffixArray"/> usage examples published in <c>docs/api/collections.md</c>, the README
+/// Runs the <see cref="SuffixArray"/> usage examples published in <c>docs/api/collections.md</c>, <c>docs/collections.md</c>
 /// and the type's own XML documentation, and asserts the outputs those pages print in their comments.
 ///
 /// <para>
@@ -16,7 +16,7 @@ namespace Celerity.Tests.Collections;
 /// </summary>
 public class SuffixArrayDocumentationExampleTests
 {
-    // Verbatim from docs/api/collections.md, README.md and the XML documentation on the type.
+    // Verbatim from docs/api/collections.md, docs/collections.md and the XML documentation on the type.
     private const string Sentence = "the cat sat on the mat";
 
     [Fact]
