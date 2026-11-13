@@ -7918,7 +7918,7 @@ var routes = new FrozenCelerityDictionary<int, StringXxHash3Hasher>(
 ]);
 
 ReadOnlySpan<char> line = "GET /api/v1/users HTTP/1.1".AsSpan();
-ReadOnlySpan<char> path = line.Slice(4, 14);
+ReadOnlySpan<char> path = line.Slice(4, 13);
 
 if (routes.TryGetValue(path, out int handler))   // no string allocated
     Dispatch(handler);

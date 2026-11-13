@@ -610,7 +610,40 @@ if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string
 
 ### Examples
 
-`StringInternTable`'s worked example is in [the API reference](api/collections.md#stringinterntable).
+A route table keyed by `string` takes the path as a slice of the request line, so the lookup builds no `string`:
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+var routes = new FrozenCelerityDictionary<int, StringXxHash3Hasher>(
+[
+    new("/api/v1/users",  1),
+    new("/api/v1/orders", 2),
+]);
+
+ReadOnlySpan<char> line = "GET /api/v1/users HTTP/1.1".AsSpan();
+ReadOnlySpan<char> path = line.Slice(4, 13);
+
+if (routes.TryGetValue(path, out int handler))   // no string allocated
+    Dispatch(handler);
+```
+
+`StringInternTable` hands back one shared `string` per distinct token, so a parse allocates a string only for a token it has not seen before. See [the API reference](api/collections.md#stringinterntable).
+
+```csharp
+using Celerity.Collections;
+
+var interned = new StringInternTable();
+
+foreach (ReadOnlySpan<char> cell in SplitCells(line))
+{
+    string token = interned.GetOrAdd(cell);   // allocates only the first time each token is seen
+    Consume(token);
+}
+
+Console.WriteLine(interned.Count);            // distinct tokens, == strings allocated
+```
 
 ## Sorted (ordered) collections
 
