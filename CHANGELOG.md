@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- The README is now a short landing page — a quick start, the inventory of types by family, and links — which also makes it a lighter NuGet readme for `Celerity.Collections`. Its walkthroughs, decision table, hasher guide and benchmark results moved into `docs/`: `getting-started.md`, `collections.md`, `choosing-a-collection.md`, `choosing-a-hasher.md` and `benchmarks.md`. Closes #613.
+- The README is now a short landing page: a quick start, the inventory of types by family, and links. Its walkthroughs, decision table, hasher guide and benchmark results moved into `docs/`: `getting-started.md`, `collections.md`, `choosing-a-collection.md`, `choosing-a-hasher.md` and `benchmarks.md`. Closes #613.
 
 ### Removed
 

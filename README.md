@@ -26,9 +26,9 @@ if (byName.TryGetValue("bob", out int id))
     Console.WriteLine(id); // 1
 ```
 
-[Getting started](docs/getting-started.md) walks through the rest of the surface, and the [collections guide](docs/collections.md) has a worked example for every other type.
+[Getting started](docs/getting-started.md) covers the rest of the surface, and the [collections guide](docs/collections.md) walks through each family.
 
-## What's inside
+## Collections
 
 | Family | Types |
 |---|---|
@@ -48,27 +48,29 @@ if (byName.TryGetValue("bob", out int id))
 | [Timers](docs/collections.md#timers) | `TimerWheel` |
 | [Probabilistic & bit-level](docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
 
-Not sure which one you need? The [decision table](docs/choosing-a-collection.md) maps a workload to a type in one line, and [Choosing a hasher](docs/choosing-a-hasher.md) does the same for the hasher.
+## Choosing a collection
 
-### Packages
+The [decision table](docs/choosing-a-collection.md) maps a workload to a type in one line, and [Choosing a hasher](docs/choosing-a-hasher.md) does the same for the hasher. Celerity is single-threaded and wins on specific shapes rather than everywhere, so the decision table also covers [when not to use it](docs/choosing-a-collection.md#when-not-to-use-celerity).
+
+## Packages
 
 `Celerity.Collections` pulls in `Celerity.Hashing` and `Celerity.Primitives` transitively, so the one `dotnet add package` above is all most projects need. `Celerity.Sorting` and `Celerity.Statistics` are siblings rather than dependencies: add them for the sorts or the streaming summaries.
 
 | Package | What it adds |
 |---|---|
 | [`Celerity.Collections`](https://www.nuget.org/packages/Celerity.Collections/) | the collections above |
-| `Celerity.Hashing` | `IHashProvider<T>`, the struct hashers, `HashQualityEvaluator` — [API](docs/api/hashing.md) |
-| `Celerity.Primitives` | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SpanBits`, `SortedSpan`, space-filling curves — [API](docs/api/utilities.md) |
+| [`Celerity.Hashing`](https://www.nuget.org/packages/Celerity.Hashing/) | `IHashProvider<T>`, the struct hashers, `HashQualityEvaluator` — [API](docs/api/hashing.md) |
+| [`Celerity.Primitives`](https://www.nuget.org/packages/Celerity.Primitives/) | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve` — [API](docs/api/utilities.md) |
 | [`Celerity.Sorting`](https://www.nuget.org/packages/Celerity.Sorting/) | `RadixSort`, `CountingSort`, `PartialSort`, `StringSort`, `KWayMerge` — [API](docs/api/sorting.md) |
 | [`Celerity.Statistics`](https://www.nuget.org/packages/Celerity.Statistics/) | `DDSketch`, `KllSketch`, `ReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable` — [API](docs/api/statistics.md) |
 
 Every package multi-targets `net8.0`, `net9.0` and `net10.0`, and is [Native AOT and trimming compatible](docs/aot.md). Upgrading from 1.x? See the [migration guide](docs/migration.md#200--the-package-split).
 
-## Performance
+## Benchmarks
 
 **Up to 2.4&times; faster than `Dictionary<int, int>`** on lookups, with zero allocations — a *collection-layout* win (open addressing with direct `==` key comparison and no per-call `EqualityComparer<T>` dispatch), independent of the hasher. The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every shipped collection against its BCL counterpart on every `main` push, and [Benchmarks](docs/benchmarks.md) covers what the suites measure and how to run them locally.
 
-Celerity wins on specific shapes, not everywhere. It is single-threaded, and the docs state where each type loses as plainly as where it wins — see [when not to use Celerity](docs/choosing-a-collection.md#when-not-to-use-celerity).
+The docs state where each type loses as plainly as where it wins.
 
 ## Built with Celerity
 
@@ -76,17 +78,17 @@ Standalone libraries built **on top of** Celerity, each shipped as its own NuGet
 
 | Package | What it gives you |
 |---|---|
-| [`Celerity.Ring`](https://www.nuget.org/packages/Celerity.Ring/)<br/>[![NuGet](https://img.shields.io/nuget/v/Celerity.Ring.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Ring/) | Consistent-hash & rendezvous (HRW) **rings** and **Maglev** lookup-table routing for sharding and request routing, generic over your key type and hasher — with **byte-identical** node assignment across OS / architecture / runtime (x64, arm64, Blazor WASM), so every node in a cluster agrees on the mapping. Fills a gap the BCL has no type for. [README](src/Celerity.Ring/README.md) |
-| [`Celerity.Sentinel`](https://www.nuget.org/packages/Celerity.Sentinel/)<br/>[![NuGet](https://img.shields.io/nuget/v/Celerity.Sentinel.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Sentinel/) | Streaming **abuse / heavy-hitter detection** — surfaces the top offenders, per-key rate, and fan-out cardinality of a request stream in a **fixed footprint regardless of key cardinality**, so it survives the attacker key-rotation that drives a `Dictionary<,>` counter to OOM. Includes a striped tracker for concurrent hot paths. [README](src/Celerity.Sentinel/README.md) |
-| [`Celerity.Cardinality`](https://www.nuget.org/packages/Celerity.Cardinality/)<br/>[![NuGet](https://img.shields.io/nuget/v/Celerity.Cardinality.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Cardinality/) | Mergeable approximate **`COUNT(DISTINCT)`** and windowed **dedup** over unbounded managed streams — exact for small inputs, promoting to a fixed ~16&#160;KB estimator past a threshold, with **deterministic cross-shard merge** identical on every runtime. [README](src/Celerity.Cardinality/README.md) |
+| [`Celerity.Ring`](https://www.nuget.org/packages/Celerity.Ring/) [![NuGet](https://img.shields.io/nuget/v/Celerity.Ring.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Ring/) | Consistent-hash & rendezvous (HRW) **rings** and **Maglev** lookup-table routing for sharding and request routing, generic over your key type and hasher — with **byte-identical** node assignment across OS / architecture / runtime (x64, arm64, Blazor WASM), so every node in a cluster agrees on the mapping. Fills a gap the BCL has no type for. [README](src/Celerity.Ring/README.md) |
+| [`Celerity.Sentinel`](https://www.nuget.org/packages/Celerity.Sentinel/) [![NuGet](https://img.shields.io/nuget/v/Celerity.Sentinel.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Sentinel/) | Streaming **abuse / heavy-hitter detection** — surfaces the top offenders, per-key rate, and fan-out cardinality of a request stream in a **fixed footprint regardless of key cardinality**, so it survives the attacker key-rotation that drives a `Dictionary<,>` counter to OOM. Includes a striped tracker for concurrent hot paths. [README](src/Celerity.Sentinel/README.md) |
+| [`Celerity.Cardinality`](https://www.nuget.org/packages/Celerity.Cardinality/) [![NuGet](https://img.shields.io/nuget/v/Celerity.Cardinality.svg?style=flat-square)](https://www.nuget.org/packages/Celerity.Cardinality/) | Mergeable approximate **`COUNT(DISTINCT)`** and windowed **dedup** over unbounded managed streams — exact for small inputs, promoting to a fixed ~16&#160;KB estimator past a threshold, with **deterministic cross-shard merge** identical on every runtime. [README](src/Celerity.Cardinality/README.md) |
 
-> These are a separate tier from the core `Celerity.Collections` family above: they depend on it, but you don't get them by installing it — reach for one only when its problem is yours. (The NuGet badges populate on first publish.)
+> These are a separate tier from the core `Celerity.Collections` family above: they depend on it, but you don't get them by installing it — reach for one only when its problem is yours.
 
 ## Documentation
 
 - **Start here:** [Getting started](docs/getting-started.md) · [Collections guide](docs/collections.md) · [Choosing a collection](docs/choosing-a-collection.md) · [Choosing a hasher](docs/choosing-a-hasher.md)
 - **Guides:** [Performance tuning](docs/performance.md) · [Benchmarks](docs/benchmarks.md) · [Migrating from the BCL](docs/migration.md) · [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md) · [Native AOT & trimming](docs/aot.md)
-- **API reference:** [Collections](docs/api/collections.md) · [Hashing](docs/api/hashing.md) · [Sorting](docs/api/sorting.md) · [Statistics](docs/api/statistics.md) · [Primitives](docs/api/utilities.md)
+- **API reference:** [Collections](docs/api/collections.md) · [Hashing](docs/api/hashing.md) · [Sorting](docs/api/sorting.md) · [Statistics](docs/api/statistics.md) · [Utilities](docs/api/utilities.md)
 
 The [documentation index](docs/README.md) lists every page.
 

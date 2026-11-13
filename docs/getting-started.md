@@ -26,7 +26,7 @@ All five packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet h
 
 ## First steps
 
-Two examples cover the common surface; every other type has a worked example in the [collections guide](collections.md) and a runnable one in the [API reference](api/collections.md).
+Two examples cover the common surface. The [collections guide](collections.md) walks through each family with worked examples, and the [API reference](api/collections.md) documents every type.
 
 `IntDictionary<TValue>` defaults to `Int32WangNaiveHasher`, so most callers don't pick a hasher:
 

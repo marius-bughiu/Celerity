@@ -1,6 +1,6 @@
 # Collections guide
 
-Every collection in the `Celerity.Collections` package, grouped by family. Each family lists its types and the tradeoff each one buys, then walks through using them. Looking for the type that fits a workload? Start from [Choosing a collection](choosing-a-collection.md). For every constructor, member and exception, see the [API reference](api/collections.md).
+Every collection in the `Celerity.Collections` package, grouped by family. Each family lists its types and the tradeoff each one buys, then walks through the main ones with worked examples. Looking for the type that fits a workload? Start from [Choosing a collection](choosing-a-collection.md). For every constructor, member and exception of every type, see the [API reference](api/collections.md).
 
 ## Contents
 
@@ -605,6 +605,8 @@ if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string
 
 - `StringInternTable` / `StringInternTable<THasher>` — a **canonicalizing token table** probed with a `ReadOnlySpan<char>`: `GetOrAdd` returns the one shared `string` for those characters and allocates **only on a miss**. A 10M-cell parse over 100 distinct tokens creates 100 strings instead of 10,000,000. The collection you cannot build on the pre-.NET-9 BCL — `HashSet<string>.TryGetValue` makes you allocate the string *before* you can discover you already had it, and `string.Intern` is process-wide, never collected, and still needs a `string`. Implements `IReadOnlyCollection<string>`.
 - The same span-keyed probes ship on `FrozenCelerityDictionary`, `FrozenCeleritySet`, `CelerityDictionary<string, …>`, `CeleritySet<string, …>`, `Trie<TValue>`, and `SuccinctTrie<TValue>` — so a tokenizer, CSV/log reader, or route dispatcher holding a slice of its input buffer never has to call `new string(span)` per lookup. Works on all three target frameworks, including the `net8.0` floor where the BCL has no equivalent (.NET 9 added `Dictionary<string,V>.GetAlternateLookup`). See [span-keyed lookups](api/collections.md#span-keyed-lookups).
+
+The probes are shown in use in the API reference's [span-keyed lookups](api/collections.md#span-keyed-lookups) section, and `StringInternTable` has [its own example](api/collections.md#stringinterntable) there.
 
 ## Sorted (ordered) collections
 
