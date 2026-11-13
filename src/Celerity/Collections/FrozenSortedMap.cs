@@ -29,9 +29,9 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>When not to use it.</b> If every lookup is an exact key and order never matters, use a hash map:
 /// <c>FrozenDictionary&lt;TKey, TValue&gt;</c> answers an exact key with one hash and one or two loads, where this
-/// map runs a tree search, and on a shuffled half-hit stream it is 2.3–3.6x faster. This type's advantage is the ordered queries (<see cref="TryGetFloor"/>,
-/// <see cref="TryGetLowerBound"/>, <see cref="CountLessThan"/>, <see cref="GetIndexRange"/>), which a hash map
-/// cannot answer.
+/// map runs a tree search. With <see cref="int"/> keys on a shuffled half-hit stream it is 2.3–3.6x faster. This
+/// type's advantage is the ordered queries (<see cref="TryGetFloor"/>, <see cref="TryGetLowerBound"/>,
+/// <see cref="CountLessThan"/>, <see cref="GetIndexRange"/>), which a hash map cannot answer.
 /// </para>
 /// <para>
 /// <see cref="Keys"/> is the map's own <see cref="FrozenSortedSet{T}"/>, so its rank, successor, range and
