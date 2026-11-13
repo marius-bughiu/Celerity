@@ -72,6 +72,7 @@ internal static class Differential
         ("WaveletTree", WaveletTreeCase),
         ("EliasFanoSequence", EliasFanoSequenceCase),
         ("FrozenSortedSet", FrozenSortedSetCase),
+        ("FrozenSortedMap", FrozenSortedMapCase),
         ("SegmentTree", SegmentTreeCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
@@ -2482,6 +2483,108 @@ internal static class Differential
             Check(sut.IsProperSupersetOf(arg) == model.IsProperSupersetOf(other),
                 $"FrozenSortedSet<{type}> IsProperSupersetOf disagreed");
             Check(sut.Overlaps(arg) == model.Overlaps(other), $"FrozenSortedSet<{type}> Overlaps disagreed");
+        }
+    }
+
+    // ---- frozen sorted map ---------------------------------------------------
+
+    // FrozenSortedMap's search is FrozenSortedSet's, which the case above already fuzzes; what is new is that every
+    // value must travel with its key through the sort. So the source is a random set of distinct keys (the map
+    // rejects a repeat), each mapped to a value derived from its position in the unsorted source, drawn narrow or
+    // wide as above, sometimes with T.MinValue and T.MaxValue (the padding value) as real keys, and passed counted
+    // or lazy. Every exact and ordered query is then reconciled, key and value, against sorted parallel arrays.
+    private static void FrozenSortedMapCase(Random rng)
+    {
+        switch (rng.Next(3))
+        {
+            case 0:
+                FrozenSortedMapCheck(rng, static v => (int)v);
+                break;
+            case 1:
+                FrozenSortedMapCheck(rng, static v => v);
+                break;
+            default:
+                FrozenSortedMapCheck(rng, static v => ((Int128)v << 40) ^ (Int128)(ulong)v);
+                break;
+        }
+    }
+
+    private static void FrozenSortedMapCheck<T>(Random rng, Func<long, T> make)
+        where T : unmanaged, IBinaryInteger<T>, IMinMaxValue<T>
+    {
+        int length = rng.Next(4) switch
+        {
+            0 => rng.Next(0, 20),
+            1 => rng.Next(0, 300),
+            _ => rng.Next(0, 5000),
+        };
+        bool narrow = rng.Next(2) == 0;
+        long origin = rng.NextInt64();
+        long span = Math.Max(1, length * rng.Next(1, 4));
+        T Draw() => make(narrow ? unchecked(origin + rng.NextInt64(0, span)) : rng.NextInt64(long.MinValue, long.MaxValue));
+
+        var distinct = new HashSet<T>();
+        for (int i = 0; i < length; i++)
+            distinct.Add(Draw());
+        if (rng.Next(3) == 0)
+            distinct.Add(T.MaxValue);
+        if (rng.Next(3) == 0)
+            distinct.Add(T.MinValue);
+
+        KeyValuePair<T, long>[] source = distinct.Select((k, i) => new KeyValuePair<T, long>(k, (i * 31L) + 7)).ToArray();
+        KeyValuePair<T, long>[] oracle = source.OrderBy(static p => p.Key).ToArray();
+        T[] keys = oracle.Select(static p => p.Key).ToArray();
+        int count = oracle.Length;
+        var sut = rng.Next(2) == 0
+            ? new FrozenSortedMap<T, long>(source)
+            : new FrozenSortedMap<T, long>(source.Select(static p => p));
+        string type = typeof(T).Name;
+
+        Check(sut.Count == count, $"FrozenSortedMap<{type}> Count disagreed");
+        Check(sut.ToArray().SequenceEqual(oracle), $"FrozenSortedMap<{type}> enumeration disagreed");
+        Check(sut.Keys.AsSpan().SequenceEqual(keys), $"FrozenSortedMap<{type}> Keys disagreed");
+        for (int i = 0; i < count; i++)
+            Check(sut.GetValueAtIndex(i) == oracle[i].Value, $"FrozenSortedMap<{type}> value at {i} disagreed");
+
+        int LowerBound(T value)
+        {
+            int index = Array.BinarySearch(keys, value);
+            return index >= 0 ? index : ~index;
+        }
+
+        bool Matches(int index, bool found, KeyValuePair<T, long> entry) =>
+            index >= 0 && index < count ? found && entry.Equals(oracle[index]) : !found && entry.Equals(default(KeyValuePair<T, long>));
+
+        for (int trial = 0; trial < 200; trial++)
+        {
+            T probe = count > 0 && rng.Next(2) == 0 ? keys[rng.Next(count)] : Draw();
+            int step = rng.Next(-1, 2);
+            if (step < 0 && probe != T.MinValue)
+                probe -= T.One;
+            else if (step > 0 && probe != T.MaxValue)
+                probe += T.One;
+
+            int lower = LowerBound(probe);
+            bool present = lower < count && keys[lower] == probe;
+            int above = present ? lower + 1 : lower;
+
+            Check(sut.TryGetValue(probe, out long value) == present && value == (present ? oracle[lower].Value : 0),
+                $"FrozenSortedMap<{type}> TryGetValue({probe}) disagreed");
+            Check(sut.CountLessThan(probe) == lower, $"FrozenSortedMap<{type}> CountLessThan({probe}) disagreed");
+            Check(Matches(lower, sut.TryGetLowerBound(probe, out var ceiling), ceiling),
+                $"FrozenSortedMap<{type}> TryGetLowerBound({probe}) disagreed");
+            Check(Matches(above, sut.TryGetUpperBound(probe, out var upper), upper),
+                $"FrozenSortedMap<{type}> TryGetUpperBound({probe}) disagreed");
+            Check(Matches(above - 1, sut.TryGetFloor(probe, out var floor), floor),
+                $"FrozenSortedMap<{type}> TryGetFloor({probe}) disagreed");
+            Check(Matches(lower - 1, sut.TryGetPredecessor(probe, out var predecessor), predecessor),
+                $"FrozenSortedMap<{type}> TryGetPredecessor({probe}) disagreed");
+
+            T other = Draw();
+            (T from, T to) = probe <= other ? (probe, other) : (other, probe);
+            Range range = sut.GetIndexRange(from, to);
+            Check(range.Start.Value == LowerBound(from) && range.End.Value == LowerBound(to),
+                $"FrozenSortedMap<{type}> GetIndexRange({from}, {to}) disagreed");
         }
     }
 

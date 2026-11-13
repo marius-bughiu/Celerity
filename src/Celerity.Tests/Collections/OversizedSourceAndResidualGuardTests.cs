@@ -33,6 +33,8 @@ namespace Celerity.Tests.Collections;
 /// word puts <see cref="int.MaxValue"/> elements past <see cref="Array.MaxLength"/>.
 /// <see cref="FrozenSortedSet{T}"/> checks a counted source against its own ceiling, the largest whole number of
 /// cache-line nodes one array holds, before it allocates the padded leaf array it copies into.
+/// <see cref="FrozenSortedMap{TKey, TValue}"/> holds its keys in the same layout and checks the same ceiling
+/// before it copies the source's pairs.
 /// </para>
 ///
 /// <para>
@@ -256,6 +258,34 @@ public class OversizedSourceAndResidualGuardTests
         var oversized = new LyingCountCollection<byte>(ceiling + 1);
 
         ArgumentException ex = Assert.Throws<ArgumentException>(() => new FrozenSortedSet<byte>(oversized));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    // ---- FrozenSortedMap: the same ceiling, checked before the pair copy ----------------------------
+
+    [Fact]
+    public void FrozenSortedMapConstructor_ShouldThrowArgumentException_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        // The map copies a counted source into a pair array sized from Count, then splits it into the padded key
+        // array; reaching the ArgumentException rather than a NotSupportedException from CopyTo proves the
+        // ceiling runs before either allocation.
+        var oversized = new LyingCountCollection<KeyValuePair<int, string>>(int.MaxValue);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => new FrozenSortedMap<int, string>(oversized));
+
+        Assert.Equal("source", ex.ParamName);
+        Assert.Contains("holds at most", ex.Message);
+    }
+
+    [Fact]
+    public void FrozenSortedMapConstructor_ShouldThrowArgumentException_WhenCountedSourceIsOneOverTheCeiling()
+    {
+        // The map's ceiling is its key set's: one entry past it would need one more key node than an array holds.
+        int ceiling = Array.MaxLength / FrozenSortedSet<byte>.NodeSize * FrozenSortedSet<byte>.NodeSize;
+        var oversized = new LyingCountCollection<KeyValuePair<byte, int>>(ceiling + 1);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => new FrozenSortedMap<byte, int>(oversized));
 
         Assert.Equal("source", ex.ParamName);
     }

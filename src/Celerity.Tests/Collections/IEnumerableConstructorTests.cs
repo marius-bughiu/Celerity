@@ -2669,4 +2669,78 @@ public class IEnumerableConstructorTests
         Assert.Equal(2, map.Count);
         Assert.Equal(10, map[1]);
     }
+
+    // ──────────────────────────────────────────────────────────────
+    //  FrozenSortedMap — IEnumerable source ctor (its only ctor)
+    //  No capacity / loadFactor parameters, and integer keys have no null or default slot, so those validations
+    //  do not apply. A duplicate key throws, as it does for Dictionary and FrozenCelerityDictionary.
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void FrozenSortedMap_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new FrozenSortedMap<int, string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void FrozenSortedMap_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(1, "one"),
+            new KeyValuePair<int, string>(2, "two"),
+            new KeyValuePair<int, string>(1, "dup"),
+        };
+
+        Assert.Throws<ArgumentException>(() => new FrozenSortedMap<int, string>(source));
+    }
+
+    [Fact]
+    public void FrozenSortedMap_ShouldSupportEmptySource()
+    {
+        var map = new FrozenSortedMap<int, string>(Array.Empty<KeyValuePair<int, string>>());
+
+        Assert.Empty(map);
+        Assert.False(map.ContainsKey(0));
+    }
+
+    [Fact]
+    public void FrozenSortedMap_ShouldCopyAllEntries_FromArraySource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, int>(30, 3),
+            new KeyValuePair<int, int>(10, 1),
+            new KeyValuePair<int, int>(20, 2),
+        };
+
+        var map = new FrozenSortedMap<int, int>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(1, map[10]);
+        Assert.Equal(2, map[20]);
+        Assert.Equal(3, map[30]);
+    }
+
+    [Fact]
+    public void FrozenSortedMap_ShouldCopyAllEntries_FromNonCollectionEnumerable()
+    {
+        IEnumerable<KeyValuePair<long, string>> NonCollectionSource()
+        {
+            yield return new KeyValuePair<long, string>(3, "three");
+            yield return new KeyValuePair<long, string>(1, "one");
+            yield return new KeyValuePair<long, string>(2, "two");
+        }
+
+        var map = new FrozenSortedMap<long, string>(NonCollectionSource());
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal("one", map[1]);
+        Assert.Equal("two", map[2]);
+        Assert.Equal("three", map[3]);
+    }
 }

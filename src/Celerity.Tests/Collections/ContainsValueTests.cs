@@ -1518,4 +1518,44 @@ public class ContainsValueTests
 
         Assert.True(map.ContainsValue(null));
     }
+
+    // ---------------- FrozenSortedMap ----------------
+    // Read-only and integer-keyed, so the resize / remove / clear variants and the null-key slot do not apply.
+    // ContainsValue is a linear scan of the value array, which holds exactly Count values: there are no empty
+    // slots holding default(TValue) for it to mistake for a real entry.
+
+    private static FrozenSortedMap<int, TValue> FrozenSorted<TValue>(params (int key, TValue value)[] pairs)
+        => new(pairs.Select(p => new KeyValuePair<int, TValue>(p.key, p.value)));
+
+    [Fact]
+    public void FrozenSortedMap_EmptyMap_ReturnsFalse()
+    {
+        var map = FrozenSorted<int>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void FrozenSortedMap_FindsValue_AndReturnsFalseForMissingValue()
+    {
+        var map = FrozenSorted((3, 300), (1, 100), (2, 200));
+        Assert.True(map.ContainsValue(200));
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void FrozenSortedMap_DefaultValueLookup_ZeroValue()
+    {
+        // 3 entries in a 16-key int node: the key padding has no values behind it, so 0 is found only when an
+        // entry really maps to it.
+        Assert.False(FrozenSorted((1, 5), (2, 6), (3, 7)).ContainsValue(0));
+        Assert.True(FrozenSorted((0, 0), (1, 1)).ContainsValue(0));
+    }
+
+    [Fact]
+    public void FrozenSortedMap_NullValueLookup_ReferenceType()
+    {
+        Assert.True(FrozenSorted((1, "one"), (2, (string?)null)).ContainsValue(null));
+        Assert.False(FrozenSorted<string?>((1, "one"), (2, "two")).ContainsValue(null));
+    }
 }
