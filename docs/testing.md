@@ -222,7 +222,7 @@ The suite covers **100% of lines and 100% of branches** across all eight. A smal
 
 | Guard | Why no test can reach it |
 |---|---|
-| `Deque.ClampToArrayMaxLength` | Needs a backing array above 2³⁰ elements. Pinned by a real `[MemoryIntensiveFact(3100)]` test in `DequeGrowthTests`, which allocates ~3 GiB and skips on memory-capped runners — excluded so the gate does not depend on whether the runner had the headroom. |
+| `Deque.ClampToArrayMaxLength`, `GapBuffer.ClampToArrayMaxLength` | Needs a backing array above 2³⁰ elements. Pinned by a real `[MemoryIntensiveFact(3100)]` test in `DequeGrowthTests`, which allocates ~3 GiB and skips on memory-capped runners — excluded so the gate does not depend on whether the runner had the headroom. `GapBuffer`'s clamp is the identical expression, excluded on the same grounds. |
 | `IndexedPriorityQueue.ClampGrowth` | Needs 2³⁰ *live* entries with distinct elements, pushing the backing array past the 2 GiB single-object limit. `EnsureCapacity` calls `Resize` directly, so capacity cannot be pre-inflated into it. |
 | `MinMaxHeap.ClampGrowth` | Needs more than 2³⁰ *live* entries before the doubling passes `Array.MaxLength` — 8 GiB of backing array for `(int, int)` entries. Duplicates are legal, so unlike `IndexedPriorityQueue` the bound is memory rather than the element domain, but `EnsureCapacity` still cannot pre-inflate the array into it: a larger array is simply not full. |
 | `RadixHeap.ClampGrowth` | Needs more than 2³⁰ *live* entries in a *single* bucket before its doubling passes `Array.MaxLength` — 16 GiB of `(int, ulong)` entries. There is no `EnsureCapacity` to pre-inflate a bucket, and a drained bucket's retained array is not full, so only that many simultaneously queued entries reach it. |
