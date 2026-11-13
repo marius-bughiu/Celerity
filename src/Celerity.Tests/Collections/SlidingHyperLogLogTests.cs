@@ -332,19 +332,19 @@ public class SlidingHyperLogLogTests
     public void AddAndQuery_DoNotAllocate()
     {
         var s = NewSketch();
-        s.Add(1, 1);
-        _ = s.EstimateCardinality(0); // warm up
+        long now = 0;
+        long estimate = 0;
+        Action run = () =>
+        {
+            for (int i = 0; i < 10_000; i++)
+                s.Add(i, ++now);
+            estimate = s.EstimateCardinality(now - 5_000);
+        };
+        run(); // warm up
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10_000; i++)
-            s.Add(i, i);
-        long estimate = s.EstimateCardinality(5_000);
-        long after = GC.GetAllocatedBytesForCurrentThread();
-
-        // A per-call allocation would cost at least 10_000 x 24 bytes; the slack only absorbs one-off
-        // runtime noise (tiering, a lazily created thread-static), which an exact-zero assert flakes on.
+        // Quietest of three windows, exactly zero: a fixed 1 KB slack on one window flaked under coverage (#616).
+        Assert.Equal(0, AllocationProbe.Quietest(run));
         Assert.True(estimate > 0);
-        Assert.True(after - before < 1_024, $"allocated {after - before} bytes");
     }
 
     private static void AssertNear(long expected, long actual, double standardError)

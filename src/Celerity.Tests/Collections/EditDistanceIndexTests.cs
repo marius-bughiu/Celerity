@@ -439,12 +439,15 @@ public class EditDistanceIndexTests
             index.CopyWithin("aple", 2, destination);
         }
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        bool contains = index.ContainsWithin("aple", 2);
-        int count = index.CountWithin("aple", 2);
-        bool found = index.TryFindNearest("aple", 2, out _);
-        int written = index.CopyWithin("aple", 2, destination);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        bool contains = false, found = false;
+        int count = 0, written = 0;
+        long allocated = AllocationProbe.Quietest(() =>
+        {
+            contains = index.ContainsWithin("aple", 2);
+            count = index.CountWithin("aple", 2);
+            found = index.TryFindNearest("aple", 2, out _);
+            written = index.CopyWithin("aple", 2, destination);
+        });
 
         Assert.Equal(0, allocated);
         Assert.True(contains && found);
