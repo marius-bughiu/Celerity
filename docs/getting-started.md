@@ -22,7 +22,7 @@ Celerity's core ships as layered NuGet packages. **`Celerity.Collections` pulls 
 
 > **Upgrading from 1.x?** Namespaces are unchanged except `FastUtils`, which moved from `Celerity` to `Celerity.Primitives`. See the [migration guide](migration.md#200--the-package-split).
 
-All five packages **multi-target `net8.0`, `net9.0`, and `net10.0`**, so NuGet hands your project the assembly built against its own runtime. `net8.0` (LTS) is the floor — Celerity runs anywhere from .NET 8 upward.
+All eight packages — these five and the three [showcase packages](README.md#built-with-celerity) — **target `net10.0`** (LTS). On .NET 8 or 9, stay on the 3.6.x line: 3.6.0 is the last release built for those runtimes, and security fixes for it ship from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch.
 
 ## First steps
 

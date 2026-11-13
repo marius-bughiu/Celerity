@@ -603,8 +603,8 @@ if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string
 
 ## Span-keyed string lookups
 
-- `StringInternTable` / `StringInternTable<THasher>` — a **canonicalizing token table** probed with a `ReadOnlySpan<char>`: `GetOrAdd` returns the one shared `string` for those characters and allocates **only on a miss**. A 10M-cell parse over 100 distinct tokens creates 100 strings instead of 10,000,000. The collection you cannot build on the pre-.NET-9 BCL — `HashSet<string>.TryGetValue` makes you allocate the string *before* you can discover you already had it, and `string.Intern` is process-wide, never collected, and still needs a `string`. Implements `IReadOnlyCollection<string>`.
-- The same span-keyed probes ship on `FrozenCelerityDictionary`, `FrozenCeleritySet`, `CelerityDictionary<string, …>`, `CeleritySet<string, …>`, `Trie<TValue>`, and `SuccinctTrie<TValue>` — so a tokenizer, CSV/log reader, or route dispatcher holding a slice of its input buffer never has to call `new string(span)` per lookup. Works on all three target frameworks, including the `net8.0` floor where the BCL has no equivalent (.NET 9 added `Dictionary<string,V>.GetAlternateLookup`). See [span-keyed lookups](api/collections.md#span-keyed-lookups).
+- `StringInternTable` / `StringInternTable<THasher>` — a **canonicalizing token table** probed with a `ReadOnlySpan<char>`: `GetOrAdd` returns the one shared `string` for those characters and allocates **only on a miss**. A 10M-cell parse over 100 distinct tokens creates 100 strings instead of 10,000,000. `HashSet<string>.TryGetValue` alone makes you allocate the string *before* you can discover you already had it (.NET 9's `GetAlternateLookup` is the BCL's span-keyed answer), and `string.Intern` is process-wide, never collected, and still needs a `string`. Implements `IReadOnlyCollection<string>`.
+- The same span-keyed probes ship on `FrozenCelerityDictionary`, `FrozenCeleritySet`, `CelerityDictionary<string, …>`, `CeleritySet<string, …>`, `Trie<TValue>`, and `SuccinctTrie<TValue>` — so a tokenizer, CSV/log reader, or route dispatcher holding a slice of its input buffer never has to call `new string(span)` per lookup. The BCL's equivalent is `Dictionary<string,V>.GetAlternateLookup` (.NET 9+), a separate lookup struct; here the overloads sit on the collection itself. See [span-keyed lookups](api/collections.md#span-keyed-lookups).
 
 The probes are shown in use in the API reference's [span-keyed lookups](api/collections.md#span-keyed-lookups) section, and `StringInternTable` has [its own example](api/collections.md#stringinterntable) there.
 
@@ -618,6 +618,7 @@ The probes are shown in use in the API reference's [span-keyed lookups](api/coll
 All four take their ordering as a **struct** `IComparer<T>` type parameter (`DefaultComparer<T>` by default), exactly as the hashers are struct type parameters, so the comparison inlines instead of costing a virtual call per key inspected.
 
 - `FrozenSortedSet<T>` — an **immutable sorted set of integer keys** laid out as a static B+ tree of cache-line nodes searched with SIMD compares, so `Contains`, rank (`CountLessThan`) and successor (`TryGetLowerBound` / `TryGetUpperBound`) take a handful of node reads instead of `log2(n)` dependent binary-search probes: about **10× faster than a span `BinarySearch`** over the same sorted `int[]` for a batch of lookups, and 2–3× when each answer feeds an unpredictable branch. `SliceRange(a, b)` returns the keys in `[a, b)` as a span without copying. Build-once; integers only (`IBinaryInteger<T>`), so it takes no comparer. Implements `IReadOnlyList<T>` and `IReadOnlySet<T>`.
+- `FrozenSortedMap<TKey, TValue>` — the **map sibling of `FrozenSortedSet`**: the same SIMD-searched tree over integer keys, with the values in a parallel array, so `TryGetFloor` ("the value as of *t*", "which range owns key *k*") is about **9× faster than a span `BinarySearch`** over sorted key and value arrays at 1k to 1M keys. It also has `TryGetPredecessor` / `TryGetLowerBound` / `TryGetUpperBound` and a no-copy `GetIndexRange` over the key and value spans. ⚠️ On a shuffled half-hit stream an exact `TryGetValue` is 2.3–3.6× *slower* than `FrozenDictionary`, so use this map for the ordered queries. A duplicate key is rejected. Build-once; implements `IReadOnlyDictionary<TKey, TValue>`.
 
 ### Examples
 
@@ -676,7 +677,7 @@ window.Remove(250);                              // removes one copy, the earlie
 Console.WriteLine(window.LastIndexOf(250));      // 3
 ```
 
-#### Ordered lookups over a key set that has stopped changing — FrozenSortedSet
+#### Ordered lookups over a key set that has stopped changing — FrozenSortedSet, FrozenSortedMap
 
 `FrozenSortedSet<T>` is for a sorted integer key set that is read far more often than it changes: an allow-list of IDs, the start keys of range partitions, a timestamp index. The BCL's `FrozenSet<T>` is unordered, and a binary search over a sorted array is latency-bound (`log2(n)` loads, each waiting on the last). This type cuts the keys into 64-byte nodes and stacks a pointer-free index of separator nodes above them, then searches each node with four `Vector128` compares. A million `int` keys take 5 node reads, where a binary search takes 20 probes. A batch of lookups runs about 10× faster than a span `BinarySearch` over the same sorted `int[]` (9.5–10.9× from 1k to 1M keys), and 2–3× when each answer feeds an `if` that mispredicts, because each mispredict exposes one search's full latency. It costs about 6% more memory than the array for `int`, plus a sort to build. See [the API reference](api/collections.md#frozensortedsett).
 
@@ -688,6 +689,15 @@ int shard = shardStarts.CountLessThan(key + 1) - 1;              // last start a
 var allowed = new FrozenSortedSet<int>(allowedIds);
 bool ok = allowed.Contains(accountId);
 ReadOnlySpan<int> band = allowed.SliceRange(10_000, 20_000);     // keys in [10k, 20k), no copy
+```
+
+`FrozenSortedMap<TKey, TValue>` is the same tree with a value behind every key, for when the question is *which entry* a key falls under: range partitions to their shard, effective dates to a price, address ranges to their owner. `TryGetFloor` returns the entry with the largest key at or below the probe, about 9× faster than a binary search over sorted key and value arrays. The values are sorted with their keys, and a duplicate key throws. For exact lookups alone, `FrozenDictionary` is 2.3–3.6× faster on a shuffled half-hit stream. See [the API reference](api/collections.md#frozensortedmaptkey-tvalue).
+
+```csharp
+var shards = new FrozenSortedMap<long, string>(shardStartToName);  // any order; duplicate keys throw
+shards.TryGetFloor(key, out var owner);                            // owner.Value: the shard owning key
+Range r = shards.GetIndexRange(from, to);                          // entries in [from, to), no copy
+ReadOnlySpan<string> names = shards.Values[r];
 ```
 
 ## Range aggregates
@@ -1071,13 +1081,13 @@ Reach for it when the text keeps changing in the middle &mdash; editor buffers, 
 
 ## Timers
 
-- `TimerWheel<TValue>` — a **hierarchical timing wheel**: a container of pending **deadlines**, with `O(1)` `Cancel`, amortized-`O(1)` `Schedule` and an `Advance` bounded by the wheel's geometry — `O(levels x slots + fired + cascaded)` — rather than by the ticks it crosses. A data structure, not a scheduler — no thread, no clock, no callback; the caller owns time. The workload is defined by **cancellation** (the reply arrives, the lease is renewed), and that is where the BCL fails: `PriorityQueue` has no removal on `net8.0` and the one .NET 9 added is `O(n)`, so the standard workaround is lazy deletion — a heap that grows with the timers that will never fire and a hash probe per pop. Timers thread through one flat entry array as intrusive lists, so there is no object per timer. On a round of 100,000 timeouts — schedule, cancel nine in ten, run the clock out — CI measures **6.81x** that heap and **7.09x** `IndexedPriorityQueue`, which cancels for real, falling to 2.56x at a thousand. Taken apart, `Cancel` and `Drain` are where it wins and **`Schedule` is where it loses — roughly 2x slower than a heap insert at 100,000**, because appending to a contiguous array beats writing a scattered slot head and a back-link. Also traded: a finite **horizon** (2^32 ticks by default, about 49 days at a millisecond), **no ordering** within a fired batch, and about a fifth more allocated per round than either heap. This is a large-population type — at a thousand timers `Cancel` is 2.2x slower and the tick-by-tick drive 1.8x slower.
+- `TimerWheel<TValue>` — a **hierarchical timing wheel**: a container of pending **deadlines**, with `O(1)` `Cancel`, amortized-`O(1)` `Schedule` and an `Advance` bounded by the wheel's geometry — `O(levels x slots + fired + cascaded)` — rather than by the ticks it crosses. A data structure, not a scheduler — no thread, no clock, no callback; the caller owns time. The workload is defined by **cancellation** (the reply arrives, the lease is renewed), and that is where the BCL fails: `PriorityQueue`'s only removal, added in .NET 9, is `O(n)`, so the standard workaround is lazy deletion — a heap that grows with the timers that will never fire and a hash probe per pop. Timers thread through one flat entry array as intrusive lists, so there is no object per timer. On a round of 100,000 timeouts — schedule, cancel nine in ten, run the clock out — CI measures **6.81x** that heap and **7.09x** `IndexedPriorityQueue`, which cancels for real, falling to 2.56x at a thousand. Taken apart, `Cancel` and `Drain` are where it wins and **`Schedule` is where it loses — roughly 2x slower than a heap insert at 100,000**, because appending to a contiguous array beats writing a scattered slot head and a back-link. Also traded: a finite **horizon** (2^32 ticks by default, about 49 days at a millisecond), **no ordering** within a fired batch, and about a fifth more allocated per round than either heap. This is a large-population type — at a thousand timers `Cancel` is 2.2x slower and the tick-by-tick drive 1.8x slower.
 
 ### Examples
 
 #### Which of these pending things have timed out — TimerWheel
 
-`TimerWheel<TValue>` is a container of pending deadlines with `O(1)` `Cancel` and amortized-`O(1)` `Schedule`. It owns no thread and no clock: you drive it with `Advance`, and everything due comes back at once. The BCL answer is a `PriorityQueue`, which **cannot cancel** — no `Remove` on `net8.0`, and `O(n)` on .NET 9 — so the workaround is lazy deletion, and the heap fills with timers that will never fire.
+`TimerWheel<TValue>` is a container of pending deadlines with `O(1)` `Cancel` and amortized-`O(1)` `Schedule`. It owns no thread and no clock: you drive it with `Advance`, and everything due comes back at once. The BCL answer is a `PriorityQueue`, which **cannot cancel** cheaply — its `Remove` (.NET 9+) is `O(n)` — so the workaround is lazy deletion, and the heap fills with timers that will never fire.
 
 ```csharp
 // A tick is a millisecond here; the default 256 x 4 geometry reaches about 49 days.
