@@ -499,7 +499,7 @@ public class LinkedDictionary<TKey, TValue, THasher>
 Each of the .NET types gives up half of what this one does:
 
 - `Dictionary<TKey, TValue>` enumerates in insertion order only until the first `Remove`. The freed entry goes on a free list, and the next `Add` reuses it, so the new key appears where the removed one was. The order is not documented, so even before a removal it is an accident of the implementation.
-- .NET 9's `OrderedDictionary<TKey, TValue>` keeps the order and adds index access (`GetAt`, `Insert`, `IndexOf`). It stores entries in one dense array, so `Remove` shifts every later entry down and costs `O(n)`. Draining or churning `n` keys costs `O(n²)`. It does not exist on `net8.0`.
+- .NET 9's `OrderedDictionary<TKey, TValue>` keeps the order and adds index access (`GetAt`, `Insert`, `IndexOf`). It stores entries in one dense array, so `Remove` shifts every later entry down and costs `O(n)`. Draining or churning `n` keys costs `O(n²)`.
 
 `LinkedDictionary` has `O(1)` removal and re-ordering, and **no index access**. If you need the `i`-th entry by position, use `OrderedDictionary`. If order does not matter at all, `CelerityDictionary` and `SwissDictionary` are smaller and faster.
 
@@ -522,7 +522,7 @@ Measured locally on Apple Silicon (.NET 10); the dashboard's CI series is the co
 | Lookup every key (hits) | ~42–64 µs | ~17 µs (2.3–3.7x faster) |
 | Insert every key, pre-sized | ~88 µs | ~68 µs (1.3x faster) |
 
-The CI benchmark runs on `net8.0`, where `OrderedDictionary<,>` does not exist. It compares against what a `net8.0` caller builds by hand, a `Dictionary<TKey, LinkedListNode<…>>` plus a `LinkedList<…>`, which also removes in `O(1)`. Against that baseline, inserts are 4.7–13x faster and allocate 26–43% less (no node object per entry), lookups are about 2.3x faster, and removal is about 2x faster. **Enumeration is about 2.5x slower**. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase.
+The CI benchmark compares against the ordered map a caller builds by hand, a `Dictionary<TKey, LinkedListNode<…>>` plus a `LinkedList<…>`, which also removes in `O(1)`; `OrderedDictionary<,>` appears only in the local table above. Against that baseline, inserts are 4.7–13x faster and allocate 26–43% less (no node object per entry), lookups are about 2.3x faster, and removal is about 2x faster. **Enumeration is about 2.5x slower**. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase.
 
 ### Constructors
 
@@ -1310,7 +1310,7 @@ The layout is `LinkedDictionary`'s without the value. Elements live in one array
 
 ### Performance
 
-Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is the `net8.0` hand-roll that also removes in `O(1)`: a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`.
+Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is the hand-roll that also removes in `O(1)`: a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`.
 
 | Operation, `int` elements | 1,000 | 10,000 | 100,000 |
 |---|---|---|---|
@@ -2708,8 +2708,7 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
    why it is named for what it does rather than for Roaring.
 2. **This is not the only compressed integer set in .NET.** A maintained pure-C# Roaring
    implementation exists (`Equativ.RoaringBitmaps`). What this type offers instead of novelty is
-   integration: full mutability, verified Native AOT and trim compatibility on `net8.0` /
-   `net9.0` / `net10.0`, published benchmarks against `HashSet<int>` on the project dashboard, and
+   integration: full mutability, verified Native AOT and trim compatibility, published benchmarks against `HashSet<int>` on the project dashboard, and
    membership of the same [`BitSet`](#bitset) / [`SparseSet`](#sparseset) / [`IntSet`](#intset)
    family and shared test suites.
 
@@ -4088,7 +4087,7 @@ settled.
 ### The documented BCL-beating workload
 
 There is no BCL counterpart at all: `BitArray` exposes neither rank nor select,
-`BitOperations.PopCount` is per-word, and .NET 8/9/10 ship no succinct data-structure
+`BitOperations.PopCount` is per-word, and .NET ships no succinct data-structure
 support — so the honest baseline is the loop a caller writes by hand, popcounting every
 word below the query position. That loop is `O(index / 64)`: at the midpoint of a
 100-million-bit vector it is roughly 780,000 iterations, which this type replaces with
@@ -7743,7 +7742,7 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
 
 [`RankSelectBitVector`](#rankselectbitvector) shipped as the primitive that "succinct and compressed **tries**, and **wavelet trees**" compose on — a phrase that appears in its own source, in the section above, and in the README's decision table. [`WaveletTree`](#wavelettree) closed the second half. This closes the first: it is that composition, and it is the same **build-once half of a shipped axis** that `SparseTable` is to `SegmentTree` and `FrozenCelerityDictionary` is to `CelerityDictionary`.
 
-The gap is a footprint one. `Trie<TValue>` is the right shape for a prefix tree that changes, and the wrong one for the very common case where it does not: every node is a heap object carrying an object header, a `char[]` of edge labels, a `Node[]` of child references, a child count, a value slot and a flag. A routing table, tokenizer dictionary, autocomplete corpus or static allow-list pays that per node forever and gets nothing back for it. The BCL has no answer either — `Dictionary<string, TValue>` has no prefix operation at all, and .NET 8/9/10 ship no succinct structures.
+The gap is a footprint one. `Trie<TValue>` is the right shape for a prefix tree that changes, and the wrong one for the very common case where it does not: every node is a heap object carrying an object header, a `char[]` of edge labels, a `Node[]` of child references, a child count, a value slot and a flag. A routing table, tokenizer dictionary, autocomplete corpus or static allow-list pays that per node forever and gets nothing back for it. The BCL has no answer either — `Dictionary<string, TValue>` has no prefix operation at all, and .NET ships no succinct structures.
 
 ### How it works
 
@@ -7890,7 +7889,7 @@ The string-keyed collections below can be probed with a `ReadOnlySpan<char>` —
 
 Without them, a tokenizer, CSV / log reader, or route dispatcher holding a `ReadOnlySpan<char>` must call `new string(span)` to probe the collection: **one allocation plus a copy per lookup**, on the hot path of exactly the workloads these types exist for. The span overloads delete both. Nothing else changes — stored keys are compared ordinally against the span, which is what `EqualityComparer<string>.Default` does, so a span lookup and the equivalent string lookup always agree.
 
-> **.NET 9+.** `Dictionary<string,V>.GetAlternateLookup<ReadOnlySpan<char>>()` gives the BCL the same capability on .NET 9 and later. These overloads work on **all three** of Celerity's target frameworks, including the `net8.0` floor where the BCL has no answer.
+> **.NET 9+.** `Dictionary<string,V>.GetAlternateLookup<ReadOnlySpan<char>>()` gives the BCL the same capability through a separate lookup struct, and every runtime Celerity targets has it. These overloads put the span probe on the collection itself.
 
 ### How they are exposed
 
@@ -7940,9 +7939,9 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
 
 **A 10M-cell CSV or log parse over ~100 distinct tokens.** The intern table allocates **100 strings instead of 10,000,000** — only the miss path materializes one. Downstream reference equality then works, and the GC never sees the other 9,999,900 copies.
 
-This is the one collection you cannot build on the pre-.NET-9 BCL: `HashSet<string>.TryGetValue` takes a `string`, so you must **allocate the string before you can discover you already had it** — the very allocation you were trying to avoid. `string.Intern` is not a substitute either: it is process-wide, never collected for the life of the process, and still requires a `string` to hand it. A `StringInternTable` is an ordinary object — its scope is yours, `Clear` releases everything it holds, and dropping the table drops the interned strings with it.
+Before .NET 9 the BCL could not do this: `HashSet<string>.TryGetValue` takes a `string`, so you must **allocate the string before you can discover you already had it** — the very allocation you were trying to avoid. `string.Intern` is not a substitute either: it is process-wide, never collected for the life of the process, and still requires a `string` to hand it. A `StringInternTable` is an ordinary object — its scope is yours, `Clear` releases everything it holds, and dropping the table drops the interned strings with it.
 
-> **.NET 9+.** `Dictionary<string,V>.GetAlternateLookup<ReadOnlySpan<char>>()` can express the same pattern on .NET 9 and later. This type works on all three of Celerity's target frameworks, including the `net8.0` floor.
+> **.NET 9+.** `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()` can express the same pattern, and every runtime Celerity targets has it. This type packages it as one `GetOrAdd` call with a pluggable struct hasher. Its benchmark measures it against allocating a `string` per probe, not against the alternate lookup.
 
 ### Default hasher
 
@@ -8301,7 +8300,7 @@ public SparseTable(IEnumerable<T> values)                   // O(n log n) build 
 public SparseTable(IEnumerable<T> values, TMonoid monoid)
 ```
 
-The constructors take `IEnumerable<T>` rather than `ReadOnlySpan<T>` — unlike [`WaveletTree`](#wavelettree), and like `SegmentTree<T, TMonoid>`, the type a caller arrives here from. Offering both would make `new SparseTable<…>(anArray)` ambiguous on `net8.0`, and the table copies its input either way, so nothing is lost. A counted source (`T[]`, `List<T>`, …) is measured and copied straight into the first row; an uncounted one is materialized once.
+The constructors take `IEnumerable<T>` rather than `ReadOnlySpan<T>` — unlike [`WaveletTree`](#wavelettree), and like `SegmentTree<T, TMonoid>`, the type a caller arrives here from. Offering both would make `new SparseTable<…>(anArray)` ambiguous under C# 12, and the table copies its input either way, so nothing is lost. A counted source (`T[]`, `List<T>`, …) is measured and copied straight into the first row; an uncounted one is materialized once.
 
 They throw `ArgumentNullException` on a null source, and never alias a caller-supplied array — later writes to the source are not observed. `ArgumentException` is thrown when the source is long enough that `levels · n` would exceed `Array.MaxLength`; unlike the segment tree's ceiling this is not a fixed fraction of that limit, since the cells per element grow with the length. The product is computed as a `long` for exactly that reason: as an `int` it would wrap, and the constructor would allocate a nonsensically small array rather than report anything. The `monoid`-taking overload exists for a fold that carries state; a field-free monoid needs it not, since the other closes over `default(TMonoid)`.
 
@@ -8377,7 +8376,7 @@ public readonly struct SpatialPoint<TValue>
 }
 ```
 
-Coordinates are `double` rather than a generic numeric type. `INumber<T>` is available on the `net8.0` floor and would admit `int` or `float` coordinates, but every query compares *squared* distances, and a squared distance silently overflows an integer type at coordinates a map or a game world reaches easily.
+Coordinates are `double` rather than a generic numeric type. `INumber<T>` would admit `int` or `float` coordinates, but every query compares *squared* distances, and a squared distance silently overflows an integer type at coordinates a map or a game world reaches easily.
 
 ### How it works
 
@@ -8873,7 +8872,7 @@ public sealed class IntervalTree<TKey, TValue> : IntervalTree<TKey, TValue, Defa
 
 An **interval tree** is a build-once, immutable index over half-open `[start, end)` ranges that answers *which ranges cover this point* and *which ranges overlap this window* in time that tracks the matches found rather than the intervals stored — `O(log n + k)` when the matches cluster and `O(min(n, (k + 1) log n))` when they are scattered, where `k` is the number of matches. Both assume no stored *empty* intervals; with those the worst case is `O(n)`, for the reason given below.
 
-.NET ships nothing for this question — there is no interval tree, no interval map, and no range-overlap query anywhere in `System.Collections`, on any of `net8.0` / `net9.0` / `net10.0`. The idiomatic answer is a `List<T>` of ranges and a linear scan, which is `O(n)` per query. Sorting that list by start helps less than it looks, and the benchmark measures both: a sorted scan can stop once a start passes the query, roughly halving the work on a uniformly distributed query, but it cannot skip the *front* — an interval that begins far to the left can still cover the query point, so there is no lower bound to seek to and the scan stays linear. That is the gap this type fills — booking- and scheduling-conflict checks, IP-range and CIDR-to-owner lookup, effective-dated pricing and feature-flag windows, "which trace spans were live at time `t`", and the genomics overlap query the structure is named for.
+.NET ships nothing for this question — there is no interval tree, no interval map, and no range-overlap query anywhere in `System.Collections`. The idiomatic answer is a `List<T>` of ranges and a linear scan, which is `O(n)` per query. Sorting that list by start helps less than it looks, and the benchmark measures both: a sorted scan can stop once a start passes the query, roughly halving the work on a uniformly distributed query, but it cannot skip the *front* — an interval that begins far to the left can still cover the query point, so there is no lower bound to seek to and the scan stays linear. That is the gap this type fills — booking- and scheduling-conflict checks, IP-range and CIDR-to-owner lookup, effective-dated pricing and feature-flag windows, "which trace spans were live at time `t`", and the genomics overlap query the structure is named for.
 
 The sibling range structures index the *position* axis and cannot answer it. [`FenwickTree<T>`](#fenwicktreet) and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) fold values stored **at** positions; neither can enumerate the intervals that stab one.
 
@@ -9543,7 +9542,7 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
 
 A **compressed sparse row (CSR) graph**: a build-once, immutable directed graph over dense vertex ids `[0, VertexCount)`, stored as two flat `int[]` so a vertex's neighbours are a `ReadOnlySpan<int>` slice of one contiguous array rather than a heap object of their own.
 
-.NET ships nothing for this. There is no graph, no adjacency list, no adjacency matrix and no traversal anywhere in `System.Collections`, on any of `net8.0` / `net9.0` / `net10.0`, so the idiom that fills the vacuum is `Dictionary<int, List<int>>` — or, once a developer notices the ids are dense, `List<int>[]`. Both are benchmarked. What they pay is a hash lookup per vertex visited (the dictionary form only), one `List<int>` object plus its backing array per vertex, and an indirection through both on the one loop a traversal actually runs.
+.NET ships nothing for this. There is no graph, no adjacency list, no adjacency matrix and no traversal anywhere in `System.Collections`, so the idiom that fills the vacuum is `Dictionary<int, List<int>>` — or, once a developer notices the ids are dense, `List<int>[]`. Both are benchmarked. What they pay is a hash lookup per vertex visited (the dictionary form only), one `List<int>` object plus its backing array per vertex, and an indirection through both on the one loop a traversal actually runs.
 
 The two shipped types that sit next to graphs do not replace this and are not replaced by it. [`SparseSet`](#sparseset) is the **visited set** a traversal needs — its own documentation says so — which is bookkeeping, not the graph. [`DisjointSet<T>`](#disjointsett) answers *are these two connected* after a sequence of unions, which is a connectivity oracle: it cannot enumerate a vertex's neighbours, and it is undirected by construction.
 
@@ -9791,7 +9790,7 @@ An **Aho–Corasick automaton**: a build-once, immutable index over a fixed set 
 
 This is the other half of the text axis, and neither neighbour reaches it. [`Trie<TValue>`](#trietvalue) matches a *prefix of the query* — it walks from the root and stops, so finding its keys *inside* a text means re-walking from every position, at `O(n · m)`. [`SuffixArray`](#suffixarray) indexes *one fixed text* and answers one pattern at a time, which is the wrong way round when the text is what streams past and the pattern set is what is fixed. Here the **patterns** are indexed and the text is read once.
 
-The BCL has nothing that answers the same question. `string.IndexOf` and `MemoryExtensions.IndexOf` are single-needle scans, so `k` patterns cost `k` passes over the text. `Regex` with an alternation is the real workaround and a strong one — it is measured below rather than dismissed. .NET 9's `SearchValues<string>` does index the needles, but it answers `IndexOfAny`: *where is the first of these*, not *every occurrence of every pattern, and which one*, and it does not exist on this library's `net8.0` floor.
+The BCL has nothing that answers the same question. `string.IndexOf` and `MemoryExtensions.IndexOf` are single-needle scans, so `k` patterns cost `k` passes over the text. `Regex` with an alternation is the real workaround and a strong one — it is measured below rather than dismissed. .NET 9's `SearchValues<string>` does index the needles, but it answers `IndexOfAny`: *where is the first of these*, not *every occurrence of every pattern, and which one*.
 
 ### When to reach for it
 
@@ -10043,7 +10042,7 @@ A **hierarchical timing wheel**: a container of pending **deadlines**, with cons
 
 **It is a data structure, not a scheduler.** There is no thread, no clock and no callback: the caller owns time and drives the wheel with `Advance`. That is what keeps it deterministic, testable, and inside this library's [non-goals](https://github.com/marius-bughiu/Celerity/blob/main/ROADMAP.md#non-goals). A tick is whatever unit you schedule and advance in — milliseconds, frames, sequence numbers.
 
-.NET has nothing for this. `PriorityQueue<TElement, TPriority>` is what a developer reaches for and **it cannot cancel**: there is no `Remove` on the `net8.0` floor at all, and the one .NET 9 added is documented `O(n)`. `System.Threading.Timer` is a scheduler rather than a container — one object and one registration per timeout, which nobody allocates a hundred thousand of. [`IndexedPriorityQueue<TElement, TPriority, THasher>`](#indexedpriorityqueuetelement-tpriority-thasher) — this library's own addressable heap — *can* cancel, in `O(log n)`, and is the strong baseline this type is measured against rather than a reason to skip it.
+.NET has nothing for this. `PriorityQueue<TElement, TPriority>` is what a developer reaches for and **it cannot cancel** cheaply: its only removal, the `Remove` .NET 9 added, is documented `O(n)`. `System.Threading.Timer` is a scheduler rather than a container — one object and one registration per timeout, which nobody allocates a hundred thousand of. [`IndexedPriorityQueue<TElement, TPriority, THasher>`](#indexedpriorityqueuetelement-tpriority-thasher) — this library's own addressable heap — *can* cancel, in `O(log n)`, and is the strong baseline this type is measured against rather than a reason to skip it.
 
 ### The workload is defined by cancellation
 
@@ -10903,7 +10902,7 @@ The build is one sort, `O(n log n)`, then a pass to deduplicate and a pass over 
 levels, which hold about `n / B` keys. A source with many repeats may be copied once more into a
 smaller leaf array.
 
-There is deliberately no `ReadOnlySpan<T>` overload. On `net8.0` and `net9.0` an array argument
+There is deliberately no `ReadOnlySpan<T>` overload. Under C# 13 and earlier an array argument
 would be ambiguous between the two.
 
 The constructor throws in two cases:

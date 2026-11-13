@@ -38,11 +38,11 @@ The core packages layer as `Celerity.Primitives` ← `Celerity.Hashing` ← `Cel
 
 ```bash
 cd src
-dotnet build                 # multi-targets net8.0;net9.0;net10.0
+dotnet build                 # targets net10.0
 dotnet test                  # xUnit
 ```
 
-- `net8.0` is the floor. Shared code must not use net9/net10-only APIs unguarded — gate newer paths with `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` and keep a net8.0 fallback. The target list lives in `src/Directory.Build.props`.
+- `net10.0` is the only target; the list lives in `src/Directory.Build.props`. The 3.6.x line (the last built for `net8.0` / `net9.0`) lives on the `support/net8` branch: a security fix for it is a PR against that branch, not `main`.
 - Coverage is gated in CI at 100% line and 100% branch across all eight shipping packages. New code needs its tests. For a branch no test can reach, use `[ExcludeFromCodeCoverage(Justification = "…")]` rather than lowering the floor, and add a new shipping package's assembly to `src/coverage.runsettings` (the filter is exact-match, so an unlisted package is silently unmeasured).
 - Every public type/member needs an XML doc comment that is also well-formed XML. `GenerateDocumentationFile` is on and every shipping package promotes CS1591 (missing) and CS1570 (badly formed) to build errors — a stray unclosed tag makes the doc writer drop the whole member from the shipped `.xml`, not truncate it.
 - Every `const` is `PascalCase` — fields and method-locals, any accessibility (`DefaultCapacity`, `FnvPrime`), never `UPPER_CASE` or `camelCase`. `node scripts/check_constant_naming.js` gates this in CI over the shipping packages; run it after adding constants. The two allowances (short spec symbols like `C1`, and a `Prime64_1`-style digit index) are described in `CONTRIBUTING.md`.

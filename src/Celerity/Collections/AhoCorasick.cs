@@ -26,7 +26,7 @@ namespace Celerity.Collections;
 /// genuinely strong one; it is measured here as a baseline rather than dismissed, in its compiled and
 /// allocation-free forms. .NET 9's <c>SearchValues&lt;string&gt;</c> does index the needles, but it answers
 /// <c>IndexOfAny</c> — <i>where is the first of these</i> — not <i>every occurrence of every pattern, and
-/// which one</i>, and it does not exist on this library's <c>net8.0</c> floor.
+/// which one</i>.
 /// </para>
 /// <para>
 /// <b>Overlapping matches are reported, not resolved.</b> Over <c>"ushers"</c> with the patterns

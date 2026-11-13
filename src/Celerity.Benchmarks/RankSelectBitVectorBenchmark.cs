@@ -4,7 +4,7 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 
 // RankSelectBitVector vs the loop a caller writes by hand. There is no BCL counterpart at all — BitArray has
-// neither rank nor select, BitOperations.PopCount is per-word, and .NET 8/9/10 ship no succinct data-structure
+// neither rank nor select, BitOperations.PopCount is per-word, and .NET ships no succinct data-structure
 // support — so the honest baseline is the naive popcount walk over the same packed ulong[], marked Baseline in
 // every category and named Array_* so the dashboard classifies it as the reference arm.
 //

@@ -159,9 +159,8 @@ public class IntervalTree<TKey, TValue, TComparer> : IReadOnlyList<Interval<TKey
         _comparer = comparer;
 
         // Deliberately the only build entry point. A ReadOnlySpan<Interval<,>> overload alongside it would be
-        // ambiguous for the commonest argument of all — an array — under C# 12, which is what net8.0 (the
-        // floor TFM) compiles as; the same call resolves on a newer language version, so the break would land
-        // only on the oldest supported consumers.
+        // ambiguous for the commonest argument of all — an array — under C# 12; the same call resolves on a
+        // newer language version, so the break would land only on consumers who pin an older one.
         //
         // A counted source is sized and copied once, as the sibling trees' constructors do. Going through a
         // List<T> unconditionally would allocate and copy a second backing array for the commonest sources of

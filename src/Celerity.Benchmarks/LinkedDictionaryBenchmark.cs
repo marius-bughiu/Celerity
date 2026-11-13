@@ -3,11 +3,11 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 using Celerity.Hashing;
 
-// LinkedDictionary<int, int, ...> vs the idiomatic insertion-ordered dictionary a net8.0 caller writes
-// today: a Dictionary keyed to the nodes of a LinkedList of entries. (.NET 9's generic
-// OrderedDictionary is out of reach here — this project and its CI runner target net8.0 — and the
-// non-generic System.Collections.Specialized.OrderedDictionary boxes every key and value and finds a
-// key to remove by linear scan, so it is no contest.) Both sides keep insertion order through an O(1)
+// LinkedDictionary<int, int, ...> vs the insertion-ordered dictionary a caller builds by hand when
+// removal must stay O(1): a Dictionary keyed to the nodes of a LinkedList of entries. (.NET 9's generic
+// OrderedDictionary removes in O(n), so its local comparison lives in the API reference rather than in
+// this series, and the non-generic System.Collections.Specialized.OrderedDictionary boxes every key and
+// value and finds a key to remove by linear scan, so it is no contest.) Both sides keep insertion order through an O(1)
 // Remove; they differ in where the order lives. The baseline allocates a LinkedListNode per entry and
 // chases heap pointers; LinkedDictionary threads its order through the same entry array the hash
 // chains index, so Insert allocates nothing beyond the pre-sized table. Remove takes every key in a

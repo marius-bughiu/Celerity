@@ -19,7 +19,7 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// The BCL has no counterpart. <see cref="System.Collections.BitArray"/> exposes neither rank nor select,
-/// <see cref="BitOperations.PopCount(ulong)"/> is per-word, and nothing in .NET 8/9/10 ships succinct
+/// <see cref="BitOperations.PopCount(ulong)"/> is per-word, and nothing in .NET ships succinct
 /// data-structure support — so the honest baseline is the loop a caller writes by hand, popcounting every word
 /// below the query position. That loop is <c>O(index / 64)</c>: at the midpoint of a 100-million-bit vector it is
 /// roughly 780,000 iterations, which this type replaces with two index loads and one masked population count,

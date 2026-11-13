@@ -18,10 +18,10 @@ namespace Celerity.Hashing;
 /// <see cref="IHashProvider{T}"/>, mirroring the independent
 /// <see cref="IHashProvider64{T}"/> sibling: <see cref="IHashProvider{T}"/> is generic in
 /// its key type, and a <c>ref struct</c> such as <see cref="ReadOnlySpan{T}"/> could not be
-/// used as a generic type argument before <c>allows ref struct</c> (C# 13 / .NET 9) —
-/// while <c>net8.0</c> remains this library's floor. Expressing the span overload as a
-/// separate non-generic interface sidesteps that entirely, because the span is a method
-/// parameter rather than a type argument. In practice every built-in
+/// used as a generic type argument before <c>allows ref struct</c> (C# 13 / .NET 9), and
+/// <c>net8.0</c> was this library's floor when the interface shipped. Expressing the span
+/// overload as a separate non-generic interface sidesteps that entirely, because the span is
+/// a method parameter rather than a type argument. In practice every built-in
 /// <c>String*Hasher</c> implements both, so a single struct serves both call shapes.
 /// </para>
 /// <para>

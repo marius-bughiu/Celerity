@@ -1,31 +1,35 @@
 <Project>
 
   <!--
-    Shared multi-target framework list (#189).
+    Shared target framework list.
 
-    The five core shipped packages (Celerity.Collections / Celerity.Hashing /
-    Celerity.Primitives / Celerity.Sorting / Celerity.Statistics), the test project, and the Native AOT
-    smoke test all build for this same set of TFMs so they stay in lockstep — bump the list in
-    one place and every shipped assembly and its verification follow.
+    Every shipped package, the core test project, and the Native AOT smoke test
+    build for this same list, so they stay in lockstep: change it in one place and
+    every shipped assembly and its verification follow.
 
-    Why these three:
-      - net8.0  — the prior single target; LTS (Nov 2023). Kept so existing
-                  consumers are never dropped.
-      - net9.0  — required by #189; STS (Nov 2024). Included for consumers still
-                  on the 9.x line during the transition, even though its support
-                  window is short.
-      - net10.0 — GA Nov 2025, LTS, and the SDK the family already builds with.
-                  Folded in now (the issue's "evaluate net10.0" decision) so
-                  newer-runtime consumers get an assembly compiled against their
-                  own reference pack, ready for future TFM-gated (#if) paths.
+    net10.0 (LTS, GA Nov 2025) is the only target. The net8.0 and net9.0 targets
+    that #189 added were dropped after 3.6.0, the last release built for them;
+    security fixes for that line ship from the support/net8 branch.
 
-    Newer-runtime-only optimizations are guarded with #if NET9_0_OR_GREATER /
-    NET10_0_OR_GREATER; the trim / AOT analyzers and the CS1591 doc gate run on
-    every TFM. Dev-only, non-shipped projects (Celerity.Benchmarks,
-    Celerity.Fuzz) deliberately stay single-TFM — they are tools, not packages.
+    The property stays a list (TargetFrameworks, not TargetFramework) so a future
+    TFM is a one-word change here. A newer-runtime-only path would then be
+    guarded with #if NET11_0_OR_GREATER (or later) and keep a net10.0 fallback.
+    The dev-only, non-shipped projects (Celerity.Benchmarks, Celerity.Fuzz and
+    the three showcase test projects) are single-TFM net10.0.
   -->
   <PropertyGroup>
-    <CelerityTargetFrameworks>net8.0;net9.0;net10.0</CelerityTargetFrameworks>
+    <CelerityTargetFrameworks>net10.0</CelerityTargetFrameworks>
+  </PropertyGroup>
+
+  <!--
+    Pre-release version floor for the shipped packages (MinVer still derives
+    every version from the git tags). Dropping net8.0 and net9.0 makes the next
+    release a major one, so without this floor MinVer would stamp builds after
+    the v3.6.0 tag 3.6.1-beta.*, a patch-looking version that no longer restores
+    on .NET 8 or 9. Inert once a v4.0.0 (or later) tag exists.
+  -->
+  <PropertyGroup>
+    <MinVerMinimumMajorMinor>4.0</MinVerMinimumMajorMinor>
   </PropertyGroup>
 
   <!--

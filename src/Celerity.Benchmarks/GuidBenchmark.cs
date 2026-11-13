@@ -5,7 +5,7 @@ using Celerity.Primitives;
 /// <summary>
 /// Head-to-head throughput of <see cref="FastGuid"/> — the non-cryptographic version&#160;4 and the RFC&#160;9562
 /// big-endian version&#160;7 (stateless and the strictly monotonic <see cref="GuidV7Generator{TRng}"/>) — against
-/// the BCL GUID factories <see cref="System.Guid.NewGuid()"/> and (on .NET&#160;9+) <c>Guid.CreateVersion7()</c>
+/// the BCL GUID factories <see cref="System.Guid.NewGuid()"/> and <see cref="System.Guid.CreateVersion7()"/>
 /// (issue #195).
 /// </summary>
 /// <remarks>
@@ -18,10 +18,10 @@ using Celerity.Primitives;
 /// </para>
 /// <para>
 /// Each category fixes one GUID version; the BCL form is the baseline and each <c>FastGuid</c> form a candidate,
-/// so the ratio reads as "the PRNG-filled GUID relative to the BCL factory". The benchmark currently targets
-/// net8.0, where <c>Guid.CreateVersion7()</c> does not exist; the <c>#if NET9_0_OR_GREATER</c> arm activates the
-/// big-endian-vs-mixed-endian v7 comparison once the project multi-targets (roadmap #189). This is an isolated
-/// microbenchmark, so it lives in the <strong>extended</strong> suite (not the per-PR core regression gate).
+/// so the ratio reads as "the PRNG-filled GUID relative to the BCL factory". The v7 category also measures the
+/// BCL's own <see cref="System.Guid.CreateVersion7()"/>, whose mixed-endian layout is the comparison the big-endian
+/// <see cref="FastGuid"/> v7 exists for. This is an isolated microbenchmark, so it lives in the
+/// <strong>extended</strong> suite (not the per-PR core regression gate).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
@@ -86,7 +86,6 @@ public class GuidBenchmark
         return acc;
     }
 
-#if NET9_0_OR_GREATER
     [Benchmark]
     [BenchmarkCategory("V7")]
     public int V7_BclCreateVersion7()
@@ -95,7 +94,6 @@ public class GuidBenchmark
         for (int i = 0; i < Draws; i++) acc ^= Guid.CreateVersion7().GetHashCode();
         return acc;
     }
-#endif
 
     [Benchmark]
     [BenchmarkCategory("V7")]

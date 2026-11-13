@@ -26,16 +26,12 @@ jobs:
           fetch-depth: 0
           filter: tree:0
 
-      # All three target frameworks (#189). The SDKs provide the down-level
-      # reference packs and the matching runtimes, so `dotnet test` exercises the
-      # multi-targeted test project on net8.0, net9.0, and net10.0 in one pass.
+      # net10.0 is the only target framework; the 3.6.x line that also targeted
+      # net8.0 and net9.0 is built and tested on the support/net8 branch.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Restore dependencies
         run: dotnet restore
@@ -46,8 +42,6 @@ jobs:
       - name: Verify benchmark warmup lifecycle
         run: dotnet run --no-build --configuration Release --project Celerity.Benchmarks -- --warmup-self-test
 
-      # The test project multi-targets net8.0;net9.0;net10.0, so a single
-      # `dotnet test` run executes the full suite once per TFM on its own runtime.
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
 
@@ -90,16 +84,13 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Restore workloads
         run: dotnet workload restore
 
       # Packing is what the metadata check below inspects: it needs the actual
-      # .nupkg / .snupkg pair for every shipped package, across every TFM.
+      # .nupkg / .snupkg pair for every shipped package.
       - name: Pack
         run: dotnet pack --configuration Release --output ${{ github.workspace }}/nuget -p:ContinuousIntegrationBuild=true
 
@@ -201,13 +192,12 @@ jobs:
     name: aot-publish (linux-x64, ${{ matrix.tfm }})
     runs-on: ubuntu-latest
 
-    # Native-AOT-publish and run the smoke test on every shipped TFM (#189), so
-    # the AOT/trim verification covers net8.0, net9.0, and net10.0 — not just the
-    # lowest target.
+    # Native-AOT-publish and run the smoke test on every shipped TFM. net10.0 is
+    # the only one today; the matrix keeps a future TFM a one-word change.
     strategy:
       fail-fast: false
       matrix:
-        tfm: [ net8.0, net9.0, net10.0 ]
+        tfm: [ net10.0 ]
 
     defaults:
       run:
@@ -222,10 +212,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       # Native AOT needs a platform linker; ubuntu-latest ships gcc/clang but the
       # ILCompiler links against clang + zlib, so install them explicitly.

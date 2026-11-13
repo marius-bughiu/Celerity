@@ -56,13 +56,13 @@ public sealed class StringInternTable : StringInternTable<StringFnV1AFullHasher>
 /// reference equality then works, and the GC never sees the other 9,999,900 copies.
 /// </para>
 /// <para>
-/// <strong>Why the BCL cannot do this before .NET 9.</strong>
-/// <c>HashSet&lt;string&gt;.TryGetValue</c> takes a <see cref="string"/>, so you must
-/// <em>allocate the string before you can discover you already had it</em> — the allocation
-/// this type exists to avoid. .NET 9's
-/// <c>Dictionary&lt;string,V&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>
-/// closes that gap on .NET 9+; this type works the same way on <c>net8.0</c>, which is
-/// Celerity's floor, and stays available on all three target frameworks.
+/// <strong>The BCL equivalent.</strong>
+/// <c>HashSet&lt;string&gt;.TryGetValue</c> takes a <see cref="string"/>, so on its own it makes
+/// you <em>allocate the string before you can discover you already had it</em> — the allocation
+/// this type exists to avoid. .NET 9 added
+/// <c>HashSet&lt;string&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>, which probes
+/// with a span and is available on every runtime Celerity targets; this type packages the same
+/// pattern as one <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with a pluggable struct hasher.
 /// </para>
 /// <para>
 /// <strong>Not <see cref="string.Intern(string)"/>.</strong> The runtime intern pool is

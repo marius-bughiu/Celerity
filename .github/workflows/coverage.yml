@@ -46,26 +46,22 @@ jobs:
           fetch-depth: 0
           filter: tree:0
 
-      # Both SDKs: the core suite is collected on net8.0 (the floor TFM), while the
-      # three showcase test projects are single-target net10.0.
+      # net10.0 is the only target framework, for the core suite and the three
+      # showcase test projects alike.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
-      # Coverage for the core packages is collected on net8.0 only. The library
-      # source is identical across the multi-targeted TFMs (#189) — no #if-gated
-      # code paths today — so one TFM fully covers the line/branch surface and
-      # keeps the report deterministic. If a #if-gated path is ever introduced,
-      # this step has to fan out over the TFMs, or the 100% floor will start
-      # failing on the gated arm.
+      # Coverage for the core packages is collected on net10.0, the only TFM. If
+      # a second TFM and a #if-gated path are ever introduced, this step has to
+      # fan out over the TFMs, or the 100% floor will start failing on the gated
+      # arm.
       - name: Collect coverage (core packages)
         working-directory: src
         run: >
           dotnet test Celerity.Tests/Celerity.Tests.csproj
-          --framework net8.0
+          --framework net10.0
           --configuration Release
           --collect:"XPlat Code Coverage"
           --settings coverage.runsettings

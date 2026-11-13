@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Removed
+
+- ⚠️ **Breaking:** every package now targets `net10.0` only; the `net8.0` and `net9.0` targets are gone, and no API changed with them. On .NET 8 or 9, stay on 3.6.x, the last line built for them: its security fixes ship from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch. The benchmark dashboard now measures on .NET 10 too, so its figures from before and after this change do not compare directly. See the [migration guide](docs/migration.md#net80--net90--net100--after-36x).
+
 ## [3.6.0] - 2026-11-13
 
 ### Added

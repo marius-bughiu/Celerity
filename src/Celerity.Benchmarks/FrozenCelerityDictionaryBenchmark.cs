@@ -83,11 +83,11 @@ public class FrozenCelerityDictionaryBenchmark
     }
 
     // ── SpanLookup (the caller holds spans, not strings) ──────────────────────
-    // The baseline is what a net8.0 caller must do to probe any string-keyed collection: allocate the
-    // string first. The Celerity arm probes the span directly, so the whole allocation and copy vanish —
-    // which is the point, and why this category is the one with allocation numbers worth reading.
-    // (.NET 9's Dictionary<string,V>.GetAlternateLookup closes this gap on that runtime; this project
-    // targets net8.0, the floor where the BCL has no answer.)
+    // The baseline probes the way a caller without an alternate lookup must: allocate the string first.
+    // The Celerity arm probes the span directly, so the whole allocation and copy vanish — which is the
+    // point, and why this category is the one with allocation numbers worth reading. (.NET 9's
+    // Dictionary<string,V>.GetAlternateLookup also probes with a span; it is not an arm here, so the ratio
+    // is against the allocating probe, not the BCL's best answer.)
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("SpanLookup")]

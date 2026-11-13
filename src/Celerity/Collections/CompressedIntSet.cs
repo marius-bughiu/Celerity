@@ -24,7 +24,7 @@ namespace Celerity.Collections;
 /// <b>This is not a Roaring codec.</b> The layout is Roaring-shaped and a maintained pure-C#
 /// Roaring implementation already exists (<c>Equativ.RoaringBitmaps</c>). What this type offers over
 /// it is integration rather than novelty: full mutability, verified Native AOT and trim
-/// compatibility on all three target frameworks, published benchmarks against
+/// compatibility, published benchmarks against
 /// <see cref="HashSet{T}"/> on the project dashboard, and membership of the same
 /// <see cref="BitSet"/> / <see cref="SparseSet"/> / <see cref="IntSet{THasher}"/> family and shared
 /// test suites.

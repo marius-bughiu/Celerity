@@ -24,11 +24,9 @@ using Celerity.Collections;
 /// </para>
 /// <para>
 /// <b>The .NET 9+ caveat.</b> .NET 9 shipped
-/// <c>Dictionary&lt;string,V&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>, which closes
-/// this gap for a plain dictionary on that runtime. It is not benchmarked here because this project
-/// targets <c>net8.0</c> only — the floor where the BCL has no answer at all, and the reason the type
-/// exists. On .NET 9+ the two approaches are comparable; the library's value there is that the same code
-/// works across all three of Celerity's target frameworks.
+/// <c>HashSet&lt;string&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>, which closes this
+/// gap for the BCL, and every runtime Celerity targets has it. It is not an arm here, so these ratios are
+/// against the allocate-then-probe workaround that predates it, not against the BCL's best answer.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser]

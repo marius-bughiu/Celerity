@@ -24,8 +24,8 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>The workload is defined by cancellation.</b> Almost every timeout is cancelled rather than fired: the
 /// reply arrives, the lease is renewed, the connection closes cleanly. That is the axis on which the obvious
-/// structures fail. <see cref="PriorityQueue{TElement, TPriority}"/> has no removal on the <c>net8.0</c> floor
-/// at all, and the <c>Remove</c> added in .NET 9 is documented <c>O(n)</c>, so the standard workaround is lazy
+/// structures fail. <see cref="PriorityQueue{TElement, TPriority}"/>'s only removal, the <c>Remove</c> added in
+/// .NET 9, is documented <c>O(n)</c>, so the standard workaround is lazy
 /// deletion — push everything, keep a <c>HashSet</c> of cancelled ids, and discard tombstones on pop. The heap
 /// then grows with the timers that will never fire, keeps their payloads alive until they are popped, and pays
 /// a hash probe per pop. <see cref="IndexedPriorityQueue{TElement, TPriority, THasher}"/> — this library's

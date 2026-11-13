@@ -26,15 +26,11 @@ jobs:
           fetch-depth: 0
           filter: tree:0
 
-      # All three target frameworks (#189) so `dotnet pack` can build the
-      # net8.0/net9.0/net10.0 assemblies for each of the three packages.
+      # net10.0 is the only target framework, so one SDK builds every package.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Restore workloads
         run: dotnet workload restore
@@ -81,7 +77,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       - name: Authenticate to NuGet.org via trusted publishing
         id: nuget-login

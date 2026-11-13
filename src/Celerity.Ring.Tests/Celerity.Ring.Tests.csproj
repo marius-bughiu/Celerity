@@ -2,10 +2,8 @@
 
   <PropertyGroup>
     <!--
-      Dev-only test project, single-targeted to net10.0: only the net10.0 runtime is
-      required to run it, while the shipped Celerity.Ring package still multi-targets
-      net8.0/net9.0/net10.0. Keeping tests single-TFM halves test time and avoids the
-      per-TFM test-host churn.
+      Dev-only test project, single-targeted to net10.0, the shipped Celerity.Ring
+      package's only target.
     -->
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

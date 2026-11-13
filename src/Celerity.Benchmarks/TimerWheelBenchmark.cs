@@ -19,9 +19,9 @@ using Celerity.Hashing;
 /// than guessed at.
 /// </para>
 /// <para>
-/// The BCL arm is a lazy-deletion heap, which is not a strawman but the standard workaround: there is no
-/// <c>Remove</c> on <see cref="PriorityQueue{TElement, TPriority}"/> at all on the <c>net8.0</c> floor, and the
-/// one .NET 9 added is documented <c>O(n)</c>. So a cancel is a <see cref="HashSet{T}"/> insert — genuinely
+/// The BCL arm is a lazy-deletion heap, which is not a strawman but the standard workaround: the only
+/// <c>Remove</c> on <see cref="PriorityQueue{TElement, TPriority}"/>, added in .NET 9, is documented
+/// <c>O(n)</c>. So a cancel is a <see cref="HashSet{T}"/> insert — genuinely
 /// cheap, and the reason the <c>Cancel</c> group is not the blowout one might expect — paid for at drain time,
 /// where every cancelled timer still has to be popped and then discarded.
 /// <see cref="IndexedPriorityQueue{TElement, TPriority, THasher}"/> is the strong baseline: it cancels for

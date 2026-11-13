@@ -115,7 +115,7 @@ Yes — every package in the family sets `<IsAotCompatible>true</IsAotCompatible
 
 ### What target frameworks are supported?
 
-All eight packages multi-target **`net8.0`, `net9.0`, and `net10.0`**, so NuGet restores the assembly compiled against your project's own runtime. Install with `dotnet add package Celerity.Collections` (it transitively pulls in `Celerity.Hashing` and `Celerity.Primitives`); `Celerity.Sorting`, `Celerity.Statistics` and the showcase-tier packages are separate installs. `net8.0` (LTS) remains the floor, so the library runs anywhere from .NET 8 upward; net9/net10 consumers additionally get an assembly built against their reference pack, ready for future runtime-gated optimizations.
+All eight packages target **`net10.0`** (LTS). Install with `dotnet add package Celerity.Collections` (it transitively pulls in `Celerity.Hashing` and `Celerity.Primitives`); `Celerity.Sorting`, `Celerity.Statistics` and the showcase-tier packages are separate installs. On .NET 8 or 9, use the 3.6.x line: 3.6.0 is the last release built for `net8.0` and `net9.0`, and security fixes for it ship from the `support/net8` branch.
 
 ### Is it one package or several?
 

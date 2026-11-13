@@ -6,9 +6,8 @@ namespace Celerity.Collections;
 /// <typeparam name="TValue">The payload carried alongside the coordinates.</typeparam>
 /// <remarks>
 /// <para>
-/// The coordinates are <see cref="double"/> rather than a generic numeric type. <c>INumber&lt;T&gt;</c> is
-/// available on the <c>net8.0</c> floor and would admit <see cref="int"/> or <see cref="float"/> coordinates,
-/// but every spatial query compares <i>squared</i> distances, and a squared distance silently overflows an
+/// The coordinates are <see cref="double"/> rather than a generic numeric type. <c>INumber&lt;T&gt;</c> would
+/// admit <see cref="int"/> or <see cref="float"/> coordinates, but every spatial query compares <i>squared</i> distances, and a squared distance silently overflows an
 /// integer type at coordinates a map or a game world reaches easily. Widening to <see cref="double"/> at the
 /// boundary is the cost of not having that failure mode.
 /// </para>

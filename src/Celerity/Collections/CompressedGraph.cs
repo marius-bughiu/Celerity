@@ -11,7 +11,7 @@ namespace Celerity.Collections;
 /// <remarks>
 /// <para>
 /// .NET ships nothing for this. There is no graph, no adjacency list, no adjacency matrix and no traversal
-/// anywhere in <c>System.Collections</c> on any of net8/9/10, so the idiom that fills the vacuum is
+/// anywhere in <c>System.Collections</c>, so the idiom that fills the vacuum is
 /// <c>Dictionary&lt;int, List&lt;int&gt;&gt;</c> or <c>List&lt;int&gt;[]</c>. That shape pays for itself three
 /// times over on the one loop a traversal actually runs — expand a vertex, read its neighbours: a hash lookup
 /// per visit on the dictionary form, a <see cref="List{T}"/> object plus its backing array per vertex so
@@ -130,7 +130,7 @@ public sealed class CompressedGraph : IReadOnlyList<GraphEdge>
         // A counted source is sized and copied once, as the sibling build-once types' constructors do; going
         // through a List<T> unconditionally would allocate and copy a second backing array for the commonest
         // sources of all. A ReadOnlySpan<GraphEdge> overload alongside this one would be ambiguous for an
-        // array argument under C# 12, which is what the net8.0 floor compiles as.
+        // array argument under C# 12, which a consumer can still pin.
         GraphEdge[] items;
         if (edges is ICollection<GraphEdge> counted)
         {

@@ -167,7 +167,7 @@ A span has no `null` state: `default(ReadOnlySpan<char>)` is empty, and empty me
 
 ### Why it is a separate interface
 
-`IHashProvider<T>.Hash(T)` is generic in its key type, and a `ref struct` such as `ReadOnlySpan<char>` could not be used as a generic type argument before `allows ref struct` (C# 13 / .NET 9) — while `net8.0` is Celerity's floor. Expressing the span overload as a separate **non-generic** interface sidesteps that entirely, because the span is a method parameter rather than a type argument. The same reasoning gave `IHashProvider64<T>` its independent shape.
+`IHashProvider<T>.Hash(T)` is generic in its key type, and a `ref struct` such as `ReadOnlySpan<char>` could not be used as a generic type argument before `allows ref struct` (C# 13 / .NET 9), and `net8.0` was Celerity's floor when the interface shipped. Expressing the span overload as a separate **non-generic** interface sidesteps that entirely, because the span is a method parameter rather than a type argument. The same reasoning gave `IHashProvider64<T>` its independent shape.
 
 ### Implementing it on a custom hasher
 

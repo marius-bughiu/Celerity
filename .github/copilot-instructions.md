@@ -56,7 +56,7 @@ dotnet pack --configuration Release
 ## Code Conventions and Standards
 
 ### General Guidelines
-- **Target Framework**: .NET 8.0
+- **Target Framework**: .NET 10.0 (`net10.0`)
 - **Language**: C# with nullable reference types enabled
 - **Implicit Usings**: Enabled
 - **Documentation**: XML comments are required for all public APIs (`GenerateDocumentationFile` is enabled)

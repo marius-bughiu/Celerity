@@ -120,8 +120,8 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
     /// <remarks>
     /// The constructors take <see cref="IEnumerable{T}"/> rather than <see cref="ReadOnlySpan{T}"/> — unlike
     /// <see cref="WaveletTree"/>, and like <see cref="SegmentTree{T, TMonoid}"/>, the type a caller arrives
-    /// here from. Offering both would make <c>new SparseTable&lt;…&gt;(anArray)</c> ambiguous on
-    /// <c>net8.0</c>, and the table copies its input either way.
+    /// here from. Offering both would make <c>new SparseTable&lt;…&gt;(anArray)</c> ambiguous under C# 12,
+    /// and the table copies its input either way.
     /// </remarks>
     public SparseTable(IEnumerable<T> values, TMonoid monoid)
     {

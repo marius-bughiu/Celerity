@@ -12,7 +12,7 @@ dotnet build
 dotnet test
 ```
 
-Requirements: .NET 8 SDK. Everything else is fetched via NuGet.
+Requirements: .NET 10 SDK. Everything else is fetched via NuGet.
 
 ## Project layout
 
@@ -52,7 +52,7 @@ src/
 
 Most of these are enforced by review rather than by an analyzer — the constant-naming rule is the exception, and has a CI check behind it. Reading the existing code is the fastest way to get a feel for the style.
 
-- The packages multi-target `net8.0;net9.0;net10.0` (the shared list lives in [`src/Directory.Build.props`](src/Directory.Build.props); bump it there). `net8.0` is the lowest target, so shared code must not use net9/net10-only APIs unguarded — gate any newer-runtime path with `#if NET9_0_OR_GREATER` / `NET10_0_OR_GREATER` and keep a net8.0 fallback. Nullable reference types are enabled.
+- The packages target `net10.0` (the shared list lives in [`src/Directory.Build.props`](src/Directory.Build.props); change it there). If a newer target is ever added beside it, gate any newer-runtime path with `#if NET11_0_OR_GREATER` (or later) and keep a `net10.0` fallback. The 3.6.x line, the last built for `net8.0` and `net9.0`, lives on the `support/net8` branch: a security fix for it is a pull request against that branch, not `main`. Nullable reference types are enabled.
 - File-scoped namespaces (`namespace Celerity.Hashing;`).
 - `PascalCase` for public members, `_camelCase` for private fields.
 - `PascalCase` for **every** `const` too — any accessibility, field or method-local. See [Constant naming](#constant-naming) below; it is checked in CI.

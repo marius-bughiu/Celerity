@@ -3,8 +3,8 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 using Celerity.Hashing;
 
-// LinkedSet<int, ...> vs the idiomatic insertion-ordered set a net8.0 caller writes today: a
-// Dictionary keyed to the nodes of a LinkedList of elements. (HashSet<T> only keeps insertion order
+// LinkedSet<int, ...> vs the insertion-ordered set a caller builds by hand: a Dictionary keyed to the
+// nodes of a LinkedList of elements. (HashSet<T> only keeps insertion order
 // until the first removal, and a HashSet beside a List has an O(n) Remove, so neither is a fair
 // stand-in.) Both sides keep insertion order through an O(1) Remove; they differ in where the order
 // lives. The baseline allocates a LinkedListNode per element and chases heap pointers; LinkedSet

@@ -9,7 +9,7 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<!--
-		  Native AOT / trimming compatibility (#32). On net8.0 this single switch
+		  Native AOT / trimming compatibility (#32). This single switch
 		  marks the assembly trimmable and turns on the trim, AOT, and single-file
 		  Roslyn analyzers, so every build statically verifies the library stays
 		  free of reflection / trim hazards. The library uses no reflection — only

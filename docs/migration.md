@@ -289,6 +289,13 @@ var map = new RangeMap<int, string>(null);
 var map = new RangeMap<int, string>((IEqualityComparer<string>?)null);
 ```
 
+## `net8.0` / `net9.0` → `net10.0` — after 3.6.x
+
+Releases after the 3.6.x line target **`net10.0` only**. 3.6.0 is the last release built for `net8.0` and `net9.0`. No API changed with the targets, so this is a break in where the packages install, not in your code.
+
+- **On .NET 10:** nothing to do. NuGet already restored the `net10.0` assembly.
+- **On .NET 8 or 9:** keep the 3.6.x line, for example `<PackageReference Include="Celerity.Collections" Version="3.6.*" />`. A later version fails to restore with `NU1202` (not compatible with your target framework). Security fixes for 3.6.x ship as patch releases from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch.
+
 ## See also
 
 - [Choosing a collection](../README.md#choosing-a-collection)
