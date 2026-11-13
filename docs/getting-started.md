@@ -26,7 +26,7 @@ All eight packages — these five and the three [showcase packages](README.md#bu
 
 ## First steps
 
-Two examples cover the common surface. The [collections guide](collections.md) walks through each family with worked examples, and the [API reference](api/collections.md) documents every type.
+Two examples cover the common surface. The [collections guide](collections.md) walks through each family, and the [API reference](api/collections.md) documents every type.
 
 `IntDictionary<TValue>` defaults to `Int32WangNaiveHasher`, so most callers don't pick a hasher:
 

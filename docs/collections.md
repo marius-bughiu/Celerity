@@ -44,9 +44,9 @@ The mutable dictionaries implement **both** `IDictionary<TKey, TValue?>` and `IR
 
 ### Examples
 
-The two everyday dictionaries, `IntDictionary<TValue>` and `CelerityDictionary<TKey, TValue, THasher>`, are walked through in [Getting started](getting-started.md#first-steps).
+The two everyday dictionaries, `IntDictionary<TValue>` and `CelerityDictionary<TKey, TValue, THasher>`, are walked through in [Getting started](getting-started.md#first-steps), which also shows how to [build one from an existing collection](getting-started.md#constructing-from-an-existing-collection).
 
-#### Specialized dictionaries
+#### Specialized dictionaries — RobinHood, Swiss, HashCaching, Pooled, Linked, Bi, Frozen, MultiMap, MultiSet, Small, EnumMap, SparseMap, SlotMap
 
 All four `CelerityDictionary` peers below are drop-in (same API, same hashers) and differ only in collision strategy / storage:
 
@@ -239,6 +239,8 @@ foreach (var entry in versions.EnumerateRange(1_500, 3_500))
 The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`) all implement **`ISet<T>`** and **`IReadOnlySet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used. (The bounded-domain sets, `EnumSet`, `SparseSet` and `HierarchicalBitSet`, are the exception to "drop in anywhere": they store only values in their fixed domain, so a mutating op that must add an out-of-domain value throws.)
 
 ### Examples
+
+#### Sets — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, LinkedSet, FrozenCeleritySet, SmallSet, EnumSet, SparseSet, HierarchicalBitSet, CompressedIntSet
 
 ```csharp
 var seen = new IntSet();
@@ -606,7 +608,9 @@ if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string
 - `StringInternTable` / `StringInternTable<THasher>` — a **canonicalizing token table** probed with a `ReadOnlySpan<char>`: `GetOrAdd` returns the one shared `string` for those characters and allocates **only on a miss**. A 10M-cell parse over 100 distinct tokens creates 100 strings instead of 10,000,000. `HashSet<string>.TryGetValue` alone makes you allocate the string *before* you can discover you already had it (.NET 9's `GetAlternateLookup` is the BCL's span-keyed answer), and `string.Intern` is process-wide, never collected, and still needs a `string`. Implements `IReadOnlyCollection<string>`.
 - The same span-keyed probes ship on `FrozenCelerityDictionary`, `FrozenCeleritySet`, `CelerityDictionary<string, …>`, `CeleritySet<string, …>`, `Trie<TValue>`, and `SuccinctTrie<TValue>` — so a tokenizer, CSV/log reader, or route dispatcher holding a slice of its input buffer never has to call `new string(span)` per lookup. The BCL's equivalent is `Dictionary<string,V>.GetAlternateLookup` (.NET 9+), a separate lookup struct; here the overloads sit on the collection itself. See [span-keyed lookups](api/collections.md#span-keyed-lookups).
 
-The probes are shown in use in the API reference's [span-keyed lookups](api/collections.md#span-keyed-lookups) section, and `StringInternTable` has [its own example](api/collections.md#stringinterntable) there.
+### Examples
+
+`StringInternTable`'s worked example is in [the API reference](api/collections.md#stringinterntable).
 
 ## Sorted (ordered) collections
 
