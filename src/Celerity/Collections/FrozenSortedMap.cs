@@ -95,20 +95,24 @@ public sealed class FrozenSortedMap<TKey, TValue> : IReadOnlyDictionary<TKey, TV
         ArgumentNullException.ThrowIfNull(source);
 
         KeyValuePair<TKey, TValue>[] pairs;
+        int count;
         if (source is ICollection<KeyValuePair<TKey, TValue>> collection)
         {
             int length = collection.Count;
             ThrowIfTooLong(length);
             pairs = new KeyValuePair<TKey, TValue>[length];
-            collection.CopyTo(pairs, 0);
+
+            // Fewer than `length` when the source shrank after it was counted: the slots past `count` hold
+            // nothing the caller supplied, and building them in would add a default key.
+            count = CountedSource.CopyTo(collection, pairs, nameof(source));
         }
         else
         {
             pairs = source.ToArray();
             ThrowIfTooLong(pairs.Length);
+            count = pairs.Length;
         }
 
-        int count = pairs.Length;
         var keys = new TKey[FrozenSortedSet<TKey>.PaddedLength(count)];
         var values = new TValue[count];
         for (int i = 0; i < count; i++)

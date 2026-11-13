@@ -8,6 +8,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 - ⚠️ **Breaking:** every package now targets `net10.0` only; the `net8.0` and `net9.0` targets are gone, and no API changed with them. On .NET 8 or 9, stay on 3.6.x, the last line built for them: its security fixes ship from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch. The benchmark dashboard now measures on .NET 10 too, so its figures from before and after this change do not compare directly. See the [migration guide](docs/migration.md#net80--net90--net100--after-36x).
 
+### Fixed
+
+- A constructor given a collection that shrinks while it is being read, as a `ConcurrentDictionary` another thread writes to can, no longer builds in `default` entries the source never held: a `(0, null)` key in `FrozenSortedMap`, say, or a trailing `0` in `SegmentTree`. `FrozenSortedMap`, `FrozenSortedSet` (and its set comparisons), `IntervalTree`, `RTree`, `KdTree`, `CompressedGraph`, `SegmentTree`, `FenwickTree`, `SparseTable`, `BitPackedArray`, `Deque`, `GapBuffer` and `MinMaxHeap` now enumerate any source other than an array or `List<T>`. A source that grows meanwhile throws `ArgumentException`, where `FrozenSortedSet` and `SparseTable` used to drop its extra elements. Closes #619.
+
 ## [3.6.0] - 2026-11-13
 
 ### Added

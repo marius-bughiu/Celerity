@@ -83,10 +83,10 @@ public sealed class Deque<T> : IReadOnlyList<T>
 
         if (collection is ICollection<T> c)
         {
+            // Fewer than n when the source shrank after it was counted; the rest of the array is spare capacity.
             int n = c.Count;
             _items = n == 0 ? Array.Empty<T>() : new T[n];
-            c.CopyTo(_items, 0);
-            _count = n;
+            _count = CountedSource.CopyTo(c, _items, nameof(collection));
         }
         else
         {

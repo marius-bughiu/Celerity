@@ -141,16 +141,9 @@ public sealed class RTree<TValue> : IReadOnlyList<SpatialBox<TValue>>
         // A counted source is sized and copied once, as the sibling trees' constructors do. Going through a
         // List<T> unconditionally would allocate and copy a second backing array for the commonest sources of
         // all — an array or a List — on a type whose build cost is already the tradeoff it asks callers to make.
-        SpatialBox<TValue>[] items;
-        if (boxes is ICollection<SpatialBox<TValue>> counted)
-        {
-            items = new SpatialBox<TValue>[counted.Count];
-            counted.CopyTo(items, 0);
-        }
-        else
-        {
-            items = new List<SpatialBox<TValue>>(boxes).ToArray();
-        }
+        // CountedSource reads any other collection by enumeration, so one that shrinks after it is counted
+        // cannot leave a default box behind.
+        SpatialBox<TValue>[] items = CountedSource.ToArray(boxes, nameof(boxes));
 
         Validate(items, nameof(boxes));
 

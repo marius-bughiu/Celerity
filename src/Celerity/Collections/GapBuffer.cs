@@ -108,10 +108,10 @@ public sealed class GapBuffer<T> : IList<T>, IReadOnlyList<T>
 
         if (collection is ICollection<T> c)
         {
+            // Fewer than n when the source shrank after it was counted; the slots it left become the gap.
             int n = c.Count;
             _items = n == 0 ? Array.Empty<T>() : new T[n];
-            c.CopyTo(_items, 0);
-            _gapStart = n;
+            _gapStart = CountedSource.CopyTo(c, _items, nameof(collection));
             _gapEnd = n;
         }
         else
