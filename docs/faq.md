@@ -87,15 +87,15 @@ The dictionary masks the result to the table size, so negative returns are fine.
 
 ### When should I use `FrozenCelerityDictionary`?
 
-When a `string`-keyed table is built once and read many times for the rest of the process — route tables, config maps, interned vocabularies. It pays a one-time construction cost to find a perfect (collision-free) hash so each later lookup is single-probe. It's immutable: no `Add` / `Remove`.
+When a `string`-keyed table is built once and read many times for the rest of the process — route tables, config maps, interned vocabularies — and you want a cheaper build than `FrozenDictionary`'s or a hasher you choose. A small key set (about 150 keys or fewer) gets a perfect (collision-free) table, so each lookup is single-probe; a larger one gets a linear-probing table at most half full. It's immutable: no `Add` / `Remove`.
 
 ### `IsPerfectlyHashed` is `false` — is that a problem?
 
-Not for correctness — lookups are always correct, just not single-probe when it's `false` (it falls back to short linear probing on a raw-code collision). Supplying a stronger/wider hasher (e.g. `StringFnV1AFullHasher`) often restores the perfect layout. See [performance §6](performance.md#6-build-once-read-many--freeze-it).
+No — lookups are always correct, and a hit in the fallback table inspects about 1.5 slots instead of one. It is `false` for any set past 572 keys, and usually past about 150, because a single seeded hash cannot place that many keys without a collision; for a small set it can also mean two keys share a raw hash code, which a stronger/wider hasher (e.g. `StringFnV1AFullHasher`) fixes. See [performance §6](performance.md#6-build-once-read-many--freeze-it).
 
 ### How is it different from `System.Collections.Frozen.FrozenDictionary`?
 
-Same build-once, read-many spirit, but Celerity's is tunable via `IHashProvider<T>` and explicitly searches for a perfect hash you can verify through `IsPerfectlyHashed`. Pick whichever fits; if you're already standardized on `FrozenDictionary` and happy with it, there's no need to switch.
+Same build-once, read-many spirit. `FrozenDictionary` looks keys up faster, because it hashes only a short substring that tells the keys apart; Celerity's builds faster, hashes the whole key with a hasher you choose via `IHashProvider<T>`, allows a `null` key and rejects duplicate keys. If reads dominate, or you're already standardized on `FrozenDictionary`, there's no reason to switch.
 
 ## CelerityMultiMap
 

@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Collections;
+using Celerity.Hashing;
 
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
@@ -18,6 +19,7 @@ public class FrozenCelerityDictionaryBenchmark
 
     private FrozenDictionary<string, int> frozenDictionary = null!;
     private FrozenCelerityDictionary<int> frozenCelerity = null!;
+    private FrozenCelerityDictionary<int, StringXxHash32Hasher> frozenCelerityXxHash32 = null!;
 
     // frozenDictionary's span-keyed view for the SpanLookup category, resolved once as a caller holding it would.
     private FrozenDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> frozenSpanLookup;
@@ -45,14 +47,15 @@ public class FrozenCelerityDictionaryBenchmark
 
         frozenDictionary = pairs.ToFrozenDictionary(p => p.Key, p => p.Value);
         frozenCelerity = new FrozenCelerityDictionary<int>(pairs);
+        frozenCelerityXxHash32 = new FrozenCelerityDictionary<int, StringXxHash32Hasher>(pairs);
         frozenSpanLookup = frozenDictionary.GetAlternateLookup<ReadOnlySpan<char>>();
     }
 
     // ── Build (construct the frozen structure from the same source pairs) ──────
     // Baseline is the BCL FrozenDictionary<,>, the read-optimized build-once
-    // counterpart — the fair analogue for a frozen, perfect-hashed dictionary
-    // (a mutable Dictionary<,> does no build-time hashing optimization, so it is
-    // not a like-for-like baseline here).
+    // counterpart — the fair analogue for a frozen dictionary that tunes its
+    // layout at build time (a mutable Dictionary<,> does no build-time hashing
+    // optimization, so it is not a like-for-like baseline here).
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Build")]
@@ -83,6 +86,21 @@ public class FrozenCelerityDictionaryBenchmark
         int acc = 0;
         foreach (var key in keys)
             acc += frozenCelerity[key];
+        return acc;
+    }
+
+    // The same lookups over StringXxHash32Hasher instead of the default StringFnV1AHasher, which folds one
+    // character per step and so accounts for most of a lookup's cost on these ~30-character keys; XxHash32 reads
+    // two characters at a time across four lanes. The arm carries an op name of its own so it lands in a dashboard
+    // bucket by itself (two Celerity arms sharing an op would overwrite each other in the index the cards are built
+    // from), while the shared category keeps BenchmarkDotNet's ratio against the same FrozenDictionary baseline.
+    [Benchmark]
+    [BenchmarkCategory("Lookup")]
+    public int FrozenCelerityDictionary_LookupXxHash32()
+    {
+        int acc = 0;
+        foreach (var key in keys)
+            acc += frozenCelerityXxHash32[key];
         return acc;
     }
 

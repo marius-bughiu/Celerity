@@ -22,7 +22,7 @@ The single biggest win is using the type whose layout matches your key. The spec
 |---|---|
 | `int` / `long` keyed, read + write | `IntDictionary<TValue>` / `LongDictionary<TValue>` |
 | Any other key type, read + write | `CelerityDictionary<TKey, TValue, THasher>` |
-| Built once, read many, `string` keys | `FrozenCelerityDictionary<TValue>` |
+| Built once, read many, `string` keys | `FrozenDictionary<string, TValue>` for the fastest reads; `FrozenCelerityDictionary<TValue>` for a faster build or a hasher you choose |
 | One key → many values | `CelerityMultiMap<TKey, TValue, THasher>` |
 | Membership only | `IntSet` / `LongSet` / `CeleritySet<T, THasher>` |
 
@@ -181,14 +181,17 @@ This is exactly why an isolated `Hash()` microbench is misleading: it would rank
 
 ## 6. Build-once, read-many → freeze it
 
-If a `string`-keyed table is constructed once and then read for the rest of the process (route tables, config maps, interned vocabularies, lookup dictionaries), `FrozenCelerityDictionary<TValue>` pays a one-time construction cost to search for a **perfect (collision-free) hash**, after which every lookup is a single hash, a single array index, and a single equality check:
+If a `string`-keyed table is constructed once and then read for the rest of the process (route tables, config maps, interned vocabularies, lookup dictionaries), freeze it. Two types fit, and they trade differently:
+
+- **`FrozenDictionary<string, TValue>`** (BCL) has the faster lookups: at build time it finds a short substring that tells the keys apart and hashes only that. Take it when reads dominate.
+- **`FrozenCelerityDictionary<TValue>`** builds about 1.9x faster and looks up 3.5–5.6x slower. Every lookup hashes the whole key with a hasher you choose through `FrozenCelerityDictionary<TValue, THasher>`; it also allows a `null` key and rejects duplicate keys.
 
 ```csharp
 var routes = new FrozenCelerityDictionary<int>(pairs);
-Console.WriteLine(routes.IsPerfectlyHashed);  // True → single-probe lookups
+Console.WriteLine(routes.IsPerfectlyHashed);  // True only for a small key set
 ```
 
-Check `IsPerfectlyHashed`. When it is `true`, lookups are single-probe. When the default hasher collides two keys' raw codes it falls back to short linear probing (still correct, just not single-probe) — supplying a stronger hasher via `FrozenCelerityDictionary<TValue, THasher>` (e.g. `StringFnV1AFullHasher` for non-ASCII keys) often restores the perfect layout. The dictionary is immutable: there is no `Add` / `Remove`, which is exactly what makes the perfect-hash search worthwhile.
+`IsPerfectlyHashed` reports the layout. A small key set (about 150 keys or fewer) usually gets a perfect, collision-free table, where every lookup is a single hash, a single array index and a single equality check. Past that the build uses a linear-probing table at most half full, where a hit inspects about 1.5 slots; past 572 keys that is always the case, whatever the hasher, because a single seeded hash cannot place that many keys without a collision. Lookups are correct either way.
 
 ## 7. Benchmark on your own machine
 
