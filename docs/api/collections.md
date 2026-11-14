@@ -7727,8 +7727,8 @@ routes["/api/v1/users"] = "users-v1";
 routes["/api/v1/orders"] = "orders-v1";
 
 // Autocomplete: every route under a prefix, already in sorted order.
-foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
-    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
+foreach (var (path, target) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {target}");         // /api/v1/orders, then /api/v1/users
 
 // Longest-prefix routing: the most specific stored route that prefixes the request.
 if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
@@ -7863,8 +7863,8 @@ var routes = new SuccinctTrie<string>(
 ]);
 
 // Autocomplete: every route under a prefix, already in sorted order.
-foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
-    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
+foreach (var (path, target) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {target}");         // /api/v1/orders, then /api/v1/users
 
 // Longest-prefix routing: the most specific stored route that prefixes the request.
 if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
