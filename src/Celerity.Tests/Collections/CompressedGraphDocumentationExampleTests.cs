@@ -3,8 +3,8 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="CompressedGraph"/> usage examples published in <c>docs/api/collections.md</c>, the
-/// README and the type's own XML documentation, and asserts the outputs those pages print in their comments.
+/// Runs the <see cref="CompressedGraph"/> usage examples published in <c>docs/api/collections.md</c>,
+/// <c>docs/collections.md</c> and the type's own XML documentation, and asserts the outputs those pages print in their comments.
 ///
 /// <para>
 /// A published example is documentation a reader will copy, so an incorrect one is a defect rather than a
@@ -16,7 +16,7 @@ namespace Celerity.Tests.Collections;
 /// </summary>
 public class CompressedGraphDocumentationExampleTests
 {
-    // Verbatim from docs/api/collections.md and README.md.
+    // Verbatim from docs/api/collections.md and docs/collections.md.
     private static CompressedGraph Builds() => new(5,
     [
         new GraphEdge(0, 1),

@@ -1,13 +1,22 @@
 # Celerity Documentation
 
-This folder contains reference documentation for the Celerity high-performance collections library.
+The guides explain how to choose and use Celerity's types; the API reference documents every one of them. New to the library? Start with [Getting started](getting-started.md).
+
+## Start here
+
+- [Getting started](getting-started.md) — install, the package layout, first examples, and the API at a glance.
+- [Collections guide](collections.md) — every collection family: the tradeoff each type buys, with worked examples.
+- [Choosing a collection](choosing-a-collection.md) — the decision table: find your workload, get the type.
+- [Choosing a hasher](choosing-a-hasher.md) — the struct hasher for your key shape, and how to write your own.
 
 ## Guides
 
 - [Performance tuning](performance.md) — capacity, load factor, hasher selection, struct fast paths, and benchmarking.
+- [Benchmarks](benchmarks.md) — the headline numbers, what the benchmark suites measure, and the spatial indexes measured against two baselines each.
 - [Migration from BCL collections](migration.md) — mapping `Dictionary<,>`, `HashSet<>`, `ILookup<,>`, and `FrozenDictionary<,>` to Celerity types.
 - [Troubleshooting](troubleshooting.md) — common errors and behavioural surprises, with fixes.
 - [FAQ](faq.md) — conceptual questions about the design.
+- [Native AOT & trimming](aot.md) — AOT / trim compatibility and how it is enforced.
 - [Testing & coverage](testing.md) — the test layers, property-based and fuzz harnesses, and how coverage is measured and gated.
 
 ## API reference
@@ -16,12 +25,11 @@ This folder contains reference documentation for the Celerity high-performance c
 - [Hashing](api/hashing.md) — `IHashProvider<T>` interface and built-in hashers (`Int32WangNaiveHasher`, `Int32Murmur3Hasher`, `Int64WangHasher`, `Int64Murmur3Hasher`, `UInt32WangNaiveHasher`, `UInt64Murmur3Hasher`, `GuidHasher`, the `String*` hasher family, `DefaultHasher<T>`), and the `HashQualityEvaluator`.
 - [Sorting](api/sorting.md) — non-comparison sorts and selection over primitive keys (`RadixSort`, `CountingSort`, `PartialSort`), an ordinal string sort (`StringSort`), and a k-way merge of sorted runs (`KWayMerge`).
 - [Statistics](api/statistics.md) — streaming summary statistics in bounded memory (`DDSketch` relative-error quantiles, `ReservoirSampler` uniform sampling, `RunningStatistics` single-pass moments, `RollingQuantile` exact sliding-window quantiles, `AliasTable` `O(1)` weighted random sampling, `KllSketch` rank-error quantiles over any comparable type).
-- [Utilities](api/utilities.md) — `FastUtils` helper methods.
-- [Native AOT & trimming](aot.md) — AOT / trim compatibility and how it is enforced.
+- [Utilities](api/utilities.md) — the `Celerity.Primitives` helpers: `FastUtils` (`FastMod` / `FastDiv`, `CountDigits`, alignment), the struct PRNGs, `VarInt`, `FastGuid`, `SpanBits`, `BitWriter` / `BitReader`, `SimdReductions`, `Branchless`, `SortedSpan`, and `MortonCurve` / `HilbertCurve`.
 
 ## Built with Celerity
 
-Standalone packages built on top of `Celerity.Collections` — each ships as its own NuGet package, so you add only the one you need. See each package's README for the full API and runnable examples.
+Standalone libraries built **on top of** Celerity — each solves a real problem in a domain where a pure-managed .NET implementation is the right call (chatty per-element work over managed keys, fixed-memory streaming over unbounded input, or hashing that must be identical across runtimes) and dropping to a native C/C++ library would be a net loss. Each ships as its own NuGet package that depends on `Celerity.Collections`, so you add only the one you need. See each package's README for the full API and runnable examples.
 
 - [`Celerity.Ring`](../src/Celerity.Ring/README.md) — deterministic consistent-hash, rendezvous (HRW) and Maglev routing for sharding and request routing, with byte-identical node assignment across OS / architecture / runtime.
 - [`Celerity.Sentinel`](../src/Celerity.Sentinel/README.md) — streaming abuse / heavy-hitter detection (top offenders, per-key rate, fan-out cardinality) in a fixed footprint regardless of key cardinality.
@@ -29,7 +37,7 @@ Standalone packages built on top of `Celerity.Collections` — each ships as its
 
 ## Quick links
 
-- [README](../README.md) — project overview and benchmarks.
+- [README](../README.md) — project overview.
 - [ROADMAP](../ROADMAP.md) — planned milestones.
 - [CONTRIBUTING](../CONTRIBUTING.md) — how to build, test, and submit PRs.
 - [CHANGELOG](../CHANGELOG.md) — release history.

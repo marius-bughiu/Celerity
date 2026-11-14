@@ -44,7 +44,7 @@ using Celerity.Collections;
 // At 1,000 points the second dimension has not yet paid for its indirection: the nearest margin against the
 // sorted hand-roll falls to 1.4x (141 us against 98 us) and the radius one is gone outright (117 us against
 // 120 us, the scan a hair ahead). A development machine put the tree *behind* on both of those arms, which is
-// the sort of crossover this repo states rather than rounds away — README and API reference carry it too.
+// the sort of crossover this repo states rather than rounds away — docs/benchmarks.md and the API reference carry it too.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]

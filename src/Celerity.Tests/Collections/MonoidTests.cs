@@ -163,7 +163,7 @@ public class MonoidTests
     public void SegmentTree_ShouldAnswerRangeGcd_UnderTheDocumentedUserWrittenMonoid()
     {
         // GcdMonoid is the "write your own fold" example printed in IMonoid's docs, the API reference and the
-        // README. Pinning it here means the sample a reader copies is one that has been run.
+        // collections guide. Pinning it here means the sample a reader copies is one that has been run.
         uint[] values = { 12, 18, 24, 9, 27 };
         var tree = new SegmentTree<uint, GcdMonoid>(values);
 

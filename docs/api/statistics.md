@@ -121,7 +121,8 @@ A stream spanning an unexpectedly wide range would allocate a bucket per decade 
 budget bounds each ladder. When it is exhausted the **lowest** buckets collapse together — the low
 end of *that ladder*, which is where a geometric ladder packs its buckets most densely and so loses
 the least by folding them — and `HasCollapsed` turns `true`, at which point the `α` guarantee no
-longer holds for any quantile resolving to a collapsed bucket.
+longer holds for any quantile resolving to a collapsed bucket. The collapse is reported rather than
+hidden, because a guarantee that has quietly stopped holding is worse than none.
 
 That is **not** necessarily a low quantile of the stream. The positive and negative ladders are
 budgeted independently, so if most of the stream is negative, a collapsed bucket in the positive
@@ -595,7 +596,7 @@ lose:
 - **`RunningStatistics` is slower than LINQ, measurably.** CI puts `Moments` at **1.9× the
   two-pass LINQ shape** at both sizes, because the accumulator maintains all four moments on
   every `Add` while that caller reads two. It buys a single pass over a stream it never
-  retains, and an answer the `sum` / `sumOfSquares` shortcut gets wrong — not speed.
+  retains, and an answer the cheaper `sum` / `sumOfSquares` shortcut gets wrong — not speed.
 
 The numbers above are the CI-tracked ones from the
 [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/); the losing arms are charted

@@ -43,7 +43,7 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 | Strings that carry a payload, or ranking strings without moving them | `StringSort.Sort(keys, values)` / `StringSort.ArgSort` | The same sort; equal keys keep their payload order, which `Array.Sort(keys, items, comparer)` does not promise. |
 | Culture-aware or case-insensitive string order | `Array.Sort` with a `StringComparer` | `StringSort` is ordinal only. With a comparer in the loop, the BCL's introsort is the right tool. |
 | Combining **already-sorted runs** — per-shard results, sorted files, posting lists, LSM compaction | `KWayMerge.Merge` | A stable loser-tree merge: at most `⌈log₂ k⌉` comparisons per element, against a `PriorityQueue` hand-roll's sift per dequeue and per enqueue. Wins most where comparisons are expensive (strings, records); a lazy form streams sequences that never fit in memory. For in-memory **primitive** keys, `RadixSort` over the concatenation is faster still. |
-| Fewer than a few hundred elements | `Array.Sort` | Below the crossover the histogram's fixed cost dominates. This is measured, not assumed — see the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/). |
+| Fewer than a few hundred elements | `Array.Sort` | Below the crossover the histogram's fixed cost dominates. This is measured, not assumed: the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) sweeps from 100 to 1,000,000 elements so the crossover is read off rather than guessed. |
 | A key range as wide as (or wider than) the element count | `RadixSort` or `Array.Sort` | `CountingSort`'s histogram costs `range` regardless of `n`. Rule of thumb: `range ≲ n`. |
 
 ## `Sort` vs `SortWithScratch`
@@ -81,7 +81,10 @@ histograms, in both forms.
 ## RadixSort
 
 `RadixSort` is a static class over `Span<T>`. Every method exists for six key types: `uint`, `int`,
-`ulong`, `long`, `float`, `double`.
+`ulong`, `long`, `float`, `double`. It is an **LSD** (least-significant-digit-first) radix sort: four
+(32-bit) or eight (64-bit) counting passes with purely sequential reads, **no comparisons and no
+data-dependent branches**, where introsort's every partition step is a branch the predictor cannot
+learn on random data.
 
 | Member | Description |
 |---|---|
@@ -211,6 +214,9 @@ in the package, only genuine overlap is rejected — two disjoint slices of one 
   an `IComparer<T>`-typed helper and so boxes a `struct` comparer on every call. If you want
   introsort's constant factor over a whole span, call the BCL directly.
 - **Not stable**, in any form.
+- **Not asymptotically better than LINQ.** `OrderBy().Take(k)` has applied its own partial-sort
+  optimization since .NET 6, so the win over it is that this works in place on a span, allocates
+  nothing, boxes no comparer and materializes no intermediate sequence — not complexity.
 - **`TopK` never writes to `source`** and allocates nothing — the destination *is* the heap, which
   is why a `destination` overlapping `source` is rejected rather than silently answered wrongly.
 

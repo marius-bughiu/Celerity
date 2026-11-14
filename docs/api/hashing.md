@@ -970,11 +970,11 @@ The `Celerity.Benchmarks` project includes a head-to-head BenchmarkDotNet compar
 | `LongAscii` | Long ASCII path / URL-like keys (48–80 chars). |
 | `NonAscii` | Shorter mixed Latin + CJK text (10–20 chars) that exercises the full-width fold. |
 
-The three shapes matter because the length-classed hashers (`StringCityHash64Hasher`, `StringXxHash3Hasher`) and the four-accumulator stripe hashers (`StringXxHash32Hasher`, `StringXxHash64Hasher`) behave very differently across lengths, and the full-width hashers do extra work on non-ASCII upper bytes. The classes are registered in `Program.cs` so they join the CI report and the gh-pages benchmark history on every push to `main`.
+The three shapes matter because the length-classed hashers (`StringCityHash64Hasher`, `StringXxHash3Hasher`) and the four-accumulator stripe hashers (`StringXxHash32Hasher`, `StringXxHash64Hasher`) behave very differently across lengths, and the full-width hashers do extra work on non-ASCII upper bytes. The classes are registered in `Program.cs` so they join the CI report and the gh-pages benchmark history on each merge to `main` that can move a number.
 
 A companion `IntegerHasherBenchmark` does the same for the fixed-width integer and `Guid` hashers, grouped by key type (`int` / `long` / `uint` / `ulong` / `Guid`), each bracketed by two baselines — the direct `GetHashCode()` (`{Type}_Bcl`) and `EqualityComparer<T>.Default.GetHashCode()` (`{Type}_EqualityComparer`, the per-probe call a BCL `Dictionary<,>` makes). Each of the four integer widths carries a `{Type}_Identity` row, the explicit **zero-work floor**: a passthrough that does no mixing, which for `int` / `uint` tracks the `_Bcl` baseline (their `GetHashCode()` is itself the identity), confirming that no mixing hasher beats it on raw throughput. It has no key-shape parameter: hashing a fixed-width integer is branch-free and constant-time regardless of the key's value, so the sample's distribution affects collision *quality* but not `Hash` throughput.
 
-Both benchmarks are rendered on the [live benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) under **Hash function throughput** — one ranked bar per hasher within each key type / shape group, relative to the framework `GetHashCode()` baseline, refreshed on every push to `main`. To run them locally:
+Both benchmarks are rendered on the [live benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) under **Hash function throughput** — one ranked bar per hasher within each key type / shape group, relative to the framework `GetHashCode()` baseline, refreshed on each merge to `main` that can move a number. To run them locally:
 
 ```bash
 cd src/Celerity.Benchmarks

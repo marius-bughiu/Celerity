@@ -4,7 +4,7 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="Rope"/> usage example published in <c>docs/api/collections.md</c>, the README and the
+/// Runs the <see cref="Rope"/> usage example published in <c>docs/api/collections.md</c>, <c>docs/collections.md</c> and the
 /// type's own XML documentation, and asserts what those pages claim in their comments.
 ///
 /// <para>
@@ -69,12 +69,12 @@ public class RopeDocumentationExampleTests
     }
 
     /// <summary>
-    /// The README's shorter fragment: the rope is reached for because the document is edited in the middle,
+    /// The collections guide's shorter fragment: the rope is reached for because the document is edited in the middle,
     /// and the point of the comparison is that the answer matches what a <see cref="StringBuilder"/> would
     /// have produced from the same calls.
     /// </summary>
     [Fact]
-    public void ReadmeExample_ShouldAgreeWithStringBuilder_WhenTheSameEditsAreApplied()
+    public void GuideExample_ShouldAgreeWithStringBuilder_WhenTheSameEditsAreApplied()
     {
         var document = new Rope(Chapter);
         var oracle = new StringBuilder(Chapter);
