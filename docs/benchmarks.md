@@ -47,17 +47,17 @@ At 1,000 entities the margins are *wider*, not narrower — 11.9x on the frame �
 
 **The margin is a property of how full the cells are, not of the type**, and that belongs next to the headline rather than under it. Both structures walk the same cells and run the same distance test on the same candidates; everything the grid saves is **per cell** — an array index instead of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated `List<T>` — so the ratio is per-cell overhead against per-candidate work, and it collapses as the cells fill:
 
-The shape sweep rides the extended suite, which CI runs weekly rather than on each merge, publishing to [its own dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/). The figures below come from a single run of it, the first on .NET 10 (`ubuntu-latest`, November 2026), so read them as one sample: on .NET 8, the six weekly runs that finished before it spread the same ratios up to 19% either side of their midpoints. Each run measures every arm on one runner, so a row compares like with like:
+The shape sweep rides the extended suite, which CI runs weekly rather than on each merge, publishing to [its own dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/). The figures below come from a single run that is not on that dashboard: a manual run of the suite, its first on .NET 10 ([run 43575145503](https://github.com/marius-bughiu/Celerity/actions/runs/43575145503), `ubuntu-latest`, November 2026), at a commit whose measured code matches `main`. Read them as one sample: on .NET 8, the six weekly runs that measured this class spread the same ratios up to 19% either side of their midpoints. Each run measures every arm on one runner, so a row compares like with like:
 
 | Shape at 100,000 entities | vs. the bucketed `Dictionary` hand-roll | vs. rebuilding a `KdTree` |
 | --- | --- | --- |
 | **Tight** — ~1 point per cell, ~2 matches per query (the broadphase shape, and the one charted) | **2.3x** | **13.5x** |
-| **Wide** — ~10 points per cell, ~25 matches, cell still sized to the radius (100 and 90) | **0.86x** — no gain | **2.1x** |
+| **Wide** — ~10 points per cell, ~25 matches, cell still sized to the radius (100 and 90) | **0.86x** — the hand-roll is ahead | **2.1x** |
 | **Clustered** — 200 blobs, hundreds of points per cell | **0.60x** — the hand-roll wins | **0.78x** — the rebuild wins |
 
 The tight row is the shape of the frame above, and it reads well under 5.0x because that figure was measured on .NET 8: comparing runs on the same CPU model, .NET 10 runs the hand-roll's side of this shape 2.3x faster than .NET 8 did, and the grid's only 1.3x faster.
 
-A development machine read the first column as 6.5x, 1.12x and 0.52x and put the clustered rebuild level with the grid. Two of those flip on CI, the wide row and the clustered rebuild, in this run and in all six .NET 8 runs before it, so these are CI's figures.
+A development machine read the first column as 6.5x, 1.12x and 0.52x and put the clustered rebuild level with the grid. CI disagrees on two of those: in this run the hand-roll is ahead on the wide row and the rebuild beats the grid on clustered points, and none of the six .NET 8 runs had the grid ahead on either.
 
 The clustered row is the one worth reading twice, and it is the opposite of what the class was written to show. The expectation was that clustering would hurt both structures equally, since the baseline is the same grid. It does not: inside a dense cell the layouts genuinely differ. The hand-roll walks a contiguous `List<int>` and issues two independent loads per candidate, which the processor overlaps; the grid walks an intrusive linked list, so each step is a load that must complete before the next address is known — a cell holding five hundred entries is a five-hundred-long chain of dependent cache misses. So the documented failure mode is sharper than "it degrades to a scan": it degrades to a scan the hand-roll does faster.
 

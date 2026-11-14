@@ -12,12 +12,12 @@ using Celerity.Collections;
 // the margin is the ratio of per-cell overhead to per-candidate work, and it collapses as the cells fill up.
 //
 // Measured at 100,000 entities, one frame = move 10% then one radius query per moved entity. These are CI's
-// figures from a single run, the extended suite's first on .NET 10 (2026-11-14, ubuntu-latest, x64, an AMD EPYC
-// 9V74), at a commit where this class and the types it measures match main. The suite otherwise runs weekly from
-// benchmarks-extended.yml and publishes to the dev/bench-extended dashboard; every run measures all three arms on
-// one runner, so a row compares like with like. One run carries its runner's noise: on .NET 8, the six weekly
-// runs that finished before it spread the same ratios up to 19% either side of their midpoints. The Tight row is
-// the shape SpatialGridBenchmark charts:
+// figures from a single run: run 43575145503 of benchmarks-extended.yml, the suite's first on .NET 10, a manual
+// dispatch on 2026-11-14 (ubuntu-latest, x64, an AMD EPYC 9V74) at 611f2184, whose measured code matches main.
+// Being off main, it did not publish to the dev/bench-extended dashboard that the weekly runs feed. Every run
+// measures all three arms on one runner, so a row compares like with like. One run carries its runner's noise:
+// on .NET 8, the six weekly runs that measured this class spread the same ratios up to 19% either side of their
+// midpoints. The Tight row is the shape SpatialGridBenchmark charts:
 //
 //                                                 Dictionary    SpatialGrid   KdTree/frame      vs dict      vs tree
 //     Tight      ~1 pt/cell,  ~2 matches             3.96 ms        1.69 ms       22.84 ms         2.3x        13.5x
@@ -26,19 +26,20 @@ using Celerity.Collections;
 //
 // The Tight row reads well under SpatialGridBenchmark's 5.0x because that figure was measured on .NET 8:
 // comparing runs on the same CPU model, .NET 10 runs this shape's Dictionary arm in 3.96 ms where .NET 8 took
-// 9.1-9.2 ms, while the grid got only 1.3x faster. On every row, the six .NET 8 runs reach this run's verdict.
+// 9.1-9.2 ms, while the grid got only 1.3x faster. The six .NET 8 runs agree on which side wins each row, the
+// Wide one only narrowly.
 //
 // A development machine first read these at 6.5x, 1.12x and 0.52x against the Dictionary and put the clustered
-// rebuild level with the grid (1.01x). Two of those flip on CI rather than just shrinking, in this run and in all
-// six .NET 8 runs: at the wide shape the hand-roll is ahead, and on clustered points the rebuild beats the grid.
-// The docs quote CI.
+// rebuild level with the grid (1.01x). Two of those flip on CI rather than just shrinking: in this run the
+// hand-roll is ahead at the wide shape and the rebuild beats the grid on clustered points, and no .NET 8 run had
+// the grid ahead on either. The docs quote CI.
 //
 // The wide shape is not a pathological one — a 100-unit cell against a 90-unit radius, still sized just above
 // it, which is the tuning rule the type documents. It is simply a query that answers with twenty-five points
 // instead of two, and at that point both structures are memory-bound on the candidates' coordinates and the
-// grid's per-cell saving no longer pays: the hand-roll finishes ahead, here and in all six .NET 8 runs, which
-// fits the dependent-load cost described below starting to show at ten entries a cell. The time advantage
-// belongs to sparse cells, and the docs put that next to the headline.
+// grid's per-cell saving no longer pays: the hand-roll finishes ahead here, and ahead or level in all six .NET 8
+// runs, which fits the dependent-load cost described below starting to show at ten entries a cell. The time
+// advantage belongs to sparse cells, and the docs put that next to the headline.
 //
 // THE THIRD SHAPE DID NOT DO WHAT THIS CLASS WAS WRITTEN TO SHOW, and the measurement is left in place saying
 // so. The expectation was that clustering would hurt both structures equally — the baseline is the same grid,
@@ -109,7 +110,8 @@ public class SpatialGridShapeBenchmark
         /// <summary>
         /// About ten points per cell and twenty-five matches per query. Still a tuned grid — a 100-unit cell
         /// against a 90-unit radius; the candidates simply dominate. Measured in the same run at 0.86x the
-        /// hand-roll — the per-cell saving no longer shows — and still 2.1x a per-frame tree rebuild.
+        /// hand-roll — the per-cell saving is gone and the hand-roll edges ahead — and still 2.1x a per-frame
+        /// tree rebuild.
         /// </summary>
         Wide,
 
@@ -214,8 +216,8 @@ public class SpatialGridShapeBenchmark
     // The third arm, added because the docs were asserting something no benchmark had measured. Every surface
     // said "clustered points belong in KdTree", reasoning from KdTreeShapeBenchmark — but that class measures
     // the tree against its *own* hand-roll, not against this type. So the complementarity claim was inferred
-    // from two unrelated comparisons. This arm makes
-    // the actual comparison a caller faces for moving points: rebuild a tree every frame, or move a grid.
+    // from two unrelated comparisons. This arm makes the actual comparison a caller faces for moving points:
+    // rebuild a tree every frame, or move a grid.
     [Benchmark]
     public int KdTree_Frame()
     {

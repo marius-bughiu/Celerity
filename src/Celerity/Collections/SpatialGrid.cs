@@ -88,12 +88,12 @@ namespace Celerity.Collections;
 /// hand-roll walk the same cells and run the same distance test on the same candidates; everything gained here
 /// is <i>per cell</i>, so the ratio is per-cell overhead against per-candidate work and it collapses as the
 /// cells fill. On the frame workload above at 100,000 entities it is <b>5.0x</b> with about one point per cell
-/// and two matches per query — the broadphase shape — and <b>0.86x</b>, no gain at all, at ten points per
-/// cell and twenty-five matches, with the cell size still tuned to the radius. Rebuilding a
-/// <see cref="KdTree{TValue}"/> every frame instead measures <b>13.3x</b>. The frame figure is from CI's
-/// same-runner A/B; the shape sweep rides the extended suite, which CI runs weekly, and is quoted from one
-/// run of it on .NET 10. Both are in <c>SpatialGridBenchmark</c> and <c>SpatialGridShapeBenchmark</c>, and
-/// tabulated in the documentation's <c>docs/benchmarks.md</c>.
+/// and two matches per query — the broadphase shape — against <b>13.3x</b> for rebuilding a
+/// <see cref="KdTree{TValue}"/> every frame. Those two are CI's same-runner A/B, measured on .NET 8. The
+/// shape sweep, from one CI run of the extended suite on .NET 10, puts the broadphase shape at <b>2.3x</b>;
+/// at ten points per cell and twenty-five matches, with the cell size still tuned to the radius, it is
+/// <b>0.86x</b> and the hand-roll is ahead. Both are in <c>SpatialGridBenchmark</c> and
+/// <c>SpatialGridShapeBenchmark</c>, and tabulated in the documentation's <c>docs/benchmarks.md</c>.
 /// </para>
 /// <para>
 /// <b>What the bound really is.</b> <see cref="Move"/>, <see cref="Remove"/> and <see cref="TryGetPoint"/>
