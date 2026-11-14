@@ -63,7 +63,7 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// That is worse than "it degrades to a scan", and the benchmark says so rather than rounding it to a caveat:
-/// on clustered data this type is measured <b>1.5–2.1x slower</b> than the very hand-roll it replaces.
+/// on clustered data this type is measured <b>1.7x slower</b> than the very hand-roll it replaces.
 /// Inside a cell the two layouts genuinely differ — the hand-roll walks a contiguous <c>List&lt;T&gt;</c> and
 /// issues independent loads per candidate, while this type walks an intrusive linked list, so each step is a
 /// load that must complete before the next address is known. A cell holding two entries never shows that; a
@@ -73,8 +73,8 @@ namespace Celerity.Collections;
 /// <b>And there is no way out elsewhere in this library, which was worth measuring rather than assuming.</b>
 /// An earlier draft of these docs sent clustered points to <see cref="KdTree{TValue}"/>, reasoning that its
 /// pruning adapts to density where a fixed cell size cannot. The measurement does not support it: on clustered
-/// moving points a per-frame <see cref="KdTree{TValue}"/> rebuild takes 12–24% less time than this type, but
-/// still 1.3–1.6x the hand-roll's. So the honest advice for heavily clustered points that move is the
+/// moving points a per-frame <see cref="KdTree{TValue}"/> rebuild takes 22% less time than this type, but
+/// still 1.3x the hand-roll's. So the honest advice for heavily clustered points that move is the
 /// unflattering one: the bucketed <c>Dictionary</c> of contiguous lists wins, and neither type here beats it.
 /// </para>
 /// <para>
@@ -88,11 +88,11 @@ namespace Celerity.Collections;
 /// hand-roll walk the same cells and run the same distance test on the same candidates; everything gained here
 /// is <i>per cell</i>, so the ratio is per-cell overhead against per-candidate work and it collapses as the
 /// cells fill. On the frame workload above at 100,000 entities it is <b>5.0x</b> with about one point per cell
-/// and two matches per query — the broadphase shape — and <b>0.91–0.99x</b>, no gain at all, at ten points per
+/// and two matches per query — the broadphase shape — and <b>0.86x</b>, no gain at all, at ten points per
 /// cell and twenty-five matches, with the cell size still tuned to the radius. Rebuilding a
 /// <see cref="KdTree{TValue}"/> every frame instead measures <b>13.3x</b>. The frame figure is from CI's
-/// same-runner A/B; the shape sweep rides the extended suite, which CI runs weekly, and is quoted as the range
-/// over those runs. Both are in <c>SpatialGridBenchmark</c> and <c>SpatialGridShapeBenchmark</c>, and
+/// same-runner A/B; the shape sweep rides the extended suite, which CI runs weekly, and is quoted from one
+/// run of it on .NET 10. Both are in <c>SpatialGridBenchmark</c> and <c>SpatialGridShapeBenchmark</c>, and
 /// tabulated in the documentation's <c>docs/benchmarks.md</c>.
 /// </para>
 /// <para>

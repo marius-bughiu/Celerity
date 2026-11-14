@@ -43,7 +43,7 @@ using Celerity.Collections;
 // same distance test on the same candidates; everything this type saves is *per cell* — an array index instead
 // of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated List<T> — so the
 // margin is the ratio of per-cell overhead to per-candidate work and it collapses as the cells fill up. At ten
-// points per cell it is gone (0.91-0.99x in CI's weekly runs), and on clustered data the grid *loses*.
+// points per cell it is gone (0.86x in a CI run on .NET 10), and on clustered data the grid *loses*.
 // SpatialGridShapeBenchmark in the extended suite carries both of those measurements, and docs/benchmarks.md and
 // the API reference quote them next to the headline rather than underneath it.
 //
