@@ -42,12 +42,13 @@ using Celerity.Collections;
 // THAT PARAMETER IS THE WHOLE STORY AND IT IS NOT HIDDEN HERE. Both structures walk the same cells and run the
 // same distance test on the same candidates; everything this type saves is *per cell* — an array index instead
 // of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated List<T> — so the
-// margin is the ratio of per-cell overhead to per-candidate work and it collapses as the cells fill up. At ten
-// points per cell it is 1.12x rather than 5.0x, and on clustered data the grid *loses*. SpatialGridShapeBenchmark
-// in the extended suite carries both of those measurements, and docs/benchmarks.md and the API reference quote them next
-// to the headline rather than underneath it.
+// margin is the ratio of per-cell overhead to per-candidate work and it collapses as the cells fill up. One CI
+// run on .NET 10 puts this shape at 2.3x rather than the 5.0x below, the hand-roll is already ahead at ten points
+// per cell (0.86x), and on clustered data the grid *loses*.
+// SpatialGridShapeBenchmark in the extended suite carries all three measurements, and docs/benchmarks.md and
+// the API reference quote them next to the headline rather than underneath it.
 //
-// Measured at 100,000 entities on CI's same-runner A/B (ubuntu-latest), which is what this repo quotes — a
+// Measured at 100,000 entities on CI's same-runner A/B (ubuntu-latest, .NET 8), which is what this repo quotes — a
 // development machine put every one of these ratios 8-20% higher, which is exactly the disagreement that
 // forced a documented KdTree claim to be corrected after the fact:
 //

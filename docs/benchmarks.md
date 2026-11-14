@@ -33,7 +33,7 @@ Two further caveats worth stating rather than burying:
 
 ### Moving points
 
-`SpatialGrid<TValue>` answers the workload `KdTree` documents itself out of. The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. Both baselines are hand-rolls, because the BCL has nothing here either — the `Dictionary<(int, int), List<int>>` bucketed grid a competent developer writes, and rebuilding a `KdTree` every frame, which is what this library offered before. At 100,000 entities over a 10,000-unit square, with a 30-unit cell and a 25-unit query radius — the cell sized just over the radius, which is the tuning rule the type documents — taken from CI's same-runner A/B on `ubuntu-latest`:
+`SpatialGrid<TValue>` answers the workload `KdTree` documents itself out of. The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. Both baselines are hand-rolls, because the BCL has nothing here either — the `Dictionary<(int, int), List<int>>` bucketed grid a competent developer writes, and rebuilding a `KdTree` every frame, which is what this library offered before. At 100,000 entities over a 10,000-unit square, with a 30-unit cell and a 25-unit query radius — the cell sized just over the radius, which is the tuning rule the type documents — taken from CI's same-runner A/B on `ubuntu-latest`, on .NET 8:
 
 | Per frame | vs. the bucketed `Dictionary` hand-roll | vs. rebuilding a `KdTree` |
 | --- | --- | --- |
@@ -47,19 +47,23 @@ At 1,000 entities the margins are *wider*, not narrower — 11.9x on the frame �
 
 **The margin is a property of how full the cells are, not of the type**, and that belongs next to the headline rather than under it. Both structures walk the same cells and run the same distance test on the same candidates; everything the grid saves is **per cell** — an array index instead of a tuple hash and a bucket probe, an intrusive link instead of a separately allocated `List<T>` — so the ratio is per-cell overhead against per-candidate work, and it collapses as the cells fill:
 
-The shape sweep rides the extended suite, which CI runs weekly, publishing to [its own dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/), rather than on each merge. Unlike the table above, these three are development-machine figures — read them against each other rather than against the 5.0x above, which the same machine put at 5.5x:
+The shape sweep rides the extended suite, which CI runs weekly rather than on each merge, publishing to [its own dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/). The figures below come from a single run that is not on that dashboard: a manual run of the suite, its first on .NET 10 ([run 43575145503](https://github.com/marius-bughiu/Celerity/actions/runs/43575145503), `ubuntu-latest`, November 2026), at a commit whose measured code matches `main`. Read them as one sample: on .NET 8, the twelve weekly runs that reached this class, six of which the timeout cut off (one partway through it), spread the same ratios up to 20% either side of their midpoints. Each run measures every arm on one runner, so a row compares like with like:
 
-| Shape at 100,000 entities | Ratio |
-| --- | --- |
-| **Tight** — ~1 point per cell, ~2 matches per query (the broadphase shape, and the one charted) | **6.5x** |
-| **Wide** — ~10 points per cell, ~25 matches, cell still sized to the radius (100 and 90) | **1.12x** |
-| **Clustered** — 200 blobs, hundreds of points per cell | **0.52x** — the hand-roll wins |
+| Shape at 100,000 entities | vs. the bucketed `Dictionary` hand-roll | vs. rebuilding a `KdTree` |
+| --- | --- | --- |
+| **Tight** — ~1 point per cell, ~2 matches per query (the broadphase shape, and the one charted) | **2.3x** | **13.5x** |
+| **Wide** — ~10 points per cell, ~25 matches, cell still sized to the radius (100 and 90) | **0.86x** — the hand-roll is ahead | **2.1x** |
+| **Clustered** — 200 blobs, hundreds of points per cell | **0.60x** — the hand-roll wins | **0.78x** — the rebuild wins |
+
+The tight row is the shape of the frame above, and it reads well under 5.0x because that figure was measured on .NET 8. On matched runners (the same CPU model, Ubuntu release and instruction set), the core suite measured this shape on both runtimes a day apart: .NET 10 runs the hand-roll's side 1.8x faster than .NET 8 did, and the grid's only 1.06x faster.
+
+A development machine read the first column as 6.5x, 1.12x and 0.52x and put the clustered rebuild level with the grid. CI reverses two of those verdicts in this run: the hand-roll is ahead on the wide row, and the rebuild beats the grid on clustered points, as it did in every .NET 8 run that measured it. On .NET 8 the wide row sat near parity, 0.91–1.03x, with the grid narrowly ahead in three runs and never near 1.12x.
 
 The clustered row is the one worth reading twice, and it is the opposite of what the class was written to show. The expectation was that clustering would hurt both structures equally, since the baseline is the same grid. It does not: inside a dense cell the layouts genuinely differ. The hand-roll walks a contiguous `List<int>` and issues two independent loads per candidate, which the processor overlaps; the grid walks an intrusive linked list, so each step is a load that must complete before the next address is known — a cell holding five hundred entries is a five-hundred-long chain of dependent cache misses. So the documented failure mode is sharper than "it degrades to a scan": it degrades to a scan the hand-roll does faster.
 
-**And there is no consolation elsewhere in this library — which had to be measured rather than assumed.** An earlier draft of this section sent clustered points to `KdTree`, reasoning that pruning adapts to density where a fixed cell size cannot. That inference chained two unrelated comparisons and nobody had measured the one a caller actually faces, so `SpatialGridShapeBenchmark` now carries a third arm that does. It is not there: on clustered *moving* points a per-frame `KdTree` rebuild measures **24.3 ms against the grid's 24.0 ms** — level — while the hand-roll does the same frame in **12.5 ms**. For heavily clustered points that move, the bucketed `Dictionary` of contiguous lists wins and neither Celerity type helps. (At the other two shapes the grid beats a per-frame rebuild comfortably: **14.9x** tight, **3.2x** wide.)
+**And there is no way out elsewhere in this library — which had to be measured rather than assumed.** An earlier draft of this section sent clustered points to `KdTree`, reasoning that pruning adapts to density where a fixed cell size cannot. That inference chained two unrelated comparisons and nobody had measured the one a caller actually faces, so `SpatialGridShapeBenchmark` now carries a third arm that does. It is not a way out: on clustered *moving* points a per-frame `KdTree` rebuild takes **22% less time than the grid**, but still **1.3x the hand-roll's**. For heavily clustered points that move, the bucketed `Dictionary` of contiguous lists wins and neither Celerity type beats it.
 
-One more number worth stating plainly because it was predicted otherwise: the issue that asked for this type expected **≥50x** over the per-frame `KdTree` rebuild and called it the easy bar. It is 13.3x. A frame is not only the rebuild — both arms also run 10,000 radius queries, and that shared work sits in the denominator however cheap the index makes it.
+One more number worth stating plainly because it was predicted otherwise: the issue that asked for this type expected **≥50x** over the per-frame `KdTree` rebuild and called it the easy bar. It is 13.3x on .NET 8, and the .NET 10 run above puts the same shape at 13.5x. A frame is not only the rebuild — both arms also run 10,000 radius queries, and that shared work sits in the denominator however cheap the index makes it.
 
 ### Extent index
 
