@@ -4,11 +4,13 @@ using Celerity.Collections;
 
 // Trie<int> vs the BCL's Dictionary<string, int>. The dictionary wins the exact-key operations (one hash
 // versus a character walk), so Add / Lookup / SpanLookup are the honest "you don't use a trie for these"
-// arms. The headline is PrefixMatch: enumerating every entry whose key starts with a prefix. The trie answers
-// it from the structure in O(prefix + matches); the dictionary has no prefix index and must scan every key
-// and run StartsWith on it, so the trie's win widens with the table size. Keys share 16 two-letter prefix
-// buckets so each prefix query returns ItemCount/16 matches. The baseline arms are named Dictionary_* so the
-// dashboard classifies them as the BCL reference.
+// arms. The trie's case is PrefixMatch: enumerating every entry whose key starts with a prefix. The trie
+// answers it from the structure in O(prefix + matches); the dictionary has no prefix index and must scan
+// every key and run StartsWith on it. Keys share 16 two-letter prefix buckets, so each prefix query returns
+// ItemCount/16 matches and the trie pays for every one of them: its margin is widest at 1,000 keys and narrows
+// as the table grows. SuccinctTrieBenchmark's PrefixProbe measures the selective case, where the prefix index
+// wins outright. The baseline arms are named Dictionary_* so the dashboard classifies them as the BCL
+// reference.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]

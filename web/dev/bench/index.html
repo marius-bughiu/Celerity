@@ -460,7 +460,7 @@ function escapeHtml(s) {
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'SwissSet',            title: 'SwissSet<int, ...>',                       vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
-    // LinkedSet keeps insertion order. The BCL ships no insertion-ordered set, so its baseline is
+    // LinkedSet keeps insertion order. The BCL ships no ready-made insertion-ordered set, so its baseline is
     // OrderedDictionary used as one (a byte value per element), except on Remove, where OrderedDictionary is O(n)
     // and the baseline is the set a caller builds from BCL parts with an O(1) remove: a Dictionary keyed to the
     // nodes of a LinkedList.
@@ -551,7 +551,8 @@ function escapeHtml(s) {
     // the clock out — and Schedule, Cancel, Drain and Tick take it apart. Tick drives the clock one tick at a
     // time, which is the arm that charges the wheel for its slot sweep.
     { key: 'TimerWheel',          title: 'TimerWheel<int>',                          vs: 'PriorityQueue<int, long>', ops: ['Round', 'Schedule', 'Cancel', 'Drain', 'Tick'] },
-    // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
+    // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is its case, though the
+    // margin narrows as the table grows, since every query here returns a sixteenth of it.
     // SpanLookup probes from a ReadOnlySpan<char> slice; so does the baseline, through GetAlternateLookup.
     { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch', 'SpanLookup'] },
     // SuccinctTrie is the build-once trie: the same prefix answers over a LOUDS encoding, sold on retained

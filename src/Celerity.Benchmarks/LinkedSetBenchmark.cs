@@ -3,15 +3,16 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 using Celerity.Hashing;
 
-// LinkedSet<int, ...> vs the insertion-ordered sets a caller can build from the BCL, which ships none. Add,
-// Contains and Enumerate run against .NET 9's OrderedDictionary<TKey, TValue> used as a set: keyed by the element,
-// with a byte value nobody reads, the idiom ConcurrentDictionary<T, byte> made familiar. It keeps insertion order
-// through removals and does everything these three arms ask of a set, so it is a fair stand-in for them; the value
-// slot is part of what a caller using it pays. Remove runs against the ordered set a caller builds when removal
-// must stay O(1): a Dictionary keyed to the nodes of a LinkedList of elements. OrderedDictionary's Remove shifts
-// every later entry down, O(n), which is no stand-in for that arm (see LinkedDictionaryBenchmark). (HashSet<T> only
-// keeps insertion order until the first removal, and a HashSet beside a List has an O(n) Remove, so neither is a
-// fair stand-in for any of them.)
+// LinkedSet<int, ...> vs the insertion-ordered sets a caller can build from the BCL, which ships none ready-made.
+// Add, Contains and Enumerate run against .NET 9's OrderedDictionary<TKey, TValue> used as a set: keyed by the
+// element, with a byte value nobody reads, the idiom ConcurrentDictionary<T, byte> made familiar. It keeps
+// insertion order through removals and does everything these three arms ask of a set, so it is a fair stand-in for
+// them; the value slot is part of what a caller using it pays. Remove runs against the ordered set a caller builds
+// when removal must stay O(1): a Dictionary keyed to the nodes of a LinkedList of elements. OrderedDictionary's
+// Remove shifts every later entry down, O(n), which is no stand-in for that arm (see LinkedDictionaryBenchmark).
+// (HashSet<T> only keeps insertion order until the first removal, and a HashSet beside a List has an O(n) Remove,
+// so neither is a fair stand-in for any of them. A KeyedCollection<T, T> subclass is another route to an ordered
+// set; it is a list underneath, so it removes in O(n) too.)
 //
 // LinkedSet threads its order through the same entry array the hash chains index, so Add allocates nothing beyond
 // the pre-sized table and Remove unlinks an entry in O(1). Contains looks up every present element. Remove takes

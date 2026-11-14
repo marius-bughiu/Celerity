@@ -14,8 +14,8 @@ using Celerity.Hashing;
 /// BCL's best answer, not a workaround: it probes with the span, <c>TryGetValue</c> hands back the stored instance,
 /// and a <see cref="string"/> is materialized only for a token the set has not seen, exactly as
 /// <see cref="StringInternTable"/> does. Both sides therefore allocate once per <em>distinct token</em>, so the
-/// <b>Allocated</b> column shows only what each table's own storage costs, and what is left to compare is the
-/// probe.
+/// difference in the <b>Allocated</b> column is what each table's own storage costs, and what is left to compare
+/// is the probe.
 /// </para>
 /// <para>
 /// The <c>Dedupe</c> category is the end-to-end comparison: both arms walk the stream from an empty table and end

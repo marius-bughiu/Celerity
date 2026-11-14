@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- The benchmarks now measure against the .NET 9 BCL types their hand-rolled baselines stood in for: `OrderedDictionary<TKey, TValue>` for `LinkedDictionary` and `LinkedSet`, and `GetAlternateLookup<ReadOnlySpan<char>>()` on `Dictionary`, `FrozenDictionary` and `HashSet<string>` for the span lookups and `StringInternTable`. The dashboard cards and documented ratios moved with them. ⚠️ The span probes on `Trie`, `SuccinctTrie` and `FrozenCelerityDictionary` are 3.5–21x slower than the BCL's, and `StringInternTable` is about 2x slower than `HashSet<string>` unless given `StringCityHash64Hasher`, which makes it 1.05–1.2x faster.
+- The benchmarks now measure against the .NET 9 BCL types their hand-rolled baselines stood in for: `OrderedDictionary<TKey, TValue>` for `LinkedDictionary` and `LinkedSet` (removal keeps its `O(1)` hand-rolled baseline), and `GetAlternateLookup<ReadOnlySpan<char>>()` on `Dictionary`, `FrozenDictionary` and `HashSet<string>` for the span lookups and `StringInternTable`. The dashboard cards and documented ratios moved with them. ⚠️ Enumerating either linked type is about 5x slower than `OrderedDictionary`; the span probes on `Trie`, `SuccinctTrie` and `FrozenCelerityDictionary` are 3.5–21x slower than the BCL's; and `StringInternTable` is about 2x slower than `HashSet<string>` unless given `StringCityHash64Hasher`, which makes it 1.05–1.2x faster.
 
 ### Removed
 

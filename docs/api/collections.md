@@ -518,14 +518,14 @@ Measured locally on Apple Silicon (.NET 10, default BenchmarkDotNet job); the da
 
 | Operation, `int` keys | 1,000 | 100,000 |
 |---|---|---|
-| Insert every key, pre-sized | parity, 2.0x the allocation | parity, 2.7x the allocation |
+| Insert every key, pre-sized | 1.04x faster, 2.0x the allocation | 1.06x slower, 2.7x the allocation |
 | Lookup every key (hits) | 1.5x faster | 2.4x faster |
 | Enumerate after removing half | **5.3x slower** | **5.3x slower** |
 | Remove every key, shuffled order, against the hand-roll | 2.1x faster | 2.7x faster |
 
-Against `OrderedDictionary` itself, removal is where the two part ways. Draining every key in shuffled order is `O(n²)` for it: 372 µs against `LinkedDictionary`'s 2.9 µs at 1,000 keys (128x), and 36.5 ms against 36 µs at 10,000 (1,015x). `OrderedDictionaryRemoveBenchmark` in the extended suite measures it. The gap grows with the table, and a drain of 100,000 keys takes seconds, which is why the dashboard's Remove card uses the hand-roll instead.
+Against `OrderedDictionary` itself, removal is where the two part ways. Draining every key in shuffled order is `O(n²)` for it: about 370 µs against `LinkedDictionary`'s 2.9 µs at 1,000 keys (~127x), and about 36 ms against 36 µs at 10,000 (~1,000x). `OrderedDictionaryRemoveBenchmark` in the extended suite measures it. The gap grows with the table, and a drain of 100,000 keys takes seconds, which is why the dashboard's Remove card uses the hand-roll instead.
 
-**Enumeration is the cost.** `OrderedDictionary` reads one dense array front to back. `LinkedDictionary` follows its order links, one dependent load per step, through an entry array that removals have left full of holes. Inserts tie on time but allocate 2–2.7x as much: each entry carries a cached hash and two order links, and the power-of-two table rounds up.
+**Enumeration is the cost.** `OrderedDictionary` reads one dense array front to back. `LinkedDictionary` follows its order links, one dependent load per step, through an entry array that removals have left full of holes. Inserts are within 6% on time but allocate 2–2.7x as much: each entry carries two order links, and the table is sized for a 0.75 load factor and rounded up to a power of two, where `OrderedDictionary` sizes its arrays to the next prime at or above the requested capacity.
 
 ### Constructors
 
@@ -1314,16 +1314,16 @@ The layout is `LinkedDictionary`'s without the value. Elements live in one array
 
 ### Performance
 
-Measured locally on Apple Silicon (.NET 10, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is .NET 9's `OrderedDictionary<int, byte>` used as a set, since the BCL ships no insertion-ordered set, except for the last row. There it is the hand-roll that also removes in `O(1)`, a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`, because `OrderedDictionary` removes in `O(n)` (see [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher) for what that costs a drain).
+Measured locally on Apple Silicon (.NET 10, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is .NET 9's `OrderedDictionary<int, byte>` used as a set, since the BCL ships no ready-made insertion-ordered set, except for the last row. There it is the hand-roll that also removes in `O(1)`, a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`, because `OrderedDictionary` removes in `O(n)` (see [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher) for what that costs a drain).
 
 | Operation, `int` elements | 1,000 | 100,000 |
 |---|---|---|
-| Add every element, pre-sized | 1.1x slower, 1.8x the allocation | parity, 2.3x the allocation |
+| Add every element, pre-sized | 1.1x slower, 1.8x the allocation | 1.01–1.06x slower, 2.3x the allocation |
 | `Contains`, every element a hit | 1.6x faster | 3.0x faster |
 | Enumerate after removing half | **5.5x slower** | **4.6–5.5x slower** |
 | Remove every element, shuffled order, against the hand-roll | 2.0x faster | 2.7x faster |
 
-**Enumeration is the cost**, as on `LinkedDictionary`. `OrderedDictionary` reads one dense array front to back, where this type follows its order links, one dependent load per step, through an entry array that removals have left full of holes. Adds stay within 10% on time but allocate 1.8–2.3x as much: each entry carries a cached hash and two order links, and the power-of-two table rounds up. Growth copies the live entries into a fresh array in order, which makes the walk sequential again. A `TrimExcess` does the same only when it changes the table size. One that leaves the bucket count unchanged rebuilds nothing, so it does not restore sequential layout after steady churn.
+**Enumeration is the cost**, as on `LinkedDictionary`. `OrderedDictionary` reads one dense array front to back, where this type follows its order links, one dependent load per step, through an entry array that removals have left full of holes. Adds stay within 10% on time but allocate 1.8–2.3x as much, mostly from table sizing: the table is sized for a 0.75 load factor and rounded up to a power of two, where `OrderedDictionary` sizes its arrays to the next prime at or above the requested capacity, and each entry also carries two order links. Growth copies the live entries into a fresh array in order, which makes the walk sequential again. A `TrimExcess` does the same only when it changes the table size. One that leaves the bucket count unchanged rebuilds nothing, so it does not restore sequential layout after steady churn.
 
 ### Constructors
 
@@ -7947,7 +7947,7 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
 
 ### Against `HashSet<string>`
 
-The BCL does the same with `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()`, which every runtime Celerity targets has: its `TryGetValue` returns the stored instance from a span, and a miss materializes the token once for `Add`. That allocates exactly the strings this type does, so **this type saves no allocations over it**, and with its default hasher it is **about 2x slower**. Measured on `StringInternTableBenchmark`'s stream of 64 distinct 16-character tokens (Apple Silicon, .NET 10, default BenchmarkDotNet job):
+The BCL does the same with `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()`, which every runtime Celerity targets has: its `TryGetValue` returns the stored instance from a span, and a miss materializes the token once for `Add`. That allocates exactly the strings this type does, so **this type saves no string allocations over it**, and with its default hasher it is **about 2x slower**. Measured on `StringInternTableBenchmark`'s stream of 64 distinct 16-character tokens (Apple Silicon, .NET 10, default BenchmarkDotNet job):
 
 | Against `HashSet<string>` with `GetAlternateLookup` | 1,000 tokens | 100,000 tokens |
 |---|---|---|
