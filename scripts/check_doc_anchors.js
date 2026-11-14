@@ -43,6 +43,8 @@
 //      rules 2–4 as if it were relative to the repository root. A package README can link
 //      to the docs no other way, because nuget.org renders a relative link with no
 //      destination, and an absolute link that nothing checks rots without a symptom.
+//      For any link, a query string is not part of the path, and under `?plain=1`,
+//      GitHub's source view of a file, a fragment names a line (`#L42`) and is not checked.
 //
 // The slug rule below mirrors github-slugger, which is what GitHub itself renders with.
 // It was checked against the live rendering rather than inferred; to re-confirm it after
@@ -518,6 +520,26 @@ const RULE_FIVE_CASES = [
     },
     expect: [],
   },
+  {
+    name: 'a tree link into main to a missing directory is rejected',
+    files: { 'src/pkg/README.md': '[x](https://github.com/marius-bughiu/Celerity/tree/main/src/gone)\n' },
+    expect: ['src/pkg/README.md:1 missing'],
+  },
+  {
+    name: "a link to the repository's front page is not read as an anchor in the linking file",
+    files: { 'src/pkg/README.md': `[x](${MAIN}#install)\n` },
+    expect: [],
+  },
+  {
+    name: 'a query string is not part of the path, and a source-view line anchor is not a heading',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/a.md?plain=1#L42)\n`, 'docs/a.md': '## Solo\n' },
+    expect: [],
+  },
+  {
+    name: 'a source-view link to a missing file is still rejected',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/gone.md?plain=1#L42)\n`, 'docs/a.md': '## Solo\n' },
+    expect: ['src/pkg/README.md:1 missing'],
+  },
 ];
 
 function verdictCases() {
@@ -550,8 +572,13 @@ function checkLinks(files, parsed, exists) {
       const local = own ? target.slice(own[0].length) : target;
 
       const hash = local.indexOf('#');
-      const rawPath = hash === -1 ? local : local.slice(0, hash);
+      const beforeHash = hash === -1 ? local : local.slice(0, hash);
       const encoded = hash === -1 ? '' : local.slice(hash + 1);
+      // A query string is not part of the path. Under `?plain=1`, GitHub's source view,
+      // the fragment names a line (`#L42`) rather than a heading, so it is not checked.
+      const question = beforeHash.indexOf('?');
+      const rawPath = question === -1 ? beforeHash : beforeHash.slice(0, question);
+      const sourceView = question !== -1 && /(?:^|&)plain=1(?:&|$)/.test(beforeHash.slice(question + 1));
       let fragment = encoded;
       try {
         fragment = decodeURIComponent(encoded);
@@ -569,7 +596,7 @@ function checkLinks(files, parsed, exists) {
 
       if (rawPath === '') {
         if (own) continue; // the repository's own front page
-        const reason = fragment ? verdict(parsed.get(file), 'this file') : null;
+        const reason = fragment && !sourceView ? verdict(parsed.get(file), 'this file') : null;
         if (reason) problems.push({ file, line, target, reason });
         continue;
       }
@@ -581,7 +608,7 @@ function checkLinks(files, parsed, exists) {
         problems.push({ file, line, target, reason: `no such file: ${resolved}` });
         continue;
       }
-      if (!fragment || !resolved.toLowerCase().endsWith('.md')) continue;
+      if (!fragment || sourceView || !resolved.toLowerCase().endsWith('.md')) continue;
 
       const other = parsed.get(resolved);
       if (!other) continue; // an untracked or skipped markdown file
