@@ -15,6 +15,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Fixed
 
 - Building from a collection that changes while it is being read, such as a `ConcurrentDictionary` another thread writes to, now keeps exactly what it yields. A source that shrank left `default` entries it never held (a `(0, null)` key in `FrozenSortedMap`, a `null` added to a `BTreeSet` by `SymmetricExceptWith`), and one that grew threw or lost elements. Fixed in the constructors of `FrozenSortedMap`, `FrozenSortedSet`, `IntervalTree`, `RTree`, `KdTree`, `CompressedGraph`, `SegmentTree`, `FenwickTree`, `SparseTable`, `BitPackedArray`, `Deque`, `GapBuffer` and `MinMaxHeap`, and in the set operations of `FrozenSortedSet`, `BTreeSet` and `RankedSet`. Sources other than an array or a `List<T>` itself (not a subclass) are now enumerated, which is slower than their `CopyTo`. Closes #619.
+- `SegmentedList<T>.AddRange`, `KWayMerge.Merge` and `ProbeStatisticsEvaluator.Evaluate` now keep exactly what a counted source yields when another thread changes it after it is counted (a `ConcurrentDictionary`, say). `AddRange` used to stop at the counted number, which could drop an element that was there all along; `Merge` blamed the caller for `null` sequences it never passed or threw from `CopyTo`; `Evaluate` simulated `default` keys the caller never supplied. Closes #621.
 
 ## [3.6.0] - 2026-11-13
 
