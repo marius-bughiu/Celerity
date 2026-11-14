@@ -21,7 +21,7 @@ using Celerity.Primitives;
 /// Each category fixes one operation; the <see cref="System.Collections.BitArray"/> arm is the baseline
 /// and the <see cref="SpanBits"/> arm the candidate, so the ratio reads as "the span helper relative to
 /// the BCL bit array". This is an isolated microbenchmark, so it lives in the <strong>extended</strong>
-/// suite (not the per-PR core regression gate).
+/// suite (not the core regression suite).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

@@ -25,8 +25,8 @@ using Celerity.Primitives;
 /// fixes one direction of one curve, so the ratios read as "relative to writing it by hand".
 /// </para>
 /// <para>
-/// Isolated microbenchmarks, so this lives in the <strong>extended</strong> suite rather than the per-PR
-/// core regression gate.
+/// Isolated microbenchmarks, so this lives in the <strong>extended</strong> suite rather than the
+/// core regression suite.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

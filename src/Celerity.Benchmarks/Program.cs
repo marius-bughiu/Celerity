@@ -7,10 +7,10 @@ using BenchmarkDotNet.Running;
 internal class Program
 {
     // ── CI-tracked core suite ───────────────────────────────────────────────────
-    // The lean, fast, low-variance set run on every PR by the `--ci` path and pushed
-    // to gh-pages for continuous regression tracking. Keep this list tight: every
-    // entry is benchmarked twice (PR + base) on the same runner, so additions here
-    // directly lengthen CI and widen the A/B comparison surface.
+    // The lean, fast, low-variance set that the `--ci` path runs on merges to main
+    // (and on demand) and pushes to gh-pages for continuous regression tracking. Keep
+    // this list tight: it is the most expensive thing in CI even sharded across a
+    // parallel matrix, so additions here directly lengthen every post-merge run.
     private static readonly Type[] CoreBenchmarks =
     {
         typeof(CelerityDictionaryBenchmark),
@@ -122,9 +122,9 @@ internal class Program
     // ── Extended suite (local / on-demand) ──────────────────────────────────────
     // Heavier, more exploratory benchmarks: multi-distribution sweeps, million-item
     // scale tests, concurrency fan-out, allocation profiling, and mixed workloads.
-    // These are too slow and/or too noisy for the per-PR regression gate, so they are
-    // NOT part of the `--ci` joined run. Run them locally via the interactive switcher
-    // or a filter, e.g.:
+    // These are too slow and/or too noisy for the core regression run, so they are
+    // NOT part of the `--ci` joined run; benchmarks-extended.yml runs them weekly via
+    // `--ci-extended`. Run them locally via the interactive switcher or a filter, e.g.:
     //   dotnet run -c Release -- --filter '*LargeDataset*'
     //   dotnet run -c Release -- --filter '*Distribution*'
     private static readonly Type[] ExtendedBenchmarks =
@@ -195,7 +195,7 @@ internal class Program
             // Weekly extended mode: run the heavy extended suite and emit a joined
             // JSON report for github-action-benchmark, published to the separate
             // dev/bench-extended dashboard. Driven by benchmarks-extended.yml on a
-            // cron schedule — intentionally NOT part of the per-PR --ci gate.
+            // cron schedule — intentionally NOT part of the core --ci run.
             new BenchmarkSwitcher(ExtendedBenchmarks).RunAllJoined(new ExtendedCiConfig());
         }
         else if (args.Contains("--ci"))
@@ -253,10 +253,10 @@ internal class Program
 
     // Select this shard's slice of the suite for the parallel CI matrix. `--shard
     // <total> <index>` partitions the suite across `total` runners; without it the
-    // whole suite is returned. Partitioning is by benchmark class (never by case),
-    // which preserves the workflow's same-runner A/B invariant: a class's PR-head and
-    // main-base measurements always run together on the one shard runner, so hardware
-    // variance still cancels per benchmark.
+    // whole suite is returned. Partitioning is by benchmark class (never by case), so
+    // all of a class's cases, its baseline included, run on the one shard runner and
+    // its ratios never mix hardware. A hand-run A/B relies on the same property to
+    // measure each class on both refs on one runner (see `--shard-classes` below).
     private static Type[] SelectShard(Type[] benchmarks, string[] args)
     {
         // `--shard-classes <path>` replays a slice resolved by an earlier process instead

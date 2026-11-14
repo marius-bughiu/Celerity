@@ -20,7 +20,7 @@ using Celerity;
 /// Each category fixes one operation/width (32- or 64-bit modulo or division); the operator form is the
 /// baseline and the <c>FastUtils</c> form the candidate, so each ratio reads as "the reciprocal trick
 /// relative to the hardware instruction". This is an isolated microbenchmark, so it lives in the
-/// <strong>extended</strong> suite (not the per-PR core regression gate).
+/// <strong>extended</strong> suite (not the core regression suite).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

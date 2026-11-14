@@ -14,7 +14,7 @@ using Celerity.Collections;
 /// the same type, so the ratio reads directly as "how much the single up-front grow saves over incremental
 /// doubling". Both a BCL <see cref="Dictionary{TKey, TValue}"/> and Celerity's <see cref="IntDictionary{TValue}"/>
 /// are shown so the win is visible against the type a developer is most likely replacing. This is an isolated
-/// build microbenchmark, so it lives in the <strong>extended</strong> suite, not the per-PR core gate.
+/// build microbenchmark, so it lives in the <strong>extended</strong> suite, not the core suite.
 /// </remarks>
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
