@@ -9,9 +9,10 @@ name: Benchmarks (extended)
 
 on:
   schedule:
-    # Mondays 03:23 UTC: off the hour, as GitHub advises for scheduled workflows, since the start
-    # of every hour is its busiest time. That does not guarantee a prompt start: from late August
-    # to October this run and fuzz.yml's off-the-hour cron alike started five to eight hours late.
+    # Mondays 03:23 UTC: off the hour, as GitHub advises for scheduled workflows, whose docs list the
+    # start of every hour among their high-load times. That does not guarantee a prompt start: on the
+    # Mondays from 2026-08-31 to 2026-10-26, this run and fuzz.yml's off-the-hour cron alike started
+    # five to eight hours late.
     - cron: '23 3 * * 1'
   workflow_dispatch: {}
 
@@ -28,7 +29,8 @@ jobs:
     # the old 120-min cap on 2026-11-02, LargeDatasetBenchmark alone taking 7 min on one run and
     # 17.5 on the other. Seven of the twelve weekly runs from 2026-08-24 to 2026-11-09 were cut
     # off like that. The five that finished took 110-117 min, and the seven extrapolate to
-    # 122-142. The benchmark step's own 225-min timeout clears the slowest by ~80 min; this job
+    # 122-142. All twelve ran on .NET 8; the first .NET 10 run (a manual one, 2026-11-14) took
+    # 110. The benchmark step's own 225-min timeout clears the slowest by ~80 min; this job
     # cap sits 15 min above it so the steps after it still get to run, and both stay well under
     # GitHub's 6h job ceiling. The summary step warns when a run passes 165 min. Past that, cap
     # the iteration count in ExtendedCiConfig (trading some accuracy on noisy hosts) or shard the
@@ -61,10 +63,10 @@ jobs:
         # writes its artifacts to ./BenchmarkDotNet.Artifacts relative to the
         # process CWD, and downstream steps look for them under Celerity.Benchmarks/.
         working-directory: src/Celerity.Benchmarks
-        # The step's own timeout, inside the job's, makes a run that runs out of time end as a
-        # failure, which GitHub's notifications for failed runs cover. A job timeout ends it as
-        # cancelled instead, as it did for the seven cut-off runs above. The summary step's cap
-        # must match this.
+        # The step's own timeout, inside the job's, makes a run whose benchmarks run out of time end
+        # as a failure. A job timeout ends it as cancelled instead, as it did for the seven cut-off
+        # runs above, and a notification setting that reports only failed runs passes over that.
+        # The summary step's cap must match this.
         timeout-minutes: 225
         run: dotnet run --configuration Release -- --ci-extended
 
