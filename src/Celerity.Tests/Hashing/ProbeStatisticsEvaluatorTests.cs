@@ -324,5 +324,16 @@ public class ProbeStatisticsEvaluatorTests
         Assert.Equal(fromArray, ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(Uncounted(keys)));
         Assert.Equal(fromArray, ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(
             new StaleCountCollection<int>(keys.Length, keys)));
+        Assert.Equal(fromArray, ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(
+            new ArraySegment<int>([0, .. keys, 0], 1, keys.Length)));
+    }
+
+    [Fact]
+    public void Evaluate_ShouldReportNoKeys_ForTheDefaultArraySegment()
+    {
+        ProbeStatistics stats = ProbeStatisticsEvaluator.Evaluate<int, IdentityIntHasher>(default(ArraySegment<int>));
+
+        Assert.Equal(0, stats.KeyCount);
+        Assert.Equal(0, stats.EntryCount);
     }
 }

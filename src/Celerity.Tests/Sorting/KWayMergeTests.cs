@@ -338,6 +338,15 @@ public class KWayMergeTests
     }
 
     [Fact]
+    public void LazyMerge_ShouldReadAnArraySegmentOfSources_IncludingTheDefaultOne()
+    {
+        IEnumerable<int>[] runs = [new[] { 9 }, new[] { 1, 4 }, new[] { 2, 3 }, new[] { 0 }];
+
+        Assert.Empty(KWayMerge.Merge(default(ArraySegment<IEnumerable<int>>)));
+        Assert.Equal([1, 2, 3, 4], KWayMerge.Merge(new ArraySegment<IEnumerable<int>>(runs, 1, 2)));
+    }
+
+    [Fact]
     public void LazyMerge_ShouldReadAnUncountedOuterSequence()
     {
         static IEnumerable<IEnumerable<int>> Outer()

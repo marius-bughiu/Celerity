@@ -236,7 +236,8 @@ public static class KWayMerge
         return new SequenceMerge<T, TComparer>(snapshot, comparer);
     }
 
-    // Reads the outer sequence once. An array or an exact List<T> is copied whole. Any other counted collection is
+    // Reads the outer sequence once. An array, an ArraySegment<T> or an exact List<T> is copied whole: none of their
+    // counts can go stale, and the default ArraySegment<T> cannot be enumerated. Any other counted collection is
     // enumerated rather than copied through CopyTo, because Count and CopyTo are two calls that a collection
     // another thread is changing need not agree across: a shrinking one leaves trailing nulls that the null check
     // would blame on the caller, and a growing one makes CopyTo throw. A plain sequence is left to ToArray, which
@@ -244,7 +245,7 @@ public static class KWayMerge
     private static IEnumerable<T>[] Snapshot<T>(IEnumerable<IEnumerable<T>> sources)
     {
         if (sources is not ICollection<IEnumerable<T>> counted
-            || sources is IEnumerable<T>[]
+            || sources is IEnumerable<T>[] or ArraySegment<IEnumerable<T>>
             || sources.GetType() == typeof(List<IEnumerable<T>>))
         {
             return sources.ToArray();

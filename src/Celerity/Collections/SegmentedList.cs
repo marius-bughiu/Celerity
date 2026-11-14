@@ -208,8 +208,8 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     }
 
     /// <summary>
-    /// Appends the elements of <paramref name="collection"/> in enumeration order. An array, a
-    /// <see cref="List{T}"/> or another <see cref="SegmentedList{T}"/> is copied a block at a time after one
+    /// Appends the elements of <paramref name="collection"/> in enumeration order. An array, an
+    /// <see cref="ArraySegment{T}"/>, a <see cref="List{T}"/> or another <see cref="SegmentedList{T}"/> is copied a block at a time after one
     /// capacity check. Any other <see cref="ICollection{T}"/> is enumerated once into capacity reserved for its
     /// <see cref="ICollection{T}.Count"/>, and its elements are published only when that enumeration finishes,
     /// so no temporary copy of it is made. Exactly what that enumeration yields is appended, more or fewer than the
@@ -235,6 +235,10 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
                 break;
             case List<T> list:
                 AppendSpan(CollectionsMarshal.AsSpan(list));
+                break;
+            case ArraySegment<T> segment:
+                // A fixed-length view, so its count cannot go stale, and the default one cannot be enumerated.
+                AppendSpan(segment);
                 break;
             case SegmentedList<T> other:
                 AppendSegments(other);
@@ -670,11 +674,8 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     // counted loses nothing, and one that shrank appends what it still holds.
     private void AppendCollection(ICollection<T> source)
     {
-        int n = source.Count;
-        if (n == 0)
-            return;
-
-        EnsureCapacityCore(CheckedTotal(n));
+        // A count of zero is no reason to skip the enumeration: the source may have grown since it was counted.
+        EnsureCapacityCore(CheckedTotal(source.Count));
         int start = _count;
         int written = 0;
         try
@@ -696,6 +697,9 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
             throw;
         }
 
+        if (written == 0)
+            return;
+
         _count = start + written;
         _version++;
         SetTail();
@@ -703,10 +707,13 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
 
     // Grows the capacity past the `written` unpublished elements that sit from `start` on, when a counted source
     // yields more than it counted. The count is raised over them for the duration, because a first segment that
-    // grows is copied only up to the count; it goes back down, unpublished, before this returns or throws.
+    // grows is copied only up to the count; it goes back down, unpublished, before this returns or throws. The
+    // version is put back too: the published elements are unchanged, and an enumerator reads the segments afresh
+    // on every step, so a source that wraps this list keeps enumerating. The append bumps it once it publishes.
     private void ReserveOneMore(int start, int written)
     {
         int total = CheckedTotal(written + 1);
+        int version = _version;
         _count = start + written;
         try
         {
@@ -715,6 +722,7 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         finally
         {
             _count = start;
+            _version = version;
             SetTail();
         }
     }

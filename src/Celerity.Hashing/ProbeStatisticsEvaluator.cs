@@ -166,13 +166,14 @@ public static class ProbeStatisticsEvaluator
             maxProbeLength);
     }
 
-    // An array or an exact List<T> is copied whole. Any other counted collection is enumerated rather than copied
+    // An array, an ArraySegment<T> or an exact List<T> is copied whole: none of their counts can go stale, and the
+    // default ArraySegment<T> cannot be enumerated. Any other counted collection is enumerated rather than copied
     // through CopyTo, which the List<T> constructor would use: Count and CopyTo are two calls that a collection
     // another thread is changing need not agree across, and a shrinking one would leave default keys in the copy,
     // which the simulated table would then place as if the caller had supplied them.
     private static List<T> Materialize<T>(IEnumerable<T> keys)
     {
-        if (keys is not ICollection<T> counted || keys is T[] || keys.GetType() == typeof(List<T>))
+        if (keys is not ICollection<T> counted || keys is T[] or ArraySegment<T> || keys.GetType() == typeof(List<T>))
             return new List<T>(keys);
 
         var read = new List<T>(counted.Count);

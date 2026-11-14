@@ -1000,6 +1000,53 @@ public class SegmentedListTests
     }
 
     [Fact]
+    public void AddRange_ShouldAppendWhatItYields_WhenACountedSourceCountedZero()
+    {
+        // A count of zero used to skip the enumeration, so a source that grew from empty appended nothing.
+        var list = new SegmentedList<int>();
+
+        list.AddRange(new CountedSource<int>(0, [1, 2]));
+
+        Assert.Equal(new[] { 1, 2 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldLeaveTheVersionAlone_WhenACountedSourceYieldsNothing()
+    {
+        var list = new SegmentedList<int>(new[] { 1 });
+        SegmentedList<int>.Enumerator e = list.GetEnumerator();
+
+        list.AddRange(new CountedSource<int>(0, []));
+        list.AddRange(new CountedSource<int>(3, []));
+
+        Assert.True(e.MoveNext());
+        Assert.Equal(new[] { 1 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendOneCopy_WhenAWrapperOverTheListUndercountsIt()
+    {
+        // Growing past the reservation must not invalidate an enumeration of the list itself, which a source that
+        // wraps it is running at the time.
+        var list = new SegmentedList<int>(new[] { 1, 2, 3, 4 });
+        Assert.Equal(4, list.Capacity); // full, so the first element appended grows it
+
+        list.AddRange(new Miscounted<int>(list, 0));
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 1, 2, 3, 4 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldCopyAnArraySegment()
+    {
+        var list = new SegmentedList<int>(new[] { 0 });
+
+        list.AddRange(new ArraySegment<int>([9, 1, 2, 9], 1, 2));
+
+        Assert.Equal(new[] { 0, 1, 2 }, list);
+    }
+
+    [Fact]
     public void AddRange_ShouldAppendEverythingItYields_WhenACountedSourceYieldsMoreAcrossSegments()
     {
         var list = new SegmentedList<int>(new[] { -1 });
@@ -1249,6 +1296,28 @@ public class SegmentedListTests
             change();
             return inner.GetEnumerator();
         }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public void Add(T item) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Contains(T item) => throw new NotSupportedException();
+
+        public void CopyTo(T[] array, int arrayIndex) => throw new NotSupportedException();
+
+        public bool Remove(T item) => throw new NotSupportedException();
+    }
+
+    // Reports a fixed count, whatever the wrapped sequence holds, and enumerates the sequence itself.
+    private sealed class Miscounted<T>(IEnumerable<T> inner, int count) : ICollection<T>
+    {
+        public int Count => count;
+
+        public bool IsReadOnly => true;
+
+        public IEnumerator<T> GetEnumerator() => inner.GetEnumerator();
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
