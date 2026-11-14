@@ -34,7 +34,7 @@ src/
 ├── Celerity.Ring.Tests/      The showcase packages' own xUnit suites, one per package.
 ├── Celerity.Sentinel.Tests/
 ├── Celerity.Cardinality.Tests/
-├── Celerity.Benchmarks/      BenchmarkDotNet project. Runs in CI on every PR and main push.
+├── Celerity.Benchmarks/      BenchmarkDotNet project. Runs in CI on merges to main; the extended suite weekly.
 ├── Celerity.Fuzz/            Differential fuzz harness. Nightly soak; reproduces failures from a seed.
 ├── Celerity.AotSmokeTest/    Native AOT publish + run target. Proves AOT/trim compatibility.
 └── Celerity.sln
@@ -125,6 +125,16 @@ node scripts/check_dashboard_coverage.js path/to/joined-report-full.json   # + v
 
 The structural half — the two `COLLECTIONS` arrays agree, every charted collection has a `{Key}Benchmark` registered in `CoreBenchmarks`, and no label reaches an `innerHTML` template unescaped — runs on every PR in `ci.yml`. The full check runs in the aggregate job of `benchmarks.yml`, against the merged report, and additionally asserts that every published name parses and that every card resolves to both a BCL and a Celerity measurement.
 
+## Documentation
+
+`README.md` is the project's landing page, so it stays short: the pitch, a quick start, the family-by-family inventory of types, and links. Guides, examples, decision tables and benchmark results live under [`docs/`](docs/README.md). Each package's NuGet readme is the `README.md` in its own project folder, [`src/Celerity/README.md`](src/Celerity/README.md) for `Celerity.Collections`, and it links only by absolute URL, because nuget.org renders a relative link with no destination. A new collection is documented in:
+
+- its own section in [`docs/api/collections.md`](docs/api/collections.md) — constructors, members, exceptions, a runnable example, and where it wins and loses;
+- a bullet and a worked example under its family in the [collections guide](docs/collections.md);
+- a row in the [decision table](docs/choosing-a-collection.md);
+- its name in its family's row of the [Collections](README.md#collections) table, in both the README and [`src/Celerity/README.md`](src/Celerity/README.md#collections), and in the [`docs/README.md`](docs/README.md) index;
+- the smoke-test list in [`docs/aot.md`](docs/aot.md), next to its block in `src/Celerity.AotSmokeTest`.
+
 ## Documentation links
 
 Anchor links inside the docs are checked in CI, because a broken one is invisible: the markdown is well-formed, the diff looks right, and the only symptom is that clicking the link scrolls nowhere.
@@ -139,7 +149,7 @@ The trap is that GitHub slugs a heading by lowercasing its **rendered** text and
 
 The doubled `t` in the first two rows is `…Set` meeting `T` once the `<` between them is deleted — and it happens whether the generic is entity-encoded or written with bare angle brackets, since bare `<T, THasher>` is not a valid HTML tag and renders as text. The doubled dash in the third row is the arrow vanishing between two spaces. None of the three is what anyone writes by hand.
 
-[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to any anchor that a repeated heading can renumber. Never *guess* a heading's anchor — ask the script:
+[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to any anchor that a repeated heading can renumber. An absolute link into this repository's `main` branch (`https://github.com/marius-bughiu/Celerity/blob/main/…`), the only kind a package readme can use, is checked the same way, from the repository root. Never *guess* a heading's anchor — ask the script:
 
 ```bash
 node scripts/check_doc_anchors.js --list    # every anchor each file defines
@@ -249,7 +259,7 @@ The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as 
 ./.github/scripts/extract-release-notes.sh 1.2.0
 ```
 
-`workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push.
+`workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push. Run it with the tag selected as the ref. The release-notes check and the GitHub Release only run for a tag, but the `deploy` job that publishes has no such condition: from `main` it pushes whatever version MinVer computes there to NuGet.org, a pre-release once `main` has moved past the tag, and a published package can only be unlisted, not deleted.
 
 ### API compatibility
 

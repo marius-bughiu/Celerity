@@ -10,9 +10,10 @@ using Celerity.Hashing;
 /// different regime that the 1k/100k benchmarks do not exercise.
 /// </summary>
 /// <remarks>
-/// Excluded from the per-PR CI regression run (see <c>Program.cs</c>): a single
+/// Excluded from the core CI regression run (see <c>Program.cs</c>): a single
 /// pass builds and tears down tens of millions of entries, which is too slow and
-/// too memory-hungry for the same-runner A/B comparison. Run locally with
+/// too memory-hungry for the sharded post-merge run. It rides the weekly extended
+/// suite instead; run it locally with
 /// <c>dotnet run -c Release -- --filter '*LargeDataset*'</c>.
 /// </remarks>
 [MemoryDiagnoser(false)]

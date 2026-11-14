@@ -22,7 +22,7 @@ using Celerity.Primitives;
 /// Each category fixes one direction (encode or decode); the BCL form is the baseline and the
 /// <c>VarInt</c> form the candidate, so the ratio reads as "the span codec relative to the BCL
 /// stream path". This is an isolated microbenchmark, so it lives in the <strong>extended</strong>
-/// suite (not the per-PR core regression gate).
+/// suite (not the core regression suite).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

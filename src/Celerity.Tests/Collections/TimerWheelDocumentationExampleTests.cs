@@ -3,12 +3,12 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="TimerWheel{TValue}"/> usage examples published in <c>docs/api/collections.md</c>, the
-/// README and the type's own XML documentation, and asserts what those pages claim in their comments.
+/// Runs the <see cref="TimerWheel{TValue}"/> usage examples published in <c>docs/api/collections.md</c>,
+/// <c>docs/collections.md</c> and the type's own XML documentation, and asserts what those pages claim in their comments.
 ///
 /// <para>
 /// A published example is documentation a reader will copy, so an incorrect one is a defect rather than a
-/// typo. This file exists because the README example was one: it reused a single destination list across two
+/// typo. This file exists because the example the README then carried was one: it reused a single destination list across two
 /// advances without clearing it, so a reader following it would have re-failed every request the previous
 /// advance had already failed. Nothing caught that, because the only claim the example makes is about the
 /// <i>shape</i> of the loop, and no test ran the shape.
@@ -124,7 +124,7 @@ public class TimerWheelDocumentationExampleTests
     }
 
     /// <summary>
-    /// The claim the README's quick start makes about cancellation, which is the axis the type is sold on:
+    /// The claim the collections guide's example makes about cancellation, which is the axis the type is sold on:
     /// the payload is released, the handle stops resolving, and a second cancel is <c>false</c> rather than
     /// an exception.
     /// </summary>

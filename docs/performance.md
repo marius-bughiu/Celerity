@@ -8,7 +8,7 @@ If you only read one section, read [Pick the right collection](#1-pick-the-right
 
 | Knob | Default | When to change it |
 |---|---|---|
-| Collection type | — | Match the key type and access pattern — see the [README table](../README.md#choosing-a-collection). |
+| Collection type | — | Match the key type and access pattern — see the [decision table](choosing-a-collection.md). |
 | `capacity` | `16` | Set it to (or above) the final element count when you know the size up front. |
 | `loadFactor` | `0.75f` | Lower (e.g. `0.6`) to trade memory for fewer collisions; raise (e.g. `0.85`) to trade speed for density. |
 | Hasher | per-type default | Escalate only when profiling shows clustering or you face adversarial keys. |
@@ -26,7 +26,7 @@ The single biggest win is using the type whose layout matches your key. The spec
 | One key → many values | `CelerityMultiMap<TKey, TValue, THasher>` |
 | Membership only | `IntSet` / `LongSet` / `CeleritySet<T, THasher>` |
 
-See the full decision table with rationale in the [README](../README.md#choosing-a-collection). If your workload isn't on it, the BCL collection is usually the right starting point.
+See the full [decision table](choosing-a-collection.md), with rationale. If your workload isn't on it, the BCL collection is usually the right starting point.
 
 ### Reference-type keys: cache the hash
 
@@ -116,7 +116,7 @@ Escalation ladders (cheap → strong avalanche):
 - **`string` (ASCII identifiers):** `StringFnV1AHasher` → `StringJenkinsOaatHasher` → `StringMurmur3Hasher` / `StringXxHash3Hasher`
 - **`string`, untrusted/adversarial keys:** step to a keyed PRF — `StringHalfSipHash24Hasher`, `StringSipHash13Hasher`, or `StringSipHash24Hasher`.
 
-The full hasher matrix, with the cost/avalanche rationale for every option, lives in [the README's hasher notes](../README.md#choosing-a-collection) and [`docs/api/hashing.md`](api/hashing.md).
+The full hasher matrix, with the cost/avalanche rationale for every option, lives in [Choosing a hasher](choosing-a-hasher.md) and [`docs/api/hashing.md`](api/hashing.md).
 
 ### Measure distribution before you commit
 
@@ -192,7 +192,7 @@ Check `IsPerfectlyHashed`. When it is `true`, lookups are single-probe. When the
 
 ## 7. Benchmark on your own machine
 
-The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every collection against its BCL counterpart on each `main` push, with per-PR regression comparisons. It runs on hosted CI runners, which are **noisier than your laptop** — treat the dashboard as a trend and regression guard, not as the absolute number you will see in production.
+The [live dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) tracks every collection against its BCL counterpart on each merge to `main` that can move a number; to measure a branch before it merges, run the workflow by hand (see [CONTRIBUTING](../CONTRIBUTING.md#ci)). It runs on hosted CI runners, which are **noisier than your laptop** — treat the dashboard as a trend and regression guard, not as the absolute number you will see in production.
 
 For high-precision local numbers, run the BenchmarkDotNet suite in Release:
 
@@ -208,11 +208,11 @@ Filter to the comparison you care about:
 dotnet run -c Release -- --filter "String*HasherBenchmark*" --join
 ```
 
-These hasher sweeps are a **raw-mixing-cost diagnostic**, not the headline metric — each is bracketed by two baselines, the direct `GetHashCode()` and `EqualityComparer<T>.Default.GetHashCode()` (the per-probe call a BCL `Dictionary<,>` makes, i.e. the realistic thing you replace), so you can see both the absolute floor and the cost you actually pay today. Read hasher throughput numbers **alongside** the `HashQualityReport` distribution metrics *and* the end-to-end probe length below — the right hasher is the one that is both fast *and* uniform on your key shape, and the isolated `Hash()` number alone is misleading (for `int`, `GetHashCode()` is identity, so no mixer can beat it). When you change `capacity`, `loadFactor`, or the hasher in production code, re-run the relevant benchmark; the README's published numbers are the contract, and a local benchmark is how you confirm a tuning change actually helped.
+These hasher sweeps are a **raw-mixing-cost diagnostic**, not the headline metric — each is bracketed by two baselines, the direct `GetHashCode()` and `EqualityComparer<T>.Default.GetHashCode()` (the per-probe call a BCL `Dictionary<,>` makes, i.e. the realistic thing you replace), so you can see both the absolute floor and the cost you actually pay today. Read hasher throughput numbers **alongside** the `HashQualityReport` distribution metrics *and* the end-to-end probe length below — the right hasher is the one that is both fast *and* uniform on your key shape, and the isolated `Hash()` number alone is misleading (for `int`, `GetHashCode()` is identity, so no mixer can beat it). When you change `capacity`, `loadFactor`, or the hasher in production code, re-run the relevant benchmark; the documented numbers are the contract, and a local benchmark is how you confirm a tuning change actually helped.
 
 ## Extended benchmark suite
 
-The CI dashboard runs a deliberately **lean core suite** on each merge to `main` whose diff can actually move a number — a documentation or comment-only commit is skipped — so the tracked series stays fast and low-variance. A second, heavier set of benchmarks lives in the same project but is **excluded from the CI run** — it exists to answer the questions a single random-key measurement can't, and you run it on demand. Each is a `*Benchmark` class you can target with `--filter`:
+The CI dashboard runs a deliberately **lean core suite** on each merge to `main` whose diff can actually move a number — a documentation or comment-only commit is skipped — so the tracked series stays fast and low-variance. A second, heavier set of benchmarks lives in the same project but is **excluded from the per-merge CI run** — it exists to answer the questions a single random-key measurement can't, and you run it on demand. Each is a `*Benchmark` class you can target with `--filter`:
 
 | Benchmark | Filter | What it measures |
 |---|---|---|
@@ -248,7 +248,7 @@ In CI, the extended suite runs **weekly** (and on demand via *Run workflow*) thr
 
 ## See also
 
-- [Choosing a collection](../README.md#choosing-a-collection) — the decision table.
+- [Choosing a collection](choosing-a-collection.md) — the decision table.
 - [Hashing API reference](api/hashing.md) — every built-in hasher and the quality evaluator.
 - [Migration guide](migration.md) — moving from BCL collections.
 - [Troubleshooting](troubleshooting.md) and [FAQ](faq.md).

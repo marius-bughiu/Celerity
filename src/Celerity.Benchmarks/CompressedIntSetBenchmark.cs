@@ -22,7 +22,7 @@ using Celerity.Collections;
 //     recorded against this type in ROADMAP.md.
 //
 // The sweep stays at the family's 1,000 / 100,000 item counts so the card sits alongside the other
-// set cards on the dashboard and the CI A/B run stays affordable. That is a *tenth* of the scale
+// set cards on the dashboard and the sharded core run stays affordable. That is a *tenth* of the scale
 // the type's headline claim is stated at (~1M elements over a ~100M universe) — but the same shape,
 // because the Sparse arms keep the 100x universe ratio, so a chunk still holds a few hundred values
 // and still lands in an array container. The full-scale measurements are recorded in ROADMAP.md.

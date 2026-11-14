@@ -15,12 +15,12 @@ The core family:
 - `Celerity/` — the `Celerity.Collections` package (assembly `Celerity.dll`): dictionaries, sets, frozen/perfect-hash collections, sketches.
 - `Celerity.Hashing/` — `IHashProvider<T>` and the struct hashers.
 - `Celerity.Primitives/` — `FastUtils`, struct PRNGs, `VarInt`, `SpanBits`, `FastGuid`, `SortedSpan`.
-- `Celerity.Sorting/` — `RadixSort`, `CountingSort`, `PartialSort`.
+- `Celerity.Sorting/` — `RadixSort`, `CountingSort`, `PartialSort`, `StringSort`, `KWayMerge`.
 - `Celerity.Statistics/` — `DDSketch`, `ReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable`, `KllSketch`.
 
 The showcase packages — standalone libraries built *on top of* the core family, each with its own test project:
 
-- `Celerity.Ring/` — consistent-hash and rendezvous rings.
+- `Celerity.Ring/` — consistent-hash, rendezvous and Maglev routing.
 - `Celerity.Sentinel/` — streaming abuse / heavy-hitter detection.
 - `Celerity.Cardinality/` — mergeable approximate `COUNT(DISTINCT)` and windowed dedup.
 
@@ -28,7 +28,7 @@ Support projects:
 
 - `Celerity.Tests/` — xUnit tests for the core family, mirroring the main project's layout.
 - `Celerity.Ring.Tests/`, `Celerity.Sentinel.Tests/`, `Celerity.Cardinality.Tests/` — the showcase packages' own suites.
-- `Celerity.Benchmarks/` — BenchmarkDotNet; runs in CI on every PR.
+- `Celerity.Benchmarks/` — BenchmarkDotNet. CI runs the core suite on merges to `main` (and on demand), not on PRs, so a perf change carries its own local before/after numbers in the PR description.
 - `Celerity.Fuzz/` — differential fuzz harness.
 - `Celerity.AotSmokeTest/` — Native AOT publish/run target.
 

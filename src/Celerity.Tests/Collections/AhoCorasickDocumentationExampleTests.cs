@@ -3,7 +3,7 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="AhoCorasick"/> usage examples published in <c>docs/api/collections.md</c>, the README
+/// Runs the <see cref="AhoCorasick"/> usage examples published in <c>docs/api/collections.md</c>, <c>docs/collections.md</c>
 /// and the type's own XML documentation, and asserts the outputs those pages print in their comments.
 ///
 /// <para>
@@ -21,7 +21,7 @@ public class AhoCorasickDocumentationExampleTests
 
     private const string Ushers = "ushers";
 
-    // Verbatim from README.md and docs/api/collections.md.
+    // Verbatim from docs/collections.md and docs/api/collections.md.
     private static readonly string[] Alerts = ["OutOfMemory", "StackOverflow", "Timeout", "Deadlock"];
 
     private const string LogLine = "worker-3: Timeout waiting for the lock — possible Deadlock";
