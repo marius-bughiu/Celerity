@@ -1575,7 +1575,7 @@ there are no mutating members. The constructor first searches a small parameter 
 (table size × a mixing seed) for a **perfect** — collision-free — placement of the keys.
 When one is found, a lookup is a single hash, a single array index, and a single
 equality check. That is realistic only for small key sets: near-certain up to about 100
-keys and a matter of odds up to 333 (see
+keys, a matter of odds for most counts up to 333, and nil past that (see
 [below](#frozenceleritydictionary-perfect-hash-fallback)). Other sets go into a
 linear-probing table kept at most half full, where a hit inspects at most about 1.5 slots
 on average.
@@ -1591,9 +1591,11 @@ sets.** On the
 | Lookup | 5.63x slower | 3.50x slower |
 | Span lookup, against `GetAlternateLookup<ReadOnlySpan<char>>()` | 3.39x slower | 2.52x slower |
 
-Both builds skip the perfect-hash search. Up to 333 keys the build runs it, and is slower
-than `FrozenDictionary`'s: up to 3.4x slower from 16 to 333 keys, at most about 40 µs, and
-1.8 µs against 0.2 µs for 8 keys (a Stopwatch loop on the same machine).
+Both of those builds skip the perfect-hash search. Most smaller sets run it, every count up
+to 235 keys and from 257 to 333, and build slower than `FrozenDictionary`'s: up to about 5x
+slower, at most about 45 µs, and 1.8 µs against 0.2 µs for 8 keys (a Stopwatch loop on the
+same machine). From 236 to 256 keys no table size is plausible, so the search is skipped
+and the build is about 3x faster.
 
 `FrozenDictionary` spends build time finding a short substring that tells the keys apart,
 then hashes only that substring on each lookup. This type hashes the whole key with its
@@ -1659,7 +1661,8 @@ search tries table sizes from `NextPowerOfTwo(n)` up to eight times that, so the
 depend on where `n` falls between two powers of two. A perfect placement is near-certain
 up to about 100 keys; above that the odds fall toward each power of two and recover just
 past it: about 12% at 128 keys but nearly certain at 129, 85% at 150, 2% at 200 and 13% at
-257. Past 333 keys no seed has a realistic chance, and the build skips the search. A
+257. From 236 to 256 keys, and past 333, no seed has a realistic chance, and the build
+skips the search. A
 perfect placement is also impossible
 when two distinct keys collide on the chosen hasher's raw 32-bit hash code — for example
 `"A"` and `"Ł"` under the low-byte `StringFnV1AHasher`, which returns the same code for
@@ -1747,12 +1750,13 @@ BCL `System.Collections.Frozen.FrozenSet<T>` but tunable through Celerity's
 The set is **immutable**: every element is supplied at construction and there are no
 mutating members. It shares `FrozenCelerityDictionary`'s layout: a **perfect** —
 collision-free — placement for small sets (near-certain up to about 100 elements, a
-matter of odds up to 333), where a membership test is a single hash, a single array index
+matter of odds for most counts up to 333), where a membership test is a single hash, a
+single array index
 and a single equality check, and otherwise a linear-probing table at most half full.
 Against `FrozenSet<string>` it answers `Contains` 4.1–6.1x slower at 1,000 to 100,000
 elements, for the [same reason](#frozenceleritydictionarytvalue): it hashes the whole
-element. It builds 1.75–1.86x faster at those sizes, and slower below 334 elements, where
-it runs the perfect-hash search.
+element. It builds 1.75–1.86x faster at those sizes, and slower, up to about 5x, for most
+sets below 334 elements, where it runs the perfect-hash search.
 
 ### Constructors
 
@@ -1797,8 +1801,9 @@ Streaming does not copy `other`, but obtaining its enumerator can still allocate
 ### The perfect-hash fast path and the fallback
 
 The same as [`FrozenCelerityDictionary`'s](#frozenceleritydictionary-perfect-hash-fallback):
-a perfect placement is near-certain up to about 100 elements and a matter of odds up to
-333, past which the build skips the search, and two distinct elements that collide on the
+a perfect placement is near-certain up to about 100 elements and a matter of odds for
+most counts up to 333; the build skips the search from 236 to 256 elements and past 333.
+Two distinct elements that collide on the
 hasher's raw 32-bit code (`"A"` and `"Ł"` under the low-byte `StringFnV1AHasher`) rule it
 out at any size. Otherwise the build uses an open-addressed linear-probing table at most half
 full (`IsPerfectlyHashed` is then `false`). **Membership tests are always correct either

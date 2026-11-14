@@ -107,7 +107,7 @@ var sparse = new CelerityDictionary<string, int, StringFnV1AHasher>(
 
 Hashers are `struct`s supplied as a generic constraint, so the JIT devirtualizes and inlines `Hash()` onto the probe path — the abstraction itself is free. What is *not* free is a hasher that clusters your keys: collisions lengthen probe chains and cost cache misses on every lookup.
 
-The convenience types already pick sensible defaults — `Int32WangNaiveHasher` for `int`, `Int64WangNaiveHasher` for `long`, `StringFnV1AHasher` for `FrozenCelerityDictionary`. **Don't escalate without evidence.** A stronger hasher costs more per call; it only pays off if it removes enough collisions to offset that. (Speed is a different question for long `string` keys: FNV-1a folds one character per step, so a block hasher such as `StringXxHash32Hasher` can be both stronger and faster — see [§6](#6-build-once-read-many--freeze-it).)
+The convenience types already pick sensible defaults — `Int32WangNaiveHasher` for `int`, `Int64WangNaiveHasher` for `long`, `StringFnV1AHasher` for `FrozenCelerityDictionary`. **Don't escalate without evidence.** A stronger hasher costs more per call; it only pays off if it removes enough collisions to offset that. (Speed is a different question for long `string` keys: FNV-1a folds one character per step, so a block hasher such as `StringXxHash32Hasher` can be both stronger and faster — see [the `FrozenCelerityDictionary<TValue, THasher>` reference](api/collections.md#frozenceleritydictionarytvalue-thasher).)
 
 Escalation ladders (cheap → strong avalanche):
 
@@ -184,7 +184,7 @@ This is exactly why an isolated `Hash()` microbench is misleading: it would rank
 If a `string`-keyed table is constructed once and then read for the rest of the process (route tables, config maps, interned vocabularies, lookup dictionaries), freeze it. Two types fit, and they trade differently:
 
 - **`FrozenDictionary<string, TValue>`** (BCL) has the faster lookups: at build time it finds a short substring that tells the keys apart and hashes only that. Take it when reads dominate.
-- **`FrozenCelerityDictionary<TValue>`** looks up 3.5–5.6x slower at 1,000 to 100,000 keys and builds about 1.8x faster there; below 334 keys its build is slower, because it searches for a perfect table. Every lookup hashes the whole key with a hasher you choose through `FrozenCelerityDictionary<TValue, THasher>`; it also allows a `null` key and rejects duplicate keys.
+- **`FrozenCelerityDictionary<TValue>`** looks up 3.5–5.6x slower at 1,000 to 100,000 keys and builds about 1.8x faster there; below 334 keys its build is usually slower, because it searches for a perfect table. Every lookup hashes the whole key with a hasher you choose through `FrozenCelerityDictionary<TValue, THasher>`; it also allows a `null` key and rejects duplicate keys.
 
 ```csharp
 var routes = new FrozenCelerityDictionary<int>(pairs);

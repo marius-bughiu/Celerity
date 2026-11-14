@@ -95,7 +95,7 @@ No — lookups are always correct, and a hit in the fallback table inspects at m
 
 ### How is it different from `System.Collections.Frozen.FrozenDictionary`?
 
-Same build-once, read-many spirit. `FrozenDictionary` looks keys up faster, because it hashes only a short substring that tells the keys apart; Celerity's builds faster for large key sets (slower for small ones), hashes the whole key with a hasher you choose via `IHashProvider<T>`, allows a `null` key and rejects duplicate keys. If reads dominate, or you're already standardized on `FrozenDictionary`, there's no reason to switch.
+Same build-once, read-many spirit. `FrozenDictionary` looks keys up faster, because it hashes only a short substring that tells the keys apart; Celerity's builds faster for large key sets (slower for most small ones), hashes the whole key with a hasher you choose via `IHashProvider<T>`, allows a `null` key and rejects duplicate keys. If reads dominate, or you're already standardized on `FrozenDictionary`, there's no reason to switch.
 
 ## CelerityMultiMap
 

@@ -79,8 +79,9 @@ public sealed class FrozenCelerityDictionary<TValue>
 /// sets most of its cost.
 /// <see cref="System.Collections.Frozen.FrozenDictionary{TKey, TValue}"/> instead finds,
 /// at build time, a short substring that tells the keys apart and hashes only that, so
-/// its lookups are faster on typical keys. This type's build is faster for key sets too
-/// large for the perfect-hash search, past 333 keys, and slower below.
+/// its lookups are faster on typical keys. This type's build is faster for the key sets
+/// the perfect-hash search skips, which include every set past 333 keys, and slower for
+/// most smaller ones.
 /// </para>
 /// <para>
 /// The <c>null</c> key is stored out-of-band (the hasher is never invoked with

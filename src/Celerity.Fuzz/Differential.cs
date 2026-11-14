@@ -5608,12 +5608,14 @@ internal static class Differential
     private static void FrozenCase(Random rng)
     {
         // Mostly a small key universe, which the build places perfectly. One case in eight draws
-        // hundreds to thousands of keys, past the 333 where the build stops searching, so the
-        // half-full linear-probing layout and its occupied-slot enumeration face the same checks.
-        bool large = rng.Next(8) == 0;
-        int universe = large ? 3000 : 60;
+        // 110 to 334 distinct keys, where the build runs the perfect-hash search and usually falls
+        // back after it; another draws hundreds to thousands, past the 333 where it stops searching.
+        // Both put the half-full linear-probing layout and its occupied-slot enumeration under the
+        // same checks.
+        int band = rng.Next(8);
+        int universe = band switch { 0 => 3000, 1 => 100_000, _ => 60 };
         var oracle = new Dictionary<string, int>();
-        int entries = large ? rng.Next(400, 2000) : rng.Next(0, 40);
+        int entries = band switch { 0 => rng.Next(400, 2000), 1 => rng.Next(110, 335), _ => rng.Next(0, 40) };
         for (int i = 0; i < entries; i++)
             oracle[$"key_{rng.Next(0, universe)}"] = Value(rng); // last write wins -> unique keys
 
@@ -5708,14 +5710,16 @@ internal static class Differential
     private static void FrozenSetCase(Random rng)
     {
         // A deliberately tiny, duplicate-rich element universe so the build's dedupe fires
-        // densely; such sets are placed perfectly. One case in eight draws hundreds to thousands
-        // of elements instead, past the 333 where the build stops searching, so the half-full
-        // linear-probing layout and its occupied-slot enumeration face the same checks.
-        bool large = rng.Next(8) == 0;
-        int universe = large ? 3000 : 30;
+        // densely; such sets are placed perfectly. One case in eight draws 110 to 334 distinct
+        // elements instead, where the build runs the perfect-hash search and usually falls back
+        // after it, and another hundreds to thousands, past the 333 where it stops searching. Both
+        // put the half-full linear-probing layout and its occupied-slot enumeration under the same
+        // checks.
+        int band = rng.Next(8);
+        int universe = band switch { 0 => 3000, 1 => 100_000, _ => 30 };
         var sourceList = new List<string>();
         var oracle = new HashSet<string>();
-        int entries = large ? rng.Next(400, 3000) : rng.Next(0, 50);
+        int entries = band switch { 0 => rng.Next(400, 3000), 1 => rng.Next(110, 335), _ => rng.Next(0, 50) };
         for (int i = 0; i < entries; i++)
         {
             string item = $"item_{rng.Next(0, universe)}";

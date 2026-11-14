@@ -34,7 +34,7 @@ internal static class FrozenHashLayout
     // A candidate size m is skipped once n(n − 1) > HopelessRatio · m, the point where the birthday
     // bound leaves every seed in the budget together less than a one-in-a-thousand chance:
     // (SeedBudget + 1) · e^(−HopelessRatio / 2) = 513 · e^(−13.5) ≈ 7e-4. A size just inside that
-    // line still costs a whole pass of seeds, so a tighter line would mostly buy slower builds.
+    // line still costs a whole pass of seeds, so a higher ratio would mostly buy slower builds.
     private const int HopelessRatio = 27;
 
     // Maximum fraction of the linear-probing table's slots that hold a key. At most half full, a hit

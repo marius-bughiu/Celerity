@@ -61,10 +61,10 @@ public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
 /// <para>
 /// As for <see cref="FrozenCelerityDictionary{TValue, THasher}"/>, which shares this
 /// layout, a perfect placement is realistic only for small sets: it is near-certain up to
-/// about 100 elements, a matter of odds that depend on where the count falls between
-/// powers of two up to 333, and nil past that, where the build skips the search. It is
-/// also impossible when two distinct elements collide on the chosen hasher's raw 32-bit
-/// code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
+/// about 100 elements, for most counts up to 333 a matter of odds that depend on where
+/// the count falls between powers of two, and nil past that, where the build skips the
+/// search. It is also impossible when two distinct elements collide on the chosen hasher's
+/// raw 32-bit code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
 /// <see cref="StringFnV1AHasher"/>). Otherwise the build uses an open-addressed
 /// linear-probing table at most half full (<see cref="IsPerfectlyHashed"/> is
 /// <c>false</c>), where a hit inspects at most about 1.5 slots on average. Membership

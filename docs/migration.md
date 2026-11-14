@@ -119,7 +119,7 @@ Note: equality of *keys* themselves still uses `EqualityComparer<TKey>.Default` 
 
 ## `FrozenDictionary<string, V>` → `FrozenCelerityDictionary<V>`
 
-Both are immutable, build-once, read-many tables, but the swap is not a speedup for reads: `FrozenDictionary` looks keys up 3.5–5.6x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. Celerity's builds about 1.8x faster at those sizes (slower below 334 keys) and is tunable via `IHashProvider<T>`. Migrate for the hasher, or for the build time of a large table, not for the lookups:
+Both are immutable, build-once, read-many tables, but the swap is not a speedup for reads: `FrozenDictionary` looks keys up 3.5–5.6x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. Celerity's builds about 1.8x faster at those sizes (slower for most sets below 334 keys) and is tunable via `IHashProvider<T>`. Migrate for the hasher, or for the build time of a large table, not for the lookups:
 
 ```csharp
 // Before
