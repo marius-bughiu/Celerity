@@ -291,8 +291,8 @@ internal class Program
                 }
 
                 // A class the replaying side does not have is simply absent — one only the
-                // other ref has in its core suite, which this ref cannot measure, so an A/B of
-                // the two has no delta for it.
+                // other ref has in its core suite, which this run does not measure, so an A/B
+                // of the two has no delta for it.
                 if (byName.TryGetValue(name, out var type))
                 {
                     replayed.Add(type);
