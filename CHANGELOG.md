@@ -15,7 +15,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Fixed
 
 - Building from a collection that changes while it is being read, such as a `ConcurrentDictionary` another thread writes to, now keeps exactly what it yields. A source that shrank left `default` entries it never held (a `(0, null)` key in `FrozenSortedMap`, a `null` added to a `BTreeSet` by `SymmetricExceptWith`), and one that grew threw or lost elements. Fixed in the constructors of `FrozenSortedMap`, `FrozenSortedSet`, `IntervalTree`, `RTree`, `KdTree`, `CompressedGraph`, `SegmentTree`, `FenwickTree`, `SparseTable`, `BitPackedArray`, `Deque`, `GapBuffer` and `MinMaxHeap`, and in the set operations of `FrozenSortedSet`, `BTreeSet` and `RankedSet`. Sources other than an array or a `List<T>` itself (not a subclass) are now enumerated, which is slower than their `CopyTo`. Closes #619.
-- The weekly extended benchmark run no longer times out. Seven of its twelve runs from August to November hit the two-hour limit, so [the extended dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/) gained a point only about every other week. A manual run against a branch other than `main` now measures without publishing. No change to the shipped packages.
+- The weekly extended benchmark run now has four hours instead of two. Seven of its last twelve runs hit the old limit, so [the extended dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/) gained only five points in those twelve weeks. A manual run against a branch other than `main` now measures without publishing. No change to the shipped packages.
 
 ## [3.6.0] - 2026-11-13
 

@@ -3,14 +3,16 @@ name: Benchmarks (extended)
 # The heavy, exploratory benchmark suite (multi-distribution sweeps, million-item
 # scale tests, concurrency fan-out, allocation profiling, cache-locality, and mixed
 # workloads). It is deliberately kept OUT of the core suite that benchmarks.yml
-# measures on every merge to main, because it is slow and noisy. Instead it runs
-# weekly (and on demand) and publishes to its own dev/bench-extended dashboard on
-# gh-pages, so its trend never mixes with the per-commit core time series.
+# measures after merges to main, because it is slow and noisy. Instead it runs
+# weekly and on demand, and publishes (from main only) to its own dev/bench-extended
+# dashboard on gh-pages, so its trend never mixes with the per-commit core time series.
 
 on:
   schedule:
-    # Mondays 06:00 UTC.
-    - cron: '0 6 * * 1'
+    # Mondays 03:23 UTC. Off the hour on purpose: GitHub delays scheduled runs under load and
+    # names the start of every hour as a high-load time. At '0 6 * * 1', ten of the eleven
+    # runs from 2026-08-31 to 2026-11-09 started five to eight hours late.
+    - cron: '23 3 * * 1'
   workflow_dispatch: {}
 
 jobs:
@@ -27,8 +29,9 @@ jobs:
     # 17.5 on the other. Seven of the twelve weekly runs from 2026-08-24 to 2026-11-09 were cut
     # off like that. The five that finished took 110-117 min, and the seven extrapolate to
     # 122-142. 240 clears the slowest by ~100 min and stays 2h under GitHub's 6h job ceiling.
-    # Re-measure if runs approach ~200 min (the job summary lists per-class minutes); past that,
-    # shard the suite as benchmarks.yml shards the core one rather than raising this again.
+    # The summary step warns when a run passes 180 min. Past that, cap the iteration count in
+    # ExtendedCiConfig (trading some accuracy on noisy hosts) or shard the suite as
+    # benchmarks.yml shards the core one, rather than raising this again.
     timeout-minutes: 240
 
     permissions:
@@ -77,6 +80,48 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+      # One row per class from BenchmarkDotNet's own per-class "Run time" line, so sizing the
+      # timeout above reads off the job summary instead of a ~40k-line log. Non-fatal, because a
+      # diagnostics step must never cost the measurement, and ahead of the publish step so its
+      # table is not buried under that step's one row per benchmark. It runs on a timed-out run
+      # too, where the classes that finished are the useful part; the log on disk trails the
+      # console by a buffer, so the class it names as unfinished is approximate there.
+      - name: Summarize per-class wall time
+        if: always()
+        continue-on-error: true
+        working-directory: src/Celerity.Benchmarks
+        run: |
+          set -euo pipefail
+          # Keep in sync with timeout-minutes above.
+          cap=240
+          log=$(ls BenchmarkDotNet.Artifacts/*.log | head -n 1)
+          total=$(grep -m1 '^Global total time' "$log" || true)
+          {
+            echo "### Extended suite — per-class wall time"
+            echo
+            echo "| Class | Cases | Minutes |"
+            echo "|---|--:|--:|"
+            awk '
+              /^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] }
+              /^Run time: / { secs = $4; sub(/^\(/, "", secs); printf "%s\t%d\t%.1f\n", cls, $NF, secs / 60 }
+            ' "$log" | sort -t$'\t' -k3,3nr | awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }'
+            echo
+            # A run cut off by the timeout never prints its global total; name where it stopped.
+            if [ -n "$total" ]; then
+              echo "$total"
+            else
+              awk '/^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] } END { print "No global total: the run stopped during " cls "." }' "$log"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          # Nothing reads a job summary unprompted, which is how two months of timeouts went
+          # unnoticed, so a run within an hour of the cap also says so as an annotation on the run.
+          if [ -n "$total" ]; then
+            minutes=$(echo "$total" | sed -E 's/.*\(([0-9.]+) sec\).*/\1/' | awk '{ printf "%d", $1 / 60 }')
+            if [ "${minutes:-0}" -ge $((cap - 60)) ]; then
+              echo "::warning title=Extended suite near its timeout::The suite ran ${minutes} of the job's ${cap} minutes. Re-size it before it is cut off; see the comment on timeout-minutes."
+            fi
+          fi
+
       - name: Publish to gh-pages (dev/bench-extended)
         # Gated on the ref rather than the event, as benchmarks.yml gates its publish: the weekly
         # run and a manual run against `main` publish, while a manual run against any other ref
@@ -97,29 +142,3 @@ jobs:
           fail-on-alert: false
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: dev/bench-extended
-
-      # One row per class from BenchmarkDotNet's own per-class "Run time" line, so sizing the
-      # timeout above reads off the job summary instead of a ~40k-line log. Last and non-fatal: a
-      # diagnostics step must never cost the measurement. It runs on a timed-out run too, where
-      # the classes that finished and the one it stopped in are the useful part.
-      - name: Summarize per-class wall time
-        if: always()
-        continue-on-error: true
-        working-directory: src/Celerity.Benchmarks
-        run: |
-          set -euo pipefail
-          log=$(ls BenchmarkDotNet.Artifacts/*.log | head -n 1)
-          {
-            echo "### Extended suite — per-class wall time"
-            echo
-            echo "| Class | Cases | Minutes |"
-            echo "|---|--:|--:|"
-            awk '
-              /^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] }
-              /^Run time: / { secs = $4; sub(/^\(/, "", secs); printf "%s\t%d\t%.1f\n", cls, $NF, secs / 60 }
-            ' "$log" | sort -t$'\t' -k3,3nr | awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }'
-            echo
-            # A run cut off by the timeout never prints its global total; name where it stopped.
-            grep -m1 '^Global total time' "$log" \
-              || awk '/^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] } END { print "No global total: the run stopped during " cls "." }' "$log"
-          } | tee -a "$GITHUB_STEP_SUMMARY"
