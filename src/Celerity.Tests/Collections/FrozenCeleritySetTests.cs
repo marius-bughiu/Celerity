@@ -153,9 +153,9 @@ public class FrozenCeleritySetTests
     }
 
     // Every element hashes to the same raw code, so no (size, seed) the perfect-hash
-    // search tries can ever be collision-free. The search runs every seed at each
-    // candidate size the birthday bound leaves plausible for 200 elements (1,024 and 2,048
-    // slots), fails at all of them, and falls back to linear probing.
+    // search tries can ever be collision-free. The search runs every seed at the one
+    // candidate size the birthday bound leaves plausible for 200 elements (2,048 slots),
+    // fails at all of them, and falls back to linear probing.
     private struct ConstantStringHasher : IHashProvider<string>
     {
         public int Hash(string key) => 7;
@@ -215,12 +215,12 @@ public class FrozenCeleritySetTests
             .GetValue(set)!).Length;
 
     [Theory]
-    [InlineData(400)]
-    [InlineData(2000)]
+    [InlineData(300)]  // the search runs, at 4,096 slots, and fails
+    [InlineData(2000)] // the search is skipped
     public void Build_DoesNotAllocateATablePerSearchAttempt(int count)
     {
         // The perfect-hash search used to allocate a fresh table-sized array for each of its up
-        // to 2,052 (size, seed) attempts: about 32 MB to build 400 elements and 126 MB for 2,000.
+        // to 2,052 (size, seed) attempts: about 32 MB to build 300 elements and 126 MB for 2,000.
         // It now reuses one stamp buffer, and skips the sizes the birthday bound rules out (all
         // of them at 2,000 elements), so a build allocates about its own table.
         var items = IdentifierItems(count);
@@ -232,13 +232,13 @@ public class FrozenCeleritySetTests
     }
 
     [Theory]
-    [InlineData(573)]  // the smallest count no candidate size can plausibly hold collision-free
+    [InlineData(334)]  // from here up the build never runs the search
     [InlineData(1000)]
     [InlineData(1024)]
     [InlineData(5000)]
     public void LargeSet_FallsBackToATableAtMostHalfFull(int count)
     {
-        // Past 572 elements no seed is plausibly collision-free at any candidate size, so the
+        // Past 333 elements no seed is plausibly collision-free at any candidate size, so the
         // build takes the linear-probing table. It must keep at least half its slots empty so
         // probe runs stay short: the old sizing put 1,000 elements in 1,024 slots.
         var items = IdentifierItems(count);
@@ -251,14 +251,18 @@ public class FrozenCeleritySetTests
         foreach (var item in items)
             Assert.True(set.Contains(item));
         Assert.False(set.Contains("celerity/key/absent"));
+
+        // Enumeration walks the occupied slots only; every element must still come back once.
+        Assert.Equal(items.Order(StringComparer.Ordinal), set.Order(StringComparer.Ordinal));
     }
 
     [Fact]
-    public void MidSizeSet_SkipsHopelessSizes_AndStillFindsAPerfectPlacement()
+    public void MidSizeSet_SearchGoesOnPastHopelessSizes_ToAPerfectPlacement()
     {
         // 150 elements cannot plausibly land collision-free in 256 or 512 slots, so the search
-        // skips those sizes, but it must go on to the larger candidates rather than give up
-        // there. For these elements under Murmur3 the first seed that works is at 2,048 slots.
+        // skips those sizes. It must go on to the larger candidates rather than give up at the
+        // first skipped one: for these elements under Murmur3 the first seed that works is at
+        // 2,048 slots.
         var items = Enumerable.Range(0, 150).Select(i => "item-" + i).ToArray();
 
         var set = new FrozenCeleritySet<StringMurmur3Hasher>(items);

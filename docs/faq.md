@@ -87,15 +87,15 @@ The dictionary masks the result to the table size, so negative returns are fine.
 
 ### When should I use `FrozenCelerityDictionary`?
 
-When a `string`-keyed table is built once and read many times for the rest of the process — route tables, config maps, interned vocabularies — and you want a cheaper build than `FrozenDictionary`'s or a hasher you choose. A small key set (about 150 keys or fewer) gets a perfect (collision-free) table, so each lookup is single-probe; a larger one gets a linear-probing table at most half full. It's immutable: no `Add` / `Remove`.
+When a `string`-keyed table is built once and read many times for the rest of the process — route tables, config maps, interned vocabularies — and you want a hasher you choose, a `null` key, or a cheaper build of a large key set than `FrozenDictionary`'s. A set of up to about 100 keys gets a perfect (collision-free) table, so each lookup is single-probe; larger sets mostly get a linear-probing table at most half full. It's immutable: no `Add` / `Remove`.
 
 ### `IsPerfectlyHashed` is `false` — is that a problem?
 
-No — lookups are always correct, and a hit in the fallback table inspects about 1.5 slots instead of one. It is `false` for any set past 572 keys, and usually past about 150, because a single seeded hash cannot place that many keys without a collision; for a small set it can also mean two keys share a raw hash code, which a stronger/wider hasher (e.g. `StringFnV1AFullHasher`) fixes. See [performance §6](performance.md#6-build-once-read-many--freeze-it).
+No — lookups are always correct, and a hit in the fallback table inspects at most about 1.5 slots instead of one. It is `false` for any set past 333 keys, and often from about 110 keys up (the odds depend on where the count falls between powers of two), because a single seeded hash cannot place that many keys without a collision; for a small set it can also mean two keys share a raw hash code, which a stronger/wider hasher (e.g. `StringFnV1AFullHasher`) fixes. See [performance §6](performance.md#6-build-once-read-many--freeze-it).
 
 ### How is it different from `System.Collections.Frozen.FrozenDictionary`?
 
-Same build-once, read-many spirit. `FrozenDictionary` looks keys up faster, because it hashes only a short substring that tells the keys apart; Celerity's builds faster, hashes the whole key with a hasher you choose via `IHashProvider<T>`, allows a `null` key and rejects duplicate keys. If reads dominate, or you're already standardized on `FrozenDictionary`, there's no reason to switch.
+Same build-once, read-many spirit. `FrozenDictionary` looks keys up faster, because it hashes only a short substring that tells the keys apart; Celerity's builds faster for large key sets (slower for small ones), hashes the whole key with a hasher you choose via `IHashProvider<T>`, allows a `null` key and rejects duplicate keys. If reads dominate, or you're already standardized on `FrozenDictionary`, there's no reason to switch.
 
 ## CelerityMultiMap
 

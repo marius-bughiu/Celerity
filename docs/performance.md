@@ -22,7 +22,7 @@ The single biggest win is using the type whose layout matches your key. The spec
 |---|---|
 | `int` / `long` keyed, read + write | `IntDictionary<TValue>` / `LongDictionary<TValue>` |
 | Any other key type, read + write | `CelerityDictionary<TKey, TValue, THasher>` |
-| Built once, read many, `string` keys | `FrozenDictionary<string, TValue>` for the fastest reads; `FrozenCelerityDictionary<TValue>` for a faster build or a hasher you choose |
+| Built once, read many, `string` keys | `FrozenDictionary<string, TValue>` for the fastest reads; `FrozenCelerityDictionary<TValue>` for a hasher you choose or a faster build of a large table |
 | One key → many values | `CelerityMultiMap<TKey, TValue, THasher>` |
 | Membership only | `IntSet` / `LongSet` / `CeleritySet<T, THasher>` |
 
@@ -107,7 +107,7 @@ var sparse = new CelerityDictionary<string, int, StringFnV1AHasher>(
 
 Hashers are `struct`s supplied as a generic constraint, so the JIT devirtualizes and inlines `Hash()` onto the probe path — the abstraction itself is free. What is *not* free is a hasher that clusters your keys: collisions lengthen probe chains and cost cache misses on every lookup.
 
-The convenience types already pick sensible defaults — `Int32WangNaiveHasher` for `int`, `Int64WangNaiveHasher` for `long`, `StringFnV1AHasher` for `FrozenCelerityDictionary`. **Don't escalate without evidence.** A stronger hasher costs more per call; it only pays off if it removes enough collisions to offset that.
+The convenience types already pick sensible defaults — `Int32WangNaiveHasher` for `int`, `Int64WangNaiveHasher` for `long`, `StringFnV1AHasher` for `FrozenCelerityDictionary`. **Don't escalate without evidence.** A stronger hasher costs more per call; it only pays off if it removes enough collisions to offset that. (Speed is a different question for long `string` keys: FNV-1a folds one character per step, so a block hasher such as `StringXxHash32Hasher` can be both stronger and faster — see [§6](#6-build-once-read-many--freeze-it).)
 
 Escalation ladders (cheap → strong avalanche):
 
@@ -184,14 +184,14 @@ This is exactly why an isolated `Hash()` microbench is misleading: it would rank
 If a `string`-keyed table is constructed once and then read for the rest of the process (route tables, config maps, interned vocabularies, lookup dictionaries), freeze it. Two types fit, and they trade differently:
 
 - **`FrozenDictionary<string, TValue>`** (BCL) has the faster lookups: at build time it finds a short substring that tells the keys apart and hashes only that. Take it when reads dominate.
-- **`FrozenCelerityDictionary<TValue>`** builds about 1.9x faster and looks up 3.5–5.6x slower. Every lookup hashes the whole key with a hasher you choose through `FrozenCelerityDictionary<TValue, THasher>`; it also allows a `null` key and rejects duplicate keys.
+- **`FrozenCelerityDictionary<TValue>`** looks up 3.5–5.6x slower at 1,000 to 100,000 keys and builds about 1.8x faster there; below 334 keys its build is slower, because it searches for a perfect table. Every lookup hashes the whole key with a hasher you choose through `FrozenCelerityDictionary<TValue, THasher>`; it also allows a `null` key and rejects duplicate keys.
 
 ```csharp
 var routes = new FrozenCelerityDictionary<int>(pairs);
 Console.WriteLine(routes.IsPerfectlyHashed);  // True only for a small key set
 ```
 
-`IsPerfectlyHashed` reports the layout. A small key set (about 150 keys or fewer) usually gets a perfect, collision-free table, where every lookup is a single hash, a single array index and a single equality check. Past that the build uses a linear-probing table at most half full, where a hit inspects about 1.5 slots; past 572 keys that is always the case, whatever the hasher, because a single seeded hash cannot place that many keys without a collision. Lookups are correct either way.
+`IsPerfectlyHashed` reports the layout. A set of up to about 100 keys gets a perfect, collision-free table, where every lookup is a single hash, a single array index and a single equality check. Larger sets mostly get a linear-probing table at most half full, where a hit inspects at most about 1.5 slots; past 333 keys that is always the case, whatever the hasher, because a single seeded hash cannot place that many keys without a collision. Lookups are correct either way.
 
 ## 7. Benchmark on your own machine
 

@@ -14,7 +14,8 @@ namespace Celerity.Collections;
 /// hash code. For a single seed that succeeds with probability
 /// <c>∏(1 − i/m) ≤ e^(−n(n−1)/2m)</c> in a table of <c>m</c> slots (the birthday bound), so it is
 /// realistic only while <c>m</c> grows with <c>n²</c>: a few hundred keys at most within the
-/// <see cref="MaxSizeMultiplier"/> cap. Larger key sets always take the linear-probing table. The
+/// <see cref="MaxSizeMultiplier"/> cap, and never past 333. Larger key sets always take the
+/// linear-probing table. The
 /// search therefore skips every candidate size the bound rules out instead of spending its whole
 /// seed budget there, and places the trial keys into one reused stamp buffer rather than a fresh
 /// pair of table arrays per attempt.
@@ -22,7 +23,8 @@ namespace Celerity.Collections;
 /// </remarks>
 internal static class FrozenHashLayout
 {
-    // Number of distinct mixing seeds tried per candidate table size before moving to the next size.
+    // Highest mixing seed tried per candidate table size before moving to the next size: seeds 0
+    // through SeedBudget, so 513 in all.
     private const int SeedBudget = 512;
 
     // Largest multiple of NextPowerOfTwo(n) the perfect search grows the table to. 8 means up to 8×
@@ -30,13 +32,14 @@ internal static class FrozenHashLayout
     private const int MaxSizeMultiplier = 8;
 
     // A candidate size m is skipped once n(n − 1) > HopelessRatio · m, the point where the birthday
-    // bound leaves every seed in the budget together less than a one-in-a-million chance:
-    // (SeedBudget + 1) · e^(−HopelessRatio / 2) = 513 · e^(−20) ≈ 1.1e-6.
-    private const int HopelessRatio = 40;
+    // bound leaves every seed in the budget together less than a one-in-a-thousand chance:
+    // (SeedBudget + 1) · e^(−HopelessRatio / 2) = 513 · e^(−13.5) ≈ 7e-4. A size just inside that
+    // line still costs a whole pass of seeds, so a tighter line would mostly buy slower builds.
+    private const int HopelessRatio = 27;
 
-    // Maximum fraction of the linear-probing table's slots that hold a key. At one half a hit
-    // inspects about 1.5 slots on average and a miss about 2.5, and a vacant slot to end a miss's
-    // probe always exists.
+    // Maximum fraction of the linear-probing table's slots that hold a key. At most half full, a hit
+    // inspects at most about 1.5 slots on average and a miss at most about 2.5, and a vacant slot to
+    // end a miss's probe always exists.
     private const float FallbackLoadFactor = 0.5f;
 
     /// <summary>
@@ -75,8 +78,8 @@ internal static class FrozenHashLayout
         int minSize = FastUtils.NextPowerOfTwo(n);
 
         // Hopeless even at the largest candidate size: skip the search outright. Past this check
-        // n(n − 1) <= 40 · 8 · NextPowerOfTwo(n), which holds only for n <= 572, so every candidate
-        // size below is at most 8,192 slots and the doubling cannot overflow.
+        // n(n − 1) <= 27 · 8 · NextPowerOfTwo(n), which holds only for n <= 333, so every candidate
+        // size below is at most 4,096 slots and the doubling cannot overflow.
         if (pairs > (long)HopelessRatio * MaxSizeMultiplier * minSize)
         {
             size = 0;

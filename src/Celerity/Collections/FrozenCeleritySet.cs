@@ -60,14 +60,15 @@ public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
 /// </para>
 /// <para>
 /// As for <see cref="FrozenCelerityDictionary{TValue, THasher}"/>, which shares this
-/// layout, a perfect placement is realistic only for small sets: it is usually found up
-/// to about 150 elements, rarely past 200, and never past 572, where the build skips
-/// the search. It is also impossible when two distinct elements collide on the chosen
-/// hasher's raw 32-bit code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
+/// layout, a perfect placement is realistic only for small sets: it is near-certain up to
+/// about 100 elements, a matter of odds that depend on where the count falls between
+/// powers of two up to 333, and nil past that, where the build skips the search. It is
+/// also impossible when two distinct elements collide on the chosen hasher's raw 32-bit
+/// code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
 /// <see cref="StringFnV1AHasher"/>). Otherwise the build uses an open-addressed
 /// linear-probing table at most half full (<see cref="IsPerfectlyHashed"/> is
-/// <c>false</c>), where a hit inspects about 1.5 slots on average. Membership tests are
-/// correct either way: the equality check tells colliding elements apart.
+/// <c>false</c>), where a hit inspects at most about 1.5 slots on average. Membership
+/// tests are correct either way: the equality check tells colliding elements apart.
 /// </para>
 /// <para>
 /// Unlike <see cref="FrozenCelerityDictionary{TValue, THasher}"/>, which rejects
@@ -87,6 +88,12 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     where THasher : struct, IHashProvider<string>
 {
     private readonly string?[] _items;
+
+    // The slots that hold an element, ascending. Enumeration walks these rather than every
+    // slot: past a perfect placement the table is at most half full, so a scan of all of it
+    // would visit one to three empty slots per element, each behind a branch that is close
+    // to a coin flip.
+    private readonly int[] _occupied;
     private readonly int _mask;
     private readonly int _seed;
     private readonly bool _isPerfect;
@@ -144,7 +151,8 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         // fallback additionally needs at least one empty slot to terminate a miss. Both
         // require the non-null element count to stay strictly below the 2^30 power-of-two
         // ceiling (NextPowerOfTwo caps there), so reject an impossible count up front with
-        // a clear error rather than overflow the build search or hang the fallback probe.
+        // a clear error rather than build a fallback table with no empty slot, whose miss
+        // probe would never end.
         ThrowIfElementCountExceedsCeiling(n, nameof(source));
 
         // Precompute the raw hash code of every element once; the perfect-hash search
@@ -171,7 +179,15 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
             items[slot] = itemList[i];
         }
 
+        var occupied = new int[n];
+        for (int slot = 0, next = 0; next < n; slot++)
+        {
+            if (items[slot] is not null)
+                occupied[next++] = slot;
+        }
+
         _items = items;
+        _occupied = occupied;
         _mask = mask;
     }
 
@@ -185,9 +201,10 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     /// Gets a value indicating whether the build found a collision-free (perfect)
     /// placement, so membership tests take the single-probe fast path. <c>false</c>
     /// means the set uses a linear-probing table at most half full instead: always the
-    /// case past 572 non-<c>null</c> elements, usually past about 150, and whenever two
-    /// distinct elements share the chosen hasher's raw hash code. Membership tests are
-    /// correct either way.
+    /// case past 333 non-<c>null</c> elements, often from about 110 elements up (the odds
+    /// depend on where the count falls between powers of two), and whenever two distinct
+    /// elements share the chosen hasher's raw hash code. Membership tests are correct either
+    /// way.
     /// </summary>
     public bool IsPerfectlyHashed => _isPerfect;
 
@@ -443,6 +460,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     public struct Enumerator : IEnumerator<string>
     {
         private readonly FrozenCeleritySet<THasher> _set;
+
+        // The set's arrays, read once here rather than through _set on every MoveNext.
+        private readonly int[] _occupied;
+        private readonly string?[] _items;
+
         private int _index;
         private string? _current;
         private State _state;
@@ -457,6 +479,8 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         internal Enumerator(FrozenCeleritySet<THasher> set)
         {
             _set = set;
+            _occupied = set._occupied;
+            _items = set._items;
             _index = -1;
             _current = default;
             _state = State.BeforeNull;
@@ -491,17 +515,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
 
             if (_state == State.InArray)
             {
-                string?[] items = _set._items;
-                int length = items.Length;
-                ref string? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
-                while (++_index < length)
+                if (++_index < _occupied.Length)
                 {
-                    string? item = Unsafe.Add(ref itemsRef, (nint)(uint)_index);
-                    if (item is not null)
-                    {
-                        _current = item;
-                        return true;
-                    }
+                    nint slot = (nint)(uint)Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_occupied), (nint)(uint)_index);
+                    _current = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_items), slot);
+                    return true;
                 }
                 _state = State.Done;
             }

@@ -11,7 +11,7 @@ Celerity is designed to be a near drop-in for the parts of the BCL collection AP
 | `Dictionary<int, V>` | `IntDictionary<V>` | No hasher needed; defaults to `Int32WangNaiveHasher`. |
 | `Dictionary<long, V>` | `LongDictionary<V>` | Defaults to `Int64WangNaiveHasher`. |
 | `Dictionary<K, V>` (other keys) | `CelerityDictionary<K, V, THasher>` | Pick a struct hasher for `K`. |
-| `FrozenDictionary<string, V>` | `FrozenCelerityDictionary<V>` | Build-once, read-many; a faster build, slower lookups. |
+| `FrozenDictionary<string, V>` | `FrozenCelerityDictionary<V>` | Build-once, read-many; slower lookups, a faster build of large key sets. |
 | `HashSet<int>` | `IntSet` | Full `ISet<int>` / `IReadOnlySet<int>`. |
 | `HashSet<long>` | `LongSet` | Full `ISet<long>` / `IReadOnlySet<long>`. |
 | `HashSet<T>` (other) | `CeleritySet<T, THasher>` | Pick a struct hasher for `T`. |
@@ -119,7 +119,7 @@ Note: equality of *keys* themselves still uses `EqualityComparer<TKey>.Default` 
 
 ## `FrozenDictionary<string, V>` → `FrozenCelerityDictionary<V>`
 
-Both are immutable, build-once, read-many tables, but the swap is not a speedup for reads: `FrozenDictionary` looks keys up 3.5–5.6x faster, because it hashes only a short substring that tells the keys apart. Celerity's builds about 1.9x faster and is tunable via `IHashProvider<T>`. Migrate for the build time or the hasher, not the lookups:
+Both are immutable, build-once, read-many tables, but the swap is not a speedup for reads: `FrozenDictionary` looks keys up 3.5–5.6x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. Celerity's builds about 1.8x faster at those sizes (slower below 334 keys) and is tunable via `IHashProvider<T>`. Migrate for the hasher, or for the build time of a large table, not for the lookups:
 
 ```csharp
 // Before

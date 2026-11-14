@@ -62,15 +62,16 @@ public sealed class FrozenCelerityDictionary<TValue>
 /// <para>
 /// A perfect placement is realistic only for small key sets. One seed places
 /// <c>n</c> keys collision-free in <c>m</c> slots with probability at most
-/// <c>e^(−n(n−1)/2m)</c>, so it needs a table that grows with <c>n²</c>: within the
-/// search's limit of eight times the minimum table size it is usually found up to about
-/// 150 keys, rarely past 200, and never past 572, where the build skips the search. It
-/// is also impossible when two distinct keys collide on the chosen hasher's raw 32-bit
-/// code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
+/// <c>e^(−n(n−1)/2m)</c>, so it needs a table that grows with <c>n²</c>. The search tries
+/// table sizes from <c>NextPowerOfTwo(n)</c> to eight times that, so the odds depend on
+/// where <c>n</c> falls between two powers of two: near-certain up to about 100 keys,
+/// about 12% at 128 keys but nearly certain at 129, and nil past 333, where the build
+/// skips the search. It is also impossible when two distinct keys collide on the chosen
+/// hasher's raw 32-bit code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
 /// <see cref="StringFnV1AHasher"/>), because the mixing seed is a pure function of that
 /// code and so cannot separate them. Otherwise the build uses an open-addressed
 /// linear-probing table at most half full (<see cref="IsPerfectlyHashed"/> is
-/// <c>false</c>), where a hit inspects about 1.5 slots on average. Lookups are correct
+/// <c>false</c>), where a hit inspects at most about 1.5 slots on average. Lookups are correct
 /// either way: the equality check tells colliding keys apart.
 /// </para>
 /// <para>
@@ -78,7 +79,8 @@ public sealed class FrozenCelerityDictionary<TValue>
 /// sets most of its cost.
 /// <see cref="System.Collections.Frozen.FrozenDictionary{TKey, TValue}"/> instead finds,
 /// at build time, a short substring that tells the keys apart and hashes only that, so
-/// its lookups are faster on typical keys. This type's build is faster.
+/// its lookups are faster on typical keys. This type's build is faster for key sets too
+/// large for the perfect-hash search, past 333 keys, and slower below.
 /// </para>
 /// <para>
 /// The <c>null</c> key is stored out-of-band (the hasher is never invoked with
@@ -93,6 +95,12 @@ public class FrozenCelerityDictionary<TValue, THasher>
 {
     private readonly string?[] _keys;
     private readonly TValue?[] _values;
+
+    // The slots that hold a key, ascending. Enumeration and ContainsValue walk these rather
+    // than every slot: past a perfect placement the table is at most half full, so a scan of
+    // all of it would visit one to three empty slots per key, each behind a branch that is
+    // close to a coin flip.
+    private readonly int[] _occupied;
     private readonly int _mask;
     private readonly int _seed;
     private readonly bool _isPerfect;
@@ -159,7 +167,8 @@ public class FrozenCelerityDictionary<TValue, THasher>
         // fallback additionally needs at least one empty slot to terminate a miss. Both
         // require the non-null key count to stay strictly below the 2^30 power-of-two
         // ceiling (NextPowerOfTwo caps there), so reject an impossible count up front with
-        // a clear error rather than overflow the build search or hang the fallback probe.
+        // a clear error rather than build a fallback table with no empty slot, whose miss
+        // probe would never end.
         ThrowIfKeyCountExceedsCeiling(n, nameof(source));
 
         // Precompute the raw hash code of every key once; the perfect-hash search
@@ -188,8 +197,16 @@ public class FrozenCelerityDictionary<TValue, THasher>
             values[slot] = valueList[i];
         }
 
+        var occupied = new int[n];
+        for (int slot = 0, next = 0; next < n; slot++)
+        {
+            if (keys[slot] is not null)
+                occupied[next++] = slot;
+        }
+
         _keys = keys;
         _values = values;
+        _occupied = occupied;
         _mask = mask;
     }
 
@@ -203,8 +220,9 @@ public class FrozenCelerityDictionary<TValue, THasher>
     /// Gets a value indicating whether the build found a collision-free (perfect)
     /// placement, so lookups take the single-probe fast path. <c>false</c> means the
     /// dictionary uses a linear-probing table at most half full instead: always the case
-    /// past 572 non-<c>null</c> keys, usually past about 150, and whenever two distinct
-    /// keys share the chosen hasher's raw hash code. Lookups are correct either way.
+    /// past 333 non-<c>null</c> keys, often from about 110 keys up (the odds depend on where
+    /// the count falls between powers of two), and whenever two distinct keys share the
+    /// chosen hasher's raw hash code. Lookups are correct either way.
     /// </summary>
     public bool IsPerfectlyHashed => _isPerfect;
 
@@ -290,8 +308,8 @@ public class FrozenCelerityDictionary<TValue, THasher>
     /// </param>
     /// <returns><c>true</c> if a matching value is found; otherwise, <c>false</c>.</returns>
     /// <remarks>
-    /// This operation is <c>O(n)</c> in the dictionary's count: it scans the frozen
-    /// table (skipping empty slots) and, when present, the out-of-band null-key slot.
+    /// This operation is <c>O(n)</c> in the dictionary's count: it compares each stored
+    /// value once, the out-of-band null-key entry's included, and never visits an empty slot.
     /// </remarks>
     public bool ContainsValue(TValue? value)
     {
@@ -300,18 +318,11 @@ public class FrozenCelerityDictionary<TValue, THasher>
         if (_hasNullKey && valueComparer.Equals(_nullKeyValue, value))
             return true;
 
-        string?[] keys = _keys;
-        TValue?[] values = _values;
-        ref string? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
-        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
-        int length = keys.Length;
-        for (int i = 0; i < length; i++)
+        ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(_values);
+        foreach (int slot in _occupied)
         {
-            if (Unsafe.Add(ref keysRef, (nint)(uint)i) is not null &&
-                valueComparer.Equals(Unsafe.Add(ref valuesRef, (nint)(uint)i), value))
-            {
+            if (valueComparer.Equals(Unsafe.Add(ref valuesRef, (nint)(uint)slot), value))
                 return true;
-            }
         }
 
         return false;
@@ -342,7 +353,7 @@ public class FrozenCelerityDictionary<TValue, THasher>
     // List<string>, so reaching 2^30 needs an 8.6 GB backing string[] — past the 2 GiB single-object array
     // limit — before this check is even read. A source that merely *reports* a huge ICollection.Count cannot
     // reach it either; that count is used only as the list's initial capacity hint. Kept because it documents
-    // and enforces the invariant the perfect-hash search depends on.
+    // and enforces the invariant the fallback table's sizing depends on.
     [ExcludeFromCodeCoverage(Justification = "Unreachable: 2^30 materialized keys exceed the 2 GiB " +
         "single-object array limit, so the guard cannot be reached regardless of available memory.")]
     private static void ThrowIfKeyCountExceedsCeiling(int n, string paramName)
@@ -433,6 +444,12 @@ public class FrozenCelerityDictionary<TValue, THasher>
     public struct Enumerator : IEnumerator<KeyValuePair<string, TValue?>>
     {
         private readonly FrozenCelerityDictionary<TValue, THasher> _dict;
+
+        // The dictionary's arrays, read once here rather than through _dict on every MoveNext.
+        private readonly int[] _occupied;
+        private readonly string?[] _keys;
+        private readonly TValue?[] _values;
+
         private int _index;
         private KeyValuePair<string, TValue?> _current;
         private State _state;
@@ -447,6 +464,9 @@ public class FrozenCelerityDictionary<TValue, THasher>
         internal Enumerator(FrozenCelerityDictionary<TValue, THasher> dict)
         {
             _dict = dict;
+            _occupied = dict._occupied;
+            _keys = dict._keys;
+            _values = dict._values;
             _index = -1;
             _current = default;
             _state = State.BeforeNullKey;
@@ -480,19 +500,13 @@ public class FrozenCelerityDictionary<TValue, THasher>
 
             if (_state == State.InArray)
             {
-                string?[] keys = _dict._keys;
-                TValue?[] values = _dict._values;
-                int length = keys.Length;
-                ref string? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
-                ref TValue? valuesRef = ref MemoryMarshal.GetArrayDataReference(values);
-                while (++_index < length)
+                if (++_index < _occupied.Length)
                 {
-                    string? key = Unsafe.Add(ref keysRef, (nint)(uint)_index);
-                    if (key is not null)
-                    {
-                        _current = new KeyValuePair<string, TValue?>(key, Unsafe.Add(ref valuesRef, (nint)(uint)_index));
-                        return true;
-                    }
+                    nint slot = (nint)(uint)Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_occupied), (nint)(uint)_index);
+                    _current = new KeyValuePair<string, TValue?>(
+                        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_keys), slot)!,
+                        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_values), slot));
+                    return true;
                 }
                 _state = State.Done;
             }
