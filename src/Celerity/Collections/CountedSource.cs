@@ -25,11 +25,14 @@ namespace Celerity.Collections;
 /// can re-implement <see cref="ICollection{T}"/> to present other contents than its storage. Any other collection
 /// is enumerated once. Its count only sizes the storage, which grows if the enumeration yields more, and the caller
 /// keeps exactly what was yielded. For a <c>ConcurrentDictionary</c> that is the weakly consistent view its
-/// enumerator documents, which never holds a key twice, so a build from a live one always succeeds.
+/// enumerator documents. In the current implementation it also never yields a key twice: an added key goes to the
+/// head of its bucket, behind an enumerator already in that bucket, and a resize leaves a running enumerator on the
+/// old table, which is no longer written. So a build from a live one succeeds rather than reporting a duplicate.
 /// </para>
 /// <para>
 /// The price is the enumeration itself: an interface call or two per element, where <c>CopyTo</c> may have been a
-/// block copy. It falls only on counted sources that are neither arrays nor lists.
+/// block copy. It falls only on counted sources that are neither an array nor an exact <see cref="List{T}"/>,
+/// which includes a plain subclass of <see cref="List{T}"/>.
 /// </para>
 /// </remarks>
 internal static class CountedSource

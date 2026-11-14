@@ -114,9 +114,9 @@ public sealed class BitPackedArray : IReadOnlyList<ulong>
     /// <paramref name="bitsPerValue"/> bits.
     /// </summary>
     /// <param name="values">
-    /// The initial values. Every one must be at most <c>2^bitsPerValue - 1</c>. A <c>ulong[]</c> or
-    /// <see cref="List{T}"/> is packed directly; any other counted collection has its length checked before
-    /// anything is allocated, and is then copied once; any other sequence is materialized once.
+    /// The initial values. Every one must be at most <c>2^bitsPerValue - 1</c>. A <c>ulong[]</c> or a
+    /// <see cref="List{T}"/> itself (not a subclass) is packed directly; any other counted collection has its length
+    /// checked before anything is allocated, and is then copied once; any other sequence is materialized once.
     /// </param>
     /// <param name="bitsPerValue">The width of each element in bits, from 1 to 64.</param>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> is <c>null</c>.</exception>
@@ -135,9 +135,11 @@ public sealed class BitPackedArray : IReadOnlyList<ulong>
         {
             source = array;
         }
-        else if (values is List<ulong> list)
+        else if (values.GetType() == typeof(List<ulong>))
         {
-            source = CollectionsMarshal.AsSpan(list);
+            // The exact type only: a subclass can re-implement the collection interfaces to present other values
+            // than its storage, and is read through them below, as CountedSource reads every subclass.
+            source = CollectionsMarshal.AsSpan((List<ulong>)values);
         }
         else if (values is ICollection<ulong> collection)
         {

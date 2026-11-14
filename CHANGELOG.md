@@ -10,7 +10,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Fixed
 
-- Building from a collection that changes while it is being read, as a `ConcurrentDictionary` another thread writes to can, now keeps exactly what it yields. A source that shrank left `default` entries it never held: a `(0, null)` key in `FrozenSortedMap`, a trailing `0` in `SegmentTree`, a `null` added to a `BTreeSet` by `SymmetricExceptWith`. One that grew threw, or lost its extra elements in `FrozenSortedSet` and `SparseTable`. Affects the constructors of `FrozenSortedMap`, `FrozenSortedSet`, `IntervalTree`, `RTree`, `KdTree`, `CompressedGraph`, `SegmentTree`, `FenwickTree`, `SparseTable`, `BitPackedArray`, `Deque`, `GapBuffer` and `MinMaxHeap`, and the set operations of `FrozenSortedSet`, `BTreeSet` and `RankedSet`. Collections other than arrays and `List<T>` are now enumerated, which is slower than their `CopyTo`. Closes #619.
+- Building from a collection that changes while it is being read, such as a `ConcurrentDictionary` another thread writes to, now keeps exactly what it yields. A source that shrank left `default` entries it never held (a `(0, null)` key in `FrozenSortedMap`, a `null` added to a `BTreeSet` by `SymmetricExceptWith`), and one that grew threw or lost elements. Fixed in the constructors of `FrozenSortedMap`, `FrozenSortedSet`, `IntervalTree`, `RTree`, `KdTree`, `CompressedGraph`, `SegmentTree`, `FenwickTree`, `SparseTable`, `BitPackedArray`, `Deque`, `GapBuffer` and `MinMaxHeap`, and in the set operations of `FrozenSortedSet`, `BTreeSet` and `RankedSet`. Sources other than an array or a `List<T>` itself (not a subclass) are now enumerated, which is slower than their `CopyTo`. Closes #619.
 
 ## [3.6.0] - 2026-11-13
 

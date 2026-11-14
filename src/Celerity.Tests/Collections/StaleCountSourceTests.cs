@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Numerics;
 using Celerity.Collections;
 
 namespace Celerity.Tests.Collections;
@@ -77,6 +78,15 @@ public class StaleCountSourceTests
 
         Assert.Equal(new[] { 3, 7, 9 }, set);
         Assert.False(set.Contains(0));
+    }
+
+    [Fact]
+    public void FrozenSortedSet_ShouldHoldAGrownSource_ThatOutgrowsItsPaddedLeafArray()
+    {
+        // Counted as 1, which sizes one node of 16 int keys. The 20 keys it then yields overflow the padding too.
+        var set = new FrozenSortedSet<int>(new StaleCount<int>(1, Enumerable.Range(0, 20).Reverse().ToArray()));
+
+        Assert.Equal(Enumerable.Range(0, 20), set);
     }
 
     [Theory]
@@ -246,6 +256,18 @@ public class StaleCountSourceTests
         Assert.Equal(2L * 3 * sizeof(int), table.IndexSizeInBytes);
     }
 
+    [Fact]
+    public void SparseTable_ShouldHoldAGrownSource_ThatOutgrowsTheWholeTable()
+    {
+        // Counted as 2, which sizes two rows of two cells. The five values it then yields fill all four and need a
+        // fifth, so the table is laid out again with three rows of five.
+        var table = new SparseTable<int, MinMonoid<int>>(new StaleCount<int>(2, 5, 3, 8, 1, 9));
+
+        Assert.Equal(new[] { 5, 3, 8, 1, 9 }, table);
+        Assert.Equal(1, table.Aggregate);
+        Assert.Equal(3, table.LevelCount);
+    }
+
     // ---- containers ---------------------------------------------------------------------------------
 
     [Theory]
@@ -328,11 +350,14 @@ public class StaleCountSourceTests
         // A subclass can re-implement ICollection<T> and IEnumerable<T> to present other contents than its List<T>
         // storage. Its count describes that view, so the view is what is read: only an exact List<T> is copied
         // from its storage.
-        var view = new EvensOnly(1, 2, 3, 4);
+        var view = new EvensOnly<int>(1, 2, 3, 4);
 
         Assert.Equal(new[] { 2, 4 }, new Deque<int>(view));
         Assert.Equal(new[] { 2, 4 }, new FrozenSortedSet<int>(view));
         Assert.Equal(new[] { 2, 4 }, new SegmentTree<int, MinMonoid<int>>(view));
+
+        // BitPackedArray has a List<ulong> fast path of its own, held to the same exact-type rule.
+        Assert.Equal(new[] { 2UL, 4UL }, new BitPackedArray(new EvensOnly<ulong>(1, 2, 3, 4), bitsPerValue: 8));
     }
 
     // ---- sources ------------------------------------------------------------------------------------
@@ -419,30 +444,31 @@ public class StaleCountSourceTests
     /// present only its even elements. <c>Count</c>, <c>CopyTo</c> and the enumerator agree with one another, and not
     /// with the list's own storage.
     /// </summary>
-    private sealed class EvensOnly : List<int>, ICollection<int>, IEnumerable<int>
+    private sealed class EvensOnly<T> : List<T>, ICollection<T>, IEnumerable<T>
+        where T : INumber<T>
     {
-        public EvensOnly(params int[] items)
+        public EvensOnly(params T[] items)
             : base(items)
         {
         }
 
-        int ICollection<int>.Count => Evens().Count();
+        int ICollection<T>.Count => Evens().Count();
 
-        void ICollection<int>.CopyTo(int[] array, int arrayIndex)
+        void ICollection<T>.CopyTo(T[] array, int arrayIndex)
         {
-            foreach (int item in Evens())
+            foreach (T item in Evens())
                 array[arrayIndex++] = item;
         }
 
-        IEnumerator<int> IEnumerable<int>.GetEnumerator() => Evens().GetEnumerator();
+        IEnumerator<T> IEnumerable<T>.GetEnumerator() => Evens().GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => Evens().GetEnumerator();
 
-        private IEnumerable<int> Evens()
+        private IEnumerable<T> Evens()
         {
-            foreach (int item in (List<int>)this)
+            foreach (T item in (List<T>)this)
             {
-                if (item % 2 == 0)
+                if (T.IsEvenInteger(item))
                     yield return item;
             }
         }
