@@ -11,7 +11,9 @@ namespace Celerity.Collections;
 /// <see cref="StringFnV1AHasher"/> by default. Supply a different string hasher via
 /// the <see cref="FrozenCelerityDictionary{TValue, THasher}"/> generic overload when
 /// your keys favour a different hash (e.g. <see cref="StringFnV1AFullHasher"/> for
-/// non-ASCII keys, or one of the strong hashers for adversarial keys).
+/// non-ASCII keys, one of the strong hashers for adversarial keys, or a block hasher
+/// such as <see cref="StringXxHash32Hasher"/> for faster lookups on longer keys: every
+/// lookup hashes the whole key, and this default folds one character per step).
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
 public sealed class FrozenCelerityDictionary<TValue>
@@ -51,25 +53,32 @@ public sealed class FrozenCelerityDictionary<TValue>
 /// <remarks>
 /// <para>
 /// The dictionary is immutable: all key/value pairs are supplied at construction and
-/// there are no mutating members. In exchange the constructor searches a small
-/// parameter space (table size × a mixing seed) for a <em>perfect</em> — that is,
+/// there are no mutating members. The constructor first searches a small parameter
+/// space (table size × a mixing seed) for a <em>perfect</em> — that is,
 /// collision-free — placement of the keys. When one is found
 /// (<see cref="IsPerfectlyHashed"/> is then <c>true</c>) a lookup is a single hash,
-/// a single array index, and a single equality check — no probing and no probe
-/// chains, the same shape as <see cref="System.Collections.Frozen.FrozenDictionary{TKey, TValue}"/>.
+/// a single array index, and a single equality check, with no probing.
 /// </para>
 /// <para>
-/// A perfect placement is impossible when two distinct keys collide on the chosen
-/// hasher's raw 32-bit code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
-/// <see cref="StringFnV1AHasher"/>, which returns the same code for both), because the
-/// mixing seed is a pure function of that code and so cannot separate them. In that
-/// case the build falls back to an open-addressed linear-probing table
-/// (<see cref="IsPerfectlyHashed"/> is <c>false</c>); lookups remain correct — the
-/// equality check disambiguates the colliding keys — they simply cost a short probe
-/// instead of a single index. Either way the result is always correct; supply a
-/// full-width or strong hasher (<see cref="StringFnV1AFullHasher"/>,
-/// <see cref="StringMurmur3Hasher"/>, …) if you want the perfect fast path for keys
-/// the default collides.
+/// A perfect placement is realistic only for small key sets. One seed places
+/// <c>n</c> keys collision-free in <c>m</c> slots with probability at most
+/// <c>e^(−n(n−1)/2m)</c>, so it needs a table that grows with <c>n²</c>: within the
+/// search's limit of eight times the minimum table size it is usually found up to about
+/// 150 keys, rarely past 200, and never past 572, where the build skips the search. It
+/// is also impossible when two distinct keys collide on the chosen hasher's raw 32-bit
+/// code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
+/// <see cref="StringFnV1AHasher"/>), because the mixing seed is a pure function of that
+/// code and so cannot separate them. Otherwise the build uses an open-addressed
+/// linear-probing table at most half full (<see cref="IsPerfectlyHashed"/> is
+/// <c>false</c>), where a hit inspects about 1.5 slots on average. Lookups are correct
+/// either way: the equality check tells colliding keys apart.
+/// </para>
+/// <para>
+/// Every lookup hashes the whole key with <typeparamref name="THasher"/>, so the hasher
+/// sets most of its cost.
+/// <see cref="System.Collections.Frozen.FrozenDictionary{TKey, TValue}"/> instead finds,
+/// at build time, a short substring that tells the keys apart and hashes only that, so
+/// its lookups are faster on typical keys. This type's build is faster.
 /// </para>
 /// <para>
 /// The <c>null</c> key is stored out-of-band (the hasher is never invoked with
@@ -82,15 +91,6 @@ public class FrozenCelerityDictionary<TValue, THasher>
     : IReadOnlyDictionary<string, TValue?>
     where THasher : struct, IHashProvider<string>
 {
-    // Number of distinct mixing seeds tried per candidate table size before giving
-    // up on that size and trying the next-larger one. The search is one-time build
-    // work, so a generous budget is cheap insurance for the single-probe fast path.
-    private const int SeedBudget = 512;
-
-    // Largest power-of-two multiple of NextPowerOfTwo(n) the perfect-hash search will
-    // grow the table to before falling back. 8 means up to 8× the minimum table size.
-    private const int MaxSizeMultiplier = 8;
-
     private readonly string?[] _keys;
     private readonly TValue?[] _values;
     private readonly int _mask;
@@ -168,16 +168,29 @@ public class FrozenCelerityDictionary<TValue, THasher>
         for (int i = 0; i < n; i++)
             baseHashes[i] = _hasher.Hash(keyList[i]);
 
-        if (TryBuildPerfect(keyList, valueList, baseHashes, out _keys, out _values, out _mask, out _seed))
+        _isPerfect = FrozenHashLayout.TryFindPerfect(baseHashes, out int size, out _seed);
+        if (!_isPerfect)
+            size = FrozenHashLayout.FallbackSize(n);
+
+        // One placement loop serves both layouts: under a perfect (size, seed) every key's home
+        // slot is vacant, so the probe below never advances; otherwise it is the linear-probing
+        // insert, with seed 0 and a table at most half full.
+        int mask = size - 1;
+        var keys = new string?[size];
+        var values = new TValue?[size];
+        for (int i = 0; i < n; i++)
         {
-            _isPerfect = true;
+            int slot = (int)(FrozenHashLayout.Mix(unchecked((uint)baseHashes[i]), _seed) & (uint)mask);
+            while (keys[slot] is not null)
+                slot = (slot + 1) & mask;
+
+            keys[slot] = keyList[i];
+            values[slot] = valueList[i];
         }
-        else
-        {
-            BuildFallback(keyList, valueList, baseHashes, out _keys, out _values, out _mask);
-            _seed = 0;
-            _isPerfect = false;
-        }
+
+        _keys = keys;
+        _values = values;
+        _mask = mask;
     }
 
     /// <summary>
@@ -189,8 +202,9 @@ public class FrozenCelerityDictionary<TValue, THasher>
     /// <summary>
     /// Gets a value indicating whether the build found a collision-free (perfect)
     /// placement, so lookups take the single-probe fast path. <c>false</c> means the
-    /// dictionary fell back to linear probing because two distinct keys share the
-    /// chosen hasher's raw hash code; lookups are still correct, just not single-probe.
+    /// dictionary uses a linear-probing table at most half full instead: always the case
+    /// past 572 non-<c>null</c> keys, usually past about 150, and whenever two distinct
+    /// keys share the chosen hasher's raw hash code. Lookups are correct either way.
     /// </summary>
     public bool IsPerfectlyHashed => _isPerfect;
 
@@ -339,134 +353,6 @@ public class FrozenCelerityDictionary<TValue, THasher>
                 paramName);
     }
 
-    // ── Perfect-hash construction ─────────────────────────────────────────────
-
-    // Integer finalizer used to map a key's raw hash code (combined with the search
-    // seed) to a table slot. It must be the SAME mapping at build and lookup time.
-    // Based on the "lowbias32" mix; the seed is folded in so different seeds produce
-    // different — but each individually well-spread — placements of the same keys.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Mix(uint hash, int seed)
-    {
-        uint h = hash + unchecked((uint)seed * 0x9E3779B9u);
-        h ^= h >> 16;
-        h *= 0x7FEB352Du;
-        h ^= h >> 15;
-        h *= 0x846CA68Bu;
-        h ^= h >> 16;
-        return h;
-    }
-
-    private bool TryBuildPerfect(
-        List<string> keyList,
-        List<TValue> valueList,
-        int[] baseHashes,
-        out string?[] keys,
-        out TValue?[] values,
-        out int mask,
-        out int seed)
-    {
-        int n = keyList.Count;
-        int minSize = FastUtils.NextPowerOfTwo(n == 0 ? 1 : n);
-
-        // Probe candidate table sizes minSize, 2·minSize, … up to MaxSizeMultiplier·minSize.
-        // Advance via the overflow-safe TryDoubleCapacity rather than a bare `size <<= 1`: once
-        // a candidate reaches the 2^30 ceiling the shift would wrap negative and the next
-        // `new string?[size]` would throw OverflowException instead of cleanly falling back.
-        for (int size = minSize, mult = 1; mult <= MaxSizeMultiplier; mult <<= 1)
-        {
-            int m = size - 1;
-            for (int s = 0; s <= SeedBudget; s++)
-            {
-                if (TryPlace(keyList, valueList, baseHashes, size, m, s, out keys, out values))
-                {
-                    mask = m;
-                    seed = s;
-                    return true;
-                }
-            }
-
-            if (!FastUtils.TryDoubleCapacity(size, out size))
-                break; // reached the 2^30 table ceiling; fall back to linear probing
-        }
-
-        keys = null!;
-        values = null!;
-        mask = 0;
-        seed = 0;
-        return false;
-    }
-
-    private static bool TryPlace(
-        List<string> keyList,
-        List<TValue> valueList,
-        int[] baseHashes,
-        int size,
-        int mask,
-        int seed,
-        out string?[] keys,
-        out TValue?[] values)
-    {
-        var tableKeys = new string?[size];
-        var tableValues = new TValue?[size];
-
-        int n = keyList.Count;
-        for (int i = 0; i < n; i++)
-        {
-            int slot = (int)(Mix(unchecked((uint)baseHashes[i]), seed) & (uint)mask);
-            if (tableKeys[slot] is not null)
-            {
-                // Collision — this (size, seed) is not perfect.
-                keys = null!;
-                values = null!;
-                return false;
-            }
-
-            tableKeys[slot] = keyList[i];
-            tableValues[slot] = valueList[i];
-        }
-
-        keys = tableKeys;
-        values = tableValues;
-        return true;
-    }
-
-    private static void BuildFallback(
-        List<string> keyList,
-        List<TValue> valueList,
-        int[] baseHashes,
-        out string?[] keys,
-        out TValue?[] values,
-        out int mask)
-    {
-        int n = keyList.Count;
-
-        // Size with headroom so at least one slot stays empty — linear probing needs
-        // an empty slot to terminate a miss, and to keep chains short. The constructor
-        // rejects n >= 2^30, so n + 1 <= 2^30 and NextPowerOfTwo(n + 1) is a power of two
-        // strictly greater than n (it never has to cap below n + 1), guaranteeing a vacant
-        // slot.
-        int size = FastUtils.NextPowerOfTwo(n + 1);
-
-        int m = size - 1;
-        var tableKeys = new string?[size];
-        var tableValues = new TValue?[size];
-
-        for (int i = 0; i < n; i++)
-        {
-            int slot = (int)(Mix(unchecked((uint)baseHashes[i]), 0) & (uint)m);
-            while (tableKeys[slot] is not null)
-                slot = (slot + 1) & m;
-
-            tableKeys[slot] = keyList[i];
-            tableValues[slot] = valueList[i];
-        }
-
-        keys = tableKeys;
-        values = tableValues;
-        mask = m;
-    }
-
     // Returns the slot holding <paramref name="key"/>, or -1 if absent. In perfect
     // mode this is a single index + equality check; in fallback mode it linear-probes
     // until it finds the key or hits an empty slot. The caller guarantees key != null.
@@ -492,7 +378,7 @@ public class FrozenCelerityDictionary<TValue, THasher>
         string?[] keys = _keys;
         ref string? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
         int mask = _mask;
-        int slot = (int)(Mix(unchecked((uint)hasher.Hash(key)), _seed) & (uint)mask);
+        int slot = (int)(FrozenHashLayout.Mix(unchecked((uint)hasher.Hash(key)), _seed) & (uint)mask);
 
         if (_isPerfect)
         {
@@ -518,7 +404,7 @@ public class FrozenCelerityDictionary<TValue, THasher>
         ref string? keysRef = ref MemoryMarshal.GetArrayDataReference(keys);
         int mask = _mask;
         var comparer = EqualityComparer<string>.Default;
-        int slot = (int)(Mix(unchecked((uint)_hasher.Hash(key)), _seed) & (uint)mask);
+        int slot = (int)(FrozenHashLayout.Mix(unchecked((uint)_hasher.Hash(key)), _seed) & (uint)mask);
 
         if (_isPerfect)
         {

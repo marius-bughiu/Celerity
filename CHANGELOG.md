@@ -7,6 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Changed
 
 - The benchmarks now measure against the .NET 9 BCL types their hand-rolled baselines stood in for: `OrderedDictionary<TKey, TValue>` for `LinkedDictionary` and `LinkedSet` (removal keeps its `O(1)` hand-rolled baseline), and `GetAlternateLookup<ReadOnlySpan<char>>()` on `Dictionary`, `FrozenDictionary` and `HashSet<string>` for the span lookups and `StringInternTable`. The dashboard cards and documented ratios moved with them. ⚠️ Enumerating either linked type is about 5x slower than `OrderedDictionary`; the span probes on `Trie`, `SuccinctTrie` and `FrozenCelerityDictionary` are 3.5–21x slower than the BCL's; and `StringInternTable` is about 2x slower than `HashSet<string>` unless given `StringCityHash64Hasher`, which makes it 1.05–1.2x faster.
+- `FrozenCelerityDictionary` and `FrozenCeleritySet` build and look up faster. The build's perfect-hash search allocated two fresh tables per attempt (12 GB to freeze 100,000 keys) and kept trying sizes where a perfect placement cannot exist; it now reuses one buffer and skips those sizes, so a 100,000-key build takes 5.9 ms instead of 3.3 s, 1.9x faster than `FrozenDictionary`. Key sets too large for a perfect placement, anything past about 150 keys, now use a table at most half full rather than up to 98% full, and lookups are 1.8–2.3x faster. `FrozenDictionary` still looks keys up 3.5–5.6x faster, and the docs now say so.
 
 ### Removed
 
