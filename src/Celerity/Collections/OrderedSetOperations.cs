@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 namespace Celerity.Collections;
 
 /// <summary>
@@ -179,14 +177,14 @@ internal static class OrderedSetOperations
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     // Materializes `other` into an ascending, comparer-distinct span: a private copy (never the caller's own
-    // list — the sort is in place), sorted by TComparer, with each run of comparer-equal elements collapsed
-    // to its first member. The returned span is backed by the copy's array, which the span itself keeps
-    // alive, so the List<T> local going out of scope here is not a lifetime problem.
+    // array — the sort is in place), sorted by TComparer, with each run of comparer-equal elements collapsed
+    // to its first member. Not new List<T>(other): for a collection that shrank between its Count and its
+    // CopyTo, that list would hold default elements, which IntersectWith and SymmetricExceptWith would then
+    // keep in or add to the set.
     private static ReadOnlySpan<T> MaterializeDistinct<T, TComparer>(IEnumerable<T> other, TComparer comparer)
         where TComparer : struct, IComparer<T>
     {
-        List<T> copy = new(other);
-        Span<T> span = CollectionsMarshal.AsSpan(copy);
+        Span<T> span = CountedSource.ToArray(other);
         if (span.Length <= 1)
             return span; // zero or one element is already sorted and already distinct
 

@@ -164,9 +164,20 @@ public sealed class SegmentTree<T, TMonoid> : IReadOnlyList<T>
             int count = collection.Count;
             ThrowIfSourceTooLong(count, nameof(values));
 
-            _length = count;
-            _tree = new T[2 * count];
-            collection.CopyTo(_tree, count);
+            T[] tree = new T[2 * count];
+            int read = CountedSource.Read(collection, ref tree, count);
+            if (read != count)
+            {
+                // The source changed after it was counted. The leaves of the 2n layout start at n, so they move to
+                // the length the source really had: no default leaves past it, and none of its own dropped.
+                ThrowIfSourceTooLong(read, nameof(values));
+                T[] exact = new T[2 * read];
+                Array.Copy(tree, count, exact, read, read);
+                tree = exact;
+            }
+
+            _length = read;
+            _tree = tree;
         }
         else
         {

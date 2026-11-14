@@ -514,15 +514,18 @@ Entries live in one array of structs. Each entry holds the key, the value, the k
 
 ### Performance
 
-Measured locally on Apple Silicon (.NET 10); the dashboard's CI series is the contract.
+Measured locally on Apple Silicon (.NET 10, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is .NET 9's `OrderedDictionary<int, int>`, except for the last row. There it is the hand-roll a caller builds when removal must stay `O(1)`, a `Dictionary<TKey, LinkedListNode<…>>` beside a `LinkedList<…>`, because `OrderedDictionary` removes in `O(n)`.
 
-| Operation, 10,000 `int` keys | `OrderedDictionary<int, int>` (.NET 9+) | `LinkedDictionary` |
+| Operation, `int` keys | 1,000 | 100,000 |
 |---|---|---|
-| Remove every key, shuffled order | ~59 ms (`O(n)` per removal) | ~63 µs (~900x faster) |
-| Lookup every key (hits) | ~42–64 µs | ~17 µs (2.3–3.7x faster) |
-| Insert every key, pre-sized | ~88 µs | ~68 µs (1.3x faster) |
+| Insert every key, pre-sized | 1.04x faster, 2.0x the allocation | 1.06x slower, 2.7x the allocation |
+| Lookup every key (hits) | 1.5x faster | 2.4x faster |
+| Enumerate after removing half | **5.3x slower** | **5.3x slower** |
+| Remove every key, shuffled order, against the hand-roll | 2.1x faster | 2.7x faster |
 
-The CI benchmark compares against the ordered map a caller builds by hand, a `Dictionary<TKey, LinkedListNode<…>>` plus a `LinkedList<…>`, which also removes in `O(1)`; `OrderedDictionary<,>` appears only in the local table above. Against that baseline, inserts are 4.7–13x faster and allocate 26–43% less (no node object per entry), lookups are about 2.3x faster, and removal is about 2x faster. **Enumeration is about 2.5x slower**. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase.
+Against `OrderedDictionary` itself, removal is where the two part ways. Draining every key in shuffled order is `O(n²)` for it: about 370 µs against `LinkedDictionary`'s 2.9 µs at 1,000 keys (~127x), and about 36 ms against 36 µs at 10,000 (~1,000x). `OrderedDictionaryRemoveBenchmark` in the extended suite measures it. The gap grows with the table, and a drain of 100,000 keys takes seconds, which is why the dashboard's Remove card uses the hand-roll instead.
+
+**Enumeration is the cost.** `OrderedDictionary` reads one dense array front to back. `LinkedDictionary` follows its order links, one dependent load per step, through an entry array that removals have left full of holes. Inserts are within 6% on time but allocate 2–2.7x as much: each entry carries two order links, and the table is sized for a 0.75 load factor and rounded up to a power of two, where `OrderedDictionary` sizes its arrays to the next prime at or above the requested capacity.
 
 ### Constructors
 
@@ -1300,6 +1303,7 @@ public class LinkedSet<T, THasher> : ISet<T>, IReadOnlySet<T>
 
 - `HashSet<T>` enumerates in insertion order only until the first `Remove`. The freed entry goes on a free list, and the next `Add` reuses it, so the new element appears where the removed one was. The order is not documented, so even before a removal it is an accident of the implementation.
 - `SortedSet<T>` keeps an order, but the comparer's order, not arrival order.
+- .NET 9's `OrderedDictionary<TKey, TValue>`, keyed by the element with a value nobody reads, keeps arrival order through removals. It stores its entries in one dense array, so `Remove` shifts every later entry down and costs `O(n)`.
 - The usual hand-rolls each pay somewhere. A `HashSet<T>` beside a `List<T>` removes in `O(n)`. A `Dictionary<T, LinkedListNode<T>>` beside a `LinkedList<T>` removes in `O(1)`, but allocates a node object per element and stores every element twice.
 
 `LinkedSet` has `O(1)` removal and re-ordering, no per-element allocation, and **no index access**. If order does not matter at all, `CeleritySet` and `SwissSet` are smaller and faster.
@@ -1310,16 +1314,16 @@ The layout is `LinkedDictionary`'s without the value. Elements live in one array
 
 ### Performance
 
-Measured locally on Apple Silicon (net8.0 build, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is the hand-roll that also removes in `O(1)`: a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`.
+Measured locally on Apple Silicon (.NET 10, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is .NET 9's `OrderedDictionary<int, byte>` used as a set, since the BCL ships no ready-made insertion-ordered set, except for the last row. There it is the hand-roll that also removes in `O(1)`, a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`, because `OrderedDictionary` removes in `O(n)` (see [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher) for what that costs a drain).
 
-| Operation, `int` elements | 1,000 | 10,000 | 100,000 |
-|---|---|---|---|
-| Add every element, pre-sized | 4.3x faster, 51% less allocated | 7–9x faster, 59% less allocated | 13.4x faster, 36% less allocated |
-| `Contains`, every element a hit | 1.7x faster | 1.7x faster | 4.0x faster |
-| Remove every element, shuffled order | 2.1x faster | 2.2x faster | 2.3x faster |
-| Enumerate after removing half | **2.7x slower** | **2.4x slower** | **2.7x slower** |
+| Operation, `int` elements | 1,000 | 100,000 |
+|---|---|---|
+| Add every element, pre-sized | 1.1x slower, 1.8x the allocation | 1.01–1.06x slower, 2.3x the allocation |
+| `Contains`, every element a hit | 1.6x faster | 3.0x faster |
+| Enumerate after removing half | **5.5x slower** | **4.6–5.5x slower** |
+| Remove every element, shuffled order, against the hand-roll | 2.0x faster | 2.7x faster |
 
-The add gap is the node object the hand-roll allocates per element. **Enumeration is the cost**, as on `LinkedDictionary`. Each step of the order walk loads an entry by index from the entry array, where the hand-roll follows an object pointer, and in the benchmark those list nodes were allocated back to back, which flatters the pointer chase. Growth copies the live entries into a fresh array in order, which makes the walk sequential again. A `TrimExcess` does the same only when it changes the table size. One that leaves the bucket count unchanged rebuilds nothing, so it does not restore sequential layout after steady churn.
+**Enumeration is the cost**, as on `LinkedDictionary`. `OrderedDictionary` reads one dense array front to back, where this type follows its order links, one dependent load per step, through an entry array that removals have left full of holes. Adds stay within 10% on time but allocate 1.8–2.3x as much, mostly from table sizing: the table is sized for a 0.75 load factor and rounded up to a power of two, where `OrderedDictionary` sizes its arrays to the next prime at or above the requested capacity, and each entry also carries two order links. Growth copies the live entries into a fresh array in order, which makes the walk sequential again. A `TrimExcess` does the same only when it changes the table size. One that leaves the bucket count unchanged rebuilds nothing, so it does not restore sequential layout after steady churn.
 
 ### Constructors
 
@@ -3952,10 +3956,11 @@ public BitPackedArray(IEnumerable<ulong> values, int bitsPerValue)
 - `BitPackedArray(int length, int bitsPerValue)` creates `length` elements, all zero.
   A `length` of `0` is a valid empty array.
 - `BitPackedArray(IEnumerable<ulong> values, int bitsPerValue)` packs `values` in
-  enumeration order. A `ulong[]` or `List<ulong>` is packed directly, in one streaming pass
-  that writes a whole word at a time. Any other counted collection has its length checked
-  before anything is allocated and is then copied once. Any other sequence is materialized
-  once.
+  enumeration order. A `ulong[]` or a `List<ulong>` itself (not a subclass) is packed
+  directly, in one streaming pass that writes a whole word at a time. Any other counted
+  collection has its length checked before anything is allocated and is then copied once,
+  by enumeration, so one that changes while it is read contributes exactly what it yields.
+  Any other sequence is materialized once.
 
 **Throws:**
 
@@ -7708,7 +7713,7 @@ The empty string is an ordinary key. The trie stores no `TValue` out-of-band, so
 
 ### Choosing it
 
-Reach for `Trie<TValue>` when the workload needs **prefix or ordered** access: autocomplete / typeahead, longest-prefix routing, ordered key iteration, or listing everything under a namespace. If you only ever do exact-key `Add` / `TryGetValue` / `Remove`, a `Dictionary<string, TValue>` (or `CelerityDictionary`) is the better fit — the trie earns its place only when you use the prefix operations. It is not thread-safe.
+Reach for `Trie<TValue>` when the workload needs **prefix or ordered** access: autocomplete / typeahead, longest-prefix routing, ordered key iteration, or listing everything under a namespace. If you only ever do exact-key `Add` / `TryGetValue` / `Remove`, a `Dictionary<string, TValue>` (or `CelerityDictionary`) is the better fit — the trie earns its place only when you use the prefix operations. That holds for probes from a `ReadOnlySpan<char>` too: `Dictionary`'s `GetAlternateLookup<ReadOnlySpan<char>>()` takes one, and the trie's span overload is 3.5–4.1x slower than it. It is not thread-safe.
 
 ### Usage example
 
@@ -7765,7 +7770,7 @@ It is also the wrong type when **query latency**, not memory, is the binding con
 
 ### Measured
 
-BenchmarkDotNet short job, .NET 10, Apple Silicon, `SuccinctTrieBenchmark`, 100,000 keys of the form `ab_00012345` — the same key shape `TrieBenchmark` uses, so the two tries read side by side.
+Apple Silicon, .NET 10, 100,000 keys of the form `ab_00012345` — the same key shape `TrieBenchmark` uses, so the two tries read side by side.
 
 **Footprint**, as bytes *retained* by the built structure (measured by settling the GC around a build from a source that is kept alive throughout, so no figure counts the key strings):
 
@@ -7775,20 +7780,20 @@ BenchmarkDotNet short job, .NET 10, Apple Silicon, `SuccinctTrieBenchmark`, 100,
 | `Dictionary<string, int>` | 3.04 MB | 2.9× larger — *and* it alone must keep every key `string` alive (~48 bytes each here, ~4.8 MB) |
 | `SuccinctTrie<int>` | 1.05 MB | — (`IndexSizeInBytes` reports 938 KB of it) |
 
-**Query time:**
+**Query time**, from `SuccinctTrieBenchmark` on the default BenchmarkDotNet job:
 
 | Category | `Dictionary` | `SuccinctTrie` | `Trie` |
 | --- | --- | --- | --- |
-| `PrefixProbe` — the few completions of a nearly-complete token | 3.59 ms | **3.45 µs — 1,042× faster** | 1.43 µs |
-| `PrefixMatch` — enumerate a sixteenth of the table, per prefix | 3.08 ms | 11.18 ms — 3.6× *slower* | 3.59 ms |
-| `Lookup` — exact key, every key | 0.94 ms | 26.41 ms — 28× *slower* | 4.10 ms |
-| `SpanLookup` — exact key from a span | 2.14 ms + 4.8 MB allocated | 25.89 ms — 12× *slower*, **0 B** | — |
-| `Build` — from the whole key set | 1.59 ms | 19.81 ms — 12.5× *slower* | — |
+| `PrefixProbe` — the few completions of a nearly-complete token | 3.71 ms | **3.43 µs — 1,082× faster** | 1.36 µs |
+| `PrefixMatch` — enumerate a sixteenth of the table, per prefix | 3.17 ms | 11.61 ms — 3.7× *slower* | 4.27 ms |
+| `Lookup` — exact key, every key | 0.94 ms | 26.44 ms — 28× *slower* | 4.28 ms |
+| `SpanLookup` — exact key from a span, neither side allocating | 1.29 ms, through `GetAlternateLookup` | 26.39 ms — 20× *slower* | — |
+| `Build` — from the whole key set | 1.24 ms | 20.56 ms — 16.6× *slower* | — |
 
 Two **pre-registered kill criteria** were set before the type was written, and both are recorded here as measured rather than rounded away:
 
 1. **≥5× smaller than `Trie<TValue>`.** Passed at **38.1×** — but only on the right quantity. The criterion was originally written as *allocated* bytes for the build, and by that measure the ratio is **1.19×**, essentially a wash: the succinct build allocates a sort buffer and several transient lists that it then drops. Allocated-during-build is not what this type is sold on; *retained* is, and that is the column above. It is also why the benchmark class deliberately charts no footprint arm — `[MemoryDiagnoser]` would confidently report the wrong number.
-2. **Still beats `Dictionary` on `GetByPrefix` by the margin `Trie` does.** Passed on `PrefixProbe` (1,042× against `Trie`'s 2,510×) and **missed on `PrefixMatch`**, where it is 3.6× slower than the dictionary. The measurement then showed the criterion was written on a false premise: `Trie` does not win that arm either (1.16× the dictionary — a slight loss). Bulk enumeration of a sixteenth of the table finds the dictionary a match every sixteen entries and charges either trie for materializing 100,000 result strings, so it does not isolate the prefix index at all. `PrefixProbe` — the same operation at the selectivity a prefix index is actually reached for — does, and both tries win it by three orders of magnitude. Both arms are on the dashboard and **the pair has to be read together**; either alone misstates the trade.
+2. **Still beats `Dictionary` on `GetByPrefix` by the margin `Trie` does.** Passed on `PrefixProbe` (1,082× against `Trie`'s 2,737×) and **missed on `PrefixMatch`**, where it is 3.7× slower than the dictionary. The measurement then showed the criterion was written on a false premise: `Trie` does not win that arm either (1.35× slower than the dictionary). Bulk enumeration of a sixteenth of the table finds the dictionary a match every sixteen entries and charges either trie for materializing 100,000 result strings, so it does not isolate the prefix index at all. `PrefixProbe` — the same operation at the selectivity a prefix index is actually reached for — does, and both tries win it by three orders of magnitude. Both arms are on the dashboard and **the pair has to be read together**; either alone misstates the trade.
 
 See the [succinct-trie benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=SuccinctTrie) on the dashboard.
 
@@ -7889,7 +7894,7 @@ The string-keyed collections below can be probed with a `ReadOnlySpan<char>` —
 
 Without them, a tokenizer, CSV / log reader, or route dispatcher holding a `ReadOnlySpan<char>` must call `new string(span)` to probe the collection: **one allocation plus a copy per lookup**, on the hot path of exactly the workloads these types exist for. The span overloads delete both. Nothing else changes — stored keys are compared ordinally against the span, which is what `EqualityComparer<string>.Default` does, so a span lookup and the equivalent string lookup always agree.
 
-> **.NET 9+.** `Dictionary<string,V>.GetAlternateLookup<ReadOnlySpan<char>>()` gives the BCL the same capability through a separate lookup struct, and every runtime Celerity targets has it. These overloads put the span probe on the collection itself.
+> **Against the BCL's span probe.** `Dictionary<string, V>`, `HashSet<string>` and `FrozenDictionary<string, V>` probe with a span too, through `GetAlternateLookup<ReadOnlySpan<char>>()`, and every runtime Celerity targets has it. These overloads put the span probe on the collection itself; they do not make it cheaper than the BCL's. Measured against the alternate lookups (Apple Silicon, .NET 10, default BenchmarkDotNet job), at 1,000 and 100,000 keys: `FrozenCelerityDictionary` is 6.0x and 3.8x slower than `FrozenDictionary`, `Trie` 4.1x and 3.5x slower than `Dictionary`, and `SuccinctTrie` 21x and 20x slower. A span probe costs about what the same collection's `string` probe costs, so the overloads are for using these types without allocating, when you chose them for something else — prefix queries, ordered enumeration, a pluggable hasher — and not a reason to choose them.
 
 ### How they are exposed
 
@@ -7935,17 +7940,28 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     where THasher : struct, IHashProvider<string>, ISpanHashProvider
 ```
 
-### The documented BCL-beating workload
+### The workload
 
-**A 10M-cell CSV or log parse over ~100 distinct tokens.** The intern table allocates **100 strings instead of 10,000,000** — only the miss path materializes one. Downstream reference equality then works, and the GC never sees the other 9,999,900 copies.
+**A 10M-cell CSV or log parse over ~100 distinct tokens.** Interning allocates **100 strings instead of 10,000,000** — only the miss path materializes one. Downstream reference equality then works, and the GC never sees the other 9,999,900 copies.
 
-Before .NET 9 the BCL could not do this: `HashSet<string>.TryGetValue` takes a `string`, so you must **allocate the string before you can discover you already had it** — the very allocation you were trying to avoid. `string.Intern` is not a substitute either: it is process-wide, never collected for the life of the process, and still requires a `string` to hand it. A `StringInternTable` is an ordinary object — its scope is yours, `Clear` releases everything it holds, and dropping the table drops the interned strings with it.
+`string.Intern` is not a substitute: it is process-wide, never collected for the life of the process, and still requires a `string` to hand it. A `StringInternTable` is an ordinary object — its scope is yours, `Clear` releases everything it holds, and dropping the table drops the interned strings with it.
 
-> **.NET 9+.** `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()` can express the same pattern, and every runtime Celerity targets has it. This type packages it as one `GetOrAdd` call with a pluggable struct hasher. Its benchmark measures it against allocating a `string` per probe, not against the alternate lookup.
+### Against `HashSet<string>`
+
+The BCL does the same with `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()`, which every runtime Celerity targets has: its `TryGetValue` returns the stored instance from a span, and a miss materializes the token once for `Add`. That allocates exactly the strings this type does, so **this type saves no string allocations over it**, and with its default hasher it is **about 2x slower**. Measured on `StringInternTableBenchmark`'s stream of 64 distinct 16-character tokens (Apple Silicon, .NET 10, default BenchmarkDotNet job):
+
+| Against `HashSet<string>` with `GetAlternateLookup` | 1,000 tokens | 100,000 tokens |
+|---|---|---|
+| Dedupe the stream, default hasher | **2.3x slower** | **2.3x slower** |
+| Probe a warm table, default hasher | **2.1x slower** | **2.0x slower** |
+| Dedupe the stream, `StringCityHash64Hasher` | 1.06x faster | 1.05x faster |
+| Probe a warm table, `StringCityHash64Hasher` | 1.2x faster | 1.2x faster |
+
+The default hasher is most of the gap: it folds every UTF-16 code unit a byte at a time, where `StringCityHash64Hasher` reads the token eight bytes at a time. What this type adds over the set is the pattern as one `GetOrAdd` call, a table that holds only the string references (it allocated 18% less than the set in the dedupe run), and the hasher as a type parameter.
 
 ### Default hasher
 
-The non-generic `StringInternTable` uses `StringFnV1AFullHasher` — cheap, and **full Unicode width**, so tokens that differ only in a character's high byte do not collide. (This deliberately differs from the frozen collections' `StringFnV1AHasher` default, which folds only the low byte: an intern table's inputs are arbitrary parsed text rather than curated identifiers.) A collision is never a correctness problem in either case — the ordinal span comparison resolves it — but it costs probes. Supply any `String*Hasher` through `StringInternTable<THasher>` for a different speed/quality point.
+The non-generic `StringInternTable` uses `StringFnV1AFullHasher`: **full Unicode width**, so tokens that differ only in a character's high byte do not collide, but it folds each code unit a byte at a time, which made it the slow part of the probe on the 16-character tokens measured above. (It deliberately differs from the frozen collections' `StringFnV1AHasher` default, which folds only the low byte: an intern table's inputs are arbitrary parsed text rather than curated identifiers.) A collision is never a correctness problem in either case — the ordinal span comparison resolves it — but it costs probes. Supply any `String*Hasher` through `StringInternTable<THasher>` for a different speed/quality point; `StringCityHash64Hasher`, also full width, is the faster choice measured above.
 
 ### Constructors
 
@@ -7978,7 +7994,7 @@ The empty string is an ordinary entry, and an empty span means `""`. `null` is n
 
 ### Choosing it
 
-Reach for `StringInternTable` when you are producing **many occurrences of few distinct strings** from a buffer you already hold: parsers, tokenizers, log ingestion, column stores, header dispatch. If you need to associate a *value* with each token, use a `CelerityDictionary<string, TValue, THasher>` with the [span lookups](#span-keyed-lookups) instead. It is not thread-safe.
+Reach for `StringInternTable` when you are producing **many occurrences of few distinct strings** from a buffer you already hold: parsers, tokenizers, log ingestion, column stores, header dispatch. A `HashSet<string>` probed through `GetAlternateLookup` does the same job just as frugally, and faster than this type's default hasher; choose this type for the one-call `GetOrAdd`, and give it `StringCityHash64Hasher` when probe speed matters. If you need to associate a *value* with each token, use a `CelerityDictionary<string, TValue, THasher>` with the [span lookups](#span-keyed-lookups) instead. It is not thread-safe.
 
 ### Usage example
 
