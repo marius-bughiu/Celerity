@@ -314,6 +314,41 @@ public class KWayMergeTests
         Assert.Equal([1, 2], merged);
     }
 
+    [Theory]
+    [InlineData(5)] // counted before two sources were removed: a CopyTo snapshot ends in two nulls
+    [InlineData(2)] // counted before one was added: CopyTo has too little room and throws
+    [InlineData(0)]
+    public void LazyMerge_ShouldMergeExactlyTheSourcesYielded_WhenACountedOuterSequenceHasAStaleCount(int count)
+    {
+        // Regression (#621): the outer sequence was snapshotted through Count and CopyTo, so a shrinking one was
+        // rejected for "null" sequences the caller never passed, and a growing one threw from CopyTo.
+        var outer = new StaleCountCollection<IEnumerable<int>>(count, new[] { 1, 4 }, new[] { 2 }, new[] { 0, 3 });
+
+        Assert.Equal([0, 1, 2, 3, 4], KWayMerge.Merge(outer));
+    }
+
+    [Fact]
+    public void LazyMerge_ShouldStillRejectANullSource_WhenACountedOuterSequenceIsEnumerated()
+    {
+        var outer = new StaleCountCollection<IEnumerable<int>>(9, new[] { 1 }, null!);
+
+        var ex = Assert.Throws<ArgumentException>(() => KWayMerge.Merge(outer));
+        Assert.Equal("sources", ex.ParamName);
+        Assert.Contains("index 1", ex.Message);
+    }
+
+    [Fact]
+    public void LazyMerge_ShouldReadAnUncountedOuterSequence()
+    {
+        static IEnumerable<IEnumerable<int>> Outer()
+        {
+            yield return new[] { 2, 5 };
+            yield return new[] { 1, 6 };
+        }
+
+        Assert.Equal([1, 2, 5, 6], KWayMerge.Merge(Outer()));
+    }
+
     [Fact]
     public void LazyMerge_ShouldDisposeEverySource_WhenEnumerationCompletes()
     {

@@ -212,14 +212,17 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     /// <see cref="List{T}"/> or another <see cref="SegmentedList{T}"/> is copied a block at a time after one
     /// capacity check. Any other <see cref="ICollection{T}"/> is enumerated once into capacity reserved for its
     /// <see cref="ICollection{T}.Count"/>, and its elements are published only when that enumeration finishes,
-    /// so no temporary copy of it is made. Adding a list to itself, or a collection that wraps it, appends one
-    /// copy of its current elements, as on <see cref="List{T}"/>.
+    /// so no temporary copy of it is made. Exactly what that enumeration yields is appended, more or fewer than the
+    /// count, so a collection another thread changes after it is counted (a
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey, TValue}"/>, say) loses none of its
+    /// elements. Adding a list to itself, or a collection that wraps it, appends one copy of its current elements,
+    /// as on <see cref="List{T}"/>.
     /// </summary>
     /// <param name="collection">The elements to append.</param>
     /// <exception cref="ArgumentNullException"><paramref name="collection"/> is <c>null</c>.</exception>
     /// <exception cref="OverflowException">
     /// A counted <paramref name="collection"/> would take the list past the most elements it can hold. Nothing is
-    /// reserved or appended.
+    /// appended, and when its <see cref="ICollection{T}.Count"/> alone is too many, nothing is reserved either.
     /// </exception>
     public void AddRange(IEnumerable<T> collection)
     {
@@ -662,8 +665,9 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     // publishes the new elements only once the enumeration has finished. A collection that wraps this list (a
     // ReadOnlyCollection<T> over it, say) therefore enumerates only the elements already present and appends
     // one copy of them, as List<T>'s CopyTo snapshot does, without a second array the size of the source,
-    // which for a large source would sit on the large object heap and copy every element twice. At most
-    // Count elements are appended, and fewer if the enumeration yields fewer.
+    // which for a large source would sit on the large object heap and copy every element twice. The count only
+    // sizes the reservation: everything the enumeration yields is appended, so a source that grew after it was
+    // counted loses nothing, and one that shrank appends what it still holds.
     private void AppendCollection(ICollection<T> source)
     {
         int n = source.Count;
@@ -677,10 +681,10 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         {
             foreach (T item in source)
             {
-                if (written == n)
-                    break;
-
                 int position = start + written;
+                if (position == _capacity)
+                    ReserveOneMore(start, written);
+
                 _segments[position >> Shift][position & Mask] = item;
                 written++;
             }
@@ -695,6 +699,24 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         _count = start + written;
         _version++;
         SetTail();
+    }
+
+    // Grows the capacity past the `written` unpublished elements that sit from `start` on, when a counted source
+    // yields more than it counted. The count is raised over them for the duration, because a first segment that
+    // grows is copied only up to the count; it goes back down, unpublished, before this returns or throws.
+    private void ReserveOneMore(int start, int written)
+    {
+        int total = CheckedTotal(written + 1);
+        _count = start + written;
+        try
+        {
+            EnsureCapacityCore(total);
+        }
+        finally
+        {
+            _count = start;
+            SetTail();
+        }
     }
 
     // The count after appending `n` elements, or an OverflowException when that passes the element ceiling,

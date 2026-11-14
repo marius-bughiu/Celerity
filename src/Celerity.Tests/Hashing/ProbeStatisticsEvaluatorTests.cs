@@ -290,4 +290,39 @@ public class ProbeStatisticsEvaluatorTests
         Assert.Contains("AvgProbe=", text);
         Assert.Contains("MaxProbe=", text);
     }
+
+    [Theory]
+    [InlineData(5)] // counted before two keys were removed: a CopyTo snapshot ends in two default keys
+    [InlineData(2)] // counted before one was added: CopyTo has too little room and throws
+    [InlineData(0)]
+    public void Evaluate_ShouldPlaceExactlyTheKeysYielded_WhenACountedSourceHasAStaleCount(int count)
+    {
+        // Regression (#621): the keys were materialized through Count and CopyTo, so a shrinking source added
+        // default keys to the simulated table, and a growing one threw.
+        ProbeStatistics stats = ProbeStatisticsEvaluator.Evaluate<int, IdentityIntHasher>(
+            new StaleCountCollection<int>(count, 1, 2, 3));
+
+        Assert.Equal(3, stats.KeyCount);
+        Assert.Equal(3, stats.EntryCount);
+        Assert.Equal(0, stats.DuplicateKeyCount);
+        Assert.Equal(1.0, stats.AverageProbeLength);
+    }
+
+    [Fact]
+    public void Evaluate_ShouldMatch_AcrossAnArrayAListAndAnUncountedSequence()
+    {
+        static IEnumerable<int> Uncounted(int[] keys)
+        {
+            foreach (int key in keys)
+                yield return key;
+        }
+
+        int[] keys = Range(200, start: 1);
+        ProbeStatistics fromArray = ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(keys);
+
+        Assert.Equal(fromArray, ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(new List<int>(keys)));
+        Assert.Equal(fromArray, ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(Uncounted(keys)));
+        Assert.Equal(fromArray, ProbeStatisticsEvaluator.Evaluate<int, Int32WangNaiveHasher>(
+            new StaleCountCollection<int>(keys.Length, keys)));
+    }
 }
