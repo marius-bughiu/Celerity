@@ -2,10 +2,10 @@ name: Benchmarks (extended)
 
 # The heavy, exploratory benchmark suite (multi-distribution sweeps, million-item
 # scale tests, concurrency fan-out, allocation profiling, cache-locality, and mixed
-# workloads). It is deliberately kept OUT of the per-PR regression gate in
-# benchmarks.yml because it is slow and noisy. Instead it runs weekly (and on
-# demand) and publishes to its own dev/bench-extended dashboard on gh-pages, so its
-# trend never mixes with the per-commit core time series.
+# workloads). It is deliberately kept OUT of the core suite that benchmarks.yml
+# measures on every merge to main, because it is slow and noisy. Instead it runs
+# weekly (and on demand) and publishes to its own dev/bench-extended dashboard on
+# gh-pages, so its trend never mixes with the per-commit core time series.
 
 on:
   schedule:
@@ -20,7 +20,16 @@ jobs:
     # canonical repo actually runs and pushes to its gh-pages.
     if: github.repository == 'marius-bughiu/Celerity'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Sized from measured runs, and the host moves the length as much as the suite does.
+    # BenchmarkDotNet iterates each case until it is stable, so a noisy runner drives cases to
+    # the iteration cap: the same commit (674011a8) ran 114 min on 2026-11-09 and was cut off at
+    # the old 120-min cap on 2026-11-02, LargeDatasetBenchmark alone taking 7 min on one run and
+    # 17.5 on the other. Seven of the twelve weekly runs from 2026-08-24 to 2026-11-09 were cut
+    # off like that. The five that finished took 110-117 min, and the seven extrapolate to
+    # 122-142. 240 clears the slowest by ~100 min and stays 2h under GitHub's 6h job ceiling.
+    # Re-measure if runs approach ~200 min (the job summary lists per-class minutes); past that,
+    # shard the suite as benchmarks.yml shards the core one rather than raising this again.
+    timeout-minutes: 240
 
     permissions:
       contents: write
@@ -69,6 +78,11 @@ jobs:
           retention-days: 90
 
       - name: Publish to gh-pages (dev/bench-extended)
+        # Gated on the ref rather than the event, as benchmarks.yml gates its publish: the weekly
+        # run and a manual run against `main` publish, while a manual run against any other ref
+        # measures and uploads its artifact without adding a point for a commit `main` may never
+        # contain.
+        if: github.ref == 'refs/heads/main'
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: Celerity Extended Benchmarks
@@ -83,3 +97,29 @@ jobs:
           fail-on-alert: false
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: dev/bench-extended
+
+      # One row per class from BenchmarkDotNet's own per-class "Run time" line, so sizing the
+      # timeout above reads off the job summary instead of a ~40k-line log. Last and non-fatal: a
+      # diagnostics step must never cost the measurement. It runs on a timed-out run too, where
+      # the classes that finished and the one it stopped in are the useful part.
+      - name: Summarize per-class wall time
+        if: always()
+        continue-on-error: true
+        working-directory: src/Celerity.Benchmarks
+        run: |
+          set -euo pipefail
+          log=$(ls BenchmarkDotNet.Artifacts/*.log | head -n 1)
+          {
+            echo "### Extended suite — per-class wall time"
+            echo
+            echo "| Class | Cases | Minutes |"
+            echo "|---|--:|--:|"
+            awk '
+              /^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] }
+              /^Run time: / { secs = $4; sub(/^\(/, "", secs); printf "%s\t%d\t%.1f\n", cls, $NF, secs / 60 }
+            ' "$log" | sort -t$'\t' -k3,3nr | awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }'
+            echo
+            # A run cut off by the timeout never prints its global total; name where it stopped.
+            grep -m1 '^Global total time' "$log" \
+              || awk '/^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] } END { print "No global total: the run stopped during " cls "." }' "$log"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
