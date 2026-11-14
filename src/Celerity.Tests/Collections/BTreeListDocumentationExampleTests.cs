@@ -3,8 +3,8 @@ using Celerity.Collections;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Runs the <see cref="BTreeList{T}"/> usage example published in <c>docs/api/collections.md</c> and the
-/// README, and asserts what its comments claim.
+/// Runs the <see cref="BTreeList{T}"/> usage example published in <c>docs/api/collections.md</c> and
+/// <c>docs/collections.md</c>, and asserts what its comments claim.
 ///
 /// <para>
 /// A published example is documentation a reader will copy, so a wrong comment in it is a defect. The claim

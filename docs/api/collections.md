@@ -6073,7 +6073,7 @@ public SegmentedList(IEnumerable<T> collection)
 | `int SegmentCount` | `O(1)` | Segments holding elements; `0` for an empty list. Segments retained by `Clear` are not counted. |
 | `T this[int index] { get; set; }` | `O(1)` | Get and set by position: two dependent loads. Both throw `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. A set replaces the element in place and does **not** invalidate an active enumerator (see below). |
 | `void Add(T item)` | `O(1)` | Appends at the end. Allocates one segment when the last is full, and copies nothing except while the first segment is still growing. |
-| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` is enumerated once into capacity reserved for its `Count`, with its elements published only when that enumeration finishes, so no temporary copy of it is made. Adding a list to itself, or a collection that wraps it, appends one copy of its current elements, as on `List<T>`. A counted source that would pass the element ceiling throws `OverflowException` before anything is reserved or appended. Throws `ArgumentNullException` for `null`. |
+| `void AddRange(IEnumerable<T> collection)` | `O(m)` | Appends in enumeration order. A `T[]`, an `ArraySegment<T>`, a `List<T>` or another `SegmentedList<T>` is copied a block at a time after one capacity check, and any other `ICollection<T>` is enumerated once into capacity reserved for its `Count`, with its elements published only when that enumeration finishes, so no temporary copy of it is made. Exactly what that enumeration yields is appended, more or fewer than its `Count`, so a collection another thread changed after it was counted loses none of its elements. Adding a list to itself, or a collection that wraps it, appends one copy of its current elements, as on `List<T>`. A counted source that would pass the element ceiling throws `OverflowException` and appends nothing; when its `Count` alone passes the ceiling, nothing is reserved either. Throws `ArgumentNullException` for `null`. |
 | `void Insert(int index, T item)` | `O(n - index)` | Inserts at `index`, shifting every later element up a position across segment boundaries. `index == Count` appends. Throws `ArgumentOutOfRangeException` when `index` is negative or greater than `Count`. |
 | `void RemoveAt(int index)` | `O(n - index)` | Removes the element at `index`. Removing the last element is `O(1)`. Throws `ArgumentOutOfRangeException` when `index` is negative or not less than `Count`. |
 | `bool Remove(T item)` | `O(n)` | Removes the first match under `EqualityComparer<T>.Default`. |
@@ -7727,8 +7727,8 @@ routes["/api/v1/users"] = "users-v1";
 routes["/api/v1/orders"] = "orders-v1";
 
 // Autocomplete: every route under a prefix, already in sorted order.
-foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
-    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
+foreach (var (path, target) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {target}");         // /api/v1/orders, then /api/v1/users
 
 // Longest-prefix routing: the most specific stored route that prefixes the request.
 if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
@@ -7745,7 +7745,7 @@ public sealed class SuccinctTrie<TValue> : IReadOnlyDictionary<string, TValue?>
 
 ### The gap it fills
 
-[`RankSelectBitVector`](#rankselectbitvector) shipped as the primitive that "succinct and compressed **tries**, and **wavelet trees**" compose on — a phrase that appears in its own source, in the section above, and in the README's decision table. [`WaveletTree`](#wavelettree) closed the second half. This closes the first: it is that composition, and it is the same **build-once half of a shipped axis** that `SparseTable` is to `SegmentTree` and `FrozenCelerityDictionary` is to `CelerityDictionary`.
+[`RankSelectBitVector`](#rankselectbitvector) shipped as the primitive that "succinct and compressed **tries**, and **wavelet trees**" compose on — a phrase that appears in its own source, in the section above, and in the [decision table](../choosing-a-collection.md). [`WaveletTree`](#wavelettree) closed the second half. This closes the first: it is that composition, and it is the same **build-once half of a shipped axis** that `SparseTable` is to `SegmentTree` and `FrozenCelerityDictionary` is to `CelerityDictionary`.
 
 The gap is a footprint one. `Trie<TValue>` is the right shape for a prefix tree that changes, and the wrong one for the very common case where it does not: every node is a heap object carrying an object header, a `char[]` of edge labels, a `Node[]` of child references, a child count, a value slot and a flag. A routing table, tokenizer dictionary, autocomplete corpus or static allow-list pays that per node forever and gets nothing back for it. The BCL has no answer either — `Dictionary<string, TValue>` has no prefix operation at all, and .NET ships no succinct structures.
 
@@ -7863,8 +7863,8 @@ var routes = new SuccinctTrie<string>(
 ]);
 
 // Autocomplete: every route under a prefix, already in sorted order.
-foreach (var (path, handler) in routes.GetByPrefix("/api/v1/"))
-    Console.WriteLine($"{path} -> {handler}");        // /api/v1/orders, then /api/v1/users
+foreach (var (path, target) in routes.GetByPrefix("/api/v1/"))
+    Console.WriteLine($"{path} -> {target}");         // /api/v1/orders, then /api/v1/users
 
 // Longest-prefix routing: the most specific stored route that prefixes the request.
 if (routes.TryGetLongestPrefix("/api/v1/users/42", out string? route, out string? handler))
@@ -7923,7 +7923,7 @@ var routes = new FrozenCelerityDictionary<int, StringXxHash3Hasher>(
 ]);
 
 ReadOnlySpan<char> line = "GET /api/v1/users HTTP/1.1".AsSpan();
-ReadOnlySpan<char> path = line.Slice(4, 14);
+ReadOnlySpan<char> path = line.Slice(4, 13);
 
 if (routes.TryGetValue(path, out int handler))   // no string allocated
     Dispatch(handler);
@@ -8481,7 +8481,7 @@ Do not reach for it when the points **change constantly** — it is build-once, 
 
 ### The documented BCL-beating workload
 
-Against the array-and-a-loop the BCL leaves you with, at 100,000 uniformly scattered points and 1,000 queries, the nearest-neighbour query is **348x** faster and the radius query **53x** — measured on CI's same-runner A/B; the full table, and the important caveat beside it, are in the README's [spatial index section](../../README.md#spatial-index).
+Against the array-and-a-loop the BCL leaves you with, at 100,000 uniformly scattered points and 1,000 queries, the nearest-neighbour query is **348x** faster and the radius query **53x** — measured on CI's same-runner A/B; the full table, and the important caveat beside it, are on the [benchmarks page](../benchmarks.md#spatial-index).
 
 The caveat is that a **hand-rolled** partial index does much better than the naive scan: order the points by x, binary-search to the query's x and work outward, abandoning each direction once the horizontal gap alone exceeds the best distance so far. That is a real optimization and effectively a one-dimensional spatial index, and against it the tree's margin is **2.5x** on the nearest query and **3.5x** on the radius one rather than two orders of magnitude — falling to 1.4x and to nothing at all at 1,000 points. Both baselines are measured, and the second is the one to judge the type by.
 
@@ -8652,7 +8652,7 @@ Reach for [`KdTree<TValue>`](#kdtreetvalue) instead when the point set is **stat
 
 The unit is a **frame**: move 10% of the population, then run one radius query per moved entity. `SpatialGridBenchmark` measures that against the `Dictionary<(int, int), List<int>>` hand-roll above and against rebuilding a `KdTree` each frame, at 1,000 and 100,000 entities over a 10,000-unit square with a 30-unit cell and a 25-unit query radius — the cell sized just over the radius, which is the tuning rule the type documents. At 100,000 entities the frame measures **5.0x** the hand-roll and **13.3x** the per-frame `KdTree` rebuild, on CI's same-runner A/B. Note how little room that leaves: the issue's hard bar was ≥5x, and 9.83 ms / 1.96 ms is 5.02x — cleared by 0.4%, against a combined run spread of about 1.5%. Met, but marginally.
 
-**The margin is a property of how full the cells are, not of the type**, and the README carries that next to the headline rather than underneath it. Both structures walk the same cells and run the same distance test on the same candidates; everything gained here is *per cell*, so the ratio is per-cell overhead against per-candidate work and it collapses as the cells fill. The figure above is the broadphase shape — about one point per cell, about two matches per query. At ten points per cell and twenty-five matches, with the cell size still tuned to the radius, the gain is gone: **0.91–0.99x**. On clustered points it is **0.48–0.67x** and the hand-roll wins. `SpatialGridShapeBenchmark` in the extended suite carries all three, plus a per-frame `KdTree` rebuild for each; those are ranges over its weekly CI runs. Full tables are in the README's [spatial index section](../../README.md#spatial-index).
+**The margin is a property of how full the cells are, not of the type**, and the [benchmarks page](../benchmarks.md#moving-points) carries that next to the headline rather than underneath it. Both structures walk the same cells and run the same distance test on the same candidates; everything gained here is *per cell*, so the ratio is per-cell overhead against per-candidate work and it collapses as the cells fill. The figure above is the broadphase shape — about one point per cell, about two matches per query. At ten points per cell and twenty-five matches, with the cell size still tuned to the radius, the gain is gone: **0.91–0.99x**. On clustered points it is **0.48–0.67x** and the hand-roll wins. `SpatialGridShapeBenchmark` in the extended suite carries all three, plus a per-frame `KdTree` rebuild for each; those are ranges over its weekly CI runs. Full tables are on the [benchmarks page](../benchmarks.md#moving-points).
 
 ### Usage example
 
@@ -8840,7 +8840,7 @@ Building the index costs **~144x** what merely copying the box array costs (436 
 
 **The small-`n` crossover is real, and on the point query it goes negative.** At 1,000 boxes the margin against that hand-roll falls to **1.48x** on the overlap query, and the point query **loses outright at 0.91x** — the scan is ahead. The index has not paid for its indirection at that size, and a slab scan over a thousand boxes is a handful of cache lines. And the ratios track **selectivity**: a query ten times wider narrows the gap considerably, because a query answering with much of the tree prunes little.
 
-Figures are measured in `RTreeBenchmark`; the README's [extent index section](../../README.md#extent-index) carries the same table.
+Figures are measured in `RTreeBenchmark`; the [benchmarks page](../benchmarks.md#extent-index) carries the same table.
 
 ### Usage example
 

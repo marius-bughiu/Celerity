@@ -38,7 +38,7 @@ internal readonly struct FirstNonZeroMonoid : IIdempotentMonoid<int>
 
 /// <summary>
 /// The greatest common divisor, transcribed verbatim from the "write your own fold" example in
-/// <see cref="IMonoid{T}"/>'s docs, the API reference and the README. A doc sample a reader is invited to
+/// <see cref="IMonoid{T}"/>'s docs, the API reference and the collections guide. A doc sample a reader is invited to
 /// copy has to actually work, so it is pinned here rather than only inspected. It is written over
 /// <see cref="uint"/> for the reason the docs state: a signed gcd has to normalize its sign, and
 /// <c>Math.Abs(int.MinValue)</c> throws.

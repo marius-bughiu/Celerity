@@ -9,7 +9,7 @@ Status legend: `planned`, `in-progress`, `done`, `deferred`.
 1. **Correctness first.** A "fast" collection that returns wrong answers is worthless. Every optimization must be covered by tests.
 2. **Zero-cost abstractions.** Hashers are structs, generic constraints are `struct, IHashProvider<T>`, so the JIT can devirtualize and inline. This is a hard rule.
 3. **Parity with BCL where it makes sense.** `TryGetValue`, `Clear`, enumeration, `IReadOnlyDictionary<TKey, TValue>` — users should be able to drop Celerity in wherever they use `Dictionary<,>`.
-4. **Benchmark every perf claim.** The README's numbers are the contract. If a change regresses them, it ships only with a written justification.
+4. **Benchmark every perf claim.** The documented numbers are the contract. If a change regresses them, it ships only with a written justification.
 5. **Document the tradeoffs.** Celerity is not "always faster." Each collection should document the workloads where it wins and where it loses.
 
 ## Vision

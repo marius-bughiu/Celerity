@@ -21,8 +21,8 @@ namespace Celerity.Collections;
 /// mask, and the whole key array fits in a cache line or two, so the branch
 /// predictor and prefetcher do the rest. The trade-off is that lookups are
 /// <c>O(n)</c> rather than <c>O(1)</c>, so the type degrades for large key sets —
-/// keep it to the small-<c>n</c> workloads it is built for (see the choosing-a-collection
-/// guidance in the README). It does <em>not</em> auto-promote to a hash table; it
+/// keep it to the small-<c>n</c> workloads it is built for (see
+/// <c>docs/choosing-a-collection.md</c>). It does <em>not</em> auto-promote to a hash table; it
 /// simply grows its arrays and keeps scanning.
 /// </para>
 /// <para>

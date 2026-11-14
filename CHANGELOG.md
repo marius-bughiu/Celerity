@@ -7,6 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Changed
 
 - The benchmarks now measure against the .NET 9 BCL types their hand-rolled baselines stood in for: `OrderedDictionary<TKey, TValue>` for `LinkedDictionary` and `LinkedSet` (removal keeps its `O(1)` hand-rolled baseline), and `GetAlternateLookup<ReadOnlySpan<char>>()` on `Dictionary`, `FrozenDictionary` and `HashSet<string>` for the span lookups and `StringInternTable`. The dashboard cards and documented ratios moved with them. ⚠️ Enumerating either linked type is about 5x slower than `OrderedDictionary`; the span probes on `Trie`, `SuccinctTrie` and `FrozenCelerityDictionary` are 3.5–21x slower than the BCL's; and `StringInternTable` is about 2x slower than `HashSet<string>` unless given `StringCityHash64Hasher`, which makes it 1.05–1.2x faster.
+- The README is now a short landing page: a quick start, the inventory of types by family, and links. Its walkthroughs, decision table, hasher guide and benchmark results moved into `docs/`: `getting-started.md`, `collections.md`, `choosing-a-collection.md`, `choosing-a-hasher.md` and `benchmarks.md`. The `Celerity.Collections` package now has a readme of its own, so its links work on nuget.org. Closes #613.
 - `SpatialGrid`'s docs now quote CI's weekly measurements of its cell-density sweep instead of a development machine's. At ten points per cell it does not beat the hand-rolled `Dictionary` grid (0.91–0.99x; the docs said 1.12x), and on clustered points a per-frame `KdTree` rebuild takes 12–24% less time than it rather than being level, though the hand-roll beats both.
 
 ### Removed
@@ -16,6 +17,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Fixed
 
 - Building from a collection that changes while it is being read, such as a `ConcurrentDictionary` another thread writes to, now keeps exactly what it yields. A source that shrank left `default` entries it never held (a `(0, null)` key in `FrozenSortedMap`, a `null` added to a `BTreeSet` by `SymmetricExceptWith`), and one that grew threw or lost elements. Fixed in the constructors of `FrozenSortedMap`, `FrozenSortedSet`, `IntervalTree`, `RTree`, `KdTree`, `CompressedGraph`, `SegmentTree`, `FenwickTree`, `SparseTable`, `BitPackedArray`, `Deque`, `GapBuffer` and `MinMaxHeap`, and in the set operations of `FrozenSortedSet`, `BTreeSet` and `RankedSet`. Sources other than an array or a `List<T>` itself (not a subclass) are now enumerated, which is slower than their `CopyTo`. Closes #619.
+- `SegmentedList<T>.AddRange`, `KWayMerge.Merge` and `ProbeStatisticsEvaluator.Evaluate` now keep exactly what a counted source yields when another thread changes it after it is counted (a `ConcurrentDictionary`, say). `AddRange` used to stop at the counted number, which could drop an element that was there all along; `Merge` blamed the caller for `null` sequences it never passed or threw from `CopyTo`; `Evaluate` simulated `default` keys the caller never supplied. Closes #621.
 
 ## [3.6.0] - 2026-11-13
 
