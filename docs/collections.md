@@ -957,8 +957,8 @@ owners.Set(0, 1024, "node-a");
 owners.Set(256, 512, "node-b");        // splits node-a's range in two
 owners.Set(512, 768, "node-b");        // merges with the adjacent node-b range
 
-owners[300];                           // "node-b"
-owners.Count;                          // 3
+Console.WriteLine(owners[300]);        // node-b
+Console.WriteLine(owners.Count);       // 3
 owners.TryGetRange(300, out var run);  // [256, 768) = node-b
 
 owners.Remove(700, 800);               // trims the straddled ranges rather than dropping them
