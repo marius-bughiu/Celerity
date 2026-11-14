@@ -8568,7 +8568,7 @@ A uniform grid is the right structure for **evenly spread** moving objects and t
 
 The first is worse than "it degrades to a scan", and it is measured rather than rounded to a caveat: on clustered data this type is **1.5–2.1x slower than the hand-roll it replaces**. Inside a cell the two layouts genuinely differ — the hand-roll walks a contiguous `List<T>` and issues independent loads per candidate, which the processor overlaps, while this type walks an intrusive linked list, so each step is a load that must complete before the next address is known. A cell holding two entries never shows that; a cell holding five hundred is a five-hundred-long chain of dependent cache misses.
 
-**And there is no way out elsewhere in this library**, which was worth measuring rather than assuming. An earlier draft of this page sent clustered points to [`KdTree<TValue>`](#kdtreetvalue), reasoning that pruning adapts to density where a fixed cell size cannot. The measurement does not support it: on clustered *moving* points a per-frame `KdTree` rebuild is only **12–24% faster than this type** and still takes 1.3–1.6x the hand-roll's time — and `KdTreeShapeBenchmark` separately finds the tree losing to *its* own hand-roll under clustering. So the honest advice for heavily clustered points that move is the unflattering one: the bucketed `Dictionary` of contiguous lists wins, and neither type here beats it.
+**And there is no way out elsewhere in this library**, which was worth measuring rather than assuming. An earlier draft of this page sent clustered points to [`KdTree<TValue>`](#kdtreetvalue), reasoning that pruning adapts to density where a fixed cell size cannot. The measurement does not support it: on clustered *moving* points a per-frame `KdTree` rebuild takes **12–24% less time than this type**, but still 1.3–1.6x the hand-roll's. So the honest advice for heavily clustered points that move is the unflattering one: the bucketed `Dictionary` of contiguous lists wins, and neither type here beats it.
 
 `cellSize` is the knob that trades these against each other, and it is a constructor parameter for that reason: roughly one that puts a handful of points in the average cell, and no smaller than the typical query radius.
 
@@ -8646,7 +8646,7 @@ There is no k-nearest query either. Bounding a ring search by the *k*-th best ra
 
 Reach for `SpatialGrid<TValue>` when the points **move** and you query them as often as you move them, and when they are spread reasonably evenly over a world whose extent you can declare.
 
-Reach for [`KdTree<TValue>`](#kdtreetvalue) instead when the point set is **static** enough to build once, when you need **k-nearest** rather than a radius, or when there is no natural world rectangle to declare. Do **not** reach for it merely because your points are clustered and moving — measured, a per-frame rebuild is only 12–24% faster than this type there, and both lose to the hand-roll.
+Reach for [`KdTree<TValue>`](#kdtreetvalue) instead when the point set is **static** enough to build once, when you need **k-nearest** rather than a radius, or when there is no natural world rectangle to declare. Clustered moving points are no reason to reach for it on their own: a per-frame rebuild takes 12–24% less time than this type there, but both lose to the hand-roll, which is the one to use.
 
 ### The documented BCL-beating workload
 

@@ -73,11 +73,9 @@ namespace Celerity.Collections;
 /// <b>And there is no way out elsewhere in this library, which was worth measuring rather than assuming.</b>
 /// An earlier draft of these docs sent clustered points to <see cref="KdTree{TValue}"/>, reasoning that its
 /// pruning adapts to density where a fixed cell size cannot. The measurement does not support it: on clustered
-/// moving points a per-frame <see cref="KdTree{TValue}"/> rebuild is only 12–24% faster than this type and
-/// still takes 1.3–1.6x the hand-roll's time, and <c>KdTreeShapeBenchmark</c> separately finds the tree losing
-/// to <i>its</i> own hand-roll under clustering. So the honest advice for heavily clustered points that move is
-/// the unflattering one: the bucketed <c>Dictionary</c> of contiguous lists wins, and neither type here beats
-/// it.
+/// moving points a per-frame <see cref="KdTree{TValue}"/> rebuild takes 12–24% less time than this type, but
+/// still 1.3–1.6x the hand-roll's. So the honest advice for heavily clustered points that move is the
+/// unflattering one: the bucketed <c>Dictionary</c> of contiguous lists wins, and neither type here beats it.
 /// </para>
 /// <para>
 /// 2. <b>A query radius much larger than the cell.</b> The number of cells a query touches grows with the
@@ -94,8 +92,8 @@ namespace Celerity.Collections;
 /// cell and twenty-five matches, with the cell size still tuned to the radius. Rebuilding a
 /// <see cref="KdTree{TValue}"/> every frame instead measures <b>13.3x</b>. The frame figure is from CI's
 /// same-runner A/B; the shape sweep rides the extended suite, which CI runs weekly, and is quoted as the range
-/// over those runs. Both are in <c>SpatialGridBenchmark</c> and
-/// <c>SpatialGridShapeBenchmark</c>, and tabulated in the README.
+/// over those runs. Both are in <c>SpatialGridBenchmark</c> and <c>SpatialGridShapeBenchmark</c>, and
+/// tabulated in the README.
 /// </para>
 /// <para>
 /// <b>What the bound really is.</b> <see cref="Move"/>, <see cref="Remove"/> and <see cref="TryGetPoint"/>
