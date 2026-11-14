@@ -19,6 +19,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - `SegmentedList<T>.AddRange`, `KWayMerge.Merge` and `ProbeStatisticsEvaluator.Evaluate` now keep exactly what a counted source yields when another thread changes it after it is counted (a `ConcurrentDictionary`, say). `AddRange` used to stop at the counted number, which could drop an element that was there all along; `Merge` blamed the caller for `null` sequences it never passed or threw from `CopyTo`; `Evaluate` simulated `default` keys the caller never supplied. Closes #621.
 - The `Celerity.Primitives` package description on nuget.org now names the alignment helpers, `SpanBits`, `BitWriter` / `BitReader` and `MortonCurve` / `HilbertCurve`, which the package shipped without mentioning.
 - The collections guide no longer says every mutable dictionary implements `IDictionary<,>`, or that all of them have `Keys` / `Values` views and a key-value-pair constructor; it names `SlotMap`, `CelerityMultiMap` and `CelerityMultiSet` as the exceptions.
+- The weekly extended benchmark run now gets 225 minutes instead of 120. Seven of the twelve weekly runs from 24 August to 9 November hit the old limit, so [the extended dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/) gained only five points in those weeks. A manual run against a branch other than `main` now measures without publishing. No change to the shipped packages.
 
 ## [3.6.0] - 2026-11-13
 
