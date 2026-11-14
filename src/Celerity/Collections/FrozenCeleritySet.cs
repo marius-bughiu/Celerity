@@ -11,7 +11,10 @@ namespace Celerity.Collections;
 /// <see cref="StringFnV1AHasher"/> by default. Supply a different string hasher via
 /// the <see cref="FrozenCeleritySet{THasher}"/> generic overload when your elements
 /// favour a different hash (e.g. <see cref="StringFnV1AFullHasher"/> for non-ASCII
-/// elements, or one of the strong hashers for adversarial elements).
+/// elements, one of the strong hashers for adversarial elements, or a block hasher
+/// such as <see cref="StringXxHash32Hasher"/> for faster membership tests on longer
+/// elements: every test hashes the whole element, and this default folds one character
+/// per step).
 /// </summary>
 public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
 {
@@ -49,25 +52,23 @@ public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
 /// <remarks>
 /// <para>
 /// The set is immutable: all elements are supplied at construction and there are no
-/// mutating members. In exchange the constructor searches a small parameter space
-/// (table size × a mixing seed) for a <em>perfect</em> — that is, collision-free —
-/// placement of the elements. When one is found (<see cref="IsPerfectlyHashed"/> is
-/// then <c>true</c>) a membership test is a single hash, a single array index, and a
-/// single equality check — no probing and no probe chains, the same shape as
-/// <see cref="System.Collections.Frozen.FrozenSet{T}"/>.
+/// mutating members. The constructor first searches a small parameter space (table
+/// size × a mixing seed) for a <em>perfect</em> — that is, collision-free — placement
+/// of the elements. When one is found (<see cref="IsPerfectlyHashed"/> is then
+/// <c>true</c>) a membership test is a single hash, a single array index, and a single
+/// equality check, with no probing.
 /// </para>
 /// <para>
-/// A perfect placement is impossible when two distinct elements collide on the chosen
-/// hasher's raw 32-bit code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
-/// <see cref="StringFnV1AHasher"/>, which returns the same code for both), because the
-/// mixing seed is a pure function of that code and so cannot separate them. In that
-/// case the build falls back to an open-addressed linear-probing table
-/// (<see cref="IsPerfectlyHashed"/> is <c>false</c>); membership tests remain correct —
-/// the equality check disambiguates the colliding elements — they simply cost a short
-/// probe instead of a single index. Either way the result is always correct; supply a
-/// full-width or strong hasher (<see cref="StringFnV1AFullHasher"/>,
-/// <see cref="StringMurmur3Hasher"/>, …) if you want the perfect fast path for elements
-/// the default collides.
+/// As for <see cref="FrozenCelerityDictionary{TValue, THasher}"/>, which shares this
+/// layout, a perfect placement is realistic only for small sets: it is near-certain up to
+/// about 100 elements, for most counts up to 333 a matter of odds that depend on where
+/// the count falls between powers of two, and nil past that, where the build skips the
+/// search. It is also impossible when two distinct elements collide on the chosen hasher's
+/// raw 32-bit code (for example <c>"A"</c> and <c>"Ł"</c> under the low-byte
+/// <see cref="StringFnV1AHasher"/>). Otherwise the build uses an open-addressed
+/// linear-probing table at most half full (<see cref="IsPerfectlyHashed"/> is
+/// <c>false</c>), where a hit inspects at most about 1.5 slots on average. Membership
+/// tests are correct either way: the equality check tells colliding elements apart.
 /// </para>
 /// <para>
 /// Unlike <see cref="FrozenCelerityDictionary{TValue, THasher}"/>, which rejects
@@ -86,16 +87,13 @@ public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
 public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     where THasher : struct, IHashProvider<string>
 {
-    // Number of distinct mixing seeds tried per candidate table size before giving
-    // up on that size and trying the next-larger one. The search is one-time build
-    // work, so a generous budget is cheap insurance for the single-probe fast path.
-    private const int SeedBudget = 512;
-
-    // Largest power-of-two multiple of NextPowerOfTwo(n) the perfect-hash search will
-    // grow the table to before falling back. 8 means up to 8× the minimum table size.
-    private const int MaxSizeMultiplier = 8;
-
     private readonly string?[] _items;
+
+    // The slots that hold an element, ascending. Enumeration walks these rather than every
+    // slot: past a perfect placement the table is at most half full, so a scan of all of it
+    // would visit one to three empty slots per element, each behind a branch that is close
+    // to a coin flip.
+    private readonly int[] _occupied;
     private readonly int _mask;
     private readonly int _seed;
     private readonly bool _isPerfect;
@@ -153,7 +151,8 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         // fallback additionally needs at least one empty slot to terminate a miss. Both
         // require the non-null element count to stay strictly below the 2^30 power-of-two
         // ceiling (NextPowerOfTwo caps there), so reject an impossible count up front with
-        // a clear error rather than overflow the build search or hang the fallback probe.
+        // a clear error rather than build a fallback table with no empty slot, whose miss
+        // probe would never end.
         ThrowIfElementCountExceedsCeiling(n, nameof(source));
 
         // Precompute the raw hash code of every element once; the perfect-hash search
@@ -162,16 +161,34 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         for (int i = 0; i < n; i++)
             baseHashes[i] = _hasher.Hash(itemList[i]);
 
-        if (TryBuildPerfect(itemList, baseHashes, out _items, out _mask, out _seed))
+        _isPerfect = FrozenHashLayout.TryFindPerfect(baseHashes, out int size, out _seed);
+        if (!_isPerfect)
+            size = FrozenHashLayout.FallbackSize(n);
+
+        // One placement loop serves both layouts: under a perfect (size, seed) every element's
+        // home slot is vacant, so the probe below never advances; otherwise it is the
+        // linear-probing insert, with seed 0 and a table at most half full.
+        int mask = size - 1;
+        var items = new string?[size];
+        for (int i = 0; i < n; i++)
         {
-            _isPerfect = true;
+            int slot = (int)(FrozenHashLayout.Mix(unchecked((uint)baseHashes[i]), _seed) & (uint)mask);
+            while (items[slot] is not null)
+                slot = (slot + 1) & mask;
+
+            items[slot] = itemList[i];
         }
-        else
+
+        var occupied = new int[n];
+        for (int slot = 0, next = 0; next < n; slot++)
         {
-            BuildFallback(itemList, baseHashes, out _items, out _mask);
-            _seed = 0;
-            _isPerfect = false;
+            if (items[slot] is not null)
+                occupied[next++] = slot;
         }
+
+        _items = items;
+        _occupied = occupied;
+        _mask = mask;
     }
 
     /// <summary>
@@ -183,9 +200,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     /// <summary>
     /// Gets a value indicating whether the build found a collision-free (perfect)
     /// placement, so membership tests take the single-probe fast path. <c>false</c>
-    /// means the set fell back to linear probing because two distinct elements share
-    /// the chosen hasher's raw hash code; lookups are still correct, just not
-    /// single-probe.
+    /// means the set uses a linear-probing table at most half full instead: always the
+    /// case past 333 non-<c>null</c> elements, often from about 110 elements up (the odds
+    /// depend on where the count falls between powers of two), and whenever two distinct
+    /// elements share the chosen hasher's raw hash code. Membership tests are correct either
+    /// way.
     /// </summary>
     public bool IsPerfectlyHashed => _isPerfect;
 
@@ -363,120 +382,6 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
                 paramName);
     }
 
-    // ── Perfect-hash construction ─────────────────────────────────────────────
-
-    // Integer finalizer used to map an element's raw hash code (combined with the
-    // search seed) to a table slot. It must be the SAME mapping at build and lookup
-    // time. Based on the "lowbias32" mix; the seed is folded in so different seeds
-    // produce different — but each individually well-spread — placements.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Mix(uint hash, int seed)
-    {
-        uint h = hash + unchecked((uint)seed * 0x9E3779B9u);
-        h ^= h >> 16;
-        h *= 0x7FEB352Du;
-        h ^= h >> 15;
-        h *= 0x846CA68Bu;
-        h ^= h >> 16;
-        return h;
-    }
-
-    private bool TryBuildPerfect(
-        List<string> itemList,
-        int[] baseHashes,
-        out string?[] items,
-        out int mask,
-        out int seed)
-    {
-        int n = itemList.Count;
-        int minSize = FastUtils.NextPowerOfTwo(n == 0 ? 1 : n);
-
-        // Probe candidate table sizes minSize, 2·minSize, … up to MaxSizeMultiplier·minSize.
-        // Advance via the overflow-safe TryDoubleCapacity rather than a bare `size <<= 1`: once
-        // a candidate reaches the 2^30 ceiling the shift would wrap negative and the next
-        // `new string?[size]` would throw OverflowException instead of cleanly falling back.
-        for (int size = minSize, mult = 1; mult <= MaxSizeMultiplier; mult <<= 1)
-        {
-            int m = size - 1;
-            for (int s = 0; s <= SeedBudget; s++)
-            {
-                if (TryPlace(itemList, baseHashes, size, m, s, out items))
-                {
-                    mask = m;
-                    seed = s;
-                    return true;
-                }
-            }
-
-            if (!FastUtils.TryDoubleCapacity(size, out size))
-                break; // reached the 2^30 table ceiling; fall back to linear probing
-        }
-
-        items = null!;
-        mask = 0;
-        seed = 0;
-        return false;
-    }
-
-    private static bool TryPlace(
-        List<string> itemList,
-        int[] baseHashes,
-        int size,
-        int mask,
-        int seed,
-        out string?[] items)
-    {
-        var table = new string?[size];
-
-        int n = itemList.Count;
-        for (int i = 0; i < n; i++)
-        {
-            int slot = (int)(Mix(unchecked((uint)baseHashes[i]), seed) & (uint)mask);
-            if (table[slot] is not null)
-            {
-                // Collision — this (size, seed) is not perfect.
-                items = null!;
-                return false;
-            }
-
-            table[slot] = itemList[i];
-        }
-
-        items = table;
-        return true;
-    }
-
-    private static void BuildFallback(
-        List<string> itemList,
-        int[] baseHashes,
-        out string?[] items,
-        out int mask)
-    {
-        int n = itemList.Count;
-
-        // Size with headroom so at least one slot stays empty — linear probing needs
-        // an empty slot to terminate a miss, and to keep chains short. The constructor
-        // rejects n >= 2^30, so n + 1 <= 2^30 and NextPowerOfTwo(n + 1) is a power of two
-        // strictly greater than n (it never has to cap below n + 1), guaranteeing a vacant
-        // slot.
-        int size = FastUtils.NextPowerOfTwo(n + 1);
-
-        int m = size - 1;
-        var table = new string?[size];
-
-        for (int i = 0; i < n; i++)
-        {
-            int slot = (int)(Mix(unchecked((uint)baseHashes[i]), 0) & (uint)m);
-            while (table[slot] is not null)
-                slot = (slot + 1) & m;
-
-            table[slot] = itemList[i];
-        }
-
-        items = table;
-        mask = m;
-    }
-
     // Returns the slot holding <paramref name="item"/>, or -1 if absent. In perfect
     // mode this is a single index + equality check; in fallback mode it linear-probes
     // until it finds the element or hits an empty slot. The caller guarantees
@@ -500,7 +405,7 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         string?[] items = _items;
         ref string? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
         int mask = _mask;
-        int slot = (int)(Mix(unchecked((uint)hasher.Hash(item)), _seed) & (uint)mask);
+        int slot = (int)(FrozenHashLayout.Mix(unchecked((uint)hasher.Hash(item)), _seed) & (uint)mask);
 
         if (_isPerfect)
         {
@@ -526,7 +431,7 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         ref string? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
         int mask = _mask;
         var comparer = EqualityComparer<string>.Default;
-        int slot = (int)(Mix(unchecked((uint)_hasher.Hash(item)), _seed) & (uint)mask);
+        int slot = (int)(FrozenHashLayout.Mix(unchecked((uint)_hasher.Hash(item)), _seed) & (uint)mask);
 
         if (_isPerfect)
         {
@@ -555,6 +460,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
     public struct Enumerator : IEnumerator<string>
     {
         private readonly FrozenCeleritySet<THasher> _set;
+
+        // The set's arrays, read once here rather than through _set on every MoveNext.
+        private readonly int[] _occupied;
+        private readonly string?[] _items;
+
         private int _index;
         private string? _current;
         private State _state;
@@ -569,6 +479,8 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
         internal Enumerator(FrozenCeleritySet<THasher> set)
         {
             _set = set;
+            _occupied = set._occupied;
+            _items = set._items;
             _index = -1;
             _current = default;
             _state = State.BeforeNull;
@@ -603,17 +515,11 @@ public class FrozenCeleritySet<THasher> : IReadOnlySet<string>
 
             if (_state == State.InArray)
             {
-                string?[] items = _set._items;
-                int length = items.Length;
-                ref string? itemsRef = ref MemoryMarshal.GetArrayDataReference(items);
-                while (++_index < length)
+                if (++_index < _occupied.Length)
                 {
-                    string? item = Unsafe.Add(ref itemsRef, (nint)(uint)_index);
-                    if (item is not null)
-                    {
-                        _current = item;
-                        return true;
-                    }
+                    nint slot = (nint)(uint)Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_occupied), (nint)(uint)_index);
+                    _current = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_items), slot);
+                    return true;
                 }
                 _state = State.Done;
             }

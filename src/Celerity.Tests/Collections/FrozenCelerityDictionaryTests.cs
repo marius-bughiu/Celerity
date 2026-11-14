@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Numerics;
+using System.Reflection;
 using Celerity.Collections;
 using Celerity.Hashing;
 
@@ -187,9 +189,9 @@ public class FrozenCelerityDictionaryTests
     }
 
     // Every key hashes to the same raw code, so no (size, seed) the perfect-hash search
-    // tries can ever be collision-free. The search exhausts all candidate sizes —
-    // exercising the #228 overflow-safe TryDoubleCapacity advance through the loop — and
-    // then falls back to linear probing.
+    // tries can ever be collision-free. The search runs every seed at the one candidate size
+    // the birthday bound leaves plausible for 200 keys (2,048 slots), fails at all of them,
+    // and falls back to linear probing.
     private struct ConstantStringHasher : IHashProvider<string>
     {
         public int Hash(string key) => 7;
@@ -199,8 +201,8 @@ public class FrozenCelerityDictionaryTests
     public void AllKeysBaseHashColliding_ExhaustSearchThenFallBackCorrectly()
     {
         // A degenerate constant hasher forces the perfect-hash search to fail at every
-        // candidate size, so the refactored size-doubling loop runs to completion and the
-        // build falls back. The fallback table must still terminate (a missing key's probe
+        // candidate size, so the size-doubling loop runs to completion and the build falls
+        // back. The fallback table must still terminate (a missing key's probe
         // walks to a guaranteed-empty slot) and look up every key exactly.
         var pairs = Enumerable.Range(0, 200)
             .Select(i => new KeyValuePair<string, int>("key-" + i, i))
@@ -242,6 +244,84 @@ public class FrozenCelerityDictionaryTests
 
         for (int i = 1000; i < 2000; i++)
             Assert.False(dict.ContainsKey($"celerity/key/{i}/{i * 7}"));
+    }
+
+    // ── Build layout: the bounded search and the half-full fallback ───────────
+
+    private static KeyValuePair<string, int>[] IdentifierPairs(int count)
+        => Enumerable.Range(0, count)
+            .Select(i => new KeyValuePair<string, int>($"celerity/key/{i}/{i * 7}", i))
+            .ToArray();
+
+    // The length of the slot array the build settled on.
+    private static int TableLength<THasher>(FrozenCelerityDictionary<int, THasher> dict)
+        where THasher : struct, IHashProvider<string>
+        => ((string?[])typeof(FrozenCelerityDictionary<int, THasher>)
+            .GetField("_keys", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(dict)!).Length;
+
+    [Theory]
+    [InlineData(300)]  // the search runs, at 4,096 slots, and fails
+    [InlineData(2000)] // the search is skipped
+    public void Build_DoesNotAllocateATablePerSearchAttempt(int count)
+    {
+        // The perfect-hash search used to allocate a fresh pair of table-sized arrays for each of
+        // its up to 2,052 (size, seed) attempts: about 47 MB to build 300 keys, 190 MB for 2,000,
+        // and 12 GB for 100,000. It now reuses one stamp buffer, and skips the sizes the birthday
+        // bound rules out (all of them at 2,000 keys), so a build allocates about its own table.
+        var pairs = IdentifierPairs(count);
+        _ = new FrozenCelerityDictionary<int>(pairs); // warm every path outside the windows
+
+        long allocated = AllocationProbe.Quietest(() => _ = new FrozenCelerityDictionary<int>(pairs));
+
+        Assert.True(allocated < 1_000_000, $"Building {count} keys allocated {allocated:N0} bytes.");
+    }
+
+    [Theory]
+    [InlineData(334)]  // from here up the build never runs the search
+    [InlineData(1000)]
+    [InlineData(1024)]
+    [InlineData(5000)]
+    public void LargeKeySet_FallsBackToATableAtMostHalfFull(int count)
+    {
+        // Past 333 keys no seed is plausibly collision-free at any candidate size, so the build
+        // takes the linear-probing table. It must keep at least half its slots empty so probe runs
+        // stay short: the old sizing put 1,000 keys in 1,024 slots, about 19 slots per hit.
+        var pairs = IdentifierPairs(count);
+        var dict = new FrozenCelerityDictionary<int>(pairs);
+
+        Assert.False(dict.IsPerfectlyHashed);
+        int length = TableLength(dict);
+        Assert.True(BitOperations.IsPow2(length));
+        Assert.InRange(length, 2 * count, 4 * count - 1);
+        foreach (var p in pairs)
+            Assert.Equal(p.Value, dict[p.Key]);
+        Assert.False(dict.ContainsKey("celerity/key/absent"));
+
+        // Enumeration and ContainsValue walk the occupied slots only; every pair must still come
+        // back exactly once.
+        Assert.Equal(pairs.OrderBy(p => p.Key, StringComparer.Ordinal),
+            dict.OrderBy(p => p.Key, StringComparer.Ordinal));
+        Assert.True(dict.ContainsValue(count - 1));
+        Assert.False(dict.ContainsValue(count));
+    }
+
+    [Fact]
+    public void MidSizeKeySet_SearchGoesOnPastHopelessSizes_ToAPerfectPlacement()
+    {
+        // 150 keys cannot plausibly land collision-free in 256 or 512 slots, so the search skips
+        // those sizes. It must go on to the larger candidates rather than give up at the first
+        // skipped one: for these keys under Murmur3 the first seed that works is at 2,048 slots.
+        var pairs = Enumerable.Range(0, 150)
+            .Select(i => new KeyValuePair<string, int>("key-" + i, i))
+            .ToArray();
+
+        var dict = new FrozenCelerityDictionary<int, StringMurmur3Hasher>(pairs);
+
+        Assert.True(dict.IsPerfectlyHashed);
+        Assert.Equal(2048, TableLength(dict));
+        foreach (var p in pairs)
+            Assert.Equal(p.Value, dict[p.Key]);
     }
 
     // ── ContainsValue ─────────────────────────────────────────────────────────

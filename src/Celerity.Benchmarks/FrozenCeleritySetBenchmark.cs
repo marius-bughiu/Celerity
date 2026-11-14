@@ -32,8 +32,9 @@ public class FrozenCeleritySetBenchmark
 
     // ── Build (construct the frozen structure from the same source elements) ───
     // Baseline is the BCL FrozenSet<>, the read-optimized build-once counterpart —
-    // the fair analogue for a frozen, perfect-hashed set (a mutable HashSet<> does
-    // no build-time hashing optimization, so it is not a like-for-like baseline).
+    // the fair analogue for a frozen set that tunes its layout at build time (a
+    // mutable HashSet<> does no build-time hashing optimization, so it is not a
+    // like-for-like baseline).
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Build")]

@@ -29,7 +29,7 @@ Every collection in the `Celerity.Collections` package, grouped by family. Each 
 - `PooledCelerityDictionary<TKey, TValue, THasher>` — backing arrays rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt dictionaries. Same API plus `IDisposable`.
 - `LinkedDictionary<TKey, TValue, THasher>` — **insertion-ordered** dictionary (the .NET `LinkedHashMap` / `OrderedDict`): enumerates oldest first and keeps that order through removals, with `O(1)` `Remove`, `MoveToEnd` / `MoveToFront`, and first/last access (`TryRemoveFirst` drains it in FIFO order). .NET 9's `OrderedDictionary` removes in `O(n)`, and `Dictionary` reuses freed slots, so its order breaks at the first removal. No index access (cost: two `int` order links and a cached hash per entry).
 - `BiDictionary<TKey, TValue, TKeyHasher, TValueHasher>` — **one-to-one** dictionary (the .NET `BiMap` / `BidiMap`): `O(1)` lookup by key *and* by value (`TryGetKey`, `ContainsValue`, `RemoveValue`, an `Inverse` view), with value uniqueness enforced on every write. One table instead of two hand-synced `Dictionary` instances, at 0.6–0.75x their memory (cost: removal re-hashes, since no hash code is cached).
-- `FrozenCelerityDictionary<TValue>` / `<TValue, THasher>` — build-once, read-many `string`-keyed dictionary that searches for a perfect (collision-free) hash so lookups are single-probe.
+- `FrozenCelerityDictionary<TValue>` / `<TValue, THasher>` — build-once, read-many `string`-keyed dictionary: a perfect (collision-free) hash for small key sets, a half-full linear-probing table past that. Looks keys up slower than `FrozenDictionary`; builds faster past a few hundred keys.
 - `CelerityMultiMap<TKey, TValue, THasher>` — one-to-many map: `Add` appends instead of overwriting. Implements `ILookup<TKey, TValue?>`.
 - `CelerityMultiSet<T, THasher>` — counting multiset (bag): each element maps to its multiplicity. Single-probe `Add`-increment for frequency counting, vs the two-probe `Dictionary<T,int>` idiom. `Count` (distinct) / `TotalCount` (occurrences).
 - `SmallDictionary<TKey, TValue>` — flat-array, linear-scan dictionary for the very-small (`n <= ~16`) case. No hasher; the default key is stored inline.
@@ -98,7 +98,7 @@ string name = columns.GetKey(0);     // "id", O(1)
 columns.ForceSet("created", 0);      // moves 0 to "created", removing "id"
 ```
 
-`FrozenCelerityDictionary<TValue>` is build-once, read-many and searches for a perfect (collision-free) hash at construction, so each lookup is single-probe. Immutable; implements `IReadOnlyDictionary<string, TValue?>`. Use the `<TValue, THasher>` overload (e.g. `StringFnV1AFullHasher` for non-ASCII keys) for the single-probe fast path on keys the default would collide — lookups stay correct regardless.
+`FrozenCelerityDictionary<TValue>` is build-once, read-many. A set of up to about 100 keys gets a perfect (collision-free) table, so each lookup is single-probe; larger sets mostly get a linear-probing table at most half full. Immutable; implements `IReadOnlyDictionary<string, TValue?>`. `FrozenDictionary` looks keys up 3.5–5.6x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. This type builds about 1.8x faster at those sizes (slower for most sets below 334 keys, where it searches for a perfect table), takes your hasher through the `<TValue, THasher>` overload (e.g. `StringFnV1AFullHasher` for non-ASCII keys), allows a `null` key, and rejects duplicate keys.
 
 ```csharp
 var routes = new FrozenCelerityDictionary<int>(new[]
@@ -227,7 +227,7 @@ foreach (var entry in versions.EnumerateRange(1_500, 3_500))
 - `HashCachingSet<T, THasher>` — struct-of-arrays layout for sets: a dense side array of 32-bit hash fingerprints lets probes scan metadata only and short-circuit expensive element equality on a single integer compare (cost: four bytes per slot). For lookup-heavy sets and costly-equality elements. The set counterpart of `HashCachingDictionary`.
 - `PooledCeleritySet<T, THasher>` — backing array rented from `ArrayPool<T>.Shared` and returned on `Dispose`, cutting GC pressure for short-lived, frequently-rebuilt sets. Same API plus `IDisposable`. The set counterpart of `PooledCelerityDictionary`.
 - `LinkedSet<T, THasher>` — **insertion-ordered** set (the .NET `LinkedHashSet`): enumerates oldest first and keeps that order through removals, with `O(1)` `Remove`, `MoveToEnd` / `MoveToFront`, and first/last access (`TryRemoveFirst` drains it in FIFO order). `HashSet`'s order breaks at the first removal and .NET ships no ordered-by-arrival set. No index access (cost: two `int` order links and a cached hash per element). The set counterpart of `LinkedDictionary`.
-- `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with single-probe membership. Implements `IReadOnlySet<string>`.
+- `FrozenCeleritySet` / `<THasher>` — build-once, read-many `string` set with `FrozenCelerityDictionary`'s layout. Implements `IReadOnlySet<string>`.
 - `IntSet` / `LongSet` — `int` / `long`-keyed set specializations.
 - `SmallSet<T>` — flat-array, linear-scan set for the very-small (`n <= ~16`) case. No hasher; the default element is stored inline. The set counterpart of `SmallDictionary`.
 - `EnumSet<TEnum>` — bit-vector set for enum keys (the .NET `EnumSet`): membership is a single bit test and set algebra is word-wise bitwise ops, with no hashing or boxing. Enumerates in ascending underlying-value order.
@@ -299,7 +299,7 @@ firstSeen.MoveToEnd(7);    // 9, 1, 7
 firstSeen.TryRemoveFirst(out int oldest); // oldest == 9
 ```
 
-`FrozenCeleritySet` is the build-once, read-many string set counterpart of `FrozenCelerityDictionary` — single-probe `Contains`, immutable, implements `IReadOnlySet<string>` (so `SetEquals`, `IsSubsetOf`, `Overlaps`, … are available), and silently dedupes. Use `FrozenCeleritySet<THasher>` (e.g. `StringFnV1AFullHasher`) for non-ASCII elements.
+`FrozenCeleritySet` is the build-once, read-many string set counterpart of `FrozenCelerityDictionary`, with the same layout and the same trade against its BCL counterpart, `FrozenSet<string>` — immutable, implements `IReadOnlySet<string>` (so `SetEquals`, `IsSubsetOf`, `Overlaps`, … are available), and silently dedupes. Use `FrozenCeleritySet<THasher>` (e.g. `StringFnV1AFullHasher`) for non-ASCII elements.
 
 ```csharp
 var reserved = new FrozenCeleritySet(new[] { "select", "from", "where", "join" });

@@ -11,7 +11,7 @@ Celerity is designed to be a near drop-in for the parts of the BCL collection AP
 | `Dictionary<int, V>` | `IntDictionary<V>` | No hasher needed; defaults to `Int32WangNaiveHasher`. |
 | `Dictionary<long, V>` | `LongDictionary<V>` | Defaults to `Int64WangNaiveHasher`. |
 | `Dictionary<K, V>` (other keys) | `CelerityDictionary<K, V, THasher>` | Pick a struct hasher for `K`. |
-| `FrozenDictionary<string, V>` | `FrozenCelerityDictionary<V>` | Build-once, read-many; perfect hashing. |
+| `FrozenDictionary<string, V>` | `FrozenCelerityDictionary<V>` | Build-once, read-many; slower lookups, a faster build of large key sets. |
 | `HashSet<int>` | `IntSet` | Full `ISet<int>` / `IReadOnlySet<int>`. |
 | `HashSet<long>` | `LongSet` | Full `ISet<long>` / `IReadOnlySet<long>`. |
 | `HashSet<T>` (other) | `CeleritySet<T, THasher>` | Pick a struct hasher for `T`. |
@@ -119,7 +119,7 @@ Note: equality of *keys* themselves still uses `EqualityComparer<TKey>.Default` 
 
 ## `FrozenDictionary<string, V>` → `FrozenCelerityDictionary<V>`
 
-Both are immutable, build-once, read-many tables. Celerity searches for a *perfect* (collision-free) hash and is tunable via `IHashProvider<T>`:
+Both are immutable, build-once, read-many tables, but the swap is not a speedup for reads: `FrozenDictionary` looks keys up 3.5–5.6x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. Celerity's builds about 1.8x faster at those sizes (slower for most sets below 334 keys) and is tunable via `IHashProvider<T>`. Migrate for the hasher, or for the build time of a large table, not for the lookups:
 
 ```csharp
 // Before
@@ -127,7 +127,7 @@ var routes = pairs.ToFrozenDictionary();
 
 // After
 var routes = new FrozenCelerityDictionary<int>(pairs);
-Console.WriteLine(routes.IsPerfectlyHashed);   // True → single-probe lookups
+Console.WriteLine(routes.IsPerfectlyHashed);   // True only for a small key set
 ```
 
 No `Add` / `Remove` (same as `FrozenDictionary`). Duplicate keys in the source throw `ArgumentException`, where `ToFrozenDictionary` silently keeps the last value — de-duplicate first if your source can repeat a key. For non-ASCII keys or to restore a perfect layout when the default collides, use `FrozenCelerityDictionary<V, StringFnV1AFullHasher>`. See the [performance guide](performance.md#6-build-once-read-many--freeze-it).
