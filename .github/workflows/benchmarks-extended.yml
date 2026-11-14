@@ -9,9 +9,9 @@ name: Benchmarks (extended)
 
 on:
   schedule:
-    # Mondays 03:23 UTC. Off the hour on purpose: GitHub delays scheduled runs under load and
-    # names the start of every hour as a high-load time. At '0 6 * * 1', ten of the eleven
-    # runs from 2026-08-31 to 2026-11-09 started five to eight hours late.
+    # Mondays 03:23 UTC: off the hour, as GitHub advises for scheduled workflows, since the start
+    # of every hour is its busiest time. That does not guarantee a prompt start: from late August
+    # to October this run and fuzz.yml's off-the-hour cron alike started five to eight hours late.
     - cron: '23 3 * * 1'
   workflow_dispatch: {}
 
@@ -28,10 +28,11 @@ jobs:
     # the old 120-min cap on 2026-11-02, LargeDatasetBenchmark alone taking 7 min on one run and
     # 17.5 on the other. Seven of the twelve weekly runs from 2026-08-24 to 2026-11-09 were cut
     # off like that. The five that finished took 110-117 min, and the seven extrapolate to
-    # 122-142. 240 clears the slowest by ~100 min and stays 2h under GitHub's 6h job ceiling.
-    # The summary step warns when a run passes 180 min. Past that, cap the iteration count in
-    # ExtendedCiConfig (trading some accuracy on noisy hosts) or shard the suite as
-    # benchmarks.yml shards the core one, rather than raising this again.
+    # 122-142. The benchmark step's own 225-min timeout clears the slowest by ~80 min; this job
+    # cap sits 15 min above it so the steps after it still get to run, and both stay well under
+    # GitHub's 6h job ceiling. The summary step warns when a run passes 165 min. Past that, cap
+    # the iteration count in ExtendedCiConfig (trading some accuracy on noisy hosts) or shard the
+    # suite as benchmarks.yml shards the core one, rather than raising these again.
     timeout-minutes: 240
 
     permissions:
@@ -60,6 +61,11 @@ jobs:
         # writes its artifacts to ./BenchmarkDotNet.Artifacts relative to the
         # process CWD, and downstream steps look for them under Celerity.Benchmarks/.
         working-directory: src/Celerity.Benchmarks
+        # The step's own timeout, inside the job's, makes a run that runs out of time end as a
+        # failure, which GitHub's notifications for failed runs cover. A job timeout ends it as
+        # cancelled instead, as it did for the seven cut-off runs above. The summary step's cap
+        # must match this.
+        timeout-minutes: 225
         run: dotnet run --configuration Release -- --ci-extended
 
       - name: Stage benchmark report
@@ -92,8 +98,8 @@ jobs:
         working-directory: src/Celerity.Benchmarks
         run: |
           set -euo pipefail
-          # Keep in sync with timeout-minutes above.
-          cap=240
+          # Keep in sync with the benchmark step's timeout-minutes.
+          cap=225
           log=$(ls BenchmarkDotNet.Artifacts/*.log | head -n 1)
           total=$(grep -m1 '^Global total time' "$log" || true)
           {
@@ -110,15 +116,19 @@ jobs:
             if [ -n "$total" ]; then
               echo "$total"
             else
-              awk '/^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] } END { print "No global total: the run stopped during " cls "." }' "$log"
+              awk '/^\/\/ Benchmark: / { split($3, part, "."); cls = part[1] } END { print (cls == "" ? "No global total: the run stopped before its first benchmark." : "No global total: the run stopped during " cls ".") }' "$log"
             fi
+            # BenchmarkDotNet stops a case at 100 iterations when it cannot settle, so a high count
+            # marks a noisy runner, and that week's dashboard point deserves less weight.
+            echo
+            echo "Cases that ran to BenchmarkDotNet's 100-iteration cap: $(grep -cE '^WorkloadActual +100:' "$log" || true)"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          # Nothing reads a job summary unprompted, which is how two months of timeouts went
-          # unnoticed, so a run within an hour of the cap also says so as an annotation on the run.
+          # A run that finishes within an hour of the cap still passes, so nothing would point at
+          # it; say so as an annotation on the run, before a slower host tips it over the cap.
           if [ -n "$total" ]; then
             minutes=$(echo "$total" | sed -E 's/.*\(([0-9.]+) sec\).*/\1/' | awk '{ printf "%d", $1 / 60 }')
             if [ "${minutes:-0}" -ge $((cap - 60)) ]; then
-              echo "::warning title=Extended suite near its timeout::The suite ran ${minutes} of the job's ${cap} minutes. Re-size it before it is cut off; see the comment on timeout-minutes."
+              echo "::warning title=Extended suite near its timeout::The suite ran ${minutes} of the benchmark step's ${cap} minutes. Re-size it before it is cut off; see the comment on the job's timeout-minutes."
             fi
           fi
 
