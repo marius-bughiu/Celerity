@@ -83,10 +83,10 @@ public sealed class Deque<T> : IReadOnlyList<T>
 
         if (collection is ICollection<T> c)
         {
-            int n = c.Count;
-            _items = n == 0 ? Array.Empty<T>() : new T[n];
-            c.CopyTo(_items, 0);
-            _count = n;
+            // An array exactly as long as what the source yielded, which differs from its count only if it changed
+            // after it was counted.
+            _items = CountedSource.ToArray(c);
+            _count = _items.Length;
         }
         else
         {

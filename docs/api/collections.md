@@ -3952,10 +3952,11 @@ public BitPackedArray(IEnumerable<ulong> values, int bitsPerValue)
 - `BitPackedArray(int length, int bitsPerValue)` creates `length` elements, all zero.
   A `length` of `0` is a valid empty array.
 - `BitPackedArray(IEnumerable<ulong> values, int bitsPerValue)` packs `values` in
-  enumeration order. A `ulong[]` or `List<ulong>` is packed directly, in one streaming pass
-  that writes a whole word at a time. Any other counted collection has its length checked
-  before anything is allocated and is then copied once. Any other sequence is materialized
-  once.
+  enumeration order. A `ulong[]` or a `List<ulong>` itself (not a subclass) is packed
+  directly, in one streaming pass that writes a whole word at a time. Any other counted
+  collection has its length checked before anything is allocated and is then copied once,
+  by enumeration, so one that changes while it is read contributes exactly what it yields.
+  Any other sequence is materialized once.
 
 **Throws:**
 

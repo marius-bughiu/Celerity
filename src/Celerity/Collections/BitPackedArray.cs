@@ -114,9 +114,9 @@ public sealed class BitPackedArray : IReadOnlyList<ulong>
     /// <paramref name="bitsPerValue"/> bits.
     /// </summary>
     /// <param name="values">
-    /// The initial values. Every one must be at most <c>2^bitsPerValue - 1</c>. A <c>ulong[]</c> or
-    /// <see cref="List{T}"/> is packed directly; any other counted collection has its length checked before
-    /// anything is allocated, and is then copied once; any other sequence is materialized once.
+    /// The initial values. Every one must be at most <c>2^bitsPerValue - 1</c>. A <c>ulong[]</c> or a
+    /// <see cref="List{T}"/> itself (not a subclass) is packed directly; any other counted collection has its length
+    /// checked before anything is allocated, and is then copied once; any other sequence is materialized once.
     /// </param>
     /// <param name="bitsPerValue">The width of each element in bits, from 1 to 64.</param>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> is <c>null</c>.</exception>
@@ -135,19 +135,24 @@ public sealed class BitPackedArray : IReadOnlyList<ulong>
         {
             source = array;
         }
-        else if (values is List<ulong> list)
+        else if (values.GetType() == typeof(List<ulong>))
         {
-            source = CollectionsMarshal.AsSpan(list);
+            // The exact type only: a subclass can re-implement the collection interfaces to present other values
+            // than its storage, and is read through them below, as CountedSource reads every subclass.
+            source = CollectionsMarshal.AsSpan((List<ulong>)values);
         }
         else if (values is ICollection<ulong> collection)
         {
             // Checked before the copy is allocated, so an oversized source reports the documented exception
-            // rather than failing inside an impossible allocation.
+            // rather than failing inside an impossible allocation. The copy is cut to what the source yielded,
+            // which differs from its count only if it changed after it was counted; the check below sees that.
             int counted = collection.Count;
             ThrowIfSourceTooLong(counted, bitsPerValue);
             ulong[] copy = new ulong[counted];
-            collection.CopyTo(copy, 0);
-            source = copy;
+
+            // Read first: it replaces `copy` with a longer array when the source grew.
+            int read = CountedSource.Read(collection, ref copy, 0);
+            source = copy.AsSpan(0, read);
         }
         else
         {

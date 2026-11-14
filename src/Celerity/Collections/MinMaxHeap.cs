@@ -168,7 +168,10 @@ public class MinMaxHeap<TElement, TPriority, TComparer> : IReadOnlyCollection<(T
         ArgumentNullException.ThrowIfNull(items);
 
         _comparer = comparer;
-        _nodes = items.ToArray();
+
+        // Not Enumerable.ToArray: for a counted source it trusts CopyTo to fill what Count reported, and one that
+        // shrank in between would leave (default, default) entries in the heap.
+        _nodes = CountedSource.ToArray(items);
         _count = _nodes.Length;
 
         // Floyd's bottom-up construction carries over to the min-max layout: trickling every internal node

@@ -118,7 +118,11 @@ public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
             length = collection.Count;
             ThrowIfTooLong(length);
             buffer = new T[PaddedLength(length)];
-            collection.CopyTo(buffer, 0);
+
+            // Differs from the count only when the source changed after it was counted: the slots past what it
+            // yielded are not keys, and the padding (or a longer buffer) takes what a source that grew added.
+            length = CountedSource.Read(collection, ref buffer, 0);
+            ThrowIfTooLong(length);
         }
         else
         {
@@ -540,7 +544,7 @@ public sealed class FrozenSortedSet<T> : IReadOnlyList<T>, IReadOnlySet<T>
         if (other is FrozenSortedSet<T> frozen)
             return frozen.AsSpan();
 
-        T[] copy = other.ToArray();
+        T[] copy = CountedSource.ToArray(other);
         return copy.AsSpan(0, SortDistinct(copy));
     }
 

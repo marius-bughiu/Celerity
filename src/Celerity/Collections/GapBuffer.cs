@@ -108,11 +108,11 @@ public sealed class GapBuffer<T> : IList<T>, IReadOnlyList<T>
 
         if (collection is ICollection<T> c)
         {
-            int n = c.Count;
-            _items = n == 0 ? Array.Empty<T>() : new T[n];
-            c.CopyTo(_items, 0);
-            _gapStart = n;
-            _gapEnd = n;
+            // An array exactly as long as what the source yielded, which differs from its count only if it changed
+            // after it was counted. The gap starts empty.
+            _items = CountedSource.ToArray(c);
+            _gapStart = _items.Length;
+            _gapEnd = _items.Length;
         }
         else
         {
