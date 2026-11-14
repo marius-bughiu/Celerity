@@ -57,12 +57,14 @@ public sealed class StringInternTable : StringInternTable<StringFnV1AFullHasher>
 /// </para>
 /// <para>
 /// <strong>The BCL equivalent.</strong>
-/// <c>HashSet&lt;string&gt;.TryGetValue</c> takes a <see cref="string"/>, so on its own it makes
-/// you <em>allocate the string before you can discover you already had it</em> — the allocation
-/// this type exists to avoid. .NET 9 added
-/// <c>HashSet&lt;string&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>, which probes
-/// with a span and is available on every runtime Celerity targets; this type packages the same
-/// pattern as one <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with a pluggable struct hasher.
+/// <c>HashSet&lt;string&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>, available on
+/// every runtime Celerity targets, expresses the same pattern: its <c>TryGetValue</c> returns the
+/// stored instance from a span, and a miss materializes the string once for <c>Add</c>. It
+/// allocates the same strings this type does, and it probes faster than this type does with the
+/// default hasher, which folds each UTF-16 code unit a byte at a time. This type packages the
+/// pattern as one <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type
+/// parameter; supply a block hasher such as <see cref="StringCityHash64Hasher"/> when probe speed
+/// matters.
 /// </para>
 /// <para>
 /// <strong>Not <see cref="string.Intern(string)"/>.</strong> The runtime intern pool is

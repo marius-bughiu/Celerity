@@ -47,6 +47,9 @@ public class SuccinctTrieBenchmark
     private Trie<int> trieFull = null!;
     private Dictionary<string, int> dictFull = null!;
 
+    // dictFull's span-keyed view for the SpanLookup category, resolved once as a caller holding it would.
+    private Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> dictSpanLookup;
+
     [Params(1000, 100_000)]
     public int ItemCount;
 
@@ -90,6 +93,8 @@ public class SuccinctTrieBenchmark
             trieFull[keys[i]] = i;
             dictFull[keys[i]] = i;
         }
+
+        dictSpanLookup = dictFull.GetAlternateLookup<ReadOnlySpan<char>>();
     }
 
     // ---- Build: turn the whole key set into a queryable index ----------------------------------------
@@ -243,11 +248,9 @@ public class SuccinctTrieBenchmark
     }
 
     // ---- SpanLookup: the caller holds spans, not strings ----------------------------------------------
-    // The baseline probes the way a caller without an alternate lookup must: allocate the string first. The
-    // trie descends the span directly, so the whole allocation and copy vanish — which is why this category
-    // is the one with allocation numbers worth reading. (.NET 9's Dictionary<string, V>.GetAlternateLookup
-    // also probes with a span; it is not an arm here, so the ratio is against the allocating probe, not the
-    // BCL's best answer.)
+    // Both sides probe with a slice of the buffer and allocate nothing: the trie descends the span, and the
+    // dictionary hashes it through GetAlternateLookup<ReadOnlySpan<char>>, which every runtime Celerity
+    // targets has. So this is the Lookup comparison again for a caller holding spans.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("SpanLookup")]
@@ -257,7 +260,8 @@ public class SuccinctTrieBenchmark
         for (int i = 0; i < slices.Length; i++)
         {
             (int offset, int length) = slices[i];
-            acc += dictFull[new string(buffer, offset, length)];
+            dictSpanLookup.TryGetValue(buffer.AsSpan(offset, length), out int value);
+            acc += value;
         }
         return acc;
     }

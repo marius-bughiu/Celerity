@@ -152,16 +152,9 @@ public sealed class KdTree<TValue> : IReadOnlyList<SpatialPoint<TValue>>
         // A counted source is sized and copied once, as the sibling trees' constructors do. Going through a
         // List<T> unconditionally would allocate and copy a second backing array for the commonest sources of
         // all — an array or a List — on a type whose build cost is already the tradeoff it asks callers to make.
-        SpatialPoint<TValue>[] items;
-        if (points is ICollection<SpatialPoint<TValue>> counted)
-        {
-            items = new SpatialPoint<TValue>[counted.Count];
-            counted.CopyTo(items, 0);
-        }
-        else
-        {
-            items = new List<SpatialPoint<TValue>>(points).ToArray();
-        }
+        // CountedSource reads any other collection by enumeration, so one that changes after it is counted
+        // cannot leave a default point behind.
+        SpatialPoint<TValue>[] items = CountedSource.ToArray(points);
 
         _coords = new double[items.Length * 2];
         _values = new TValue?[items.Length];

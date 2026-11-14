@@ -134,11 +134,26 @@ public sealed class SparseTable<T, TMonoid> : IReadOnlyList<T>
         // ArgumentException instead of failing the allocation first, and no intermediate array is built.
         if (values is ICollection<T> collection)
         {
-            _length = collection.Count;
-            _levelCount = LevelsFor(_length, nameof(values));
-            _table = new T[_levelCount * _length];
+            int count = collection.Count;
+            int levels = LevelsFor(count, nameof(values));
+            T[] table = new T[levels * count];
 
-            collection.CopyTo(_table, 0);
+            // The source fills the first row. A source that grew after it was counted runs on into the rows above,
+            // which Build has not filled yet, or past them into a longer buffer; either way it is laid out again.
+            int read = CountedSource.Read(collection, ref table, 0);
+            if (read != count)
+            {
+                // Both the row width and the row count follow the length the source really had. For one that grew,
+                // this is also where its ceiling is checked again.
+                levels = LevelsFor(read, nameof(values));
+                T[] exact = new T[levels * read];
+                Array.Copy(table, exact, read);
+                table = exact;
+            }
+
+            _length = read;
+            _levelCount = levels;
+            _table = table;
         }
         else
         {
