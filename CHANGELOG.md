@@ -7,6 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Changed
 
 - The benchmarks now measure against the .NET 9 BCL types their hand-rolled baselines stood in for: `OrderedDictionary<TKey, TValue>` for `LinkedDictionary` and `LinkedSet` (removal keeps its `O(1)` hand-rolled baseline), and `GetAlternateLookup<ReadOnlySpan<char>>()` on `Dictionary`, `FrozenDictionary` and `HashSet<string>` for the span lookups and `StringInternTable`. The dashboard cards and documented ratios moved with them. ⚠️ Enumerating either linked type is about 5x slower than `OrderedDictionary`; the span probes on `Trie`, `SuccinctTrie` and `FrozenCelerityDictionary` are 3.5–21x slower than the BCL's; and `StringInternTable` is about 2x slower than `HashSet<string>` unless given `StringCityHash64Hasher`, which makes it 1.05–1.2x faster.
+- `SpatialGrid`'s docs now quote CI's weekly measurements of its cell-density sweep instead of a development machine's. At ten points per cell it does not beat the hand-rolled `Dictionary` grid (0.91–0.99x; the docs said 1.12x), and on clustered points a per-frame `KdTree` rebuild is 12–24% faster than it rather than level, though the hand-roll beats both.
 
 ### Removed
 
