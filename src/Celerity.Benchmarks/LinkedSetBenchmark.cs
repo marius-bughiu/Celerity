@@ -3,17 +3,24 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 using Celerity.Hashing;
 
-// LinkedSet<int, ...> vs the insertion-ordered set a caller builds by hand: a Dictionary keyed to the
-// nodes of a LinkedList of elements. (HashSet<T> only keeps insertion order
-// until the first removal, and a HashSet beside a List has an O(n) Remove, so neither is a fair
-// stand-in.) Both sides keep insertion order through an O(1) Remove; they differ in where the order
-// lives. The baseline allocates a LinkedListNode per element and chases heap pointers; LinkedSet
-// threads its order through the same entry array the hash chains index, so Add allocates nothing
-// beyond the pre-sized table. Contains looks up every present element. Remove takes every element in
-// a shuffled order. Enumerate runs over a set that has had half its elements removed, so the cost of
-// walking the order through a holey entry array is visible. Both sides are pre-sized for ItemCount
-// elements (LinkedList has no capacity), so Add measures inserts, not growth. The baseline is named
-// `Dictionary_*` so the dashboard classifies it as the BCL reference.
+// LinkedSet<int, ...> vs the insertion-ordered sets a caller can build from the BCL, which ships none ready-made.
+// Add, Contains and Enumerate run against .NET 9's OrderedDictionary<TKey, TValue> used as a set: keyed by the
+// element, with a byte value nobody reads, the idiom ConcurrentDictionary<T, byte> made familiar. It keeps
+// insertion order through removals and does everything these three arms ask of a set, so it is a fair stand-in for
+// them; the value slot is part of what a caller using it pays. Remove runs against the ordered set a caller builds
+// when removal must stay O(1): a Dictionary keyed to the nodes of a LinkedList of elements. OrderedDictionary's
+// Remove shifts every later entry down, O(n), which is no stand-in for that arm (see LinkedDictionaryBenchmark).
+// (HashSet<T> only keeps insertion order until the first removal, and a HashSet beside a List has an O(n) Remove,
+// so neither is a fair stand-in for any of them. A KeyedCollection<T, T> subclass is another route to an ordered
+// set; it is a list underneath, so it removes in O(n) too.)
+//
+// LinkedSet threads its order through the same entry array the hash chains index, so Add allocates nothing beyond
+// the pre-sized table and Remove unlinks an entry in O(1). Contains looks up every present element. Remove takes
+// every element in a shuffled order. Enumerate runs over a set that has had half its elements removed, so the
+// cost of walking the order through a holey entry array is visible; OrderedDictionary compacts on every removal,
+// so its walk is always a dense array. Every side is pre-sized for ItemCount elements (LinkedList has no
+// capacity), so Add measures inserts, not growth. The baselines are named `OrderedDictionary_*` and
+// `Dictionary_*` so the dashboard classifies them as the BCL reference.
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
@@ -23,11 +30,12 @@ public class LinkedSetBenchmark
     private int[] removeOrder = null!;   // the same elements, shuffled
     private int linkedCapacity;          // the bucket count that holds ItemCount elements without growing
 
-    private ClassicOrderedSet classic = null!;
+    private OrderedDictionary<int, byte> ordered = null!;
     private LinkedSet<int, Int32WangNaiveHasher> linked = null!;
+    private ClassicOrderedSet classic = null!;   // Remove's baseline, rebuilt per iteration
 
     // Enumerate's sets: ItemCount adds, then every other element of removeOrder removed.
-    private ClassicOrderedSet classicHalf = null!;
+    private OrderedDictionary<int, byte> orderedHalf = null!;
     private LinkedSet<int, Int32WangNaiveHasher> linkedHalf = null!;
 
     [Params(1000, 100_000)]
@@ -53,24 +61,35 @@ public class LinkedSetBenchmark
         // holds ItemCount elements.
         linkedCapacity = FastUtils.MinTableSizeFor(ItemCount, 0.75f);
 
-        classic = NewClassic();
+        ordered = NewOrdered();
         linked = NewLinked();
 
-        classicHalf = NewClassic();
         linkedHalf = NewLinked();
         for (int i = 0; i < removeOrder.Length; i += 2)
         {
-            classicHalf.Remove(removeOrder[i]);
             linkedHalf.Remove(removeOrder[i]);
         }
     }
 
-    private ClassicOrderedSet NewClassic()
+    // OrderedDictionary's half-removed set is built only for the arm that reads it: each of its ItemCount / 2
+    // removals is O(n), which costs seconds at 100,000 elements, and every other arm's process would pay for it.
+    [GlobalSetup(Target = nameof(OrderedDictionary_Enumerate))]
+    public void SetupForOrderedEnumerate()
     {
-        var set = new ClassicOrderedSet(ItemCount);
+        Setup();
+        orderedHalf = NewOrdered();
+        for (int i = 0; i < removeOrder.Length; i += 2)
+        {
+            orderedHalf.Remove(removeOrder[i]);
+        }
+    }
+
+    private OrderedDictionary<int, byte> NewOrdered()
+    {
+        var set = new OrderedDictionary<int, byte>(ItemCount);
         foreach (var key in keys)
         {
-            set.Add(key);
+            set.TryAdd(key, 0);
         }
         return set;
     }
@@ -85,15 +104,25 @@ public class LinkedSetBenchmark
         return set;
     }
 
-    [Benchmark(Baseline = true)]
-    [BenchmarkCategory("Add")]
-    public void Dictionary_Add()
+    private ClassicOrderedSet NewClassic()
     {
         var set = new ClassicOrderedSet(ItemCount);
-
         foreach (var key in keys)
         {
             set.Add(key);
+        }
+        return set;
+    }
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("Add")]
+    public void OrderedDictionary_Add()
+    {
+        var set = new OrderedDictionary<int, byte>(ItemCount);
+
+        foreach (var key in keys)
+        {
+            set.TryAdd(key, 0);
         }
     }
 
@@ -111,12 +140,12 @@ public class LinkedSetBenchmark
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Contains")]
-    public int Dictionary_Contains()
+    public int OrderedDictionary_Contains()
     {
         int hits = 0;
         foreach (var key in keys)
         {
-            if (classic.Contains(key))
+            if (ordered.ContainsKey(key))
                 hits++;
         }
         return hits;
@@ -167,12 +196,14 @@ public class LinkedSetBenchmark
         }
     }
 
+    // A caller using the dictionary as a set walks its Keys view, whose struct enumerator reads the dense entry
+    // array in index order.
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Enumerate")]
-    public long Dictionary_Enumerate()
+    public long OrderedDictionary_Enumerate()
     {
         long sum = 0;
-        foreach (var item in classicHalf.Order)
+        foreach (var item in orderedHalf.Keys)
         {
             sum += item;
         }
@@ -191,8 +222,8 @@ public class LinkedSetBenchmark
         return sum;
     }
 
-    // The ordered set a caller builds from BCL parts: the map finds an element's node, the list
-    // keeps the order, and Remove is O(1).
+    // The ordered set a caller builds from BCL parts when removal must stay O(1): the map finds an element's
+    // node, the list keeps the order, and Remove is O(1).
     private sealed class ClassicOrderedSet
     {
         private readonly Dictionary<int, LinkedListNode<int>> _map;
@@ -202,10 +233,6 @@ public class LinkedSetBenchmark
         {
             _map = new Dictionary<int, LinkedListNode<int>>(capacity);
         }
-
-        public LinkedList<int> Order => _order;
-
-        public bool Contains(int item) => _map.ContainsKey(item);
 
         public bool Add(int item)
         {

@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The benchmarks now measure against the .NET 9 BCL types their hand-rolled baselines stood in for: `OrderedDictionary<TKey, TValue>` for `LinkedDictionary` and `LinkedSet` (removal keeps its `O(1)` hand-rolled baseline), and `GetAlternateLookup<ReadOnlySpan<char>>()` on `Dictionary`, `FrozenDictionary` and `HashSet<string>` for the span lookups and `StringInternTable`. The dashboard cards and documented ratios moved with them. ⚠️ Enumerating either linked type is about 5x slower than `OrderedDictionary`; the span probes on `Trie`, `SuccinctTrie` and `FrozenCelerityDictionary` are 3.5–21x slower than the BCL's; and `StringInternTable` is about 2x slower than `HashSet<string>` unless given `StringCityHash64Hasher`, which makes it 1.05–1.2x faster.
+
 ### Removed
 
 - ⚠️ **Breaking:** every package now targets `net10.0` only; the `net8.0` and `net9.0` targets are gone, and no API changed with them. On .NET 8 or 9, stay on 3.6.x, the last line built for them: its security fixes ship from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch. The benchmark dashboard now measures on .NET 10 too, so its figures from before and after this change do not compare directly. See the [migration guide](docs/migration.md#net80--net90--net100--after-36x).

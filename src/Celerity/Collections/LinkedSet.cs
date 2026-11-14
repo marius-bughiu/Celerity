@@ -20,11 +20,11 @@ namespace Celerity.Collections;
 /// .NET ships no insertion-ordered set. <see cref="HashSet{T}"/> only enumerates in insertion order
 /// until the first removal: a freed entry is reused by the next add, so the new element appears where
 /// the removed one was. <see cref="SortedSet{T}"/> keeps an order, but a comparer's order, not arrival
-/// order. The usual stand-in is a <see cref="HashSet{T}"/> beside a <see cref="List{T}"/>, whose
-/// <c>Remove</c> is <c>O(n)</c>, or a <see cref="Dictionary{TKey, TValue}"/> of
-/// <see cref="LinkedListNode{T}"/>s, which allocates a node per element. This type is the shape of
-/// Java's <c>LinkedHashSet</c>: <c>O(1)</c> removal and re-ordering, no per-element allocation, and
-/// no index access.
+/// order. The usual stand-ins are a <see cref="HashSet{T}"/> beside a <see cref="List{T}"/>, or .NET 9's
+/// <see cref="OrderedDictionary{TKey, TValue}"/> keyed by the element, both of whose <c>Remove</c> is
+/// <c>O(n)</c>, or a <see cref="Dictionary{TKey, TValue}"/> of <see cref="LinkedListNode{T}"/>s, which
+/// allocates a node per element. This type is the shape of Java's <c>LinkedHashSet</c>: <c>O(1)</c>
+/// removal and re-ordering, no per-element allocation, and no index access.
 /// </para>
 /// <para>
 /// Elements live in one array of structs, each holding the element, its full hash, the next entry in
