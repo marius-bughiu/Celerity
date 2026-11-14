@@ -460,9 +460,10 @@ function escapeHtml(s) {
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'SwissSet',            title: 'SwissSet<int, ...>',                       vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
-    // LinkedSet keeps insertion order. The BCL ships no ordered set, so its baseline is OrderedDictionary used as
-    // one (a byte value per element), except on Remove, where OrderedDictionary is O(n) and the baseline is the
-    // set a caller builds from BCL parts with an O(1) remove: a Dictionary keyed to the nodes of a LinkedList.
+    // LinkedSet keeps insertion order. The BCL ships no insertion-ordered set, so its baseline is
+    // OrderedDictionary used as one (a byte value per element), except on Remove, where OrderedDictionary is O(n)
+    // and the baseline is the set a caller builds from BCL parts with an O(1) remove: a Dictionary keyed to the
+    // nodes of a LinkedList.
     { key: 'LinkedSet',           title: 'LinkedSet<int, ...>',                      vs: 'OrderedDictionary<int, byte> as a set, or Dictionary + LinkedList on the Remove card', ops: ['Add', 'Contains', 'Remove', 'Enumerate'] },
     { key: 'RobinHoodSet',        title: 'RobinHoodSet<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'HashCachingSet',      title: 'HashCachingSet<int, ...>',                 vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },

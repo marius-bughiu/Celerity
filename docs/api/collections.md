@@ -1314,7 +1314,7 @@ The layout is `LinkedDictionary`'s without the value. Elements live in one array
 
 ### Performance
 
-Measured locally on Apple Silicon (.NET 10, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is .NET 9's `OrderedDictionary<int, byte>` used as a set, the only BCL hashed collection that keeps arrival order through removals, except for the last row. There it is the hand-roll that also removes in `O(1)`, a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`, because `OrderedDictionary` removes in `O(n)` (see [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher) for what that costs a drain).
+Measured locally on Apple Silicon (.NET 10, default BenchmarkDotNet job); the dashboard's CI series is the contract. The baseline is .NET 9's `OrderedDictionary<int, byte>` used as a set, since the BCL ships no insertion-ordered set, except for the last row. There it is the hand-roll that also removes in `O(1)`, a `Dictionary<int, LinkedListNode<int>>` beside a `LinkedList<int>`, because `OrderedDictionary` removes in `O(n)` (see [`LinkedDictionary`](#linkeddictionarytkey-tvalue-thasher) for what that costs a drain).
 
 | Operation, `int` elements | 1,000 | 100,000 |
 |---|---|---|
