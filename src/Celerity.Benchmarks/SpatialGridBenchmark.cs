@@ -45,7 +45,7 @@ using Celerity.Collections;
 // margin is the ratio of per-cell overhead to per-candidate work and it collapses as the cells fill up. One CI
 // run on .NET 10 puts this shape at 2.3x rather than the 5.0x below, the hand-roll is already ahead at ten points
 // per cell (0.86x), and on clustered data the grid *loses*.
-// SpatialGridShapeBenchmark in the extended suite carries both of those measurements, and docs/benchmarks.md and
+// SpatialGridShapeBenchmark in the extended suite carries all three measurements, and docs/benchmarks.md and
 // the API reference quote them next to the headline rather than underneath it.
 //
 // Measured at 100,000 entities on CI's same-runner A/B (ubuntu-latest, .NET 8), which is what this repo quotes — a

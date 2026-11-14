@@ -16,30 +16,31 @@ using Celerity.Collections;
 // dispatch on 2026-11-14 (ubuntu-latest, x64, an AMD EPYC 9V74) at 611f2184, whose measured code matches main.
 // Being off main, it did not publish to the dev/bench-extended dashboard that the weekly runs feed. Every run
 // measures all three arms on one runner, so a row compares like with like. One run carries its runner's noise:
-// on .NET 8, the six weekly runs that measured this class spread the same ratios up to 19% either side of their
-// midpoints. The Tight row is the shape SpatialGridBenchmark charts:
+// on .NET 8, the twelve weekly runs that reached this class, six of them cut off later in the suite, spread the
+// same ratios up to 20% either side of their midpoints. The Tight row is the shape SpatialGridBenchmark charts:
 //
 //                                                 Dictionary    SpatialGrid   KdTree/frame      vs dict      vs tree
 //     Tight      ~1 pt/cell,  ~2 matches             3.96 ms        1.69 ms       22.84 ms         2.3x        13.5x
 //     Wide      ~10 pts/cell, ~25 matches           10.85 ms       12.58 ms       26.90 ms        0.86x         2.1x
 //     Clustered  200 blobs, hundreds per cell       26.48 ms       44.47 ms       34.49 ms        0.60x        0.78x
 //
-// The Tight row reads well under SpatialGridBenchmark's 5.0x because that figure was measured on .NET 8:
-// comparing runs on the same CPU model, .NET 10 runs this shape's Dictionary arm in 3.96 ms where .NET 8 took
-// 9.1-9.2 ms, while the grid got only 1.3x faster. The six .NET 8 runs agree on which side wins each row, the
-// Wide one only narrowly.
+// The Tight row reads well under SpatialGridBenchmark's 5.0x because that figure was measured on .NET 8. On
+// matched runners (an EPYC 9V74, the same OS image, AVX-512 on), SpatialGridBenchmark measured this shape on both
+// runtimes a day apart: .NET 10 runs the Dictionary arm 1.8x faster and the grid only 1.06x faster. The twelve
+// .NET 8 runs above agree with this one on every comparison but Wide against the Dictionary, which sat near
+// parity: 0.91-1.03x, the grid narrowly ahead in three of them.
 //
 // A development machine first read these at 6.5x, 1.12x and 0.52x against the Dictionary and put the clustered
-// rebuild level with the grid (1.01x). Two of those flip on CI rather than just shrinking: in this run the
-// hand-roll is ahead at the wide shape and the rebuild beats the grid on clustered points, and no .NET 8 run had
-// the grid ahead on either. The docs quote CI.
+// rebuild level with the grid (1.01x). Two of those flip in this run rather than just shrinking: the hand-roll is
+// ahead at the wide shape, and the rebuild beats the grid on clustered points, as it did in every .NET 8 run that
+// measured it. No CI run came near the development machine's 1.12x at the wide shape. The docs quote CI.
 //
 // The wide shape is not a pathological one — a 100-unit cell against a 90-unit radius, still sized just above
 // it, which is the tuning rule the type documents. It is simply a query that answers with twenty-five points
 // instead of two, and at that point both structures are memory-bound on the candidates' coordinates and the
-// grid's per-cell saving no longer pays: the hand-roll finishes ahead here, and ahead or level in all six .NET 8
-// runs, which fits the dependent-load cost described below starting to show at ten entries a cell. The time
-// advantage belongs to sparse cells, and the docs put that next to the headline.
+// grid's per-cell saving no longer pays: the hand-roll finishes ahead here, and on .NET 8 the two were within a
+// few percent either way, which fits the dependent-load cost described below starting to show at ten entries a
+// cell. The time advantage belongs to sparse cells, and the docs put that next to the headline.
 //
 // THE THIRD SHAPE DID NOT DO WHAT THIS CLASS WAS WRITTEN TO SHOW, and the measurement is left in place saying
 // so. The expectation was that clustering would hurt both structures equally — the baseline is the same grid,

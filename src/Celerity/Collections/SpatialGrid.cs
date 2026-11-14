@@ -63,7 +63,7 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// That is worse than "it degrades to a scan", and the benchmark says so rather than rounding it to a caveat:
-/// on clustered data this type is measured <b>1.7x slower</b> than the very hand-roll it replaces.
+/// on clustered data, one CI run on .NET 10 measured this type <b>1.7x slower</b> than the hand-roll it replaces.
 /// Inside a cell the two layouts genuinely differ — the hand-roll walks a contiguous <c>List&lt;T&gt;</c> and
 /// issues independent loads per candidate, while this type walks an intrusive linked list, so each step is a
 /// load that must complete before the next address is known. A cell holding two entries never shows that; a
@@ -74,7 +74,7 @@ namespace Celerity.Collections;
 /// An earlier draft of these docs sent clustered points to <see cref="KdTree{TValue}"/>, reasoning that its
 /// pruning adapts to density where a fixed cell size cannot. The measurement does not support it: on clustered
 /// moving points a per-frame <see cref="KdTree{TValue}"/> rebuild takes 22% less time than this type, but
-/// still 1.3x the hand-roll's. So the honest advice for heavily clustered points that move is the
+/// still 1.3x the hand-roll's (same run). So the honest advice for heavily clustered points that move is the
 /// unflattering one: the bucketed <c>Dictionary</c> of contiguous lists wins, and neither type here beats it.
 /// </para>
 /// <para>
