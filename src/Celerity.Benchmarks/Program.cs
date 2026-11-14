@@ -8,9 +8,10 @@ internal class Program
 {
     // ── CI-tracked core suite ───────────────────────────────────────────────────
     // The lean, fast, low-variance set that the `--ci` path runs on merges to main
-    // (and on demand) and pushes to gh-pages for continuous regression tracking. Keep
-    // this list tight: it is the most expensive thing in CI even sharded across a
-    // parallel matrix, so additions here directly lengthen every post-merge run.
+    // and publishes to gh-pages for continuous regression tracking (an on-demand run
+    // can measure any ref, but only main publishes). Keep this list tight: it is the
+    // most expensive thing in CI even sharded across a parallel matrix, so additions
+    // here directly lengthen every post-merge run.
     private static readonly Type[] CoreBenchmarks =
     {
         typeof(CelerityDictionaryBenchmark),
@@ -119,7 +120,7 @@ internal class Program
         typeof(IntegerHasherBenchmark),
     };
 
-    // ── Extended suite (local / on-demand) ──────────────────────────────────────
+    // ── Extended suite (weekly CI / local) ──────────────────────────────────────
     // Heavier, more exploratory benchmarks: multi-distribution sweeps, million-item
     // scale tests, concurrency fan-out, allocation profiling, and mixed workloads.
     // These are too slow and/or too noisy for the core regression run, so they are
@@ -289,9 +290,9 @@ internal class Program
                     continue;
                 }
 
-                // A class the replaying side does not have is simply absent — that is the PR
-                // head's newly added benchmark, which `main` cannot measure and which the
-                // comparison therefore reports as new rather than as a delta.
+                // A class the replaying side does not have is simply absent — a benchmark
+                // the other ref added, which this ref cannot measure, so an A/B of the two
+                // has no delta for it.
                 if (byName.TryGetValue(name, out var type))
                 {
                     replayed.Add(type);

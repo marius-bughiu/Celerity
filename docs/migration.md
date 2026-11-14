@@ -22,7 +22,7 @@ Celerity is designed to be a near drop-in for the parts of the BCL collection AP
 
 These apply to **all** Celerity dictionaries and sets. Internalize them once.
 
-The interfaces are not one of them. The mutable dictionaries implement both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`, and the mutable sets implement both `ISet<T>` and `IReadOnlySet<T>`. Code that passes a collection around as any of those interfaces keeps compiling after the swap.
+The interfaces are not one of them. The mutable dictionaries implement both `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`, with the few exceptions listed under [Dictionaries](collections.md#dictionaries), and the mutable sets implement both `ISet<T>` and `IReadOnlySet<T>`. Code that passes a collection around as any of those interfaces keeps compiling after the swap.
 
 ### 1. Values are nullable (`TValue?`)
 

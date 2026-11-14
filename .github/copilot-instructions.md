@@ -19,7 +19,7 @@ src/
 │   ├── TypeForwarders.cs        # Binary back-compat for types moved out in the 2.0.0 package split
 │   └── README.md                # The package's NuGet readme
 ├── Celerity.Hashing/            # IHashProvider<T> and the struct hashers (Int32WangNaiveHasher.cs, StringFnV1AHasher.cs, …)
-├── Celerity.Primitives/         # FastUtils, struct PRNGs, VarInt, SpanBits, BitWriter/BitReader, FastGuid, SortedSpan, Morton/Hilbert curves
+├── Celerity.Primitives/         # FastUtils, struct PRNGs, VarInt, SpanBits, BitWriter/BitReader, FastGuid, SimdReductions, Branchless, SortedSpan, Morton/Hilbert curves
 ├── Celerity.Sorting/            # RadixSort, CountingSort, PartialSort, StringSort, KWayMerge
 ├── Celerity.Statistics/         # DDSketch, KllSketch, ReservoirSampler, RunningStatistics, RollingQuantile, AliasTable
 ├── Celerity.Ring/               # Showcase: consistent-hash, rendezvous and Maglev routing
@@ -153,4 +153,4 @@ Releases are automated via GitHub Actions workflow (`.github/workflows/release.y
 1. Move the `CHANGELOG.md` `[Unreleased]` block to `[X.Y.Z]` in a PR and merge it to `main`
 2. Tag the merge commit and push the tag: `git tag -a v1.2.0 -m "Release 1.2.0"` then `git push origin v1.2.0`
 3. The tag push fires the workflow, which builds, packs, publishes to NuGet.org and creates the GitHub Release from the `## [X.Y.Z]` section of `CHANGELOG.md`
-4. `workflow_dispatch` is only a manual fallback, for re-publishing when a NuGet push fails partway through
+4. `workflow_dispatch` is only a manual fallback, for re-publishing when a NuGet push fails partway through. Run it with the tag selected as the ref: the release-notes check and the GitHub Release only run for a tag, and from `main` the packages get whatever version MinVer computes there

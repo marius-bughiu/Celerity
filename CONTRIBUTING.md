@@ -259,7 +259,7 @@ The workflow extracts the `## [X.Y.Z]` section of `CHANGELOG.md` and uses it as 
 ./.github/scripts/extract-release-notes.sh 1.2.0
 ```
 
-`workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push.
+`workflow_dispatch` is still wired up as a manual fallback for ad-hoc re-publishes (e.g. if a NuGet push fails partway through), but the normal flow is tag-push. Run it with the tag selected as the ref: the release-notes check and the GitHub Release only run for a tag, and from `main` the packages get whatever version MinVer computes there, a pre-release once `main` has moved past the tag.
 
 ### API compatibility
 
