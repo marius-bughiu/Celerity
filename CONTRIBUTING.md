@@ -127,12 +127,12 @@ The structural half — the two `COLLECTIONS` arrays agree, every charted collec
 
 ## Documentation
 
-`README.md` is the project's landing page and the `Celerity.Collections` NuGet readme, so it stays short: the pitch, a quick start, the family-by-family inventory of types, and links. Guides, examples, decision tables and benchmark results live under [`docs/`](docs/README.md). A new collection is documented in:
+`README.md` is the project's landing page, so it stays short: the pitch, a quick start, the family-by-family inventory of types, and links. Guides, examples, decision tables and benchmark results live under [`docs/`](docs/README.md). Each package's NuGet readme is the `README.md` in its own project folder, [`src/Celerity/README.md`](src/Celerity/README.md) for `Celerity.Collections`, and it links only by absolute URL, because nuget.org renders a relative link with no destination. A new collection is documented in:
 
 - its own section in [`docs/api/collections.md`](docs/api/collections.md) — constructors, members, exceptions, a runnable example, and where it wins and loses;
 - a bullet and a worked example under its family in the [collections guide](docs/collections.md);
 - a row in the [decision table](docs/choosing-a-collection.md);
-- its name in its family's row of the README's [Collections](README.md#collections) table, and in the [`docs/README.md`](docs/README.md) index;
+- its name in its family's row of the [Collections](README.md#collections) table, in both the README and [`src/Celerity/README.md`](src/Celerity/README.md#collections), and in the [`docs/README.md`](docs/README.md) index;
 - the smoke-test list in [`docs/aot.md`](docs/aot.md), next to its block in `src/Celerity.AotSmokeTest`.
 
 ## Documentation links
@@ -149,7 +149,7 @@ The trap is that GitHub slugs a heading by lowercasing its **rendered** text and
 
 The doubled `t` in the first two rows is `…Set` meeting `T` once the `<` between them is deleted — and it happens whether the generic is entity-encoded or written with bare angle brackets, since bare `<T, THasher>` is not a valid HTML tag and renders as text. The doubled dash in the third row is the arrow vanishing between two spaces. None of the three is what anyone writes by hand.
 
-[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to any anchor that a repeated heading can renumber. Never *guess* a heading's anchor — ask the script:
+[`scripts/check_doc_anchors.js`](scripts/check_doc_anchors.js) resolves every same-file `](#fragment)`, every relative `](other.md#fragment)`, and every relative file target across all tracked markdown, and rejects links to any anchor that a repeated heading can renumber. An absolute link into this repository's `main` branch (`https://github.com/marius-bughiu/Celerity/blob/main/…`), the only kind a package readme can use, is checked the same way, from the repository root. Never *guess* a heading's anchor — ask the script:
 
 ```bash
 node scripts/check_doc_anchors.js --list    # every anchor each file defines

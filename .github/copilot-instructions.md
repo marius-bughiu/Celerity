@@ -104,10 +104,11 @@ dotnet pack --configuration Release
 2. Follow existing patterns for capacity and load factor management
 3. Use appropriate hash provider via generic constraint
 4. Add comprehensive unit tests
-5. Document it: an API reference section in `docs/api/collections.md`, a bullet and worked example in `docs/collections.md`, a row in `docs/choosing-a-collection.md`, its name in the README's Collections table and the `docs/README.md` index, and a block in `src/Celerity.AotSmokeTest` with its entry in `docs/aot.md` (see CONTRIBUTING.md, "Documentation")
+5. Document it: an API reference section in `docs/api/collections.md`, a bullet and worked example in `docs/collections.md`, a row in `docs/choosing-a-collection.md`, its name in the Collections table of both `README.md` and `src/Celerity/README.md` and in the `docs/README.md` index, and a block in `src/Celerity.AotSmokeTest` with its entry in `docs/aot.md` (see CONTRIBUTING.md, "Documentation")
 
 ### Updating Documentation
-- README.md is packaged with the NuGet package and is the landing page: keep it short, and put examples, decision tables and benchmark results under `docs/`
+- README.md is the repository's landing page: keep it short, and put examples, decision tables and benchmark results under `docs/`
+- Each package's NuGet readme is the README.md in its own project folder (`src/Celerity/README.md` for `Celerity.Collections`). nuget.org renders a relative link with no destination, so every link in those is absolute
 - Update benchmarks when performance characteristics change
 - Keep examples simple and focused on common use cases
 
