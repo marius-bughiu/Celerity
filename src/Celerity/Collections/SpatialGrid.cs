@@ -93,7 +93,7 @@ namespace Celerity.Collections;
 /// matches, with the cell size still tuned to the radius. Rebuilding a <see cref="KdTree{TValue}"/> every
 /// frame instead measures <b>13.3x</b>. The frame figure is from CI's same-runner A/B; the shape sweep rides
 /// the extended suite and is a development-machine measurement. Both are in <c>SpatialGridBenchmark</c> and
-/// <c>SpatialGridShapeBenchmark</c>, and tabulated in the README.
+/// <c>SpatialGridShapeBenchmark</c>, and tabulated in the documentation's <c>docs/benchmarks.md</c>.
 /// </para>
 /// <para>
 /// <b>What the bound really is.</b> <see cref="Move"/>, <see cref="Remove"/> and <see cref="TryGetPoint"/>

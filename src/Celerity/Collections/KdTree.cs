@@ -79,7 +79,7 @@ namespace Celerity.Collections;
 /// <b>3.5x</b>, and at 1,000 points that margin is 1.4x on the nearest query and gone on the radius one.
 /// The second column is the honest one: the second dimension is the only thing this type adds over it.
 /// Both are measured in <c>KdTreeBenchmark</c>, quoted here from CI's same-runner A/B rather than from a
-/// development machine, and tabulated in the README.
+/// development machine, and tabulated in the documentation's <c>docs/benchmarks.md</c>.
 /// </para>
 /// <para>
 /// <b>Two dimensions specifically, not a generic <c>k</c>.</b> The dimensionality is a design decision here

@@ -2,7 +2,7 @@
 
 Celerity is designed to be a near drop-in for the parts of the BCL collection API that most code actually uses. This guide maps each standard .NET collection to its Celerity counterpart, shows the mechanical edits, and calls out the behavioural differences you must account for before switching.
 
-> **Before you migrate:** Celerity wins on *specific shapes* — `int`/`long`-keyed tables, build-once string lookups, one-to-many maps, single-threaded hot paths. It is **not** a universal replacement for `Dictionary<,>`. If a collection isn't on the [decision table](../README.md#choosing-a-collection), staying on the BCL type is the right call. See [non-goals](#what-not-to-migrate).
+> **Before you migrate:** Celerity wins on *specific shapes* — `int`/`long`-keyed tables, build-once string lookups, one-to-many maps, single-threaded hot paths. It is **not** a universal replacement for `Dictionary<,>`. If a collection isn't on the [decision table](choosing-a-collection.md), staying on the BCL type is the right call. See [non-goals](#what-not-to-migrate).
 
 ## Type mapping at a glance
 
@@ -183,7 +183,7 @@ Keep the BCL type when any of these hold — Celerity explicitly does not target
 
 ## Migration checklist
 
-1. ☐ Confirm the workload is a shape Celerity wins on (see the [decision table](../README.md#choosing-a-collection)).
+1. ☐ Confirm the workload is a shape Celerity wins on (see the [decision table](choosing-a-collection.md)).
 2. ☐ Swap the type; for non-`int`/`long` keys, choose a struct hasher.
 3. ☐ Add `?`/null handling where `TryGetValue` / the indexer / enumeration now yield `TValue?`.
 4. ☐ Replace any reliance on iteration order with an explicit sort, or with `LinkedDictionary` / `LinkedSet` if it is insertion order.
@@ -298,7 +298,7 @@ Releases after the 3.6.x line target **`net10.0` only**. 3.6.0 is the last relea
 
 ## See also
 
-- [Choosing a collection](../README.md#choosing-a-collection)
+- [Choosing a collection](choosing-a-collection.md)
 - [Performance tuning guide](performance.md)
 - [Troubleshooting](troubleshooting.md) and [FAQ](faq.md)
 - [Collections API reference](api/collections.md)

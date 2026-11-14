@@ -15,10 +15,12 @@
 //   2. inside a project the benchmark process never loads — every `*.Tests` project plus
 //      `Celerity.Fuzz` and `Celerity.AotSmokeTest`, none of which is reachable from
 //      `Celerity.Benchmarks.csproj`, so nothing they contain reaches a measurement;
-//   3. a modified `.cs` file whose text is unchanged once comments are stripped.
+//   3. a modified `.cs` file whose text is unchanged once comments are stripped;
+//   4. a markdown file, such as a package's README, which a project only packs: no
+//      measured build compiles, embeds or loads it.
 //
-// Everything else — an added or deleted file, a rename, a non-`.cs` file under `src/`
-// (a `.csproj`, `Directory.Build.props`), the benchmark workflow itself, this script,
+// Everything else — an added or deleted file, a rename, any other non-`.cs` file under
+// `src/` (a `.csproj`, `Directory.Build.props`), the benchmark workflow itself, this script,
 // a git command that fails, an argument that is missing — is treated as significant and
 // the suite runs. Every unknown resolves toward running, because the cost of a wrong
 // "run" is wasted runner minutes and the cost of a wrong "skip" is an unmeasured
@@ -264,6 +266,7 @@ function classify(filePath) {
   if (!filePath.startsWith('src/')) return 'ignored';
   const project = filePath.slice('src/'.length).split('/')[0];
   if (isUnbenchmarkedProject(project)) return 'ignored';
+  if (filePath.toLowerCase().endsWith('.md')) return 'ignored';
   if (!filePath.endsWith('.cs')) return 'significant';
   return 'compare';
 }
@@ -452,6 +455,17 @@ function selfTest() {
   if (normalize(literal) !== normalize(literalCommentOnly)) {
     failures++;
     console.error('FAIL  a comment edit beside a multi-line literal did not normalize identically');
+  }
+
+  // A package README is documentation even inside a benchmarked project; the project
+  // file that packs it is not.
+  if (classify('src/Celerity/README.md') !== 'ignored') {
+    failures++;
+    console.error('FAIL  a package README under src/ was not ignored');
+  }
+  if (classify('src/Celerity/Celerity.csproj') !== 'significant') {
+    failures++;
+    console.error('FAIL  a project file under src/ was not significant');
   }
 
   failures += checkProjectRoster();

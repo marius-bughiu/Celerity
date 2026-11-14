@@ -15,12 +15,12 @@ The core family:
 - `Celerity/` — the `Celerity.Collections` package (assembly `Celerity.dll`): dictionaries, sets, frozen/perfect-hash collections, sketches.
 - `Celerity.Hashing/` — `IHashProvider<T>` and the struct hashers.
 - `Celerity.Primitives/` — `FastUtils`, struct PRNGs, `VarInt`, `SpanBits`, `FastGuid`, `SortedSpan`.
-- `Celerity.Sorting/` — `RadixSort`, `CountingSort`, `PartialSort`.
+- `Celerity.Sorting/` — `RadixSort`, `CountingSort`, `PartialSort`, `StringSort`, `KWayMerge`.
 - `Celerity.Statistics/` — `DDSketch`, `ReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable`, `KllSketch`.
 
 The showcase packages — standalone libraries built *on top of* the core family, each with its own test project:
 
-- `Celerity.Ring/` — consistent-hash and rendezvous rings.
+- `Celerity.Ring/` — consistent-hash, rendezvous and Maglev routing.
 - `Celerity.Sentinel/` — streaming abuse / heavy-hitter detection.
 - `Celerity.Cardinality/` — mergeable approximate `COUNT(DISTINCT)` and windowed dedup.
 

@@ -53,7 +53,7 @@ using Celerity.Collections;
 // AT 1,000 BOXES THE POINT QUERY LOSES OUTRIGHT, which the development machine did not show and which is the
 // reason this repo quotes CI. Against the sorted hand-roll the overlap query is 1.48x there, but the point
 // query is 0.91x — the scan is ahead. The index has not paid for its indirection at that size, and a slab
-// scan over a thousand boxes is a handful of cache lines. Stated rather than rounded away, in the README and
+// scan over a thousand boxes is a handful of cache lines. Stated rather than rounded away, in docs/benchmarks.md and
 // the API reference as well as here. The build multiple is also far worse on CI (144x against the dev
 // machine's 27x), because the hosted runner's array copy is quicker and its sorts are slower.
 [MemoryDiagnoser]

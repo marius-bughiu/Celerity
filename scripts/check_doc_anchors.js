@@ -38,6 +38,13 @@
 //      one: an `<a id="measured-1">` that collides with a generated id renders a second
 //      element carrying that id, and the fragment still resolves to whichever comes
 //      first in the document, so a colliding anchor rescues nothing.
+//   5. an absolute link into this repository's `main` branch —
+//      `https://github.com/marius-bughiu/Celerity/blob/main/<path>#fragment` — is held to
+//      rules 2–4 as if it were relative to the repository root. A package README can link
+//      to the docs no other way, because nuget.org renders a relative link with no
+//      destination, and an absolute link that nothing checks rots without a symptom.
+//      For any link, a query string is not part of the path, and under `?plain=1`,
+//      GitHub's source view of a file, a fragment names a line (`#L42`) and is not checked.
 //
 // The slug rule below mirrors github-slugger, which is what GitHub itself renders with.
 // It was checked against the live rendering rather than inferred; to re-confirm it after
@@ -335,6 +342,10 @@ function positionalReason(fragment, where, group) {
     + 'retargets when another is inserted above it';
 }
 
+// Rule 5's prefix: a file on this repository's `main` branch, linked the way a package README
+// has to. Another repository, branch or tag is not ours to check.
+const OWN_MAIN = /^https:\/\/github\.com\/marius-bughiu\/Celerity\/(?:blob|tree)\/main\//i;
+
 function isExternal(target) {
   return /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('//');
 }
@@ -375,14 +386,14 @@ function selfTest() {
     failures.push(`  repeated headings\n      expected "added added-1 added-2", got "${repeats}"`);
   }
 
-  for (const failure of ruleFourCases()) failures.push(failure);
+  for (const failure of verdictCases()) failures.push(failure);
 
   if (failures.length > 0) {
     console.error('error: the guard no longer behaves as pinned.\n');
     console.error(failures.join('\n'));
     process.exit(1);
   }
-  console.log(`ok: ${SELF_TEST_CASES.length + 1 + RULE_FOUR_CASES.length} case(s) pinned.`);
+  console.log(`ok: ${SELF_TEST_CASES.length + 1 + RULE_FOUR_CASES.length + RULE_FIVE_CASES.length} case(s) pinned.`);
 }
 
 // ---- Rule 4, pinned end to end ------------------------------------------------------
@@ -476,9 +487,64 @@ const RULE_FOUR_CASES = [
   },
 ];
 
-function ruleFourCases() {
+// Rule 5, end to end: a link into this repository's `main` is held to the same verdicts as a
+// relative one, resolved from the repository root rather than from the linking file's folder.
+const MAIN = 'https://github.com/marius-bughiu/Celerity/blob/main/';
+
+const RULE_FIVE_CASES = [
+  {
+    name: 'an absolute link into main resolves from the repository root',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/a.md#solo)\n`, 'docs/a.md': '## Solo\n' },
+    expect: [],
+  },
+  {
+    name: 'an absolute link into main to a missing anchor is rejected',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/a.md#gone)\n`, 'docs/a.md': '## Solo\n' },
+    expect: ['src/pkg/README.md:1 missing'],
+  },
+  {
+    name: 'an absolute link into main to a missing file is rejected',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/gone.md)\n`, 'docs/a.md': '## Solo\n' },
+    expect: ['src/pkg/README.md:1 missing'],
+  },
+  {
+    name: 'an absolute link into main to a positional anchor is rejected',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/a.md#dup-1)\n`, 'docs/a.md': '## Dup\n## Dup\n' },
+    expect: ['src/pkg/README.md:1 positional'],
+  },
+  {
+    name: 'another repository or branch is left alone',
+    files: {
+      'src/pkg/README.md': '[x](https://github.com/someone/else/blob/main/gone.md#x)\n'
+        + '[y](https://github.com/marius-bughiu/Celerity/blob/support/net8/gone.md#x)\n',
+    },
+    expect: [],
+  },
+  {
+    name: 'a tree link into main to a missing directory is rejected',
+    files: { 'src/pkg/README.md': '[x](https://github.com/marius-bughiu/Celerity/tree/main/src/gone)\n' },
+    expect: ['src/pkg/README.md:1 missing'],
+  },
+  {
+    name: "a link to the repository's front page is not read as an anchor in the linking file",
+    files: { 'src/pkg/README.md': `[x](${MAIN}#install)\n` },
+    expect: [],
+  },
+  {
+    name: 'a query string is not part of the path, and a source-view line anchor is not a heading',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/a.md?plain=1#L42)\n`, 'docs/a.md': '## Solo\n' },
+    expect: [],
+  },
+  {
+    name: 'a source-view link to a missing file is still rejected',
+    files: { 'src/pkg/README.md': `[x](${MAIN}docs/gone.md?plain=1#L42)\n`, 'docs/a.md': '## Solo\n' },
+    expect: ['src/pkg/README.md:1 missing'],
+  },
+];
+
+function verdictCases() {
   const failures = [];
-  for (const { name, files, expect } of RULE_FOUR_CASES) {
+  for (const { name, files, expect } of [...RULE_FOUR_CASES, ...RULE_FIVE_CASES]) {
     const names = Object.keys(files);
     const parsed = new Map(names.map((f) => [f, parseMarkdown(files[f])]));
     const problems = checkLinks(names, parsed, (f) => Object.hasOwn(files, f));
@@ -500,11 +566,19 @@ function checkLinks(files, parsed, exists) {
   for (const file of files) {
     const dir = path.posix.dirname(file);
     for (const { target, line } of parsed.get(file).links) {
-      if (isExternal(target)) continue;
+      // Rule 5: a link into this repository's `main` resolves from the repository root.
+      const own = OWN_MAIN.exec(target);
+      if (!own && isExternal(target)) continue;
+      const local = own ? target.slice(own[0].length) : target;
 
-      const hash = target.indexOf('#');
-      const rawPath = hash === -1 ? target : target.slice(0, hash);
-      const encoded = hash === -1 ? '' : target.slice(hash + 1);
+      const hash = local.indexOf('#');
+      const beforeHash = hash === -1 ? local : local.slice(0, hash);
+      const encoded = hash === -1 ? '' : local.slice(hash + 1);
+      // A query string is not part of the path. Under `?plain=1`, GitHub's source view,
+      // the fragment names a line (`#L42`) rather than a heading, so it is not checked.
+      const question = beforeHash.indexOf('?');
+      const rawPath = question === -1 ? beforeHash : beforeHash.slice(0, question);
+      const sourceView = question !== -1 && /(?:^|&)plain=1(?:&|$)/.test(beforeHash.slice(question + 1));
       let fragment = encoded;
       try {
         fragment = decodeURIComponent(encoded);
@@ -521,19 +595,20 @@ function checkLinks(files, parsed, exists) {
       };
 
       if (rawPath === '') {
-        const reason = fragment ? verdict(parsed.get(file), 'this file') : null;
+        if (own) continue; // the repository's own front page
+        const reason = fragment && !sourceView ? verdict(parsed.get(file), 'this file') : null;
         if (reason) problems.push({ file, line, target, reason });
         continue;
       }
 
-      const resolved = path.posix.normalize(path.posix.join(dir, rawPath));
+      const resolved = path.posix.normalize(own ? rawPath : path.posix.join(dir, rawPath));
       if (resolved.startsWith('..')) continue; // outside the repository; not ours to check
 
       if (!exists(resolved)) {
         problems.push({ file, line, target, reason: `no such file: ${resolved}` });
         continue;
       }
-      if (!fragment || !resolved.toLowerCase().endsWith('.md')) continue;
+      if (!fragment || sourceView || !resolved.toLowerCase().endsWith('.md')) continue;
 
       const other = parsed.get(resolved);
       if (!other) continue; // an untracked or skipped markdown file
