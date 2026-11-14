@@ -432,9 +432,11 @@ function escapeHtml(s) {
     { key: 'SwissDictionary',     title: 'SwissDictionary<int, int, ...>',           vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'HashCachingDictionary', title: 'HashCachingDictionary<int, int, ...>',    vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
     { key: 'PooledCelerityDictionary', title: 'PooledCelerityDictionary<int, int, ...>', vs: 'Dictionary<int, int>',  ops: ['Insert', 'Lookup', 'Remove'] },
-    // LinkedDictionary keeps insertion order, so its baseline is the ordered map a caller builds from BCL
-    // parts with an O(1) remove (.NET 9's generic OrderedDictionary removes in O(n); see the API reference).
-    { key: 'LinkedDictionary',    title: 'LinkedDictionary<int, int, ...>',          vs: 'Dictionary + LinkedList', ops: ['Insert', 'Lookup', 'Remove', 'Enumerate'] },
+    // LinkedDictionary keeps insertion order, so its baseline is the BCL's insertion-ordered map, .NET 9's
+    // OrderedDictionary. Not on Remove: OrderedDictionary removes in O(n), and draining 100k keys that way costs
+    // seconds per invocation, so that card's baseline is the map a caller builds from BCL parts with an O(1)
+    // remove. The O(n) drain is measured in the extended suite and published in the API reference.
+    { key: 'LinkedDictionary',    title: 'LinkedDictionary<int, int, ...>',          vs: 'OrderedDictionary<int, int>, or Dictionary + LinkedList on the Remove card', ops: ['Insert', 'Lookup', 'Remove', 'Enumerate'] },
     // BiDictionary's baseline is the hand-roll: a forward and an inverse Dictionary kept in sync, so
     // Insert and Remove touch both, and InverseLookup reads the inverse map.
     { key: 'BiDictionary',        title: 'BiDictionary<int, int, ...>',              vs: 'Dictionary pair (forward + inverse)', ops: ['Insert', 'Lookup', 'InverseLookup', 'Remove', 'Enumerate'] },
@@ -458,9 +460,10 @@ function escapeHtml(s) {
     { key: 'LongSet',             title: 'LongSet',                                  vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'Remove'] },
     { key: 'CeleritySet',         title: 'CeleritySet<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
     { key: 'SwissSet',            title: 'SwissSet<int, ...>',                       vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
-    // LinkedSet keeps insertion order, so its baseline is the ordered set a caller builds from BCL parts:
-    // a Dictionary keyed to the nodes of a LinkedList.
-    { key: 'LinkedSet',           title: 'LinkedSet<int, ...>',                      vs: 'Dictionary + LinkedList', ops: ['Add', 'Contains', 'Remove', 'Enumerate'] },
+    // LinkedSet keeps insertion order. The BCL ships no ordered set, so its baseline is OrderedDictionary used as
+    // one (a byte value per element), except on Remove, where OrderedDictionary is O(n) and the baseline is the
+    // set a caller builds from BCL parts with an O(1) remove: a Dictionary keyed to the nodes of a LinkedList.
+    { key: 'LinkedSet',           title: 'LinkedSet<int, ...>',                      vs: 'OrderedDictionary<int, byte> as a set, or Dictionary + LinkedList on the Remove card', ops: ['Add', 'Contains', 'Remove', 'Enumerate'] },
     { key: 'RobinHoodSet',        title: 'RobinHoodSet<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'HashCachingSet',      title: 'HashCachingSet<int, ...>',                 vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'PooledCeleritySet',   title: 'PooledCeleritySet<int, ...>',              vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'Remove'] },
@@ -548,14 +551,14 @@ function escapeHtml(s) {
     // time, which is the arm that charges the wheel for its slot sweep.
     { key: 'TimerWheel',          title: 'TimerWheel<int>',                          vs: 'PriorityQueue<int, long>', ops: ['Round', 'Schedule', 'Cancel', 'Drain', 'Tick'] },
     // Trie is an ordered prefix tree benchmarked against Dictionary<string, int>; PrefixMatch is the win.
-    // SpanLookup probes from a ReadOnlySpan<char> slice, which the baseline must first turn into a string.
+    // SpanLookup probes from a ReadOnlySpan<char> slice; so does the baseline, through GetAlternateLookup.
     { key: 'Trie',                title: 'Trie<int>',                                vs: 'Dictionary<string, int>', ops: ['Add', 'Lookup', 'PrefixMatch', 'SpanLookup'] },
     // SuccinctTrie is the build-once trie: the same prefix answers over a LOUDS encoding, sold on retained
     // footprint rather than speed. Its Trie_Cross* arms carry op names of their own so they draw no card.
     { key: 'SuccinctTrie',        title: 'SuccinctTrie<int>',                        vs: 'Dictionary<string, int>', ops: ['Build', 'Lookup', 'PrefixMatch', 'PrefixProbe', 'SpanLookup'] },
-    // StringInternTable canonicalizes tokens probed as spans: it allocates one string per distinct token,
-    // where the BCL arms must allocate one per occurrence before they can dedupe. Allocation is the headline.
-    { key: 'StringInternTable',   title: 'StringInternTable',                        vs: 'HashSet<string> / Dictionary<string, string>', ops: ['Dedupe', 'Lookup'] },
+    // StringInternTable canonicalizes tokens probed as spans, allocating one string per distinct token. So does
+    // its baseline, a HashSet<string> probed through GetAlternateLookup, so the cards compare the probe alone.
+    { key: 'StringInternTable',   title: 'StringInternTable',                        vs: 'HashSet<string> via GetAlternateLookup<ReadOnlySpan<char>>', ops: ['Dedupe', 'Lookup'] },
     // FenwickTree is a Binary Indexed Tree benchmarked against a plain long[] holding the raw values: point
     // updates are O(1) there, but every prefix / range sum re-adds the slice (O(n)). The tree keeps both O(log n).
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                        vs: 'long[] (naive prefix sum)', ops: ['Mixed', 'RangeSum'] },
@@ -732,7 +735,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

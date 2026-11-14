@@ -3,12 +3,12 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 
 // Trie<int> vs the BCL's Dictionary<string, int>. The dictionary wins the exact-key operations (one hash
-// versus a character walk), so Add / Lookup are the honest "you don't use a trie for these" arms. The
-// headline is PrefixMatch: enumerating every entry whose key starts with a prefix. The trie answers it from
-// the structure in O(prefix + matches); the dictionary has no prefix index and must scan every key and run
-// StartsWith on it, so the trie's win widens with the table size. Keys share 16 two-letter prefix buckets so
-// each prefix query returns ItemCount/16 matches. The baseline arms are named Dictionary_* so the dashboard
-// classifies them as the BCL reference.
+// versus a character walk), so Add / Lookup / SpanLookup are the honest "you don't use a trie for these"
+// arms. The headline is PrefixMatch: enumerating every entry whose key starts with a prefix. The trie answers
+// it from the structure in O(prefix + matches); the dictionary has no prefix index and must scan every key
+// and run StartsWith on it, so the trie's win widens with the table size. Keys share 16 two-letter prefix
+// buckets so each prefix query returns ItemCount/16 matches. The baseline arms are named Dictionary_* so the
+// dashboard classifies them as the BCL reference.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
@@ -31,6 +31,9 @@ public class TrieBenchmark
     // Full, warm subjects for the non-destructive Lookup / PrefixMatch categories, built once in [GlobalSetup].
     private Trie<int> trieFull = null!;
     private Dictionary<string, int> dictFull = null!;
+
+    // dictFull's span-keyed view for the SpanLookup category, resolved once as a caller holding it would.
+    private Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> dictSpanLookup;
 
     [Params(1000, 100_000)]
     public int ItemCount;
@@ -61,6 +64,8 @@ public class TrieBenchmark
             trieFull[keys[i]] = i;
             dictFull[keys[i]] = i;
         }
+
+        dictSpanLookup = dictFull.GetAlternateLookup<ReadOnlySpan<char>>();
     }
 
     // ---- Add: build the table from empty --------------------------------------------------------------
@@ -143,12 +148,10 @@ public class TrieBenchmark
     }
 
     // ---- SpanLookup: the caller holds spans, not strings ----------------------------------------------
-    // The baseline probes the way a caller without an alternate lookup must: allocate the string first.
-    // The trie descends the span directly, so the whole allocation and copy vanish — which is why this
-    // category is the one with allocation numbers worth reading. It also flips the Lookup verdict: the
-    // trie's character walk no longer competes against a bare hash, but against a hash plus an
-    // allocation. (.NET 9's Dictionary<string,V>.GetAlternateLookup also probes with a span; it is not an
-    // arm here, so the ratio is against the allocating probe, not the BCL's best answer.)
+    // Both sides probe with a slice of the buffer and allocate nothing: the trie descends the span, and the
+    // dictionary hashes it through GetAlternateLookup<ReadOnlySpan<char>>, which every runtime Celerity
+    // targets has. So this is the Lookup comparison again for a caller holding spans: the trie's character
+    // walk against one hash of the same characters.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("SpanLookup")]
@@ -158,7 +161,8 @@ public class TrieBenchmark
         for (int i = 0; i < slices.Length; i++)
         {
             (int offset, int length) = slices[i];
-            acc += dictFull[new string(buffer, offset, length)];
+            dictSpanLookup.TryGetValue(buffer.AsSpan(offset, length), out int value);
+            acc += value;
         }
         return acc;
     }

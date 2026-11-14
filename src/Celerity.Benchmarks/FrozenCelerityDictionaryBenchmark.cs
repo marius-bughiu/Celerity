@@ -19,6 +19,9 @@ public class FrozenCelerityDictionaryBenchmark
     private FrozenDictionary<string, int> frozenDictionary = null!;
     private FrozenCelerityDictionary<int> frozenCelerity = null!;
 
+    // frozenDictionary's span-keyed view for the SpanLookup category, resolved once as a caller holding it would.
+    private FrozenDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> frozenSpanLookup;
+
     [Params(1000, 100_000)]
     public int ItemCount;
 
@@ -42,6 +45,7 @@ public class FrozenCelerityDictionaryBenchmark
 
         frozenDictionary = pairs.ToFrozenDictionary(p => p.Key, p => p.Value);
         frozenCelerity = new FrozenCelerityDictionary<int>(pairs);
+        frozenSpanLookup = frozenDictionary.GetAlternateLookup<ReadOnlySpan<char>>();
     }
 
     // ── Build (construct the frozen structure from the same source pairs) ──────
@@ -83,11 +87,9 @@ public class FrozenCelerityDictionaryBenchmark
     }
 
     // ── SpanLookup (the caller holds spans, not strings) ──────────────────────
-    // The baseline probes the way a caller without an alternate lookup must: allocate the string first.
-    // The Celerity arm probes the span directly, so the whole allocation and copy vanish — which is the
-    // point, and why this category is the one with allocation numbers worth reading. (.NET 9's
-    // Dictionary<string,V>.GetAlternateLookup also probes with a span; it is not an arm here, so the ratio
-    // is against the allocating probe, not the BCL's best answer.)
+    // Both sides probe with a slice of the buffer and allocate nothing: FrozenDictionary through
+    // GetAlternateLookup<ReadOnlySpan<char>>, which every runtime Celerity targets has, and the Celerity arm
+    // through its own span overload. So this is the Lookup comparison again for a caller holding spans.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("SpanLookup")]
@@ -97,7 +99,8 @@ public class FrozenCelerityDictionaryBenchmark
         for (int i = 0; i < slices.Length; i++)
         {
             (int offset, int length) = slices[i];
-            acc += frozenDictionary[new string(buffer, offset, length)];
+            frozenSpanLookup.TryGetValue(buffer.AsSpan(offset, length), out int value);
+            acc += value;
         }
         return acc;
     }

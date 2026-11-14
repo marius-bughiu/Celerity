@@ -3,18 +3,23 @@ using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 using Celerity.Hashing;
 
-// LinkedDictionary<int, int, ...> vs the insertion-ordered dictionary a caller builds by hand when
-// removal must stay O(1): a Dictionary keyed to the nodes of a LinkedList of entries. (.NET 9's generic
-// OrderedDictionary removes in O(n), so its local comparison lives in the API reference rather than in
-// this series, and the non-generic System.Collections.Specialized.OrderedDictionary boxes every key and
-// value and finds a key to remove by linear scan, so it is no contest.) Both sides keep insertion order through an O(1)
-// Remove; they differ in where the order lives. The baseline allocates a LinkedListNode per entry and
-// chases heap pointers; LinkedDictionary threads its order through the same entry array the hash
-// chains index, so Insert allocates nothing beyond the pre-sized table. Remove takes every key in a
-// shuffled order. Enumerate runs over a dictionary that has had half its keys removed, so the cost
-// of walking the order through a holey entry array is visible. Both sides are pre-sized for ItemCount
-// entries (LinkedList has no capacity), so Insert measures inserts, not growth. The baseline is named
-// `Dictionary_*` so the dashboard classifies it as the BCL reference.
+// LinkedDictionary<int, int, ...> vs the insertion-ordered maps the BCL offers. Insert, Lookup and Enumerate run
+// against .NET 9's generic OrderedDictionary<TKey, TValue>, the BCL's own insertion-ordered map. Remove runs against
+// the ordered map a caller builds from BCL parts when removal must stay O(1): a Dictionary keyed to the nodes of a
+// LinkedList of entries. OrderedDictionary is not a stand-in for that arm. It keeps its entries in one dense array,
+// so its Remove shifts every later entry down and costs O(n), and draining 100,000 keys that way takes seconds per
+// invocation, more than this suite's schedule can spend on one card. OrderedDictionaryRemoveBenchmark, in the
+// extended suite, measures that drain at sizes where it fits. (The non-generic
+// System.Collections.Specialized.OrderedDictionary boxes every key and value and finds a key to remove by linear
+// scan, so it is no contest.)
+//
+// LinkedDictionary threads its order through the same entry array the hash chains index, so Insert allocates
+// nothing beyond the pre-sized table and Remove unlinks an entry in O(1). Remove takes every key in a shuffled
+// order. Enumerate runs over a dictionary that has had half its keys removed, so the cost of walking the order
+// through a holey entry array is visible. OrderedDictionary compacts on every removal, so its walk is always a
+// dense array. Every side is pre-sized for ItemCount entries (LinkedList has no capacity), so Insert measures
+// inserts, not growth. The baselines are named `OrderedDictionary_*` and `Dictionary_*` so the dashboard
+// classifies them as the BCL reference.
 [MemoryDiagnoser(false)]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
@@ -24,11 +29,12 @@ public class LinkedDictionaryBenchmark
     private int[] removeOrder = null!;   // the same keys, shuffled
     private int linkedCapacity;          // the bucket count that holds ItemCount entries without growing
 
-    private ClassicOrderedDictionary classic = null!;
+    private OrderedDictionary<int, int> ordered = null!;
     private LinkedDictionary<int, int, Int32WangNaiveHasher> linked = null!;
+    private ClassicOrderedDictionary classic = null!;   // Remove's baseline, rebuilt per iteration
 
     // Enumerate's dictionaries: ItemCount inserts, then every other key of removeOrder removed.
-    private ClassicOrderedDictionary classicHalf = null!;
+    private OrderedDictionary<int, int> orderedHalf = null!;
     private LinkedDictionary<int, int, Int32WangNaiveHasher> linkedHalf = null!;
 
     [Params(1000, 100_000)]
@@ -54,24 +60,35 @@ public class LinkedDictionaryBenchmark
         // holds ItemCount entries.
         linkedCapacity = FastUtils.MinTableSizeFor(ItemCount, 0.75f);
 
-        classic = NewClassic();
+        ordered = NewOrdered();
         linked = NewLinked();
 
-        classicHalf = NewClassic();
         linkedHalf = NewLinked();
         for (int i = 0; i < removeOrder.Length; i += 2)
         {
-            classicHalf.Remove(removeOrder[i]);
             linkedHalf.Remove(removeOrder[i]);
         }
     }
 
-    private ClassicOrderedDictionary NewClassic()
+    // OrderedDictionary's half-removed table is built only for the arm that reads it: each of its ItemCount / 2
+    // removals is O(n), which costs seconds at 100,000 keys, and every other arm's process would pay for it.
+    [GlobalSetup(Target = nameof(OrderedDictionary_Enumerate))]
+    public void SetupForOrderedEnumerate()
     {
-        var map = new ClassicOrderedDictionary(ItemCount);
+        Setup();
+        orderedHalf = NewOrdered();
+        for (int i = 0; i < removeOrder.Length; i += 2)
+        {
+            orderedHalf.Remove(removeOrder[i]);
+        }
+    }
+
+    private OrderedDictionary<int, int> NewOrdered()
+    {
+        var map = new OrderedDictionary<int, int>(ItemCount);
         foreach (var key in keys)
         {
-            map.Set(key, key);
+            map[key] = key;
         }
         return map;
     }
@@ -86,15 +103,25 @@ public class LinkedDictionaryBenchmark
         return map;
     }
 
-    [Benchmark(Baseline = true)]
-    [BenchmarkCategory("Insert")]
-    public void Dictionary_Insert()
+    private ClassicOrderedDictionary NewClassic()
     {
         var map = new ClassicOrderedDictionary(ItemCount);
-
         foreach (var key in keys)
         {
             map.Set(key, key);
+        }
+        return map;
+    }
+
+    [Benchmark(Baseline = true)]
+    [BenchmarkCategory("Insert")]
+    public void OrderedDictionary_Insert()
+    {
+        var map = new OrderedDictionary<int, int>(ItemCount);
+
+        foreach (var key in keys)
+        {
+            map[key] = key;
         }
     }
 
@@ -112,12 +139,12 @@ public class LinkedDictionaryBenchmark
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Lookup")]
-    public int Dictionary_Lookup()
+    public int OrderedDictionary_Lookup()
     {
         int sum = 0;
         foreach (var key in keys)
         {
-            classic.TryGetValue(key, out int value);
+            ordered.TryGetValue(key, out int value);
             sum += value;
         }
         return sum;
@@ -170,10 +197,10 @@ public class LinkedDictionaryBenchmark
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Enumerate")]
-    public long Dictionary_Enumerate()
+    public long OrderedDictionary_Enumerate()
     {
         long sum = 0;
-        foreach (var kv in classicHalf.Order)
+        foreach (var kv in orderedHalf)
         {
             sum += kv.Key + kv.Value;
         }
@@ -192,8 +219,8 @@ public class LinkedDictionaryBenchmark
         return sum;
     }
 
-    // The ordered dictionary a caller builds from BCL parts: the map finds a key's node, the list
-    // keeps the order, and both Remove and an in-place overwrite are O(1).
+    // The ordered map a caller builds from BCL parts when removal must stay O(1): the map finds a key's node,
+    // the list keeps the order, and both Remove and an in-place overwrite are O(1).
     private sealed class ClassicOrderedDictionary
     {
         private readonly Dictionary<int, LinkedListNode<KeyValuePair<int, int>>> _map;
@@ -202,19 +229,6 @@ public class LinkedDictionaryBenchmark
         public ClassicOrderedDictionary(int capacity)
         {
             _map = new Dictionary<int, LinkedListNode<KeyValuePair<int, int>>>(capacity);
-        }
-
-        public LinkedList<KeyValuePair<int, int>> Order => _order;
-
-        public bool TryGetValue(int key, out int value)
-        {
-            if (_map.TryGetValue(key, out LinkedListNode<KeyValuePair<int, int>>? node))
-            {
-                value = node.Value.Value;
-                return true;
-            }
-            value = 0;
-            return false;
         }
 
         public void Set(int key, int value)
