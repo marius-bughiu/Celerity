@@ -984,13 +984,109 @@ public class SegmentedListTests
     }
 
     [Fact]
-    public void AddRange_ShouldAppendAtMostCount_WhenACountedSourceYieldsMore()
+    public void AddRange_ShouldAppendEverythingItYields_WhenACountedSourceYieldsMore()
+    {
+        // Regression (#621): only Count elements were appended. A concurrent collection that grew after it was
+        // counted need not yield its new elements last, so the cut could drop one that was there all along.
+        var list = new SegmentedList<int>(new[] { 0 });
+        int version = Version(list);
+
+        list.AddRange(new CountedSource<int>(2, [1, 2, 3, 4, 5, 6, 7, 8, 9]));
+
+        Assert.Equal(Enumerable.Range(0, 10), list);
+        Assert.NotEqual(version, Version(list));
+        list.Add(10); // the tail points past the appended elements
+        Assert.Equal(Enumerable.Range(0, 11), list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendWhatItYields_WhenACountedSourceCountedZero()
+    {
+        // A count of zero used to skip the enumeration, so a source that grew from empty appended nothing.
+        var list = new SegmentedList<int>();
+
+        list.AddRange(new CountedSource<int>(0, [1, 2]));
+
+        Assert.Equal(new[] { 1, 2 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldLeaveTheVersionAlone_WhenACountedSourceYieldsNothing()
+    {
+        var list = new SegmentedList<int>(new[] { 1 });
+        SegmentedList<int>.Enumerator e = list.GetEnumerator();
+
+        list.AddRange(new CountedSource<int>(0, []));
+        list.AddRange(new CountedSource<int>(3, []));
+
+        Assert.True(e.MoveNext());
+        Assert.Equal(new[] { 1 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendOneCopy_WhenAWrapperOverTheListUndercountsIt()
+    {
+        // Growing past the reservation must not invalidate an enumeration of the list itself, which a source that
+        // wraps it is running at the time.
+        var list = new SegmentedList<int>(new[] { 1, 2, 3, 4 });
+        Assert.Equal(4, list.Capacity); // full, so the first element appended grows it
+
+        list.AddRange(new Miscounted<int>(list, 0));
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 1, 2, 3, 4 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldCopyAnArraySegment()
     {
         var list = new SegmentedList<int>(new[] { 0 });
 
-        list.AddRange(new CountedSource<int>(2, [1, 2, 3, 4]));
+        list.AddRange(new ArraySegment<int>([9, 1, 2, 9], 1, 2));
 
         Assert.Equal(new[] { 0, 1, 2 }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendEverythingItYields_WhenACountedSourceYieldsMoreAcrossSegments()
+    {
+        var list = new SegmentedList<int>(new[] { -1 });
+
+        list.AddRange(new CountedSource<int>(1, Enumerable.Range(0, (IntSegment * 2) + 3).ToArray()));
+
+        Assert.Equal(Enumerable.Range(-1, (IntSegment * 2) + 4), list);
+        list.Add(IntSegment * 2 + 3);
+        Assert.Equal((IntSegment * 2) + 5, list.Count);
+        Assert.Equal(IntSegment * 2 + 3, list[^1]);
+    }
+
+    [Fact]
+    public void AddRange_ShouldLeaveTheListUnchanged_AndDropWhatItWrote_WhenAGrowingCountedSourceThrows()
+    {
+        var list = new SegmentedList<string>(new[] { "a" });
+
+        Assert.Throws<InvalidOperationException>(
+            () => list.AddRange(new CountedSource<string>(1, ["b", "c", "d", "e", "x"], throwAfter: 4)));
+
+        Assert.Equal(new[] { "a" }, list);
+        var first = (string?[])Segments(list)[0]!;
+        Assert.True(first.Length > 4); // the first segment grew partway through
+        Assert.All(first.Skip(1), Assert.Null); // and kept nothing past Count
+        list.Add("f");
+        Assert.Equal(new[] { "a", "f" }, list);
+    }
+
+    [Fact]
+    public void AddRange_ShouldAppendTheLiveContents_OfAConcurrentDictionaryThatGrewAfterItWasCounted()
+    {
+        var live = new System.Collections.Concurrent.ConcurrentDictionary<int, int>();
+        for (int i = 0; i < 8; i++)
+            live[i] = i;
+        var source = new GrowsAfterCount<KeyValuePair<int, int>>(live, () => live[100] = 100);
+        var list = new SegmentedList<KeyValuePair<int, int>>();
+
+        list.AddRange(source);
+
+        Assert.Equal(live.OrderBy(p => p.Key), list.OrderBy(p => p.Key));
     }
 
     [Fact]
@@ -1187,6 +1283,55 @@ public class SegmentedListTests
 
     // An ICollection<T> whose Count need not match what it yields, and which can throw partway through: the
     // shapes AddRange's counted-source path has to survive. That path reads only Count and GetEnumerator.
+    // Reports the wrapped collection's count, then runs `change` before handing out an enumerator, as another
+    // thread might between the two calls.
+    private sealed class GrowsAfterCount<T>(ICollection<T> inner, Action change) : ICollection<T>
+    {
+        public int Count => inner.Count;
+
+        public bool IsReadOnly => true;
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            change();
+            return inner.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public void Add(T item) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Contains(T item) => throw new NotSupportedException();
+
+        public void CopyTo(T[] array, int arrayIndex) => throw new NotSupportedException();
+
+        public bool Remove(T item) => throw new NotSupportedException();
+    }
+
+    // Reports a fixed count, whatever the wrapped sequence holds, and enumerates the sequence itself.
+    private sealed class Miscounted<T>(IEnumerable<T> inner, int count) : ICollection<T>
+    {
+        public int Count => count;
+
+        public bool IsReadOnly => true;
+
+        public IEnumerator<T> GetEnumerator() => inner.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public void Add(T item) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Contains(T item) => throw new NotSupportedException();
+
+        public void CopyTo(T[] array, int arrayIndex) => throw new NotSupportedException();
+
+        public bool Remove(T item) => throw new NotSupportedException();
+    }
+
     private sealed class CountedSource<T>(int count, T[] items, int throwAfter = -1) : ICollection<T>
     {
         public int Count => count;
