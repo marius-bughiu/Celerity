@@ -12,8 +12,8 @@ using Celerity.Collections;
 //
 // Real spatial data is not uniform — cities, users, sensors, sprites and trace points cluster — so this class
 // exists to change the distribution under a fixed comparison and see what the ratio does. It rides the extended
-// suite, not the CI one: it answers "when does this type earn its keep", a question asked once while reading
-// the docs, not on every pull request.
+// suite, not the core one: it answers "when does this type earn its keep", a question asked once while reading
+// the docs, not on every merge.
 //
 // THE HYPOTHESIS IT WAS WRITTEN TO CONFIRM WAS WRONG, and the measurement is left in place saying so. The
 // expectation was that clustering would punish the one-dimensional scan — a dense cluster puts many points

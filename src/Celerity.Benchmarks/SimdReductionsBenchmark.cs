@@ -23,8 +23,8 @@ using Celerity.Primitives;
 /// <remarks>
 /// The <c>TensorPrimitives.*</c> arms are the BCL baselines; the <see cref="SimdReductions"/> arms are the
 /// candidates, so each ratio reads as "the fused/checked helper relative to the BCL composition". This is an
-/// isolated microbenchmark, so it lives in the <strong>extended</strong> suite (not the per-PR core regression
-/// gate). The span lengths span an in-cache size and an out-of-cache size so the single-pass memory-traffic win
+/// isolated microbenchmark, so it lives in the <strong>extended</strong> suite (not the core regression
+/// suite). The span lengths span an in-cache size and an out-of-cache size so the single-pass memory-traffic win
 /// is visible.
 /// </remarks>
 [MemoryDiagnoser(false)]
