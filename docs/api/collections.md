@@ -1580,7 +1580,7 @@ keys, a matter of odds for most counts up to 333, and nil past that (see
 linear-probing table kept at most half full, where a hit inspects at most about 1.5 slots
 on average.
 
-**Against `FrozenDictionary`, it looks keys up slower, and builds faster only for large key
+**Against `FrozenDictionary`, it looks keys up slower, and builds faster mainly for large key
 sets.** On the
 `FrozenCelerityDictionaryBenchmark` keys (identifier-shaped, about 30 characters; Apple M4,
 .NET 10, default job):
@@ -1593,9 +1593,9 @@ sets.** On the
 
 Both of those builds skip the perfect-hash search. Most smaller sets run it, every count up
 to 235 keys and from 257 to 333, and build slower than `FrozenDictionary`'s: up to about 5x
-slower, at most about 45 µs, and 1.8 µs against 0.2 µs for 8 keys (a Stopwatch loop on the
-same machine). From 236 to 256 keys no table size is plausible, so the search is skipped
-and the build is about 3x faster.
+slower from 16 keys up, at most about 45 µs, and 1.8 µs against 0.2 µs for 8 keys (a
+Stopwatch loop on the same machine). From 236 to 256 keys no table size is plausible, so the
+search is skipped and the build is about 3x faster.
 
 `FrozenDictionary` spends build time finding a short substring that tells the keys apart,
 then hashes only that substring on each lookup. This type hashes the whole key with its
@@ -1755,8 +1755,9 @@ single array index
 and a single equality check, and otherwise a linear-probing table at most half full.
 Against `FrozenSet<string>` it answers `Contains` 4.1–6.1x slower at 1,000 to 100,000
 elements, for the [same reason](#frozenceleritydictionarytvalue): it hashes the whole
-element. It builds 1.75–1.86x faster at those sizes, and slower, up to about 5x, for most
-sets below 334 elements, where it runs the perfect-hash search.
+element. It builds 1.75–1.86x faster at those sizes, and slower for most sets below 334
+elements, where it runs the perfect-hash search: up to about 5x slower from 16 elements up,
+and more for a handful (2.0 µs against 0.14 µs at 8).
 
 ### Constructors
 
