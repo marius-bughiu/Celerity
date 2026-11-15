@@ -10,19 +10,20 @@ using Celerity.Hashing;
 /// <para>
 /// The workload is <see cref="StringInternTableBenchmark"/>'s <c>Lookup</c> category, probing a warm table with
 /// spans sliced from one buffer. Tokens are fixed at 3 to 64 characters, or drawn log-uniformly from 2–20 or 2–48
-/// characters, as a parse that mixes short codes, words and identifiers would see them.
+/// characters (averaging about 8 and 14), as a parse that mixes short codes, words and identifiers would see them.
 /// </para>
 /// <para>
 /// Each invocation probes sixteen tables, each with its own vocabulary of 64 random tokens, 6,250 times apiece in a
-/// seeded random order. Which of 64 tokens happen to share a slot is luck of the draw: on a single vocabulary a
-/// hasher's mean probe length ranged from 1.14 to 1.95, where the mean over many vocabularies is 1.47 for every
-/// hasher, and at 8–20 ns a probe that luck moves a single-vocabulary ratio by tens of percent. The random order
-/// keeps the branch predictor from learning the probe sequence, which a cyclic stream lets it do.
+/// seeded random order. Which of 64 tokens happen to share a slot is luck of the draw: a hasher's mean probe length
+/// varies widely from one vocabulary to the next, where the mean over many vocabularies is 1.47 for every hasher, and
+/// at tens of nanoseconds a probe that luck moves a single-vocabulary ratio by tens of percent. Sixteen vocabularies
+/// shrink it to a few percent. The random order keeps the branch predictor from learning the probe sequence, which a
+/// cyclic stream lets it do.
 /// </para>
 /// <para>
 /// The arms are the default <see cref="StringCityHash64Hasher"/>, <see cref="StringXxHash3Hasher"/> (the choice for
-/// long tokens) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII; text that varies
-/// both bytes of each UTF-16 code unit measured the same, since none of these hashers branches on content.
+/// long tokens) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII: none of these
+/// hashers branches on content, so text that varies both bytes of each UTF-16 code unit costs the same to hash.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

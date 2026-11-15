@@ -296,6 +296,14 @@ Releases after the 3.6.x line target **`net10.0` only**. 3.6.0 is the last relea
 - **On .NET 10:** nothing to do. NuGet already restored the `net10.0` assembly.
 - **On .NET 8 or 9:** keep the 3.6.x line, for example `<PackageReference Include="Celerity.Collections" Version="3.6.*" />`. A later version fails to restore with `NU1202` (not compatible with your target framework). Security fixes for 3.6.x ship as patch releases from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch.
 
+## `StringInternTable`'s default hasher — after 3.6.x
+
+The non-generic `StringInternTable` now derives from `StringInternTable<StringCityHash64Hasher>` instead of `StringInternTable<StringFnV1AFullHasher>`, which makes it about 2–2.5x faster on 16-character tokens. Hash values and the unspecified enumeration order change with it. This is a **source** break and a silent **binary** one:
+
+- **Source.** Code that names the old base type for a non-generic table stops compiling: `StringInternTable<StringFnV1AFullHasher> table = new StringInternTable();`, or that spelling of its `Enumerator`. Use `StringInternTable`, or `var`.
+- **Binary.** An assembly compiled against 3.6.x or earlier still calls the `StringFnV1AFullHasher` code on the table, and nothing fails at load or run time. A table it shares with code compiled against this version gives inconsistent answers. In a check, a library compiled against the old version found none of 1,000 tokens that the recompiled app had interned, and interned a second instance of a token the app already held. Recompile every assembly that uses `StringInternTable`, and do not share a table between assemblies built against different majors.
+- **Keeping the old behaviour.** `new StringInternTable<StringFnV1AFullHasher>()` hashes, orders and performs exactly as `StringInternTable` did.
+
 ## See also
 
 - [Choosing a collection](choosing-a-collection.md)
