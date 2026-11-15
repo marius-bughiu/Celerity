@@ -359,12 +359,12 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         return value;
     }
 
-    // The two GetOrAdd paths below are kept out of line so that a hit inlines exactly one Probe. The JIT
-    // inlines Probe, hasher and all, into GetOrAdd, and can inline GetOrAdd into a caller's loop. A
+    // An insert that crosses the load factor. Growing moves every entry, so the slot is probed for again.
+    //
+    // Kept out of line so that a hit inlines exactly one Probe. The JIT inlines Probe into GetOrAdd, with as
+    // much of the hasher as its inlining budget allows, and can inline GetOrAdd into a caller's loop. A
     // post-resize re-probe inlined there doubles the probe code at every call site, and the register
     // pressure that comes with it spills the hit path's values to the stack.
-
-    // An insert that crosses the load factor. Growing moves every entry, so the slot is probed for again.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private string GrowAndStore(string value)
     {
@@ -373,8 +373,10 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         return Store(value, index);
     }
 
-    // GetOrAdd(ReadOnlySpan<char>)'s miss. Materializing the string is a call anyway; taking the whole miss
-    // here makes the caller's miss path a single call with nothing live across it.
+    // GetOrAdd(ReadOnlySpan<char>)'s miss: materialize the string, then store it. Done inline in GetOrAdd,
+    // the ToString call made the JIT keep the key span on the stack, storing and reloading it on every
+    // call, hits included (ARM64, .NET 10). Out here a miss pays one more call instead, and none of
+    // GetOrAdd's own values are live across it.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private string AddSlow(ReadOnlySpan<char> key, int index)
     {
