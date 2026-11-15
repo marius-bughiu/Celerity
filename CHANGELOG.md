@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`PersistentSortedSet<T, TComparer>`**, an immutable sorted set and the set half of `PersistentSortedMap`: a path-copying B+ tree with a transient `Builder`, comparer-faithful set algebra, and the ordered queries `ImmutableSortedSet<T>` lacks (lower and upper bound, floor and predecessor, `EnumerateRange`) alongside `Min` / `Max`. At 100,000 elements it enumerates 4.1x, builds 2.5x and seeks 2.15x faster than `ImmutableSortedSet<T>`. Closes #628.
+- **`PersistentSortedSet<T, TComparer>`**, an immutable sorted set and the set half of `PersistentSortedMap`: a path-copying B+ tree with a transient `Builder`, comparer-faithful set algebra, and the ordered queries `ImmutableSortedSet<T>` lacks (lower and upper bound, floor and predecessor, `EnumerateRange`) alongside `Min` / `Max`. At 100,000 elements it enumerates 4.1x, inserts 2.5x and seeks 2.15x faster than `ImmutableSortedSet<T>`. Closes #628.
 
 ### Changed
 

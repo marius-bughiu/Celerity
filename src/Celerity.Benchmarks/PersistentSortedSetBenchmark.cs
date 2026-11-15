@@ -58,8 +58,9 @@ public class PersistentSortedSetBenchmark
             (elements[i], elements[j]) = (elements[j], elements[i]);
         }
 
-        // Uniform over [0, 2 * ItemCount], so about half the probes are hits and half land between elements —
-        // and, for LowerBound, the top value lands past the largest element.
+        // Uniform over [0, 2 * ItemCount) for Contains and [0, 2 * ItemCount] for LowerBound, so about half the
+        // probes are hits and half land between elements — and, for LowerBound, the top value lands past the
+        // largest element.
         probes = new int[ProbeCount];
         lowerBoundProbes = new int[ProbeCount];
         for (int i = 0; i < ProbeCount; i++)

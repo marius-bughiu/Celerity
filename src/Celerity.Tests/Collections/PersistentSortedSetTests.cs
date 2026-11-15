@@ -394,7 +394,7 @@ public class PersistentSortedSetTests
     // ── Set algebra: queries ─────────────────────────────────────────────────────
 
     [Fact]
-    public void Queries_ShouldAnswerTheSameInstanceWithoutEnumeratingIt()
+    public void Queries_ShouldAnswerTheSameInstanceAsOperand()
     {
         PersistentSortedSet<int, DefaultComparer<int>> set = BuildRange(10);
 

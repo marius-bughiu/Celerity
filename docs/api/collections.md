@@ -7324,6 +7324,12 @@ popcount per level instead of a binary search per level.
 **If the set never changes after it is built, use [`FrozenSortedSet`](#frozensortedsett)** — a
 static, read-only layout with no path copying at all.
 
+**A removed element can stay referenced.** A branch separator is a copy of the first element of the
+subtree to its right, and a removal that does not rebalance leaves the separator in place, so the new
+set can keep a removed element alive (never returning it) until a later split, merge or borrow
+replaces that separator. `PersistentSortedMap`'s keys behave the same way; it matters only for
+elements that pin large object graphs.
+
 ### Thread safety
 
 Concurrent readers need no synchronization: no published set is ever mutated after it is returned. A
