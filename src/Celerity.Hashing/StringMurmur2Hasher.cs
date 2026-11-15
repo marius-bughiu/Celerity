@@ -102,11 +102,12 @@ public struct StringMurmur2Hasher : IHashProvider<string>, ISpanHashProvider
         // Consume two chars (one 32-bit little-endian block) per iteration: the
         // first char supplies the low 16 bits, the second the high 16 bits — exactly
         // the 4-byte block a byte-oriented MurmurHash2 would read over the native
-        // little-endian UTF-16 representation of the string.
+        // little-endian UTF-16 representation of the string, and one unaligned load
+        // on a little-endian host (see Utf16Words).
         int i = 0;
         for (; i + 1 < length; i += 2)
         {
-            uint k = (uint)key[i] | ((uint)key[i + 1] << 16);
+            uint k = Utf16Words.ReadUInt32(key, i);
 
             k *= M;
             k ^= k >> R;

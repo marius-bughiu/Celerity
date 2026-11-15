@@ -221,14 +221,11 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
     /// Reads one 64-bit little-endian lane (eight bytes / four UTF-16 code units)
     /// starting at char index <paramref name="i"/>: each successive char supplies
     /// the next 16 bits — exactly the 8-byte block a byte-oriented XXH64 would read
-    /// over the native little-endian UTF-16 stream.
+    /// over the native little-endian UTF-16 stream. One unaligned load on a
+    /// little-endian host (see <see cref="Utf16Words"/>).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Lane(ReadOnlySpan<char> key, int i) =>
-        (ulong)key[i]
-        | ((ulong)key[i + 1] << 16)
-        | ((ulong)key[i + 2] << 32)
-        | ((ulong)key[i + 3] << 48);
+    private static ulong Lane(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt64(key, i);
 
     /// <summary>
     /// Reads one 32-bit little-endian lane (four bytes / two UTF-16 code units)
@@ -236,8 +233,7 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
     /// 16 bits, the next char the high 16 bits.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Block(ReadOnlySpan<char> key, int i) =>
-        (uint)key[i] | ((uint)key[i + 1] << 16);
+    private static uint Block(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt32(key, i);
 
     /// <summary>The XXH64 accumulator round: <c>rotl(acc + lane * PRIME64_2, 31) * PRIME64_1</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -17,15 +17,15 @@ public class StringHalfSipHash24HasherTests
     /// <summary>
     /// Independent, byte-oriented reference implementation of canonical
     /// HalfSipHash-2-4 (4-byte output) over the BCL's little-endian UTF-16 encoding
-    /// of the string. The hasher loops over <c>char</c>s and assembles 32-bit
-    /// message words by hand; this reference goes through <see cref="Encoding.Unicode"/>
+    /// of the string. The hasher reads its 32-bit message words straight from the
+    /// <c>char</c> span's memory; this reference goes through <see cref="Encoding.Unicode"/>
     /// and reads words with <see cref="BinaryPrimitives.ReadUInt32LittleEndian"/>
     /// against raw byte offsets, handling a fully general 0–3 byte tail (the UTF-16
     /// stream only ever yields a 0- or 2-byte tail, but the reference pins the
     /// general tail packing anyway), so agreement pins the word order, the tail
     /// packing, the length byte, the two-round compression and four-round
     /// finalization, and the native 32-bit output against drift without sharing the
-    /// hasher's char-lane implementation.
+    /// hasher's word reader.
     /// </summary>
     private static int ReferenceHalfSipHash24Utf16(string s) =>
         unchecked((int)HalfSipHash24(Encoding.Unicode.GetBytes(s)));
@@ -149,6 +149,15 @@ public class StringHalfSipHash24HasherTests
     public void Hash_MatchesCanonicalHalfSipHash24OverUtf16ByteStream(string input)
     {
         Assert.Equal(ReferenceHalfSipHash24Utf16(input), _hasher.Hash(input));
+    }
+
+    [Fact]
+    public void Hash_MatchesCanonicalHalfSipHash24OverUtf16ByteStream_AcrossTheSharedCorpus()
+    {
+        // Every length from 0 to 40 chars (each word count, with and without the
+        // one-char tail), long inputs, and non-ASCII chars with the high byte set.
+        foreach (string s in HasherStringCorpus.Strings)
+            Assert.Equal(ReferenceHalfSipHash24Utf16(s), _hasher.Hash(s));
     }
 
     // ── Determinism ───────────────────────────────────────────────────────────

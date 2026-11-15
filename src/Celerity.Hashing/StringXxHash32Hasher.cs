@@ -159,10 +159,10 @@ public struct StringXxHash32Hasher : IHashProvider<string>, ISpanHashProvider
     /// starting at char index <paramref name="i"/>: the low char supplies the low
     /// 16 bits, the next char the high 16 bits — exactly the 4-byte block a
     /// byte-oriented XXH32 would read over the native little-endian UTF-16 stream.
+    /// One unaligned load on a little-endian host (see <see cref="Utf16Words"/>).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Block(ReadOnlySpan<char> key, int i) =>
-        (uint)key[i] | ((uint)key[i + 1] << 16);
+    private static uint Block(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt32(key, i);
 
     /// <summary>The XXH32 accumulator round: <c>rotl(acc + lane * PRIME32_2, 13) * PRIME32_1</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

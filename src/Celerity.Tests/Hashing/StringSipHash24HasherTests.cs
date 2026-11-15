@@ -17,13 +17,13 @@ public class StringSipHash24HasherTests
     /// <summary>
     /// Independent, byte-oriented reference implementation of canonical SipHash-2-4
     /// over the BCL's little-endian UTF-16 encoding of the string, xor-folded to 32
-    /// bits exactly as the hasher does. The hasher loops over <c>char</c>s and
-    /// assembles 64-bit message words by hand; this reference goes through
+    /// bits exactly as the hasher does. The hasher reads its 64-bit message words
+    /// straight from the <c>char</c> span's memory; this reference goes through
     /// <see cref="Encoding.Unicode"/> and reads words with
     /// <see cref="BinaryPrimitives.ReadUInt64LittleEndian"/> against raw byte
     /// offsets, so agreement pins the word order, the tail packing, the length
     /// byte, the two-round compression and four-round finalization, and the final
-    /// fold against drift without sharing the hasher's char-lane implementation.
+    /// fold against drift without sharing the hasher's word reader.
     /// </summary>
     private static int ReferenceSipHash24Utf16(string s)
     {

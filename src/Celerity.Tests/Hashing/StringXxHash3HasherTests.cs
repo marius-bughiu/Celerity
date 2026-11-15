@@ -11,8 +11,8 @@ public class StringXxHash3HasherTests
 
     // ── Independent, byte-oriented XXH3-64 reference ──────────────────────────
     //
-    // The hasher loops over `char`s and reads 64/32-bit words by combining UTF-16
-    // code units; this reference reads from the real `Encoding.Unicode` byte array
+    // The hasher reads its 64/32-bit words straight from the `char` span's memory;
+    // this reference reads from the real `Encoding.Unicode` byte array
     // with `BinaryPrimitives` at raw byte offsets and dispatches on the byte length.
     // It shares the XXH3 *spec* with the hasher but none of its reading / indexing
     // code, so agreement pins the length-class dispatch, the secret offsets, the

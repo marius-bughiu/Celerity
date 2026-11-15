@@ -168,11 +168,11 @@ public struct StringHalfSipHash24Hasher : IHashProvider<string>, ISpanHashProvid
     /// Reads one 32-bit little-endian message word (four bytes / two UTF-16 code
     /// units) starting at char index <paramref name="i"/>: each successive char
     /// supplies the next 16 bits — exactly the 4-byte word a byte-oriented
-    /// HalfSipHash would read over the native little-endian UTF-16 stream.
+    /// HalfSipHash would read over the native little-endian UTF-16 stream. One
+    /// unaligned load on a little-endian host (see <see cref="Utf16Words"/>).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Word(ReadOnlySpan<char> key, int i) =>
-        key[i] | ((uint)key[i + 1] << 16);
+    private static uint Word(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt32(key, i);
 
     /// <summary>
     /// The HalfSipHash round function: one fixed lattice of 32-bit add / rotate / xor

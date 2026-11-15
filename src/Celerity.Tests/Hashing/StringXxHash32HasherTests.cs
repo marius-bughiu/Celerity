@@ -18,7 +18,7 @@ public class StringXxHash32HasherTests
     /// <summary>
     /// Independent, byte-oriented reference implementation of canonical xxHash32
     /// (seed <c>0</c>) over the BCL's little-endian UTF-16 encoding of the string.
-    /// The hasher loops over <c>char</c>s and assembles lanes by hand; this
+    /// The hasher reads its lanes straight from the <c>char</c> span's memory; this
     /// reference goes through <see cref="Encoding.Unicode"/> and a byte loop with
     /// <see cref="BinaryPrimitives.ReadUInt32LittleEndian"/>, so agreement pins the
     /// byte order, the stripe / lane boundaries, the tail handling, and the
@@ -128,6 +128,15 @@ public class StringXxHash32HasherTests
     public void Hash_MatchesCanonicalXxHash32OverUtf16ByteStream(string input)
     {
         Assert.Equal(ReferenceXxHash32Utf16(input), _hasher.Hash(input));
+    }
+
+    [Fact]
+    public void Hash_MatchesCanonicalXxHash32OverUtf16ByteStream_AcrossTheSharedCorpus()
+    {
+        // Lengths 0 to 40 chars cross the 16-byte stripe boundary five times, with every
+        // lane / tail remainder after it; the longer entries loop over many stripes.
+        foreach (string s in HasherStringCorpus.Strings)
+            Assert.Equal(ReferenceXxHash32Utf16(s), _hasher.Hash(s));
     }
 
     // ── Determinism ───────────────────────────────────────────────────────────

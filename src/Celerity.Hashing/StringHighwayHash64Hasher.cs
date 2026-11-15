@@ -361,14 +361,11 @@ public struct StringHighwayHash64Hasher : IHashProvider<string>, IHashProvider64
     /// Reads one 64-bit little-endian word (eight bytes / four UTF-16 code units)
     /// starting at char index <paramref name="i"/>: each successive char supplies the
     /// next 16 bits — exactly the 8-byte word a byte-oriented HighwayHash would read
-    /// over the native little-endian UTF-16 stream.
+    /// over the native little-endian UTF-16 stream. One unaligned load on a
+    /// little-endian host (see <see cref="Utf16Words"/>).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Lane(ReadOnlySpan<char> key, int i) =>
-        (ulong)key[i]
-        | ((ulong)key[i + 1] << 16)
-        | ((ulong)key[i + 2] << 32)
-        | ((ulong)key[i + 3] << 48);
+    private static ulong Lane(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt64(key, i);
 
     /// <summary>
     /// Reads the byte at offset <paramref name="b"/> into the tail's native
