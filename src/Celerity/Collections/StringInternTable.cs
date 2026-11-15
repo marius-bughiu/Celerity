@@ -192,7 +192,7 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         if (interned is not null)
             return interned;
 
-        return Insert(key, index);
+        return _count < _threshold ? Store(key, index) : GrowAndStore(key);
     }
 
     /// <summary>
@@ -349,30 +349,37 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         }
     }
 
-    // The GetOrAdd miss paths, kept out of line so a hit inlines exactly one Probe. The JIT inlines Probe,
-    // hasher and all, into GetOrAdd, and can inline GetOrAdd into a caller's loop; a second, post-resize
-    // Probe inline there doubled that code on every hit and pushed the hit path's values into stack spills.
-    // A miss runs once per distinct string, so the call it pays here is noise.
-    //
-    // AddSlow materializes the span first, so the caller's miss path is one call with nothing live across it.
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private string AddSlow(ReadOnlySpan<char> key, int index) => Insert(key.ToString(), index);
-
-    // Stores value, whose contents Probe just reported absent, in the vacant slot index it returned. Growing
-    // moves every entry, so after a resize the slot is found again.
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private string Insert(string value, int index)
+    // Stores value, whose contents Probe just reported absent, in the vacant slot index it returned.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private string Store(string value, int index)
     {
-        if (_count >= _threshold)
-        {
-            Resize();
-            Probe(value.AsSpan(), out index);
-        }
-
         _slots[index] = value;
         _count++;
         _version++;
         return value;
+    }
+
+    // The two GetOrAdd paths below are kept out of line so that a hit inlines exactly one Probe. The JIT
+    // inlines Probe, hasher and all, into GetOrAdd, and can inline GetOrAdd into a caller's loop. A
+    // post-resize re-probe inlined there doubles the probe code at every call site, and the register
+    // pressure that comes with it spills the hit path's values to the stack.
+
+    // An insert that crosses the load factor. Growing moves every entry, so the slot is probed for again.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string GrowAndStore(string value)
+    {
+        Resize();
+        Probe(value.AsSpan(), out int index);
+        return Store(value, index);
+    }
+
+    // GetOrAdd(ReadOnlySpan<char>)'s miss. Materializing the string is a call anyway; taking the whole miss
+    // here makes the caller's miss path a single call with nothing live across it.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string AddSlow(ReadOnlySpan<char> key, int index)
+    {
+        string value = key.ToString();
+        return _count < _threshold ? Store(value, index) : GrowAndStore(value);
     }
 
     // Rehashes every interned string into a table of twice the size. Entries are known to be
