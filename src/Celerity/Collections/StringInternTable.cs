@@ -62,8 +62,8 @@ public sealed class StringInternTable : StringInternTable<StringCityHash64Hasher
 /// stored instance from a span, and a miss materializes the string once for <c>Add</c>. It
 /// allocates the same strings this type does. This type packages the pattern as one
 /// <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type parameter. With
-/// <see cref="StringCityHash64Hasher"/>, the non-generic table's default, it probes about as fast as
-/// that set on short tokens (ahead on Apple Silicon, behind on x64) and slower on long ones;
+/// <see cref="StringCityHash64Hasher"/>, the non-generic table's default, it probes faster than that
+/// set on 16-character tokens on Apple Silicon and slower on x64, and slower on long tokens;
 /// <see cref="StringXxHash3Hasher"/> suits a stream of long tokens.
 /// </para>
 /// <para>

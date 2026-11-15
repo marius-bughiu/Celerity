@@ -8000,22 +8000,22 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
 
 ### Against `HashSet<string>`
 
-The BCL does the same with `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()`, which every runtime Celerity targets has: its `TryGetValue` returns the stored instance from a span, and a miss materializes the token once for `Add`. That allocates exactly the strings this type does, so **this type saves no string allocations over it**, and with its default hasher it probes **about as fast**: ahead of the set on Apple Silicon, behind it on x64. Measured on `StringInternTableBenchmark`'s stream of 64 distinct 16-character tokens (.NET 10, default BenchmarkDotNet job; the x64 column is the four [CI runs](https://marius-bughiu.github.io/Celerity/dev/bench/) on GitHub's ubuntu-latest runners after the BCL baseline landed, 2026-11-14):
+The BCL does the same with `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()`, which every runtime Celerity targets has: its `TryGetValue` returns the stored instance from a span, and a miss materializes the token once for `Add`. That allocates exactly the strings this type does, so **this type saves no string allocations over it**. With its default hasher it probes **faster than the set on Apple Silicon and slower on x64**. Measured on `StringInternTableBenchmark`'s stream of 64 distinct 16-character tokens (.NET 10, default BenchmarkDotNet job; the x64 column is the four [CI runs](https://marius-bughiu.github.io/Celerity/dev/bench/) on GitHub's ubuntu-latest runners after the BCL baseline landed, 2026-11-14):
 
 | Against `HashSet<string>` with `GetAlternateLookup` | Apple M4, 1,000 tokens | Apple M4, 100,000 tokens | x64 CI, both sizes |
 |---|---|---|---|
 | Dedupe the stream | 1.04x faster | 1.09x faster | 1.06–1.19x slower |
 | Probe a warm table | 1.17x faster | 1.2x faster | 1.14–1.2x slower |
 | Dedupe the stream, `StringFnV1AFullHasher` (the default before 4.0) | **2.3x slower** | **2.3x slower** | **2.1–3.1x slower** |
-| Probe a warm table, `StringFnV1AFullHasher` | **2.1x slower** | **2.1x slower** | **2.1–3.0x slower** |
+| Probe a warm table, `StringFnV1AFullHasher` | **2.1x slower** | **2.1x slower** | **2.2–3.0x slower** |
 
-One x64 probe run at 1,000 tokens read 1.08x faster, on a baseline with a ±19% error; the other seven points are the range shown. On either platform the default is 1.9–2.6x faster than `StringFnV1AFullHasher`.
+One x64 run's probe baseline at 1,000 tokens had a ±19% error, so it is left out of both probe rows; it read the default 1.08x faster. On either platform the default is 1.9–2.6x faster than `StringFnV1AFullHasher`.
 
 Token length moves the margin. `StringInternTableTokenLengthBenchmark` probes sixteen warm tables, each holding its own 64 random tokens, in random order, at fixed lengths and at lengths drawn log-uniformly from a range (averaging about 8 and 14 characters). Two default-job runs on the Apple M4; "level" means within about 6% of the set in both, or on both sides of it:
 
 | Probe a warm table, against the set | 3 chars | 8 | 16 | 32 | 64 | 2–20, mixed | 2–48, mixed |
 |---|---|---|---|---|---|---|---|
-| Default hasher | 1.07–1.31x faster | 1.17x faster | 1.06x faster | level | **1.4x slower** | 1.2–1.5x faster | level |
+| Default hasher | 1.07–1.31x faster | 1.17–1.18x faster | 1.06–1.07x faster | level | **1.4x slower** | 1.2–1.5x faster | level |
 | `StringXxHash3Hasher` | **1.3x slower** | 1.03–1.1x slower | 1.13–1.19x slower | 1.05–1.09x slower | level | level | level |
 | `StringFnV1AFullHasher` | 1.26x faster | **1.5x slower** | **2.1x slower** | **3.2x slower** | **4.8–4.9x slower** | level | **1.5x slower** |
 
@@ -8056,7 +8056,7 @@ The empty string is an ordinary entry, and an empty span means `""`. `null` is n
 
 ### Choosing it
 
-Reach for `StringInternTable` when you are producing **many occurrences of few distinct strings** from a buffer you already hold: parsers, tokenizers, log ingestion, column stores, header dispatch. A `HashSet<string>` probed through `GetAlternateLookup` does the same job just as frugally and about as fast, ahead of this type on x64 and behind it on Apple Silicon; choose this type for the one-call `GetOrAdd` and the hasher parameter. For a stream of long tokens, past about 32 characters, give it `StringXxHash3Hasher` or use the set. If you need to associate a *value* with each token, use a `CelerityDictionary<string, TValue, THasher>` with the [span lookups](#span-keyed-lookups) instead. It is not thread-safe.
+Reach for `StringInternTable` when you are producing **many occurrences of few distinct strings** from a buffer you already hold: parsers, tokenizers, log ingestion, column stores, header dispatch. A `HashSet<string>` probed through `GetAlternateLookup` does the same job just as frugally, and on 16-character tokens it probes faster than this type on x64 and slower on Apple Silicon; choose this type for the one-call `GetOrAdd` and the hasher parameter. For a stream of long tokens, past about 32 characters, give it `StringXxHash3Hasher` or use the set. If you need to associate a *value* with each token, use a `CelerityDictionary<string, TValue, THasher>` with the [span lookups](#span-keyed-lookups) instead. It is not thread-safe.
 
 ### Usage example
 
