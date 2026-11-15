@@ -165,18 +165,7 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
             return _slots[index]!;
 
         // The miss path is the only one that materializes a string.
-        string materialized = key.ToString();
-
-        if (_count >= _threshold)
-        {
-            Resize();
-            index = Probe(key, out _);
-        }
-
-        _slots[index] = materialized;
-        _count++;
-        _version++;
-        return materialized;
+        return AddSlow(key, index);
     }
 
     /// <summary>
@@ -203,16 +192,7 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         if (!wasEmpty)
             return _slots[index]!;
 
-        if (_count >= _threshold)
-        {
-            Resize();
-            index = Probe(key.AsSpan(), out _);
-        }
-
-        _slots[index] = key;
-        _count++;
-        _version++;
-        return key;
+        return Insert(key, index);
     }
 
     /// <summary>
@@ -377,6 +357,32 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
             if (key.SequenceEqual(slot.AsSpan())) { wasEmpty = false; return index; }
             index = (index + 1) & mask;
         }
+    }
+
+    // The GetOrAdd miss paths, kept out of line so a hit inlines exactly one Probe. The JIT inlines Probe,
+    // hasher and all, into GetOrAdd, and can inline GetOrAdd into a caller's loop; a second, post-resize
+    // Probe inline there doubled that code on every hit and pushed the hit path's values into stack spills.
+    // A miss runs once per distinct string, so the call it pays here is noise.
+    //
+    // AddSlow materializes the span first, so the caller's miss path is one call with nothing live across it.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string AddSlow(ReadOnlySpan<char> key, int index) => Insert(key.ToString(), index);
+
+    // Stores value, whose contents Probe just reported absent, in the vacant slot index it returned. Growing
+    // moves every entry, so after a resize the slot is found again.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string Insert(string value, int index)
+    {
+        if (_count >= _threshold)
+        {
+            Resize();
+            index = Probe(value.AsSpan(), out _);
+        }
+
+        _slots[index] = value;
+        _count++;
+        _version++;
+        return value;
     }
 
     // Rehashes every interned string into a table of twice the size. Entries are known to be
