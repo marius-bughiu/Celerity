@@ -40,7 +40,7 @@ public static bool TryDoubleCapacity(int currentCapacity, out int doubled);
 
 `DoubleCapacity` is the guarded `* 2` the collections use in their `Resize()` paths. It returns `currentCapacity * 2`, but throws `InvalidOperationException` when `currentCapacity` is already at or above `MaxPowerOfTwoCapacity` rather than computing `2^31` and overflowing to a negative size (which would corrupt the `newSize - 1` slot mask).
 
-`TryDoubleCapacity` is the non-throwing sibling for loops that *probe* a sequence of candidate sizes and need to halt cleanly at the ceiling rather than throw — for example the frozen collections' perfect-hash build search. It sets `doubled = currentCapacity * 2` and returns `true` below the ceiling, or leaves `doubled` unchanged and returns `false` at/above it. Advancing such a loop with a bare `size <<= 1` is unsafe: once `size` reaches `2^30` the shift wraps to a negative value that still passes a `size <= 2^30` guard, so the next iteration allocates a negative-length array and throws `OverflowException` (the bug fixed in #228).
+`TryDoubleCapacity` is the non-throwing sibling for loops that *probe* a sequence of candidate sizes and need to halt cleanly at the ceiling rather than throw. It sets `doubled = currentCapacity * 2` and returns `true` below the ceiling, or leaves `doubled` unchanged and returns `false` at/above it. Advancing such a loop with a bare `size <<= 1` is unsafe: once `size` reaches `2^30` the shift wraps to a negative value that still passes a `size <= 2^30` guard, so the next iteration allocates a negative-length array and throws `OverflowException` (the bug fixed in #228, in the frozen collections' perfect-hash build search, which has since stopped probing past 4,096 slots).
 
 **Special cases:**
 

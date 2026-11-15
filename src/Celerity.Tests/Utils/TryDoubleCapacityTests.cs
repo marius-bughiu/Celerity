@@ -5,9 +5,10 @@ namespace Celerity.Tests.Utils;
 /// (<see cref="FastUtils.TryDoubleCapacity"/>), the loop-friendly sibling of
 /// <see cref="FastUtils.DoubleCapacity"/>.
 ///
-/// The frozen collections' perfect-hash build search (#228) probes a series of candidate
-/// table sizes and must stop cleanly at the <c>2^30</c> ceiling rather than throw. Before the
-/// fix it advanced the candidate with a bare <c>size &lt;&lt;= 1</c> under a <c>size &lt;= 2^30</c>
+/// The helper came from the frozen collections' perfect-hash build search (#228), which then
+/// probed candidate table sizes up to the <c>2^30</c> ceiling and had to stop cleanly there
+/// rather than throw. (That search now stops at 4,096 slots.) Before the fix it advanced the
+/// candidate with a bare <c>size &lt;&lt;= 1</c> under a <c>size &lt;= 2^30</c>
 /// loop guard, but once <c>size</c> reached <c>2^30</c> the shift wrapped to <see cref="int.MinValue"/>,
 /// which still satisfies <c>size &lt;= 2^30</c>, so the next iteration allocated a negative-length
 /// array and threw <see cref="OverflowException"/>. Routing the doubling through this helper makes

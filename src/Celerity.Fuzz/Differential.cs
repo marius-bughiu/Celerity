@@ -5607,18 +5607,30 @@ internal static class Differential
 
     private static void FrozenCase(Random rng)
     {
+        // Mostly a small key universe, which the build places perfectly. One case in eight draws
+        // 110 to 334 distinct keys, where the build runs the perfect-hash search and usually falls
+        // back after it; another draws hundreds to thousands, past the 333 where it stops searching.
+        // Both put the half-full linear-probing layout and its occupied-slot enumeration under the
+        // same checks.
+        int band = rng.Next(8);
+        int universe = band switch { 0 => 3000, 1 => 100_000, _ => 60 };
         var oracle = new Dictionary<string, int>();
-        int entries = rng.Next(0, 40);
+        int entries = band switch { 0 => rng.Next(400, 2000), 1 => rng.Next(110, 335), _ => rng.Next(0, 40) };
         for (int i = 0; i < entries; i++)
-            oracle[$"key_{rng.Next(0, 60)}"] = Value(rng); // last write wins -> unique keys
+            oracle[$"key_{rng.Next(0, universe)}"] = Value(rng); // last write wins -> unique keys
 
         var frozen = new FrozenCelerityDictionary<int>(oracle);
 
         Check(frozen.Count == oracle.Count, $"Count {frozen.Count} != {oracle.Count}");
         foreach (var kv in oracle)
             Check(frozen.TryGetValue(kv.Key, out int av) && av == kv.Value, $"lookup({kv.Key}) missing/wrong");
-        for (int k = 60; k <= 70; k++)
+        for (int k = universe; k <= universe + 10; k++)
             Check(!frozen.ContainsKey($"key_{k}"), $"absent key_{k} reported present");
+        for (int i = 0; i < 4; i++)
+        {
+            int v = Value(rng);
+            Check(frozen.ContainsValue(v) == oracle.ContainsValue(v), $"ContainsValue({v}) disagrees");
+        }
 
         int seen = 0;
         foreach (var kv in frozen)
@@ -5697,14 +5709,20 @@ internal static class Differential
 
     private static void FrozenSetCase(Random rng)
     {
-        // A deliberately tiny, duplicate-rich element universe so the build's dedupe
-        // and the perfect-hash / fallback paths fire densely.
+        // A deliberately tiny, duplicate-rich element universe so the build's dedupe fires
+        // densely; such sets are placed perfectly. One case in eight draws 110 to 334 distinct
+        // elements instead, where the build runs the perfect-hash search and usually falls back
+        // after it, and another hundreds to thousands, past the 333 where it stops searching. Both
+        // put the half-full linear-probing layout and its occupied-slot enumeration under the same
+        // checks.
+        int band = rng.Next(8);
+        int universe = band switch { 0 => 3000, 1 => 100_000, _ => 30 };
         var sourceList = new List<string>();
         var oracle = new HashSet<string>();
-        int entries = rng.Next(0, 50);
+        int entries = band switch { 0 => rng.Next(400, 3000), 1 => rng.Next(110, 335), _ => rng.Next(0, 50) };
         for (int i = 0; i < entries; i++)
         {
-            string item = $"item_{rng.Next(0, 30)}";
+            string item = $"item_{rng.Next(0, universe)}";
             sourceList.Add(item); // duplicates allowed in the source
             oracle.Add(item);
         }
@@ -5714,7 +5732,7 @@ internal static class Differential
         Check(frozen.Count == oracle.Count, $"Count {frozen.Count} != {oracle.Count}");
         foreach (string item in oracle)
             Check(frozen.Contains(item), $"Contains({item}) missing");
-        for (int k = 30; k <= 40; k++)
+        for (int k = universe; k <= universe + 10; k++)
             Check(!frozen.Contains($"item_{k}"), $"absent item_{k} reported present");
 
         int seen = 0;
