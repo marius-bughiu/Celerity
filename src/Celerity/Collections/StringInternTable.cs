@@ -10,10 +10,10 @@ namespace Celerity.Collections;
 /// A canonicalizing table of <see cref="string"/>s that is probed with a
 /// <see cref="ReadOnlySpan{T}"/> of <see cref="char"/> and allocates a
 /// <see cref="string"/> <em>only on a miss</em>, using
-/// <see cref="StringFnV1AFullHasher"/>. Supply a different string hasher via the
+/// <see cref="StringCityHash64Hasher"/>. Supply a different string hasher via the
 /// <see cref="StringInternTable{THasher}"/> generic overload.
 /// </summary>
-public sealed class StringInternTable : StringInternTable<StringFnV1AFullHasher>
+public sealed class StringInternTable : StringInternTable<StringCityHash64Hasher>
 {
     /// <summary>
     /// Initializes a new <see cref="StringInternTable"/> with the specified capacity
@@ -60,11 +60,11 @@ public sealed class StringInternTable : StringInternTable<StringFnV1AFullHasher>
 /// <c>HashSet&lt;string&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>, available on
 /// every runtime Celerity targets, expresses the same pattern: its <c>TryGetValue</c> returns the
 /// stored instance from a span, and a miss materializes the string once for <c>Add</c>. It
-/// allocates the same strings this type does, and it probes faster than this type does with the
-/// default hasher, which folds each UTF-16 code unit a byte at a time. This type packages the
-/// pattern as one <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type
-/// parameter; supply a block hasher such as <see cref="StringCityHash64Hasher"/> when probe speed
-/// matters.
+/// allocates the same strings this type does. This type packages the pattern as one
+/// <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type parameter. With
+/// <see cref="StringCityHash64Hasher"/>, the non-generic table's default, it probes faster than that
+/// set on short tokens, the common case for interning, and slower on long ones, past about 32
+/// characters; <see cref="StringXxHash3Hasher"/> suits a stream of long tokens.
 /// </para>
 /// <para>
 /// <strong>Not <see cref="string.Intern(string)"/>.</strong> The runtime intern pool is

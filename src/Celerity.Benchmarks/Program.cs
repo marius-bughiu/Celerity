@@ -156,6 +156,8 @@ internal class Program
         typeof(RTreeShapeBenchmark),
         // The O(n²) OrderedDictionary drain LinkedDictionaryBenchmark's Remove card cannot afford at 100,000 keys.
         typeof(OrderedDictionaryRemoveBenchmark),
+        // StringInternTableBenchmark's probe swept across token lengths, behind the length claims in its docs.
+        typeof(StringInternTableTokenLengthBenchmark),
 
         // "Built with Celerity" showcase packages (separate NuGet packages built on the core family):
         // isolated perf demos, so they ride the extended suite alongside the primitive benchmarks.
