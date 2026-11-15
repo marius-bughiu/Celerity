@@ -91,7 +91,7 @@ When a `string`-keyed table is built once and read many times for the rest of th
 
 ### `IsPerfectlyHashed` is `false` — is that a problem?
 
-No — lookups are always correct, and a hit in the fallback table inspects at most about 1.5 slots instead of one. It is `false` for any set past 333 keys, and often from about 110 keys up (the odds depend on where the count falls between powers of two), because a single seeded hash cannot place that many keys without a collision; for a small set it can also mean two keys share a raw hash code, which a stronger/wider hasher (e.g. `StringFnV1AFullHasher`) fixes. See [performance §6](performance.md#6-build-once-read-many--freeze-it).
+No — lookups are always correct, and a hit in the fallback table inspects at most about 1.5 slots instead of one. It is `false` for any set past 333 keys, and often from about 110 keys up (the odds depend on where the count falls between powers of two), because a single seeded hash cannot place that many keys without a collision; for a small set it can also mean two keys share a raw hash code, which another hasher fixes. Under the default `StringXxHash32Hasher`, which hashes every character in full, that is a chance collision; the low-byte `StringFnV1AHasher` (the default before 4.0) also gives keys like `"A"` and `"Ł"` one code. See [performance §6](performance.md#6-build-once-read-many--freeze-it).
 
 ### How is it different from `System.Collections.Frozen.FrozenDictionary`?
 

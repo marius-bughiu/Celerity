@@ -8,15 +8,15 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A build-once, read-many set of <see cref="string"/> elements using
-/// <see cref="StringFnV1AHasher"/> by default. Supply a different string hasher via
-/// the <see cref="FrozenCeleritySet{THasher}"/> generic overload when your elements
-/// favour a different hash (e.g. <see cref="StringFnV1AFullHasher"/> for non-ASCII
-/// elements, one of the strong hashers for adversarial elements, or a block hasher
-/// such as <see cref="StringXxHash32Hasher"/> for faster membership tests on longer
-/// elements: every test hashes the whole element, and this default folds one character
-/// per step).
+/// <see cref="StringXxHash32Hasher"/> by default: every membership test hashes the whole
+/// element, and this block hasher reads it two characters at a time across four lanes.
+/// Supply a different string hasher via the <see cref="FrozenCeleritySet{THasher}"/>
+/// generic overload when your elements favour a different hash (e.g. one of the keyed
+/// hashers for adversarial elements, or <see cref="StringFnV1AHasher"/>, the default
+/// before 4.0, to keep the hash codes that decide the enumeration order and which small
+/// sets get a perfect table).
 /// </summary>
-public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
+public sealed class FrozenCeleritySet : FrozenCeleritySet<StringXxHash32Hasher>
 {
     /// <summary>
     /// Initializes a new <see cref="FrozenCeleritySet"/> from the specified

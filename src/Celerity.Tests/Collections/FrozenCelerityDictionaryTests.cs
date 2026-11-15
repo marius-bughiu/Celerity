@@ -416,13 +416,33 @@ public class FrozenCelerityDictionaryTests
     }
 
     [Fact]
-    public void DefaultConvenienceType_UsesFnv1aAndRoundTrips()
+    public void DefaultConvenienceType_UsesXxHash32AndRoundTrips()
     {
-        // The non-hasher convenience type defaults to StringFnV1AHasher.
+        // The non-hasher convenience type defaults to StringXxHash32Hasher.
+        Assert.Equal(typeof(FrozenCelerityDictionary<int, StringXxHash32Hasher>),
+            typeof(FrozenCelerityDictionary<int>).BaseType);
+
         FrozenCelerityDictionary<int> dict = Build(("one", 1), ("two", 2), ("three", 3));
         Assert.Equal(1, dict["one"]);
         Assert.Equal(2, dict["two"]);
         Assert.Equal(3, dict["three"]);
+    }
+
+    [Fact]
+    public void DefaultConvenienceType_HashesTheHighByte_SoAAndLStrokeGetAPerfectTable()
+    {
+        // 'A' (U+0041) and 'Ł' (U+0141) differ only in the high byte. The low-byte
+        // StringFnV1AHasher, the default before 4.0, gave them one raw code, which rules a
+        // perfect table out; the default hashes the full UTF-16 code unit, so it does not.
+        var xxHash32 = new StringXxHash32Hasher();
+        Assert.NotEqual(xxHash32.Hash("A"), xxHash32.Hash("Ł"));
+
+        FrozenCelerityDictionary<int> dict = Build(("A", 1), ("Ł", 2));
+
+        Assert.True(dict.IsPerfectlyHashed);
+        Assert.Equal(1, dict["A"]);
+        Assert.Equal(2, dict["Ł"]);
+        Assert.False(dict.ContainsKey("ŁA"));
     }
 
     // ── Non-generic enumeration surface ───────────────────────────────────────

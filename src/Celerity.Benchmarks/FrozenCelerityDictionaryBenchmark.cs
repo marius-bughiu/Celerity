@@ -19,7 +19,7 @@ public class FrozenCelerityDictionaryBenchmark
 
     private FrozenDictionary<string, int> frozenDictionary = null!;
     private FrozenCelerityDictionary<int> frozenCelerity = null!;
-    private FrozenCelerityDictionary<int, StringXxHash32Hasher> frozenCelerityXxHash32 = null!;
+    private FrozenCelerityDictionary<int, StringFnV1AHasher> frozenCelerityFnV1A = null!;
 
     // frozenDictionary's span-keyed view for the SpanLookup category, resolved once as a caller holding it would.
     private FrozenDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> frozenSpanLookup;
@@ -47,7 +47,7 @@ public class FrozenCelerityDictionaryBenchmark
 
         frozenDictionary = pairs.ToFrozenDictionary(p => p.Key, p => p.Value);
         frozenCelerity = new FrozenCelerityDictionary<int>(pairs);
-        frozenCelerityXxHash32 = new FrozenCelerityDictionary<int, StringXxHash32Hasher>(pairs);
+        frozenCelerityFnV1A = new FrozenCelerityDictionary<int, StringFnV1AHasher>(pairs);
         frozenSpanLookup = frozenDictionary.GetAlternateLookup<ReadOnlySpan<char>>();
     }
 
@@ -89,18 +89,19 @@ public class FrozenCelerityDictionaryBenchmark
         return acc;
     }
 
-    // The same lookups over StringXxHash32Hasher instead of the default StringFnV1AHasher, which folds one
-    // character per step and so accounts for most of a lookup's cost on these ~30-character keys; XxHash32 reads
-    // two characters at a time across four lanes. The arm carries an op name of its own so it lands in a dashboard
-    // bucket by itself (two Celerity arms sharing an op would overwrite each other in the index the cards are built
-    // from), while the shared category keeps BenchmarkDotNet's ratio against the same FrozenDictionary baseline.
+    // The same lookups over StringFnV1AHasher, the default before 4.0, instead of the default StringXxHash32Hasher:
+    // what a caller pays to keep the old hash codes. FNV-1a folds one character per step, which on these ~30-character
+    // keys is most of a lookup's cost; XxHash32 reads two characters at a time across four lanes. The arm carries an
+    // op name of its own so it lands in a dashboard bucket by itself (two Celerity arms sharing an op would overwrite
+    // each other in the index the cards are built from), while the shared category keeps BenchmarkDotNet's ratio
+    // against the same FrozenDictionary baseline.
     [Benchmark]
     [BenchmarkCategory("Lookup")]
-    public int FrozenCelerityDictionary_LookupXxHash32()
+    public int FrozenCelerityDictionary_LookupFnV1A()
     {
         int acc = 0;
         foreach (var key in keys)
-            acc += frozenCelerityXxHash32[key];
+            acc += frozenCelerityFnV1A[key];
         return acc;
     }
 

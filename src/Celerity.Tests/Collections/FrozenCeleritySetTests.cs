@@ -416,8 +416,29 @@ public class FrozenCeleritySetTests
     }
 
     [Fact]
-    public void DefaultConvenienceType_UsesFnv1aAndRoundTrips()
+    public void DefaultConvenienceType_HashesTheHighByte_SoAAndLStrokeGetAPerfectTable()
     {
+        // 'A' (U+0041) and 'Ł' (U+0141) differ only in the high byte. The low-byte
+        // StringFnV1AHasher, the default before 4.0, gave them one raw code, which rules a
+        // perfect table out; the default hashes the full UTF-16 code unit, so it does not.
+        var xxHash32 = new StringXxHash32Hasher();
+        Assert.NotEqual(xxHash32.Hash("A"), xxHash32.Hash("Ł"));
+
+        FrozenCeleritySet set = Build("A", "Ł");
+
+        Assert.True(set.IsPerfectlyHashed);
+        Assert.Equal(2, set.Count);
+        Assert.True(set.Contains("A"));
+        Assert.True(set.Contains("Ł"));
+        Assert.False(set.Contains("ŁA"));
+    }
+
+    [Fact]
+    public void DefaultConvenienceType_UsesXxHash32AndRoundTrips()
+    {
+        // The non-hasher convenience type defaults to StringXxHash32Hasher.
+        Assert.Equal(typeof(FrozenCeleritySet<StringXxHash32Hasher>), typeof(FrozenCeleritySet).BaseType);
+
         FrozenCeleritySet set = Build("one", "two", "three");
 
         Assert.True(set.Contains("one"));

@@ -1561,14 +1561,15 @@ foreach (long n in seen) { /* ... */ }
 
 ```csharp
 public sealed class FrozenCelerityDictionary<TValue>
-    : FrozenCelerityDictionary<TValue, StringFnV1AHasher>
+    : FrozenCelerityDictionary<TValue, StringXxHash32Hasher>
 ```
 
 A build-once, read-many dictionary for `string` keys, in the spirit of the BCL
 `System.Collections.Frozen.FrozenDictionary<TKey, TValue>` but tunable through
-Celerity's `IHashProvider<T>`. The convenience type defaults to `StringFnV1AHasher`;
-use the [generic overload](#frozenceleritydictionarytvalue-thasher) to supply a
-different string hasher.
+Celerity's `IHashProvider<T>`. The convenience type defaults to `StringXxHash32Hasher`
+(`StringFnV1AHasher` before 4.0); use the
+[generic overload](#frozenceleritydictionarytvalue-thasher) to supply a different string
+hasher.
 
 The dictionary is **immutable**: every key/value pair is supplied at construction and
 there are no mutating members. The constructor first searches a small parameter space
@@ -1587,22 +1588,23 @@ sets.** On the
 
 | Card | 1,000 keys | 100,000 keys |
 |---|---|---|
-| Build | 1.76x faster (37 µs vs 65 µs) | 1.76x faster (6.1 ms vs 10.8 ms) |
-| Lookup | 5.63x slower | 3.50x slower |
-| Span lookup, against `GetAlternateLookup<ReadOnlySpan<char>>()` | 3.39x slower | 2.52x slower |
+| Build | 1.92x faster (38 µs vs 74 µs) | 1.94x faster (6.6 ms vs 12.9 ms) |
+| Lookup | 2.99x slower | 2.21x slower |
+| Span lookup, against `GetAlternateLookup<ReadOnlySpan<char>>()` | 2.04x slower | 1.69x slower |
 
 Both of those builds skip the perfect-hash search. Most smaller sets run it, every count up
-to 235 keys and from 257 to 333, and build slower than `FrozenDictionary`'s: up to about 5x
-slower from 16 keys up, at most about 45 µs, and 1.8 µs against 0.2 µs for 8 keys (a
+to 235 keys and from 257 to 333, and build slower than `FrozenDictionary`'s: up to about 7x
+slower from 16 keys up, at most about 47 µs, and 2.2 µs against 0.15 µs for 8 keys (a
 Stopwatch loop on the same machine). From 236 to 256 keys no table size is plausible, so the
 search is skipped and the build is about 3x faster.
 
 `FrozenDictionary` spends build time finding a short substring that tells the keys apart,
 then hashes only that substring on each lookup. This type hashes the whole key with its
 hasher on every lookup, so the hasher sets most of the cost; the default
-`StringFnV1AHasher` takes one character per step. Pick this type for a hasher you choose
-(`<TValue, THasher>`), for a `null` key, to have duplicate keys rejected, or for a cheaper
-build of a large key set; for the fastest reads, `FrozenDictionary` is the better choice.
+`StringXxHash32Hasher` reads two characters at a time across four lanes. Pick this type for
+a hasher you choose (`<TValue, THasher>`), for a `null` key, to have duplicate keys
+rejected, or for a cheaper build of a large key set; for the fastest reads,
+`FrozenDictionary` is the better choice.
 
 ### Constructors
 
@@ -1665,16 +1667,17 @@ past it: about 12% at 128 keys but nearly certain at 129, 85% at 150, 2% at 200 
 skips the search. A
 perfect placement is also impossible
 when two distinct keys collide on the chosen hasher's raw 32-bit hash code — for example
-`"A"` and `"Ł"` under the low-byte `StringFnV1AHasher`, which returns the same code for
-both — because every seed maps them alike.
+`"A"` and `"Ł"` under the low-byte `StringFnV1AHasher` (not the default), which returns
+the same code for both — because every seed maps them alike.
 
 Otherwise the build uses an open-addressed linear-probing table at most half full
 (`IsPerfectlyHashed` is then `false`), where a hit inspects at most about 1.5 slots on
 average and a miss at most about 2.5. **Lookups are always correct either way**: the
 equality check
-tells colliding keys apart. A full-width or strong hasher (`StringFnV1AFullHasher`,
-`StringMurmur3Hasher`, …) restores the perfect fast path only for a small key set that
-the default collides; for a large set, `IsPerfectlyHashed` is `false` whatever the hasher.
+tells colliding keys apart. The default `StringXxHash32Hasher` hashes every character in
+full, so its raw codes collide only by chance. Another hasher restores the perfect fast
+path only for a small key set that the current one collides; for a large set,
+`IsPerfectlyHashed` is `false` whatever the hasher.
 
 ### Null-key handling
 
@@ -1713,13 +1716,11 @@ The hasher-parameterized base type of
 [`FrozenCelerityDictionary<TValue>`](#frozenceleritydictionarytvalue). Identical API and
 semantics; the only difference is that you choose the string hasher used to build and
 probe the frozen table. Every lookup hashes the whole key with it, so the hasher is the
-main lever on lookup speed. The default `StringFnV1AHasher` folds one character per step;
-`StringXxHash32Hasher` reads two at a time across four lanes, and on the benchmark's
-~30-character keys it looks keys up 1.6–1.9x faster, 2.3–3.0x slower than
-`FrozenDictionary` against the default's 3.5–5.6x. Pick a full-width hasher
-(`StringFnV1AFullHasher`) for keys with non-ASCII content, or a strong hasher
-(`StringMurmur3Hasher`, `StringXxHash3Hasher`) when you want the perfect fast path for a
-small key set a cheaper hasher would collide.
+main lever on lookup speed. The default `StringXxHash32Hasher` reads two characters at a
+time across four lanes; `StringFnV1AHasher`, the default before 4.0, folds one per step, and
+on the benchmark's ~30-character keys it looks keys up 1.5–1.9x slower, 3.4–5.8x slower
+than `FrozenDictionary` against the default's 2.2–3.0x. Name it to keep the hash codes, and
+with them the enumeration order and the perfect tables, that 3.x built.
 
 ```csharp
 using Celerity.Collections;
@@ -1738,14 +1739,15 @@ Both the convenience type and this one also carry `TryGetValue(ReadOnlySpan<char
 ## FrozenCeleritySet
 
 ```csharp
-public sealed class FrozenCeleritySet : FrozenCeleritySet<StringFnV1AHasher>
+public sealed class FrozenCeleritySet : FrozenCeleritySet<StringXxHash32Hasher>
 ```
 
 A build-once, read-many set of `string` elements — the set counterpart of
 [`FrozenCelerityDictionary`](#frozenceleritydictionarytvalue), in the spirit of the
 BCL `System.Collections.Frozen.FrozenSet<T>` but tunable through Celerity's
-`IHashProvider<T>`. The convenience type defaults to `StringFnV1AHasher`; use the
-[generic overload](#frozenceleritysetthasher) to supply a different string hasher.
+`IHashProvider<T>`. The convenience type defaults to `StringXxHash32Hasher`
+(`StringFnV1AHasher` before 4.0); use the [generic overload](#frozenceleritysetthasher)
+to supply a different string hasher.
 
 The set is **immutable**: every element is supplied at construction and there are no
 mutating members. It shares `FrozenCelerityDictionary`'s layout: a **perfect** —
@@ -1753,11 +1755,11 @@ collision-free — placement for small sets (near-certain up to about 100 elemen
 matter of odds for most counts up to 333), where a membership test is a single hash, a
 single array index
 and a single equality check, and otherwise a linear-probing table at most half full.
-Against `FrozenSet<string>` it answers `Contains` 4.1–6.1x slower at 1,000 to 100,000
+Against `FrozenSet<string>` it answers `Contains` 2.5–3.3x slower at 1,000 to 100,000
 elements, for the [same reason](#frozenceleritydictionarytvalue): it hashes the whole
-element. It builds 1.75–1.86x faster at those sizes, and slower for most sets below 334
-elements, where it runs the perfect-hash search: up to about 5x slower from 16 elements up,
-and more for a handful (2.0 µs against 0.14 µs at 8).
+element. It builds 2.0–2.1x faster at those sizes, and slower for most sets below 334
+elements, where it runs the perfect-hash search: up to about 7x slower from 16 elements up,
+and more for a handful (2.2 µs against 0.14 µs at 8).
 
 ### Constructors
 
@@ -1805,10 +1807,10 @@ The same as [`FrozenCelerityDictionary`'s](#frozenceleritydictionary-perfect-has
 a perfect placement is near-certain up to about 100 elements and a matter of odds for
 most counts up to 333; the build skips the search from 236 to 256 elements and past 333.
 Two distinct elements that collide on the
-hasher's raw 32-bit code (`"A"` and `"Ł"` under the low-byte `StringFnV1AHasher`) rule it
-out at any size. Otherwise the build uses an open-addressed linear-probing table at most half
-full (`IsPerfectlyHashed` is then `false`). **Membership tests are always correct either
-way**: the equality check tells colliding elements apart.
+hasher's raw 32-bit code (`"A"` and `"Ł"` under the low-byte `StringFnV1AHasher`, not the
+default) rule it out at any size. Otherwise the build uses an open-addressed linear-probing
+table at most half full (`IsPerfectlyHashed` is then `false`). **Membership tests are
+always correct either way**: the equality check tells colliding elements apart.
 
 ### Null-element handling
 
@@ -1845,10 +1847,11 @@ public class FrozenCeleritySet<THasher>
 The hasher-parameterized base type of [`FrozenCeleritySet`](#frozencelerityset).
 Identical API and semantics; the only difference is that you choose the string hasher
 used to build and probe the frozen table. As for the dictionary, every membership test
-hashes the whole element, so the hasher is the main lever on its speed. Pick a
-full-width hasher (`StringFnV1AFullHasher`) for elements with non-ASCII content, or a
-strong hasher (`StringMurmur3Hasher`, `StringXxHash3Hasher`) when you want the perfect
-fast path for a small set a cheaper hasher would collide.
+hashes the whole element, so the hasher is the main lever on its speed: under
+`StringFnV1AHasher`, the default before 4.0, `Contains` on the benchmark's ~30-character
+elements is about 1.5–2x slower than under the default `StringXxHash32Hasher`. Name it to
+keep the hash codes, and with them the enumeration order and the perfect tables, that 3.x
+built.
 
 ```csharp
 using Celerity.Collections;
@@ -7946,7 +7949,7 @@ The string-keyed collections below can be probed with a `ReadOnlySpan<char>` —
 
 Without them, a tokenizer, CSV / log reader, or route dispatcher holding a `ReadOnlySpan<char>` must call `new string(span)` to probe the collection: **one allocation plus a copy per lookup**, on the hot path of exactly the workloads these types exist for. The span overloads delete both. Nothing else changes — stored keys are compared ordinally against the span, which is what `EqualityComparer<string>.Default` does, so a span lookup and the equivalent string lookup always agree.
 
-> **Against the BCL's span probe.** `Dictionary<string, V>`, `HashSet<string>` and `FrozenDictionary<string, V>` probe with a span too, through `GetAlternateLookup<ReadOnlySpan<char>>()`, and every runtime Celerity targets has it. These overloads put the span probe on the collection itself; they do not make it cheaper than the BCL's. Measured against the alternate lookups (Apple Silicon, .NET 10, default BenchmarkDotNet job), at 1,000 and 100,000 keys: `FrozenCelerityDictionary` is 3.4x and 2.5x slower than `FrozenDictionary`, `Trie` 4.1x and 3.5x slower than `Dictionary`, and `SuccinctTrie` 21x and 20x slower. A span probe costs about what the same collection's `string` probe costs, so the overloads are for using these types without allocating, when you chose them for something else — prefix queries, ordered enumeration, a pluggable hasher — and not a reason to choose them.
+> **Against the BCL's span probe.** `Dictionary<string, V>`, `HashSet<string>` and `FrozenDictionary<string, V>` probe with a span too, through `GetAlternateLookup<ReadOnlySpan<char>>()`, and every runtime Celerity targets has it. These overloads put the span probe on the collection itself; they do not make it cheaper than the BCL's. Measured against the alternate lookups (Apple Silicon, .NET 10, default BenchmarkDotNet job), at 1,000 and 100,000 keys: `FrozenCelerityDictionary` is 2.0x and 1.7x slower than `FrozenDictionary`, `Trie` 4.1x and 3.5x slower than `Dictionary`, and `SuccinctTrie` 21x and 20x slower. A span probe costs about what the same collection's `string` probe costs, so the overloads are for using these types without allocating, when you chose them for something else — prefix queries, ordered enumeration, a pluggable hasher — and not a reason to choose them.
 
 ### How they are exposed
 

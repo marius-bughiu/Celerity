@@ -8,16 +8,17 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A build-once, read-many dictionary keyed by <see cref="string"/> using
-/// <see cref="StringFnV1AHasher"/> by default. Supply a different string hasher via
-/// the <see cref="FrozenCelerityDictionary{TValue, THasher}"/> generic overload when
-/// your keys favour a different hash (e.g. <see cref="StringFnV1AFullHasher"/> for
-/// non-ASCII keys, one of the strong hashers for adversarial keys, or a block hasher
-/// such as <see cref="StringXxHash32Hasher"/> for faster lookups on longer keys: every
-/// lookup hashes the whole key, and this default folds one character per step).
+/// <see cref="StringXxHash32Hasher"/> by default: every lookup hashes the whole key, and
+/// this block hasher reads it two characters at a time across four lanes. Supply a
+/// different string hasher via the <see cref="FrozenCelerityDictionary{TValue, THasher}"/>
+/// generic overload when your keys favour a different hash (e.g. one of the keyed hashers
+/// for adversarial keys, or <see cref="StringFnV1AHasher"/>, the default before 4.0, to
+/// keep the hash codes that decide the enumeration order and which small key sets get a
+/// perfect table).
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
 public sealed class FrozenCelerityDictionary<TValue>
-    : FrozenCelerityDictionary<TValue, StringFnV1AHasher>
+    : FrozenCelerityDictionary<TValue, StringXxHash32Hasher>
 {
     /// <summary>
     /// Initializes a new <see cref="FrozenCelerityDictionary{TValue}"/> from the

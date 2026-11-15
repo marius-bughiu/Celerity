@@ -119,7 +119,7 @@ Note: equality of *keys* themselves still uses `EqualityComparer<TKey>.Default` 
 
 ## `FrozenDictionary<string, V>` → `FrozenCelerityDictionary<V>`
 
-Both are immutable, build-once, read-many tables, but the swap is not a speedup for reads: `FrozenDictionary` looks keys up 3.5–5.6x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. Celerity's builds about 1.8x faster at those sizes (slower for most sets below 334 keys) and is tunable via `IHashProvider<T>`. Migrate for the hasher, or for the build time of a large table, not for the lookups:
+Both are immutable, build-once, read-many tables, but the swap is not a speedup for reads: `FrozenDictionary` looks keys up 2.2–3.0x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. Celerity's builds about 1.9x faster at those sizes (slower for most sets below 334 keys) and is tunable via `IHashProvider<T>`. Migrate for the hasher, or for the build time of a large table, not for the lookups:
 
 ```csharp
 // Before
@@ -130,7 +130,7 @@ var routes = new FrozenCelerityDictionary<int>(pairs);
 Console.WriteLine(routes.IsPerfectlyHashed);   // True only for a small key set
 ```
 
-No `Add` / `Remove` (same as `FrozenDictionary`). Duplicate keys in the source throw `ArgumentException`, where `ToFrozenDictionary` silently keeps the last value — de-duplicate first if your source can repeat a key. For non-ASCII keys or to restore a perfect layout when the default collides, use `FrozenCelerityDictionary<V, StringFnV1AFullHasher>`. See the [performance guide](performance.md#6-build-once-read-many--freeze-it).
+No `Add` / `Remove` (same as `FrozenDictionary`). Duplicate keys in the source throw `ArgumentException`, where `ToFrozenDictionary` silently keeps the last value — de-duplicate first if your source can repeat a key. The default hasher, `StringXxHash32Hasher`, hashes every character in full, so non-ASCII keys need nothing special; `FrozenCelerityDictionary<V, THasher>` takes another one. See the [performance guide](performance.md#6-build-once-read-many--freeze-it).
 
 ## `HashSet<T>` → `IntSet` / `LongSet` / `CeleritySet<T, THasher>`
 
@@ -295,6 +295,29 @@ Releases after the 3.6.x line target **`net10.0` only**. 3.6.0 is the last relea
 
 - **On .NET 10:** nothing to do. NuGet already restored the `net10.0` assembly.
 - **On .NET 8 or 9:** keep the 3.6.x line, for example `<PackageReference Include="Celerity.Collections" Version="3.6.*" />`. A later version fails to restore with `NU1202` (not compatible with your target framework). Security fixes for 3.6.x ship as patch releases from the [`support/net8`](https://github.com/marius-bughiu/Celerity/tree/support/net8) branch.
+
+## `StringFnV1AHasher` → `StringXxHash32Hasher` in the frozen types — after 3.6.x
+
+`FrozenCelerityDictionary<TValue>` and `FrozenCeleritySet` now hash with `StringXxHash32Hasher`, where 3.x used `StringFnV1AHasher`: they derive from `FrozenCelerityDictionary<TValue, StringXxHash32Hasher>` and `FrozenCeleritySet<StringXxHash32Hasher>`. Every lookup hashes the whole key, and FNV-1a folds the low byte of one character per step where XxHash32 reads two characters at a time, in full, so on the benchmark's ~30-character keys lookups are 1.5–1.9x faster. Code that builds and queries these types compiles unchanged, but what follows the hash codes changes with them:
+
+- **Enumeration order**, which follows the table layout. It was never specified; sort when you need an order.
+- **`IsPerfectlyHashed` for a small key set**, which can flip either way, since different hash codes meet the perfect-hash search's odds differently. Lookups are correct either way.
+
+To keep the tables 3.x built, name the old hasher:
+
+```csharp
+// Before (3.x hashed with StringFnV1AHasher)
+var routes = new FrozenCelerityDictionary<int>(pairs);
+var keywords = new FrozenCeleritySet(words);
+
+// After, keeping 3.x's hash codes
+var routes = new FrozenCelerityDictionary<int, StringFnV1AHasher>(pairs);
+var keywords = new FrozenCeleritySet<StringFnV1AHasher>(words);
+```
+
+A variable or parameter typed as the old base, `FrozenCelerityDictionary<TValue, StringFnV1AHasher>` or `FrozenCeleritySet<StringFnV1AHasher>`, no longer accepts the convenience types: retype it, or construct the generic type as above.
+
+This is also a **binary** break, and a silent one. An assembly compiled against 3.x calls the lookup members of the `StringFnV1AHasher` base it was compiled against. Run against 4.0 without recompiling, those hash keys with FNV-1a into a table the constructor built with XxHash32, so `TryGetValue`, `ContainsKey` and `Contains` miss keys that are present and the indexer throws `KeyNotFoundException`, while `Count` and enumeration still look right. Recompile everything that uses these types against 4.0, and that includes packages: a library built against 3.x needs a release built against 4.0 before it runs beside it.
 
 ## See also
 

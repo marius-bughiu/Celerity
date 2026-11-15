@@ -124,7 +124,7 @@ foreach (var k in toRemove) dict.Remove(k);
 
 **Cause:** Usually the key set is too large for a perfect placement: from about 110 keys up one seeded hash places them without a collision only some of the time, depending on where the count falls between powers of two, and past 333 keys the build does not try. Less often, the chosen hasher gave two keys the same raw hash code. Either way the build used a linear-probing table at most half full, so lookups are still **correct** and a hit inspects at most about 1.5 slots instead of one.
 
-**Fix:** Nothing is broken. For a small key set, a stronger/wider hasher via `FrozenCelerityDictionary<TValue, THasher>` can restore the single-probe layout — e.g. `StringFnV1AFullHasher` for keys with non-ASCII characters (the default `StringFnV1AHasher` folds only the low byte). For a large set no hasher will. See the [performance guide](performance.md#6-build-once-read-many--freeze-it).
+**Fix:** Nothing is broken. For a small key set whose keys collide on the hasher's raw code, another hasher via `FrozenCelerityDictionary<TValue, THasher>` can restore the single-probe layout. The default `StringXxHash32Hasher` hashes every character in full, so that takes a chance collision; the low-byte `StringFnV1AHasher` (the default before 4.0) gives keys that differ only in a character's high byte, such as `"A"` and `"Ł"`, the same code. For a large set no hasher will. See the [performance guide](performance.md#6-build-once-read-many--freeze-it).
 
 ### Lookups feel slow / no speedup vs `Dictionary<,>`
 
