@@ -1750,8 +1750,8 @@ Name `StringFnV1AHasher` for short keys, or to keep 3.x's hash codes: a key set 
 placed perfectly then gets the same table, in the same enumeration order. (A set on the
 fallback table usually enumerates in a new order in 4.0 whatever the hasher, because that
 table is now at most half full.)
-`StringCityHash64Hasher` led on keys of 8 to 32 characters and on short mixed lengths, but
-fell behind `StringXxHash32Hasher` past 32 characters and on long keys of varying length.
+`StringCityHash64Hasher` led on keys of 8 to 32 characters, uniform or mixed, but fell behind
+`StringXxHash32Hasher` once keys ran past 32 characters.
 
 ```csharp
 using Celerity.Collections;
