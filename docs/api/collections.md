@@ -1609,7 +1609,7 @@ up. Pick this type for
 a hasher you choose (`<TValue, THasher>`), for a `null` key, to have duplicate keys
 rejected, or for a cheaper build of a large key set; for the fastest reads,
 `FrozenDictionary` is the better choice, unless the keys are very short: at 3–4 characters
-this type came within about 15% of it under the default, and beat it under
+this type was level with it to 9% slower under the default, and faster under
 `StringFnV1AHasher` ([measured below](#frozenceleritydictionarytvalue-thasher)).
 
 ### Constructors
@@ -1727,10 +1727,11 @@ how much their lengths vary. The default `StringXxHash32Hasher` reads two charac
 step, in four lanes from eight characters up; `StringFnV1AHasher`, the default before 4.0,
 folds the low byte of one character per step. On the benchmark's ~30-character keys FNV-1a
 looks keys up 1.5–1.9x slower than the default (3.4–5.8x slower than `FrozenDictionary`,
-against the default's 2.2–3.0x), but on short keys it is the faster of the two: 1.3–1.5x at
-3–4 characters, and up to 12% when lengths vary and average under about 16 characters. Nanoseconds per successful lookup over 1,000 random ASCII keys, probing with the
-stored strings themselves (Apple M4, .NET 10; a Stopwatch loop that interleaves the four,
-one process per row):
+against the default's 2.2–3.0x), but on short keys it is the faster of the two: 1.3x at 3–4
+characters (up to 1.5x with 200 keys), and up to 12% when lengths vary and average under
+about 16 characters. Nanoseconds per successful lookup over 1,000 random ASCII keys,
+probing with the stored strings themselves (Apple M4, .NET 10; a Stopwatch loop that
+interleaves the four, one process per row):
 
 | Keys | `FrozenDictionary` | `StringFnV1AHasher` | `StringXxHash32Hasher` (default) | `StringCityHash64Hasher` |
 |---|---|---|---|---|
@@ -1745,9 +1746,10 @@ one process per row):
 | 20–40 characters | 4.0 | 14.4 | 10.7 | 14.2 |
 | 16–48 characters | 4.0 | 22.0 | 10.9 | 15.0 |
 
-Name `StringFnV1AHasher` for short keys, or to keep 3.x's hash codes: a small key set then
-gets the perfect table 3.x built, in the same enumeration order. (Larger sets enumerate in a
-new order in 4.0 whatever the hasher, because the fallback table is now at most half full.)
+Name `StringFnV1AHasher` for short keys, or to keep 3.x's hash codes: a key set that 3.x
+placed perfectly then gets the same table, in the same enumeration order. (A set on the
+fallback table usually enumerates in a new order in 4.0 whatever the hasher, because that
+table is now at most half full.)
 `StringCityHash64Hasher` led on keys of 8 to 32 characters and on short mixed lengths, but
 fell behind `StringXxHash32Hasher` past 32 characters and on long keys of varying length.
 
