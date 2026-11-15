@@ -27,8 +27,8 @@ namespace Celerity.Hashing;
 /// <para>
 /// The loads are not bounds-checked, so each caller must keep every word inside the span: its
 /// length dispatch places the reads, and its loop bounds are written so they cannot overflow
-/// (<c>i &lt;= length - 4</c>, not <c>i + 4 &lt;= length</c>, which wraps for a span within four
-/// chars of <see cref="int.MaxValue"/>). A Debug build asserts every read. The hashers' reference
+/// (<c>i &lt;= length - 4</c>, not <c>i + 4 &lt;= length</c>, which wraps once <c>i</c> passes
+/// <c>int.MaxValue - 4</c>). A Debug build asserts every read. The hashers' reference
 /// tests cover each length class, and the span parity tests hash slices of a padded buffer.
 /// </para>
 /// </remarks>

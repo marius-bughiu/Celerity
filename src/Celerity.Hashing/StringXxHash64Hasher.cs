@@ -175,8 +175,8 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
 
         // Remaining whole 64-bit lanes (four chars / eight bytes each). The reads are
         // unchecked, so the bounds are written `i <= length - 4` rather than
-        // `i + 4 <= length`, which overflows for a span within four chars of
-        // int.MaxValue and would read past its end.
+        // `i + 4 <= length`, which overflows once i passes int.MaxValue - 4 and would
+        // then read past the end of the span.
         while (i <= length - 4)
         {
             ulong k1 = Lane(key, i);

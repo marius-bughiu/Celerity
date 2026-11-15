@@ -124,8 +124,8 @@ public struct StringXxHash32Hasher : IHashProvider<string>, ISpanHashProvider
 
         // Remaining whole 32-bit lanes (two chars / four bytes each). The reads are
         // unchecked, so the bound is written `i <= length - 2` rather than
-        // `i + 2 <= length`, which overflows for a span within two chars of
-        // int.MaxValue and would read past its end.
+        // `i + 2 <= length`, which overflows once i passes int.MaxValue - 2 and would
+        // then read past the end of the span.
         while (i <= length - 2)
         {
             uint lane = Block(key, i);

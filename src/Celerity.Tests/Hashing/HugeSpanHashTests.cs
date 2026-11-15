@@ -7,17 +7,23 @@ namespace Celerity.Tests.Hashing;
 /// <summary>
 /// The block string hashers read their words without bounds checks, so their loop bounds must not
 /// overflow for a span near <see cref="int.MaxValue"/> chars: a bound written <c>i + 4 &lt;= length</c>
-/// wraps negative there and reads past the end of the span. Only native memory can back a span that
-/// long (arrays and strings stop at 2,147,483,591 elements), so these tests hash a span over a 4 GiB
-/// native buffer and check that the result ignores the memory just past the span's end.
+/// wraps negative once <c>i</c> passes <c>int.MaxValue - 4</c> and reads past the end of the span. No
+/// <c>char[]</c> or <see cref="string"/> is that long, but a span over native memory, or a
+/// <c>MemoryMarshal.Cast</c> of a wider array, can be. These tests hash a span over a 4 GiB native
+/// buffer and check that the result ignores the memory just past the span's end.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The buffer is never written apart from those few trailing chars. Where the OS backs untouched pages
 /// with a shared zero page, as Linux does, reading it costs address space rather than resident memory;
-/// elsewhere it can commit the full 4 GiB, hence the <see cref="MemoryIntensiveFactAttribute"/>. The
-/// tests cover XxHash64 and XxHash32, whose loop bounds were once written in the overflowing form;
-/// running every block hasher at this length would take about a minute, since each 4 GiB pass of a
-/// SipHash variant takes several seconds.
+/// elsewhere it can commit the full 4 GiB, hence the <see cref="MemoryIntensiveFactAttribute"/>.
+/// </para>
+/// <para>
+/// The tests run in Release builds only. An unoptimised Debug build of the hashers, asserting every
+/// word, stretches the four 4 GiB passes to about half a minute; CI tests Release. They cover XxHash64
+/// and XxHash32, whose loop bounds were once written in the overflowing form: every block hasher at
+/// this length would take about a minute, since a 4 GiB pass of a SipHash variant takes seconds.
+/// </para>
 /// </remarks>
 public class HugeSpanHashTests
 {
@@ -26,11 +32,21 @@ public class HugeSpanHashTests
     private const int Length = int.MaxValue;
     private const int SlackChars = 16;
 
+#if DEBUG
+    private const string ReleaseOnly = "Runs in Release builds only: a Debug build takes about half a minute.";
+
+    [Fact(Skip = ReleaseOnly)]
+#else
     [MemoryIntensiveFact(4200)]
+#endif
     public void XxHash64_ShouldReadOnlyInsideTheSpan_WhenTheSpanIsIntMaxValueCharsLong() =>
         AssertHashIgnoresTheMemoryPastTheEnd<StringXxHash64Hasher>();
 
+#if DEBUG
+    [Fact(Skip = ReleaseOnly)]
+#else
     [MemoryIntensiveFact(4200)]
+#endif
     public void XxHash32_ShouldReadOnlyInsideTheSpan_WhenTheSpanIsIntMaxValueCharsLong() =>
         AssertHashIgnoresTheMemoryPastTheEnd<StringXxHash32Hasher>();
 
