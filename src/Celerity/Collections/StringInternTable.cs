@@ -374,9 +374,10 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     }
 
     // GetOrAdd(ReadOnlySpan<char>)'s miss: materialize the string, then store it. Done inline in GetOrAdd,
-    // the ToString call made the JIT keep the key span on the stack, storing and reloading it on every
-    // call, hits included (ARM64, .NET 10). Out here a miss pays one more call instead, and none of
-    // GetOrAdd's own values are live across it.
+    // the ToString call added stack traffic to hits (ARM64, .NET 10). GetOrAdd's own body stored and
+    // reloaded the key span on every call. Inlined into a caller's loop, it could spill the span or the
+    // probe index. Out here a miss pays one more call instead, and none of GetOrAdd's own values are live
+    // across it.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private string AddSlow(ReadOnlySpan<char> key, int index)
     {
