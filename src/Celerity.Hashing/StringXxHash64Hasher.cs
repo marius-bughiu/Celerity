@@ -173,8 +173,11 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
 
         h64 += byteLength;
 
-        // Remaining whole 64-bit lanes (four chars / eight bytes each).
-        while (i + 4 <= length)
+        // Remaining whole 64-bit lanes (four chars / eight bytes each). The reads are
+        // unchecked, so the bounds are written `i <= length - 4` rather than
+        // `i + 4 <= length`, which overflows for a span within four chars of
+        // int.MaxValue and would read past its end.
+        while (i <= length - 4)
         {
             ulong k1 = Lane(key, i);
             k1 *= Prime2;
@@ -186,7 +189,7 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
         }
 
         // A remaining 32-bit lane (two chars / four bytes).
-        if (i + 2 <= length)
+        if (i <= length - 2)
         {
             h64 ^= (ulong)Block(key, i) * Prime1;
             h64 = BitOperations.RotateLeft(h64, 23) * Prime2 + Prime3;

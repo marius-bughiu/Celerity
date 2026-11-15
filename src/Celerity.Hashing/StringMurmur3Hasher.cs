@@ -83,9 +83,10 @@ public struct StringMurmur3Hasher : IHashProvider<string>, ISpanHashProvider
         // first char supplies the low 16 bits, the second the high 16 bits, which
         // is exactly the 4-byte block a byte-oriented Murmur3 would read over the
         // native little-endian UTF-16 representation of the string — one unaligned
-        // load on a little-endian host (see Utf16Words).
+        // load on a little-endian host (see Utf16Words). The reads are unchecked, so
+        // the bound is written in a form that cannot overflow.
         int i = 0;
-        for (; i + 1 < length; i += 2)
+        for (; i < length - 1; i += 2)
         {
             uint block = Utf16Words.ReadUInt32(key, i);
 
