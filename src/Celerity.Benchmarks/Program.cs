@@ -62,6 +62,7 @@ internal class Program
         typeof(PersistentHashMapBenchmark),
         typeof(PersistentSortedMapBenchmark),
         typeof(PersistentHashSetBenchmark),
+        typeof(PersistentSortedSetBenchmark),
         typeof(DisjointSetBenchmark),
         typeof(IndexedPriorityQueueBenchmark),
         typeof(MinMaxHeapBenchmark),

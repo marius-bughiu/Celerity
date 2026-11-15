@@ -111,6 +111,7 @@ internal static class Differential
         ("PersistentHashMap", PersistentHashMapCase),
         ("PersistentSortedMap", PersistentSortedMapCase),
         ("PersistentHashSet", PersistentHashSetCase),
+        ("PersistentSortedSet", PersistentSortedSetCase),
         ("RadixSort", RadixSortCase),
         ("StringSort", StringSortCase),
         ("CountingSort", CountingSortCase),
@@ -6943,6 +6944,141 @@ internal static class Differential
 
         foreach ((PersistentSortedMap<int, int, DefaultComparer<int>> snapshot, SortedDictionary<int, int> expected) in builderSnapshots)
             CheckSortedEntries(snapshot, expected, keyOffset, keySpace, rng, "PersistentSortedMap builder snapshot");
+    }
+
+    // PersistentSortedSet — the immutable B+ tree without values, against a SortedSet<int> oracle. The same
+    // three concerns as the map case — a builder replaying the run, snapshots re-checked at the end, and the
+    // enumerated sequence plus the ordered queries — and the set algebra as a fourth route into the tree, each
+    // operation reconciled against SortedSet's in-place counterpart.
+    private static void PersistentSortedSetCase(Random rng)
+    {
+        var sut = PersistentSortedSet<int, DefaultComparer<int>>.Empty;
+        var builder = new PersistentSortedSet<int, DefaultComparer<int>>.Builder();
+
+        var oracle = new SortedSet<int>();
+        var snapshots = new List<(PersistentSortedSet<int, DefaultComparer<int>> Set, SortedSet<int> Oracle)>();
+
+        int removeWeight = rng.Next(0, 51);
+        int space = rng.Next(1, 4000);
+        int offset = rng.Next(-space, 1);
+        int operations = rng.Next(0, 2500);
+
+        for (int op = 0; op < operations; op++)
+        {
+            int item = offset + rng.Next(0, space);
+            int roll = rng.Next(0, 100);
+            var before = sut;
+
+            if (roll < removeWeight)
+            {
+                sut = sut.Remove(item);
+                bool inOracle = oracle.Remove(item);
+                if (!inOracle)
+                    Check(ReferenceEquals(before, sut), "PersistentSortedSet Remove of an absent element allocated");
+
+                Check(builder.Remove(item) == inOracle, "PersistentSortedSet builder Remove diverged");
+            }
+            else if (roll < removeWeight + 5)
+            {
+                var other = new List<int>();
+                int size = rng.Next(0, 40);
+                for (int i = 0; i < size; i++)
+                    other.Add(offset + rng.Next(0, space));
+
+                switch (rng.Next(0, 4))
+                {
+                    case 0: sut = sut.Union(other); oracle.UnionWith(other); break;
+                    case 1: sut = sut.Except(other); oracle.ExceptWith(other); break;
+                    case 2: sut = sut.Intersect(other); oracle.IntersectWith(other); break;
+                    default: sut = sut.SymmetricExcept(other); oracle.SymmetricExceptWith(other); break;
+                }
+
+                Check(sut.SetEquals(oracle), "PersistentSortedSet set algebra diverged");
+                if (oracle.SetEquals(before))
+                    Check(ReferenceEquals(before, sut), "PersistentSortedSet no-op set operation allocated");
+
+                // The queries use a HashSet oracle: on .NET 10, SortedSet<T>.IsSubsetOf can answer true for an
+                // operand with duplicates that lacks one of the set's elements. For int the two equalities agree.
+                var queryOracle = new HashSet<int>(oracle);
+                Check(sut.IsSubsetOf(other) == queryOracle.IsSubsetOf(other), "PersistentSortedSet IsSubsetOf diverged");
+                Check(sut.IsProperSupersetOf(other) == queryOracle.IsProperSupersetOf(other), "PersistentSortedSet IsProperSupersetOf diverged");
+                Check(sut.Overlaps(other) == queryOracle.Overlaps(other), "PersistentSortedSet Overlaps diverged");
+
+                // Re-seed the builder from the result so it keeps tracking the same contents; seeding from a
+                // set that shares nodes with earlier snapshots is itself an ownership-token check.
+                builder = sut.ToBuilder();
+            }
+            else
+            {
+                sut = sut.Add(item);
+                bool added = oracle.Add(item);
+                if (!added)
+                    Check(ReferenceEquals(before, sut), "PersistentSortedSet Add of a present element allocated");
+
+                Check(builder.Add(item) == added, "PersistentSortedSet builder Add diverged");
+            }
+
+            Check(sut.Count == oracle.Count, "PersistentSortedSet count diverged");
+            Check(builder.Count == oracle.Count, "PersistentSortedSet builder count diverged");
+
+            if (op % 64 == 0)
+                snapshots.Add((sut, new SortedSet<int>(oracle)));
+        }
+
+        CheckSortedElements(sut, oracle, offset, space, rng, "PersistentSortedSet");
+        CheckSortedElements(builder.ToImmutable(), oracle, offset, space, rng, "PersistentSortedSet builder");
+
+        foreach ((PersistentSortedSet<int, DefaultComparer<int>> snapshot, SortedSet<int> expected) in snapshots)
+            CheckSortedElements(snapshot, expected, offset, space, rng, "PersistentSortedSet snapshot");
+    }
+
+    private static void CheckSortedElements(
+        PersistentSortedSet<int, DefaultComparer<int>> actual,
+        SortedSet<int> expected,
+        int offset,
+        int space,
+        Random rng,
+        string label)
+    {
+        Check(actual.Count == expected.Count, $"{label} count diverged");
+        CheckSameSequence(actual, expected, $"{label} order");
+
+        int[] items = expected.ToArray();
+        for (int probe = 0; probe < 64; probe++)
+        {
+            int k = probe switch
+            {
+                0 => offset - 1,
+                1 => offset,
+                2 => offset + space - 1,
+                3 => offset + space,
+                _ => offset + rng.Next(0, space),
+            };
+
+            int at = Array.BinarySearch(items, k);
+            bool exact = at >= 0;
+            int ceiling = exact ? at : ~at;
+            int higher = exact ? at + 1 : ceiling;
+            int floor = exact ? at : ceiling - 1;
+
+            Check(actual.Contains(k) == exact, $"{label} Contains({k}) diverged");
+            CheckElementSeek(actual.TryGetLowerBound(k, out int e), e, items, ceiling, $"{label} lower({k})");
+            CheckElementSeek(actual.TryGetUpperBound(k, out e), e, items, higher, $"{label} upper({k})");
+            CheckElementSeek(actual.TryGetFloor(k, out e), e, items, floor, $"{label} floor({k})");
+            CheckElementSeek(actual.TryGetPredecessor(k, out e), e, items, ceiling - 1, $"{label} predecessor({k})");
+        }
+
+        int from = offset + rng.Next(-2, space + 2);
+        int to = from + rng.Next(0, 200);
+        CheckSameSequence(actual.EnumerateRange(from, to), expected.Where(x => x >= from && x < to), $"{label} range[{from},{to})");
+
+        static void CheckElementSeek(bool found, int item, int[] items, int index, string what)
+        {
+            bool expectedFound = index >= 0 && index < items.Length;
+            Check(found == expectedFound, $"{what} found={found}, expected {expectedFound}");
+            if (expectedFound)
+                Check(item == items[index], $"{what} returned {item}, expected {items[index]}");
+        }
     }
 
     // Reconciles every read surface: TryGetValue and the four seeks descend the tree, while enumeration and

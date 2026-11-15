@@ -6871,8 +6871,9 @@ to produce an edited copy cheaply.
 nothing to share with, and every edit here allocates a root-to-leaf path where `CeleritySet` writes
 one slot.
 
-**If you need ordered iteration or range queries, use `BTreeSet`.** A hash trie's enumeration order
-is unspecified.
+**If you need ordered iteration or range queries, use
+[`PersistentSortedSet`](#persistentsortedsett-tcomparer)** — or `BTreeSet` when nobody holds an old
+version. A hash trie's enumeration order is unspecified.
 
 ### Thread safety
 
@@ -7181,6 +7182,209 @@ history.Add(3_000, "v3");
 
 PersistentSortedMap<long, string, DefaultComparer<long>> versions = history.ToImmutable();
 versions.TryGetFloor(2_500, out var asOf);          // (2000, "v2")
+```
+
+
+## PersistentSortedSet&lt;T, TComparer&gt;
+
+An **immutable sorted set** backed by a **persistent B+ tree**: a **single-element edit** returns a
+new set that **shares** all but one root-to-leaf path of the old one's storage (plus a neighbour per
+level on a removal that rebalances) — while an edit that changes nothing hands back the receiver —
+and the ordered queries (`Min`, `Max`, lower and upper bound, floor and predecessor) each cost one
+`O(log n)` descent, with range enumeration in `O(log n + k)`. The set half of
+[`PersistentSortedMap`](#persistentsortedmaptkey-tvalue-tcomparer), the sorted sibling of
+[`PersistentHashSet`](#persistenthashsett-thasher), and the immutable sibling of
+[`BTreeSet`](#btreesett-tcomparer).
+
+```csharp
+public sealed class PersistentSortedSet<T, TComparer> : IReadOnlySet<T>
+    where TComparer : struct, IComparer<T>
+```
+
+`System.Collections.Immutable.ImmutableSortedSet<T>` is the BCL's only immutable sorted set. It is an
+**AVL tree with one heap node per element**, each carrying the element, two children, a height and a
+subtree count. Its branching factor is two, so a membership test is a pointer chase per level — about
+seventeen at 100,000 elements — and every comparison is an interface call through the `IComparer<T>`
+it holds. It has `Min` and `Max`, but no floor, ceiling or range view: "the first element at or after
+*x*" is an `IndexOf` binary search followed by an indexer descent, and a range is that seek followed
+by one more descent per element.
+
+`PersistentSortedSet<T, TComparer>` is `PersistentSortedMap`'s tree with the value array taken out:
+every element lives in a leaf of up to 32 held in one flat array, and a branch holds up to 32 children
+and the separators between them. 100,000 elements are four levels deep rather than seventeen, a level
+costs one binary search over a contiguous array, and in-order enumeration — of the whole set or of a
+range — walks leaf arrays rather than a node per element. `TComparer` is a struct type argument, as in
+`BTreeSet`, so the comparison is inlined rather than dispatched.
+
+The documented BCL-beating workload is the one `PersistentHashSet` serves, when the reader also needs
+**order**: a sorted snapshot read far more often than it is written, that must still be updatable
+without copying, and that is queried by **position in the order** as well as by membership — a free-id
+or free-slot pool handed to readers as a version, a set of active timestamps or sequence numbers asked
+"the next one after *t*", a sorted allow-list or symbol set threaded through a compiler pass, or the
+visited frontier of a search that backtracks.
+
+### How it works
+
+The tree is `PersistentSortedMap`'s, node for node: every node except the root holds between **16 and
+32** elements or children, so the tree is at most eight levels deep for any count an `int` can hold;
+an insert that overflows a leaf splits it into 16 and 17, a removal that drops a node below 16
+borrows from or merges with a neighbour, and a single-element edit **path-copies** its root-to-leaf
+path into exact-length arrays while sharing every other node.
+
+**Equality is the comparer's.** Two elements `TComparer` orders equal are the same element — under a
+case-insensitive order, `"a"` and `"A"` are one — and the whole surface answers that way, the
+set-algebra methods included, as `SortedSet<T>` does. The four queries that need the *distinct*
+elements of the other operand (`SetEquals`, `IsSubsetOf`, `IsProperSubsetOf`, `IsProperSupersetOf`)
+collapse it under `TComparer` rather than into a `HashSet<T>`, exactly as `BTreeSet` and `RankedSet`
+do.
+
+There is **no out-of-band `default(T)` slot**, unlike `PersistentHashSet`. A comparer orders `null`
+and `0` like any other element, so they are stored inline: `Comparer<T>.Default` puts `null` before
+every non-`null` element.
+
+**The comparer is `default(TComparer)`.** Every set — `Empty` included — orders by the default value
+of `TComparer`, because the type shares one static empty set and every node operation is static. A
+comparer must carry its configuration in its *type* rather than in fields, as `DefaultComparer<T>`
+does; there is no constructor taking a comparer instance.
+
+### Constructors
+
+```csharp
+public PersistentSortedSet(IEnumerable<T> source)
+public static readonly PersistentSortedSet<T, TComparer> Empty
+```
+
+- `Empty` is the empty set, and is the instance `Remove` returns when it takes the last element.
+- The `source` constructor inserts through a `Builder`, so no intermediate set is allocated per
+  element. The source does not need to be sorted, and duplicates — under `TComparer` — are ignored
+  rather than rejected, as `SortedSet<T>`'s sequence constructor does; the first of a run of equal
+  elements is the one kept.
+
+**Throws:** `ArgumentNullException` if `source` is `null`.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `bool IsEmpty { get; }` | The number of elements, and whether there are none. |
+| `bool Contains(T item)` | `O(log n)`: one binary search per level, four levels at 100,000 elements and never more than eight. |
+| `bool TryGetValue(T equalValue, out T actualValue)` | The **stored** instance equal to `equalValue` — the original casing under a case-insensitive order, say. On a miss `actualValue` is the argument itself, as `ImmutableSortedSet<T>.TryGetValue` hands it back. |
+| `T Min { get; }` / `T Max { get; }` | Smallest / largest element, `O(log n)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out T)` / `TryGetMax(out T)` | The non-throwing forms. |
+| `bool TryGetLowerBound(T item, out T)` | First element **≥** `item` (`lower_bound`, the ceiling); an equal element is its own lower bound. |
+| `bool TryGetUpperBound(T item, out T)` | First element **>** `item` (`upper_bound`, the successor). |
+| `bool TryGetFloor(T item, out T)` | Last element **≤** `item`. |
+| `bool TryGetPredecessor(T item, out T)` | Last element **<** `item`. |
+| `RangeEnumerable EnumerateRange(T fromInclusive, T toExclusive)` | The elements of `[fromInclusive, toExclusive)`, ascending, in `O(log n + k)`, allocation-free. Throws `ArgumentException` when the bounds are inverted. |
+| `PersistentSortedSet<...> Add(T item)` | A set with the element added; returns **the receiver** when an equal element is present, keeping the stored instance — as `ImmutableSortedSet<T>.Add` does. |
+| `PersistentSortedSet<...> Remove(T item)` | A set without the element; returns **the receiver** when it was absent and `Empty` when it was the last element. |
+| `PersistentSortedSet<...> Union(IEnumerable<T> other)` | Every element of either side, through one `Builder`; returns the receiver when `other` added nothing. |
+| `PersistentSortedSet<...> Except(IEnumerable<T> other)` | This set without `other`'s elements; returns the receiver when none was present. |
+| `PersistentSortedSet<...> Intersect(IEnumerable<T> other)` | Only the elements also in `other`, built up from the matches so a small intersection of a large set costs a small set's allocation. Keeps the **stored** instances, not `other`'s equal ones; returns the receiver when every element survives. |
+| `PersistentSortedSet<...> SymmetricExcept(IEnumerable<T> other)` | The elements in exactly one side. `other` is collapsed under `TComparer` first, so a run of equal elements toggles once. Returns the receiver when `other` is empty. |
+| `SetEquals` / `IsSubsetOf` / `IsProperSubsetOf` / `IsSupersetOf` / `IsProperSupersetOf` / `Overlaps` | The `IReadOnlySet<T>` queries, under the comparer's equality. `IsSupersetOf` and `Overlaps` stream `other` and may stop early; the other four sort and collapse it once and merge it against this set's ascending order. |
+| `Builder ToBuilder()` | A mutable builder seeded with this set's elements. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in ascending order. Nothing can invalidate it, so it has no version check; the root-to-leaf path is held inline in the struct. |
+
+#### Builder
+
+```csharp
+public sealed class Builder
+```
+
+The builder works as `PersistentSortedMap`'s does: it stamps every node it creates with an ownership
+token and edits such a node in place, copying a node shared with a published set once and owning the
+copy from then on. `ToImmutable()` takes a new token, which makes every node it has handed out
+read-only again; the builder stays usable afterwards.
+
+- `Builder()` — a new, empty builder.
+- `int Count` — the number of elements the builder holds.
+- `bool Contains(T item)` — membership.
+- `bool Add(T item)` — add, reporting whether the element was new.
+- `bool Remove(T item)` — remove, reporting whether the element was there.
+- `PersistentSortedSet<...> ToImmutable()` — a set holding the builder's current elements.
+
+### Three deliberate omissions
+
+**There is no `Clear()`**: everywhere else in this library `Clear()` means in-place mutation, so the
+empty set is spelled `Empty`. It **does not implement `IImmutableSet<T>`**, whose `Clear()`
+contradicts that; it implements `IReadOnlySet<T>`. And there is **no positional access** — no indexer
+and no `IndexOf` — because the tree keeps no subtree counts, which is what keeps an edit's copy to one
+array per level. For rank and select over a sorted set use [`RankedSet`](#rankedsett-tcomparer)
+(mutable) or `ImmutableSortedSet<T>`, whose AVL nodes carry the count.
+
+### When not to reach for it
+
+**If nobody holds an old version, use `BTreeSet`.** Structural sharing buys nothing when there is
+nothing to share with: the mutable B-tree writes into one node where this allocates a path.
+
+**If the set never needs order, use `PersistentHashSet`.** A hash trie tests membership with a
+popcount per level instead of a binary search per level.
+
+**If the set never changes after it is built, use [`FrozenSortedSet`](#frozensortedsett)** — a
+static, read-only layout with no path copying at all.
+
+### Thread safety
+
+Concurrent readers need no synchronization: no published set is ever mutated after it is returned. A
+shared *variable* holding successive sets still needs the usual publication rules, and the guarantee
+covers the set's own state only — every lookup calls `TComparer`, so a comparer or element whose
+comparison is not thread-safe makes concurrent reads unsafe however immutable the set is. `Builder`
+is **not** thread-safe; the sets it produces are.
+
+### Measured
+
+`int` elements, against `ImmutableSortedSet<int>`, as speedups (BCL time ÷ this type's time; below 1x
+is a loss):
+
+| Operation | 1,000 elements | 100,000 elements |
+| --- | --- | --- |
+| `Enumerate` — every element in order | **2.7x** | **4.1x** |
+| `Insert` — build the whole set one element at a time | **1.75x** | **2.5x** |
+| `LowerBound` — `TryGetLowerBound` at random probes, against `IndexOf` + indexer | **1.67x** | **2.15x** |
+| `Remove` — take out half the set (at most 10,000) one element at a time | **1.35x** | **1.76x** |
+| `Contains` — random probes, about half of them misses | 1.04x (a wash) | **1.37x** |
+
+Unlike `PersistentSortedMap`, no shared operation loses at 1,000 elements: `ImmutableSortedSet`'s
+nodes carry a subtree count the map's do not, so its writes do more work per level. **Removal
+allocates more**, though — 1.19x the BCL's bytes at 1,000 elements and 1.11x at 100,000 — for the
+reason the map's writes do: a path copy here rebuilds about four arrays of up to 32 slots where an AVL
+path copy rebuilds about seventeen small nodes. Building allocates about the same (0.91x and 1.01x).
+
+Every ratio above was measured on a development machine (Apple Silicon, .NET 10). The CI series that
+is the project's contract is published to the
+[benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=PersistentSortedSet)
+and refreshes on merge to `main`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// A pool of free slot ids, handed to readers as a version and edited by one writer.
+PersistentSortedSet<int, DefaultComparer<int>> free =
+    new PersistentSortedSet<int, DefaultComparer<int>>(new[] { 7, 3, 12, 5 });
+
+PersistentSortedSet<int, DefaultComparer<int>> snapshot = free; // hand to a reader
+free = free.Remove(free.Min);                       // claim the lowest id; snapshot still has 3
+
+Console.WriteLine(free.Min);                        // 5
+free.TryGetLowerBound(6, out int next);             // 7 — the first free id at or after 6
+free.TryGetFloor(11, out int below);                // 7 — the last free id at or below 11
+
+foreach (int id in free.EnumerateRange(5, 12))
+    Console.WriteLine(id);                          // 5, 7 in ascending order
+
+Console.WriteLine(snapshot.Contains(3));            // True
+Console.WriteLine(free.Union(new[] { 3 }).Count);   // 4 — the receiver is untouched
+
+// Bulk construction goes through the builder, which writes nodes it owns in place.
+var builder = new PersistentSortedSet<long, DefaultComparer<long>>.Builder();
+for (long t = 0; t < 100_000; t += 10)
+    builder.Add(t);
+
+PersistentSortedSet<long, DefaultComparer<long>> timestamps = builder.ToImmutable();
+timestamps.TryGetUpperBound(12_345, out long after); // 12350 — the next timestamp after t
 ```
 
 

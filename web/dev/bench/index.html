@@ -536,6 +536,10 @@ function escapeHtml(s) {
     // PersistentHashSet is the set half of the same trie, benchmarked against ImmutableHashSet — likewise the
     // BCL's only one, and likewise an AVL tree keyed by hash with a heap node per distinct hash.
     { key: 'PersistentHashSet',   title: 'PersistentHashSet<int, ...>',              vs: 'ImmutableHashSet<int>', ops: ['Contains', 'Insert', 'Remove', 'Enumerate'] },
+    // PersistentSortedSet is the set half of PersistentSortedMap's B+ tree, benchmarked against ImmutableSortedSet —
+    // the BCL's only immutable sorted set, an AVL tree with a heap node per element. Its LowerBound arm is
+    // IndexOf + indexer, since ImmutableSortedSet has no ceiling method.
+    { key: 'PersistentSortedSet', title: 'PersistentSortedSet<int, ...>',            vs: 'ImmutableSortedSet<int>', ops: ['Contains', 'Insert', 'Remove', 'Enumerate', 'LowerBound'] },
     // DisjointSet is a union-find benchmarked against the hand-rolled Dictionary<int, HashSet<int>> set-merge.
     { key: 'DisjointSet',         title: 'DisjointSet<int>',                         vs: 'Dictionary<int, HashSet<int>> merge', ops: ['Union', 'Connected', 'Components'] },
     // IndexedPriorityQueue is an addressable heap benchmarked against the BCL PriorityQueue (lazy-deletion decrease-key).
