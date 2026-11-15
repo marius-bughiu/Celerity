@@ -18,8 +18,8 @@ using Celerity;
 /// <para>
 /// Each category fixes one width; the naive divide-by-ten loop is the baseline and the <c>FastUtils</c>
 /// form the candidate, so the ratio reads as "the LZCNT-table counter relative to the obvious loop". This
-/// is an isolated microbenchmark, so it lives in the <strong>extended</strong> suite (not the per-PR core
-/// regression gate).
+/// is an isolated microbenchmark, so it lives in the <strong>extended</strong> suite (not the core
+/// regression suite).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

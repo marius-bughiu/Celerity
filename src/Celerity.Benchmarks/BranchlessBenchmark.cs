@@ -19,7 +19,7 @@ using Celerity.Primitives;
 /// predictor is right every time, the predicted branch is essentially free, so the branchless arm wins little or
 /// nothing — the documented "don't bother unless the condition is unpredictable" boundary. The <c>Ternary_*</c>
 /// arms are the baselines; the <c>Branchless_*</c> arms are the candidates. This is an isolated microbenchmark,
-/// so it lives in the <strong>extended</strong> suite (not the per-PR core regression gate).
+/// so it lives in the <strong>extended</strong> suite (not the core regression suite).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

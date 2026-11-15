@@ -12,8 +12,8 @@ using BenchmarkDotNet.Reports;
 /// Mirrors <see cref="CiConfig"/> but with a single launch instead of two: the
 /// extended benchmarks (million-item scale tests, O(n) adversarial runs,
 /// thread fan-out, per-iteration workload rebuilds) are far heavier than the core
-/// suite, and the weekly run is an exploratory trend, not the per-PR regression
-/// gate, so it does not need the extra launch for variance reduction. The emitted
+/// suite, and the weekly run is an exploratory trend, not the core regression
+/// series, so it does not need the extra launch for variance reduction. The emitted
 /// full JSON report is consumed by <c>github-action-benchmark</c> and published to
 /// its own <c>dev/bench-extended</c> dashboard, separate from the core time series.
 /// </remarks>

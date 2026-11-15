@@ -47,7 +47,7 @@ public enum Distribution
 /// <summary>
 /// Deterministic key generators for the workload benchmarks. Every generator is
 /// seeded identically so a key set is byte-for-byte reproducible across runs,
-/// collections, and the A/B benchmark comparison in CI.
+/// collections, and commits, so a before/after comparison measures the same keys.
 /// </summary>
 public static class KeyDistributions
 {

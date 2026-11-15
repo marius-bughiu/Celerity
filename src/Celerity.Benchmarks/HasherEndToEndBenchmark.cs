@@ -30,7 +30,7 @@ using Celerity.Hashing;
 /// <c>docs/performance.md</c>); read the two together.
 /// </para>
 /// <para>
-/// This lives in the <em>extended</em> suite, not the per-PR core gate: the adversarial rows are
+/// This lives in the <em>extended</em> suite, not the core suite: the adversarial rows are
 /// intentionally slow (the naive hasher's O(n) probe chains), so the matrix is too heavy and too
 /// noisy for the regression run. Item counts are capped at
 /// <see cref="KeyDistributions.MaxAdversarialCount"/> so the adversarial shape stays buildable.

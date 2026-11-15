@@ -14,7 +14,7 @@ using Celerity.Ring;
 /// every call. The <c>Allocated</c> column is the headline: the Celerity ring routes with zero
 /// per-lookup allocation. (Its real reason to exist — a node assignment that is byte-identical across
 /// OS / architecture / runtime — a throughput benchmark can't show.) Isolated microbenchmark, so it
-/// lives in the extended suite, not the per-PR core gate.
+/// lives in the extended suite, not the core suite.
 /// </summary>
 /// <remarks>
 /// The <c>GetReplicas</c> category measures the replica set a replicated store asks for on every write and

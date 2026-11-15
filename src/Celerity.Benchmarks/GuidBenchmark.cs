@@ -21,7 +21,7 @@ using Celerity.Primitives;
 /// so the ratio reads as "the PRNG-filled GUID relative to the BCL factory". The v7 category also measures the
 /// BCL's own <see cref="System.Guid.CreateVersion7()"/>, whose mixed-endian layout is the comparison the big-endian
 /// <see cref="FastGuid"/> v7 exists for. This is an isolated microbenchmark, so it lives in the
-/// <strong>extended</strong> suite (not the per-PR core regression gate).
+/// <strong>extended</strong> suite (not the core regression suite).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

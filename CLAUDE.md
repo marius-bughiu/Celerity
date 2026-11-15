@@ -28,7 +28,7 @@ Support projects:
 
 - `Celerity.Tests/` — xUnit tests for the core family, mirroring the main project's layout.
 - `Celerity.Ring.Tests/`, `Celerity.Sentinel.Tests/`, `Celerity.Cardinality.Tests/` — the showcase packages' own suites.
-- `Celerity.Benchmarks/` — BenchmarkDotNet; runs in CI on every PR.
+- `Celerity.Benchmarks/` — BenchmarkDotNet. CI runs the core suite on merges to `main` (and on demand), not on PRs, so a perf change carries its own local before/after numbers in the PR description.
 - `Celerity.Fuzz/` — differential fuzz harness.
 - `Celerity.AotSmokeTest/` — Native AOT publish/run target.
 

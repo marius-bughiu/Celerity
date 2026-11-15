@@ -22,7 +22,7 @@ using Celerity.Primitives;
 /// Each category fixes one direction (pack or unpack); the BCL form is the baseline and the
 /// <c>BitWriter</c> / <c>BitReader</c> form the candidate, so the ratio reads as "the span bit codec
 /// relative to the BCL <see cref="BitArray"/> path". This is an isolated microbenchmark, so it lives in
-/// the <strong>extended</strong> suite (not the per-PR core regression gate).
+/// the <strong>extended</strong> suite (not the core regression suite).
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]

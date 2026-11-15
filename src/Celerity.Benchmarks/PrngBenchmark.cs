@@ -20,8 +20,8 @@ using Celerity.Primitives;
 /// <para>
 /// Each category fixes one workload; the seeded <c>Random</c> form is the baseline and each struct PRNG a
 /// candidate, so the ratio reads as "the value-type generator relative to seeded <c>System.Random</c>". This
-/// is an isolated microbenchmark, so it lives in the <strong>extended</strong> suite (not the per-PR core
-/// regression gate). For the 64-bit workload the <c>System.Random</c> baseline uses <c>NextInt64()</c> (a
+/// is an isolated microbenchmark, so it lives in the <strong>extended</strong> suite (not the core
+/// regression suite). For the 64-bit workload the <c>System.Random</c> baseline uses <c>NextInt64()</c> (a
 /// 63-bit non-negative draw) as the closest throughput proxy — it has no full-width <c>ulong</c> primitive.
 /// </para>
 /// </remarks>

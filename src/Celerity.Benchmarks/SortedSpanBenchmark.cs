@@ -20,7 +20,7 @@ using Celerity.Primitives;
 //     BCL forms must materialize a set before they can answer.
 //
 // The sweep stays at the family's 1,000 / 100,000 item counts so the card sits alongside the other
-// cards on the dashboard and the per-PR A/B run stays affordable. That is below the scale the type's
+// cards on the dashboard and the sharded core run stays affordable. That is below the scale the type's
 // headline claim is stated at (1M x 1M, and 1k x 10M for the asymmetric shape) but the same shape;
 // the full-scale measurements are recorded in ROADMAP.md.
 //

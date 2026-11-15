@@ -2,7 +2,7 @@
 
 ## Repository Overview
 
-Celerity is a .NET library providing specialized high-performance collections optimized for specific use cases. The library focuses on data structures designed for better speed or memory efficiency compared to standard .NET collections.
+Celerity is a .NET library of specialized high-performance collections, hashers and supporting primitives, shipped as eight NuGet packages (see Project Structure). The library focuses on data structures designed for better speed or memory efficiency compared to standard .NET collections.
 
 ### Key Features
 - High-performance dictionary implementations (`CelerityDictionary`, `IntDictionary`)
@@ -14,18 +14,26 @@ Celerity is a .NET library providing specialized high-performance collections op
 
 ```
 src/
-├── Celerity/                    # Main library code
-│   ├── Collections/             # Collection implementations
-│   │   ├── CelerityDictionary.cs
-│   │   └── IntDictionary.cs
-│   ├── Hashing/                 # Hash providers
-│   │   ├── IHashProvider.cs
-│   │   ├── Int32WangNaiveHasher.cs
-│   │   ├── Int64Murmur3Hasher.cs
-│   │   └── StringFnV1AHasher.cs
-│   └── FastUtils.cs             # Utility functions
-├── Celerity.Tests/              # Unit tests (xUnit)
+├── Celerity/                    # The Celerity.Collections package (assembly Celerity.dll)
+│   ├── Collections/             # Collection implementations (CelerityDictionary.cs, IntDictionary.cs, …)
+│   ├── TypeForwarders.cs        # Binary back-compat for types moved out in the 2.0.0 package split
+│   └── README.md                # The package's NuGet readme
+├── Celerity.Hashing/            # IHashProvider<T> and the struct hashers (Int32WangNaiveHasher.cs, StringFnV1AHasher.cs, …)
+├── Celerity.Primitives/         # FastUtils, struct PRNGs, VarInt, SpanBits, BitWriter/BitReader, FastGuid, SimdReductions, Branchless, SortedSpan, Morton/Hilbert curves
+├── Celerity.Sorting/            # RadixSort, CountingSort, PartialSort, StringSort, KWayMerge
+├── Celerity.Statistics/         # DDSketch, KllSketch, ReservoirSampler, RunningStatistics, RollingQuantile, AliasTable
+├── Celerity.Ring/               # Showcase: consistent-hash, rendezvous and Maglev routing
+├── Celerity.Sentinel/           # Showcase: streaming abuse / heavy-hitter detection
+├── Celerity.Cardinality/        # Showcase: mergeable approximate COUNT(DISTINCT) and windowed dedup
+├── Celerity.Tests/              # xUnit tests for the core packages (Collections/, Hashing/, Primitives/, Sorting/, Statistics/, …)
+├── Celerity.Ring.Tests/         # One test project per showcase package
+├── Celerity.Sentinel.Tests/
+├── Celerity.Cardinality.Tests/
 ├── Celerity.Benchmarks/         # BenchmarkDotNet benchmarks
+├── Celerity.Fuzz/               # Differential fuzz harness
+├── Celerity.AotSmokeTest/       # Native AOT publish/run target
+├── Directory.Build.props        # Shared build settings: target framework, MinVer version floor, packaging
+├── coverage.runsettings         # Coverage filter: one entry per shipping assembly
 └── Celerity.sln                 # Solution file
 ```
 
@@ -43,8 +51,8 @@ dotnet build
 # Run tests
 dotnet test
 
-# Run tests with coverage
-dotnet test --collect:"XPlat Code Coverage"
+# Run tests with coverage (CI gates 100% line and branch)
+dotnet test --collect:"XPlat Code Coverage" --settings coverage.runsettings
 
 # Build without restore
 dotnet build --no-restore
@@ -93,7 +101,7 @@ dotnet pack --configuration Release
 ## Common Tasks
 
 ### Adding a New Hash Provider
-1. Create a new struct in `src/Celerity/Hashing/`
+1. Create a new struct in `src/Celerity.Hashing/`
 2. Implement `IHashProvider<T>` interface
 3. Add XML documentation
 4. Create corresponding tests in `src/Celerity.Tests/Hashing/`
@@ -114,15 +122,18 @@ dotnet pack --configuration Release
 
 ## Dependencies
 
-### Main Library (Celerity)
+### Shipping packages (all eight)
 - MinVer: Automated versioning based on git tags
 
-### Tests (Celerity.Tests)
-- xUnit: Testing framework
+### Test projects (Celerity.Tests and the three showcase test projects)
+- xUnit (with xunit.runner.visualstudio): Testing framework
 - Microsoft.NET.Test.Sdk: Test runner
+- CsCheck: Property-based tests
+- coverlet.collector: Coverage collection
 
 ### Benchmarks (Celerity.Benchmarks)
 - BenchmarkDotNet: Performance benchmarking
+- System.Numerics.Tensors: `TensorPrimitives` baselines for the SIMD reduction benchmarks
 
 ## Versioning (critical — read before touching any `.csproj`)
 
@@ -131,7 +142,7 @@ dotnet pack --configuration Release
 **Rules for coding agents:**
 - **NEVER** add `<Version>`, `<PackageVersion>`, or `<AssemblyVersion>` to any `.csproj` file
 - **NEVER** hardcode a version string anywhere in the source tree
-- The `<MinVerTagPrefix>v</MinVerTagPrefix>` and `<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>` settings in `Celerity.csproj` are the only version-related MSBuild properties — do not change them
+- The `<MinVerTagPrefix>v</MinVerTagPrefix>` and `<MinVerDefaultPreReleaseIdentifiers>beta</MinVerDefaultPreReleaseIdentifiers>` settings in each shipping package's `.csproj`, and the `<MinVerMinimumMajorMinor>` pre-release floor in `src/Directory.Build.props`, are the only version-related MSBuild properties — do not change them
 - Pre-release builds (commits after a tag) automatically get versions like `1.0.2-beta.1` — this is correct behavior, not a bug
 - To check the current version: `git tag -l 'v*' --sort=-v:refname | head -1`
 - To see what MinVer computes: `dotnet build /p:MinVerVerbosity=diagnostic`
@@ -139,7 +150,7 @@ dotnet pack --configuration Release
 ## Release Process
 
 Releases are automated via GitHub Actions workflow (`.github/workflows/release.yml`):
-1. Update `CHANGELOG.md` in a PR and merge to `main`
-2. Tag the merge commit: `git tag -a v1.2.0 -m "Release 1.2.0"` then `git push origin v1.2.0`
-3. Trigger the Release workflow via `workflow_dispatch` in the GitHub Actions UI
-4. The workflow builds, packs, and publishes to NuGet.org
+1. Move the `CHANGELOG.md` `[Unreleased]` block to `[X.Y.Z]` in a PR and merge it to `main`
+2. Tag the merge commit and push the tag: `git tag -a v1.2.0 -m "Release 1.2.0"` then `git push origin v1.2.0`
+3. The tag push fires the workflow, which builds, packs, publishes to NuGet.org and creates the GitHub Release from the `## [X.Y.Z]` section of `CHANGELOG.md`
+4. `workflow_dispatch` is only a manual fallback, for re-publishing when a NuGet push fails partway through. Run it with the tag selected as the ref. The release-notes check and the GitHub Release only run for a tag, but the `deploy` job that publishes has no such condition: from `main` it pushes whatever version MinVer computes there to NuGet.org (a pre-release once `main` has moved past the tag), and a published package can only be unlisted, not deleted
