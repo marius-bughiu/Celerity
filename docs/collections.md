@@ -100,7 +100,7 @@ string name = columns.GetKey(0);     // "id", O(1)
 columns.ForceSet("created", 0);      // moves 0 to "created", removing "id"
 ```
 
-`FrozenCelerityDictionary<TValue>` is build-once, read-many. A set of up to about 100 keys gets a perfect (collision-free) table, so each lookup is single-probe; larger sets mostly get a linear-probing table at most half full. Immutable; implements `IReadOnlyDictionary<string, TValue?>`. `FrozenDictionary` looks keys up 2.2–3.0x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. This type builds about 1.9x faster at those sizes (slower for most sets below 334 keys, where it searches for a perfect table), hashes with `StringXxHash32Hasher` unless you pass another hasher through the `<TValue, THasher>` overload, allows a `null` key, and rejects duplicate keys.
+`FrozenCelerityDictionary<TValue>` is build-once, read-many. A set of up to about 100 keys gets a perfect (collision-free) table, so each lookup is single-probe; larger sets mostly get a linear-probing table at most half full. Immutable; implements `IReadOnlyDictionary<string, TValue?>`. `FrozenDictionary` looks ~30-character keys up 2.2–3.0x faster at 1,000 to 100,000 keys, because it hashes only a short substring that tells the keys apart. This type builds about 1.8x faster at those sizes (slower for most sets below 334 keys, where it searches for a perfect table), hashes with `StringXxHash32Hasher` unless you pass another hasher through the `<TValue, THasher>` overload (`StringFnV1AHasher` is faster on short keys), allows a `null` key, and rejects duplicate keys.
 
 ```csharp
 var routes = new FrozenCelerityDictionary<int>(new[]

@@ -8,13 +8,13 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A build-once, read-many set of <see cref="string"/> elements using
-/// <see cref="StringXxHash32Hasher"/> by default: every membership test hashes the whole
-/// element, and this block hasher reads it two characters at a time across four lanes.
-/// Supply a different string hasher via the <see cref="FrozenCeleritySet{THasher}"/>
-/// generic overload when your elements favour a different hash (e.g. one of the keyed
-/// hashers for adversarial elements, or <see cref="StringFnV1AHasher"/>, the default
-/// before 4.0, to keep the hash codes that decide the enumeration order and which small
-/// sets get a perfect table).
+/// <see cref="StringXxHash32Hasher"/> by default. Every membership test hashes the whole
+/// element, and the default is faster than <see cref="StringFnV1AHasher"/>, the default
+/// before 4.0, on long elements and slower on short ones (the collections API reference has
+/// measurements). Supply a different string hasher via the
+/// <see cref="FrozenCeleritySet{THasher}"/> generic overload when your elements favour one:
+/// for example <see cref="StringFnV1AHasher"/> for short elements, or to keep the hash codes
+/// that decide the enumeration order and which small sets get a perfect table.
 /// </summary>
 public sealed class FrozenCeleritySet : FrozenCeleritySet<StringXxHash32Hasher>
 {

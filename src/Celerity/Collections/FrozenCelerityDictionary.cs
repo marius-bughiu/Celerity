@@ -8,13 +8,13 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// A build-once, read-many dictionary keyed by <see cref="string"/> using
-/// <see cref="StringXxHash32Hasher"/> by default: every lookup hashes the whole key, and
-/// this block hasher reads it two characters at a time across four lanes. Supply a
+/// <see cref="StringXxHash32Hasher"/> by default. Every lookup hashes the whole key, and the
+/// default is faster than <see cref="StringFnV1AHasher"/>, the default before 4.0, on long
+/// keys and slower on short ones (the collections API reference has measurements). Supply a
 /// different string hasher via the <see cref="FrozenCelerityDictionary{TValue, THasher}"/>
-/// generic overload when your keys favour a different hash (e.g. one of the keyed hashers
-/// for adversarial keys, or <see cref="StringFnV1AHasher"/>, the default before 4.0, to
-/// keep the hash codes that decide the enumeration order and which small key sets get a
-/// perfect table).
+/// generic overload when your keys favour one: for example <see cref="StringFnV1AHasher"/>
+/// for short keys, or to keep the hash codes that decide the enumeration order and which
+/// small key sets get a perfect table.
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
 public sealed class FrozenCelerityDictionary<TValue>
