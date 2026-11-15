@@ -1592,6 +1592,9 @@ sets.** On the
 | Lookup | 2.99x slower | 2.21x slower |
 | Span lookup, against `GetAlternateLookup<ReadOnlySpan<char>>()` | 2.04x slower | 1.69x slower |
 
+The Build row was measured before the default hasher changed in 4.0; the change left it
+within run-to-run noise.
+
 Both of those builds skip the perfect-hash search. Most smaller sets run it, every count up
 to 235 keys and from 257 to 333, and build slower than `FrozenDictionary`'s: up to about 7x
 slower from 16 keys up, at most about 47 µs, and 2.2 µs against 0.15 µs for 8 keys (a
@@ -1717,29 +1720,34 @@ The hasher-parameterized base type of
 [`FrozenCelerityDictionary<TValue>`](#frozenceleritydictionarytvalue). Identical API and
 semantics; the only difference is that you choose the string hasher used to build and
 probe the frozen table. Every lookup hashes the whole key with it, so the hasher is the
-main lever on lookup speed, and which hasher is fastest depends on key length. The default
-`StringXxHash32Hasher` reads two characters per step, in four lanes from eight characters
-up; `StringFnV1AHasher`, the default before 4.0, folds the low byte of one character per
-step. On the benchmark's ~30-character keys FNV-1a looks keys up 1.5–1.9x slower than the
-default (3.4–5.8x slower than `FrozenDictionary`, against the default's 2.2–3.0x), but on
-short keys it is the faster of the two. Nanoseconds per lookup over 1,000 random ASCII keys
-(Apple M4, .NET 10; a Stopwatch loop that interleaves the four):
+main lever on lookup speed, and which hasher is fastest depends on how long the keys are and
+how much their lengths vary. The default `StringXxHash32Hasher` reads two characters per
+step, in four lanes from eight characters up; `StringFnV1AHasher`, the default before 4.0,
+folds the low byte of one character per step. On the benchmark's ~30-character keys FNV-1a
+looks keys up 1.5–1.9x slower than the default (3.4–5.8x slower than `FrozenDictionary`,
+against the default's 2.2–3.0x), but on short keys it is the faster of the two: 1.3x at 3–4
+characters (1.5x with 200 keys), and up to 12% when lengths vary and average under about 16
+characters. Nanoseconds per successful lookup over 1,000 random ASCII keys, probing with the
+stored strings themselves (Apple M4, .NET 10; a Stopwatch loop that interleaves the four,
+one process per row):
 
 | Keys | `FrozenDictionary` | `StringFnV1AHasher` | `StringXxHash32Hasher` (default) | `StringCityHash64Hasher` |
 |---|---|---|---|---|
 | 3 characters | 3.6 | 3.0 | 3.9 | 3.1 |
-| 6 characters | 3.7 | 3.9 | 4.2 | 3.9 |
+| 4 characters | 3.8 | 2.9 | 3.7 | 3.8 |
 | 8 characters | 3.7 | 4.8 | 4.6 | 3.8 |
-| 12 characters | 3.7 | 8.3 | 6.0 | 4.9 |
 | 16 characters | 3.9 | 12.0 | 6.6 | 4.9 |
 | 32 characters | 3.8 | 22.1 | 10.6 | 8.8 |
 | 48 characters | 4.0 | 34.0 | 15.8 | 22.6 |
-| 5–10 characters, mixed | 3.9 | 4.2 | 4.7 | 3.9 |
-| 3–20 characters, mixed | 4.0 | 5.4 | 5.7 | 4.9 |
+| 5–10 characters | 3.9 | 4.2 | 4.7 | 3.9 |
+| 8–24 characters | 4.1 | 6.7 | 7.0 | 6.5 |
+| 20–40 characters | 4.0 | 14.4 | 10.7 | 14.2 |
+| 16–48 characters | 4.0 | 22.0 | 10.9 | 15.0 |
 
 Name `StringFnV1AHasher` for short keys, or to keep the hash codes, and with them the
-enumeration order and the perfect tables, that 3.x built. `StringCityHash64Hasher` was the
-fastest of the three up to 32 characters and falls behind past 64 bytes.
+enumeration order and the perfect tables, that 3.x built. `StringCityHash64Hasher` led on
+keys of 8 to 32 characters and on short mixed lengths, but fell behind
+`StringXxHash32Hasher` past 64 bytes and on long keys of varying length.
 
 ```csharp
 using Celerity.Collections;
@@ -1869,7 +1877,7 @@ used to build and probe the frozen table. As for the dictionary, every membershi
 hashes the whole element, so the hasher is the main lever on its speed, and the
 [dictionary's measurements by key length](#frozenceleritydictionarytvalue-thasher) apply.
 Under `StringFnV1AHasher`, the default before 4.0, `Contains` on the benchmark's
-~30-character elements is about 1.5–2x slower than under the default
+~30-character elements is about 1.4–2x slower than under the default
 `StringXxHash32Hasher`, and on short elements it is faster. Name it for short elements, or
 to keep the hash codes, and with them the enumeration order and the perfect tables, that 3.x
 built.
