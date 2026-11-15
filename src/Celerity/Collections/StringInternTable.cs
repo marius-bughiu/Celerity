@@ -160,9 +160,9 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     /// </returns>
     public string GetOrAdd(ReadOnlySpan<char> key)
     {
-        int index = Probe(key, out bool wasEmpty);
-        if (!wasEmpty)
-            return _slots[index]!;
+        string? interned = Probe(key, out int index);
+        if (interned is not null)
+            return interned;
 
         // The miss path is the only one that materializes a string.
         return AddSlow(key, index);
@@ -188,9 +188,9 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     {
         ArgumentNullException.ThrowIfNull(key);
 
-        int index = Probe(key.AsSpan(), out bool wasEmpty);
-        if (!wasEmpty)
-            return _slots[index]!;
+        string? interned = Probe(key.AsSpan(), out int index);
+        if (interned is not null)
+            return interned;
 
         return Insert(key, index);
     }
@@ -206,15 +206,8 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     /// <returns><c>true</c> if the contents were already interned; otherwise <c>false</c>.</returns>
     public bool TryGet(ReadOnlySpan<char> key, out string? value)
     {
-        int index = Probe(key, out bool wasEmpty);
-        if (wasEmpty)
-        {
-            value = null;
-            return false;
-        }
-
-        value = _slots[index];
-        return true;
+        value = Probe(key, out _);
+        return value is not null;
     }
 
     /// <summary>
@@ -222,11 +215,7 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     /// </summary>
     /// <param name="key">The characters to look up. An empty span means <c>""</c>.</param>
     /// <returns><c>true</c> if the contents are present; otherwise <c>false</c>.</returns>
-    public bool Contains(ReadOnlySpan<char> key)
-    {
-        Probe(key, out bool wasEmpty);
-        return !wasEmpty;
-    }
+    public bool Contains(ReadOnlySpan<char> key) => Probe(key, out _) is not null;
 
     /// <summary>
     /// Determines whether <paramref name="key"/>'s contents are already interned.
@@ -336,26 +325,27 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         public void Dispose() { }
     }
 
-    // Returns the slot the characters belong in. wasEmpty is true when the slot is vacant
-    // (a miss — the caller may write there) and false when it already holds a string with
-    // these contents. A vacant slot always exists because the load factor is < 1.
+    // Returns the interned string with these contents, or null on a miss. Either way index is the
+    // slot the characters belong in; on a miss it is vacant, and the caller may write there. A
+    // vacant slot always exists because the load factor is < 1. Returning the string itself spares
+    // a hit from reading its slot back.
     //
     // The probe walks _slots via Unsafe.Add against a base reference taken at the top, so
     // per-iteration bounds checks disappear; the bound is structural (mask = length - 1).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int Probe(ReadOnlySpan<char> key, out bool wasEmpty)
+    private string? Probe(ReadOnlySpan<char> key, out int index)
     {
         string?[] slots = _slots;
         ref string? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;
-        int index = _hasher.Hash(key) & mask;
+        int i = _hasher.Hash(key) & mask;
 
         while (true)
         {
-            string? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (slot is null) { wasEmpty = true; return index; }
-            if (key.SequenceEqual(slot.AsSpan())) { wasEmpty = false; return index; }
-            index = (index + 1) & mask;
+            string? slot = Unsafe.Add(ref slotsRef, (nint)(uint)i);
+            if (slot is null) { index = i; return null; }
+            if (key.SequenceEqual(slot.AsSpan())) { index = i; return slot; }
+            i = (i + 1) & mask;
         }
     }
 
@@ -376,7 +366,7 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         if (_count >= _threshold)
         {
             Resize();
-            index = Probe(value.AsSpan(), out _);
+            Probe(value.AsSpan(), out index);
         }
 
         _slots[index] = value;
