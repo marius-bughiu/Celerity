@@ -300,10 +300,10 @@ Releases after the 3.6.x line target **`net10.0` only**. 3.6.0 is the last relea
 
 `FrozenCelerityDictionary<TValue>` and `FrozenCeleritySet` now hash with `StringXxHash32Hasher`, where 3.x used `StringFnV1AHasher`: they derive from `FrozenCelerityDictionary<TValue, StringXxHash32Hasher>` and `FrozenCeleritySet<StringXxHash32Hasher>`. Every lookup hashes the whole key, and FNV-1a folds the low byte of one character per step where XxHash32 reads two characters at a time, in full, so on the benchmark's ~30-character keys lookups are 1.5–1.9x faster. Short keys go the other way: 1.3–1.5x slower at 3–4 characters, and up to 12% slower when lengths vary and average under about 16 characters (see the [measurements by key length](api/collections.md#frozenceleritydictionarytvalue-thasher)). Code that builds and queries these types compiles unchanged, but what follows the hash codes changes with them:
 
-- **Enumeration order**, which follows the table layout. It was never specified; sort when you need an order.
+- **Enumeration order**, which follows the table layout. It was never specified; sort when you need an order. Past the sizes that get a perfect table it changes in 4.0 whatever the hasher, because the fallback table is now at most half full.
 - **`IsPerfectlyHashed` for a small key set**, which can flip either way, since different hash codes meet the perfect-hash search's odds differently. Lookups are correct either way.
 
-To keep the tables 3.x built, or the faster lookups of short keys, name the old hasher:
+To keep 3.x's hash codes, and with them the perfect tables of small key sets, or the faster lookups of short keys, name the old hasher:
 
 ```csharp
 // Before (3.x hashed with StringFnV1AHasher)

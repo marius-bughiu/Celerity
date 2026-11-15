@@ -13,8 +13,8 @@ namespace Celerity.Collections;
 /// keys and slower on short ones (the collections API reference has measurements). Supply a
 /// different string hasher via the <see cref="FrozenCelerityDictionary{TValue, THasher}"/>
 /// generic overload when your keys favour one: for example <see cref="StringFnV1AHasher"/>
-/// for short keys, or to keep the hash codes that decide the enumeration order and which
-/// small key sets get a perfect table.
+/// for short keys, or to keep 3.x's hash codes, which decide which small key sets get a
+/// perfect table.
 /// </summary>
 /// <typeparam name="TValue">The type of the stored values.</typeparam>
 public sealed class FrozenCelerityDictionary<TValue>

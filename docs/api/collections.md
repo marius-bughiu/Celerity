@@ -1581,8 +1581,8 @@ keys, a matter of odds for most counts up to 333, and nil past that (see
 linear-probing table kept at most half full, where a hit inspects at most about 1.5 slots
 on average.
 
-**Against `FrozenDictionary`, it looks keys up slower, and builds faster mainly for large key
-sets.** On the
+**Against `FrozenDictionary`, it looks most keys up slower, and builds faster mainly for large
+key sets.** On the
 `FrozenCelerityDictionaryBenchmark` keys (identifier-shaped, about 30 characters; Apple M4,
 .NET 10, default job):
 
@@ -1608,7 +1608,9 @@ hasher on every lookup, so the hasher sets most of the cost; the default
 up. Pick this type for
 a hasher you choose (`<TValue, THasher>`), for a `null` key, to have duplicate keys
 rejected, or for a cheaper build of a large key set; for the fastest reads,
-`FrozenDictionary` is the better choice.
+`FrozenDictionary` is the better choice, unless the keys are very short: at 3–4 characters
+this type came within about 15% of it under the default, and beat it under
+`StringFnV1AHasher` ([measured below](#frozenceleritydictionarytvalue-thasher)).
 
 ### Constructors
 
@@ -1725,9 +1727,8 @@ how much their lengths vary. The default `StringXxHash32Hasher` reads two charac
 step, in four lanes from eight characters up; `StringFnV1AHasher`, the default before 4.0,
 folds the low byte of one character per step. On the benchmark's ~30-character keys FNV-1a
 looks keys up 1.5–1.9x slower than the default (3.4–5.8x slower than `FrozenDictionary`,
-against the default's 2.2–3.0x), but on short keys it is the faster of the two: 1.3x at 3–4
-characters (1.5x with 200 keys), and up to 12% when lengths vary and average under about 16
-characters. Nanoseconds per successful lookup over 1,000 random ASCII keys, probing with the
+against the default's 2.2–3.0x), but on short keys it is the faster of the two: 1.3–1.5x at
+3–4 characters, and up to 12% when lengths vary and average under about 16 characters. Nanoseconds per successful lookup over 1,000 random ASCII keys, probing with the
 stored strings themselves (Apple M4, .NET 10; a Stopwatch loop that interleaves the four,
 one process per row):
 
@@ -1744,10 +1745,11 @@ one process per row):
 | 20–40 characters | 4.0 | 14.4 | 10.7 | 14.2 |
 | 16–48 characters | 4.0 | 22.0 | 10.9 | 15.0 |
 
-Name `StringFnV1AHasher` for short keys, or to keep the hash codes, and with them the
-enumeration order and the perfect tables, that 3.x built. `StringCityHash64Hasher` led on
-keys of 8 to 32 characters and on short mixed lengths, but fell behind
-`StringXxHash32Hasher` past 64 bytes and on long keys of varying length.
+Name `StringFnV1AHasher` for short keys, or to keep 3.x's hash codes: a small key set then
+gets the perfect table 3.x built, in the same enumeration order. (Larger sets enumerate in a
+new order in 4.0 whatever the hasher, because the fallback table is now at most half full.)
+`StringCityHash64Hasher` led on keys of 8 to 32 characters and on short mixed lengths, but
+fell behind `StringXxHash32Hasher` past 32 characters and on long keys of varying length.
 
 ```csharp
 using Celerity.Collections;
@@ -1879,8 +1881,7 @@ hashes the whole element, so the hasher is the main lever on its speed, and the
 Under `StringFnV1AHasher`, the default before 4.0, `Contains` on the benchmark's
 ~30-character elements is about 1.4–2x slower than under the default
 `StringXxHash32Hasher`, and on short elements it is faster. Name it for short elements, or
-to keep the hash codes, and with them the enumeration order and the perfect tables, that 3.x
-built.
+to keep 3.x's hash codes and with them the perfect tables of small sets.
 
 ```csharp
 using Celerity.Collections;
@@ -8045,7 +8046,7 @@ The default hasher is most of the gap: it folds every UTF-16 code unit a byte at
 
 ### Default hasher
 
-The non-generic `StringInternTable` uses `StringFnV1AFullHasher`: **full Unicode width**, so tokens that differ only in a character's high byte do not collide, but it folds each code unit a byte at a time, which made it the slow part of the probe on the 16-character tokens measured above. A collision is never a correctness problem in either case — the ordinal span comparison resolves it — but it costs probes. Supply any `String*Hasher` through `StringInternTable<THasher>` for a different speed/quality point; `StringCityHash64Hasher`, also full width, is the faster choice measured above.
+The non-generic `StringInternTable` uses `StringFnV1AFullHasher`: **full Unicode width**, so tokens that differ only in a character's high byte do not collide, but it folds each code unit a byte at a time, which made it the slow part of the probe on the 16-character tokens measured above. A collision is never a correctness problem — the ordinal span comparison resolves it — but it costs probes. Supply any `String*Hasher` through `StringInternTable<THasher>` for a different speed/quality point; `StringCityHash64Hasher`, also full width, is the faster choice measured above.
 
 ### Constructors
 

@@ -13,8 +13,8 @@ namespace Celerity.Collections;
 /// before 4.0, on long elements and slower on short ones (the collections API reference has
 /// measurements). Supply a different string hasher via the
 /// <see cref="FrozenCeleritySet{THasher}"/> generic overload when your elements favour one:
-/// for example <see cref="StringFnV1AHasher"/> for short elements, or to keep the hash codes
-/// that decide the enumeration order and which small sets get a perfect table.
+/// for example <see cref="StringFnV1AHasher"/> for short elements, or to keep 3.x's hash
+/// codes, which decide which small sets get a perfect table.
 /// </summary>
 public sealed class FrozenCeleritySet : FrozenCeleritySet<StringXxHash32Hasher>
 {
