@@ -30,10 +30,10 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 }
 
 /// <summary>
-/// An <b>order-statistics set</b>: a sorted set that also answers the two positional questions no BCL ordered
-/// container can — <i>where does this element rank?</i> (<see cref="IndexOf"/> for one that is present,
-/// <see cref="CountLessThan"/> for the rank one <i>would</i> take whether or not it is) and <i>what is the
-/// k-th smallest?</i> (<see cref="this[int]"/>) — both in <c>O(log n)</c>, on a set that is still being
+/// An <b>order-statistics set</b>: a sorted set that also answers the two positional questions
+/// <see cref="SortedSet{T}"/> cannot — <i>where does this element rank?</i> (<see cref="IndexOf"/> for one that
+/// is present, <see cref="CountLessThan"/> for the rank one <i>would</i> take whether or not it is) and <i>what
+/// is the k-th smallest?</i> (<see cref="this[int]"/>) — both in <c>O(log n)</c>, on a set that is still being
 /// inserted into and removed from.
 /// </summary>
 /// <typeparam name="T">The element type, ordered by <typeparamref name="TComparer"/>.</typeparam>
@@ -52,14 +52,16 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// <see cref="Trie{TValue}"/> — have no rank at all. This type is that missing corner.
 /// </para>
 /// <para>
-/// <b>The BCL has no counterpart</b>, which is the unusual part of the case for this type.
-/// <see cref="SortedSet{T}"/> exposes neither a rank nor a positional accessor, so the answers are
-/// <c>set.ElementAt(k)</c> — <c>O(k)</c> enumeration — and <c>set.Count(x =&gt; x &lt; v)</c>, which is
-/// <c>O(n)</c>. <see cref="SortedList{TKey, TValue}"/> <i>does</i> have <c>IndexOfKey</c> and positional
-/// access, but its insert and remove memmove one contiguous array and are <c>O(n)</c>, which is the same
-/// trade a hand-rolled sorted <see cref="List{T}"/> makes. Nothing in .NET is <c>O(log n)</c> on both halves,
-/// and that is the gap this fills: live leaderboards (<i>what rank is this score, and who is 500th</i>),
-/// exact percentiles over a moving window, a sweep line that needs the median of its active set.
+/// <b>What the BCL offers.</b> <see cref="SortedSet{T}"/> exposes neither a rank nor a positional accessor, so
+/// the answers are <c>set.ElementAt(k)</c> — <c>O(k)</c> enumeration — and <c>set.Count(x =&gt; x &lt; v)</c>,
+/// which is <c>O(n)</c>. <see cref="SortedList{TKey, TValue}"/> <i>does</i> have <c>IndexOfKey</c> and
+/// positional access, but its insert and remove memmove its key and value arrays and are <c>O(n)</c>, which is
+/// the same trade a hand-rolled sorted <see cref="List{T}"/> makes. <c>ImmutableSortedSet&lt;T&gt;</c> is
+/// <c>O(log n)</c> on both halves — <c>IndexOf</c> and its indexer walk subtree counts kept in its AVL nodes,
+/// and its <c>Builder</c> edits in place — at a heap node per element and an <see cref="IComparer{T}"/>
+/// interface call per comparison. It is not one of this type's benchmark baselines yet, so no ratio against it
+/// is published. The workloads that need both halves: live leaderboards (<i>what rank is this score, and who
+/// is 500th</i>), exact percentiles over a moving window, a sweep line that needs the median of its active set.
 /// </para>
 /// <para>
 /// This is a <i>set</i>, so those workloads need distinct elements. A window of samples with repeated values,
@@ -381,8 +383,8 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
 
     /// <summary>
     /// Removes the element at <paramref name="index"/> in ascending order, in <c>O(√n)</c> — finding it is
-    /// <c>O(log n)</c> and the removal shifts at most one bucket. No BCL ordered container offers removal by
-    /// rank at all.
+    /// <c>O(log n)</c> and the removal shifts at most one bucket. No BCL sorted set has a <c>RemoveAt</c>;
+    /// <see cref="SortedList{TKey, TValue}.RemoveAt"/> removes by rank from a map, in <c>O(n)</c>.
     /// </summary>
     /// <param name="index">The zero-based rank of the element to remove.</param>
     /// <exception cref="ArgumentOutOfRangeException">

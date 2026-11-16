@@ -9547,7 +9547,7 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
 public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 ```
 
-An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions no BCL ordered container can answer — *where does this element rank?* (`IndexOf` for one that is present, `CountLessThan` for the rank one *would* take whether or not it is) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only set in this library that is also an `IReadOnlyList<T>`, and it can be for exactly that reason.
+An **order-statistics set**: everything `BTreeSet` offers, plus the two positional questions `SortedSet<T>` cannot answer — *where does this element rank?* (`IndexOf` for one that is present, `CountLessThan` for the rank one *would* take whether or not it is) and *what is the k-th smallest?* (`this[int]`) — both in `O(log n)`, on a set that is still being inserted into and removed from. It is the only mutable set in this library that is also an `IReadOnlyList<T>` (the immutable [`FrozenSortedSet`](#frozensortedsett) is the other), and it can be for exactly that reason.
 
 The mutations are the other half of the trade and are **not** `O(log n)`: `Add` and `Remove` are `O(√n)`, spelled out under [how it is laid out](#layout-rankedset) below. That is the sqrt-decomposition bargain — `O(√n)` of the cheapest work a CPU does, in exchange for positional queries no tree of this shape answers at all.
 
@@ -9555,16 +9555,17 @@ The mutations are the other half of the trade and are **not** `O(log n)`: `Add` 
 
 This library could already rank and select three ways, and never over a set that changes: [`RankSelectBitVector`](#rankselectbitvector) over an *immutable* bit vector, [`FenwickTree<T>`](#fenwicktreet) and [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) over a *fixed-length* sequence of positions. The ordered containers — [`BTreeSet<T, TComparer>`](#btreesett-tcomparer), [`BTreeDictionary<TKey, TValue, TComparer>`](#btreedictionarytkey-tvalue-tcomparer), [`Trie<TValue>`](#trietvalue) — have no rank at all.
 
-The BCL has no answer either, and this is a genuine gap rather than a "we are faster" claim:
+The BCL's answers, beside this type's:
 
 | The BCL answer | Mutation | Rank | Select |
 | --- | --- | --- | --- |
 | `SortedSet<T>` | `O(log n)` | none — `set.Count(x => x < v)` is `O(n)` | none — `set.ElementAt(k)` is `O(k)` |
 | `SortedList<TKey, TValue>` | `O(n)` memmove | `O(log n)` (`IndexOfKey`) | `O(1)` |
 | A hand-rolled sorted `List<T>` | `O(n)` memmove | `O(log n)` (`BinarySearch`) | `O(1)` |
+| `ImmutableSortedSet<T>` (its `Builder` edits in place) | `O(log n)` | `O(log n)` (`IndexOf`) | `O(log n)` (indexer) |
 | `RankedSet<T, TComparer>` | `O(√n)` memmove | `O(log n)` | `O(log n)` |
 
-Nothing in .NET answers the positional questions on a set that changes without paying `O(n)` somewhere. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one, and it is the price of the two right-hand columns. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched. Those workloads need **distinct** elements here, because this is a set: a window of samples with repeated values, or a leaderboard with tied scores, would lose its repeats and report wrong percentiles. [`RankedMultiSet`](#rankedmultisett-tcomparer) is the same layout with every copy kept.
+`ImmutableSortedSet<T>` answers the positional questions on a changing set without an `O(n)` step: its AVL nodes carry subtree counts. Otherwise its `Builder` pays what `SortedSet<T>` pays: a heap node per element, a pointer chase per level and an `IComparer<T>` interface call per comparison. The immutable set also copies the `O(log n)` nodes on each edit's path, where `SortedSet<T>` allocates at most one node per edit. It is not one of this type's benchmark baselines yet, so the ratios below are against `SortedSet<T>` and a sorted list only. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one: it is what this layout pays for the two right-hand columns, where `ImmutableSortedSet<T>` pays a subtree count per node, updated on every edit. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched. Those workloads need **distinct** elements here, because this is a set: a window of samples with repeated values, or a leaderboard with tied scores, would lose its repeats and report wrong percentiles. [`RankedMultiSet`](#rankedmultisett-tcomparer) is the same layout with every copy kept.
 
 <a id="layout-rankedset"></a>
 
@@ -9660,7 +9661,7 @@ There is no capacity and no load factor. The `IEnumerable` overloads throw `Argu
 | `T this[int index] { get; }` | The `index`-th smallest, `O(log n)`. Throws `ArgumentOutOfRangeException` outside `[0, Count)`. |
 | `int IndexOf(T item)` | The rank of `item`, `O(log n)`, or `-1` when it is absent. |
 | `int CountLessThan(T item)` / `int CountLessThanOrEqual(T item)` | The rank `item` *would* occupy, whether or not it is present — what a percentile query needs. |
-| `void RemoveAt(int index)` | Remove by rank, `O(√n)` — `O(log n)` to find it, then at most one bucket shifts. No BCL ordered container offers this at all. |
+| `void RemoveAt(int index)` | Remove by rank, `O(√n)` — `O(log n)` to find it, then at most one bucket shifts. No BCL sorted set has a `RemoveAt`; `SortedList<,>.RemoveAt` removes by rank from a map, in `O(n)`. |
 | `void Add(T item)` | Insert, `O(√n)`; throws `ArgumentException` when the element is already present (the family-wide set convention). |
 | `bool TryAdd(T item)` | Non-throwing insert, `O(√n)`. `ISet<T>.Add` and `ICollection<T>.Add` both map to this. |
 | `bool Contains(T item)` | `O(log n)`. |
@@ -9737,9 +9738,10 @@ An **order-statistics dictionary**: the map counterpart of [`RankedSet`](#ranked
 | --- | --- | --- | --- |
 | `SortedDictionary<TKey, TValue>` | `O(log n)` | none: a walk, `O(n)` | none: `ElementAt(k)`, `O(k)` |
 | `SortedList<TKey, TValue>` | `O(n)` memmove of two arrays | `O(log n)` (`IndexOfKey`) | `O(1)` |
+| A key-ordered `ImmutableSortedSet<KeyValuePair<TKey, TValue>>` (its `Builder` edits in place) | `O(log n)` | `O(log n)` (`IndexOf` of a probe pair) | `O(log n)` (indexer) |
 | `RankedDictionary<TKey, TValue, TComparer>` | `O(√n)` memmove of one bucket | `O(log n)` | `O(log n)` |
 
-The workloads are the ones `RankedSet` serves where each key carries a payload: a live leaderboard keyed by score that reports a player's rank and who holds a given place, an order book that reads its k-th price level and the size resting there, a time-keyed window that reads its median entry.
+The `ImmutableSortedSet` row is a set of pairs ordered by key, standing in for a map: no BCL map is `O(log n)` on both halves, and that set is not one of this type's benchmark baselines yet. The workloads are the ones `RankedSet` serves where each key carries a payload: a live leaderboard keyed by score that reports a player's rank and who holds a given place, an order book that reads its k-th price level and the size resting there, a time-keyed window that reads its median entry.
 
 ### How it is laid out
 
@@ -9864,7 +9866,10 @@ An **order-statistics multiset**: [`RankedSet`](#rankedsett-tcomparer) with dupl
 | `SortedSet<(T, long Seq)>`: a tie-break sequence number in every element | yes, by widening the element | `O(log n)` | none, `O(n)` | none, `O(k)` |
 | `SortedDictionary<T, int>`: a count per distinct value | counts only, not the elements | `O(log n)` | none, `O(n)` | none, `O(n)` |
 | A hand-rolled sorted `List<T>` with lower- and upper-bound searches | yes | `O(n)` memmove | `O(log n)` | `O(1)` |
+| `ImmutableSortedSet<(T, long Seq)>` (its `Builder` edits in place): the same composite in an AVL tree that counts its subtrees | yes, by widening the element | `O(log n)` | `O(log n)` (`IndexOf`) | `O(log n)` (indexer) |
 | `RankedMultiSet<T, TComparer>` | yes | `O(√n)` memmove | `O(log n)` | `O(log n)` |
+
+The `ImmutableSortedSet` composite is not one of this type's benchmark baselines yet; the measured ratios below are against the `SortedSet` composite and the sorted list.
 
 ### Equal elements keep insertion order
 

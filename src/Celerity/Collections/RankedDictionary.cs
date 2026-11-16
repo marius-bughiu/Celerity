@@ -32,12 +32,13 @@ public class RankedDictionary<TKey, TValue> : RankedDictionary<TKey, TValue, Def
 }
 
 /// <summary>
-/// An <b>order-statistics dictionary</b>: a sorted map that also answers the two positional questions no BCL
-/// ordered map answers cheaply — <i>where does this key rank?</i> (<see cref="IndexOfKey"/> for a key that is
-/// present, <see cref="CountLessThan"/> for the rank one <i>would</i> take) and <i>which entry is k-th?</i>
-/// (<see cref="GetKeyAtIndex"/>, <see cref="GetValueAtIndex"/>, <see cref="GetEntryAtIndex"/>) — in
-/// <c>O(log n)</c>, on a map that is still being inserted into and removed from. The map counterpart of
-/// <see cref="RankedSet{T, TComparer}"/>.
+/// An <b>order-statistics dictionary</b>: a sorted map that also answers the two positional questions
+/// <see cref="SortedDictionary{TKey, TValue}"/> cannot — <i>where does this key rank?</i> (<see cref="IndexOfKey"/>
+/// for a key that is present, <see cref="CountLessThan"/> for the rank one <i>would</i> take) and <i>which entry
+/// is k-th?</i> (<see cref="GetKeyAtIndex"/>, <see cref="GetValueAtIndex"/>, <see cref="GetEntryAtIndex"/>) — in
+/// <c>O(log n)</c>, on a map that is still being inserted into and removed from, where
+/// <see cref="SortedList{TKey, TValue}"/> answers them but pays <c>O(n)</c> per insert and remove. The map
+/// counterpart of <see cref="RankedSet{T, TComparer}"/>.
 /// </summary>
 /// <typeparam name="TKey">The key type, ordered by <typeparamref name="TComparer"/>.</typeparam>
 /// <typeparam name="TValue">The value type.</typeparam>
@@ -53,10 +54,13 @@ public class RankedDictionary<TKey, TValue> : RankedDictionary<TKey, TValue, Def
 /// the answers are <c>map.ElementAt(k)</c> — <c>O(k)</c> — and an <c>O(n)</c> count.
 /// <see cref="SortedList{TKey, TValue}"/> has exactly the positional surface (<c>IndexOfKey</c>,
 /// <c>GetKeyAtIndex</c>, <c>GetValueAtIndex</c>, <c>RemoveAt</c>), and this type keeps its names, but every
-/// insert and remove there memmoves one contiguous array and is <c>O(n)</c>. Nothing in .NET is fast on both
-/// halves. That is the workload this type is for: a live leaderboard keyed by score that reports a player's
-/// rank and who holds the 500th place, an order book that reads its k-th price level and the size resting
-/// there, a time-keyed window that reads its median entry.
+/// insert and remove there memmoves its key and value arrays and is <c>O(n)</c>. No BCL map is fast on both
+/// halves, and that is the workload this type is for: a live leaderboard keyed by score that reports a
+/// player's rank and who holds the 500th place, an order book that reads its k-th price level and the size
+/// resting there, a time-keyed window that reads its median entry. Outside the maps, a key-ordered
+/// <c>ImmutableSortedSet&lt;KeyValuePair&lt;TKey, TValue&gt;&gt;</c> is <c>O(log n)</c> on both halves, through
+/// subtree counts in its AVL nodes, at a heap node per entry; it is not one of this type's benchmark baselines
+/// yet.
 /// </para>
 /// <para>
 /// <b>The layout</b> is <see cref="RankedSet{T, TComparer}"/>'s, with a value array beside each key array:
