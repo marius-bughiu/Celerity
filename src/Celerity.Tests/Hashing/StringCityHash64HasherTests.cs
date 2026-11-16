@@ -18,15 +18,15 @@ public class StringCityHash64HasherTests
     /// <summary>
     /// Independent, byte-oriented reference implementation of canonical CityHash64
     /// (v1.1) over the BCL's little-endian UTF-16 encoding of the string, xor-folded
-    /// to 32 bits exactly as the hasher does. The hasher loops over <c>char</c>s and
-    /// assembles 64-bit words by hand; this reference goes through
+    /// to 32 bits exactly as the hasher does. The hasher reads its words straight
+    /// from the <c>char</c> span's memory; this reference goes through
     /// <see cref="Encoding.Unicode"/> and reads words with
     /// <see cref="BinaryPrimitives.ReadUInt64LittleEndian"/> /
     /// <see cref="BinaryPrimitives.ReadUInt32LittleEndian"/> against raw byte
     /// offsets, so agreement pins the word order, the four length-class dispatch
     /// boundaries, the end-relative offsets, the 64-byte main loop, the
     /// finalization, and the final fold against drift without sharing the hasher's
-    /// char-lane implementation.
+    /// word reader.
     /// </summary>
     private static int ReferenceCityHash64Utf16(string s)
     {

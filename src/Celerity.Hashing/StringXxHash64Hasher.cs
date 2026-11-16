@@ -173,8 +173,11 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
 
         h64 += byteLength;
 
-        // Remaining whole 64-bit lanes (four chars / eight bytes each).
-        while (i + 4 <= length)
+        // Remaining whole 64-bit lanes (four chars / eight bytes each). The reads are
+        // unchecked, so the bounds are written `i <= length - 4` rather than
+        // `i + 4 <= length`, which overflows once i passes int.MaxValue - 4 and would
+        // then read past the end of the span.
+        while (i <= length - 4)
         {
             ulong k1 = Lane(key, i);
             k1 *= Prime2;
@@ -186,7 +189,7 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
         }
 
         // A remaining 32-bit lane (two chars / four bytes).
-        if (i + 2 <= length)
+        if (i <= length - 2)
         {
             h64 ^= (ulong)Block(key, i) * Prime1;
             h64 = BitOperations.RotateLeft(h64, 23) * Prime2 + Prime3;
@@ -221,14 +224,11 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
     /// Reads one 64-bit little-endian lane (eight bytes / four UTF-16 code units)
     /// starting at char index <paramref name="i"/>: each successive char supplies
     /// the next 16 bits — exactly the 8-byte block a byte-oriented XXH64 would read
-    /// over the native little-endian UTF-16 stream.
+    /// over the native little-endian UTF-16 stream. One unaligned load on a
+    /// little-endian host (see <see cref="Utf16Words"/>).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Lane(ReadOnlySpan<char> key, int i) =>
-        (ulong)key[i]
-        | ((ulong)key[i + 1] << 16)
-        | ((ulong)key[i + 2] << 32)
-        | ((ulong)key[i + 3] << 48);
+    private static ulong Lane(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt64(key, i);
 
     /// <summary>
     /// Reads one 32-bit little-endian lane (four bytes / two UTF-16 code units)
@@ -236,8 +236,7 @@ public struct StringXxHash64Hasher : IHashProvider<string>, IHashProvider64<stri
     /// 16 bits, the next char the high 16 bits.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Block(ReadOnlySpan<char> key, int i) =>
-        (uint)key[i] | ((uint)key[i + 1] << 16);
+    private static uint Block(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt32(key, i);
 
     /// <summary>The XXH64 accumulator round: <c>rotl(acc + lane * PRIME64_2, 31) * PRIME64_1</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
