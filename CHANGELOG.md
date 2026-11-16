@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The `RankedSet`, `RankedDictionary` and `RankedMultiSet` benchmarks now measure `ImmutableSortedSet<T>.Builder`, the BCL's `O(log n)` way to rank and select in a changing sorted set, and the docs quote the ratios instead of calling it unmeasured. On an Apple M4 at 100,000 elements all three are faster than it in every group, by 1.2x or more. ⚠️ At 1,000 elements the builder is level with `RankedSet` on ranks and lookups, and `RankedDictionary` inserts and removes more slowly than a key-ordered builder of pairs. Not yet measured on x64.
+
 ## [4.0.0] - 2026-11-16
 
 ### Added
