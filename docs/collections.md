@@ -833,7 +833,7 @@ Console.WriteLine(history.Aggregate);     // 101 — O(1), where SegmentTree.Agg
 
 #### The k-th smallest value inside a window — WaveletTree
 
-`WaveletTree` is the build-once index over a sequence of `int` values that reaches the *value* axis a range fold collapses. `SegmentTree<long, MinMonoid<long>>` answers the smallest value in a window; nothing in the library — or in the BCL — could answer the **median** of one, because a monoid fold has no way to keep the values it discarded.
+`WaveletTree` is the build-once index over a sequence of `int` values that reaches the *value* axis a range fold collapses. `SegmentTree<long, MinMonoid<long>>` answers the smallest value in a window; nothing in the library — or in the BCL — could answer the **median** of one without a pass over the window, because a monoid fold has no way to keep the values it discarded.
 
 ```csharp
 // A million request latencies in arrival order, indexed once after the run.
