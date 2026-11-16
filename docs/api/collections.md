@@ -1580,8 +1580,8 @@ keys, a matter of odds for most counts up to 333, and nil past that (see
 linear-probing table kept at most half full, where a hit inspects at most about 1.5 slots
 on average.
 
-**Against `FrozenDictionary`, it looks keys up slower unless they are short, and builds faster
-mainly for large key sets.** On the
+**Against `FrozenDictionary`, it looks most keys up slower, and builds faster mainly for large
+key sets.** On the
 `FrozenCelerityDictionaryBenchmark` keys (identifier-shaped, about 30 characters; Apple M4,
 .NET 10, default job):
 
@@ -1602,10 +1602,12 @@ then hashes only that substring on each lookup. This type hashes the whole key w
 hasher on every lookup, so the hasher sets most of the cost; the default
 `StringFnV1AHasher` takes one character per step. Pick this type for a hasher you choose
 (`<TValue, THasher>`), for a `null` key, to have duplicate keys rejected, or for a cheaper
-build of a large key set; for the fastest reads, `FrozenDictionary` is the better choice
-unless the keys are short: on an Apple M4 this type looked up keys of up to about 16
-characters as fast or faster when given `StringCityHash64Hasher`, and 3-character keys faster
-with the default too (see the [measurements by key length](#frozenceleritydictionarytvalue-thasher)).
+build of a large key set; for the fastest reads, `FrozenDictionary` is the better choice.
+On an Apple M4 the exception was successful lookups of short keys:
+`FrozenCelerityDictionary<TValue, StringCityHash64Hasher>` found keys of up to about 16
+characters as fast or faster, and this type found 3-character keys faster, but
+`FrozenDictionary` still answered misses 1.3–1.6x faster (see the
+[measurements by key length](#frozenceleritydictionarytvalue-thasher)).
 
 ### Constructors
 
@@ -1722,7 +1724,7 @@ step, so its cost grows with every character, while the block hashers read the k
 eight bytes at a time: `StringXxHash32Hasher` takes two characters per step, in four lanes
 from eight characters up. Nanoseconds per successful lookup over 1,000 random ASCII keys,
 probing with the stored strings themselves (Apple M4, .NET 10; a Stopwatch loop that
-interleaves the four, median of three runs, each row in its own process):
+interleaves the four; each cell is the median of three runs, each run in its own process):
 
 | Keys | `FrozenDictionary` | `StringFnV1AHasher` (default) | `StringXxHash32Hasher` | `StringCityHash64Hasher` |
 |---|---|---|---|---|
@@ -1738,11 +1740,12 @@ interleaves the four, median of three runs, each row in its own process):
 | 16–48 characters | 4.0 | 17.0 | 9.3 | 10.1 |
 
 On this machine `StringCityHash64Hasher` was the fastest hasher on keys of about 6 to 32
-characters and on every mixed-length set up to 32, matching or beating `FrozenDictionary`
-up to about 16 characters. Past 32 characters it and `StringXxHash32Hasher` traded the
-lead, and on 3-character keys it was level with the default while `StringXxHash32Hasher`
-trailed both by 1.2–1.5x. Other CPUs can rank the hashers differently, so time your own
-keys before you switch. Pick a full-width hasher
+characters and on every mixed-length set up to 32, and found keys of up to about 16
+characters as fast as `FrozenDictionary` or faster; misses, not in the table, took 1.3–1.6x
+longer than `FrozenDictionary`'s at those lengths. Past 32 characters it and
+`StringXxHash32Hasher` traded the lead, and on 3-character keys it was within about 10% of
+the default while `StringXxHash32Hasher` trailed both by 1.2–1.5x. Other CPUs can rank the
+hashers differently, so time your own keys before you switch. Pick a full-width hasher
 (`StringFnV1AFullHasher`) for keys with non-ASCII content, or a strong hasher
 (`StringMurmur3Hasher`, `StringXxHash3Hasher`) when you want the perfect fast path for a
 small key set a cheaper hasher would collide.
