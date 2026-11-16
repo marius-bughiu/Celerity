@@ -1900,6 +1900,67 @@ public class ReadOnlyDictionaryInterfaceTests
         Assert.Equal(150, SumValues(map));
     }
 
+    // -------- RankedDictionary --------
+
+    [Fact]
+    public void RankedDictionary_ShouldBeAssignableToIReadOnlyDictionary()
+    {
+        var map = new RankedDictionary<int, string>();
+        map[1] = "one";
+
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        Assert.Single(ro);
+        Assert.True(ro.ContainsKey(1));
+        Assert.Equal("one", ro[1]);
+    }
+
+    [Fact]
+    public void RankedDictionary_InterfaceIndexer_ShouldThrowForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new RankedDictionary<int, string>();
+
+        Assert.Throws<KeyNotFoundException>(() => ro[42]);
+    }
+
+    [Fact]
+    public void RankedDictionary_InterfaceTryGetValue_ShouldReturnFalseForMissingKey()
+    {
+        IReadOnlyDictionary<int, string?> ro = new RankedDictionary<int, string>();
+
+        bool found = ro.TryGetValue(42, out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void RankedDictionary_InterfaceTryGetValue_ShouldReturnTrueForPresentKey()
+    {
+        var map = new RankedDictionary<int, string>();
+        map[7] = "seven";
+        IReadOnlyDictionary<int, string?> ro = map;
+
+        bool found = ro.TryGetValue(7, out string? value);
+
+        Assert.True(found);
+        Assert.Equal("seven", value);
+    }
+
+    [Fact]
+    public void RankedDictionary_InterfaceKeysAndValues_ShouldEnumerateInKeyOrder()
+    {
+        var map = new RankedDictionary<int, int>();
+        for (int i = 5; i >= 0; i--)
+            map[i] = i * 10;
+
+        IReadOnlyDictionary<int, int> ro = map;
+
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, ro.Keys);
+        Assert.Equal(new[] { 0, 10, 20, 30, 40, 50 }, ro.Values);
+        Assert.Equal(150, SumValues(map));
+    }
+
     // -------- PersistentHashMap --------
     // The immutable member of the family. Every mutable dictionary above is exercised through the interface
     // *and* through a concurrent-modification check; this one has no mutation to invalidate an enumerator

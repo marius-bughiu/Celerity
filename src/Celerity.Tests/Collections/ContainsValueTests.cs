@@ -1242,6 +1242,72 @@ public class ContainsValueTests
         Assert.True(map.ContainsValue(null));
     }
 
+    // ---------------- RankedDictionary ----------------
+
+    [Fact]
+    public void RankedDictionary_EmptyMap_ReturnsFalse()
+    {
+        var map = new RankedDictionary<int, int>();
+        Assert.False(map.ContainsValue(0));
+        Assert.False(map.ContainsValue(42));
+    }
+
+    [Fact]
+    public void RankedDictionary_FindsValueInRegularSlot()
+    {
+        var map = new RankedDictionary<int, int> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.ContainsValue(200));
+    }
+
+    [Fact]
+    public void RankedDictionary_ReturnsFalseForMissingValue()
+    {
+        var map = new RankedDictionary<int, int> { [1] = 100, [2] = 200 };
+        Assert.False(map.ContainsValue(999));
+    }
+
+    [Fact]
+    public void RankedDictionary_DefaultValueLookup_ZeroValue()
+    {
+        var map = new RankedDictionary<int, int> { [5] = 0, [6] = 1 };
+        Assert.True(map.ContainsValue(0));
+
+        var empty = new RankedDictionary<int, int>();
+        Assert.False(empty.ContainsValue(0));
+    }
+
+    [Fact]
+    public void RankedDictionary_AfterRemove_DoesNotReportRemovedValue()
+    {
+        var map = new RankedDictionary<int, int> { [1] = 100, [2] = 200, [3] = 300 };
+        Assert.True(map.Remove(2));
+        Assert.False(map.ContainsValue(200));
+        Assert.True(map.ContainsValue(100));
+        Assert.True(map.ContainsValue(300));
+    }
+
+    [Fact]
+    public void RankedDictionary_FindsValue_AcrossSeveralBuckets()
+    {
+        // The scan walks every live bucket's value array, so this pins that a value in a bucket created by a
+        // split - not only the first one - is still reachable.
+        var map = new RankedDictionary<int, int>();
+        for (int i = 0; i < 2000; i++)
+            map[i] = i * 3;
+
+        Assert.True(map.ContainsValue(0));
+        Assert.True(map.ContainsValue(31 * 3));
+        Assert.True(map.ContainsValue(1999 * 3));
+        Assert.False(map.ContainsValue(2000 * 3));
+    }
+
+    [Fact]
+    public void RankedDictionary_NullValue_ReturnsTrue_WhenPresent()
+    {
+        var map = new RankedDictionary<int, string?> { [1] = null, [2] = "x" };
+        Assert.True(map.ContainsValue(null));
+    }
+
     // ---------------- PersistentHashMap ----------------
     // The scan walks the trie's enumeration, so what is pinned here is that a value in a leaf several levels
     // down, one in a collision node, and the one in the out-of-band default-key slot are all reachable.

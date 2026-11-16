@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`RankedDictionary<TKey, TValue, TComparer>`**, the map sibling of `RankedSet`: a sorted map with `SortedList<,>`'s positional methods (`IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `SetValueAtIndex`, `RemoveAt`), where ranks and selects are `O(log n)` and inserts and removes (including `RemoveAt`) are `O(√n)` instead of `SortedList<,>`'s `O(n)`. On a change-a-key-then-rank-and-select workload at 100,000 entries it measures 94x `SortedList<,>`; a select is 9.7x slower than `SortedList<,>`'s array index. Ships with its tests, fuzz target, benchmark, dashboard cards and API docs. Closes #635.
+
 ### Changed
 
 - The benchmarks now measure against the .NET 9 BCL types their hand-rolled baselines stood in for: `OrderedDictionary<TKey, TValue>` for `LinkedDictionary` and `LinkedSet` (removal keeps its `O(1)` hand-rolled baseline), and `GetAlternateLookup<ReadOnlySpan<char>>()` on `Dictionary`, `FrozenDictionary` and `HashSet<string>` for the span lookups and `StringInternTable`. The dashboard cards and documented ratios moved with them. ⚠️ Enumerating either linked type is about 5x slower than `OrderedDictionary`, and the span probes on `Trie`, `SuccinctTrie` and `FrozenCelerityDictionary` are 2.5–21x slower than the BCL's.

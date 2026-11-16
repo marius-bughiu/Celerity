@@ -290,6 +290,28 @@ public class IndexerReturnTypeTests
     }
 
     [Fact]
+    public void RankedDictionary_PrimaryIndexer_ReturnsNonNullableTValue()
+    {
+        AssertPrimaryIndexerReturnsTValue(
+            typeof(RankedDictionary<string, int, DefaultComparer<string>>),
+            keyType: typeof(string),
+            valueGenericIndex: 1);
+    }
+
+    [Fact]
+    public void RankedDictionary_StringValue_IndexerAssignsToNonNullableLocal_WithoutWarning()
+    {
+        var map = new RankedDictionary<int, string>
+        {
+            [1] = "hello",
+        };
+
+        string value = map[1];
+
+        Assert.Equal("hello", value);
+    }
+
+    [Fact]
     public void PersistentHashMap_PrimaryIndexer_ReturnsNonNullableTValue()
     {
         AssertPrimaryIndexerReturnsTValue(
