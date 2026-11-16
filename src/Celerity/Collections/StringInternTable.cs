@@ -10,10 +10,10 @@ namespace Celerity.Collections;
 /// A canonicalizing table of <see cref="string"/>s that is probed with a
 /// <see cref="ReadOnlySpan{T}"/> of <see cref="char"/> and allocates a
 /// <see cref="string"/> <em>only on a miss</em>, using
-/// <see cref="StringFnV1AFullHasher"/>. Supply a different string hasher via the
+/// <see cref="StringCityHash64Hasher"/>. Supply a different string hasher via the
 /// <see cref="StringInternTable{THasher}"/> generic overload.
 /// </summary>
-public sealed class StringInternTable : StringInternTable<StringFnV1AFullHasher>
+public sealed class StringInternTable : StringInternTable<StringCityHash64Hasher>
 {
     /// <summary>
     /// Initializes a new <see cref="StringInternTable"/> with the specified capacity
@@ -60,11 +60,14 @@ public sealed class StringInternTable : StringInternTable<StringFnV1AFullHasher>
 /// <c>HashSet&lt;string&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>, available on
 /// every runtime Celerity targets, expresses the same pattern: its <c>TryGetValue</c> returns the
 /// stored instance from a span, and a miss materializes the string once for <c>Add</c>. It
-/// allocates the same strings this type does, and it probes faster than this type does with the
-/// default hasher, which folds each UTF-16 code unit a byte at a time. This type packages the
-/// pattern as one <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type
-/// parameter; supply a block hasher such as <see cref="StringCityHash64Hasher"/> when probe speed
-/// matters.
+/// allocates the same strings this type does. This type packages the pattern as one
+/// <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type parameter. On half-full
+/// tables of 64 tokens, with <see cref="StringCityHash64Hasher"/>, the non-generic table's default, it
+/// probed faster than that set on mixed, mostly short tokens on Apple Silicon and x64, but slower at some
+/// fixed lengths, mostly from 17 characters up: by up to 1.19x on Apple Silicon and 1.61x on x64. For
+/// tokens mostly 17 to 64 characters long, try <see cref="StringXxHash3Hasher"/> through
+/// <see cref="StringInternTable{THasher}"/>, which probed faster than the default there on both platforms,
+/// but not for tokens past 120 characters: at 128 it probed 2.2x slower than the default on Apple Silicon.
 /// </para>
 /// <para>
 /// <strong>Not <see cref="string.Intern(string)"/>.</strong> The runtime intern pool is

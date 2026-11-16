@@ -22,12 +22,19 @@ using Celerity.Hashing;
 /// up holding one canonical instance per distinct token. <c>Lookup</c> isolates the probe on an already-warm table.
 /// </para>
 /// <para>
-/// The <c>*CityHash64</c> arms run the same table over <see cref="StringCityHash64Hasher"/> instead of the default
-/// <see cref="StringFnV1AFullHasher"/>, which folds every UTF-16 code unit a byte at a time and so accounts for most
-/// of the probe's cost on these 16-character tokens; CityHash64 reads them eight bytes at a time. Those arms carry
-/// op names of their own so each lands in a dashboard bucket by itself, since two Celerity arms sharing an op would
-/// overwrite each other in the index the cards are built from, while the shared category keeps BenchmarkDotNet's
-/// ratio against the same <c>HashSet</c> baseline.
+/// The <c>*FnV1AFull</c> arms run the same table over <see cref="StringFnV1AFullHasher"/>, the default before 4.0,
+/// which folds every UTF-16 code unit a byte at a time; the default <see cref="StringCityHash64Hasher"/> reads these
+/// 16-character tokens eight bytes at a time. Those arms carry op names of their own so each lands in a dashboard
+/// bucket by itself, since two Celerity arms sharing an op would overwrite each other in the index the cards are built
+/// from, while the shared category keeps BenchmarkDotNet's ratio against the same <c>HashSet</c> baseline.
+/// </para>
+/// <para>
+/// The stream cycles through the 64 tokens in a fixed order, which a branch predictor learns, collisions included,
+/// so these arms measure a probe whose branches are already predicted. That helps the default's table more than the
+/// set, and the <c>*FnV1AFull</c> arms not at all: these tokens differ only in a counter, which that hasher spreads
+/// without a collision to learn. On the Apple M4 both of the default's margins, over the set and over
+/// <see cref="StringFnV1AFullHasher"/>, are wider here than at 16 characters in
+/// <see cref="StringInternTableTokenLengthBenchmark"/>, which probes in an order too long to learn.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser]
@@ -47,7 +54,7 @@ public class StringInternTableBenchmark
     // A warm table / set for the Lookup category, built once in [GlobalSetup], and the set's span-keyed view,
     // resolved once as a caller holding it would.
     private StringInternTable internedFull = null!;
-    private StringInternTable<StringCityHash64Hasher> internedCityFull = null!;
+    private StringInternTable<StringFnV1AFullHasher> internedFnvFull = null!;
     private HashSet<string> hashSetFull = null!;
     private HashSet<string>.AlternateLookup<ReadOnlySpan<char>> hashSetSpanLookup;
 
@@ -73,12 +80,12 @@ public class StringInternTableBenchmark
         buffer = text.ToString().ToCharArray();
 
         internedFull = new StringInternTable(DistinctTokens);
-        internedCityFull = new StringInternTable<StringCityHash64Hasher>(DistinctTokens);
+        internedFnvFull = new StringInternTable<StringFnV1AFullHasher>(DistinctTokens);
         hashSetFull = new HashSet<string>(DistinctTokens, StringComparer.Ordinal);
         foreach (string token in vocabulary)
         {
             internedFull.GetOrAdd(token);
-            internedCityFull.GetOrAdd(token);
+            internedFnvFull.GetOrAdd(token);
             hashSetFull.Add(token);
         }
 
@@ -120,9 +127,9 @@ public class StringInternTableBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Dedupe")]
-    public int StringInternTable_DedupeCityHash64()
+    public int StringInternTable_DedupeFnV1AFull()
     {
-        var table = new StringInternTable<StringCityHash64Hasher>();
+        var table = new StringInternTable<StringFnV1AFullHasher>();
         for (int i = 0; i < tokens.Length; i++)
         {
             (int offset, int length) = tokens[i];
@@ -163,13 +170,13 @@ public class StringInternTableBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Lookup")]
-    public int StringInternTable_LookupCityHash64()
+    public int StringInternTable_LookupFnV1AFull()
     {
         int hits = 0;
         for (int i = 0; i < tokens.Length; i++)
         {
             (int offset, int length) = tokens[i];
-            if (internedCityFull.Contains(buffer.AsSpan(offset, length)))
+            if (internedFnvFull.Contains(buffer.AsSpan(offset, length)))
                 hits++;
         }
         return hits;

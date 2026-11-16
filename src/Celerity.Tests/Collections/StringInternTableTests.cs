@@ -230,7 +230,7 @@ public class StringInternTableTests
         var table = new StringInternTable();
         table.GetOrAdd("a".AsSpan());
 
-        StringInternTable<StringFnV1AFullHasher>.Enumerator enumerator = table.GetEnumerator();
+        StringInternTable<StringCityHash64Hasher>.Enumerator enumerator = table.GetEnumerator();
         table.GetOrAdd("b".AsSpan());
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
@@ -242,7 +242,7 @@ public class StringInternTableTests
         var table = new StringInternTable();
         table.GetOrAdd("a".AsSpan());
 
-        StringInternTable<StringFnV1AFullHasher>.Enumerator enumerator = table.GetEnumerator();
+        StringInternTable<StringCityHash64Hasher>.Enumerator enumerator = table.GetEnumerator();
         Assert.True(enumerator.MoveNext());
         Assert.False(enumerator.MoveNext());
 
@@ -257,7 +257,7 @@ public class StringInternTableTests
         var table = new StringInternTable();
         table.GetOrAdd("a".AsSpan());
 
-        StringInternTable<StringFnV1AFullHasher>.Enumerator enumerator = table.GetEnumerator();
+        StringInternTable<StringCityHash64Hasher>.Enumerator enumerator = table.GetEnumerator();
         table.GetOrAdd("b".AsSpan());
 
         Assert.Throws<InvalidOperationException>(enumerator.Reset);
@@ -290,6 +290,14 @@ public class StringInternTableTests
     }
 
     // ── Hasher parameterization ───────────────────────────────────────────────
+
+    [Fact]
+    public void NonGenericTable_ShouldHashWithCityHash64()
+    {
+        // The default hasher is part of the non-generic table's public shape (it names the base
+        // type) and decides its enumeration order, so a change to it has to be a deliberate one.
+        Assert.Equal(typeof(StringInternTable<StringCityHash64Hasher>), typeof(StringInternTable).BaseType);
+    }
 
     [Fact]
     public void GetOrAdd_ShouldBehaveIdentically_AcrossHashers()
