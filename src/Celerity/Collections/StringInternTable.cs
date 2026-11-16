@@ -61,11 +61,12 @@ public sealed class StringInternTable : StringInternTable<StringCityHash64Hasher
 /// every runtime Celerity targets, expresses the same pattern: its <c>TryGetValue</c> returns the
 /// stored instance from a span, and a miss materializes the string once for <c>Add</c>. It
 /// allocates the same strings this type does. This type packages the pattern as one
-/// <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type parameter. With
-/// <see cref="StringCityHash64Hasher"/>, the non-generic table's default, it probes faster than that
-/// set on Apple Silicon at every token length measured, 3 to 64 characters, and on x64 on 16-character tokens in a
-/// repeating order, the one case measured there; <see cref="StringXxHash3Hasher"/> probes faster still at 32 and 64
-/// characters. These were measured on half-full tables of 64 tokens.
+/// <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type parameter. On half-full
+/// tables of 64 tokens, with <see cref="StringCityHash64Hasher"/>, the non-generic table's default, it
+/// probed faster than that set on tokens of mixed length on Apple Silicon and x64, but slower at some
+/// fixed lengths from 17 characters up, past steps in that hasher's cost: by up to 1.19x on Apple Silicon
+/// and 1.61x on x64. For tokens mostly longer than 16 characters, try <see cref="StringXxHash3Hasher"/>
+/// through <see cref="StringInternTable{THasher}"/>, which probed faster than the default there on both platforms.
 /// </para>
 /// <para>
 /// <strong>Not <see cref="string.Intern(string)"/>.</strong> The runtime intern pool is

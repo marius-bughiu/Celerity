@@ -30,9 +30,11 @@ using Celerity.Hashing;
 /// </para>
 /// <para>
 /// The stream cycles through the 64 tokens in a fixed order, which a branch predictor learns, collisions included,
-/// so these arms measure a probe whose branches are already predicted. That helps the tables more than the set.
-/// <see cref="StringInternTableTokenLengthBenchmark"/> probes in an order that does not repeat, across token lengths,
-/// and its margins over the set are the smaller ones.
+/// so these arms measure a probe whose branches are already predicted. That helps the default's table more than the
+/// set, and the <c>*FnV1AFull</c> arms not at all: these tokens differ only in a counter, which that hasher spreads
+/// without a collision to learn. On the Apple M4 both of the default's margins, over the set and over
+/// <see cref="StringFnV1AFullHasher"/>, are wider here than in <see cref="StringInternTableTokenLengthBenchmark"/>,
+/// which probes in an order too long to learn, across token lengths.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser]

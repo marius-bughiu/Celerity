@@ -13,17 +13,23 @@ using Celerity.Hashing;
 /// characters (averaging about 8 and 14), as a parse that mixes short codes, words and identifiers would see them.
 /// </para>
 /// <para>
+/// The fixed lengths fall on both sides of <see cref="StringCityHash64Hasher"/>'s cost steps. Above 8 characters it
+/// hashes 9 to 16, 17 to 32 and 33 to 64 characters on three paths, each costing about the same throughout and more
+/// than the one before, so against the set's hash, whose cost grows with length, it compares best at the end of a
+/// path, as at 16, 32 and 64 characters, and worst just past one, as at 17 and 36.
+/// </para>
+/// <para>
 /// Each invocation probes sixteen tables, each with its own vocabulary of 64 random tokens and so half full, 6,250
 /// times apiece in a random order. Successive invocations take the next of sixteen such draws, so a run averages
 /// 256 vocabularies and no invocation repeats the order the one before it probed.
 /// </para>
 /// <para>
 /// Both are needed for a fair comparison. Which of 64 tokens happen to share a slot is luck of the draw: a draw of
-/// sixteen vocabularies gave one hasher's tables up to 12% fewer probes per hit than another's, and on short tokens
-/// that moved the time ratio by two to three times as much. Over all 256, the three hashers' mean probes per hit came
-/// out within about 2% of each other at every length. And a branch predictor learns a probe order that repeats:
-/// replaying one draw of 100,000 probes on every invocation let it learn which probes collide, which on the Apple M4
-/// took a quarter or more off the tables' probe time and much less off the set's, overstating the tables' lead. The
+/// sixteen vocabularies gave one hasher's tables up to 13% fewer probes per hit than another's. Over all 256, the
+/// three hashers' mean probes per hit came out within 3% of each other at every length. And a branch predictor learns
+/// a probe order that repeats: replaying one draw of 100,000 probes on every invocation let it learn which probes
+/// collide. On the Apple M4 that took a fifth or more off the default's and <see cref="StringXxHash3Hasher"/>'s probe
+/// time on tokens of up to 16 characters, less on longer ones, and less off the set's, overstating their lead. The
 /// sixteen streams, 1.6 million probes in all, are more than it learns. The tables are half full; nearer their 0.75
 /// load factor they visit more slots per hit, and that is not measured here.
 /// </para>
@@ -59,7 +65,7 @@ public class StringInternTableTokenLengthBenchmark
     private int draw;
 
     /// <summary>A fixed token length in characters, or a <c>min-max</c> range drawn log-uniformly.</summary>
-    [Params("3", "8", "16", "32", "64", "2-20", "2-48")]
+    [Params("3", "8", "16", "17", "32", "36", "48", "64", "2-20", "2-48")]
     public string Tokens = null!;
 
     [GlobalSetup]
@@ -163,8 +169,8 @@ public class StringInternTableTokenLengthBenchmark
 
     // Each arm keeps its probe loop inline, as HashSet_Lookup does, rather than calling one shared generic helper. A
     // one-line arm that calls a helper is a tiny inline root, so the JIT inlines the helper and the hasher under it to
-    // a different depth per instantiation. In this benchmark that shape slowed StringXxHash3Hasher's arm by up to about 2x
-    // and the default's by up to about 1.6x.
+    // a different depth per instantiation. When this benchmark replayed one draw per invocation, that shape slowed
+    // StringXxHash3Hasher's arm by up to about 2x and the default's by up to about 1.6x.
     [Benchmark]
     public int StringInternTable_Lookup()
     {
