@@ -1,11 +1,13 @@
+using System.Collections.Immutable;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 
 /// <summary>
-/// <see cref="RankedSet{T}"/> against the two things a caller actually reaches for today: the BCL's ordered
-/// set, <see cref="SortedSet{T}"/>, and a <see cref="List{T}"/> kept sorted by hand with
-/// <see cref="List{T}.BinarySearch(T)"/> and <see cref="List{T}.Insert"/>.
+/// <see cref="RankedSet{T}"/> against the three things a caller actually reaches for today: the BCL's ordered
+/// set, <see cref="SortedSet{T}"/>; a <see cref="List{T}"/> kept sorted by hand with
+/// <see cref="List{T}.BinarySearch(T)"/> and <see cref="List{T}.Insert"/>; and
+/// <see cref="ImmutableSortedSet{T}.Builder"/>, the one BCL set that ranks and selects in <c>O(log n)</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,9 +20,18 @@ using Celerity.Collections;
 /// <c>ElementAt(k)</c> and a walk to the probe, both linear.
 /// </para>
 /// <para>
+/// <see cref="ImmutableSortedSet{T}"/> is the BCL's one <c>O(log n)</c> answer to both questions: its AVL nodes
+/// count their subtrees, so <c>IndexOf</c> and the indexer are each one descent. Its arms drive the
+/// <see cref="ImmutableSortedSet{T}.Builder"/>, the form that edits in place, filled by <c>Add</c> in the same
+/// shuffled order this type's constructor inserts in and never frozen: <c>ToImmutable()</c> would freeze every
+/// node, and the builder copies a frozen node on its next edit instead of editing it. It has no range view, so
+/// its range scan is an <c>IndexOf</c> to the lower bound and then one indexer descent per element.
+/// </para>
+/// <para>
 /// Only the <see cref="SortedSet{T}"/> arms carry the dashboard's op names; the list arms are named for what
-/// they do (<c>SelectByIndex</c>, <c>RankBinarySearch</c>, …) so each dashboard card still resolves to one
-/// BCL measurement and one Celerity one, while the report keeps all three in the same category with ratios
+/// they do (<c>SelectByIndex</c>, <c>RankBinarySearch</c>, …) and the <see cref="ImmutableSortedSet{T}"/> arms
+/// carry an <c>Avl</c> suffix (<c>SelectAvl</c>, <c>MixedAvl</c>, …), so each dashboard card still resolves to
+/// one BCL measurement and one Celerity one, while the report keeps all four in the same category with ratios
 /// against the same baseline.
 /// </para>
 /// </remarks>
@@ -40,6 +51,7 @@ public class RankedSetBenchmark
     private SortedSet<int> sortedSet = null!;
     private List<int> sortedList = null!;
     private RankedSet<int> ranked = null!;
+    private ImmutableSortedSet<int>.Builder avl = null!;
 
     private int window;
     private int rangeFrom;
@@ -74,6 +86,7 @@ public class RankedSetBenchmark
         sortedSet = new SortedSet<int>(keys);
         sortedList = [.. Enumerable.Range(0, ItemCount)];
         ranked = new RankedSet<int>(keys);
+        avl = BuildAvl();
 
         // The sliding window the Mixed group maintains. The group asks a rank and a select on *every* step,
         // and the SortedSet answers to both are linear in the window, so the window is a twentieth of the
@@ -83,6 +96,17 @@ public class RankedSetBenchmark
 
         rangeFrom = ItemCount / 2;
         rangeTo = rangeFrom + Math.Max(1, ItemCount / 100);
+    }
+
+    // Added one at a time in the shuffled order, as RankedSet's constructor inserts, and never frozen, so every
+    // edit an arm makes is in place.
+    private ImmutableSortedSet<int>.Builder BuildAvl()
+    {
+        ImmutableSortedSet<int>.Builder builder = ImmutableSortedSet.CreateBuilder<int>();
+        foreach (int key in keys)
+            builder.Add(key);
+
+        return builder;
     }
 
     // ---- Add -----------------------------------------------------------------------------------------
@@ -112,6 +136,18 @@ public class RankedSetBenchmark
             {
                 list.Insert(~at, key);
             }
+        }
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Add")]
+    public void ImmutableSortedSet_AddAvl()
+    {
+        ImmutableSortedSet<int>.Builder set = ImmutableSortedSet.CreateBuilder<int>();
+
+        foreach (int key in keys)
+        {
+            set.Add(key);
         }
     }
 
@@ -150,6 +186,19 @@ public class RankedSetBenchmark
         foreach (int key in keys)
         {
             result ^= sortedList.BinarySearch(key) >= 0;
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Contains")]
+    public bool ImmutableSortedSet_ContainsAvl()
+    {
+        bool result = false;
+        foreach (int key in keys)
+        {
+            result ^= avl.Contains(key);
         }
 
         return result;
@@ -200,6 +249,19 @@ public class RankedSetBenchmark
         }
     }
 
+    [IterationSetup(Target = nameof(ImmutableSortedSet_RemoveAvl))]
+    public void SetupForImmutableSortedSetRemove() => avl = BuildAvl();
+
+    [Benchmark]
+    [BenchmarkCategory("Remove")]
+    public void ImmutableSortedSet_RemoveAvl()
+    {
+        foreach (int key in keys)
+        {
+            avl.Remove(key);
+        }
+    }
+
     [IterationSetup(Target = nameof(RankedSet_Remove))]
     public void SetupForRankedSetRemove() => ranked = new RankedSet<int>(keys);
 
@@ -238,6 +300,19 @@ public class RankedSetBenchmark
         foreach (int rank in ranks)
         {
             result += sortedList[rank];
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Select")]
+    public long ImmutableSortedSet_SelectAvl()
+    {
+        long result = 0;
+        foreach (int rank in ranks)
+        {
+            result += avl[rank];
         }
 
         return result;
@@ -299,6 +374,21 @@ public class RankedSetBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Rank")]
+    public long ImmutableSortedSet_RankAvl()
+    {
+        long result = 0;
+        foreach (int probe in probes)
+        {
+            // A miss comes back as the complement of the next larger element's index, as from BinarySearch.
+            int at = avl.IndexOf(probe);
+            result += at >= 0 ? at : ~at;
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Rank")]
     public long RankedSet_Rank()
     {
         long result = 0;
@@ -342,6 +432,29 @@ public class RankedSetBenchmark
 
     [Benchmark]
     [BenchmarkCategory("RangeScan")]
+    public long ImmutableSortedSet_RangeScanAvl()
+    {
+        // No range view and no seekable enumerator: find the lower bound, then read each element by index,
+        // one descent apiece, until the first one past the range.
+        long result = 0;
+        int count = avl.Count;
+        int at = avl.IndexOf(rangeFrom);
+        for (int i = at >= 0 ? at : ~at; i < count; i++)
+        {
+            int item = avl[i];
+            if (item >= rangeTo)
+            {
+                break;
+            }
+
+            result += item;
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("RangeScan")]
     public long RankedSet_RangeScan()
     {
         long result = 0;
@@ -358,7 +471,8 @@ public class RankedSetBenchmark
     // — on every step, which is what the pre-registered criterion says — ask for the rank of the newest value
     // and for the median of what is currently in. That is the leaderboard / live-percentile shape, and it is
     // the only group where both baselines pay their weakness at once: the tree for the two linear queries,
-    // the list for the memmove per mutation.
+    // the list for the memmove per mutation. The AVL builder has no such weakness — every step is four
+    // O(log n) descents — so against it the group measures the layout rather than the complexity class.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Mixed")]
@@ -418,6 +532,28 @@ public class RankedSetBenchmark
 
             int found = list.BinarySearch(keys[i]);
             result += (found >= 0 ? found : ~found) + list[list.Count / 2];
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Mixed")]
+    public long ImmutableSortedSet_MixedAvl()
+    {
+        ImmutableSortedSet<int>.Builder set = ImmutableSortedSet.CreateBuilder<int>();
+        long result = 0;
+
+        for (int i = 0; i < keys.Length; i++)
+        {
+            set.Add(keys[i]);
+            if (i >= window)
+            {
+                set.Remove(keys[i - window]);
+            }
+
+            int found = set.IndexOf(keys[i]);
+            result += (found >= 0 ? found : ~found) + set[set.Count / 2];
         }
 
         return result;

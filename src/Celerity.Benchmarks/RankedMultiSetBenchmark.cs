@@ -1,13 +1,15 @@
+using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Collections;
 
 /// <summary>
-/// <see cref="RankedMultiSet{T}"/> against the two things a caller reaches for today when a sorted collection
+/// <see cref="RankedMultiSet{T}"/> against the three things a caller reaches for today when a sorted collection
 /// must keep duplicates. One is <see cref="SortedSet{T}"/> over a composite <c>(value, sequence)</c> element,
-/// the usual tie-break workaround. The other is a <see cref="List{T}"/> kept sorted by hand, with lower- and
-/// upper-bound binary searches and <see cref="List{T}.Insert"/>.
+/// the usual tie-break workaround. Another is the same composite in an <see cref="ImmutableSortedSet{T}.Builder"/>,
+/// which ranks and selects in <c>O(log n)</c>. The third is a <see cref="List{T}"/> kept sorted by hand, with
+/// lower- and upper-bound binary searches and <see cref="List{T}.Insert"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,9 +19,18 @@ using Celerity.Collections;
 /// <see cref="RankedSet{T}"/> is not an arm here. It would drop the repeats and answer a different question.
 /// </para>
 /// <para>
+/// <see cref="ImmutableSortedSet{T}"/>'s AVL nodes count their subtrees, so on the composite the indexer is one
+/// descent, and a rank is one <c>IndexOf</c> of <c>(value, long.MinValue)</c>, which no element equals, so the
+/// complement of its answer is the lower bound. Its arms drive the <see cref="ImmutableSortedSet{T}.Builder"/>,
+/// filled by <c>Add</c> in sequence order and never frozen, so every edit is in place, as in
+/// <c>RankedSetBenchmark</c>.
+/// </para>
+/// <para>
 /// Only the <see cref="SortedSet{T}"/> arms carry the dashboard's op names. The list arms are named for what
-/// they do (<c>SelectByIndex</c>, <c>RankBinarySearch</c>, …), because <c>List</c> is also a BCL type and two
-/// BCL arms sharing an op would overwrite each other on the dashboard.
+/// they do (<c>SelectByIndex</c>, <c>RankBinarySearch</c>, …) and the <see cref="ImmutableSortedSet{T}"/> arms
+/// carry an <c>Avl</c> suffix (<c>SelectAvl</c>, <c>MixedAvl</c>, …), because <c>List</c> and
+/// <c>ImmutableSortedSet</c> are BCL types too, and two BCL arms sharing an op would overwrite each other on the
+/// dashboard.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
@@ -37,6 +48,7 @@ public class RankedMultiSetBenchmark
     private SortedSet<(int Value, long Seq)> sortedSet = null!;
     private List<int> sortedList = null!;
     private RankedMultiSet<int> multiSet = null!;
+    private ImmutableSortedSet<(int Value, long Seq)>.Builder avl = null!;
 
     private int window;
 
@@ -66,6 +78,7 @@ public class RankedMultiSetBenchmark
         sortedSet = BuildSortedSet();
         sortedList = BuildSortedList();
         multiSet = new RankedMultiSet<int>(values);
+        avl = BuildAvl();
 
         // The same window rule as RankedSetBenchmark: the SortedSet answers to the per-step rank and select
         // are linear in the window, so a twentieth of the sweep keeps that arm from running for minutes.
@@ -87,6 +100,25 @@ public class RankedMultiSetBenchmark
         list.Sort();
         return list;
     }
+
+    // Added one element at a time, as the SortedSet composite is, and never frozen, so every edit an arm makes is
+    // in place.
+    private ImmutableSortedSet<(int Value, long Seq)>.Builder BuildAvl()
+    {
+        ImmutableSortedSet<(int Value, long Seq)>.Builder builder = ImmutableSortedSet.CreateBuilder<(int Value, long Seq)>();
+        for (int i = 0; i < values.Length; i++)
+            builder.Add((values[i], i));
+
+        return builder;
+    }
+
+    // The composite's bounds. Every sequence number lies in [0, ItemCount), so no element equals either probe and
+    // IndexOf always misses: the complement of its answer is the index of the first element past the probe.
+    private static int AvlLowerBound(ImmutableSortedSet<(int Value, long Seq)>.Builder set, int value)
+        => ~set.IndexOf((value, long.MinValue));
+
+    private static int AvlUpperBound(ImmutableSortedSet<(int Value, long Seq)>.Builder set, int value)
+        => ~set.IndexOf((value, long.MaxValue));
 
     // The first index whose element is not smaller than `value`. List<T>.BinarySearch returns *some* match
     // among duplicates, so a hand-roll that keeps duplicates has to write its own bound searches.
@@ -147,6 +179,15 @@ public class RankedMultiSetBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Add")]
+    public void ImmutableSortedSet_AddAvl()
+    {
+        ImmutableSortedSet<(int Value, long Seq)>.Builder set = ImmutableSortedSet.CreateBuilder<(int Value, long Seq)>();
+        for (int i = 0; i < values.Length; i++)
+            set.Add((values[i], i));
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Add")]
     public void RankedMultiSet_Add()
     {
         var set = new RankedMultiSet<int>();
@@ -177,6 +218,18 @@ public class RankedMultiSetBenchmark
     {
         foreach (int value in values)
             sortedList.RemoveAt(LowerBound(sortedList, value));
+    }
+
+    [IterationSetup(Target = nameof(ImmutableSortedSet_RemoveAvl))]
+    public void SetupForImmutableSortedSetRemove() => avl = BuildAvl();
+
+    [Benchmark]
+    [BenchmarkCategory("Remove")]
+    public void ImmutableSortedSet_RemoveAvl()
+    {
+        // The composite element has to be named exactly here too.
+        for (int i = 0; i < values.Length; i++)
+            avl.Remove((values[i], i));
     }
 
     [IterationSetup(Target = nameof(RankedMultiSet_Remove))]
@@ -210,6 +263,17 @@ public class RankedMultiSetBenchmark
         long result = 0;
         foreach (int rank in ranks)
             result += sortedList[rank];
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Select")]
+    public long ImmutableSortedSet_SelectAvl()
+    {
+        long result = 0;
+        foreach (int rank in ranks)
+            result += avl[rank].Value;
 
         return result;
     }
@@ -262,6 +326,17 @@ public class RankedMultiSetBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Rank")]
+    public long ImmutableSortedSet_RankAvl()
+    {
+        long result = 0;
+        foreach (int probe in probes)
+            result += AvlLowerBound(avl, probe);
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Rank")]
     public long RankedMultiSet_Rank()
     {
         long result = 0;
@@ -292,6 +367,18 @@ public class RankedMultiSetBenchmark
         long result = 0;
         foreach (int probe in probes)
             result += UpperBound(sortedList, probe) - LowerBound(sortedList, probe);
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("CountOf")]
+    public long ImmutableSortedSet_CountOfAvl()
+    {
+        // Two descents, one to each end of the value's run, whatever its length.
+        long result = 0;
+        foreach (int probe in probes)
+            result += AvlUpperBound(avl, probe) - AvlLowerBound(avl, probe);
 
         return result;
     }
@@ -354,6 +441,25 @@ public class RankedMultiSetBenchmark
                 list.RemoveAt(LowerBound(list, values[i - window]));
 
             result += LowerBound(list, values[i]) + list[list.Count / 2];
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Mixed")]
+    public long ImmutableSortedSet_MixedAvl()
+    {
+        ImmutableSortedSet<(int Value, long Seq)>.Builder set = ImmutableSortedSet.CreateBuilder<(int Value, long Seq)>();
+        long result = 0;
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            set.Add((values[i], i));
+            if (i >= window)
+                set.Remove((values[i - window], i - window));
+
+            result += AvlLowerBound(set, values[i]) + set[set.Count / 2].Value;
         }
 
         return result;
