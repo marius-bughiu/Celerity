@@ -54,7 +54,7 @@ namespace Celerity.Hashing;
 /// and 512 characters XXH3 took 2.21–3.43x as long as
 /// <see cref="StringCityHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/> and
 /// <see cref="StringXxHash64Hasher"/>. A table probe can rank them differently.
-/// <see cref="StringMurmur3Hasher"/> stays the simplest of them.
+/// <see cref="StringMurmur3Hasher"/> stays the simplest of the strong-avalanche hashers.
 /// All are good answers when FNV-1a's weaker avalanche pushes clustered or
 /// adversarial keys into long probe chains.
 /// </para>
