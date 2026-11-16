@@ -1609,10 +1609,11 @@ internal static class Differential
             int key = rng.Next(0, RankedDictionaryKeyDomain);
             int value = rng.Next();
 
-            // In the draining half, inserts are rarer than removals, so the map contracts across buckets.
+            // In the draining half every insert becomes a removal, half by key and half by rank, so the map
+            // contracts across buckets far enough to merge and drop them.
             int roll = rng.Next(0, 24);
-            if (drain && i >= ops / 2 && roll < 10 && rng.Next(0, 4) != 0)
-                roll = 13;
+            if (drain && i >= ops / 2 && roll < 13)
+                roll = rng.Next(0, 2) == 0 ? 13 : 20;
 
             switch (roll)
             {
@@ -1635,10 +1636,21 @@ internal static class Differential
                     oracle[sut.GetKeyAtIndex(slot)] = value;
                     break;
                 case < 22: break;
-                case < 24 when rng.Next(0, 4) == 0:
-                    sut.TrimExcess();
+
+                // Both of these undo the structure the case is trying to build (Clear empties the map, and
+                // TrimExcess repacks every bucket to three quarters), so each is drawn only rarely.
+                case < 23:
+                    if (rng.Next(0, 200) == 0)
+                        sut.TrimExcess();
                     break;
-                default: sut.Clear(); oracle.Clear(); break;
+                default:
+                    if (rng.Next(0, 1000) == 0)
+                    {
+                        sut.Clear();
+                        oracle.Clear();
+                    }
+
+                    break;
             }
         }
 
