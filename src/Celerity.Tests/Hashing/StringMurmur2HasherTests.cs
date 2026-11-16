@@ -14,8 +14,9 @@ public class StringMurmur2HasherTests
     /// <summary>
     /// Independent reference: canonical MurmurHash2 (32-bit, seed <c>0</c>) over the
     /// BCL's little-endian UTF-16 encoding of the string. The hasher loops over
-    /// <c>char</c> pairs and builds each block by hand; this reference goes through
-    /// <see cref="Encoding.Unicode"/> and a byte-oriented block / tail loop with the
+    /// <c>char</c> pairs, reading each block straight from the span's memory; this
+    /// reference goes through <see cref="Encoding.Unicode"/> and a byte-oriented
+    /// block / tail loop with the
     /// literal <c>switch</c> fall-through tail, so agreement pins the byte order, the
     /// 4-byte block read, the per-block mix, the tail handling, and the finalizer
     /// against drift without sharing the hasher's char-loop implementation.
@@ -100,6 +101,15 @@ public class StringMurmur2HasherTests
     public void Hash_MatchesMurmur2OverUtf16ByteStream(string input)
     {
         Assert.Equal(ReferenceMurmur2Utf16(input), _hasher.Hash(input));
+    }
+
+    [Fact]
+    public void Hash_MatchesMurmur2OverUtf16ByteStream_AcrossTheSharedCorpus()
+    {
+        // Every length from 0 to 40 chars (both block parities, with and without the
+        // one-char tail), long inputs, and non-ASCII chars with the high byte set.
+        foreach (string s in HasherStringCorpus.Strings)
+            Assert.Equal(ReferenceMurmur2Utf16(s), _hasher.Hash(s));
     }
 
     /// <summary>

@@ -21,8 +21,8 @@ public class StringXxHash64HasherTests
     /// <summary>
     /// Independent, byte-oriented reference implementation of canonical xxHash64
     /// (seed <c>0</c>) over the BCL's little-endian UTF-16 encoding of the string,
-    /// xor-folded to 32 bits exactly as the hasher does. The hasher loops over
-    /// <c>char</c>s and assembles lanes by hand; this reference goes through
+    /// xor-folded to 32 bits exactly as the hasher does. The hasher reads its lanes
+    /// straight from the <c>char</c> span's memory; this reference goes through
     /// <see cref="Encoding.Unicode"/> and a byte loop with
     /// <see cref="BinaryPrimitives.ReadUInt64LittleEndian"/> /
     /// <see cref="BinaryPrimitives.ReadUInt32LittleEndian"/>, so agreement pins the

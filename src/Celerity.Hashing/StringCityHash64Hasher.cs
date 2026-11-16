@@ -272,14 +272,11 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
     /// Reads one 64-bit little-endian word (eight bytes / four UTF-16 code units)
     /// starting at char index <paramref name="i"/>: each successive char supplies
     /// the next 16 bits — exactly the 8-byte word a byte-oriented CityHash would
-    /// read over the native little-endian UTF-16 stream.
+    /// read over the native little-endian UTF-16 stream. One unaligned load on a
+    /// little-endian host (see <see cref="Utf16Words"/>).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Lane(ReadOnlySpan<char> key, int i) =>
-        (ulong)key[i]
-        | ((ulong)key[i + 1] << 16)
-        | ((ulong)key[i + 2] << 32)
-        | ((ulong)key[i + 3] << 48);
+    private static ulong Lane(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt64(key, i);
 
     /// <summary>
     /// Reads one 32-bit little-endian word (four bytes / two UTF-16 code units)
@@ -287,8 +284,7 @@ public struct StringCityHash64Hasher : IHashProvider<string>, IHashProvider64<st
     /// 16 bits, the next char the high 16 bits.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Block(ReadOnlySpan<char> key, int i) =>
-        (uint)key[i] | ((uint)key[i + 1] << 16);
+    private static ulong Block(ReadOnlySpan<char> key, int i) => Utf16Words.ReadUInt32(key, i);
 
     /// <summary>CityHash's <c>ShiftMix</c>: <c>val ^ (val &gt;&gt; 47)</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
