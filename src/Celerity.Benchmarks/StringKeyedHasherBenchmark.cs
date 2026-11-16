@@ -22,21 +22,63 @@ public class StringKeyedHasherBenchmark : StringHasherBenchmarkBase
     [BenchmarkCategory("Hash")]
     public int Bcl_GetHashCode() => HashAllBcl();
 
+    // Each hasher arm holds its own loop instead of forwarding to a shared generic helper;
+    // StringHasherBenchmarkBase explains why.
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int SipHash13() => HashAll<StringSipHash13Hasher>();
+    public int SipHash13()
+    {
+        StringSipHash13Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int SipHash24() => HashAll<StringSipHash24Hasher>();
+    public int SipHash24()
+    {
+        StringSipHash24Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int HalfSipHash24() => HashAll<StringHalfSipHash24Hasher>();
+    public int HalfSipHash24()
+    {
+        StringHalfSipHash24Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int HighwayHash64() => HashAll<StringHighwayHash64Hasher>();
+    public int HighwayHash64()
+    {
+        StringHighwayHash64Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     // ---- IHashProvider64: the un-folded 64-bit surface ----
 
@@ -45,5 +87,15 @@ public class StringKeyedHasherBenchmark : StringHasherBenchmarkBase
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public ulong SipHash24_Hash64() => HashAll64<StringSipHash24Hasher>();
+    public ulong SipHash24_Hash64()
+    {
+        StringSipHash24Hasher hasher = default;
+        string[] k = Keys;
+        ulong acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash64(k[i]);
+        }
+        return acc;
+    }
 }
