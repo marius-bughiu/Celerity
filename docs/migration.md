@@ -298,12 +298,12 @@ Releases after the 3.6.x line target **`net10.0` only**. 3.6.0 is the last relea
 
 ## `StringInternTable`'s default hasher — after 3.6.x
 
-The non-generic `StringInternTable` now derives from `StringInternTable<StringCityHash64Hasher>` instead of `StringInternTable<StringFnV1AFullHasher>`. Probing half-full tables in random order on Apple Silicon and x64, that makes it level to 1.11x faster on 3-character tokens, 1.82–2.35x faster on 16-character ones and 3.76–4.93x on 64-character ones. Hash values and the unspecified enumeration order change with it. This is a **source** break and a silent **binary** one:
+The non-generic `StringInternTable` now derives from `StringInternTable<StringCityHash64Hasher>` instead of `StringInternTable<StringFnV1AFullHasher>`. On half-full tables probed in random order on Apple Silicon and x64, it is 1.01–1.11x faster on 3-character tokens, 1.82–2.35x faster on 16-character ones and 3.76–4.93x on 64-character ones. Hash values and the unspecified enumeration order change with it. This is a **source** break and a silent **binary** one:
 
 - **Source.** Code that names the old base type for a non-generic table stops compiling: `StringInternTable<StringFnV1AFullHasher> table = new StringInternTable();`, or that spelling of its `Enumerator`. Use `StringInternTable`, `StringInternTable.Enumerator` or `var`. A cast or `is` test to the old type through `object` or an interface still compiles, and fails at run time.
 - **Binary.** An assembly compiled against 3.6.x or earlier still calls the `StringFnV1AFullHasher` code on the table, and nothing fails at load or run time. A table it shares with code compiled against this version gives inconsistent answers. In a check, a library compiled against the old version found none of 1,000 tokens that the recompiled app had interned, and interned a second instance of a token the app already held. Recompile every assembly that uses `StringInternTable`, and do not share a table between assemblies built against different majors.
 - **Keeping the old behaviour.** `new StringInternTable<StringFnV1AFullHasher>()` hashes and orders exactly as `StringInternTable` did. It measured slower than the new default at every token length measured, from 3 to 64 characters, on Apple Silicon and x64, though by only 1–2% at 3 characters on x64.
-- **Pinning a hasher.** Code that depends on a particular hasher's hash values or speed should name it through `StringInternTable<THasher>`; the non-generic default can change again only in a major version, and the same way.
+- **Pinning a hasher.** Code that depends on a particular hasher's hash values or speed should name it through `StringInternTable<THasher>`; the non-generic default can change again only in a major version, and then again as a source break and a silent binary one.
 
 ## See also
 

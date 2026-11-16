@@ -9,14 +9,17 @@ using Celerity.Hashing;
 /// <remarks>
 /// <para>
 /// The workload is <see cref="StringInternTableBenchmark"/>'s <c>Lookup</c> category, probing warm tables with
-/// spans sliced from one buffer. Tokens are fixed at 3 to 64 characters, or drawn log-uniformly from 2–20 or 2–48
+/// spans sliced from one buffer. Tokens are fixed at 3 to 128 characters, or drawn log-uniformly from 2–20 or 2–48
 /// characters (averaging about 8 and 14), as a parse that mixes short codes, words and identifiers would see them.
 /// </para>
 /// <para>
-/// The fixed lengths fall on both sides of <see cref="StringCityHash64Hasher"/>'s cost steps. Above 8 characters it
-/// hashes 9 to 16, 17 to 32 and 33 to 64 characters on three paths, each costing about the same throughout and more
-/// than the one before, so against the set's hash, whose cost grows with length, it compares best at the end of a
-/// path, as at 16, 32 and 64 characters, and worst just past one, as at 17 and 36.
+/// The fixed lengths fall on both sides of the block hashers' cost steps. Above 8 characters
+/// <see cref="StringCityHash64Hasher"/> hashes 9 to 16 and 17 to 32 characters on two paths and longer tokens 32
+/// characters at a time, so its cost is flat up to the end of a path or block and steps up just past it. Against the
+/// set's hash, whose cost grows with length, it compares best at the end, as at 16, 32, 64 and 128 characters, and
+/// worst just past it, as at 17 and 36. <see cref="StringXxHash3Hasher"/>'s cost grows more evenly up to 64
+/// characters, steps up at 65 and steps up sharply at 121, where it switches to a loop for long inputs, which 128
+/// measures.
 /// </para>
 /// <para>
 /// Each invocation probes sixteen tables, each with its own vocabulary of 64 random tokens and so half full, 6,250
@@ -37,7 +40,7 @@ using Celerity.Hashing;
 /// The arms are the default <see cref="StringCityHash64Hasher"/>, <see cref="StringXxHash3Hasher"/> (the other
 /// block hasher compared) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII: none
 /// of these hashers branches on content, so text that varies both bytes of each UTF-16 code unit costs the same to
-/// hash. The buffer holds every draw's stream back to back, about 200 MB at 64 characters.
+/// hash. The buffer holds every draw's stream back to back, about 400 MB at 128 characters.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
@@ -65,7 +68,7 @@ public class StringInternTableTokenLengthBenchmark
     private int draw;
 
     /// <summary>A fixed token length in characters, or a <c>min-max</c> range drawn log-uniformly.</summary>
-    [Params("3", "8", "16", "17", "32", "36", "48", "64", "2-20", "2-48")]
+    [Params("3", "8", "16", "17", "32", "36", "48", "64", "128", "2-20", "2-48")]
     public string Tokens = null!;
 
     [GlobalSetup]

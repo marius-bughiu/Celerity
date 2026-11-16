@@ -33,8 +33,8 @@ using Celerity.Hashing;
 /// so these arms measure a probe whose branches are already predicted. That helps the default's table more than the
 /// set, and the <c>*FnV1AFull</c> arms not at all: these tokens differ only in a counter, which that hasher spreads
 /// without a collision to learn. On the Apple M4 both of the default's margins, over the set and over
-/// <see cref="StringFnV1AFullHasher"/>, are wider here than in <see cref="StringInternTableTokenLengthBenchmark"/>,
-/// which probes in an order too long to learn, across token lengths.
+/// <see cref="StringFnV1AFullHasher"/>, are wider here than at 16 characters in
+/// <see cref="StringInternTableTokenLengthBenchmark"/>, which probes in an order too long to learn.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser]
