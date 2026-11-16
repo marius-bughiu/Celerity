@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`RankedDictionary<TKey, TValue, TComparer>`**, the map sibling of `RankedSet`: a sorted map with `SortedList<,>`'s positional methods (`IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `SetValueAtIndex`, `RemoveAt`) in `O(log n)`, and inserts and removes in `O(√n)` instead of `SortedList<,>`'s `O(n)`. On a change-a-key-then-rank-and-select workload at 100,000 entries it measures 94x `SortedList<,>`; a select is 9.7x slower than `SortedList<,>`'s array index. Ships with its tests, fuzz target, benchmark, dashboard cards and API docs. Closes #635.
+- **`RankedDictionary<TKey, TValue, TComparer>`**, the map sibling of `RankedSet`: a sorted map with `SortedList<,>`'s positional methods (`IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `SetValueAtIndex`, `RemoveAt`), where ranks and selects are `O(log n)` and inserts and removes (including `RemoveAt`) are `O(√n)` instead of `SortedList<,>`'s `O(n)`. On a change-a-key-then-rank-and-select workload at 100,000 entries it measures 94x `SortedList<,>`; a select is 9.7x slower than `SortedList<,>`'s array index. Ships with its tests, fuzz target, benchmark, dashboard cards and API docs. Closes #635.
 
 ### Changed
 
