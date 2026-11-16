@@ -36,8 +36,8 @@ namespace Celerity.Collections;
 /// 88 bytes.
 /// </para>
 /// <para>
-/// <b>Precondition.</b> <c>self</c> must enumerate in ascending <c>TComparer</c> order. That is part of both
-/// ordered sets' public contract, and it is what lets <c>AllElementsIn</c> — the shared probe behind
+/// <b>Precondition.</b> <c>self</c> must enumerate in ascending <c>TComparer</c> order. That is part of each
+/// ordered set's public contract, and it is what lets <c>AllElementsIn</c> — the shared probe behind
 /// <c>SetEquals</c>, <c>IsSubsetOf</c> and <c>IsProperSubsetOf</c> — and <c>IntersectWith</c> merge two
 /// sorted sequences in <c>O(n + m)</c> instead of binary-searching one per element. So a set that does not
 /// promise it must not be routed here. <c>IsProperSupersetOf</c> is the one member that does not merge: it

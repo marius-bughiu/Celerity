@@ -9,7 +9,7 @@ namespace Celerity.Collections;
 /// new set that <b>shares</b> all but one root-to-leaf path of the old one's storage (plus a neighbour per level
 /// on a removal that rebalances) — while an edit that changes nothing hands back the receiver — and the ordered
 /// queries (<see cref="Min"/>, <see cref="Max"/>, <see cref="TryGetLowerBound"/>, <see cref="TryGetUpperBound"/>,
-/// <see cref="TryGetFloor"/>, <see cref="TryGetPredecessor"/>) each cost one <c>O(log n)</c> descent, and
+/// <see cref="TryGetFloor"/>, <see cref="TryGetPredecessor"/>) each cost <c>O(log n)</c>, and
 /// <see cref="EnumerateRange"/> costs <c>O(log n + k)</c>.
 /// </summary>
 /// <typeparam name="T">The type of the elements.</typeparam>
@@ -33,9 +33,10 @@ namespace Celerity.Collections;
 /// Here every element lives in a leaf of up to 32 held in one flat array, and a branch holds up to 32 children
 /// and the separators between them. 100,000 elements are four levels deep rather than seventeen, a level costs
 /// one binary search over a contiguous array, and in-order enumeration — of the whole set or of a range — walks
-/// leaf arrays rather than a node per element. An edit copies only the nodes on its root-to-leaf path and shares
-/// every other node with the set it came from. <typeparamref name="TComparer"/> is a struct type argument, as in
-/// <see cref="BTreeSet{T, TComparer}"/>, so the comparison is inlined rather than dispatched.
+/// leaf arrays rather than a node per element. An edit copies only the nodes on its root-to-leaf path (plus a
+/// neighbour per level on a removal that rebalances) and shares every other node with the set it came from.
+/// <typeparamref name="TComparer"/> is a struct type argument, as in <see cref="BTreeSet{T, TComparer}"/>, so the
+/// comparison is inlined rather than dispatched.
 /// </para>
 /// <para>
 /// The documented BCL-beating workload is the one <see cref="PersistentHashSet{T, THasher}"/> serves, when the
@@ -62,7 +63,7 @@ namespace Celerity.Collections;
 /// <typeparamref name="TComparer"/>, because the type shares one static empty set and every node operation is
 /// static, so a comparer must carry its configuration in its type rather than in fields. A <c>null</c> element
 /// is legal whenever the comparer orders it: <see cref="Comparer{T}.Default"/> orders <c>null</c> first, so
-/// unlike the hashed family this set needs no out-of-band slot for <c>default(T)</c>.
+/// unlike <see cref="PersistentHashSet{T, THasher}"/> this set needs no out-of-band slot for <c>default(T)</c>.
 /// </para>
 /// <para>
 /// Three deliberate omissions. There is no <c>Clear()</c>: everywhere else in this library <c>Clear()</c> means
@@ -120,7 +121,7 @@ public sealed class PersistentSortedSet<T, TComparer> : IReadOnlySet<T>
     /// The elements are inserted through a <see cref="Builder"/>, so no intermediate set is allocated per element
     /// and no root-to-leaf path is copied per element either. The source does not need to be sorted, and
     /// duplicates — under <typeparamref name="TComparer"/> — are ignored rather than rejected, as
-    /// <see cref="SortedSet{T}"/>'s sequence constructor does; the first of a run of equal elements is the one
+    /// <see cref="SortedSet{T}"/>'s sequence constructor does; the first occurrence in the source is the one
     /// kept.
     /// </remarks>
     public PersistentSortedSet(IEnumerable<T> source)
@@ -406,10 +407,10 @@ public sealed class PersistentSortedSet<T, TComparer> : IReadOnlySet<T>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     /// <remarks>
     /// Builds the result up from the elements of <paramref name="other"/> this set contains, rather than
-    /// removing the rest from a copy — so a small intersection of a large set costs a small set's worth of
-    /// allocation. <paramref name="other"/> is collapsed under <typeparamref name="TComparer"/> and sorted first,
-    /// so the result is built in ascending order. The stored instances are kept, not the equal ones
-    /// <paramref name="other"/> supplied.
+    /// removing the rest from a copy — so intersecting a large set with a small <paramref name="other"/> costs a
+    /// small set's worth of allocation. <paramref name="other"/> is copied, collapsed under
+    /// <typeparamref name="TComparer"/> and sorted first, so the result is built in ascending order. The stored
+    /// instances are kept, not the equal ones <paramref name="other"/> supplied.
     /// </remarks>
     public PersistentSortedSet<T, TComparer> Intersect(IEnumerable<T> other)
     {
@@ -464,9 +465,10 @@ public sealed class PersistentSortedSet<T, TComparer> : IReadOnlySet<T>
     // The whole set is the left-hand operand; `other` is the right-hand one. IsSupersetOf and Overlaps stream
     // `other` against Contains and may stop early. The other four need the *distinct* elements of `other`, and
     // distinct means distinct under TComparer — so they go through OrderedSetOperations, which collapses
-    // `other` with the comparer and merges it against this set's ascending enumeration, rather than through a
-    // HashSet<T> keyed by EqualityComparer<T>.Default, which would disagree with the set under a comparer that
-    // equates unequal values. All six answer a same-instance argument without enumerating it.
+    // `other` with the comparer, rather than through a HashSet<T> keyed by EqualityComparer<T>.Default, which
+    // would disagree with the set under a comparer that equates unequal values. SetEquals, IsSubsetOf and
+    // IsProperSubsetOf then merge `other` against this set's ascending enumeration; IsProperSupersetOf instead
+    // calls Contains once per distinct element. All six answer a same-instance argument without enumerating it.
 
     /// <summary>
     /// Determines whether the set and <paramref name="other"/> contain the same distinct elements.

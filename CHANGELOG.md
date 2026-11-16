@@ -7,7 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Added
 
 - **`RankedDictionary<TKey, TValue, TComparer>`**, the map sibling of `RankedSet`: a sorted map with `SortedList<,>`'s positional methods (`IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `SetValueAtIndex`, `RemoveAt`), where ranks and selects are `O(log n)` and inserts and removes (including `RemoveAt`) are `O(√n)` instead of `SortedList<,>`'s `O(n)`. On a change-a-key-then-rank-and-select workload at 100,000 entries it measures 94x `SortedList<,>`; a select is 9.7x slower than `SortedList<,>`'s array index. Ships with its tests, fuzz target, benchmark, dashboard cards and API docs. Closes #635.
-- **`PersistentSortedSet<T, TComparer>`**, an immutable sorted set and the set half of `PersistentSortedMap`: a path-copying B+ tree with a transient `Builder`, comparer-faithful set algebra, and the ordered queries `ImmutableSortedSet<T>` lacks (lower and upper bound, floor and predecessor, `EnumerateRange`) alongside `Min` / `Max`. At 100,000 elements it enumerates 4.1x, inserts 2.5x and seeks 2.15x faster than `ImmutableSortedSet<T>`. Closes #628.
+- **`PersistentSortedSet<T, TComparer>`**, an immutable sorted set and the set half of `PersistentSortedMap`: a path-copying B+ tree with a transient `Builder`, comparer-faithful set algebra, and the ordered queries `ImmutableSortedSet<T>` lacks (lower and upper bound, floor and predecessor, `EnumerateRange`) alongside `Min` / `Max`. At 100,000 elements it enumerates 4.1x, inserts 2.5x and seeks 2.15x faster than `ImmutableSortedSet<T>`. ⚠️ Removal allocates 1.11–1.19x the BCL's bytes. Closes #628.
 
 ### Changed
 
