@@ -4,9 +4,11 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-16
+
 ### Added
 
-- **`RankedDictionary<TKey, TValue, TComparer>`**, the map sibling of `RankedSet`: a sorted map with `SortedList<,>`'s positional methods (`IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `SetValueAtIndex`, `RemoveAt`), where ranks and selects are `O(log n)` and inserts and removes (including `RemoveAt`) are `O(√n)` instead of `SortedList<,>`'s `O(n)`. On a change-a-key-then-rank-and-select workload at 100,000 entries it measures 94x `SortedList<,>`; a select is 9.7x slower than `SortedList<,>`'s array index. Ships with its tests, fuzz target, benchmark, dashboard cards and API docs. Closes #635.
+- **`RankedDictionary<TKey, TValue, TComparer>`**, the map sibling of `RankedSet`: a sorted map with `SortedList<,>`'s positional methods (`IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `SetValueAtIndex`, `RemoveAt`), where ranks and selects are `O(log n)` and inserts and removes (including `RemoveAt`) are `O(√n)` instead of `SortedList<,>`'s `O(n)`. On a change-a-key-then-rank-and-select workload at 100,000 entries it measures 25–37x `SortedList<,>` on x64 in CI and 94x in a local run on Apple Silicon; a select is 8.7–10.2x slower than `SortedList<,>`'s array index. Ships with its tests, fuzz target, benchmark, dashboard cards and API docs. Closes #635.
 - **`PersistentSortedSet<T, TComparer>`**, an immutable sorted set and the set half of `PersistentSortedMap`: a path-copying B+ tree with a transient `Builder`, comparer-faithful set algebra, and the ordered queries `ImmutableSortedSet<T>` lacks (lower and upper bound, floor and predecessor, `EnumerateRange`) alongside `Min` / `Max`. At 100,000 elements it enumerates 4.1x, inserts 2.5x and seeks 2.15x faster than `ImmutableSortedSet<T>`. ⚠️ Removal allocates 1.11–1.19x the BCL's bytes. Closes #628.
 
 ### Changed
@@ -895,7 +897,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v4.0.0
 [3.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.6.0
 [3.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.5.0
 [3.4.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.4.0
