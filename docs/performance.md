@@ -107,7 +107,7 @@ var sparse = new CelerityDictionary<string, int, StringFnV1AHasher>(
 
 Hashers are `struct`s supplied as a generic constraint, so the JIT devirtualizes and inlines `Hash()` onto the probe path — the abstraction itself is free. What is *not* free is a hasher that clusters your keys: collisions lengthen probe chains and cost cache misses on every lookup.
 
-The convenience types already pick sensible defaults — `Int32WangNaiveHasher` for `int`, `Int64WangNaiveHasher` for `long`, `StringFnV1AHasher` for `FrozenCelerityDictionary`. **Don't escalate without evidence.** A stronger hasher costs more per call; it only pays off if it removes enough collisions to offset that. (Speed is a different question for long `string` keys: FNV-1a folds one character per step, so a block hasher such as `StringXxHash32Hasher` can be both stronger and faster — see [the `FrozenCelerityDictionary<TValue, THasher>` reference](api/collections.md#frozenceleritydictionarytvalue-thasher).)
+The convenience types already pick sensible defaults — `Int32WangNaiveHasher` for `int`, `Int64WangNaiveHasher` for `long`, `StringFnV1AHasher` for `FrozenCelerityDictionary`. **Don't escalate without evidence.** A stronger hasher costs more per call; it only pays off if it removes enough collisions to offset that. (Speed is a different question for long `string` keys: FNV-1a folds one character per step, so a block hasher such as `StringCityHash64Hasher` or `StringXxHash32Hasher` can be both stronger and faster. Which one is fastest depends on the key length and the CPU — see [the `FrozenCelerityDictionary<TValue, THasher>` reference](api/collections.md#frozenceleritydictionarytvalue-thasher) for measurements by key length.)
 
 Escalation ladders (cheap → strong avalanche):
 
