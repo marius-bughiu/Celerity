@@ -9590,7 +9590,7 @@ The BCL's answers, beside this type's:
 | `ImmutableSortedSet<T>` (its `Builder` edits in place) | `O(log n)` | `O(log n)` (`IndexOf`) | `O(log n)` (indexer) |
 | `RankedSet<T, TComparer>` | `O(√n)` memmove | `O(log n)` | `O(log n)` |
 
-`ImmutableSortedSet<T>` answers the positional questions on a changing set without an `O(n)` step: its AVL nodes carry subtree counts. Otherwise its `Builder` pays what `SortedSet<T>` pays: a heap node per element, a pointer chase per level and an `IComparer<T>` interface call per comparison. The immutable set also copies the `O(log n)` nodes on each edit's path, where `SortedSet<T>` allocates at most one node per edit. Its `Builder` is [measured below](#measured-rankedset) too, on an Apple M4: this type runs the churn-plus-query workload 1.4x faster at both sizes and leads every other group at 100,000 elements, while at 1,000 ranks and lookups are within 8% either way. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one: it is what this layout pays for the two right-hand columns, where `ImmutableSortedSet<T>` pays a subtree count per node, updated on every edit. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched. Those workloads need **distinct** elements here, because this is a set: a window of samples with repeated values, or a leaderboard with tied scores, would lose its repeats and report wrong percentiles. [`RankedMultiSet`](#rankedmultisett-tcomparer) is the same layout with every copy kept.
+`ImmutableSortedSet<T>` answers the positional questions on a changing set without an `O(n)` step: its AVL nodes carry subtree counts. Otherwise its `Builder` pays what `SortedSet<T>` pays: a heap node per element, a pointer chase per level and an `IComparer<T>` interface call per comparison. The immutable set also copies the `O(log n)` nodes on each edit's path, where `SortedSet<T>` allocates at most one node per edit. Its `Builder` is [measured below](#rankedset-vs-the-builder) too, on an Apple M4: this type runs the churn-plus-query workload 1.4–1.7x faster at both sizes and leads every other measured group at 100,000 elements, while at 1,000 ranks and lookups are within 10% either way. This type's `O(√n)` mutation is one bounded, contiguous memmove rather than a whole-array one: it is what this layout pays for the two right-hand columns, where `ImmutableSortedSet<T>` pays a subtree count per node, updated on every edit. The workloads that need both are ordinary: live leaderboards (*what rank is this score, and who is 500th*), exact percentiles over a moving window, a sweep line that needs the median of its active set, a rate limiter naming the *n*-th busiest key exactly rather than sketched. Those workloads need **distinct** elements here, because this is a set: a window of samples with repeated values, or a leaderboard with tied scores, would lose its repeats and report wrong percentiles. [`RankedMultiSet`](#rankedmultisett-tcomparer) is the same layout with every copy kept.
 
 <a id="layout-rankedset"></a>
 
@@ -9633,9 +9633,10 @@ Reach for it when the positional questions are asked of a set that changes. Reac
 
 ### Measured
 
-CI's sharded A/B run, `int` elements, shuffled inserts. Every group carries three arms: `SortedSet<T>` (the
-baseline), a sorted `List<T>` kept by hand with `BinarySearch` + `Insert`, and this type. The ratios are
-*this type against that arm* — above 1 means it is faster.
+CI's sharded A/B run, `int` elements, shuffled inserts. That run had three arms per group: `SortedSet<T>` (the
+baseline), a sorted `List<T>` kept by hand with `BinarySearch` + `Insert`, and this type. The
+`ImmutableSortedSet<T>.Builder` arm added since is [measured separately below](#rankedset-vs-the-builder). The
+ratios are *this type against that arm* — above 1 means it is faster.
 
 | Group | vs `SortedSet<T>` @100k | vs sorted `List<T>` @100k | vs `SortedSet<T>` @1k | vs sorted `List<T>` @1k |
 | --- | ---: | ---: | ---: | ---: |
@@ -9667,18 +9668,22 @@ Two things worth saying plainly rather than rounding away:
   8.9x; CI's A/B is the number published here, and the difference is why. Against `SortedSet<T>` the margin is
   two orders of magnitude, but that arm is winning on the *queries*, which the first two rows already isolate.
 
+<a id="rankedset-vs-the-builder"></a>
+
 **Against `ImmutableSortedSet<T>.Builder`.** Local runs on an Apple M4 (.NET 10, BenchmarkDotNet's default
-job). The builder is filled by `Add` and never frozen, so it edits in place. It has no range view, so its range
-scan is an `IndexOf` and then one indexer descent per element. The ratios are *this type against the builder*,
-so above 1 means this type is faster.
+job); x64 is not measured yet, and these arms have no dashboard card. The builder is filled by `Add` and never
+frozen, so it edits in place. It has no range view, so its range scan is an `IndexOf` and then one indexer
+descent per element. The ratios are *this type against the builder*, so above 1 means this type is faster.
 
-The benchmark replays its input. Every invocation asks the same 100 selects and ranks, and the other groups
-insert, remove or look up the same key order each time. On the M4 that keeps the nodes those queries touch in
-cache and lets the branch predictor learn their paths. So each size has two columns: the benchmark as
-committed, and a scratch harness that runs the same operations on input rotated across invocations: 1,024
-probe batches for select and rank, and 16 key orders for the other groups.
+The benchmark replays its input: every invocation asks the same 100 selects and ranks, and the other groups
+insert, remove or look up the same key order each time. A CPU can learn input that repeats (the branch
+predictor can memorize the paths, and at 100,000 elements the nodes on them can stay cached), so each size also
+has a *rotated* column from [a scratch harness](https://github.com/marius-bughiu/Celerity/pull/640#issuecomment-6932418744)
+that runs the same operations on input rotated across invocations: 1,024 probe batches for select and rank, and
+16 key orders for the other groups. RangeScan was not rerun that way. The `SortedSet<T>` and sorted-`List<T>`
+columns above come from the same replayed benchmark and have no rotated measurement.
 
-| Group | @100k | @100k, rotated input | @1k | @1k, rotated input |
+| Group (vs the builder) | @100k, committed | @100k, rotated | @1k, committed | @1k, rotated |
 | --- | ---: | ---: | ---: | ---: |
 | **Mixed** (churn + a rank and a select per step) | **1.41x** | **1.44x** | **1.44x** | **1.73x** |
 | Select (k-th smallest) | 1.82x | 4.29x | 3.68x | 8.37x |
@@ -9688,13 +9693,18 @@ probe batches for select and rank, and 16 key orders for the other groups.
 | Add | 1.71x | 1.81x | 1.44x | 1.20x |
 | Contains | 1.42x | 1.51x | 1.02x | ⚠️ 0.93x |
 
+Replaying helps both arms, so it moves the ratios either way: it hides most of this type's select lead, and at
+1,000 elements it flatters this type's rank, `Contains` and `Add`. No real query stream repeats itself, so the
+rotated columns are the closer guide; the committed ones are what the benchmark records. ⚠️ marks a cell whose
+99.9% confidence interval lies wholly below 1.
+
 This is the one baseline with no `O(n)` step, so outside the range walk, where the builder pays a descent per
 element, these margins are the layout's rather than the complexity class's: contiguous buckets against a
-48-byte heap node per `int` and a pointer chase per level. At 100,000 elements this type leads every group
-with either input, and on rotated input its select lead is more than twice the committed benchmark's. ⚠️ At
-1,000 elements, on rotated input, the builder ties it on rank and is 7% faster on `Contains`. The builder also
-allocates a node per insert, so at 100,000 elements its `Add` allocates 8.7x this type's bytes and its `Mixed`
-140x. A second launch of the committed `Add`, `Remove` and `RangeScan` groups agreed within 10%.
+48-byte heap node per `int` and a pointer chase per level. At 100,000 elements this type leads every measured
+group with either input, and on rotated input its select lead is more than twice the committed benchmark's.
+⚠️ At 1,000 elements, on rotated input, the builder ties it on rank and is 7% faster on `Contains`. The builder
+also allocates a node per insert, so at 100,000 elements its `Add` allocates 8.7x this type's bytes and its
+`Mixed` 141x. A second launch of the committed `Add`, `Remove` and `RangeScan` groups agreed within 10%.
 
 ### Constructors
 
@@ -9795,7 +9805,7 @@ An **order-statistics dictionary**: the map counterpart of [`RankedSet`](#ranked
 | A key-ordered `ImmutableSortedSet<KeyValuePair<TKey, TValue>>` (its `Builder` edits in place) | `O(log n)` | `O(log n)` (`IndexOf` of a probe pair) | `O(log n)` (indexer) |
 | `RankedDictionary<TKey, TValue, TComparer>` | `O(√n)` memmove of one bucket | `O(log n)` | `O(log n)` |
 
-The `ImmutableSortedSet` row is a set of pairs ordered by key, standing in for a map: no BCL map is `O(log n)` on both halves. Its `Builder` is [measured below](#measured-rankeddictionary) on an Apple M4: this type is faster in every group at 100,000 entries, and ⚠️ at 1,000 the set of pairs inserts and removes faster. The workloads are the ones `RankedSet` serves where each key carries a payload: a live leaderboard keyed by score that reports a player's rank and who holds a given place, an order book that reads its k-th price level and the size resting there, a time-keyed window that reads its median entry.
+The `ImmutableSortedSet` row is a set of pairs ordered by key, standing in for a map: no BCL map is `O(log n)` on both halves. Its `Builder` is [measured below](#rankeddictionary-vs-the-builder) on an Apple M4: this type is faster in every measured group at 100,000 entries. ⚠️ At 1,000 the set of pairs inserts faster, and the benchmark as committed, which replays its input, also has it ahead on removes, ranks and the mixed workload. The workloads are the ones `RankedSet` serves where each key carries a payload: a live leaderboard keyed by score that reports a player's rank and who holds a given place, an order book that reads its k-th price level and the size resting there, a time-keyed window that reads its median entry.
 
 ### How it is laid out
 
@@ -9832,19 +9842,21 @@ The pre-registered bar was 5x `SortedList` on `Mixed` at 100,000 entries; it mea
 
 ⚠️ **Select is an outright loss.** `SortedList` reads the k-th value with one array index; this type does a Fenwick descent first, which is 9.7x slower at 100,000 entries and 2.8x slower at 1,000. The range scan also loses at 100,000 (0.80x), because `SortedList` walks one array and this type crosses bucket boundaries. If the map is built once and only queried, use `SortedList`. At 1,000 entries everything fits in cache and the two are close everywhere except select.
 
-**Against a key-ordered `ImmutableSortedSet<KeyValuePair<int, int>>.Builder`.** Local runs on an Apple M4 (.NET 10, BenchmarkDotNet's default job). The builder is filled by `Add` and never frozen, so it edits in place. A lookup is `TryGetValue` of a probe pair, a rank is `IndexOf` of one, and the range scan is an `IndexOf` and then one indexer descent per entry, since the set has no range view. As for [`RankedSet`](#measured-rankedset), each size has a column for the benchmark as committed, which replays its input, and one for a scratch harness that rotates it. The ratios are *this type against the builder*, so above 1 means this type is faster.
+<a id="rankeddictionary-vs-the-builder"></a>
 
-| Group | @100k | @100k, rotated input | @1k | @1k, rotated input |
+**Against a key-ordered `ImmutableSortedSet<KeyValuePair<int, int>>.Builder`.** Local runs on an Apple M4 (.NET 10, BenchmarkDotNet's default job); x64 is not measured yet, and these arms have no dashboard card. The builder is filled by `Add` and never frozen, so it edits in place. A lookup is `TryGetValue` of a probe pair, a rank is `IndexOf` of one, and the range scan is an `IndexOf` and then one indexer descent per entry, since the set has no range view. The columns follow [`RankedSet`'s](#rankedset-vs-the-builder): the benchmark as committed, which replays its input, beside the same operations on rotated input (1,024 probe batches for select and rank, 16 key orders for add, remove and lookup, and 16 draws of the 1,000 mixed steps). The table above replays its input too. The ratios are *this type against the builder*, so above 1 means this type is faster, and ⚠️ marks a cell whose 99.9% confidence interval lies wholly below 1.
+
+| Group (vs the builder) | @100k, committed | @100k, rotated | @1k, committed | @1k, rotated |
 | --- | ---: | ---: | ---: | ---: |
 | **Mixed** (a key removed and re-inserted, then a rank and a select, per step) | **1.44x** | **1.29x** | ⚠️ 0.91x | **1.16x** |
 | Select (`GetValueAtIndex` against the indexer) | 1.94x | 4.21x | 3.45x | 8.00x |
 | Rank (`IndexOfKey` against `IndexOf`) | 1.26x | 1.60x | ⚠️ 0.94x | 1.14x |
 | RangeScan | 7.14x | — | 3.38x | — |
-| Remove | 1.51x | 1.44x | ⚠️ 0.82x | ⚠️ 0.96x |
+| Remove | 1.51x | 1.44x | ⚠️ 0.82x | 0.96x |
 | Add | 1.41x | 1.47x | ⚠️ 0.94x | ⚠️ 0.95x |
 | Lookup (`TryGetValue`) | 1.47x | 1.67x | 1.10x | 1.04x |
 
-At 100,000 entries this type leads every group with either input, by 1.26x or more, and its `Add` allocates under a quarter of the builder's bytes (1.09 MB against 4.80 MB). ⚠️ **At 1,000 entries the set of pairs inserts and removes faster** (0.95–0.96x on rotated input, 0.82–0.94x in the committed benchmark). The committed benchmark also has it ahead on rank and the mixed workload, which this type wins by 1.14–1.16x on rotated input. The replayed 1,000-entry cells also depend on which input is replayed: a second draw put rank at 1.04x and `Remove` at 0.68x.
+At 100,000 entries this type leads every measured group with either input, by 1.26x or more, and its `Add` allocates under a quarter of the builder's bytes (1.09 MB against 4.80 MB). ⚠️ **At 1,000 entries the set of pairs inserts faster with either input**, and the committed benchmark also has it ahead on removes, ranks and the mixed workload. On rotated input this type wins rank and the mixed workload by 1.14–1.16x, and removes are a tie. Those 1,000-entry cells also vary between runs: a second draw of the rank probes put rank at 1.04x, and three launches of the same `Remove` input ranged from 0.68x to 0.82x.
 
 ### Constructors
 
@@ -9937,7 +9949,7 @@ An **order-statistics multiset**: [`RankedSet`](#rankedsett-tcomparer) with dupl
 | `ImmutableSortedSet<(T, long Seq)>` (its `Builder` edits in place): the same composite in an AVL tree that counts its subtrees | yes, by widening the element | `O(log n)` | `O(log n)` (`IndexOf`) | `O(log n)` (indexer) |
 | `RankedMultiSet<T, TComparer>` | yes | `O(√n)` memmove | `O(log n)` | `O(log n)` |
 
-The `ImmutableSortedSet` composite's `Builder` is [measured below](#measured-rankedmultiset) on an Apple M4, in separate runs from the `SortedSet` composite and the sorted list: this type is faster in every group at both sizes, 1.39–1.60x on the sliding-window workload.
+The `ImmutableSortedSet` composite's `Builder` is [measured below](#rankedmultiset-vs-the-builder) on an Apple M4, in separate runs from the `SortedSet` composite and the sorted list: this type is faster in every group at both sizes, 1.39–1.69x on the sliding-window workload.
 
 ### Equal elements keep insertion order
 
@@ -9962,7 +9974,7 @@ Reach for it when a sorted collection has to keep repeats and answer rank or sel
 
 ### Measured
 
-A local short-job run (Apple M-series, .NET 8), `int` elements drawn from `ItemCount / 320` distinct values (at least 16). So the `Mixed` window holds about sixteen copies of each value at 100,000. Every group has three arms: `SortedSet<(int, long)>` (the composite workaround, and the baseline), a sorted `List<int>` with hand-written lower- and upper-bound searches, and this type. The ratios are *this type against that arm*, so above 1 means it is faster. The CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedMultiSet) is the contract.
+A local short-job run (Apple M-series, .NET 8), `int` elements drawn from `ItemCount / 320` distinct values (at least 16). So the `Mixed` window holds about sixteen copies of each value at 100,000. That run had three arms per group: `SortedSet<(int, long)>` (the composite workaround, and the baseline), a sorted `List<int>` with hand-written lower- and upper-bound searches, and this type. The composite's `ImmutableSortedSet` builder arm added since is [measured separately below](#rankedmultiset-vs-the-builder). The ratios are *this type against that arm*, so above 1 means it is faster. The CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedMultiSet) is the contract.
 
 | Group | vs `SortedSet<(T, long)>` @100k | vs sorted `List<T>` @100k | vs `SortedSet<(T, long)>` @1k | vs sorted `List<T>` @1k |
 | --- | ---: | ---: | ---: | ---: |
@@ -9977,9 +9989,11 @@ The 1k `Remove` cells are left out because that group runs with `[IterationSetup
 
 **The Mixed row is the one that decides anything.** At 100,000 this type beats both pre-registered bars: 1.5x the hand-rolled list and 10x the composite `SortedSet`. At a thousand elements the list wins (0.76x), because a 50-element window fits in cache. This is a large-collection type. On pure queries the sorted list is ahead, since it indexes one array and searches one contiguous span. It loses only where it has to move elements, at 17–19x on `Add` and `Remove` at 100,000.
 
-**Against the composite in an `ImmutableSortedSet<(int, long)>.Builder`.** Local runs on an Apple M4 (.NET 10, BenchmarkDotNet's default job). The builder is filled by `Add` and never frozen, so it edits in place. No element carries `long.MinValue` or `long.MaxValue` as its sequence number, so a rank is the complement of one `IndexOf((value, long.MinValue))`, and a count is the gap between that and the same search with `long.MaxValue`. As for [`RankedSet`](#measured-rankedset), each size has a column for the benchmark as committed, which replays its input, and one for a scratch harness that rotates it. The ratios are *this type against the builder*, so above 1 means this type is faster.
+<a id="rankedmultiset-vs-the-builder"></a>
 
-| Group | @100k | @100k, rotated input | @1k | @1k, rotated input |
+**Against the composite in an `ImmutableSortedSet<(int, long)>.Builder`.** Local runs on an Apple M4 (.NET 10, BenchmarkDotNet's default job); x64 is not measured yet, and these arms have no dashboard card. The builder is filled by `Add` and never frozen, so it edits in place. No element carries `long.MinValue` or `long.MaxValue` as its sequence number, so a rank is the complement of one `IndexOf((value, long.MinValue))`, and a count is the gap between that and the same search with `long.MaxValue`. The columns follow [`RankedSet`'s](#rankedset-vs-the-builder): the benchmark as committed, which replays its input, beside the same operations on rotated input (1,024 probe batches for select, rank and `CountOf`, and 16 value draws for add, remove and the mixed workload). The table above replays its input too. The ratios are *this type against the builder*, so above 1 means this type is faster.
+
+| Group (vs the builder) | @100k, committed | @100k, rotated | @1k, committed | @1k, rotated |
 | --- | ---: | ---: | ---: | ---: |
 | **Mixed** (sliding window + a rank and a select per step) | **1.39x** | **1.41x** | **1.60x** | **1.69x** |
 | Select (k-th smallest) | 1.98x | 4.40x | 3.56x | 7.88x |

@@ -20,12 +20,13 @@ using Celerity.Collections;
 /// <c>ElementAt(k)</c> and a walk to the probe, both linear.
 /// </para>
 /// <para>
-/// <see cref="ImmutableSortedSet{T}"/> is the BCL's one <c>O(log n)</c> answer to both questions: its AVL nodes
-/// count their subtrees, so <c>IndexOf</c> and the indexer are each one descent. Its arms drive the
-/// <see cref="ImmutableSortedSet{T}.Builder"/>, the form that edits in place, filled by <c>Add</c> in the same
-/// shuffled order this type's constructor inserts in and never frozen: <c>ToImmutable()</c> would freeze every
-/// node, and the builder copies a frozen node on its next edit instead of editing it. It has no range view, so
-/// its range scan is an <c>IndexOf</c> to the lower bound and then one indexer descent per element.
+/// <see cref="ImmutableSortedSet{T}"/> answers both questions in <c>O(log n)</c>: its AVL nodes count their
+/// subtrees, so <c>IndexOf</c> and the indexer are each one descent. Its arms drive the
+/// <see cref="ImmutableSortedSet{T}.Builder"/>, the form that edits in place. It is filled by <c>Add</c> in the
+/// same shuffled order <see cref="RankedSet{T}"/>'s constructor inserts in, and never frozen:
+/// <c>ToImmutable()</c> would freeze every node, and the builder copies a frozen node on its next edit instead
+/// of editing it. It has no range view, so its range scan is an <c>IndexOf</c> to the lower bound and then one
+/// indexer descent per element.
 /// </para>
 /// <para>
 /// Only the <see cref="SortedSet{T}"/> arms carry the dashboard's op names; the list arms are named for what
@@ -471,7 +472,7 @@ public class RankedSetBenchmark
     // — on every step, which is what the pre-registered criterion says — ask for the rank of the newest value
     // and for the median of what is currently in. That is the leaderboard / live-percentile shape, and it is
     // the only group where both baselines pay their weakness at once: the tree for the two linear queries,
-    // the list for the memmove per mutation. The AVL builder has no such weakness — every step is four
+    // the list for the memmove per mutation. The AVL builder has no such weakness — every step is about four
     // O(log n) descents — so against it the group measures the layout rather than the complexity class.
 
     [Benchmark(Baseline = true)]

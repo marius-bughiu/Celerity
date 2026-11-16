@@ -6,8 +6,8 @@ using Celerity.Collections;
 /// <summary>
 /// <see cref="RankedDictionary{TKey, TValue}"/> against <see cref="SortedList{TKey, TValue}"/> — the one BCL
 /// map with the same positional surface (<c>IndexOfKey</c>, <c>Keys[k]</c> / <c>Values[k]</c>,
-/// <c>RemoveAt</c>) — against a key-ordered <see cref="ImmutableSortedSet{T}.Builder"/> of the pairs, the BCL's
-/// one <c>O(log n)</c> route to both positional questions, and, in the <c>Mixed</c> group,
+/// <c>RemoveAt</c>) — against a key-ordered <see cref="ImmutableSortedSet{T}.Builder"/> of the pairs, which
+/// answers both positional questions in <c>O(log n)</c> while it changes, and, in the <c>Mixed</c> group,
 /// <see cref="SortedDictionary{TKey, TValue}"/>, the BCL's ordered map that has no positional surface at all.
 /// </summary>
 /// <remarks>
@@ -19,8 +19,9 @@ using Celerity.Collections;
 /// charged.
 /// </para>
 /// <para>
-/// No BCL map ranks and selects in <c>O(log n)</c>, but a set of <see cref="KeyValuePair{TKey, TValue}"/> ordered
-/// by key alone does: <see cref="ImmutableSortedSet{T}"/>'s AVL nodes count their subtrees, so <c>IndexOf</c> of
+/// No BCL map ranks and selects in <c>O(log n)</c> while also inserting and removing in <c>O(log n)</c>, but a set
+/// of <see cref="KeyValuePair{TKey, TValue}"/> ordered by key alone does: <see cref="ImmutableSortedSet{T}"/>'s AVL
+/// nodes count their subtrees, so <c>IndexOf</c> of
 /// a probe pair and the indexer are each one descent, and <c>TryGetValue</c> hands back the stored pair. Its
 /// arms drive the <see cref="ImmutableSortedSet{T}.Builder"/>, filled by <c>Add</c> in the shuffled key order and
 /// never frozen, so every edit is in place, as in <c>RankedSetBenchmark</c>.
@@ -387,8 +388,8 @@ public class RankedDictionaryBenchmark
     // the board asks where that player now ranks and who holds the median place. The key is re-inserted at
     // the same value, so the map is unchanged after each step and the arms can share one map across
     // invocations — but the remove and the insert each pay their full cost: SortedList memmoves both of its
-    // arrays twice per step, SortedDictionary walks the tree for both queries, and the AVL builder makes four
-    // O(log n) descents, one per operation.
+    // arrays twice per step, SortedDictionary walks the tree for both queries, and the AVL builder makes about
+    // four O(log n) descents.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Mixed")]

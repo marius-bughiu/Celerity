@@ -50,7 +50,7 @@ public class RankedMultiSet<T> : RankedMultiSet<T, DefaultComparer<T>>
 /// second equal element. The usual workarounds each cost something. A composite element such as
 /// <c>SortedSet&lt;(T, long Seq)&gt;</c> widens every element and still has no rank; the same composite in an
 /// <c>ImmutableSortedSet&lt;(T, long Seq)&gt;</c> ranks and selects in <c>O(log n)</c>, at a heap node per element, and
-/// this type's benchmarks measure against its <c>Builder</c> too. A hand-rolled sorted
+/// this type's benchmarks measure against that set's <c>Builder</c> too. A hand-rolled sorted
 /// <see cref="List{T}"/> memmoves half the array on every insert and remove. A count per distinct key in a
 /// <see cref="SortedDictionary{TKey, TValue}"/> loses the elements themselves and has no rank either.
 /// <see cref="RankedSet{T, TComparer}"/> has the rank, but it is a set, so a window of latency samples or a
