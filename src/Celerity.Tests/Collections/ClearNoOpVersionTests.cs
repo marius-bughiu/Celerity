@@ -184,6 +184,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void RankedDictionaryClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var dict = new RankedDictionary<int, int>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => dict.GetEnumerator(), dict.Clear, () => dict.Count, () => dict.Add(1, 10));
+    }
+
+    [Fact]
     public void RangeMapClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var map = new RangeMap<int, int>();

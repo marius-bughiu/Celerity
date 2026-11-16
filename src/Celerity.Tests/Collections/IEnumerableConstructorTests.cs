@@ -2428,6 +2428,97 @@ public class IEnumerableConstructorTests
     }
 
     // --------------------------------------------------------------
+    //  RankedDictionary - the IEnumerable<KeyValuePair<,>> constructor.
+    //  Shares the null-source / copy-fidelity / duplicate-key invariants with
+    //  the hash dictionaries. It has neither a capacity nor a loadFactor
+    //  parameter (its buckets grow and split on their own), so the sizing and
+    //  loadFactor-validation variants do not apply - but the seeded content,
+    //  and its ordering, do.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void RankedDictionary_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<KeyValuePair<int, string>>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new RankedDictionary<int, string>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void RankedDictionary_ShouldThrow_OnDuplicateKeysInSource()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, string>(1, "one"),
+            new KeyValuePair<int, string>(2, "two"),
+            new KeyValuePair<int, string>(1, "one-again"),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => new RankedDictionary<int, string>(source));
+        Assert.Contains("1", ex.Message);
+    }
+
+    [Fact]
+    public void RankedDictionary_ShouldSupportEmptySource()
+    {
+        var map = new RankedDictionary<int, string>(Array.Empty<KeyValuePair<int, string>>());
+
+        Assert.Equal(0, map.Count);
+        Assert.False(map.ContainsKey(0));
+    }
+
+    [Fact]
+    public void RankedDictionary_ShouldCopyAllEntries_FromArraySource_InKeyOrder()
+    {
+        var source = new[]
+        {
+            new KeyValuePair<int, int>(2, 20),
+            new KeyValuePair<int, int>(1, 10),
+            new KeyValuePair<int, int>(0, 99), // zero key is an ordinary entry
+        };
+
+        var map = new RankedDictionary<int, int>(source);
+
+        Assert.Equal(3, map.Count);
+        Assert.Equal(new[] { 0, 1, 2 }, map.Select(e => e.Key));
+        Assert.Equal(99, map[0]);
+        Assert.Equal(10, map[1]);
+        Assert.Equal(20, map[2]);
+    }
+
+    [Fact]
+    public void RankedDictionary_ShouldCopyAllEntries_FromNonCollectionEnumerableSource()
+    {
+        // Enumerable.Range is not an ICollection<T>, so this is the uncounted source path - and it is large
+        // enough to split a bucket while the constructor fills the map.
+        var map = new RankedDictionary<int, int>(
+            Enumerable.Range(0, 500).Reverse().Select(i => new KeyValuePair<int, int>(i, i * 2)));
+
+        Assert.Equal(500, map.Count);
+        Assert.Equal(Enumerable.Range(0, 500), map.Select(e => e.Key));
+        Assert.Equal(998, map[499]);
+    }
+
+    [Fact]
+    public void RankedDictionary_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<KeyValuePair<int, int>>
+        {
+            new KeyValuePair<int, int>(1, 10),
+            new KeyValuePair<int, int>(2, 20),
+        };
+
+        var map = new RankedDictionary<int, int>(source);
+        source.Clear();
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(10, map[1]);
+    }
+
+    // --------------------------------------------------------------
     //  RangeMap - the IEnumerable<Interval<,>> constructor.
     //  Shares the null-source and source-independence invariants. The
     //  duplicate-key rule does not carry over: the source is a sequence of

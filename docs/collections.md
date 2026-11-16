@@ -652,9 +652,10 @@ Console.WriteLine(interned.Count);            // distinct tokens, == strings all
 - `BTreeDictionary<TKey, TValue, TComparer>` / `BTreeDictionary<TKey, TValue>` — a **sorted map backed by a B-tree**: up to **31 keys per node** in flat arrays, so a lookup visits `log₃₂(n)` nodes instead of chasing `log₂(n)` pointers — roughly **4 cache misses instead of ~20 at `n = 1M`**. Adds the ordered surface a hash table cannot answer: `Min`, `Max`, `TryGetLowerBound` / `TryGetUpperBound`, `EnumerateRange` in `O(log n + k)`, and in-order enumeration. The B-tree the BCL lacks — `SortedDictionary<,>` is a red-black tree with one heap object per entry, and `SortedList<,>` memmoves the tail on every insert. Implements `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`.
 - `BTreeSet<T, TComparer>` / `BTreeSet<T>` — the set counterpart, with the same ordered surface and no values to store, so the memory saving over `SortedSet<T>` is larger still. Implements `ISet<T>` and `IReadOnlySet<T>`.
 - `RankedSet<T, TComparer>` / `RankedSet<T>` — an **order-statistics set**: the same ordered surface, plus the two positional questions no BCL ordered container can answer — `IndexOf(item)` (the element's **rank**) and `set[k]` (the **k-th smallest**), both `O(log n)`, on a set that is still being inserted into and removed from — with `Add` / `Remove` at `O(√n)`, a bounded memmove rather than a whole-array one, which is the sqrt-decomposition trade — plus `CountLessThan` / `CountLessThanOrEqual` for the rank an *absent* element would take, and `RemoveAt(rank)`, which the BCL has no equivalent for at all. `SortedSet<T>` has neither rank nor positional access (`ElementAt(k)` is `O(k)`); `SortedList<,>` and a hand-rolled sorted `List<T>` have both but memmove half the array on every insert. Elements sit in sorted buckets whose capacity tracks `√n` (never below 512), with a Fenwick tree over the bucket lengths carrying the positional half. Implements `ISet<T>`, `IReadOnlySet<T>` **and `IReadOnlyList<T>`** — the only set here that is also a list, and it can be for exactly that reason.
+- `RankedDictionary<TKey, TValue, TComparer>` / `RankedDictionary<TKey, TValue>` — `RankedSet`'s **map sibling**: an order-statistics dictionary with the ordered map surface of `BTreeDictionary` plus `SortedList<,>`'s positional names — `IndexOfKey`, `GetKeyAtIndex`, `GetValueAtIndex`, `SetValueAtIndex`, `RemoveAt` — and `GetEntryAtIndex` and `CountLessThan`. Lookups, ranks and selects are `O(log n)`; inserts and removes are `O(√n)`, a memmove of one bucket's keys and values, where `SortedList<,>` memmoves its whole tail. On a change-a-key-then-rank-and-select workload at 100,000 entries it measures **94x** `SortedList<,>` in a local run. ⚠️ A select is 9.7x *slower* than `SortedList<,>`'s array index, so a map that is built once and only queried belongs in `SortedList<,>`. Implements `IDictionary<TKey, TValue?>` and `IReadOnlyDictionary<TKey, TValue?>`.
 - `RankedMultiSet<T, TComparer>` / `RankedMultiSet<T>` — `RankedSet` **with duplicates kept**: an order-statistics multiset. .NET has no sorted collection that keeps repeats, and `RankedSet` drops them, which makes its percentiles wrong over a window of samples with ties. `Add` always inserts, `CountOf(item)` counts the copies, and `CountLessThan`, `IndexOf` / `LastIndexOf` and `set[k]` are all `O(log n)`, with `Add` / `Remove` at `O(√n)` on the same bucket layout. Equal elements keep **insertion order**: a new copy goes after every equal one and `Remove` takes the earliest, so the type is stable. `RemoveAll(item)` drops a whole run in one pass, however many buckets it spans. Implements `ICollection<T>` and `IReadOnlyList<T>`.
 
-All four take their ordering as a **struct** `IComparer<T>` type parameter (`DefaultComparer<T>` by default), exactly as the hashers are struct type parameters, so the comparison inlines instead of costing a virtual call per key inspected.
+All five take their ordering as a **struct** `IComparer<T>` type parameter (`DefaultComparer<T>` by default), exactly as the hashers are struct type parameters, so the comparison inlines instead of costing a virtual call per key inspected.
 
 - `FrozenSortedSet<T>` — an **immutable sorted set of integer keys** laid out as a static B+ tree of cache-line nodes searched with SIMD compares, so `Contains`, rank (`CountLessThan`) and successor (`TryGetLowerBound` / `TryGetUpperBound`) take a handful of node reads instead of `log2(n)` dependent binary-search probes: about **10× faster than a span `BinarySearch`** over the same sorted `int[]` for a batch of lookups, and 2–3× when each answer feeds an unpredictable branch. `SliceRange(a, b)` returns the keys in `[a, b)` as a span without copying. Build-once; integers only (`IBinaryInteger<T>`), so it takes no comparer. Implements `IReadOnlyList<T>` and `IReadOnlySet<T>`.
 - `FrozenSortedMap<TKey, TValue>` — the **map sibling of `FrozenSortedSet`**: the same SIMD-searched tree over integer keys, with the values in a parallel array, so `TryGetFloor` ("the value as of *t*", "which range owns key *k*") is about **9× faster than a span `BinarySearch`** over sorted key and value arrays at 1k to 1M keys. It also has `TryGetPredecessor` / `TryGetLowerBound` / `TryGetUpperBound` and a no-copy `GetIndexRange` over the key and value spans. ⚠️ On a shuffled half-hit stream an exact `TryGetValue` is 2.3–3.6× *slower* than `FrozenDictionary`, so use this map for the ordered queries. A duplicate key is rejected. Build-once; implements `IReadOnlyDictionary<TKey, TValue>`.
@@ -698,6 +699,25 @@ Console.WriteLine(scores.CountLessThan(300));    // 3   — the rank 300 *would*
 scores.TryAdd(310);
 scores.RemoveAt(0);                              // drop the lowest, by rank
 Console.WriteLine(scores.IndexOf(340));          // 3   — still O(log n), on the live set
+```
+
+#### Rank and select over a map — RankedDictionary
+
+`RankedDictionary<TKey, TValue>` is `RankedSet<T>` with a value per key: a leaderboard keyed by score that also stores who holds it, an order book that reads the size at its k-th price level. It keeps `SortedList<,>`'s positional method names, so code written against that type moves over with few changes, but an insert or remove shifts one bucket instead of the whole array.
+
+```csharp
+var board = new RankedDictionary<int, string>();
+board[120] = "ada";
+board[340] = "brian";
+board[90]  = "cleo";
+board[500] = "dmitri";
+
+Console.WriteLine(board.GetValueAtIndex(board.Count - 1)); // dmitri — the top score
+Console.WriteLine(board.IndexOfKey(340));                  // 2      — its rank
+Console.WriteLine(board.GetEntryAtIndex(board.Count / 2)); // [340, brian] — the median entry
+
+board.RemoveAt(0);                                         // drop the lowest score, by rank
+Console.WriteLine(board.GetKeyAtIndex(0));                 // 120
 ```
 
 #### Rank and select with duplicates — RankedMultiSet

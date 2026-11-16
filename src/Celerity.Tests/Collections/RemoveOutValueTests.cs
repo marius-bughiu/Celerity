@@ -1462,4 +1462,77 @@ public class RemoveOutValueTests
 
         Assert.Empty(map);
     }
+
+    // ---------------------------------------------------------------
+    //  RankedDictionary
+    //
+    //  The order-statistics dictionary has no hasher, so the
+    //  rehash-after-collision cases above do not apply; instead a removal can
+    //  merge two buckets or drop an emptied one, so the captured value must
+    //  survive the restructuring. The whole-map row below covers exactly that.
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void RankedDictionary_RemoveOutValue_ReturnsTrueAndCapturedValue_ForExistingKey()
+    {
+        var map = new RankedDictionary<int, string>();
+        map[7] = "seven";
+
+        bool removed = map.Remove(7, out string? captured);
+
+        Assert.True(removed);
+        Assert.Equal("seven", captured);
+        Assert.False(map.ContainsKey(7));
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void RankedDictionary_RemoveOutValue_ReturnsFalseAndDefault_ForMissingKey()
+    {
+        var map = new RankedDictionary<int, string>();
+        map[1] = "one";
+
+        bool removed = map.Remove(99, out string? captured);
+
+        Assert.False(removed);
+        Assert.Null(captured);
+        Assert.Single(map);
+    }
+
+    [Fact]
+    public void RankedDictionary_RemoveOutValue_ReturnsFalseAndDefault_OnEmptyMap()
+    {
+        var map = new RankedDictionary<int, string>();
+
+        Assert.False(map.Remove(1, out string? captured));
+        Assert.Null(captured);
+    }
+
+    [Fact]
+    public void RankedDictionary_RemoveOutValue_CapturesDefaultValueType_Correctly()
+    {
+        var map = new RankedDictionary<int, int>();
+        map[5] = 0; // a stored value equal to default(TValue)
+
+        Assert.True(map.Remove(5, out int captured));
+        Assert.Equal(0, captured);
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void RankedDictionary_RemoveOutValue_CapturesValue_AcrossBucketMerges()
+    {
+        var map = new RankedDictionary<int, string>();
+        for (int i = 0; i < 1000; i++)
+            map[i] = "v" + i;
+
+        for (int i = 0; i < 1000; i++)
+        {
+            Assert.True(map.Remove(i, out string? captured));
+            Assert.Equal("v" + i, captured);
+        }
+
+        Assert.Empty(map);
+    }
+
 }

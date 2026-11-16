@@ -56,6 +56,7 @@ internal static class Differential
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
         ("RankedSet", RankedSetCase),
+        ("RankedDictionary", RankedDictionaryCase),
         ("RankedMultiSet", RankedMultiSetCase),
         ("LfuCache", LfuCacheCase),
         ("SieveCache", SieveCacheCase),
@@ -1585,6 +1586,101 @@ internal static class Differential
         CheckSameSequence(
             sut.EnumerateRange(from, to),
             oracle.Where(v => v >= from && v < to),
+            $"range[{from},{to})");
+    }
+
+    // RankedDictionary vs SortedDictionary: RankedSet's layout with a value array beside each bucket, so on
+    // top of the rank surface this checks that splits, merges, drops and TrimExcess move each value with its
+    // key; a value left behind would keep every rank right and the entry at that rank wrong. The shared
+    // ordered-key domain (309 keys) never fills one 512-slot bucket, so this case draws keys from a domain
+    // several buckets wide and, in half the cases, turns remove-heavy halfway through so buckets thin out
+    // enough to merge and drop rather than only split.
+    private const int RankedDictionaryKeyDomain = 3000;
+
+    private static void RankedDictionaryCase(Random rng)
+    {
+        var sut = new RankedDictionary<int, int>();
+        var oracle = new SortedDictionary<int, int>();
+        int ops = rng.Next(0, 8000);
+        bool drain = rng.Next(0, 2) == 0;
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = rng.Next(0, RankedDictionaryKeyDomain);
+            int value = rng.Next();
+
+            // In the draining half every insert becomes a removal, half by key and half by rank, so the map
+            // contracts across buckets far enough to merge and drop them.
+            int roll = rng.Next(0, 24);
+            if (drain && i >= ops / 2 && roll < 13)
+                roll = rng.Next(0, 2) == 0 ? 13 : 20;
+
+            switch (roll)
+            {
+                case < 10: Check(sut.TryAdd(key, value) == oracle.TryAdd(key, value), $"TryAdd({key})"); break;
+                case < 13: sut[key] = value; oracle[key] = value; break;
+                case < 20:
+                    bool removed = sut.Remove(key, out int got);
+                    Check(removed == oracle.Remove(key, out int want), $"Remove({key})");
+                    Check(got == want, $"Remove({key}) returned {got}, oracle held {want}");
+                    break;
+                case < 21 when oracle.Count > 0:
+                    int rank = rng.Next(0, oracle.Count);
+                    int atRank = sut.GetKeyAtIndex(rank);
+                    sut.RemoveAt(rank);
+                    Check(oracle.Remove(atRank), $"RemoveAt({rank}) removed {atRank}, which the oracle lacked");
+                    break;
+                case < 22 when oracle.Count > 0:
+                    int slot = rng.Next(0, oracle.Count);
+                    sut.SetValueAtIndex(slot, value);
+                    oracle[sut.GetKeyAtIndex(slot)] = value;
+                    break;
+                case < 22: break;
+
+                // Both of these undo the structure the case is trying to build (Clear empties the map, and
+                // TrimExcess repacks every bucket to three quarters), so each is drawn only rarely.
+                case < 23:
+                    if (rng.Next(0, 200) == 0)
+                        sut.TrimExcess();
+                    break;
+                default:
+                    if (rng.Next(0, 1000) == 0)
+                    {
+                        sut.Clear();
+                        oracle.Clear();
+                    }
+
+                    break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+
+        for (int k = -2; k <= RankedDictionaryKeyDomain + 2; k++)
+        {
+            bool has = oracle.TryGetValue(k, out int expectedValue);
+            Check(sut.TryGetValue(k, out int actualValue) == has, $"TryGetValue({k})");
+            Check(!has || actualValue == expectedValue, $"[{k}] {actualValue} != {expectedValue}");
+            Check(sut.CountLessThan(k) == oracle.Keys.Count(v => v < k), $"CountLessThan({k})");
+        }
+
+        CheckSameSequence(sut.Select(e => e.Key), oracle.Keys, "enumeration");
+        CheckSameSequence(sut.Select(e => e.Value), oracle.Values, "values");
+
+        int index = 0;
+        foreach (KeyValuePair<int, int> expected in oracle)
+        {
+            KeyValuePair<int, int> actual = sut.GetEntryAtIndex(index);
+            Check(actual.Equals(expected), $"entry [{index}] {actual} != {expected}");
+            Check(sut.IndexOfKey(expected.Key) == index, $"IndexOfKey({expected.Key}) != {index}");
+            index++;
+        }
+
+        int from = rng.Next(-2, RankedDictionaryKeyDomain + 2);
+        int to = from + rng.Next(0, 1200);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to).Select(e => e.Key),
+            oracle.Keys.Where(k => k >= from && k < to),
             $"range[{from},{to})");
     }
 
