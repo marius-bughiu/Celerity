@@ -63,8 +63,9 @@ public sealed class StringInternTable : StringInternTable<StringCityHash64Hasher
 /// allocates the same strings this type does. This type packages the pattern as one
 /// <see cref="GetOrAdd(ReadOnlySpan{char})"/> call with the hasher as a type parameter. With
 /// <see cref="StringCityHash64Hasher"/>, the non-generic table's default, it probes faster than that
-/// set on 16-character tokens on Apple Silicon and on x64, and slower on long tokens;
-/// <see cref="StringXxHash3Hasher"/> suits a stream of long tokens.
+/// set on 16-character tokens on Apple Silicon and on x64. On Apple Silicon, the one platform where token length
+/// has been swept, it stays ahead from 3 to 64 characters, and <see cref="StringXxHash3Hasher"/> probes faster still from
+/// 8 characters up.
 /// </para>
 /// <para>
 /// <strong>Not <see cref="string.Intern(string)"/>.</strong> The runtime intern pool is

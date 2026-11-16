@@ -21,8 +21,8 @@ using Celerity.Hashing;
 /// cyclic stream lets it do.
 /// </para>
 /// <para>
-/// The arms are the default <see cref="StringCityHash64Hasher"/>, <see cref="StringXxHash3Hasher"/> (the choice for
-/// long tokens) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII: none of these
+/// The arms are the default <see cref="StringCityHash64Hasher"/>, <see cref="StringXxHash3Hasher"/> (the
+/// alternative for longer tokens) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII: none of these
 /// hashers branches on content, so text that varies both bytes of each UTF-16 code unit costs the same to hash.
 /// </para>
 /// </remarks>
@@ -132,24 +132,63 @@ public class StringInternTableTokenLengthBenchmark
         return hits;
     }
 
+    // Each arm keeps its probe loop inline, as HashSet_Lookup does, rather than calling one shared generic helper. A
+    // one-line arm that calls a helper is a tiny inline root, so the JIT inlines the helper and the hasher under it to
+    // a different depth per instantiation; in this repo's benchmarks that shape has moved deep hashers by up to 25%.
     [Benchmark]
-    public int StringInternTable_Lookup() => Lookup(defaultTables);
-
-    [Benchmark]
-    public int StringInternTable_LookupXxHash3() => Lookup(xxHash3Tables);
-
-    [Benchmark]
-    public int StringInternTable_LookupFnV1AFull() => Lookup(fnv1aFullTables);
-
-    private int Lookup<THasher>(StringInternTable<THasher>[] tables)
-        where THasher : struct, IHashProvider<string>, ISpanHashProvider
+    public int StringInternTable_Lookup()
     {
         char[] buf = buffer;
         (int Offset, int Length)[] s = stream;
+        StringInternTable[] tables = defaultTables;
         int hits = 0;
         for (int v = 0; v < tables.Length; v++)
         {
-            StringInternTable<THasher> table = tables[v];
+            StringInternTable table = tables[v];
+            int end = (v + 1) * ProbesPerVocabulary;
+            for (int i = v * ProbesPerVocabulary; i < end; i++)
+            {
+                (int offset, int length) = s[i];
+                if (table.Contains(buf.AsSpan(offset, length)))
+                    hits++;
+            }
+        }
+
+        return hits;
+    }
+
+    [Benchmark]
+    public int StringInternTable_LookupXxHash3()
+    {
+        char[] buf = buffer;
+        (int Offset, int Length)[] s = stream;
+        StringInternTable<StringXxHash3Hasher>[] tables = xxHash3Tables;
+        int hits = 0;
+        for (int v = 0; v < tables.Length; v++)
+        {
+            StringInternTable<StringXxHash3Hasher> table = tables[v];
+            int end = (v + 1) * ProbesPerVocabulary;
+            for (int i = v * ProbesPerVocabulary; i < end; i++)
+            {
+                (int offset, int length) = s[i];
+                if (table.Contains(buf.AsSpan(offset, length)))
+                    hits++;
+            }
+        }
+
+        return hits;
+    }
+
+    [Benchmark]
+    public int StringInternTable_LookupFnV1AFull()
+    {
+        char[] buf = buffer;
+        (int Offset, int Length)[] s = stream;
+        StringInternTable<StringFnV1AFullHasher>[] tables = fnv1aFullTables;
+        int hits = 0;
+        for (int v = 0; v < tables.Length; v++)
+        {
+            StringInternTable<StringFnV1AFullHasher> table = tables[v];
             int end = (v + 1) * ProbesPerVocabulary;
             for (int i = v * ProbesPerVocabulary; i < end; i++)
             {
