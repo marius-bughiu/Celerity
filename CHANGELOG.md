@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The `StringXxHash3Hasher` docs said it typically leads on both short and long keys. Hashing keys of one length in a loop on an Apple M4 and an AMD EPYC 7763, it was the fastest of the throughput hashers at 33 to 64 characters, and `StringCityHash64Hasher` led at 8 to 32. Above 120 characters this port runs XXH3's loop for long inputs as scalar code, and at 121 to 512 characters it took 2.21–3.43x as long as `StringCityHash64Hasher`, `StringMetroHash64Hasher` and `StringXxHash64Hasher`. The docs now say so, and `StringHasherKeyLengthBenchmark` measures it.
+
 ## [4.0.0] - 2026-11-16
 
 ### Added
