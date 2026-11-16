@@ -110,7 +110,7 @@ public class StringInternTableTokenLengthBenchmark
             }
         }
 
-        // Written straight into the buffer: building ~100M characters through a StringBuilder would hold three
+        // Written straight into the buffer: building ~200M characters through a StringBuilder would hold three
         // copies of them at once.
         buffer = new char[checked((int)characters)];
         stream = new (int, int)[probed.Length];

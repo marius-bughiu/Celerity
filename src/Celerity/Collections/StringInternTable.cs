@@ -67,7 +67,7 @@ public sealed class StringInternTable : StringInternTable<StringCityHash64Hasher
 /// fixed lengths, mostly from 17 characters up: by up to 1.19x on Apple Silicon and 1.61x on x64. For
 /// tokens mostly 17 to 64 characters long, try <see cref="StringXxHash3Hasher"/> through
 /// <see cref="StringInternTable{THasher}"/>, which probed faster than the default there on both platforms,
-/// but not for longer ones: past 120 characters it probed slower than the default.
+/// but not for tokens past 120 characters: at 128 it probed 2.2x slower than the default on Apple Silicon.
 /// </para>
 /// <para>
 /// <strong>Not <see cref="string.Intern(string)"/>.</strong> The runtime intern pool is
