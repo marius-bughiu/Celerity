@@ -29,6 +29,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 - The `Celerity.Primitives` package description on nuget.org now names the alignment helpers, `SpanBits`, `BitWriter` / `BitReader` and `MortonCurve` / `HilbertCurve`, which the package shipped without mentioning.
 - The collections guide no longer says every mutable dictionary implements `IDictionary<,>`, or that all of them have `Keys` / `Values` views and a key-value-pair constructor; it names `SlotMap`, `CelerityMultiMap` and `CelerityMultiSet` as the exceptions.
 - The weekly extended benchmark run now gets 225 minutes instead of 120. Seven of the twelve weekly runs from 24 August to 9 November hit the old limit, so [the extended dashboard](https://marius-bughiu.github.io/Celerity/dev/bench-extended/) gained only five points in those weeks. A manual run against a branch other than `main` now measures without publishing. No change to the shipped packages.
+- The `RankedSet` docs said no BCL type ranks and selects a changing sorted set in `O(log n)`. `ImmutableSortedSet<T>` and its `Builder` do, through counts kept in their AVL nodes, and the docs now say so; `RankedSet` has not been benchmarked against them yet. The docs also no longer call it the only set that is also a list (`FrozenSortedSet` is one too), or say that no BCL type removes by rank (`SortedList<,>.RemoveAt` does).
 
 ## [3.6.0] - 2026-11-13
 
