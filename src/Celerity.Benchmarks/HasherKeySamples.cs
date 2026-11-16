@@ -64,6 +64,13 @@ public static class HasherKeySamples
     /// </summary>
     public static string[] FixedLengthAscii(int length, int count = DefaultCount)
     {
+        // Fewer distinct strings of this length exist than requested: the loop below would never finish.
+        if (length < 1 || Math.Pow(Alphabet.Length, length) < count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(length), length, $"The alphabet cannot form {count} distinct keys of this length.");
+        }
+
         Random rand = new(42);
         var set = new HashSet<string>(count);
         var keys = new string[count];

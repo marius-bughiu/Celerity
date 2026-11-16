@@ -21,9 +21,9 @@ namespace Celerity.Hashing;
 /// stripes against the secret and periodically scrambles the lanes. The dedicated
 /// branches spare short and mid-length keys a stripe loop's tail handling. Reference
 /// XXH3 runs the accumulator loop with SIMD instructions; this port runs it as scalar
-/// code, so a key over 120 characters costs far more per character than a shorter
-/// one. The 64-bit result is reduced to 32 bits by xor-folding the
-/// high half into the low half (<c>h ^ (h &gt;&gt; 32)</c>), keeping the extra
+/// code, so in the measurements below a 121-character key took 2.22–2.56 times as
+/// long to hash as a 120-character one. The 64-bit result is reduced to 32 bits by
+/// xor-folding the high half into the low half (<c>h ^ (h &gt;&gt; 32)</c>), keeping the extra
 /// high-half entropy in the returned value, exactly as
 /// <see cref="StringXxHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/>, and
 /// <see cref="StringCityHash64Hasher"/> do.
@@ -49,11 +49,12 @@ namespace Celerity.Hashing;
 /// the ladder — profile on your own key shape to pick between them, because which is
 /// fastest depends on the key length. Hashing distinct keys of one length in a loop
 /// on an Apple M4 and an AMD EPYC 7763, XXH3 was the fastest of them at 33, 48 and 64
-/// characters and <see cref="StringCityHash64Hasher"/> at 8, 16 and 32. At 121, 256
+/// characters, and <see cref="StringCityHash64Hasher"/> at 8, 16 and 32 (tied with XXH3
+/// at 8 on the EPYC). At 121, 256
 /// and 512 characters XXH3 took 2.21–3.43x as long as
 /// <see cref="StringCityHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/> and
 /// <see cref="StringXxHash64Hasher"/>. A table probe can rank them differently.
-/// <see cref="StringMurmur3Hasher"/> stays the simplest choice for very short keys.
+/// <see cref="StringMurmur3Hasher"/> stays the simplest of them.
 /// All are good answers when FNV-1a's weaker avalanche pushes clustered or
 /// adversarial keys into long probe chains.
 /// </para>

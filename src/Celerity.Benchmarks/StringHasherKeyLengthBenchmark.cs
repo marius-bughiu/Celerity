@@ -10,10 +10,11 @@ using Celerity.Hashing;
 /// <see cref="StringThroughputHasherBenchmark"/> draws its keys from three shapes, the longest 48 to 80
 /// characters, so it never reaches <see cref="StringXxHash3Hasher"/>'s path for inputs over 120 characters. This
 /// class fixes the length instead. <see cref="StringCityHash64Hasher"/> takes separate paths for up to 8, 9 to 16
-/// and 17 to 32 characters and hashes longer keys 32 characters at a time; <see cref="StringXxHash3Hasher"/> takes
-/// separate paths up to 64 and from 65 to 120 characters, and above 120 switches to its loop for long inputs. The
-/// cells sit at the ends of those paths (8, 16, 32, 64, 120) and just past two of them (33, 121), where a hasher's
-/// cost steps up, plus 48 between and 256 and 512 for long keys.
+/// and 17 to 32 characters and hashes longer keys 32 characters at a time. <see cref="StringXxHash3Hasher"/> takes
+/// separate paths for up to 4, 5 to 8, 9 to 64 and 65 to 120 characters, adds a step of work after 16, 32 and 48
+/// characters on the 9-to-64 path, and above 120 switches to its loop for long inputs. The cells sit at the ends of
+/// those paths and steps (8, 16, 32, 48, 64, 120) and just past two of them (33, 121), where a hasher's cost steps
+/// up, plus 256 and 512 for long keys.
 /// </para>
 /// <para>
 /// Each invocation hashes <see cref="HasherKeySamples.DefaultCount"/> distinct keys of the chosen length, built from
