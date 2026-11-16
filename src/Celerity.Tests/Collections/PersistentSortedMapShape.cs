@@ -3,7 +3,7 @@ using System.Reflection;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Walks a <c>PersistentSortedMap</c>'s B+ tree by reflection and asserts the shape invariants the type
+/// Walks a <c>PersistentSortedMap</c>'s — or a <c>PersistentSortedSet</c>'s — B+ tree by reflection and asserts the shape invariants the type
 /// documents but that no black-box assertion can see.
 ///
 /// <para>
@@ -65,8 +65,11 @@ internal static class PersistentSortedMapShape
                 leafDepth = depth;
 
             Assert.Equal(leafDepth, depth);
-            Array values = Get<Array>(node, "Values");
-            Assert.True(keys.Length >= count && values.Length >= count);
+            Assert.True(keys.Length >= count);
+
+            // PersistentSortedSet's nodes are the same tree with the value array taken out.
+            if (node.GetType().GetField("Values", BindingFlags.Instance | BindingFlags.NonPublic) is not null)
+                Assert.True(Get<Array>(node, "Values").Length >= count);
 
             for (int i = 0; i < count; i++)
             {

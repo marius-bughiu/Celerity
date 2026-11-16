@@ -9,8 +9,8 @@ namespace Celerity.Tests.Collections;
 /// plus <see cref="PersistentHashMap{TKey, TValue, THasher}"/> and <see cref="PersistentHashSet{T, THasher}"/>.
 /// The ordered types are deliberately not in
 /// scope: <see cref="BTreeDictionary{TKey, TValue, TComparer}"/> and its siblings — and
-/// <see cref="PersistentSortedMap{TKey, TValue, TComparer}"/>, the sorted sibling of
-/// <see cref="PersistentHashMap{TKey, TValue, THasher}"/> — store a <c>default(TKey)</c> inline and sort it
+/// <see cref="PersistentSortedMap{TKey, TValue, TComparer}"/> and <see cref="PersistentSortedSet{T, TComparer}"/>,
+/// the sorted siblings of the persistent hash types — store a <c>default(TKey)</c> inline and sort it
 /// wherever the comparer puts it, so they have no out-of-band slot to pin.
 /// </summary>
 /// <remarks>

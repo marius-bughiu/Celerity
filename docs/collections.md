@@ -237,6 +237,7 @@ foreach (var entry in versions.EnumerateRange(1_500, 3_500))
 - `HierarchicalBitSet` — **ordered** bounded-universe integer set: a bit vector under a 64-ary tree of summary words, so `TryGetMin` / `TryGetMax`, successor (`TryGetLowerBound` / `TryGetUpperBound`) and predecessor (`TryGetFloor` / `TryGetPredecessor`) read a few words — `O(log₆₄ Universe)` — and enumeration is ascending. At 100,000 values in an 800,000 universe it answers a successor query **32x** faster than `SortedSet<int>` and **18.9x** faster than `BTreeSet<int>`, at 39x less memory. For lowest-free-id allocators, next-occupied-slot scans and integer priority queues that need `Remove`. Costs about `Universe / 8` bytes.
 - `CompressedIntSet` — **exact, compressed** set of 32-bit integers: each 65,536-value chunk is stored as a sorted array or a bitmap by density, with an opt-in run-length form for clustered data that `Optimize()` and `AddRange` produce. Set algebra runs word-parallel inside a chunk and skips a whole chunk with one comparison, memory is ~10x below `HashSet<int>` (far more when dense or clustered), and enumeration is **in ascending order**. For huge-and-sparse integer sets — posting lists, row-id sets, cohort intersection. No portable Roaring format: this is an in-process structure, not an interop codec.
 - `PersistentHashSet<T, THasher>` — **immutable** hash set: `PersistentHashMap`'s CHAMP trie with the values taken out. A single-element edit returns a new set **sharing** all but one root-to-leaf path of the old one's storage, an edit that changes nothing hands back the receiver, and `Union` / `Except` / `Intersect` / `SymmetricExcept` run through a builder. Against `ImmutableHashSet<T>`'s AVL tree of branching factor two with a heap node per distinct hash, a membership test is a few popcount-indexed array reads rather than a pointer chase per level. For membership state tested far more often than it is written and still handed to readers as a snapshot. Implements `IReadOnlySet<T>`.
+- `PersistentSortedSet<T, TComparer>` — **immutable sorted** set: `PersistentSortedMap`'s path-copying **B+ tree** with the values taken out. A single-element edit returns a new set **sharing** all but one root-to-leaf path, an edit that changes nothing hands back the receiver, and it answers the ordered queries `ImmutableSortedSet<T>` lacks — lower and upper bound, floor and predecessor, and an `O(log n + k)` `EnumerateRange` — alongside `Min` / `Max`. Equality is the comparer's, set algebra included. No positional access: for rank and select use `RankedSet` or `ImmutableSortedSet<T>`. For sorted membership state handed to readers as a snapshot: a free-id pool, a set of active timestamps asked "the next one after *t*". Implements `IReadOnlySet<T>`.
 
 The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`) all implement **`ISet<T>`** and **`IReadOnlySet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used. (The bounded-domain sets, `EnumSet`, `SparseSet` and `HierarchicalBitSet`, are the exception to "drop in anywhere": they store only values in their fixed domain, so a mutating op that must add an out-of-domain value throws.)
 
@@ -377,6 +378,24 @@ blocked = blocked.Add("192.0.2.99");          // snapshot is untouched
 
 bool live = blocked.Contains("192.0.2.99");   // True
 bool asPublished = snapshot.Contains("192.0.2.99"); // False
+```
+
+#### An immutable sorted set — PersistentSortedSet
+
+`PersistentSortedSet<T, TComparer>` is the set half of `PersistentSortedMap` and the immutable sibling of `BTreeSet`. .NET's only immutable sorted set, `ImmutableSortedSet<T>`, is an **AVL tree** with one heap node per element; it has `Min` / `Max` but no floor, ceiling or range view, so "the first element at or after *x*" is an `IndexOf` search followed by an indexer descent. This is a **B+ tree of fan-out 32** with path copying: elements sit in flat 32-wide leaf arrays, an edit copies the four or so nodes on one root-to-leaf path and shares the rest, and every bound query is `O(log n)`. Two elements the comparer orders equal are one element, and `Union` / `Except` / `Intersect` / `SymmetricExcept` and the `IReadOnlySet<T>` queries all answer that way, as `SortedSet<T>` does.
+
+Reach for it when a sorted set is **handed to readers as a snapshot and queried by position in the order** — a free-id or free-slot pool, a set of active timestamps or sequence numbers asked "the next one after *t*", a sorted symbol set threaded through a compiler pass. If nobody holds an old version, `BTreeSet` writes in place; if you never need order, `PersistentHashSet` tests membership by hash rather than by comparison; if you need rank or select, use `RankedSet` or `ImmutableSortedSet<T>`. See [the API reference](api/collections.md#persistentsortedsett-tcomparer).
+
+```csharp
+PersistentSortedSet<int, DefaultComparer<int>> free =
+    new PersistentSortedSet<int, DefaultComparer<int>>(new[] { 3, 5, 7, 12 });
+
+PersistentSortedSet<int, DefaultComparer<int>> snapshot = free; // hand to a reader
+free = free.Remove(free.Min);                 // claim id 3; snapshot is untouched
+
+free.TryGetLowerBound(6, out int next);       // 7 — the first free id at or after 6
+foreach (int id in free.EnumerateRange(5, 12))
+    Console.WriteLine(id);                    // 5, 7
 ```
 
 ## Caches

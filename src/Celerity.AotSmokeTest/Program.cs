@@ -964,6 +964,54 @@ void Check(bool condition, string message)
     Check(sortedSnapshot.Keys.Count == 500 && sortedSnapshot.Values.Count == 500, "PersistentSortedMap key/value views");
 }
 
+// PersistentSortedSet - immutable path-copying B+ tree, PersistentSortedMap's tree without the value array.
+// Exercise the deduping IEnumerable constructor, Add / Remove and their no-op receivers at a depth that needs
+// several levels, the ordered surface, a null reference element stored inline under a __Canon-shared
+// instantiation, the comparer-keyed set algebra (which sorts through a struct comparer), the builder's
+// ownership token, and the struct enumerators.
+{
+    var pss = new PersistentSortedSet<int, DefaultComparer<int>>(new[] { 3, 1, 3, 2 });
+    Check(pss.Count == 3 && pss.Min == 1 && pss.Max == 3, "PersistentSortedSet construct dedupes and sorts");
+    Check(pss.Add(4).Count == 4 && pss.Count == 3, "PersistentSortedSet Add leaves the receiver alone");
+    Check(ReferenceEquals(pss, pss.Add(2)), "PersistentSortedSet Add of a present element returns the receiver");
+    Check(pss.Remove(1).Count == 2 && pss.Contains(1), "PersistentSortedSet Remove leaves the receiver alone");
+    Check(PersistentSortedSet<int, DefaultComparer<int>>.Empty.IsEmpty, "PersistentSortedSet Empty");
+
+    var deepSet = PersistentSortedSet<int, DefaultComparer<int>>.Empty;
+    for (int i = 2999; i >= 0; i--) deepSet = deepSet.Add(2 * i);
+    Check(deepSet.Count == 3000 && deepSet.Contains(0) && deepSet.Contains(5998) && !deepSet.Contains(5),
+        "PersistentSortedSet multi-level reads");
+    Check(deepSet.TryGetLowerBound(501, out int setCeiling) && setCeiling == 502, "PersistentSortedSet lower bound");
+    Check(deepSet.TryGetFloor(501, out int setFloor) && setFloor == 500, "PersistentSortedSet floor");
+
+    int setScanned = 0;
+    foreach (int item in deepSet.EnumerateRange(100, 200)) setScanned++;
+    Check(setScanned == 50, "PersistentSortedSet range scan");
+
+    for (int i = 0; i < 3000; i += 2) deepSet = deepSet.Remove(4 * (i / 2));
+    Check(deepSet.Count == 1500 && deepSet.Min == 2 && deepSet.Max == 5998, "PersistentSortedSet removal rebalances the tree");
+
+    var setNames = PersistentSortedSet<string, DefaultComparer<string>>.Empty.Add("b").Add(null!).Add("a");
+    Check(setNames.Count == 3 && setNames.Contains(null!) && setNames.Min is null && setNames.Max == "b",
+        "PersistentSortedSet null reference element stored inline");
+    Check(setNames.Intersect(new[] { "b", "c", "b" }).Count == 1 && setNames.SymmetricExcept(new[] { "a", "c" }).Count == 3,
+        "PersistentSortedSet set algebra");
+    Check(setNames.SetEquals(new[] { "a", "b", null!, "a" }) && setNames.IsProperSupersetOf(new[] { "a" }),
+        "PersistentSortedSet set queries");
+
+    var setBuilder = new PersistentSortedSet<int, DefaultComparer<int>>.Builder();
+    for (int i = 0; i < 500; i++) setBuilder.Add(i);
+    var setSnapshot = setBuilder.ToImmutable();
+    setBuilder.Remove(317);
+    setBuilder.Add(-1);
+    Check(setSnapshot.Count == 500 && setSnapshot.Contains(317) && !setSnapshot.Contains(-1),
+        "PersistentSortedSet builder isolates its snapshots");
+
+    long setTotal = 0;
+    foreach (int item in setSnapshot) setTotal += item;
+    Check(setTotal == 124750, "PersistentSortedSet struct enumeration");
+}
+
 // PersistentHashSet - immutable CHAMP set, the map's trie without the value array. Exercise the deduping
 // IEnumerable constructor, the trie read paths at a depth that needs several levels, Add / Remove and their
 // no-op receivers, the out-of-band default and null elements, the builder-driven set algebra, the

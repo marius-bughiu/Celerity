@@ -5,7 +5,8 @@ namespace Celerity.Tests.Collections;
 
 /// <summary>
 /// Cross-collection coverage of the <see cref="ISet{T}"/> algebra on the two <b>comparer-ordered</b> sets,
-/// <see cref="BTreeSet{T, TComparer}"/> and <see cref="RankedSet{T, TComparer}"/>. Both define membership as
+/// <see cref="BTreeSet{T, TComparer}"/> and <see cref="RankedSet{T, TComparer}"/> — and of its immutable
+/// counterpart on <see cref="PersistentSortedSet{T, TComparer}"/>. All three define membership as
 /// "the comparer orders the two elements equal", so a comparer that collapses values
 /// <see cref="EqualityComparer{T}.Default"/> keeps apart — a case-insensitive order, say — is the only way to
 /// observe which side of each operation is keyed by what. The oracle throughout is
@@ -295,6 +296,62 @@ public class OrderedSetComparerAlgebraTests
                 Assert.Equal(oracle.IsSupersetOf(other), ranked.IsSupersetOf(other));
                 Assert.Equal(oracle.Overlaps(other), bTree.Overlaps(other));
                 Assert.Equal(oracle.Overlaps(other), ranked.Overlaps(other));
+            }
+        });
+    }
+
+    // ── The immutable member ──────────────────────────────────────────────────
+    // PersistentSortedSet is not an ISet<T> — its algebra returns a new set rather than mutating — but it
+    // defines membership by its comparer exactly as the two above do, and routes the same six members through
+    // the same helper, so it is reconciled against the same oracle under the same collapsing comparer.
+
+    [Fact]
+    public void PersistentSortedSet_EveryAlgebraMember_ShouldAgreeWithSortedSet_WhenTheComparerCollapses()
+    {
+        var set = new PersistentSortedSet<string, CaseInsensitiveOrdinal>(["a"]);
+
+        Assert.True(set.Contains("A"));
+        Assert.True(set.Overlaps(["A"]));
+        Assert.True(set.IsSupersetOf(["A"]));
+        Assert.False(set.IsProperSupersetOf(["A"]));
+        Assert.True(set.SetEquals(["A"]));
+        Assert.True(set.IsSubsetOf(["A"]));
+        Assert.False(set.IsProperSubsetOf(["A"]));
+
+        Assert.Equal(["a"], set.Intersect(["A"]));
+        Assert.Same(set, set.Union(["A"]));
+        Assert.Empty(set.Except(["A"]));
+        Assert.Empty(set.SymmetricExcept(["a", "A"]));
+    }
+
+    [Fact]
+    public void PersistentSortedSet_TheProducingAlgebra_ShouldMatchSortedSet_UnderACollapsingComparer()
+    {
+        IComparer<int> oracleComparer = Comparer<int>.Create((x, y) => (x / 10).CompareTo(y / 10));
+
+        GenStep.List[0, 30].Sample(steps =>
+        {
+            var set = new PersistentSortedSet<int, ByTens>([10, 20]);
+            var oracle = new SortedSet<int>([10, 20], oracleComparer);
+
+            foreach ((Op op, List<int> other) in steps)
+            {
+                set = op switch
+                {
+                    Op.IntersectWith => set.Intersect(other),
+                    Op.SymmetricExceptWith => set.SymmetricExcept(other),
+                    Op.UnionWith => set.Union(other),
+                    _ => set.Except(other),
+                };
+                Apply(oracle, op, other);
+
+                Assert.Equal<int[]>([.. oracle.Select(v => v / 10)], [.. set.Select(v => v / 10)]);
+                Assert.Equal(oracle.SetEquals(other), set.SetEquals(other));
+                Assert.Equal(oracle.IsSubsetOf(other), set.IsSubsetOf(other));
+                Assert.Equal(oracle.IsProperSubsetOf(other), set.IsProperSubsetOf(other));
+                Assert.Equal(oracle.IsProperSupersetOf(other), set.IsProperSupersetOf(other));
+                Assert.Equal(oracle.IsSupersetOf(other), set.IsSupersetOf(other));
+                Assert.Equal(oracle.Overlaps(other), set.Overlaps(other));
             }
         });
     }

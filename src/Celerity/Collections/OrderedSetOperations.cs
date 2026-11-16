@@ -2,7 +2,8 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// Shared implementation of the <see cref="ISet{T}"/> set-algebra surface for the <b>comparer-ordered</b>
-/// Celerity sets (<see cref="BTreeSet{T, TComparer}"/>, <see cref="RankedSet{T, TComparer}"/>), which define
+/// Celerity sets (<see cref="BTreeSet{T, TComparer}"/>, <see cref="RankedSet{T, TComparer}"/>, and the
+/// queries and distinct-collapse of <see cref="PersistentSortedSet{T, TComparer}"/>), which define
 /// membership as "<c>TComparer</c> orders the two elements equal" rather than as
 /// <see cref="EqualityComparer{T}.Default"/>.
 /// </summary>
@@ -35,12 +36,17 @@ namespace Celerity.Collections;
 /// 88 bytes.
 /// </para>
 /// <para>
-/// <b>Precondition.</b> <c>self</c> must enumerate in ascending <c>TComparer</c> order. That is part of both
-/// ordered sets' public contract, and it is what lets <c>AllElementsIn</c> — the shared probe behind
+/// <b>Precondition.</b> <c>self</c> must enumerate in ascending <c>TComparer</c> order. That is part of each
+/// ordered set's public contract, and it is what lets <c>AllElementsIn</c> — the shared probe behind
 /// <c>SetEquals</c>, <c>IsSubsetOf</c> and <c>IsProperSubsetOf</c> — and <c>IntersectWith</c> merge two
 /// sorted sequences in <c>O(n + m)</c> instead of binary-searching one per element. So a set that does not
 /// promise it must not be routed here. <c>IsProperSupersetOf</c> is the one member that does not merge: it
 /// asks <c>self</c> about each element of <c>other</c>, so it stays <c>O(m log n)</c> on top of the sort.
+/// </para>
+/// <para>
+/// The four queries take <c>self</c> as an <see cref="IReadOnlySet{T}"/> rather than an <see cref="ISet{T}"/>:
+/// they only read it, and that is the interface the mutable ordered sets and the immutable
+/// <see cref="PersistentSortedSet{T, TComparer}"/> have in common.
 /// </para>
 /// </remarks>
 internal static class OrderedSetOperations
@@ -114,7 +120,7 @@ internal static class OrderedSetOperations
     // ── Query operations ──────────────────────────────────────────────────────
 
     /// <summary>Returns <c>true</c> when every element of <paramref name="self"/> is in <paramref name="other"/>.</summary>
-    internal static bool IsSubsetOf<T, TComparer>(ISet<T> self, TComparer comparer, IEnumerable<T> other)
+    internal static bool IsSubsetOf<T, TComparer>(IReadOnlySet<T> self, TComparer comparer, IEnumerable<T> other)
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -128,7 +134,7 @@ internal static class OrderedSetOperations
     }
 
     /// <summary>Returns <c>true</c> when <paramref name="self"/> is a strict subset of <paramref name="other"/>.</summary>
-    internal static bool IsProperSubsetOf<T, TComparer>(ISet<T> self, TComparer comparer, IEnumerable<T> other)
+    internal static bool IsProperSubsetOf<T, TComparer>(IReadOnlySet<T> self, TComparer comparer, IEnumerable<T> other)
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -139,7 +145,7 @@ internal static class OrderedSetOperations
     }
 
     /// <summary>Returns <c>true</c> when <paramref name="self"/> is a strict superset of <paramref name="other"/>.</summary>
-    internal static bool IsProperSupersetOf<T, TComparer>(ISet<T> self, TComparer comparer, IEnumerable<T> other)
+    internal static bool IsProperSupersetOf<T, TComparer>(IReadOnlySet<T> self, TComparer comparer, IEnumerable<T> other)
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -164,7 +170,7 @@ internal static class OrderedSetOperations
     }
 
     /// <summary>Returns <c>true</c> when the two sides hold the same elements.</summary>
-    internal static bool SetEquals<T, TComparer>(ISet<T> self, TComparer comparer, IEnumerable<T> other)
+    internal static bool SetEquals<T, TComparer>(IReadOnlySet<T> self, TComparer comparer, IEnumerable<T> other)
         where TComparer : struct, IComparer<T>
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -181,7 +187,7 @@ internal static class OrderedSetOperations
     // to its first member. Not new List<T>(other): for a collection that shrank between its Count and its
     // CopyTo, that list would hold default elements, which IntersectWith and SymmetricExceptWith would then
     // keep in or add to the set.
-    private static ReadOnlySpan<T> MaterializeDistinct<T, TComparer>(IEnumerable<T> other, TComparer comparer)
+    internal static ReadOnlySpan<T> MaterializeDistinct<T, TComparer>(IEnumerable<T> other, TComparer comparer)
         where TComparer : struct, IComparer<T>
     {
         Span<T> span = CountedSource.ToArray(other);
@@ -205,7 +211,7 @@ internal static class OrderedSetOperations
     // order by contract, `other` because MaterializeDistinct has just sorted it — so this is a linear merge
     // rather than a binary search per element: O(n + m) comparisons instead of O(n log m), and both walks
     // are sequential rather than jumping around a span.
-    private static bool AllElementsIn<T, TComparer>(ISet<T> self, ReadOnlySpan<T> other, TComparer comparer)
+    private static bool AllElementsIn<T, TComparer>(IReadOnlySet<T> self, ReadOnlySpan<T> other, TComparer comparer)
         where TComparer : struct, IComparer<T>
     {
         int j = 0;

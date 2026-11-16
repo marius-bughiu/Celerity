@@ -11,7 +11,7 @@ namespace Celerity.Tests.Collections;
 /// <see cref="LinkedSet{T, THasher}"/>,
 /// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/> and
 /// <see cref="FrozenSortedSet{T}"/>, and the
-/// immutable <see cref="PersistentHashSet{T, THasher}"/>.
+/// immutable <see cref="PersistentHashSet{T, THasher}"/> and <see cref="PersistentSortedSet{T, TComparer}"/>.
 ///
 /// Mirrors <see cref="IEnumerableConstructorTests"/> for the dictionary
 /// equivalents, but follows BCL <see cref="HashSet{T}"/> semantics rather than
@@ -2146,6 +2146,69 @@ public class SetIEnumerableConstructorTests
         Assert.Equal(3, set.Count);
         foreach (int item in new[] { 1, 2, 3 })
             Assert.True(set.Contains(item));
+    }
+
+    // --------------------------------------------------------------
+    //  PersistentSortedSet - the immutable ordered set, likewise without a
+    //  capacity or loadFactor. The IEnumerable-source contract applies, with
+    //  dedupe under the comparer (a null is an ordinary element ordered first,
+    //  not an out-of-band one), sorted output from an unsorted source, and
+    //  independence from the source.
+    // --------------------------------------------------------------
+
+    [Fact]
+    public void PersistentSortedSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<int>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => new PersistentSortedSet<int, DefaultComparer<int>>(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void PersistentSortedSet_ShouldSupportEmptySource()
+    {
+        var set = new PersistentSortedSet<int, DefaultComparer<int>>(Array.Empty<int>());
+
+        Assert.Equal(0, set.Count);
+        Assert.True(set.IsEmpty);
+        Assert.False(set.Contains(0));
+    }
+
+    [Fact]
+    public void PersistentSortedSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource_InOrder()
+    {
+        // Enumerable.Range is not an ICollection<int>, and 5000 elements put the tree three levels deep while
+        // the constructor's builder is filling it.
+        var set = new PersistentSortedSet<int, DefaultComparer<int>>(Enumerable.Range(0, 5000).Reverse());
+
+        Assert.Equal(5000, set.Count);
+        Assert.Equal(Enumerable.Range(0, 5000), set);
+    }
+
+    [Fact]
+    public void PersistentSortedSet_ShouldDedupeSource_IncludingDefaultAndNullElements()
+    {
+        var ints = new PersistentSortedSet<int, DefaultComparer<int>>(new[] { 0, 1, 0, 1, 2 });
+
+        Assert.Equal(new[] { 0, 1, 2 }, ints);
+
+        var strings = new PersistentSortedSet<string, DefaultComparer<string>>(CreateSourceWithRuntimeNulls("a", null, "a", null));
+
+        Assert.Equal(new[] { null!, "a" }, strings);
+    }
+
+    [Fact]
+    public void PersistentSortedSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<int> { 3, 1, 2 };
+
+        var set = new PersistentSortedSet<int, DefaultComparer<int>>(source);
+        source.Clear();
+
+        Assert.Equal(new[] { 1, 2, 3 }, set);
     }
 
     // ──────────────────────────────────────────────────────────────

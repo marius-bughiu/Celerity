@@ -13,8 +13,9 @@ namespace Celerity.Tests.Collections;
 /// <see cref="IntSet{THasher}"/>, <see cref="LongSet{THasher}"/>, <see cref="SparseSet"/>,
 /// <see cref="HierarchicalBitSet"/> and <see cref="EnumSet{TEnum}"/>), the read-only mirror of the <see cref="ISet{T}"/> conformance
 /// covered by <see cref="SetAlgebraTests"/> — and of the immutable
-/// <see cref="PersistentHashSet{T, THasher}"/>, which declares <see cref="IReadOnlySet{T}"/> alone,
-/// since it has no in-place mutation for <see cref="ISet{T}"/> to describe.
+/// <see cref="PersistentHashSet{T, THasher}"/> and <see cref="PersistentSortedSet{T, TComparer}"/>, which
+/// declare <see cref="IReadOnlySet{T}"/> alone, since they have no in-place mutation for <see cref="ISet{T}"/>
+/// to describe.
 ///
 /// <para>
 /// <see cref="ISet{T}"/> does not derive from <see cref="IReadOnlySet{T}"/>, so declaring the
@@ -285,6 +286,31 @@ public class ReadOnlySetInterfaceTests
         Assert.IsAssignableFrom<IReadOnlySet<string>>(set);
         AssertMatchesOracle(set, StringMembers, StringAbsent);
         AssertEmptyContract<string>(PersistentHashSet<string, StringFnV1AHasher>.Empty, StringMembers);
+    }
+
+    // ── PersistentSortedSet ───────────────────────────────────────────────────
+    // The immutable ordered member, built the same way. Its equality is its comparer's; under
+    // DefaultComparer that agrees with the HashSet oracle's default equality, so the shared oracle applies.
+    // The string row's null element is an ordinary element ordered first, not an out-of-band one.
+
+    [Fact]
+    public void PersistentSortedSet_ShouldSatisfyTheReadOnlySetContract_WhenReachedThroughTheInterface()
+    {
+        var set = new PersistentSortedSet<int, DefaultComparer<int>>(IntMembers);
+
+        Assert.IsAssignableFrom<IReadOnlySet<int>>(set);
+        AssertMatchesOracle(set, IntMembers, IntAbsent);
+        AssertEmptyContract<int>(PersistentSortedSet<int, DefaultComparer<int>>.Empty, IntMembers);
+    }
+
+    [Fact]
+    public void PersistentSortedSet_ShouldSatisfyTheReadOnlySetContract_WhenElementsAreStrings()
+    {
+        var set = new PersistentSortedSet<string, DefaultComparer<string>>(StringMembers);
+
+        Assert.IsAssignableFrom<IReadOnlySet<string>>(set);
+        AssertMatchesOracle(set, StringMembers, StringAbsent);
+        AssertEmptyContract<string>(PersistentSortedSet<string, DefaultComparer<string>>.Empty, StringMembers);
     }
 
     // ── Shared fixtures and drivers ───────────────────────────────────────────
