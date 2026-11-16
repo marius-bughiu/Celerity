@@ -56,6 +56,7 @@ internal static class Differential
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
         ("RankedSet", RankedSetCase),
+        ("RankedDictionary", RankedDictionaryCase),
         ("RankedMultiSet", RankedMultiSetCase),
         ("LfuCache", LfuCacheCase),
         ("SieveCache", SieveCacheCase),
@@ -1585,6 +1586,77 @@ internal static class Differential
         CheckSameSequence(
             sut.EnumerateRange(from, to),
             oracle.Where(v => v >= from && v < to),
+            $"range[{from},{to})");
+    }
+
+    // RankedDictionary vs SortedDictionary: RankedSet's layout with a value array beside each bucket, so on
+    // top of the rank surface this checks that every split, merge, drop and TrimExcess moved each value with
+    // its key — a value left behind would keep every rank right and the entry at that rank wrong.
+    private static void RankedDictionaryCase(Random rng)
+    {
+        var sut = new RankedDictionary<int, int>();
+        var oracle = new SortedDictionary<int, int>();
+        int ops = OrderedOpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = OrderedKey(rng);
+            int value = rng.Next();
+            switch (rng.Next(0, 24))
+            {
+                case < 10: Check(sut.TryAdd(key, value) == oracle.TryAdd(key, value), $"TryAdd({key})"); break;
+                case < 13: sut[key] = value; oracle[key] = value; break;
+                case < 20:
+                    bool removed = sut.Remove(key, out int got);
+                    Check(removed == oracle.Remove(key, out int want), $"Remove({key})");
+                    Check(got == want, $"Remove({key}) returned {got}, oracle held {want}");
+                    break;
+                case < 21 when oracle.Count > 0:
+                    int rank = rng.Next(0, oracle.Count);
+                    int atRank = sut.GetKeyAtIndex(rank);
+                    sut.RemoveAt(rank);
+                    Check(oracle.Remove(atRank), $"RemoveAt({rank}) removed {atRank}, which the oracle lacked");
+                    break;
+                case < 22 when oracle.Count > 0:
+                    int slot = rng.Next(0, oracle.Count);
+                    sut.SetValueAtIndex(slot, value);
+                    oracle[sut.GetKeyAtIndex(slot)] = value;
+                    break;
+                case < 22: break;
+                case < 24 when rng.Next(0, 4) == 0:
+                    sut.TrimExcess();
+                    break;
+                default: sut.Clear(); oracle.Clear(); break;
+            }
+        }
+
+        Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count}");
+
+        for (int k = MinOrderedKey - 2; k <= MaxOrderedKey + 2; k++)
+        {
+            bool has = oracle.TryGetValue(k, out int expectedValue);
+            Check(sut.TryGetValue(k, out int actualValue) == has, $"TryGetValue({k})");
+            Check(!has || actualValue == expectedValue, $"[{k}] {actualValue} != {expectedValue}");
+            Check(sut.CountLessThan(k) == oracle.Keys.Count(v => v < k), $"CountLessThan({k})");
+        }
+
+        CheckSameSequence(sut.Select(e => e.Key), oracle.Keys, "enumeration");
+        CheckSameSequence(sut.Select(e => e.Value), oracle.Values, "values");
+
+        int index = 0;
+        foreach (KeyValuePair<int, int> expected in oracle)
+        {
+            KeyValuePair<int, int> actual = sut.GetEntryAtIndex(index);
+            Check(actual.Equals(expected), $"entry [{index}] {actual} != {expected}");
+            Check(sut.IndexOfKey(expected.Key) == index, $"IndexOfKey({expected.Key}) != {index}");
+            index++;
+        }
+
+        int from = OrderedKey(rng);
+        int to = from + rng.Next(0, 120);
+        CheckSameSequence(
+            sut.EnumerateRange(from, to).Select(e => e.Key),
+            oracle.Keys.Where(k => k >= from && k < to),
             $"range[{from},{to})");
     }
 

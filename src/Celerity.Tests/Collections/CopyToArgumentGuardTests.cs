@@ -346,6 +346,17 @@ public class CopyToArgumentGuardTests
     }
 
     [Fact]
+    public void RankedDictionary_ShouldValidateCopyToArguments()
+    {
+        RankedDictionary<int, string> dictionary = new();
+        Fill(dictionary.Add);
+
+        AssertCopyToContract<KeyValuePair<int, string?>>(3, dictionary.CopyTo);
+        AssertCopyToContract<int>(3, dictionary.Keys.CopyTo);
+        AssertCopyToContract<string?>(3, dictionary.Values.CopyTo);
+    }
+
+    [Fact]
     public void PooledCelerityDictionary_ShouldValidateCopyToArguments()
     {
         using PooledCelerityDictionary<int, string, Int32WangNaiveHasher> dictionary = new();
@@ -462,6 +473,7 @@ public class CopyToArgumentGuardTests
         "LinkedDictionary", "LinkedDictionary.KeyCollection", "LinkedDictionary.ValueCollection",
         "LongDictionary", "LongDictionary.KeyCollection", "LongDictionary.ValueCollection",
         "PooledCelerityDictionary", "PooledCelerityDictionary.KeyCollection", "PooledCelerityDictionary.ValueCollection",
+        "RankedDictionary", "RankedDictionary.KeyCollection", "RankedDictionary.ValueCollection",
         "RobinHoodDictionary", "RobinHoodDictionary.KeyCollection", "RobinHoodDictionary.ValueCollection",
         "SmallDictionary", "SmallDictionary.KeyCollection", "SmallDictionary.ValueCollection",
         "SlotMap", "SlotMap.KeyCollection", "SlotMap.ValueCollection",

@@ -363,6 +363,15 @@ public class DictionaryInterfaceTests
         AssertIDictionaryContract(subject, IntKeys, Values, absentKey: 99, absentValue: "omega");
     }
 
+    // RankedDictionary declares IDictionary<,> from the start, as BTreeDictionary does.
+    [Fact]
+    public void RankedDictionary_ShouldHonourIDictionary()
+    {
+        IDictionary<int, string?> subject = new RankedDictionary<int, string>();
+
+        AssertIDictionaryContract(subject, IntKeys, Values, absentKey: 99, absentValue: "omega");
+    }
+
     // ---------------- string keys, the shape the issue calls out ----------------
 
     [Fact]

@@ -9469,6 +9469,131 @@ foreach (int score in top.EnumerateRange(1000, 2000))
 }
 ```
 
+## RankedDictionary&lt;TKey, TValue, TComparer&gt;
+
+```csharp
+public class RankedDictionary<TKey, TValue, TComparer>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
+    where TComparer : struct, IComparer<TKey>
+
+// Ordered by Comparer<TKey>.Default:
+public class RankedDictionary<TKey, TValue> : RankedDictionary<TKey, TValue, DefaultComparer<TKey>>
+```
+
+An **order-statistics dictionary**: the map counterpart of [`RankedSet`](#rankedsett-tcomparer). It has the ordered map surface of [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer) (bounds, `EnumerateRange`, `Min` / `Max`, struct `Keys` / `Values` views), plus the two positional questions: *where does this key rank?* (`IndexOfKey`, or `CountLessThan` for a key that may be absent) and *which entry is k-th?* (`GetKeyAtIndex`, `GetValueAtIndex`, `GetEntryAtIndex`). Both are `O(log n)` on a map that is still being inserted into and removed from. The positional names are `SortedList<TKey, TValue>`'s, so code written against that type moves over with few changes.
+
+### The gap it fills
+
+| The BCL answer | Insert / remove | Rank of a key | Entry at rank k |
+| --- | --- | --- | --- |
+| `SortedDictionary<TKey, TValue>` | `O(log n)` | none: a walk, `O(n)` | none: `ElementAt(k)`, `O(k)` |
+| `SortedList<TKey, TValue>` | `O(n)` memmove of two arrays | `O(log n)` (`IndexOfKey`) | `O(1)` |
+| `RankedDictionary<TKey, TValue, TComparer>` | `O(√n)` memmove of one bucket | `O(log n)` | `O(log n)` |
+
+The workloads are the ones `RankedSet` serves where each key carries a payload: a live leaderboard keyed by score that reports a player's rank and who holds a given place, an order book that reads its k-th price level and the size resting there, a time-keyed window that reads its median entry.
+
+### How it is laid out
+
+`RankedSet`'s layout, with a value array beside each bucket's key array: sorted buckets of `Θ(√n)` capacity (never below 512) and a Fenwick tree over the bucket lengths. See [how RankedSet is laid out](#layout-rankedset) for the capacity rule, the cost table and the high-water caveat. All three apply unchanged, and `TrimExcess()` is the remedy after a sharp contraction. A lookup searches only key arrays; the value array is touched only to read or write the matching value, or by the same memmove that shifts the keys.
+
+| | |
+| --- | --- |
+| `TryGetValue`, `ContainsKey`, the indexer getter, `IndexOfKey`, `CountLessThan`, `CountLessThanOrEqual`, the bounds, `GetKeyAtIndex` / `GetValueAtIndex` / `GetEntryAtIndex` | `O(log n)` |
+| An overwrite: the indexer setter on an existing key, `SetValueAtIndex` | `O(log n)` |
+| `Add`, `TryAdd`, the indexer setter on a new key, `Remove`, `RemoveAt` | **`O(√n)`**: a memmove of at most one bucket's keys and the same span of its values |
+| `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)` |
+
+### When to choose it — and when not to
+
+Use it when the positional questions are asked of a map that changes. Use [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer) when they are never asked: its mutations are `O(log n)`. Use `SortedList<TKey, TValue>` when the map is built once and then only queried, because its `O(1)` select cannot be beaten. Use a hash dictionary when order is not part of the question.
+
+<a id="measured-rankeddictionary"></a>
+
+### Measured
+
+A local run on an Apple M-series machine on .NET 10 (BenchmarkDotNet's default job), with `int` keys inserted in shuffled order. The ratios are *this type against that arm*, so above 1 means this type is faster. CI's series is on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedDictionary), and that series is the contract.
+
+| Group | vs `SortedList` @100k | vs `SortedList` @1k |
+| --- | ---: | ---: |
+| **Mixed** (a key removed and re-inserted, then a rank and a select, per step) | **94x** | **1.40x** |
+| **Remove** | **30.4x** | 1.15x |
+| **Add** | **27.7x** | 1.10x |
+| Rank (`IndexOfKey`) | 1.16x | 1.04x |
+| Lookup (`TryGetValue`) | 1.15x | 1.05x |
+| RangeScan | ⚠️ 0.80x | 1.10x |
+| Select (`GetValueAtIndex`) | ⚠️ **0.10x** | ⚠️ 0.35x |
+
+The pre-registered bar was 5x `SortedList` on `Mixed` at 100,000 entries; it measured **94x**. On the same workload `SortedDictionary`, which has to walk the tree for both queries, is **6,650x** slower than this type at 100,000 and 44x at 1,000. `Add` at 100,000 also allocates about half what `SortedList` does (1.09 MB against 2.10 MB), because `SortedList` doubles two arrays.
+
+⚠️ **Select is an outright loss.** `SortedList` reads the k-th value with one array index; this type does a Fenwick descent first, which is 9.7x slower at 100,000 entries and 2.8x slower at 1,000. The range scan also loses at 100,000 (0.80x), because `SortedList` walks one array and this type crosses bucket boundaries. If the map is built once and only queried, use `SortedList`. At 1,000 entries everything fits in cache and the two are close everywhere except select.
+
+### Constructors
+
+```csharp
+public RankedDictionary()
+public RankedDictionary(TComparer comparer)
+public RankedDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source)
+public RankedDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source, TComparer comparer)
+```
+
+There is no capacity and no load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and `ArgumentException` on a duplicate key, as `BTreeDictionary`'s do.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `TComparer Comparer { get; }` | Entry count; the comparer defining the key order. |
+| `TValue this[TKey key] { get; set; }` | Lookup, `O(log n)`; throws `KeyNotFoundException` when the key is absent. The setter inserts (`O(√n)`) or overwrites in place (`O(log n)`). |
+| `KeyCollection Keys` / `ValueCollection Values` | Allocation-free struct views in key order. Read-only `ICollection<T>`s: their mutators throw `NotSupportedException`. |
+| `void Add(TKey key, TValue? value)` / `bool TryAdd(TKey key, TValue? value)` | Insert, `O(√n)`. `Add` throws `ArgumentException` on a duplicate key; `TryAdd` returns `false` and leaves the entry untouched. |
+| `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | `O(log n)`. |
+| `bool ContainsValue(TValue? value)` | `O(n)` scan with `EqualityComparer<TValue>.Default`. |
+| `int IndexOfKey(TKey key)` | The rank of `key`, `O(log n)`, or `-1` when it is absent. |
+| `int CountLessThan(TKey key)` / `int CountLessThanOrEqual(TKey key)` | The rank `key` *would* occupy, whether or not it is present. |
+| `TKey GetKeyAtIndex(int index)` / `TValue? GetValueAtIndex(int index)` | The key or value of the entry at rank `index`, `O(log n)`. |
+| `KeyValuePair<TKey, TValue?> GetEntryAtIndex(int index)` | The whole entry at rank `index` in one descent. |
+| `void SetValueAtIndex(int index, TValue? value)` | Overwrite the value at rank `index`, `O(log n)`. Not a structural change, so it does not invalidate enumerators. |
+| `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` | `O(√n)`; the second form returns the removed value. |
+| `void RemoveAt(int index)` | Remove by rank, `O(√n)`. |
+| `void Clear()` | Drop every entry and release every bucket array. |
+| `void TrimExcess()` | Rebuild at the capacity the *current* count calls for, `O(n)`, packing buckets three-quarters full. Invalidates active enumerators. |
+| `KeyValuePair<TKey, TValue?> Min { get; }` / `Max { get; }` | First / last entry, `O(1)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out …)` / `TryGetMax(out …)` | The non-throwing forms. |
+| `bool TryGetLowerBound(TKey key, out …)` / `TryGetUpperBound(TKey key, out …)` | First entry whose key is **≥** / **>** `key`, `O(log n)`. |
+| `RangeEnumerable EnumerateRange(TKey fromInclusive, TKey toExclusive)` | The entries of the half-open key range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `void CopyTo(KeyValuePair<TKey, TValue?>[] array, int arrayIndex)` | Copy every entry in key order. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in key order. |
+
+Every positional member throws `ArgumentOutOfRangeException` for an `index` outside `[0, Count)`. Key identity is `TComparer`'s: two keys are the same key when the comparer orders them equal. Under `DefaultComparer<TKey>` a `null` key is an ordinary key that orders first, which `SortedDictionary` rejects. A value-type `default(TKey)` sorts wherever the comparer puts it; there is no out-of-band slot as in the hash family. An overwrite of an existing key's value does not invalidate enumerators, matching `Dictionary<TKey, TValue>`. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Leaderboard: score -> player. Scores are distinct keys here; for tied scores, key by (score, playerId).
+var board = new RankedDictionary<int, string>();
+board[120] = "ada";
+board[340] = "brian";
+board[90]  = "cleo";
+board[500] = "dmitri";
+
+Console.WriteLine(board.GetValueAtIndex(board.Count - 1)); // dmitri, the top score
+Console.WriteLine(board.IndexOfKey(340));                  // 2, two scores below it
+Console.WriteLine(board.CountLessThan(300));               // 2, the rank 300 would take
+Console.WriteLine(board.GetEntryAtIndex(board.Count / 2)); // [340, brian], the median entry
+
+// A score changes: remove the old key and insert the new one, O(√n) each.
+board.Remove(120, out string? player);
+board[410] = player!;
+
+board.RemoveAt(0);                                         // drop the lowest score, by rank
+foreach (var (score, name) in board.EnumerateRange(300, 450))
+{
+    Console.WriteLine($"{score}: {name}");                 // 340: brian, 410: ada
+}
+```
+
 ## RankedMultiSet&lt;T, TComparer&gt;
 
 ```csharp

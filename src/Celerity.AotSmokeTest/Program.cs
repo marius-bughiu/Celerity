@@ -1959,6 +1959,39 @@ void Check(bool condition, string message)
     Check(descendingRanked[0] == 99 && descendingRanked.IndexOf(0) == 99, "RankedSet custom struct comparer order");
 }
 
+// RankedDictionary — RankedSet's layout with a value array beside each bucket. What ILC has to get right on
+// top of the rank surface is the two parallel memmoves: every split, merge and TrimExcess must move a value
+// with its key, so each check below reads the value at a rank, not only the key.
+{
+    var board = new RankedDictionary<int, string>();
+    for (int i = 1499; i >= 0; i--) board.Add(i, "p" + i);
+    Check(board.Count == 1500 && board.Min.Key == 0 && board.Max.Value == "p1499", "RankedDictionary fill across splits");
+    Check(board.GetKeyAtIndex(749) == 749 && board.GetValueAtIndex(749) == "p749", "RankedDictionary select by rank");
+    Check(board.IndexOfKey(1234) == 1234 && board.IndexOfKey(5000) == -1, "RankedDictionary rank of a key");
+    Check(board.CountLessThan(700) == 700 && board.CountLessThanOrEqual(700) == 701, "RankedDictionary counts");
+
+    board.SetValueAtIndex(10, "ten");
+    board[11] = "eleven";
+    Check(board[10] == "ten" && board.GetEntryAtIndex(11).Value == "eleven", "RankedDictionary overwrite in place");
+
+    board.RemoveAt(0);
+    Check(board.Count == 1499 && board.GetEntryAtIndex(0).Key == 1, "RankedDictionary remove by rank");
+    Check(board.Remove(20, out string? gone) && gone == "p20" && !board.ContainsKey(20), "RankedDictionary remove with value");
+
+    var inRange = 0;
+    foreach (var entry in board.EnumerateRange(200, 260)) inRange++;
+    Check(inRange == 60, "RankedDictionary range scan");
+
+    for (int i = 0; i < 1500; i++)
+        if (i % 500 != 0) board.Remove(i);
+    board.TrimExcess();
+    Check(board.Count == 2 && board.GetValueAtIndex(1) == "p1000", "RankedDictionary TrimExcess");
+
+    var descendingBoard = new RankedDictionary<int, int, DescendingIntComparer>();
+    for (int i = 0; i < 100; i++) descendingBoard.Add(i, -i);
+    Check(descendingBoard.GetKeyAtIndex(0) == 99 && descendingBoard.GetValueAtIndex(99) == 0, "RankedDictionary custom struct comparer order");
+}
+
 // RankedMultiSet — RankedSet's layout with duplicates kept. A run of equal values spanning several buckets
 // is what ILC has to get right here: the lower- and upper-bound descents, and the per-bucket run removal.
 {
