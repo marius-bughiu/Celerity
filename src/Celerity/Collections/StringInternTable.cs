@@ -160,23 +160,12 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     /// </returns>
     public string GetOrAdd(ReadOnlySpan<char> key)
     {
-        int index = Probe(key, out bool wasEmpty);
-        if (!wasEmpty)
-            return _slots[index]!;
+        string? interned = Probe(key, out int index);
+        if (interned is not null)
+            return interned;
 
         // The miss path is the only one that materializes a string.
-        string materialized = key.ToString();
-
-        if (_count >= _threshold)
-        {
-            Resize();
-            index = Probe(key, out _);
-        }
-
-        _slots[index] = materialized;
-        _count++;
-        _version++;
-        return materialized;
+        return AddSlow(key, index);
     }
 
     /// <summary>
@@ -199,20 +188,11 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     {
         ArgumentNullException.ThrowIfNull(key);
 
-        int index = Probe(key.AsSpan(), out bool wasEmpty);
-        if (!wasEmpty)
-            return _slots[index]!;
+        string? interned = Probe(key.AsSpan(), out int index);
+        if (interned is not null)
+            return interned;
 
-        if (_count >= _threshold)
-        {
-            Resize();
-            index = Probe(key.AsSpan(), out _);
-        }
-
-        _slots[index] = key;
-        _count++;
-        _version++;
-        return key;
+        return _count < _threshold ? Store(key, index) : GrowAndStore(key);
     }
 
     /// <summary>
@@ -226,15 +206,8 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     /// <returns><c>true</c> if the contents were already interned; otherwise <c>false</c>.</returns>
     public bool TryGet(ReadOnlySpan<char> key, out string? value)
     {
-        int index = Probe(key, out bool wasEmpty);
-        if (wasEmpty)
-        {
-            value = null;
-            return false;
-        }
-
-        value = _slots[index];
-        return true;
+        value = Probe(key, out _);
+        return value is not null;
     }
 
     /// <summary>
@@ -242,11 +215,7 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
     /// </summary>
     /// <param name="key">The characters to look up. An empty span means <c>""</c>.</param>
     /// <returns><c>true</c> if the contents are present; otherwise <c>false</c>.</returns>
-    public bool Contains(ReadOnlySpan<char> key)
-    {
-        Probe(key, out bool wasEmpty);
-        return !wasEmpty;
-    }
+    public bool Contains(ReadOnlySpan<char> key) => Probe(key, out _) is not null;
 
     /// <summary>
     /// Determines whether <paramref name="key"/>'s contents are already interned.
@@ -356,27 +325,64 @@ public class StringInternTable<THasher> : IReadOnlyCollection<string>
         public void Dispose() { }
     }
 
-    // Returns the slot the characters belong in. wasEmpty is true when the slot is vacant
-    // (a miss — the caller may write there) and false when it already holds a string with
-    // these contents. A vacant slot always exists because the load factor is < 1.
+    // Returns the interned string with these contents, or null on a miss. Either way index is the
+    // slot the characters belong in; on a miss it is vacant, and the caller may write there. A
+    // vacant slot always exists because the load factor is < 1. Returning the string itself spares
+    // a hit from reading its slot back.
     //
     // The probe walks _slots via Unsafe.Add against a base reference taken at the top, so
     // per-iteration bounds checks disappear; the bound is structural (mask = length - 1).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int Probe(ReadOnlySpan<char> key, out bool wasEmpty)
+    private string? Probe(ReadOnlySpan<char> key, out int index)
     {
         string?[] slots = _slots;
         ref string? slotsRef = ref MemoryMarshal.GetArrayDataReference(slots);
         int mask = slots.Length - 1;
-        int index = _hasher.Hash(key) & mask;
+        int i = _hasher.Hash(key) & mask;
 
         while (true)
         {
-            string? slot = Unsafe.Add(ref slotsRef, (nint)(uint)index);
-            if (slot is null) { wasEmpty = true; return index; }
-            if (key.SequenceEqual(slot.AsSpan())) { wasEmpty = false; return index; }
-            index = (index + 1) & mask;
+            string? slot = Unsafe.Add(ref slotsRef, (nint)(uint)i);
+            if (slot is null) { index = i; return null; }
+            if (key.SequenceEqual(slot.AsSpan())) { index = i; return slot; }
+            i = (i + 1) & mask;
         }
+    }
+
+    // Stores value, whose contents Probe just reported absent, in the vacant slot index it returned.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private string Store(string value, int index)
+    {
+        _slots[index] = value;
+        _count++;
+        _version++;
+        return value;
+    }
+
+    // An insert that crosses the load factor. Growing moves every entry, so the slot is probed for again.
+    //
+    // Kept out of line so that a hit inlines exactly one Probe. The JIT inlines Probe into GetOrAdd, with as
+    // much of the hasher as its inlining budget allows, and can inline GetOrAdd into a caller's loop. A
+    // post-resize re-probe inlined there doubles the probe code at every call site, and the register
+    // pressure that comes with it spills the hit path's values to the stack.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string GrowAndStore(string value)
+    {
+        Resize();
+        Probe(value.AsSpan(), out int index);
+        return Store(value, index);
+    }
+
+    // GetOrAdd(ReadOnlySpan<char>)'s miss: materialize the string, then store it. Done inline in GetOrAdd,
+    // the ToString call added stack traffic to hits (ARM64, .NET 10). GetOrAdd's own body stored and
+    // reloaded the key span on every call. Inlined into a caller's loop, it could spill the span or the
+    // probe index. Out here a miss pays one more call instead, and none of GetOrAdd's own values are live
+    // across it.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string AddSlow(ReadOnlySpan<char> key, int index)
+    {
+        string value = key.ToString();
+        return _count < _threshold ? Store(value, index) : GrowAndStore(value);
     }
 
     // Rehashes every interned string into a table of twice the size. Entries are known to be
