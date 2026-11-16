@@ -383,8 +383,8 @@ public class RankedSet<T, TComparer> : ISet<T>, IReadOnlySet<T>, IReadOnlyList<T
 
     /// <summary>
     /// Removes the element at <paramref name="index"/> in ascending order, in <c>O(√n)</c> — finding it is
-    /// <c>O(log n)</c> and the removal shifts at most one bucket. No BCL sorted set offers removal by rank;
-    /// <see cref="SortedList{TKey, TValue}.RemoveAt"/> does it for a map, in <c>O(n)</c>.
+    /// <c>O(log n)</c> and the removal shifts at most one bucket. No BCL sorted set has a <c>RemoveAt</c>;
+    /// <see cref="SortedList{TKey, TValue}.RemoveAt"/> removes by rank from a map, in <c>O(n)</c>.
     /// </summary>
     /// <param name="index">The zero-based rank of the element to remove.</param>
     /// <exception cref="ArgumentOutOfRangeException">

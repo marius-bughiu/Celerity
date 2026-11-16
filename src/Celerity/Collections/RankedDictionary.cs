@@ -32,12 +32,13 @@ public class RankedDictionary<TKey, TValue> : RankedDictionary<TKey, TValue, Def
 }
 
 /// <summary>
-/// An <b>order-statistics dictionary</b>: a sorted map that also answers the two positional questions no BCL
-/// ordered map answers cheaply — <i>where does this key rank?</i> (<see cref="IndexOfKey"/> for a key that is
-/// present, <see cref="CountLessThan"/> for the rank one <i>would</i> take) and <i>which entry is k-th?</i>
-/// (<see cref="GetKeyAtIndex"/>, <see cref="GetValueAtIndex"/>, <see cref="GetEntryAtIndex"/>) — in
-/// <c>O(log n)</c>, on a map that is still being inserted into and removed from. The map counterpart of
-/// <see cref="RankedSet{T, TComparer}"/>.
+/// An <b>order-statistics dictionary</b>: a sorted map that also answers the two positional questions
+/// <see cref="SortedDictionary{TKey, TValue}"/> cannot — <i>where does this key rank?</i> (<see cref="IndexOfKey"/>
+/// for a key that is present, <see cref="CountLessThan"/> for the rank one <i>would</i> take) and <i>which entry
+/// is k-th?</i> (<see cref="GetKeyAtIndex"/>, <see cref="GetValueAtIndex"/>, <see cref="GetEntryAtIndex"/>) — in
+/// <c>O(log n)</c>, on a map that is still being inserted into and removed from, where
+/// <see cref="SortedList{TKey, TValue}"/> answers them but pays <c>O(n)</c> per insert and remove. The map
+/// counterpart of <see cref="RankedSet{T, TComparer}"/>.
 /// </summary>
 /// <typeparam name="TKey">The key type, ordered by <typeparamref name="TComparer"/>.</typeparam>
 /// <typeparam name="TValue">The value type.</typeparam>
