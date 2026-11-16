@@ -40,7 +40,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Priority queues](docs/collections.md#priority-queues) | `IndexedPriorityQueue`, `MinMaxHeap`, `RadixHeap` |
 | [Prefix trees](docs/collections.md#prefix-trees) | `Trie`, `SuccinctTrie` |
 | [Span-keyed string lookups](docs/collections.md#span-keyed-string-lookups) | `StringInternTable` |
-| [Sorted collections](docs/collections.md#sorted-ordered-collections) | `BTreeDictionary`, `BTreeSet`, `RankedSet`, `RankedMultiSet`, `FrozenSortedSet`, `FrozenSortedMap` |
+| [Sorted collections](docs/collections.md#sorted-ordered-collections) | `BTreeDictionary`, `BTreeSet`, `RankedSet`, `RankedDictionary`, `RankedMultiSet`, `FrozenSortedSet`, `FrozenSortedMap` |
 | [Range aggregates](docs/collections.md#range-aggregates) | `FenwickTree`, `SegmentTree`, `SparseTable`, `WaveletTree` |
 | [Spatial & interval indexes](docs/collections.md#spatial--interval-indexes) | `KdTree`, `SpatialGrid`, `RTree`, `IntervalTree`, `RangeMap` |
 | [Graphs](docs/collections.md#graphs) | `CompressedGraph` |

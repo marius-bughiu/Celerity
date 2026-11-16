@@ -915,4 +915,46 @@ public class TryAddDuplicateResizeTests
 
         Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
     }
+
+    // RankedDictionary shares RankedSet's bucket layout, so its boundary is the same 512-key bucket: a duplicate
+    // TryAdd into a full bucket must not split it or bump the version, and the indexer overwrite of an existing
+    // key is the same non-structural write, while a new key at that point splits and invalidates.
+
+    [Fact]
+    public void RankedDictionary_TryAdd_DuplicateAtBucketCapacity_KeepsEnumeratorValid()
+    {
+        var map = new RankedDictionary<int, int>();
+        for (int i = 0; i < 512; i++)
+            map.Add(i, i * 10); // the single bucket is now exactly full
+
+        var enumerator = map.GetEnumerator();
+        var seen = new List<int>();
+        Assert.True(enumerator.MoveNext());
+        seen.Add(enumerator.Current.Key);
+
+        Assert.False(map.TryAdd(2, 99));
+        map[3] = 31;
+
+        while (enumerator.MoveNext())
+            seen.Add(enumerator.Current.Key);
+
+        Assert.Equal(Enumerable.Range(0, 512), seen);
+        Assert.Equal(20, map[2]);
+        Assert.Equal(31, map[3]);
+    }
+
+    [Fact]
+    public void RankedDictionary_TryAdd_NewKeyAtBucketCapacity_InvalidatesEnumerator()
+    {
+        var map = new RankedDictionary<int, int>();
+        for (int i = 0; i < 512; i++)
+            map.Add(i, i * 10); // the next new key splits the bucket
+
+        var enumerator = map.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        Assert.True(map.TryAdd(1000, 1));
+
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
 }

@@ -47,8 +47,8 @@ public static class FastUtils
     /// that point computes <c>2^31</c>, which overflows a signed <see cref="int"/> to a
     /// negative value and corrupts the slot mask (<c>newSize - 1</c>); this method fails fast
     /// with a clear error instead. The non-throwing <see cref="TryDoubleCapacity"/> is the
-    /// loop-friendly sibling used by the frozen-collection build search, which probes a series
-    /// of candidate sizes and must stop cleanly at the ceiling rather than throw.
+    /// loop-friendly sibling for code that probes a series of candidate sizes and must stop
+    /// cleanly at the ceiling rather than throw.
     /// </summary>
     /// <param name="currentCapacity">The current power-of-two capacity to double.</param>
     /// <returns><c>currentCapacity * 2</c>.</returns>
@@ -117,9 +117,9 @@ public static class FastUtils
     /// when the table has already reached <see cref="MaxPowerOfTwoCapacity"/> (the largest
     /// power of two representable as a signed <see cref="int"/>). This is the non-throwing
     /// counterpart of <see cref="DoubleCapacity"/>, intended for loops that probe a sequence of
-    /// candidate sizes and need to halt cleanly at the ceiling — for example the frozen
-    /// collections' perfect-hash build search. Using a bare <c>size &lt;&lt;= 1</c> there is
-    /// unsafe: once <c>size</c> reaches <c>2^30</c> the shift wraps to a negative value that
+    /// candidate sizes and need to halt cleanly at the ceiling. Using a bare
+    /// <c>size &lt;&lt;= 1</c> in such a loop is unsafe: once <c>size</c> reaches <c>2^30</c> the
+    /// shift wraps to a negative value that
     /// still passes a <c>size &lt;= 2^30</c> guard, so the next iteration allocates a
     /// negative-length array and throws <see cref="OverflowException"/>.
     /// </summary>

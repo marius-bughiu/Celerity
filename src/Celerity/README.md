@@ -37,7 +37,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Priority queues](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#priority-queues) | `IndexedPriorityQueue`, `MinMaxHeap`, `RadixHeap` |
 | [Prefix trees](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#prefix-trees) | `Trie`, `SuccinctTrie` |
 | [Span-keyed string lookups](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#span-keyed-string-lookups) | `StringInternTable` |
-| [Sorted collections](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sorted-ordered-collections) | `BTreeDictionary`, `BTreeSet`, `RankedSet`, `RankedMultiSet`, `FrozenSortedSet`, `FrozenSortedMap` |
+| [Sorted collections](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sorted-ordered-collections) | `BTreeDictionary`, `BTreeSet`, `RankedSet`, `RankedDictionary`, `RankedMultiSet`, `FrozenSortedSet`, `FrozenSortedMap` |
 | [Range aggregates](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#range-aggregates) | `FenwickTree`, `SegmentTree`, `SparseTable`, `WaveletTree` |
 | [Spatial & interval indexes](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#spatial--interval-indexes) | `KdTree`, `SpatialGrid`, `RTree`, `IntervalTree`, `RangeMap` |
 | [Graphs](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#graphs) | `CompressedGraph` |

@@ -436,6 +436,7 @@
     { key: 'BTreeDictionary',     title: 'BTreeDictionary<int, int>',             vs: 'SortedDictionary<int, int>' },
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                         vs: 'SortedSet<int>' },
     { key: 'RankedSet',           title: 'RankedSet<int>',                        vs: 'SortedSet<int>' },
+    { key: 'RankedDictionary',    title: 'RankedDictionary<int, int>',            vs: 'SortedList<int, int>' },
     { key: 'RankedMultiSet',      title: 'RankedMultiSet<int>',                   vs: 'SortedSet<(int, long)>' },
     { key: 'WaveletTree',         title: 'WaveletTree',                           vs: 'int[] sort / count loop', items: [1024, 1000000] },
     { key: 'EliasFanoSequence',   title: 'EliasFanoSequence',                     vs: 'long[]', items: [1024, 1000000] },
@@ -460,7 +461,7 @@
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----

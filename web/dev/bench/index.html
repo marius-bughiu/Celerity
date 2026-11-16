@@ -662,6 +662,10 @@ function escapeHtml(s) {
     // same benchmark carry their own op names (SelectByIndex, RankBinarySearch, ...) so they stay out of
     // these buckets and each card still resolves to exactly one BCL and one Celerity measurement.
     { key: 'RankedSet',           title: 'RankedSet<int>',                           vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Select', 'Rank', 'Mixed'] },
+    // RankedDictionary is RankedSet's map sibling. Its cards pair it against SortedList<int, int>, the one BCL map
+    // with the same positional surface (IndexOfKey, GetValueAtIndex); the SortedDictionary arm in the Mixed
+    // group carries its own op name (MixedTreeWalk) so it stays out of these buckets.
+    { key: 'RankedDictionary',    title: 'RankedDictionary<int, int>',               vs: 'SortedList<int, int>',  ops: ['Add', 'Lookup', 'Remove', 'RangeScan', 'Select', 'Rank', 'Mixed'] },
     // RankedMultiSet is RankedSet with duplicates kept. Its BCL arm is the usual tie-break workaround,
     // SortedSet<(int, long Seq)>; the sorted List<int> arms carry their own op names, as in RankedSet's.
     { key: 'RankedMultiSet',      title: 'RankedMultiSet<int>',                      vs: 'SortedSet<(int, long)>', ops: ['Add', 'Remove', 'Select', 'Rank', 'CountOf', 'Mixed'] },
@@ -741,7 +745,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

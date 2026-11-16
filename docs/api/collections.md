@@ -1571,10 +1571,43 @@ use the [generic overload](#frozenceleritydictionarytvalue-thasher) to supply a
 different string hasher.
 
 The dictionary is **immutable**: every key/value pair is supplied at construction and
-there are no mutating members. In exchange the constructor searches a small parameter
-space (table size × a mixing seed) for a **perfect** — collision-free — placement of
-the keys. When one is found, a lookup is a single hash, a single array index, and a
-single equality check: no probing, no probe chains.
+there are no mutating members. The constructor first searches a small parameter space
+(table size × a mixing seed) for a **perfect** — collision-free — placement of the keys.
+When one is found, a lookup is a single hash, a single array index, and a single
+equality check. That is realistic only for small key sets: near-certain up to about 100
+keys, a matter of odds for most counts up to 333, and nil past that (see
+[below](#frozenceleritydictionary-perfect-hash-fallback)). Other sets go into a
+linear-probing table kept at most half full, where a hit inspects at most about 1.5 slots
+on average.
+
+**Against `FrozenDictionary`, it looks most keys up slower, and builds faster mainly for large
+key sets.** On the
+`FrozenCelerityDictionaryBenchmark` keys (identifier-shaped, about 30 characters; Apple M4,
+.NET 10, default job):
+
+| Card | 1,000 keys | 100,000 keys |
+|---|---|---|
+| Build | 1.76x faster (37 µs vs 65 µs) | 1.76x faster (6.1 ms vs 10.8 ms) |
+| Lookup | 5.63x slower | 3.50x slower |
+| Span lookup, against `GetAlternateLookup<ReadOnlySpan<char>>()` | 3.39x slower | 2.52x slower |
+
+Both of those builds skip the perfect-hash search. Most smaller sets run it, every count up
+to 235 keys and from 257 to 333, and build slower than `FrozenDictionary`'s: up to about 5x
+slower from 16 keys up, at most about 45 µs, and 1.8 µs against 0.2 µs for 8 keys (a
+Stopwatch loop on the same machine). From 236 to 256 keys no table size is plausible, so the
+search is skipped and the build is about 3x faster.
+
+`FrozenDictionary` spends build time finding a short substring that tells the keys apart,
+then hashes only that substring on each lookup. This type hashes the whole key with its
+hasher on every lookup, so the hasher sets most of the cost; the default
+`StringFnV1AHasher` takes one character per step. Pick this type for a hasher you choose
+(`<TValue, THasher>`), for a `null` key, to have duplicate keys rejected, or for a cheaper
+build of a large key set; for the fastest reads, `FrozenDictionary` is the better choice.
+On an Apple M4 the exception was successful lookups of short keys:
+`FrozenCelerityDictionary<TValue, StringCityHash64Hasher>` found keys of up to about 16
+characters as fast or faster, and this type found 3-character keys faster, but
+`FrozenDictionary` still answered misses 1.3–1.6x faster (see the
+[measurements by key length](#frozenceleritydictionarytvalue-thasher)).
 
 ### Constructors
 
@@ -1600,7 +1633,7 @@ empty string `""` is an ordinary key.
 | Member | Description |
 |---|---|
 | `int Count` | Number of pairs, including the out-of-band `null`-key entry if present. |
-| `bool IsPerfectlyHashed` | `true` when the build found a collision-free placement, so lookups take the single-probe fast path. `false` means it fell back to linear probing (see below). |
+| `bool IsPerfectlyHashed` | `true` when the build found a collision-free placement, so lookups take the single-probe fast path. `false` means it uses the half-full linear-probing table instead (see below): always past 333 keys. |
 
 ### Indexer
 
@@ -1622,17 +1655,31 @@ Get-only. Throws `KeyNotFoundException` if the key is absent.
 
 Implements `IReadOnlyDictionary<string, TValue?>`.
 
+<a id="frozenceleritydictionary-perfect-hash-fallback"></a>
+
 ### The perfect-hash fast path and the fallback
 
-A perfect (single-probe) placement is impossible when two distinct keys collide on the
-chosen hasher's raw 32-bit hash code — for example `"A"` and `"Ł"` under the low-byte
-`StringFnV1AHasher`, which returns the same code for both — because the mixing seed is a
-pure function of that code and so cannot separate them. In that case the build falls
-back to an open-addressed linear-probing table (`IsPerfectlyHashed` is then `false`).
-**Lookups are always correct either way** — the equality check disambiguates colliding
-keys — they simply cost a short probe instead of a single index. Supply a full-width or
-strong hasher (`StringFnV1AFullHasher`, `StringMurmur3Hasher`, …) via the generic
-overload if you want the perfect fast path for keys the default collides.
+A perfect placement puts every key in its own slot through one seeded mix of its hash
+code. For one seed, `n` keys land collision-free in `m` slots with probability at most
+`e^(−n(n−1)/2m)` (the birthday bound), so it takes a table that grows with `n²`. The
+search tries table sizes from `NextPowerOfTwo(n)` up to eight times that, so the odds
+depend on where `n` falls between two powers of two. A perfect placement is near-certain
+up to about 100 keys; above that the odds fall toward each power of two and recover just
+past it: about 12% at 128 keys but nearly certain at 129, 85% at 150, 2% at 200 and 13% at
+257. From 236 to 256 keys, and past 333, no seed has a realistic chance, and the build
+skips the search. A
+perfect placement is also impossible
+when two distinct keys collide on the chosen hasher's raw 32-bit hash code — for example
+`"A"` and `"Ł"` under the low-byte `StringFnV1AHasher`, which returns the same code for
+both — because every seed maps them alike.
+
+Otherwise the build uses an open-addressed linear-probing table at most half full
+(`IsPerfectlyHashed` is then `false`), where a hit inspects at most about 1.5 slots on
+average and a miss at most about 2.5. **Lookups are always correct either way**: the
+equality check
+tells colliding keys apart. A full-width or strong hasher (`StringFnV1AFullHasher`,
+`StringMurmur3Hasher`, …) restores the perfect fast path only for a small key set that
+the default collides; for a large set, `IsPerfectlyHashed` is `false` whatever the hasher.
 
 ### Null-key handling
 
@@ -1652,7 +1699,7 @@ var routes = new FrozenCelerityDictionary<int>(new[]
     new KeyValuePair<string, int>("/metrics", 2),
 });
 
-Console.WriteLine(routes.IsPerfectlyHashed);   // True (single-probe lookups)
+Console.WriteLine(routes.IsPerfectlyHashed);   // True (three keys: single-probe lookups)
 Console.WriteLine(routes["/health"]);          // 1
 Console.WriteLine(routes.ContainsKey("/nope")); // False
 
@@ -1670,9 +1717,38 @@ public class FrozenCelerityDictionary<TValue, THasher>
 The hasher-parameterized base type of
 [`FrozenCelerityDictionary<TValue>`](#frozenceleritydictionarytvalue). Identical API and
 semantics; the only difference is that you choose the string hasher used to build and
-probe the frozen table. Pick a full-width hasher (`StringFnV1AFullHasher`) for keys with
-non-ASCII content, or a strong hasher (`StringMurmur3Hasher`, `StringXxHash3Hasher`) when
-you want the perfect fast path for keys a cheaper hasher would collide.
+probe the frozen table. Every lookup hashes the whole key with it, so the hasher is the
+main lever on lookup speed, and which hasher is fastest depends on how long the keys are
+and on the CPU. The default `StringFnV1AHasher` folds the low byte of one character per
+step, so its cost grows with every character, while the block hashers read the key four or
+eight bytes at a time: `StringXxHash32Hasher` takes two characters per step, in four lanes
+from eight characters up. Nanoseconds per successful lookup over 1,000 random ASCII keys,
+probing with the stored strings themselves (Apple M4, .NET 10; a Stopwatch loop that
+interleaves the four; each cell is the median of three runs, each run in its own process):
+
+| Keys | `FrozenDictionary` | `StringFnV1AHasher` (default) | `StringXxHash32Hasher` | `StringCityHash64Hasher` |
+|---|---|---|---|---|
+| 3 characters | 3.6 | 2.5 | 3.6 | 2.7 |
+| 8 characters | 3.6 | 5.0 | 4.2 | 3.0 |
+| 16 characters | 3.8 | 12.0 | 5.8 | 3.7 |
+| 32 characters | 3.8 | 21.8 | 9.2 | 6.1 |
+| 48 characters | 3.9 | 33.5 | 13.2 | 13.7 |
+| 64 characters | 3.9 | 46.4 | 17.2 | 13.9 |
+| 5–10 characters | 4.1 | 4.2 | 4.3 | 3.0 |
+| 8–24 characters | 4.0 | 6.7 | 6.0 | 4.4 |
+| 20–40 characters | 3.9 | 16.9 | 8.9 | 8.4 |
+| 16–48 characters | 4.0 | 17.0 | 9.3 | 10.1 |
+
+On this machine `StringCityHash64Hasher` was the fastest hasher on keys of about 6 to 32
+characters and on every mixed-length set up to 32, and found keys of up to about 16
+characters as fast as `FrozenDictionary` or faster; misses, not in the table, took 1.3–1.6x
+longer than `FrozenDictionary`'s at those lengths. Past 32 characters it and
+`StringXxHash32Hasher` traded the lead, and on 3-character keys it was usually within 10% of
+the default while `StringXxHash32Hasher` trailed both by 1.2–1.5x. Other CPUs can rank the
+hashers differently, so time your own keys before you switch. Pick a full-width hasher
+(`StringFnV1AFullHasher`) for keys with non-ASCII content, or a strong hasher
+(`StringMurmur3Hasher`, `StringXxHash3Hasher`) when you want the perfect fast path for a
+small key set a cheaper hasher would collide.
 
 ```csharp
 using Celerity.Collections;
@@ -1701,10 +1777,17 @@ BCL `System.Collections.Frozen.FrozenSet<T>` but tunable through Celerity's
 [generic overload](#frozenceleritysetthasher) to supply a different string hasher.
 
 The set is **immutable**: every element is supplied at construction and there are no
-mutating members. In exchange the constructor searches a small parameter space (table
-size × a mixing seed) for a **perfect** — collision-free — placement of the elements.
-When one is found, a membership test is a single hash, a single array index, and a
-single equality check: no probing, no probe chains.
+mutating members. It shares `FrozenCelerityDictionary`'s layout: a **perfect** —
+collision-free — placement for small sets (near-certain up to about 100 elements, a
+matter of odds for most counts up to 333), where a membership test is a single hash, a
+single array index
+and a single equality check, and otherwise a linear-probing table at most half full.
+On the benchmark's ~30-character elements it answers `Contains` 4.1–6.1x slower than
+`FrozenSet<string>` at 1,000 to 100,000 elements, for the
+[same reason](#frozenceleritydictionarytvalue): it hashes the whole element. It builds
+1.75–1.86x faster at those sizes, and slower for most sets below 334
+elements, where it runs the perfect-hash search: up to about 5x slower from 16 elements up,
+and more for a handful (2.0 µs against 0.14 µs at 8).
 
 ### Constructors
 
@@ -1729,7 +1812,7 @@ out-of-band; the empty string `""` is an ordinary element.
 | Member | Description |
 |---|---|
 | `int Count` | Number of elements, including the out-of-band `null` element if present. |
-| `bool IsPerfectlyHashed` | `true` when the build found a collision-free placement, so membership tests take the single-probe fast path. `false` means it fell back to linear probing (see below). |
+| `bool IsPerfectlyHashed` | `true` when the build found a collision-free placement, so membership tests take the single-probe fast path. `false` means it uses the half-full linear-probing table instead (see below): always past 333 elements. |
 
 ### Methods
 
@@ -1748,16 +1831,14 @@ Streaming does not copy `other`, but obtaining its enumerator can still allocate
 
 ### The perfect-hash fast path and the fallback
 
-A perfect (single-probe) placement is impossible when two distinct elements collide on
-the chosen hasher's raw 32-bit hash code — for example `"A"` and `"Ł"` under the
-low-byte `StringFnV1AHasher`, which returns the same code for both — because the mixing
-seed is a pure function of that code and so cannot separate them. In that case the
-build falls back to an open-addressed linear-probing table (`IsPerfectlyHashed` is then
-`false`). **Membership tests are always correct either way** — the equality check
-disambiguates colliding elements — they simply cost a short probe instead of a single
-index. Supply a full-width or strong hasher (`StringFnV1AFullHasher`,
-`StringMurmur3Hasher`, …) via the generic overload if you want the perfect fast path
-for elements the default collides.
+The same as [`FrozenCelerityDictionary`'s](#frozenceleritydictionary-perfect-hash-fallback):
+a perfect placement is near-certain up to about 100 elements and a matter of odds for
+most counts up to 333; the build skips the search from 236 to 256 elements and past 333.
+Two distinct elements that collide on the
+hasher's raw 32-bit code (`"A"` and `"Ł"` under the low-byte `StringFnV1AHasher`) rule it
+out at any size. Otherwise the build uses an open-addressed linear-probing table at most half
+full (`IsPerfectlyHashed` is then `false`). **Membership tests are always correct either
+way**: the equality check tells colliding elements apart.
 
 ### Null-element handling
 
@@ -1775,7 +1856,7 @@ var reserved = new FrozenCeleritySet(new[]
     "select", "from", "where", "join", "group", "order",
 });
 
-Console.WriteLine(reserved.IsPerfectlyHashed);     // True (single-probe membership)
+Console.WriteLine(reserved.IsPerfectlyHashed);     // True (six elements: single-probe membership)
 Console.WriteLine(reserved.Contains("join"));      // True
 Console.WriteLine(reserved.Contains("celerity"));  // False
 Console.WriteLine(reserved.IsSupersetOf(new[] { "from", "where" })); // True
@@ -1793,10 +1874,15 @@ public class FrozenCeleritySet<THasher>
 
 The hasher-parameterized base type of [`FrozenCeleritySet`](#frozencelerityset).
 Identical API and semantics; the only difference is that you choose the string hasher
-used to build and probe the frozen table. Pick a full-width hasher
-(`StringFnV1AFullHasher`) for elements with non-ASCII content, or a strong hasher
-(`StringMurmur3Hasher`, `StringXxHash3Hasher`) when you want the perfect fast path for
-elements a cheaper hasher would collide.
+used to build and probe the frozen table. As for the dictionary, every membership test
+hashes the whole element, so the hasher is the main lever on its speed, and the
+[dictionary's measurements by key length](#frozenceleritydictionarytvalue-thasher) apply:
+there, on an Apple M4, `StringCityHash64Hasher` was the fastest hasher on keys of about 6 to
+32 characters and on every mixed-length set up to 32, and `StringXxHash32Hasher` trailed the
+default 1.2–1.5x on 3-character keys. Pick a full-width hasher (`StringFnV1AFullHasher`) for
+elements with non-ASCII content, or a strong hasher (`StringMurmur3Hasher`,
+`StringXxHash3Hasher`) when you want the perfect fast path for a small set a cheaper hasher
+would collide.
 
 ```csharp
 using Celerity.Collections;
@@ -6613,8 +6699,8 @@ and `TryGetKey` would also have to be added; neither is contentious, only unused
 
 ### When not to reach for it
 
-**If the map never changes after it is built, use `FrozenCelerityDictionary` or `Dictionary<,>`.** A
-build-once perfect-hash table answers a lookup in one probe and a `Dictionary<,>` in about one; this
+**If the map never changes after it is built, use `FrozenDictionary<,>`, `FrozenCelerityDictionary` or
+`Dictionary<,>`.** A frozen table or a `Dictionary<,>` answers a lookup in about one probe; this
 type pays a few array hops for the ability to produce an edited copy cheaply. It earns the trie only
 when the map is written to as well as read.
 
@@ -6863,9 +6949,9 @@ nothing it does not already do.
 
 ### When not to reach for it
 
-**If the set never changes after it is built, use `FrozenCeleritySet` (for strings) or `HashSet<T>`.**
-A perfect-hash table answers membership in one probe; this type pays a few array hops for the ability
-to produce an edited copy cheaply.
+**If the set never changes after it is built, use `FrozenSet<T>`, `FrozenCeleritySet` (for strings) or
+`HashSet<T>`.** A frozen table answers membership in about one probe; this type pays a few array hops
+for the ability to produce an edited copy cheaply.
 
 **If nobody holds an old version, use a mutable set.** Structural sharing buys nothing when there is
 nothing to share with, and every edit here allocates a root-to-leaf path where `CeleritySet` writes
@@ -8104,7 +8190,7 @@ The string-keyed collections below can be probed with a `ReadOnlySpan<char>` —
 
 Without them, a tokenizer, CSV / log reader, or route dispatcher holding a `ReadOnlySpan<char>` must call `new string(span)` to probe the collection: **one allocation plus a copy per lookup**, on the hot path of exactly the workloads these types exist for. The span overloads delete both. Nothing else changes — stored keys are compared ordinally against the span, which is what `EqualityComparer<string>.Default` does, so a span lookup and the equivalent string lookup always agree.
 
-> **Against the BCL's span probe.** `Dictionary<string, V>`, `HashSet<string>` and `FrozenDictionary<string, V>` probe with a span too, through `GetAlternateLookup<ReadOnlySpan<char>>()`, and every runtime Celerity targets has it. These overloads put the span probe on the collection itself; they do not make it cheaper than the BCL's. Measured against the alternate lookups (Apple Silicon, .NET 10, default BenchmarkDotNet job), at 1,000 and 100,000 keys: `FrozenCelerityDictionary` is 6.0x and 3.8x slower than `FrozenDictionary`, `Trie` 4.1x and 3.5x slower than `Dictionary`, and `SuccinctTrie` 21x and 20x slower. A span probe costs about what the same collection's `string` probe costs, so the overloads are for using these types without allocating, when you chose them for something else — prefix queries, ordered enumeration, a pluggable hasher — and not a reason to choose them.
+> **Against the BCL's span probe.** `Dictionary<string, V>`, `HashSet<string>` and `FrozenDictionary<string, V>` probe with a span too, through `GetAlternateLookup<ReadOnlySpan<char>>()`, and every runtime Celerity targets has it. These overloads put the span probe on the collection itself; they do not make it cheaper than the BCL's. Measured against the alternate lookups (Apple Silicon, .NET 10, default BenchmarkDotNet job), at 1,000 and 100,000 keys: `FrozenCelerityDictionary` is 3.4x and 2.5x slower than `FrozenDictionary`, `Trie` 4.1x and 3.5x slower than `Dictionary`, and `SuccinctTrie` 21x and 20x slower. A span probe costs about what the same collection's `string` probe costs, so the overloads are for using these types without allocating, when you chose them for something else — prefix queries, ordered enumeration, a pluggable hasher — and not a reason to choose them.
 
 ### How they are exposed
 
@@ -9624,6 +9710,131 @@ Console.WriteLine(top[top.Count - 10]);           // the tenth from the top
 foreach (int score in top.EnumerateRange(1000, 2000))
 {
     Process(score);
+}
+```
+
+## RankedDictionary&lt;TKey, TValue, TComparer&gt;
+
+```csharp
+public class RankedDictionary<TKey, TValue, TComparer>
+    : IDictionary<TKey, TValue?>, IReadOnlyDictionary<TKey, TValue?>
+    where TComparer : struct, IComparer<TKey>
+
+// Ordered by Comparer<TKey>.Default:
+public class RankedDictionary<TKey, TValue> : RankedDictionary<TKey, TValue, DefaultComparer<TKey>>
+```
+
+An **order-statistics dictionary**: the map counterpart of [`RankedSet`](#rankedsett-tcomparer). It has the ordered map surface of [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer) (bounds, `EnumerateRange`, `Min` / `Max`, struct `Keys` / `Values` views), plus the two positional questions: *where does this key rank?* (`IndexOfKey`, or `CountLessThan` for a key that may be absent) and *which entry is k-th?* (`GetKeyAtIndex`, `GetValueAtIndex`, `GetEntryAtIndex`). Both are `O(log n)` on a map that is still being inserted into and removed from. The positional names are `SortedList<TKey, TValue>`'s, so code written against that type moves over with few changes.
+
+### The gap it fills
+
+| The BCL answer | Insert / remove | Rank of a key | Entry at rank k |
+| --- | --- | --- | --- |
+| `SortedDictionary<TKey, TValue>` | `O(log n)` | none: a walk, `O(n)` | none: `ElementAt(k)`, `O(k)` |
+| `SortedList<TKey, TValue>` | `O(n)` memmove of two arrays | `O(log n)` (`IndexOfKey`) | `O(1)` |
+| `RankedDictionary<TKey, TValue, TComparer>` | `O(√n)` memmove of one bucket | `O(log n)` | `O(log n)` |
+
+The workloads are the ones `RankedSet` serves where each key carries a payload: a live leaderboard keyed by score that reports a player's rank and who holds a given place, an order book that reads its k-th price level and the size resting there, a time-keyed window that reads its median entry.
+
+### How it is laid out
+
+`RankedSet`'s layout, with a value array beside each bucket's key array: sorted buckets of `Θ(√n)` capacity (never below 512) and a Fenwick tree over the bucket lengths. See [how RankedSet is laid out](#layout-rankedset) for the capacity rule, the cost table and the high-water caveat. All three apply unchanged, and `TrimExcess()` is the remedy after a sharp contraction. A lookup searches only key arrays; the value array is touched only to read or write the matching value, or by the same memmove that shifts the keys.
+
+| | |
+| --- | --- |
+| `TryGetValue`, `ContainsKey`, the indexer getter, `IndexOfKey`, `CountLessThan`, `CountLessThanOrEqual`, the bounds, `GetKeyAtIndex` / `GetValueAtIndex` / `GetEntryAtIndex` | `O(log n)` |
+| An overwrite: the indexer setter on an existing key, `SetValueAtIndex` | `O(log n)` |
+| `Add`, `TryAdd`, the indexer setter on a new key, `Remove`, `RemoveAt` | **`O(√n)`**: a memmove of at most one bucket's keys and the same span of its values |
+| `EnumerateRange`, enumeration | `O(log n + k)` / `O(n)` |
+
+### When to choose it — and when not to
+
+Use it when the positional questions are asked of a map that changes. Use [`BTreeDictionary`](#btreedictionarytkey-tvalue-tcomparer) when they are never asked: its mutations are `O(log n)`. Use `SortedList<TKey, TValue>` when the map is built once and then only queried, because its `O(1)` select cannot be beaten. Use a hash dictionary when order is not part of the question.
+
+<a id="measured-rankeddictionary"></a>
+
+### Measured
+
+A local run on an Apple M-series machine on .NET 10 (BenchmarkDotNet's default job), with `int` keys inserted in shuffled order. The ratios are *this type against that arm*, so above 1 means this type is faster. CI's series is on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=RankedDictionary), and that series is the contract.
+
+| Group | vs `SortedList` @100k | vs `SortedList` @1k |
+| --- | ---: | ---: |
+| **Mixed** (a key removed and re-inserted, then a rank and a select, per step) | **94x** | **1.40x** |
+| **Remove** | **30.4x** | 1.15x |
+| **Add** | **27.7x** | 1.10x |
+| Rank (`IndexOfKey`) | 1.16x | 1.04x |
+| Lookup (`TryGetValue`) | 1.15x | 1.05x |
+| RangeScan | ⚠️ 0.80x | 1.10x |
+| Select (`GetValueAtIndex`) | ⚠️ **0.10x** | ⚠️ 0.35x |
+
+The pre-registered bar was 5x `SortedList` on `Mixed` at 100,000 entries; it measured **94x**. On the same workload `SortedDictionary`, which has to walk the tree for both queries, is **6,650x** slower than this type at 100,000 and 44x at 1,000. `Add` at 100,000 also allocates about half what `SortedList` does (1.09 MB against 2.10 MB), because `SortedList` doubles two arrays.
+
+⚠️ **Select is an outright loss.** `SortedList` reads the k-th value with one array index; this type does a Fenwick descent first, which is 9.7x slower at 100,000 entries and 2.8x slower at 1,000. The range scan also loses at 100,000 (0.80x), because `SortedList` walks one array and this type crosses bucket boundaries. If the map is built once and only queried, use `SortedList`. At 1,000 entries everything fits in cache and the two are close everywhere except select.
+
+### Constructors
+
+```csharp
+public RankedDictionary()
+public RankedDictionary(TComparer comparer)
+public RankedDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source)
+public RankedDictionary(IEnumerable<KeyValuePair<TKey, TValue>> source, TComparer comparer)
+```
+
+There is no capacity and no load factor. The `IEnumerable` overloads throw `ArgumentNullException` on a null source and `ArgumentException` on a duplicate key, as `BTreeDictionary`'s do.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` / `TComparer Comparer { get; }` | Entry count; the comparer defining the key order. |
+| `TValue this[TKey key] { get; set; }` | Lookup, `O(log n)`; throws `KeyNotFoundException` when the key is absent. The setter inserts (`O(√n)`) or overwrites in place (`O(log n)`). |
+| `KeyCollection Keys` / `ValueCollection Values` | Allocation-free struct views in key order. Read-only `ICollection<T>`s: their mutators throw `NotSupportedException`. |
+| `void Add(TKey key, TValue? value)` / `bool TryAdd(TKey key, TValue? value)` | Insert, `O(√n)`. `Add` throws `ArgumentException` on a duplicate key; `TryAdd` returns `false` and leaves the entry untouched. |
+| `bool TryGetValue(TKey key, out TValue? value)` / `bool ContainsKey(TKey key)` | `O(log n)`. |
+| `bool ContainsValue(TValue? value)` | `O(n)` scan with `EqualityComparer<TValue>.Default`. |
+| `int IndexOfKey(TKey key)` | The rank of `key`, `O(log n)`, or `-1` when it is absent. |
+| `int CountLessThan(TKey key)` / `int CountLessThanOrEqual(TKey key)` | The rank `key` *would* occupy, whether or not it is present. |
+| `TKey GetKeyAtIndex(int index)` / `TValue? GetValueAtIndex(int index)` | The key or value of the entry at rank `index`, `O(log n)`. |
+| `KeyValuePair<TKey, TValue?> GetEntryAtIndex(int index)` | The whole entry at rank `index` in one descent. |
+| `void SetValueAtIndex(int index, TValue? value)` | Overwrite the value at rank `index`, `O(log n)`. Not a structural change, so it does not invalidate enumerators. |
+| `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` | `O(√n)`; the second form returns the removed value. |
+| `void RemoveAt(int index)` | Remove by rank, `O(√n)`. |
+| `void Clear()` | Drop every entry and release every bucket array. |
+| `void TrimExcess()` | Rebuild at the capacity the *current* count calls for, `O(n)`, packing buckets three-quarters full. Invalidates active enumerators. |
+| `KeyValuePair<TKey, TValue?> Min { get; }` / `Max { get; }` | First / last entry, `O(1)`. Throws `InvalidOperationException` when empty. |
+| `bool TryGetMin(out …)` / `TryGetMax(out …)` | The non-throwing forms. |
+| `bool TryGetLowerBound(TKey key, out …)` / `TryGetUpperBound(TKey key, out …)` | First entry whose key is **≥** / **>** `key`, `O(log n)`. |
+| `RangeEnumerable EnumerateRange(TKey fromInclusive, TKey toExclusive)` | The entries of the half-open key range, ascending, in `O(log n + k)`. Throws `ArgumentException` when the bounds are inverted. |
+| `void CopyTo(KeyValuePair<TKey, TValue?>[] array, int arrayIndex)` | Copy every entry in key order. |
+| `Enumerator GetEnumerator()` | Allocation-free struct enumerator in key order. |
+
+Every positional member throws `ArgumentOutOfRangeException` for an `index` outside `[0, Count)`. Key identity is `TComparer`'s: two keys are the same key when the comparer orders them equal. Under `DefaultComparer<TKey>` a `null` key is an ordinary key that orders first, which `SortedDictionary` rejects. A value-type `default(TKey)` sorts wherever the comparer puts it; there is no out-of-band slot as in the hash family. An overwrite of an existing key's value does not invalidate enumerators, matching `Dictionary<TKey, TValue>`. Not thread-safe.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Leaderboard: score -> player. Scores are distinct keys here; for tied scores, key by (score, playerId).
+var board = new RankedDictionary<int, string>();
+board[120] = "ada";
+board[340] = "brian";
+board[90]  = "cleo";
+board[500] = "dmitri";
+
+Console.WriteLine(board.GetValueAtIndex(board.Count - 1)); // dmitri, the top score
+Console.WriteLine(board.IndexOfKey(340));                  // 2, two scores below it
+Console.WriteLine(board.CountLessThan(300));               // 2, the rank 300 would take
+Console.WriteLine(board.GetEntryAtIndex(board.Count / 2)); // [340, brian], the median entry
+
+// A score changes: remove the old key and insert the new one, O(√n) each.
+board.Remove(120, out string? player);
+board[410] = player!;
+
+board.RemoveAt(0);                                         // drop the lowest score, by rank
+foreach (var (score, name) in board.EnumerateRange(300, 450))
+{
+    Console.WriteLine($"{score}: {name}");                 // 340: brian, 410: ada
 }
 ```
 

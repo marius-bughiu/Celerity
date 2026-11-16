@@ -39,6 +39,44 @@ public class IndexerOverwriteEnumerationTests
     }
 
     [Fact]
+    public void RankedDictionary_OverwriteDuringEnumeration_DoesNotThrow()
+    {
+        var map = new RankedDictionary<int, int>();
+        map[0] = 100; // default (zero) key - an ordinary, order-first key here
+        map[1] = 10;
+        map[2] = 20;
+
+        AssertOverwriteAllowedAddRejected(
+            getEnumerator: () => map.GetEnumerator(),
+            overwriteExisting: () => map[1] = 11,
+            overwriteDefault: () => map[0] = 101,
+            addNewKey: () => map[99] = 990);
+
+        Assert.Equal(11, map[1]);
+        Assert.Equal(101, map[0]);
+    }
+
+    [Fact]
+    public void RankedDictionary_SetValueAtIndexDuringEnumeration_DoesNotThrow()
+    {
+        // The positional overwrite is the same non-structural write as the indexer's, so it must not
+        // invalidate an enumerator either.
+        var map = new RankedDictionary<int, int>();
+        map[0] = 100;
+        map[1] = 10;
+        map[2] = 20;
+
+        AssertOverwriteAllowedAddRejected(
+            getEnumerator: () => map.GetEnumerator(),
+            overwriteExisting: () => map.SetValueAtIndex(1, 11),
+            overwriteDefault: () => map.SetValueAtIndex(0, 101),
+            addNewKey: () => map[99] = 990);
+
+        Assert.Equal(11, map[1]);
+        Assert.Equal(101, map[0]);
+    }
+
+    [Fact]
     public void IntDictionary_OverwriteDuringEnumeration_DoesNotThrow()
     {
         var map = new IntDictionary<int>();

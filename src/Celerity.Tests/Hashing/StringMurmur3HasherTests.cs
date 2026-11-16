@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Numerics;
+using System.Text;
 using Celerity.Collections;
 using Celerity.Hashing;
 
@@ -6,6 +9,79 @@ namespace Celerity.Tests.Hashing;
 public class StringMurmur3HasherTests
 {
     private readonly StringMurmur3Hasher _hasher = new StringMurmur3Hasher();
+
+    private const uint C1 = 0xcc9e2d51u;
+    private const uint C2 = 0x1b873593u;
+
+    /// <summary>
+    /// Independent reference: canonical MurmurHash3 x86_32 (seed <c>0</c>) over the
+    /// BCL's little-endian UTF-16 encoding of the string. The hasher reads each 4-byte
+    /// block straight from the <c>char</c> span's memory; this reference goes through
+    /// <see cref="Encoding.Unicode"/>, reads blocks with
+    /// <see cref="BinaryPrimitives.ReadUInt32LittleEndian"/> and keeps the spec's
+    /// general 1–3-byte tail, so agreement pins the block order, the tail and the
+    /// finalizer without sharing the hasher's code.
+    /// </summary>
+    private static int ReferenceMurmur3Utf16(string s) =>
+        unchecked((int)Murmur3(Encoding.Unicode.GetBytes(s)));
+
+    private static uint Murmur3(byte[] data)
+    {
+        int blockCount = data.Length / 4;
+        uint h = 0;
+
+        for (int b = 0; b < blockCount; b++)
+        {
+            uint k = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(b * 4));
+            k *= C1;
+            k = BitOperations.RotateLeft(k, 15);
+            k *= C2;
+
+            h ^= k;
+            h = BitOperations.RotateLeft(h, 13);
+            h = (h * 5u) + 0xe6546b64u;
+        }
+
+        int tail = blockCount * 4;
+        uint t = 0;
+        switch (data.Length & 3)
+        {
+            case 3:
+                t ^= (uint)data[tail + 2] << 16;
+                goto case 2;
+            case 2:
+                t ^= (uint)data[tail + 1] << 8;
+                goto case 1;
+            case 1:
+                t ^= data[tail];
+                t *= C1;
+                t = BitOperations.RotateLeft(t, 15);
+                t *= C2;
+                h ^= t;
+                break;
+        }
+
+        h ^= (uint)data.Length;
+        h ^= h >> 16;
+        h *= 0x85ebca6bu;
+        h ^= h >> 13;
+        h *= 0xc2b2ae35u;
+        h ^= h >> 16;
+        return h;
+    }
+
+    // ── Reference anchors (published MurmurHash3 x86_32 vectors, seed 0) ───────
+    // Byte inputs rather than strings, so the reference is pinned to the spec on its
+    // own: the empty input, a single full block of zeros, and a 4-byte ASCII block.
+
+    [Theory]
+    [InlineData(new byte[0], 0x00000000u)]
+    [InlineData(new byte[] { 0, 0, 0, 0 }, 0x2362F9DEu)]
+    [InlineData(new byte[] { (byte)'t', (byte)'e', (byte)'s', (byte)'t' }, 0xBA6BD213u)]
+    public void Reference_MatchesPublishedMurmur3Vectors(byte[] input, uint expected)
+    {
+        Assert.Equal(expected, Murmur3(input));
+    }
 
     // ── Exact-value anchors ───────────────────────────────────────────────────
     // The empty string is the fixed point of fmix32 over a zero accumulator
@@ -25,6 +101,16 @@ public class StringMurmur3HasherTests
     public void Hash_ReturnsExpected(string input, int expected)
     {
         Assert.Equal(expected, _hasher.Hash(input));
+        Assert.Equal(expected, ReferenceMurmur3Utf16(input));
+    }
+
+    [Fact]
+    public void Hash_MatchesReference_AcrossTheSharedCorpus()
+    {
+        // Every length from 0 to 40 chars (both block parities, with and without the
+        // one-char tail), long inputs, and non-ASCII chars with the high byte set.
+        foreach (string s in HasherStringCorpus.Strings)
+            Assert.Equal(ReferenceMurmur3Utf16(s), _hasher.Hash(s));
     }
 
     // ── Determinism ───────────────────────────────────────────────────────────
