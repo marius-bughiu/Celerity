@@ -17,8 +17,9 @@ using Celerity.Hashing;
 /// seeded random order. Which of 64 tokens happen to share a slot is luck of the draw: a hasher's mean probe length
 /// varies widely from one vocabulary to the next, where the mean over many vocabularies is 1.47 for every hasher, and
 /// at tens of nanoseconds a probe that luck moves a single-vocabulary ratio by tens of percent. Sixteen vocabularies
-/// shrink it, but the seed is fixed, so every run on every platform repeats one draw, and in that draw two hashers'
-/// mean probe lengths still differ by up to about 10%: read a gap of under 10% between two hashers as unresolved.
+/// shrink it, but the seed is fixed, so every run on every platform repeats one draw, and in it two hashers' mean
+/// probe lengths can still differ by 10% or more in a cell: compare a gap between two hashers with their probe
+/// lengths before ranking them.
 /// Each table holds 64 tokens and so is half full; nearer its 0.75 load factor it visits more slots per hit, and that
 /// is not measured here. The random order keeps the branch predictor from learning the probe sequence, which a cyclic
 /// stream lets it do.
@@ -138,7 +139,8 @@ public class StringInternTableTokenLengthBenchmark
 
     // Each arm keeps its probe loop inline, as HashSet_Lookup does, rather than calling one shared generic helper. A
     // one-line arm that calls a helper is a tiny inline root, so the JIT inlines the helper and the hasher under it to
-    // a different depth per instantiation. In this benchmark that shape slowed StringXxHash3Hasher's arm by up to about 2x.
+    // a different depth per instantiation. In this benchmark that shape slowed StringXxHash3Hasher's arm by up to about 2x
+    // and the default's by up to about 1.6x.
     [Benchmark]
     public int StringInternTable_Lookup()
     {
