@@ -1743,7 +1743,7 @@ On this machine `StringCityHash64Hasher` was the fastest hasher on keys of about
 characters and on every mixed-length set up to 32, and found keys of up to about 16
 characters as fast as `FrozenDictionary` or faster; misses, not in the table, took 1.3–1.6x
 longer than `FrozenDictionary`'s at those lengths. Past 32 characters it and
-`StringXxHash32Hasher` traded the lead, and on 3-character keys it was within about 10% of
+`StringXxHash32Hasher` traded the lead, and on 3-character keys it was usually within 10% of
 the default while `StringXxHash32Hasher` trailed both by 1.2–1.5x. Other CPUs can rank the
 hashers differently, so time your own keys before you switch. Pick a full-width hasher
 (`StringFnV1AFullHasher`) for keys with non-ASCII content, or a strong hasher
