@@ -8,39 +8,45 @@ using Celerity.Hashing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The workload is <see cref="StringInternTableBenchmark"/>'s <c>Lookup</c> category, probing a warm table with
+/// The workload is <see cref="StringInternTableBenchmark"/>'s <c>Lookup</c> category, probing warm tables with
 /// spans sliced from one buffer. Tokens are fixed at 3 to 64 characters, or drawn log-uniformly from 2–20 or 2–48
 /// characters (averaging about 8 and 14), as a parse that mixes short codes, words and identifiers would see them.
 /// </para>
 /// <para>
-/// Each invocation probes sixteen tables, each with its own vocabulary of 64 random tokens, 6,250 times apiece in a
-/// seeded random order. Which of 64 tokens happen to share a slot is luck of the draw: a hasher's mean probe length
-/// varies widely from one vocabulary to the next, where the mean over many vocabularies is 1.47 for every hasher, and
-/// at tens of nanoseconds a probe that luck moves a single-vocabulary ratio by tens of percent. Sixteen vocabularies
-/// shrink it, but the seed is fixed, so every run on every platform repeats one draw, and in it two hashers' mean
-/// probe lengths can still differ by 10% or more in a cell: compare a gap between two hashers with their probe
-/// lengths before ranking them.
-/// Each table holds 64 tokens and so is half full; nearer its 0.75 load factor it visits more slots per hit, and that
-/// is not measured here. The random order keeps the branch predictor from learning the probe sequence, which a cyclic
-/// stream lets it do.
+/// Each invocation probes sixteen tables, each with its own vocabulary of 64 random tokens and so half full, 6,250
+/// times apiece in a random order. Successive invocations take the next of sixteen such draws, so a run averages
+/// 256 vocabularies and no invocation repeats the order the one before it probed.
+/// </para>
+/// <para>
+/// Both are needed for a fair comparison. Which of 64 tokens happen to share a slot is luck of the draw: a draw of
+/// sixteen vocabularies gave one hasher's tables up to 12% fewer probes per hit than another's, and on short tokens
+/// that moved the time ratio by two to three times as much. Over all 256, the three hashers' mean probes per hit came
+/// out within about 2% of each other at every length. And a branch predictor learns a probe order that repeats:
+/// replaying one draw of 100,000 probes on every invocation let it learn which probes collide, which on the Apple M4
+/// took a quarter or more off the tables' probe time and much less off the set's, overstating the tables' lead. The
+/// sixteen streams, 1.6 million probes in all, are more than it learns. The tables are half full; nearer their 0.75
+/// load factor they visit more slots per hit, and that is not measured here.
 /// </para>
 /// <para>
 /// The arms are the default <see cref="StringCityHash64Hasher"/>, <see cref="StringXxHash3Hasher"/> (the other
 /// block hasher compared) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII: none
 /// of these hashers branches on content, so text that varies both bytes of each UTF-16 code unit costs the same to
-/// hash.
+/// hash. The buffer holds every draw's stream back to back, about 200 MB at 64 characters.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
 public class StringInternTableTokenLengthBenchmark
 {
+    private const int Draws = 16;
     private const int Vocabularies = 16;
+    private const int Tables = Draws * Vocabularies;
     private const int DistinctTokens = 64;
     private const int ProbesPerVocabulary = 6_250;
     private const string Alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
 
-    // One buffer holding every stream back to back; stream v is the slice
-    // [v * ProbesPerVocabulary, (v + 1) * ProbesPerVocabulary) of the token list.
+    // One buffer holding every stream back to back; table t's stream is the slice
+    // [t * ProbesPerVocabulary, (t + 1) * ProbesPerVocabulary) of the token list, and draw d is tables
+    // [d * Vocabularies, (d + 1) * Vocabularies).
     private char[] buffer = null!;
     private (int Offset, int Length)[] stream = null!;
 
@@ -48,6 +54,9 @@ public class StringInternTableTokenLengthBenchmark
     private StringInternTable[] defaultTables = null!;
     private StringInternTable<StringXxHash3Hasher>[] xxHash3Tables = null!;
     private StringInternTable<StringFnV1AFullHasher>[] fnv1aFullTables = null!;
+
+    // The draw the next invocation probes; every arm cycles through all sixteen.
+    private int draw;
 
     /// <summary>A fixed token length in characters, or a <c>min-max</c> range drawn log-uniformly.</summary>
     [Params("3", "8", "16", "32", "64", "2-20", "2-48")]
@@ -61,14 +70,14 @@ public class StringInternTableTokenLengthBenchmark
             : (int.Parse(Tokens), int.Parse(Tokens));
 
         var rand = new Random(42);
-        var vocabularies = new string[Vocabularies][];
-        stream = new (int, int)[Vocabularies * ProbesPerVocabulary];
-        var text = new System.Text.StringBuilder(stream.Length * (max + 1));
+        var vocabularies = new string[Tables][];
+        var probed = new string[Tables * ProbesPerVocabulary];
+        long characters = 0;
 
-        for (int v = 0; v < Vocabularies; v++)
+        for (int t = 0; t < Tables; t++)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            string[] vocabulary = vocabularies[v] = new string[DistinctTokens];
+            string[] vocabulary = vocabularies[t] = new string[DistinctTokens];
             for (int n = 0; n < DistinctTokens;)
             {
                 int length = min == max
@@ -87,46 +96,61 @@ public class StringInternTableTokenLengthBenchmark
             {
                 // Every token in turn first, so each is guaranteed to occur; random draws after that.
                 string token = vocabulary[i < DistinctTokens ? i : rand.Next(DistinctTokens)];
-                stream[v * ProbesPerVocabulary + i] = (text.Length, token.Length);
-                text.Append(token).Append(',');
+                probed[t * ProbesPerVocabulary + i] = token;
+                characters += token.Length + 1;
             }
         }
 
-        buffer = text.ToString().ToCharArray();
+        // Written straight into the buffer: building ~100M characters through a StringBuilder would hold three
+        // copies of them at once.
+        buffer = new char[checked((int)characters)];
+        stream = new (int, int)[probed.Length];
+        int at = 0;
+        for (int i = 0; i < probed.Length; i++)
+        {
+            string token = probed[i];
+            token.CopyTo(buffer.AsSpan(at));
+            stream[i] = (at, token.Length);
+            at += token.Length;
+            buffer[at++] = ',';
+        }
 
-        sets = new HashSet<string>.AlternateLookup<ReadOnlySpan<char>>[Vocabularies];
-        defaultTables = new StringInternTable[Vocabularies];
-        xxHash3Tables = new StringInternTable<StringXxHash3Hasher>[Vocabularies];
-        fnv1aFullTables = new StringInternTable<StringFnV1AFullHasher>[Vocabularies];
-        for (int v = 0; v < Vocabularies; v++)
+        sets = new HashSet<string>.AlternateLookup<ReadOnlySpan<char>>[Tables];
+        defaultTables = new StringInternTable[Tables];
+        xxHash3Tables = new StringInternTable<StringXxHash3Hasher>[Tables];
+        fnv1aFullTables = new StringInternTable<StringFnV1AFullHasher>[Tables];
+        for (int t = 0; t < Tables; t++)
         {
             var set = new HashSet<string>(DistinctTokens, StringComparer.Ordinal);
-            defaultTables[v] = new StringInternTable(DistinctTokens);
-            xxHash3Tables[v] = new StringInternTable<StringXxHash3Hasher>(DistinctTokens);
-            fnv1aFullTables[v] = new StringInternTable<StringFnV1AFullHasher>(DistinctTokens);
-            foreach (string token in vocabularies[v])
+            defaultTables[t] = new StringInternTable(DistinctTokens);
+            xxHash3Tables[t] = new StringInternTable<StringXxHash3Hasher>(DistinctTokens);
+            fnv1aFullTables[t] = new StringInternTable<StringFnV1AFullHasher>(DistinctTokens);
+            foreach (string token in vocabularies[t])
             {
                 set.Add(token);
-                defaultTables[v].GetOrAdd(token);
-                xxHash3Tables[v].GetOrAdd(token);
-                fnv1aFullTables[v].GetOrAdd(token);
+                defaultTables[t].GetOrAdd(token);
+                xxHash3Tables[t].GetOrAdd(token);
+                fnv1aFullTables[t].GetOrAdd(token);
             }
 
-            sets[v] = set.GetAlternateLookup<ReadOnlySpan<char>>();
+            sets[t] = set.GetAlternateLookup<ReadOnlySpan<char>>();
         }
     }
 
     [Benchmark(Baseline = true)]
     public int HashSet_Lookup()
     {
+        int d = draw;
+        draw = (d + 1) % Draws;
         char[] buf = buffer;
         (int Offset, int Length)[] s = stream;
+        HashSet<string>.AlternateLookup<ReadOnlySpan<char>>[] lookups = sets;
         int hits = 0;
-        for (int v = 0; v < Vocabularies; v++)
+        for (int t = d * Vocabularies; t < (d + 1) * Vocabularies; t++)
         {
-            HashSet<string>.AlternateLookup<ReadOnlySpan<char>> lookup = sets[v];
-            int end = (v + 1) * ProbesPerVocabulary;
-            for (int i = v * ProbesPerVocabulary; i < end; i++)
+            HashSet<string>.AlternateLookup<ReadOnlySpan<char>> lookup = lookups[t];
+            int end = (t + 1) * ProbesPerVocabulary;
+            for (int i = t * ProbesPerVocabulary; i < end; i++)
             {
                 (int offset, int length) = s[i];
                 if (lookup.Contains(buf.AsSpan(offset, length)))
@@ -144,15 +168,17 @@ public class StringInternTableTokenLengthBenchmark
     [Benchmark]
     public int StringInternTable_Lookup()
     {
+        int d = draw;
+        draw = (d + 1) % Draws;
         char[] buf = buffer;
         (int Offset, int Length)[] s = stream;
         StringInternTable[] tables = defaultTables;
         int hits = 0;
-        for (int v = 0; v < tables.Length; v++)
+        for (int t = d * Vocabularies; t < (d + 1) * Vocabularies; t++)
         {
-            StringInternTable table = tables[v];
-            int end = (v + 1) * ProbesPerVocabulary;
-            for (int i = v * ProbesPerVocabulary; i < end; i++)
+            StringInternTable table = tables[t];
+            int end = (t + 1) * ProbesPerVocabulary;
+            for (int i = t * ProbesPerVocabulary; i < end; i++)
             {
                 (int offset, int length) = s[i];
                 if (table.Contains(buf.AsSpan(offset, length)))
@@ -166,15 +192,17 @@ public class StringInternTableTokenLengthBenchmark
     [Benchmark]
     public int StringInternTable_LookupXxHash3()
     {
+        int d = draw;
+        draw = (d + 1) % Draws;
         char[] buf = buffer;
         (int Offset, int Length)[] s = stream;
         StringInternTable<StringXxHash3Hasher>[] tables = xxHash3Tables;
         int hits = 0;
-        for (int v = 0; v < tables.Length; v++)
+        for (int t = d * Vocabularies; t < (d + 1) * Vocabularies; t++)
         {
-            StringInternTable<StringXxHash3Hasher> table = tables[v];
-            int end = (v + 1) * ProbesPerVocabulary;
-            for (int i = v * ProbesPerVocabulary; i < end; i++)
+            StringInternTable<StringXxHash3Hasher> table = tables[t];
+            int end = (t + 1) * ProbesPerVocabulary;
+            for (int i = t * ProbesPerVocabulary; i < end; i++)
             {
                 (int offset, int length) = s[i];
                 if (table.Contains(buf.AsSpan(offset, length)))
@@ -188,15 +216,17 @@ public class StringInternTableTokenLengthBenchmark
     [Benchmark]
     public int StringInternTable_LookupFnV1AFull()
     {
+        int d = draw;
+        draw = (d + 1) % Draws;
         char[] buf = buffer;
         (int Offset, int Length)[] s = stream;
         StringInternTable<StringFnV1AFullHasher>[] tables = fnv1aFullTables;
         int hits = 0;
-        for (int v = 0; v < tables.Length; v++)
+        for (int t = d * Vocabularies; t < (d + 1) * Vocabularies; t++)
         {
-            StringInternTable<StringFnV1AFullHasher> table = tables[v];
-            int end = (v + 1) * ProbesPerVocabulary;
-            for (int i = v * ProbesPerVocabulary; i < end; i++)
+            StringInternTable<StringFnV1AFullHasher> table = tables[t];
+            int end = (t + 1) * ProbesPerVocabulary;
+            for (int i = t * ProbesPerVocabulary; i < end; i++)
             {
                 (int offset, int length) = s[i];
                 if (table.Contains(buf.AsSpan(offset, length)))

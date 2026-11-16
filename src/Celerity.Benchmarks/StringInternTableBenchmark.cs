@@ -26,8 +26,13 @@ using Celerity.Hashing;
 /// which folds every UTF-16 code unit a byte at a time; the default <see cref="StringCityHash64Hasher"/> reads these
 /// 16-character tokens eight bytes at a time. Those arms carry op names of their own so each lands in a dashboard
 /// bucket by itself, since two Celerity arms sharing an op would overwrite each other in the index the cards are built
-/// from, while the shared category keeps BenchmarkDotNet's ratio against the same <c>HashSet</c> baseline. How the
-/// margin moves with token length is <see cref="StringInternTableTokenLengthBenchmark"/>'s job.
+/// from, while the shared category keeps BenchmarkDotNet's ratio against the same <c>HashSet</c> baseline.
+/// </para>
+/// <para>
+/// The stream cycles through the 64 tokens in a fixed order, which a branch predictor learns, collisions included,
+/// so these arms measure a probe whose branches are already predicted. That helps the tables more than the set.
+/// <see cref="StringInternTableTokenLengthBenchmark"/> probes in an order that does not repeat, across token lengths,
+/// and its margins over the set are the smaller ones.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser]
