@@ -442,21 +442,17 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     /// Reads one 64-bit little-endian word (eight bytes / four UTF-16 code units)
     /// starting at char index <paramref name="ci"/> — exactly the 8 bytes a
     /// byte-oriented XXH3 would read over the native little-endian UTF-16 stream.
+    /// One unaligned load on a little-endian host (see <see cref="Utf16Words"/>).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong Key64(ReadOnlySpan<char> s, int ci) =>
-        (ulong)s[ci]
-        | ((ulong)s[ci + 1] << 16)
-        | ((ulong)s[ci + 2] << 32)
-        | ((ulong)s[ci + 3] << 48);
+    private static ulong Key64(ReadOnlySpan<char> s, int ci) => Utf16Words.ReadUInt64(s, ci);
 
     /// <summary>
     /// Reads one 32-bit little-endian word (four bytes / two UTF-16 code units)
     /// starting at char index <paramref name="ci"/>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Key32(ReadOnlySpan<char> s, int ci) =>
-        (uint)s[ci] | ((uint)s[ci + 1] << 16);
+    private static uint Key32(ReadOnlySpan<char> s, int ci) => Utf16Words.ReadUInt32(s, ci);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ulong Sec64(int byteOffset) =>
