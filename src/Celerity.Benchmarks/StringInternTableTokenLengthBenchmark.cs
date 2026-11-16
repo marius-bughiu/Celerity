@@ -17,13 +17,17 @@ using Celerity.Hashing;
 /// seeded random order. Which of 64 tokens happen to share a slot is luck of the draw: a hasher's mean probe length
 /// varies widely from one vocabulary to the next, where the mean over many vocabularies is 1.47 for every hasher, and
 /// at tens of nanoseconds a probe that luck moves a single-vocabulary ratio by tens of percent. Sixteen vocabularies
-/// shrink it to a few percent. The random order keeps the branch predictor from learning the probe sequence, which a
-/// cyclic stream lets it do.
+/// shrink it, but the seed is fixed, so every run on every platform repeats one draw, and in that draw two hashers'
+/// mean probe lengths still differ by up to about 10%: read a gap of under 10% between two hashers as unresolved.
+/// Each table holds 64 tokens and so is half full; nearer its 0.75 load factor it visits more slots per hit, and that
+/// is not measured here. The random order keeps the branch predictor from learning the probe sequence, which a cyclic
+/// stream lets it do.
 /// </para>
 /// <para>
-/// The arms are the default <see cref="StringCityHash64Hasher"/>, <see cref="StringXxHash3Hasher"/> (the
-/// alternative for longer tokens) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII: none of these
-/// hashers branches on content, so text that varies both bytes of each UTF-16 code unit costs the same to hash.
+/// The arms are the default <see cref="StringCityHash64Hasher"/>, <see cref="StringXxHash3Hasher"/> (the other
+/// block hasher compared) and <see cref="StringFnV1AFullHasher"/> (the default before 4.0). Tokens are ASCII: none
+/// of these hashers branches on content, so text that varies both bytes of each UTF-16 code unit costs the same to
+/// hash.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
@@ -134,7 +138,7 @@ public class StringInternTableTokenLengthBenchmark
 
     // Each arm keeps its probe loop inline, as HashSet_Lookup does, rather than calling one shared generic helper. A
     // one-line arm that calls a helper is a tiny inline root, so the JIT inlines the helper and the hasher under it to
-    // a different depth per instantiation; in this repo's benchmarks that shape has moved deep hashers by up to 25%.
+    // a different depth per instantiation. In this benchmark that shape slowed StringXxHash3Hasher's arm by up to about 2x.
     [Benchmark]
     public int StringInternTable_Lookup()
     {
