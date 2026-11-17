@@ -17,12 +17,13 @@ namespace Celerity.Hashing;
 /// <em>length-classed</em>: short inputs take dedicated branches (1–3, 4–8, 9–16,
 /// 17–128, and 129–240 bytes) that mix the relevant bytes against slices of the
 /// secret through a 128-bit multiply-fold, and only inputs longer than 240 bytes
-/// enter the eight-lane accumulator loop that consumes 64-byte stripes against the
-/// secret and periodically scrambles the lanes. This structure makes XXH3 both very
-/// fast on the short-to-mid keys typical of identifiers and dictionary keys — where a
-/// single stripe loop spends most of its time on tail handling — and extremely fast
-/// in bulk on long keys. The 64-bit result is reduced to 32 bits by xor-folding the
-/// high half into the low half (<c>h ^ (h &gt;&gt; 32)</c>), keeping the extra
+/// (120 characters) enter the eight-lane accumulator loop that consumes 64-byte
+/// stripes against the secret and periodically scrambles the lanes. The dedicated
+/// branches spare short and mid-length keys a stripe loop's tail handling. Reference
+/// XXH3 runs the accumulator loop with SIMD instructions; this port runs it as scalar
+/// code, so in the measurements below a 121-character key took 2.22–2.56 times as
+/// long to hash as a 120-character one. The 64-bit result is reduced to 32 bits by
+/// xor-folding the high half into the low half (<c>h ^ (h &gt;&gt; 32)</c>), keeping the extra
 /// high-half entropy in the returned value, exactly as
 /// <see cref="StringXxHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/>, and
 /// <see cref="StringCityHash64Hasher"/> do.
@@ -45,11 +46,17 @@ namespace Celerity.Hashing;
 /// <see cref="StringFnV1AHasher"/> collides on). <see cref="StringXxHash3Hasher"/>,
 /// <see cref="StringXxHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/>, and
 /// <see cref="StringCityHash64Hasher"/> are peers at the throughput-oriented top of
-/// the ladder — profile on your own key shape to pick between them; XXH3 typically
-/// leads on both short keys (its dedicated length classes) and long keys (its
-/// eight-lane accumulator), while <see cref="StringMurmur3Hasher"/> stays the simplest
-/// choice for very short keys. All are good answers when FNV-1a's weaker avalanche
-/// pushes clustered or adversarial keys into long probe chains.
+/// the ladder — profile on your own key shape to pick between them, because which is
+/// fastest depends on the key length. Hashing distinct keys of one length in a loop
+/// on an Apple M4 and an AMD EPYC 7763, XXH3 was the fastest of them at 33, 48 and 64
+/// characters, and <see cref="StringCityHash64Hasher"/> at 8, 16 and 32 (tied with XXH3
+/// at 8 on the EPYC). At 121, 256
+/// and 512 characters XXH3 took 2.21–3.43x as long as
+/// <see cref="StringCityHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/> and
+/// <see cref="StringXxHash64Hasher"/>. A table probe can rank them differently.
+/// <see cref="StringMurmur3Hasher"/> stays the simplest of the strong-avalanche hashers.
+/// All are good answers when FNV-1a's weaker avalanche pushes clustered or
+/// adversarial keys into long probe chains.
 /// </para>
 /// <para>
 /// <c>StringXxHash3Hasher.Hash(s)</c> equals canonical XXH3 64-bit (default secret,
