@@ -15,8 +15,9 @@ namespace Celerity.Hashing;
 /// it processes the input in 32-byte stripes (sixteen chars) across four
 /// independent <em>64-bit</em> accumulators, but its lattice of multiply / rotate /
 /// add steps gives the out-of-order core four independent multiply chains to keep
-/// in flight, so on mid-length keys it is competitive with — and often beats — the
-/// xxHash family. The 64-bit result is reduced to 32 bits by xor-folding the high
+/// in flight, so on mid-length keys it is competitive with — and often beats —
+/// <see cref="StringXxHash32Hasher"/> and <see cref="StringXxHash64Hasher"/>. The
+/// 64-bit result is reduced to 32 bits by xor-folding the high
 /// half into the low half (<c>h ^ (h &gt;&gt; 32)</c>), keeping the extra high-half
 /// entropy in the returned value, exactly as <see cref="StringXxHash64Hasher"/> and
 /// <see cref="StringFnV1A64Hasher"/> do.

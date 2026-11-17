@@ -22,23 +22,75 @@ public class StringFnvHasherBenchmark : StringHasherBenchmarkBase
     [BenchmarkCategory("Hash")]
     public int Bcl_GetHashCode() => HashAllBcl();
 
+    // Each hasher arm holds its own loop instead of forwarding to a shared generic helper;
+    // StringHasherBenchmarkBase explains why.
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int FnV1() => HashAll<StringFnV1Hasher>();
+    public int FnV1()
+    {
+        StringFnV1Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int FnV1_64() => HashAll<StringFnV164Hasher>();
+    public int FnV1_64()
+    {
+        StringFnV164Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int FnV1A() => HashAll<StringFnV1AHasher>();
+    public int FnV1A()
+    {
+        StringFnV1AHasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int FnV1A_Full() => HashAll<StringFnV1AFullHasher>();
+    public int FnV1A_Full()
+    {
+        StringFnV1AFullHasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int FnV1A_64() => HashAll<StringFnV1A64Hasher>();
+    public int FnV1A_64()
+    {
+        StringFnV1A64Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 }

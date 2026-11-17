@@ -45,6 +45,14 @@ jobs:
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
 
+      # StringXxHash3Hasher runs its loop for inputs over 240 bytes on Vector128 and keeps a scalar
+      # loop for big-endian hosts and hosts without SIMD acceleration. No CI host is one, so re-run
+      # its reference tests with hardware intrinsics turned off, which sends them down that loop.
+      - name: Test the XXH3 scalar fallback
+        env:
+          DOTNET_EnableHWIntrinsic: 0
+        run: dotnet test Celerity.Tests --no-build --configuration Release --filter "FullyQualifiedName~StringXxHash3HasherTests"
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
