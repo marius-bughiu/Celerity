@@ -20,7 +20,7 @@ namespace Celerity.Tests.Hashing;
 /// </para>
 /// <para>
 /// The tests run in Release builds only. An unoptimised Debug build of the hashers, asserting every
-/// word, stretches the 4 GiB passes to about half a minute; CI tests Release. They cover XxHash64
+/// word, stretched the four XxHash64 and XxHash32 passes to about half a minute; CI tests Release. They cover XxHash64
 /// and XxHash32, whose loop bounds were once written in the overflowing form, and XxHash3, whose
 /// vectorized loop for long inputs computes its byte offsets from the length: every block hasher at
 /// this length would take about a minute, since a 4 GiB pass of a SipHash variant takes seconds.
@@ -34,7 +34,7 @@ public class HugeSpanHashTests
     private const int SlackChars = 16;
 
 #if DEBUG
-    private const string ReleaseOnly = "Runs in Release builds only: a Debug build takes about half a minute.";
+    private const string ReleaseOnly = "Runs in Release builds only: a Debug build is far slower.";
 
     [Fact(Skip = ReleaseOnly)]
 #else

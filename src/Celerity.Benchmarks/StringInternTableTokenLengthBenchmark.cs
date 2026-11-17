@@ -18,7 +18,7 @@ using Celerity.Hashing;
 /// characters at a time, so its cost is flat up to the end of a path or block and steps up just past it. Against the
 /// set's hash, whose cost grows with length, it compares best at the end, as at 16, 32, 64 and 128 characters, and
 /// worst just past it, as at 17 and 36. <see cref="StringXxHash3Hasher"/>'s cost grows more evenly up to 64
-/// characters, steps up at 65 and steps up sharply at 121, where it switches to a loop for long inputs, which 128
+/// characters and steps up at 65; above 120 it switches to its vectorized loop for long inputs, which 128
 /// measures.
 /// </para>
 /// <para>

@@ -6,11 +6,11 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- `StringXxHash3Hasher` now runs its loop for keys longer than 120 characters on `Vector128`, as reference XXH3 does, and every hash value is unchanged. At 121, 256 and 512 characters it hashed 4.11–6.48x faster on an Apple M4, an AMD EPYC 7763 and an Intel Xeon 6975P-C, and is now the fastest of the throughput string hashers there, 1.52–2.06x ahead of the next.
+- `StringXxHash3Hasher` now runs its loop for keys longer than 120 characters on SIMD vectors (`Vector128`), as reference XXH3 does, and every hash value is unchanged. At 121, 256 and 512 characters it hashed 4.11–6.48x faster on an Apple M4, an AMD EPYC 7763 and an Intel Xeon 6975P-C, and is now the fastest of the throughput string hashers there, 1.52–2.06x ahead of the next. `StringInternTable<StringXxHash3Hasher>` now probes 128-character tokens 1.3x faster than the default hasher on Apple Silicon, where it probed 2.2x slower.
 
 ### Fixed
 
-- The `StringXxHash3Hasher` docs said it typically leads on both short and long keys. Hashing keys of one length in a loop on an Apple M4 and an AMD EPYC 7763, it was the fastest of the throughput hashers at 33, 48 and 64 characters, and `StringCityHash64Hasher` led or tied at 8, 16 and 32. Above 120 characters 4.0.0 ran XXH3's loop for long inputs as scalar code, and at 121, 256 and 512 characters it took 2.21–3.43x as long as `StringCityHash64Hasher`, `StringMetroHash64Hasher` and `StringXxHash64Hasher`. The docs now say so, and `StringHasherKeyLengthBenchmark` measures it.
+- The `StringXxHash3Hasher` docs said it typically leads on both short and long keys. Hashing keys of one length in a loop on an Apple M4 and an AMD EPYC 7763, it was the fastest of the throughput hashers at 33, 48 and 64 characters, and `StringCityHash64Hasher` led or tied at 8, 16 and 32. Above 120 characters 4.0.0 ran XXH3's loop for long inputs as scalar code, and at 121, 256 and 512 characters it took 2.21–3.43x as long as `StringCityHash64Hasher`, `StringMetroHash64Hasher` and `StringXxHash64Hasher`. The docs now say where it leads, and `StringHasherKeyLengthBenchmark` measures it.
 
 ## [4.0.0] - 2026-11-16
 

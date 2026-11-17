@@ -317,13 +317,21 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
         "runs there. The vector arm is HashLongVector, which stays measured.";
 
     private const string ScalarLongPathJustification =
-        "Big-endian hosts, and hosts without Vector128 acceleration, only: the test hosts take " +
-        "HashLongVector instead.";
+        "Big-endian hosts, and hosts without Vector128 acceleration, only: the coverage run takes " +
+        "HashLongVector. CI re-runs the XXH3 reference tests with DOTNET_EnableHWIntrinsic=0, which sends " +
+        "them down this loop, outside the coverage run.";
 
     private const string WideningMultiplyJustification =
         "Hardware dispatch: AdvSimd.IsSupported and Sse2.IsSupported are JIT-time constants, so each host " +
-        "compiles one arm. The x64 test hosts take the Sse2 arm and the Arm64 ones the AdvSimd arm, and " +
-        "both run the reference tests over every long-path length class.";
+        "compiles one arm. Coverage is collected on x64, whose arm, MultiplyHalvesAndAddSse2, stays measured.";
+
+    private const string AdvSimdArmJustification =
+        "Arm64 hosts only: coverage is collected on x64. The Arm64 CI leg runs this arm through the long-path " +
+        "reference tests.";
+
+    private const string GenericArmJustification =
+        "Hosts with Vector128 acceleration but neither AdvSimd nor SSE2 (WebAssembly SIMD, for example) only; " +
+        "no test host is one.";
 
     // Reference XXH3 runs this loop with SIMD instructions: its scalar, SSE2, AVX2 and NEON
     // accumulators do the same per-lane arithmetic and give the same value. Here the eight 64-bit
@@ -423,26 +431,31 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
         return acc + MultiplyHalvesAndAdd(swapped, data ^ key);
     }
 
-    // addend plus, per 64-bit lane, v's low 32 bits times its high 32 bits as a 64-bit product: one
-    // widening multiply-add on Arm64 (umlal), a widening multiply and an add on x64 (pmuludq,
-    // paddq), and a general 64-bit lane multiply elsewhere.
+    // addend plus, per 64-bit lane, v's low 32 bits times its high 32 bits as a 64-bit product.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [ExcludeFromCodeCoverage(Justification = WideningMultiplyJustification)]
-    private static Vector128<ulong> MultiplyHalvesAndAdd(Vector128<ulong> addend, Vector128<ulong> v)
-    {
-        if (AdvSimd.IsSupported)
-        {
-            return AdvSimd.MultiplyWideningLowerAndAdd(
-                addend, AdvSimd.ExtractNarrowingLower(v), AdvSimd.ShiftRightLogicalNarrowingLower(v, 32));
-        }
+    private static Vector128<ulong> MultiplyHalvesAndAdd(Vector128<ulong> addend, Vector128<ulong> v) =>
+        AdvSimd.IsSupported ? MultiplyHalvesAndAddAdvSimd(addend, v)
+        : Sse2.IsSupported ? MultiplyHalvesAndAddSse2(addend, v)
+        : MultiplyHalvesAndAddGeneric(addend, v);
 
-        if (Sse2.IsSupported)
-        {
-            return addend + Sse2.Multiply(v.AsUInt32(), (v >>> 32).AsUInt32());
-        }
+    // One widening multiply-add: umlal of the lanes' low halves (xtn) and high halves (shrn).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = AdvSimdArmJustification)]
+    private static Vector128<ulong> MultiplyHalvesAndAddAdvSimd(Vector128<ulong> addend, Vector128<ulong> v) =>
+        AdvSimd.MultiplyWideningLowerAndAdd(
+            addend, AdvSimd.ExtractNarrowingLower(v), AdvSimd.ShiftRightLogicalNarrowingLower(v, 32));
 
-        return addend + ((v & Vector128.Create(0xFFFF_FFFFUL)) * (v >>> 32));
-    }
+    // pmuludq multiplies each lane's low 32 bits; shifting v right by 32 brings the high halves down.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<ulong> MultiplyHalvesAndAddSse2(Vector128<ulong> addend, Vector128<ulong> v) =>
+        addend + Sse2.Multiply(v.AsUInt32(), (v >>> 32).AsUInt32());
+
+    // A general 64-bit lane multiply of the masked low halves and the shifted high halves.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = GenericArmJustification)]
+    private static Vector128<ulong> MultiplyHalvesAndAddGeneric(Vector128<ulong> addend, Vector128<ulong> v) =>
+        addend + ((v & Vector128.Create(0xFFFF_FFFFUL)) * (v >>> 32));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<ulong> ScrambleLanes(Vector128<ulong> acc, Vector128<ulong> key) =>
