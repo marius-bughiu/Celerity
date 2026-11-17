@@ -313,8 +313,8 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
 
     private const string LongPathDispatchJustification =
         "Hardware dispatch: BitConverter.IsLittleEndian and Vector128.IsHardwareAccelerated are JIT-time " +
-        "constants, and every test host is little-endian with SIMD acceleration, so the scalar arm never " +
-        "runs there. The vector arm is HashLongVector, which stays measured.";
+        "constants, and the coverage run is on little-endian hosts with SIMD acceleration, so it never takes " +
+        "the scalar arm. The vector arm is HashLongVector, which stays measured.";
 
     private const string ScalarLongPathJustification =
         "Big-endian hosts, and hosts without Vector128 acceleration, only: the coverage run takes " +
@@ -323,11 +323,12 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
 
     private const string WideningMultiplyJustification =
         "Hardware dispatch: AdvSimd.IsSupported and Sse2.IsSupported are JIT-time constants, so each host " +
-        "compiles one arm. Coverage is collected on x64, whose arm, MultiplyHalvesAndAddSse2, stays measured.";
+        "compiles one arm.";
 
-    private const string AdvSimdArmJustification =
-        "Arm64 hosts only: coverage is collected on x64. The Arm64 CI leg runs this arm through the long-path " +
-        "reference tests.";
+    private const string IsaArmJustification =
+        "One architecture only (Arm64 for AdvSimd, x64 for SSE2), while the coverage gate runs on x64 in CI and " +
+        "on Apple Silicon locally, so neither arm can stay measured on both. The x64 and Arm64 CI legs run " +
+        "their arm through the long-path reference tests.";
 
     private const string GenericArmJustification =
         "Hosts with Vector128 acceleration but neither AdvSimd nor SSE2 (WebAssembly SIMD, for example) only; " +
@@ -441,13 +442,14 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
 
     // One widening multiply-add: umlal of the lanes' low halves (xtn) and high halves (shrn).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    [ExcludeFromCodeCoverage(Justification = AdvSimdArmJustification)]
+    [ExcludeFromCodeCoverage(Justification = IsaArmJustification)]
     private static Vector128<ulong> MultiplyHalvesAndAddAdvSimd(Vector128<ulong> addend, Vector128<ulong> v) =>
         AdvSimd.MultiplyWideningLowerAndAdd(
             addend, AdvSimd.ExtractNarrowingLower(v), AdvSimd.ShiftRightLogicalNarrowingLower(v, 32));
 
     // pmuludq multiplies each lane's low 32 bits; shifting v right by 32 brings the high halves down.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = IsaArmJustification)]
     private static Vector128<ulong> MultiplyHalvesAndAddSse2(Vector128<ulong> addend, Vector128<ulong> v) =>
         addend + Sse2.Multiply(v.AsUInt32(), (v >>> 32).AsUInt32());
 
