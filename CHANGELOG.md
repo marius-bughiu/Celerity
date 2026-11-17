@@ -6,11 +6,11 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- The string hasher benchmarks now give every hasher arm its own loop instead of a one-line call into a shared helper. On an Apple M4 the old arms measured the SipHash hashers 4–9x slower than the new loops do, `StringCityHash64Hasher` 1.55x slower on long keys, and `StringXxHash64Hasher` and `StringMetroHash64Hasher` up to 1.2x slower. `StringXxHash3Hasher` measures slower in the new loops, by 1.9x on non-ASCII keys, and the other hashers move by up to 7%. The dashboard's string hasher rows move from the first run after this change; no hasher changed.
+- The string hasher benchmarks now give every hasher arm its own loop instead of a one-line call into a shared helper. On an Apple M4 the old arms measured the SipHash hashers 4–9x slower than the new loops do, `StringCityHash64Hasher` 1.55x slower on long keys and `StringXxHash64Hasher` and `StringMetroHash64Hasher` up to 1.2x slower, while `StringXxHash3Hasher` measures 1.9x slower in the new loops on non-ASCII keys and the other hashers move by up to 7%. The dashboard's string hasher rows move from the first run after this change; no hasher changed.
 
 ### Fixed
 
-- The 4.0.0 entry's speedups for the one-load word reads came from the old benchmark arms with a key order the CPU learns, and `StringXxHash3Hasher`'s depend on both. With the loop in the calling method and an order the CPU cannot learn, it hashes 48–80-character keys 1.4x faster than before 4.0 and 6–20-character keys about as fast (Apple M4), not 1.4–1.7x faster on all three key shapes.
+- The 4.0.0 entry's speedups for the one-load word reads were measured with a key order the CPU learns. In the benchmark's new loops, with an order too long to learn, `StringCityHash64Hasher` hashes 6–12-character keys 1.3x faster than before 4.0, 10–20-character non-ASCII keys 1.45x faster and 48–80-character keys 1.8x faster, and `StringXxHash3Hasher` 1.15x, 1.16x and 1.45x faster (Apple M4). The entry said 1.6–1.8x and 1.4–1.7x.
 
 ## [4.0.0] - 2026-11-16
 

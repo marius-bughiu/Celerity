@@ -40,8 +40,8 @@ using Celerity.Hashing;
 /// loop. On an Apple M4 that made the SipHash hashers measure 4–9x slower: with even one round left as
 /// a call, their whole state lived on the stack. How much of a deep hasher the JIT inlines still depends
 /// on the caller, so these arms measure one realistic caller, a loop over keys, not every call site.
-/// <see cref="StringXxHash3Hasher"/>, for one, measures slower in this loop than it did behind the
-/// helper, most of all on the non-ASCII sample.
+/// <see cref="StringXxHash3Hasher"/>, for one, measures slower on the non-ASCII sample in this loop
+/// than it did behind the helper.
 /// </para>
 /// <para>
 /// The <see cref="Shape"/> parameter sweeps three representative key shapes — short ASCII identifiers,
