@@ -659,15 +659,18 @@ function escapeHtml(s) {
     { key: 'BTreeSet',            title: 'BTreeSet<int>',                            vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Mixed', 'SetEquals', 'IsProperSupersetOf'] },
     // RankedSet is the ordered set that also ranks and selects. The cards pair it against SortedSet<int>,
     // which has no rank and no positional accessor at all; the hand-rolled sorted List<int> arms in the
-    // same benchmark carry their own op names (SelectByIndex, RankBinarySearch, ...) so they stay out of
+    // same benchmark carry their own op names (SelectByIndex, RankBinarySearch, ...), and the
+    // ImmutableSortedSet<int>.Builder arms an Avl suffix (SelectAvl, MixedAvl, ...), so they stay out of
     // these buckets and each card still resolves to exactly one BCL and one Celerity measurement.
     { key: 'RankedSet',           title: 'RankedSet<int>',                           vs: 'SortedSet<int>',        ops: ['Add', 'Contains', 'Remove', 'RangeScan', 'Select', 'Rank', 'Mixed'] },
     // RankedDictionary is RankedSet's map sibling. Its cards pair it against SortedList<int, int>, the one BCL map
     // with the same positional surface (IndexOfKey, GetValueAtIndex); the SortedDictionary arm in the Mixed
-    // group carries its own op name (MixedTreeWalk) so it stays out of these buckets.
+    // group carries its own op name (MixedTreeWalk), and the key-ordered ImmutableSortedSet arms an Avl
+    // suffix, so they stay out of these buckets.
     { key: 'RankedDictionary',    title: 'RankedDictionary<int, int>',               vs: 'SortedList<int, int>',  ops: ['Add', 'Lookup', 'Remove', 'RangeScan', 'Select', 'Rank', 'Mixed'] },
     // RankedMultiSet is RankedSet with duplicates kept. Its BCL arm is the usual tie-break workaround,
-    // SortedSet<(int, long Seq)>; the sorted List<int> arms carry their own op names, as in RankedSet's.
+    // SortedSet<(int, long Seq)>; the sorted List<int> arms and the ImmutableSortedSet composite's Avl arms
+    // carry their own op names, as in RankedSet's.
     { key: 'RankedMultiSet',      title: 'RankedMultiSet<int>',                      vs: 'SortedSet<(int, long)>', ops: ['Add', 'Remove', 'Select', 'Rank', 'CountOf', 'Mixed'] },
     // WaveletTree is the build-once index over a sequence of ints, benchmarked against what a caller
     // writes over the same int[]: a copy plus Array.Sort of the window for a quantile, a counting loop
