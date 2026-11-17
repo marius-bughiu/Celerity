@@ -160,6 +160,8 @@ internal class Program
         typeof(OrderedDictionaryRemoveBenchmark),
         // StringInternTableBenchmark's probe swept across token lengths, behind the length claims in its docs.
         typeof(StringInternTableTokenLengthBenchmark),
+        // The string hashers' raw cost at fixed key lengths up to 512 characters, past the core hasher classes' 80.
+        typeof(StringHasherKeyLengthBenchmark),
 
         // "Built with Celerity" showcase packages (separate NuGet packages built on the core family):
         // isolated perf demos, so they ride the extended suite alongside the primitive benchmarks.

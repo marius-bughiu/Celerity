@@ -58,6 +58,34 @@ public static class HasherKeySamples
         return keys;
     }
 
+    /// <summary>
+    /// Builds <paramref name="count"/> distinct ASCII <see cref="string"/> keys, all <paramref name="length"/>
+    /// characters long, from the same alphabet and seed as <see cref="Strings"/>.
+    /// </summary>
+    public static string[] FixedLengthAscii(int length, int count = DefaultCount)
+    {
+        // Fewer distinct strings of this length exist than requested: the loop below would never finish.
+        if (length < 1 || Math.Pow(Alphabet.Length, length) < count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(length), length, $"The alphabet cannot form {count} distinct keys of this length.");
+        }
+
+        Random rand = new(42);
+        var set = new HashSet<string>(count);
+        var keys = new string[count];
+        int n = 0;
+        while (n < count)
+        {
+            string key = MakeAscii(rand, length);
+            if (set.Add(key))
+            {
+                keys[n++] = key;
+            }
+        }
+        return keys;
+    }
+
     /// <summary>Builds <paramref name="count"/> distinct non-zero <see cref="int"/> keys.</summary>
     public static int[] Int32(int count = DefaultCount)
     {
