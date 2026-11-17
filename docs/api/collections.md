@@ -9695,11 +9695,12 @@ columns above come from the same replayed benchmark and have no rotated measurem
 
 Replaying helps both arms, so it moves the ratios either way: it hides most of this type's select lead, and at
 1,000 elements it flatters this type's rank, `Contains` and `Add`. No real query stream repeats itself, so the
-rotated columns are the closer guide; the committed ones are what the benchmark records. At 100,000 elements the
-committed `Contains` also queries the builder in the order its nodes were allocated. Rotating that order slowed
-the builder by about 10% and this type not at all, and `RankedDictionary`'s `Lookup` behaves the same way (10%
-against 3%). ⚠️ marks a cell that stays below 1 even at the favourable ends of both arms' 99.9% confidence
-intervals.
+rotated columns are the closer guide; the committed ones are what the benchmark records. The committed
+`Contains` and `Remove` also query the builder in the order its nodes were allocated. At 100,000 elements,
+rotating the `Contains` order slowed the builder by about 10% and this type not at all, and `RankedDictionary`'s
+`Lookup` behaves the same way (10% against 3%). The rotated `Remove` keeps the allocation order, so if anything
+it still flatters the builder. ⚠️ marks a cell that stays below 1 even with the builder at the slow end of its
+99.9% confidence interval and this type at the fast end of its own.
 
 This is the one baseline with no `O(n)` step, so outside the range walk, where the builder pays a descent per
 element, these margins are the layout's rather than the complexity class's: contiguous buckets against a
@@ -9847,7 +9848,7 @@ The pre-registered bar was 5x `SortedList` on `Mixed` at 100,000 entries; it mea
 
 <a id="rankeddictionary-vs-the-builder"></a>
 
-**Against a key-ordered `ImmutableSortedSet<KeyValuePair<int, int>>.Builder`.** Local runs on an Apple M4 (.NET 10, BenchmarkDotNet's default job); x64 is not measured yet, and these arms have no dashboard card. The builder is filled by `Add` and never frozen, so it edits in place. A lookup is `TryGetValue` of a probe pair, a rank is `IndexOf` of one, and the range scan is an `IndexOf` and then one indexer descent per entry, since the set has no range view. The columns follow [`RankedSet`'s](#rankedset-vs-the-builder): the benchmark as committed, which replays its input, beside the same operations on rotated input from the same [scratch harness](https://github.com/marius-bughiu/Celerity/pull/640#issuecomment-6932418744) (1,024 probe batches for select and rank, 16 key orders for add, remove and lookup, and 16 draws of the 1,000 mixed steps). The table above replays its input too. The ratios are *this type against the builder*, so above 1 means this type is faster, and ⚠️ marks a cell that stays below 1 even at the favourable ends of both arms' 99.9% confidence intervals.
+**Against a key-ordered `ImmutableSortedSet<KeyValuePair<int, int>>.Builder`.** Local runs on an Apple M4 (.NET 10, BenchmarkDotNet's default job); x64 is not measured yet, and these arms have no dashboard card. The builder is filled by `Add` and never frozen, so it edits in place. A lookup is `TryGetValue` of a probe pair, a rank is `IndexOf` of one, and the range scan is an `IndexOf` and then one indexer descent per entry, since the set has no range view. The columns follow [`RankedSet`'s](#rankedset-vs-the-builder): the benchmark as committed, which replays its input, beside the same operations on rotated input from the same [scratch harness](https://github.com/marius-bughiu/Celerity/pull/640#issuecomment-6932418744) (1,024 probe batches for select and rank, 16 key orders for add, remove and lookup, and 16 draws of the 1,000 mixed steps). The table above replays its input too. The ratios are *this type against the builder*, so above 1 means this type is faster, and ⚠️ marks a cell that stays below 1 even with the builder at the slow end of its 99.9% confidence interval and this type at the fast end of its own.
 
 | Group (vs the builder) | @100k, committed | @100k, rotated | @1k, committed | @1k, rotated |
 | --- | ---: | ---: | ---: | ---: |
