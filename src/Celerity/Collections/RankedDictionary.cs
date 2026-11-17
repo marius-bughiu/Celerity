@@ -59,8 +59,8 @@ public class RankedDictionary<TKey, TValue> : RankedDictionary<TKey, TValue, Def
 /// player's rank and who holds the 500th place, an order book that reads its k-th price level and the size
 /// resting there, a time-keyed window that reads its median entry. Outside the maps, a key-ordered
 /// <c>ImmutableSortedSet&lt;KeyValuePair&lt;TKey, TValue&gt;&gt;</c> is <c>O(log n)</c> on both halves, through
-/// subtree counts in its AVL nodes, at a heap node per entry; it is not one of this type's benchmark baselines
-/// yet.
+/// subtree counts in its AVL nodes, at a heap node per entry; this type's benchmarks measure against that set's
+/// <c>Builder</c> too.
 /// </para>
 /// <para>
 /// <b>The layout</b> is <see cref="RankedSet{T, TComparer}"/>'s, with a value array beside each key array:

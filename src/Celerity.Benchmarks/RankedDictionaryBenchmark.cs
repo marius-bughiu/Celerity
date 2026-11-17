@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Celerity.Collections;
@@ -5,8 +6,9 @@ using Celerity.Collections;
 /// <summary>
 /// <see cref="RankedDictionary{TKey, TValue}"/> against <see cref="SortedList{TKey, TValue}"/> — the one BCL
 /// map with the same positional surface (<c>IndexOfKey</c>, <c>Keys[k]</c> / <c>Values[k]</c>,
-/// <c>RemoveAt</c>) — and, in the <c>Mixed</c> group, <see cref="SortedDictionary{TKey, TValue}"/>, the BCL's
-/// ordered map that has no positional surface at all.
+/// <c>RemoveAt</c>) — against a key-ordered <see cref="ImmutableSortedSet{T}.Builder"/> of the pairs, which
+/// answers both positional questions in <c>O(log n)</c> while it changes, and, in the <c>Mixed</c> group,
+/// <see cref="SortedDictionary{TKey, TValue}"/>, the BCL's ordered map that has no positional surface at all.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,9 +19,18 @@ using Celerity.Collections;
 /// charged.
 /// </para>
 /// <para>
-/// The <see cref="SortedDictionary{TKey, TValue}"/> arm carries its own op name (<c>MixedTreeWalk</c>), so each
-/// dashboard card still resolves to one BCL measurement and one Celerity one while the report keeps all three
-/// in the <c>Mixed</c> category against the same baseline.
+/// No BCL map ranks and selects in <c>O(log n)</c> while also inserting and removing in <c>O(log n)</c>, but a set
+/// of <see cref="KeyValuePair{TKey, TValue}"/> ordered by key alone does: <see cref="ImmutableSortedSet{T}"/>'s AVL
+/// nodes count their subtrees, so <c>IndexOf</c> of a probe pair and the indexer are each one descent, and
+/// <c>TryGetValue</c> hands back the stored pair. Its arms drive the <see cref="ImmutableSortedSet{T}.Builder"/>,
+/// filled by <c>Add</c> in the shuffled key order and never frozen, so every edit is in place, as in
+/// <c>RankedSetBenchmark</c>.
+/// </para>
+/// <para>
+/// The <see cref="SortedDictionary{TKey, TValue}"/> arm carries its own op name (<c>MixedTreeWalk</c>), and the
+/// <see cref="ImmutableSortedSet{T}"/> arms an <c>Avl</c> suffix (<c>SelectAvl</c>, <c>MixedAvl</c>, …), so each
+/// dashboard card still resolves to one BCL measurement and one Celerity one while the report keeps every arm
+/// in its category against the same baseline.
 /// </para>
 /// </remarks>
 [MemoryDiagnoser(false)]
@@ -42,6 +53,7 @@ public class RankedDictionaryBenchmark
     private SortedList<int, int> sortedList = null!;
     private SortedDictionary<int, int> sortedDictionary = null!;
     private RankedDictionary<int, int> ranked = null!;
+    private ImmutableSortedSet<KeyValuePair<int, int>>.Builder avl = null!;
 
     private int rangeFrom;
     private int rangeTo;
@@ -91,6 +103,19 @@ public class RankedDictionaryBenchmark
         ranked = new RankedDictionary<int, int>();
         foreach (int key in keys)
             ranked.Add(key, key);
+
+        avl = BuildAvl();
+    }
+
+    // Added one pair at a time in the shuffled key order, as the RankedDictionary and the SortedDictionary are, and
+    // never frozen, so every edit an arm makes is in place.
+    private ImmutableSortedSet<KeyValuePair<int, int>>.Builder BuildAvl()
+    {
+        ImmutableSortedSet<KeyValuePair<int, int>>.Builder builder = ImmutableSortedSet.CreateBuilder(KeyOrder.Instance);
+        foreach (int key in keys)
+            builder.Add(new KeyValuePair<int, int>(key, key));
+
+        return builder;
     }
 
     // ---- Add -----------------------------------------------------------------------------------------
@@ -104,6 +129,18 @@ public class RankedDictionaryBenchmark
         foreach (int key in keys)
         {
             map.Add(key, key);
+        }
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Add")]
+    public void ImmutableSortedSet_AddAvl()
+    {
+        ImmutableSortedSet<KeyValuePair<int, int>>.Builder map = ImmutableSortedSet.CreateBuilder(KeyOrder.Instance);
+
+        foreach (int key in keys)
+        {
+            map.Add(new KeyValuePair<int, int>(key, key));
         }
     }
 
@@ -137,6 +174,21 @@ public class RankedDictionaryBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Lookup")]
+    public long ImmutableSortedSet_LookupAvl()
+    {
+        long result = 0;
+        foreach (int key in keys)
+        {
+            // A probe pair lands where its key would, whatever its value; TryGetValue returns the stored pair.
+            avl.TryGetValue(new KeyValuePair<int, int>(key, 0), out KeyValuePair<int, int> entry);
+            result += entry.Value;
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Lookup")]
     public long RankedDictionary_Lookup()
     {
         long result = 0;
@@ -161,6 +213,19 @@ public class RankedDictionaryBenchmark
         foreach (int key in keys)
         {
             sortedList.Remove(key);
+        }
+    }
+
+    [IterationSetup(Target = nameof(ImmutableSortedSet_RemoveAvl))]
+    public void SetupForImmutableSortedSetRemove() => avl = BuildAvl();
+
+    [Benchmark]
+    [BenchmarkCategory("Remove")]
+    public void ImmutableSortedSet_RemoveAvl()
+    {
+        foreach (int key in keys)
+        {
+            avl.Remove(new KeyValuePair<int, int>(key, 0));
         }
     }
 
@@ -199,6 +264,19 @@ public class RankedDictionaryBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Select")]
+    public long ImmutableSortedSet_SelectAvl()
+    {
+        long result = 0;
+        foreach (int rank in ranks)
+        {
+            result += avl[rank].Value;
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Select")]
     public long RankedDictionary_Select()
     {
         long result = 0;
@@ -220,6 +298,20 @@ public class RankedDictionaryBenchmark
         for (int i = 0; i < QueryCount; i++)
         {
             result += sortedList.IndexOfKey(probes[i]);
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Rank")]
+    public long ImmutableSortedSet_RankAvl()
+    {
+        // Every probe is a key in the map, so IndexOf returns its index, as IndexOfKey does.
+        long result = 0;
+        for (int i = 0; i < QueryCount; i++)
+        {
+            result += avl.IndexOf(new KeyValuePair<int, int>(probes[i], 0));
         }
 
         return result;
@@ -258,6 +350,28 @@ public class RankedDictionaryBenchmark
 
     [Benchmark]
     [BenchmarkCategory("RangeScan")]
+    public long ImmutableSortedSet_RangeScanAvl()
+    {
+        // No range view: find the lower bound's index, then read each entry by index, one descent apiece.
+        long result = 0;
+        int count = avl.Count;
+        int at = avl.IndexOf(new KeyValuePair<int, int>(rangeFrom, 0));
+        for (int i = at >= 0 ? at : ~at; i < count; i++)
+        {
+            KeyValuePair<int, int> entry = avl[i];
+            if (entry.Key >= rangeTo)
+            {
+                break;
+            }
+
+            result += entry.Value;
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("RangeScan")]
     public long RankedDictionary_RangeScan()
     {
         long result = 0;
@@ -274,7 +388,8 @@ public class RankedDictionaryBenchmark
     // the board asks where that player now ranks and who holds the median place. The key is re-inserted at
     // the same value, so the map is unchanged after each step and the arms can share one map across
     // invocations — but the remove and the insert each pay their full cost: SortedList memmoves both of its
-    // arrays twice per step, and SortedDictionary walks the tree for both queries.
+    // arrays twice per step, SortedDictionary walks the tree for both queries, and the AVL builder makes about
+    // four O(log n) descents.
 
     [Benchmark(Baseline = true)]
     [BenchmarkCategory("Mixed")]
@@ -323,6 +438,22 @@ public class RankedDictionaryBenchmark
 
     [Benchmark]
     [BenchmarkCategory("Mixed")]
+    public long ImmutableSortedSet_MixedAvl()
+    {
+        long result = 0;
+        for (int i = 0; i < MixedSteps; i++)
+        {
+            var entry = new KeyValuePair<int, int>(probes[i], probes[i]);
+            avl.Remove(entry);
+            avl.Add(entry);
+            result += avl.IndexOf(entry) + avl[avl.Count / 2].Value;
+        }
+
+        return result;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Mixed")]
     public long RankedDictionary_Mixed()
     {
         long result = 0;
@@ -335,5 +466,14 @@ public class RankedDictionaryBenchmark
         }
 
         return result;
+    }
+
+    // Orders the pairs by key alone, which is what makes the set usable as a map: a probe pair with any value
+    // lands where its key would.
+    private sealed class KeyOrder : IComparer<KeyValuePair<int, int>>
+    {
+        public static readonly KeyOrder Instance = new();
+
+        public int Compare(KeyValuePair<int, int> x, KeyValuePair<int, int> y) => x.Key.CompareTo(y.Key);
     }
 }

@@ -59,9 +59,9 @@ public class RankedSet<T> : RankedSet<T, DefaultComparer<T>>
 /// the same trade a hand-rolled sorted <see cref="List{T}"/> makes. <c>ImmutableSortedSet&lt;T&gt;</c> is
 /// <c>O(log n)</c> on both halves — <c>IndexOf</c> and its indexer walk subtree counts kept in its AVL nodes,
 /// and its <c>Builder</c> edits in place — at a heap node per element and an <see cref="IComparer{T}"/>
-/// interface call per comparison. It is not one of this type's benchmark baselines yet, so no ratio against it
-/// is published. The workloads that need both halves: live leaderboards (<i>what rank is this score, and who
-/// is 500th</i>), exact percentiles over a moving window, a sweep line that needs the median of its active set.
+/// interface call per comparison. This type's benchmarks measure against <c>ImmutableSortedSet&lt;T&gt;.Builder</c>
+/// too. The workloads that need both halves: live leaderboards (<i>what rank is this score, and who is
+/// 500th</i>), exact percentiles over a moving window, a sweep line that needs the median of its active set.
 /// </para>
 /// <para>
 /// This is a <i>set</i>, so those workloads need distinct elements. A window of samples with repeated values,
