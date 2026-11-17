@@ -25,7 +25,7 @@ public class StableSortDifferentialTests
         /// <summary>A random permutation: no ties at all.</summary>
         Distinct,
 
-        /// <summary>Sorted, then about one key in fifty swapped with a random partner.</summary>
+        /// <summary>Sorted (each key four times), then length / 50 swaps of two random positions.</summary>
         NearlySorted,
 
         /// <summary>Sorted batches of random lengths, some ascending and some descending.</summary>

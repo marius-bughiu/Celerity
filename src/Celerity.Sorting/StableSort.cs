@@ -25,10 +25,12 @@ namespace Celerity.Sorting;
 /// </para>
 /// <para>
 /// <b>Run-adaptive.</b> The sort finds the runs already in the input — ascending, or strictly descending,
-/// which it reverses — and merges them, so it does <c>O(n)</c> work on sorted or reversed input,
-/// <c>O(n + n·H)</c> on input made of runs whose lengths have entropy <c>H</c> (a sorted array with an
+/// which it reverses — and merges them, so it does <c>O(n)</c> work on sorted or strictly descending
+/// input, <c>O(n + n·H)</c> on input made of runs whose lengths have entropy <c>H</c> (a sorted array with an
 /// appended tail, a concatenation of sorted batches), and <c>O(n log n)</c> in the worst case. Introsort
-/// does <c>O(n log n)</c> work on all of them.
+/// does <c>O(n log n)</c> work on all of them. A descending input <i>with ties</i> is not one run: only a
+/// strictly descending run can be reversed without reordering equal elements, so such input splits into
+/// short runs and costs <c>O(n log n)</c> like unordered input.
 /// </para>
 /// <para>
 /// <b>Where it does not win.</b> With an expensive comparison, such as a string compare, and no order in

@@ -107,13 +107,14 @@ public class StableSortTests
     [InlineData(10_000)]
     public void Sort_ShouldLeaveSortedInputUntouched(int length)
     {
-        // One run covering the whole input: no buffer is rented and nothing moves.
-        int[] keys = Enumerable.Range(0, length).Select(i => i / 3).ToArray();
-        int[] expected = (int[])keys.Clone();
+        // One run covering the whole input. Ties are tagged so that any reordering of equal keys,
+        // not just a wrong order, fails the assertion.
+        var items = Tagged(Enumerable.Range(0, length).Select(i => i / 3).ToArray());
+        var expected = ((int Key, int Tag)[])items.Clone();
 
-        StableSort.Sort(keys.AsSpan());
+        StableSort.Sort(items.AsSpan(), default(ByKey));
 
-        Assert.Equal(expected, keys);
+        Assert.Equal(expected, items);
     }
 
     [Theory]

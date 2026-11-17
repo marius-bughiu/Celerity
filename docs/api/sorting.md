@@ -45,7 +45,7 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 | Culture-aware or case-insensitive string order | `Array.Sort` with a `StringComparer` | `StringSort` is ordinal only. With a comparer in the loop, the BCL's introsort is the right tool. |
 | Combining **already-sorted runs** — per-shard results, sorted files, posting lists, LSM compaction | `KWayMerge.Merge` | A stable loser-tree merge: at most `⌈log₂ k⌉` comparisons per element, against a `PriorityQueue` hand-roll's sift per dequeue and per enqueue. Wins most where comparisons are expensive (strings, records); a lazy form streams sequences that never fit in memory. For in-memory **primitive** keys, `RadixSort` over the concatenation is faster still. |
 | Sorting **records by a comparer** where equal keys must keep their input order — grid rows by one column after another, events by timestamp, a multi-pass sort | `StableSort.Sort` | A run-adaptive merge sort (Powersort). `Array.Sort` and `Span.Sort` are unstable; the BCL's stable route, LINQ `OrderBy`, allocates on every call and cannot sort in place. At 100,000 records it is 1.21x faster than LINQ on random keys and 1.69–3.80x faster on partly ordered input, with no allocation. For primitive keys use `RadixSort`, for ordinal strings `StringSort`; both are stable too. |
-| Input that is **already mostly in order** — a sorted list after a few edits, sorted batches concatenated, a sorted body with an appended tail | `StableSort.Sort` | It finds the existing runs and merges them, so its work shrinks with the disorder: `O(n)` on sorted or reversed input, where introsort pays `O(n log n)` regardless. |
+| Input that is **already mostly in order** — a sorted list after a few edits, sorted batches concatenated, a sorted body with an appended tail | `StableSort.Sort` | It finds the existing runs and merges them, so its work shrinks with the disorder: `O(n)` on sorted or strictly descending input, where introsort pays `O(n log n)` regardless. |
 | Fewer than a few hundred elements | `Array.Sort` | Below the crossover the histogram's fixed cost dominates. This is measured, not assumed: the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) sweeps from 100 to 1,000,000 elements so the crossover is read off rather than guessed. |
 | A key range as wide as (or wider than) the element count | `RadixSort` or `Array.Sort` | `CountingSort`'s histogram costs `range` regardless of `n`. Rule of thumb: `range ≲ n`. |
 
@@ -469,9 +469,12 @@ comparer** form the JIT devirtualizes. The parameters are spans, so pass an arra
 **Properties worth relying on.**
 
 - **Stable**, in both forms.
-- **`O(n)` on sorted or reversed input**, `O(n + n·H)` in general, where `H` is the entropy of the
-  natural run lengths, and `O(n log n)` in the worst case. A sorted input with an appended tail, or a
-  concatenation of a few sorted batches, costs little more than a scan.
+- **`O(n)` on sorted or strictly descending input**, `O(n + n·H)` in general, where `H` is the
+  entropy of the natural run lengths, and `O(n log n)` in the worst case. A sorted input with an
+  appended tail, or a concatenation of a few sorted batches, costs little more than a scan. ⚠️ A
+  descending input **with ties** is the exception: reversing it would reorder the equal elements, so it
+  splits into runs of a few elements and costs `O(n log n)`, like unordered input (at 65,536 elements
+  with every key twice, about 10x the comparisons of the strictly descending case).
 - **Allocates nothing** once the shared pool is warm. Input of up to 16 elements, and input that is
   already a single run, needs no buffer at all. Above that, each call rents a merge buffer of `n / 2`
   elements from `ArrayPool<T>.Shared` (and a second one for the payload). The buffers are cleared
@@ -490,14 +493,14 @@ the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
 | Input | n | vs LINQ `OrderBy` | vs tag-and-`Span.Sort` | vs unstable `Span.Sort` |
 |---|---|---|---|---|
 | Random keys, about eight copies of each | 1,000 / 100,000 | 1.32x / 1.21x | 1.65x / 1.56x | 1.11x / 1.11x |
-| Sorted, then 1% of keys swapped | 1,000 / 100,000 | 2.54x / 1.69x | 4.48x / 2.99x | — |
-| Sixteen sorted batches, concatenated | 1,000 / 100,000 | 2.82x / 3.80x | 3.79x / 5.44x | — |
+| Sorted (each key four times), then `n / 100` random swaps, so about 2% of keys move | 1,000 / 100,000 | 2.54x / 1.69x | 4.48x / 2.99x | — |
+| Sorted batches of `n / 16` keys, concatenated (seventeen batches at 1,000) | 1,000 / 100,000 | 2.82x / 3.80x | 3.79x / 5.44x | — |
 | Records ordered by an ordinal string field | 1,000 / 100,000 | 1.14x / 1.15x | 1.17x / 1.16x | **0.95x** / 1.01x |
 
 `StableSort` allocated nothing in every row; LINQ allocated a copy of the input and more on every call
 (2.8 MB for the 100,000 string records). ⚠️ With an expensive comparison and no order in the input the
 margin is small: on string records it is about 1.15x LINQ, and at 1,000 of them the **unstable**
-`Span.Sort` is 5% faster. A probe on distinct keys (no ties) also put it only about 1.1x ahead of LINQ.
+`Span.Sort` is 5% faster. A separate Stopwatch probe on distinct keys (no ties), which the benchmark does not chart, put it only about 1.1x ahead of LINQ.
 When stability is not needed and the input has no order, the BCL's introsort is fine. For primitive keys,
 `RadixSort` is stable and does no comparisons at all; for ordinal string keys, `StringSort` reads a shared
 prefix once instead of once per comparison. Both beat any comparison sort on their keys.

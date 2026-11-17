@@ -18,9 +18,10 @@ using Celerity.Sorting;
 //
 // The categories are input shapes, over (int Key, int Id) records ordered by Key:
 //   Random       — keys in [0, n/8): eight copies of each key on average, so ties are common.
-//   NearlySorted — keys ascending in steps of four, then about one in a hundred swapped with a random
-//                  partner: the shape of a list re-sorted after a few edits.
-//   SortedRuns   — sixteen sorted batches of random keys, concatenated: results from sixteen shards.
+//   NearlySorted — ascending keys, each repeated four times, then n/100 swaps of two random positions
+//                  (about 2% of keys move): the shape of a list re-sorted after a few edits.
+//   SortedRuns   — sorted batches of n/16 random keys, concatenated: results from sixteen shards (at
+//                  1,000 elements n/16 rounds down, so there are seventeen batches).
 //   Strings      — records ordered by an ordinal compare of a string field with a shared prefix: the
 //                  expensive-comparison case. (StringSort is the faster tool for sorting the strings
 //                  themselves; this measures sorting objects by a string key.)
