@@ -21,10 +21,10 @@ using Celerity.Collections;
 /// <para>
 /// No BCL map ranks and selects in <c>O(log n)</c> while also inserting and removing in <c>O(log n)</c>, but a set
 /// of <see cref="KeyValuePair{TKey, TValue}"/> ordered by key alone does: <see cref="ImmutableSortedSet{T}"/>'s AVL
-/// nodes count their subtrees, so <c>IndexOf</c> of
-/// a probe pair and the indexer are each one descent, and <c>TryGetValue</c> hands back the stored pair. Its
-/// arms drive the <see cref="ImmutableSortedSet{T}.Builder"/>, filled by <c>Add</c> in the shuffled key order and
-/// never frozen, so every edit is in place, as in <c>RankedSetBenchmark</c>.
+/// nodes count their subtrees, so <c>IndexOf</c> of a probe pair and the indexer are each one descent, and
+/// <c>TryGetValue</c> hands back the stored pair. Its arms drive the <see cref="ImmutableSortedSet{T}.Builder"/>,
+/// filled by <c>Add</c> in the shuffled key order and never frozen, so every edit is in place, as in
+/// <c>RankedSetBenchmark</c>.
 /// </para>
 /// <para>
 /// The <see cref="SortedDictionary{TKey, TValue}"/> arm carries its own op name (<c>MixedTreeWalk</c>), and the

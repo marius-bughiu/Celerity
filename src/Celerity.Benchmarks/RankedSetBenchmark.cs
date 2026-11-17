@@ -7,7 +7,7 @@ using Celerity.Collections;
 /// <see cref="RankedSet{T}"/> against the three things a caller actually reaches for today: the BCL's ordered
 /// set, <see cref="SortedSet{T}"/>; a <see cref="List{T}"/> kept sorted by hand with
 /// <see cref="List{T}.BinarySearch(T)"/> and <see cref="List{T}.Insert"/>; and
-/// <see cref="ImmutableSortedSet{T}.Builder"/>, the one BCL set that ranks and selects in <c>O(log n)</c>.
+/// <see cref="ImmutableSortedSet{T}.Builder"/>, a BCL set that ranks and selects in <c>O(log n)</c> while it changes.
 /// </summary>
 /// <remarks>
 /// <para>
