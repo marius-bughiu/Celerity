@@ -1,6 +1,11 @@
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Arm;
+using System.Runtime.Intrinsics.X86;
 
 namespace Celerity.Hashing;
 
@@ -19,10 +24,11 @@ namespace Celerity.Hashing;
 /// secret through a 128-bit multiply-fold, and only inputs longer than 240 bytes
 /// (120 characters) enter the eight-lane accumulator loop that consumes 64-byte
 /// stripes against the secret and periodically scrambles the lanes. The dedicated
-/// branches spare short and mid-length keys a stripe loop's tail handling. Reference
-/// XXH3 runs the accumulator loop with SIMD instructions; this port runs it as scalar
-/// code, so in the measurements below a 121-character key took 2.22–2.56 times as
-/// long to hash as a 120-character one. The 64-bit result is reduced to 32 bits by
+/// branches spare short and mid-length keys a stripe loop's tail handling. Like
+/// reference XXH3, this port runs the accumulator loop on SIMD vectors, two 64-bit
+/// lanes to a <see cref="System.Runtime.Intrinsics.Vector128{T}"/>; a big-endian host,
+/// or one without <c>Vector128</c> acceleration, runs the same arithmetic in scalar
+/// code, with the same result. The 64-bit result is reduced to 32 bits by
 /// xor-folding the high half into the low half (<c>h ^ (h &gt;&gt; 32)</c>), keeping the extra
 /// high-half entropy in the returned value, exactly as
 /// <see cref="StringXxHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/>, and
@@ -48,12 +54,10 @@ namespace Celerity.Hashing;
 /// <see cref="StringCityHash64Hasher"/> are peers at the throughput-oriented top of
 /// the ladder — profile on your own key shape to pick between them, because which is
 /// fastest depends on the key length. Hashing distinct keys of one length in a loop
-/// on an Apple M4 and an AMD EPYC 7763, XXH3 was the fastest of them at 33, 48 and 64
-/// characters, and <see cref="StringCityHash64Hasher"/> at 8, 16 and 32 (tied with XXH3
-/// at 8 on the EPYC). At 121, 256
-/// and 512 characters XXH3 took 2.21–3.43x as long as
-/// <see cref="StringCityHash64Hasher"/>, <see cref="StringMetroHash64Hasher"/> and
-/// <see cref="StringXxHash64Hasher"/>. A table probe can rank them differently.
+/// on an Apple M4, an AMD EPYC 7763 and an Intel Xeon 6975P-C, XXH3 was the fastest
+/// of them at 33, 48 and 64 characters and again at 121, 256 and 512, and
+/// <see cref="StringCityHash64Hasher"/> at 8, 16 and 32 (tied with XXH3 at 8 on the
+/// EPYC 7763). A table probe can rank them differently.
 /// <see cref="StringMurmur3Hasher"/> stays the simplest of the strong-avalanche hashers.
 /// All are good answers when FNV-1a's weaker avalanche pushes clustered or
 /// adversarial keys into long probe chains.
@@ -307,7 +311,165 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
 
     // ── Long code path (> 240 bytes), default secret / seed 0 ─────────────────
 
-    private static ulong HashLong(ReadOnlySpan<char> s, int n)
+    private const string LongPathDispatchJustification =
+        "Hardware dispatch: BitConverter.IsLittleEndian and Vector128.IsHardwareAccelerated are JIT-time " +
+        "constants, and the coverage run is on little-endian hosts with SIMD acceleration, so it never takes " +
+        "the scalar arm. The vector arm is HashLongVector, which stays measured.";
+
+    private const string ScalarLongPathJustification =
+        "Big-endian hosts, and hosts without Vector128 acceleration, only: the coverage run takes " +
+        "HashLongVector. CI re-runs the XXH3 reference tests with DOTNET_EnableHWIntrinsic=0, which sends " +
+        "them down this loop, outside the coverage run.";
+
+    private const string WideningMultiplyJustification =
+        "Hardware dispatch: AdvSimd.IsSupported and Sse2.IsSupported are JIT-time constants, so each host " +
+        "compiles one arm.";
+
+    private const string IsaArmJustification =
+        "One architecture only (Arm64 for AdvSimd, x64 for SSE2), while the coverage gate runs on x64 in CI and " +
+        "on Apple Silicon locally, so neither arm can stay measured on both. The x64 and Arm64 CI legs run " +
+        "their arm through the long-path reference tests.";
+
+    private const string GenericArmJustification =
+        "Hosts with Vector128 acceleration but neither AdvSimd nor SSE2 (WebAssembly SIMD, for example) only; " +
+        "no test host is one.";
+
+    // Reference XXH3 runs this loop with SIMD instructions: its scalar, SSE2, AVX2 and NEON
+    // accumulators do the same per-lane arithmetic and give the same value. Here the eight 64-bit
+    // lanes ride in four Vector128s. The loads read the span's own memory, which is the UTF-16
+    // stream's little-endian words only on a little-endian host, so a big-endian one (and one
+    // without SIMD acceleration, where Vector128 is emulated) keeps the scalar loop.
+    [ExcludeFromCodeCoverage(Justification = LongPathDispatchJustification)]
+    private static ulong HashLong(ReadOnlySpan<char> s, int n) =>
+        BitConverter.IsLittleEndian && Vector128.IsHardwareAccelerated
+            ? HashLongVector(s, n)
+            : HashLongScalar(s, n);
+
+    private static ulong HashLongVector(ReadOnlySpan<char> s, int n)
+    {
+        long byteLength = 2L * n;
+        ref byte input = ref Unsafe.As<char, byte>(ref MemoryMarshal.GetReference(s));
+        ref byte secret = ref MemoryMarshal.GetReference(Secret);
+
+        // Lanes 0-1, 2-3, 4-5 and 6-7 of the scalar loop's accumulator, in that order.
+        Vector128<ulong> acc0 = Vector128.Create((ulong)Prime32_3, Prime64_1);
+        Vector128<ulong> acc1 = Vector128.Create(Prime64_2, Prime64_3);
+        Vector128<ulong> acc2 = Vector128.Create(Prime64_4, (ulong)Prime32_2);
+        Vector128<ulong> acc3 = Vector128.Create(Prime64_5, (ulong)Prime32_1);
+
+        const long BlockBytes = 64L * NbStripesPerBlock; // 1024
+        int nbBlocks = (int)((byteLength - 1) / BlockBytes);
+
+        // Byte offset of the next stripe. The bounds below keep every 64-byte read inside the span,
+        // exactly as the scalar loop's do; the offsets are native-width, so none can overflow.
+        nuint offset = 0;
+        for (int b = 0; b < nbBlocks; b++)
+        {
+            // Each stripe consumes 8 bytes of secret (XXH_SECRET_CONSUME_RATE).
+            for (nuint secretOffset = 0; secretOffset < NbStripesPerBlock * 8; secretOffset += 8)
+            {
+                AccumulateStripeLanes(ref acc0, ref acc1, ref acc2, ref acc3, ref input, offset, ref secret, secretOffset);
+                offset += 64;
+            }
+
+            // Scramble against secret + secretLen - 64.
+            acc0 = ScrambleLanes(acc0, LoadLanes(ref secret, 128));
+            acc1 = ScrambleLanes(acc1, LoadLanes(ref secret, 144));
+            acc2 = ScrambleLanes(acc2, LoadLanes(ref secret, 160));
+            acc3 = ScrambleLanes(acc3, LoadLanes(ref secret, 176));
+        }
+
+        // Last partial block: the stripes that remain before the dedicated last stripe.
+        nuint secretEnd = (nuint)(((byteLength - 1) - ((long)nbBlocks * BlockBytes)) / 64) * 8;
+        for (nuint secretOffset = 0; secretOffset < secretEnd; secretOffset += 8)
+        {
+            AccumulateStripeLanes(ref acc0, ref acc1, ref acc2, ref acc3, ref input, offset, ref secret, secretOffset);
+            offset += 64;
+        }
+
+        // The final stripe always re-reads the last 64 bytes, against secret + secretLen - 64 - 7 = 121.
+        AccumulateStripeLanes(ref acc0, ref acc1, ref acc2, ref acc3, ref input, (nuint)(byteLength - 64), ref secret, 121);
+
+        // MergeAccs over the four vectors: each lane pair is xor-ed with the secret at 11 + 16 * i and
+        // folded through a 128-bit multiply.
+        ulong result = (ulong)byteLength * Prime64_1;
+        result += MergeLanes(acc0, LoadLanes(ref secret, 11));
+        result += MergeLanes(acc1, LoadLanes(ref secret, 27));
+        result += MergeLanes(acc2, LoadLanes(ref secret, 43));
+        result += MergeLanes(acc3, LoadLanes(ref secret, 59));
+        return Xxh3Avalanche(result);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong MergeLanes(Vector128<ulong> acc, Vector128<ulong> key)
+    {
+        Vector128<ulong> keyed = acc ^ key;
+        return Mul128Fold64(keyed.GetElement(0), keyed.GetElement(1));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void AccumulateStripeLanes(
+        ref Vector128<ulong> acc0,
+        ref Vector128<ulong> acc1,
+        ref Vector128<ulong> acc2,
+        ref Vector128<ulong> acc3,
+        ref byte input,
+        nuint offset,
+        ref byte secret,
+        nuint secretOffset)
+    {
+        acc0 = AccumulateLanes(acc0, LoadLanes(ref input, offset), LoadLanes(ref secret, secretOffset));
+        acc1 = AccumulateLanes(acc1, LoadLanes(ref input, offset + 16), LoadLanes(ref secret, secretOffset + 16));
+        acc2 = AccumulateLanes(acc2, LoadLanes(ref input, offset + 32), LoadLanes(ref secret, secretOffset + 32));
+        acc3 = AccumulateLanes(acc3, LoadLanes(ref input, offset + 48), LoadLanes(ref secret, secretOffset + 48));
+    }
+
+    // Two lanes of XXH3_accumulate_512: acc[lane ^ 1] += data, acc[lane] += lo32(data ^ key) * hi32(data ^ key).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<ulong> AccumulateLanes(Vector128<ulong> acc, Vector128<ulong> data, Vector128<ulong> key)
+    {
+        Vector128<ulong> swapped = Vector128.Shuffle(data, Vector128.Create(1UL, 0UL));
+        return acc + MultiplyHalvesAndAdd(swapped, data ^ key);
+    }
+
+    // addend plus, per 64-bit lane, v's low 32 bits times its high 32 bits as a 64-bit product.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = WideningMultiplyJustification)]
+    private static Vector128<ulong> MultiplyHalvesAndAdd(Vector128<ulong> addend, Vector128<ulong> v) =>
+        AdvSimd.IsSupported ? MultiplyHalvesAndAddAdvSimd(addend, v)
+        : Sse2.IsSupported ? MultiplyHalvesAndAddSse2(addend, v)
+        : MultiplyHalvesAndAddGeneric(addend, v);
+
+    // One widening multiply-add: umlal of the lanes' low halves (xtn) and high halves (shrn).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = IsaArmJustification)]
+    private static Vector128<ulong> MultiplyHalvesAndAddAdvSimd(Vector128<ulong> addend, Vector128<ulong> v) =>
+        AdvSimd.MultiplyWideningLowerAndAdd(
+            addend, AdvSimd.ExtractNarrowingLower(v), AdvSimd.ShiftRightLogicalNarrowingLower(v, 32));
+
+    // pmuludq multiplies each lane's low 32 bits; shifting v right by 32 brings the high halves down.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = IsaArmJustification)]
+    private static Vector128<ulong> MultiplyHalvesAndAddSse2(Vector128<ulong> addend, Vector128<ulong> v) =>
+        addend + Sse2.Multiply(v.AsUInt32(), (v >>> 32).AsUInt32());
+
+    // A general 64-bit lane multiply of the masked low halves and the shifted high halves.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = GenericArmJustification)]
+    private static Vector128<ulong> MultiplyHalvesAndAddGeneric(Vector128<ulong> addend, Vector128<ulong> v) =>
+        addend + ((v & Vector128.Create(0xFFFF_FFFFUL)) * (v >>> 32));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<ulong> ScrambleLanes(Vector128<ulong> acc, Vector128<ulong> key) =>
+        ((acc ^ (acc >>> 47)) ^ key) * Vector128.Create((ulong)Prime32_1);
+
+    // One unaligned 16-byte load: two 64-bit little-endian words on a little-endian host.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<ulong> LoadLanes(ref byte source, nuint byteOffset) =>
+        Vector128.LoadUnsafe(ref source, byteOffset).AsUInt64();
+
+    [ExcludeFromCodeCoverage(Justification = ScalarLongPathJustification)]
+    private static ulong HashLongScalar(ReadOnlySpan<char> s, int n)
     {
         long byteLength = 2L * n;
 
@@ -342,6 +504,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = ScalarLongPathJustification)]
     private static void Accumulate(Span<ulong> acc, ReadOnlySpan<char> s, int startChar, int nbStripes)
     {
         for (int i = 0; i < nbStripes; i++)
@@ -352,6 +515,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = ScalarLongPathJustification)]
     private static void AccumulateStripe(Span<ulong> acc, ReadOnlySpan<char> s, int stripeChar, int secretOffset)
     {
         for (int lane = 0; lane < 8; lane++)
@@ -364,6 +528,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [ExcludeFromCodeCoverage(Justification = ScalarLongPathJustification)]
     private static void Scramble(Span<ulong> acc)
     {
         for (int lane = 0; lane < 8; lane++)
@@ -377,6 +542,7 @@ public struct StringXxHash3Hasher : IHashProvider<string>, IHashProvider64<strin
         }
     }
 
+    [ExcludeFromCodeCoverage(Justification = ScalarLongPathJustification)]
     private static ulong MergeAccs(Span<ulong> acc, int secretOffset, ulong start)
     {
         ulong result = start;
