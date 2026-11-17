@@ -6,11 +6,11 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Changed
 
-- The string hasher benchmarks now give every hasher arm its own loop. The one-line arms they replaced left the JIT too small an inlining budget for the deeper hashers: on an Apple M4 the SipHash hashers measured 4–9x slower than they hash, and `StringXxHash64Hasher`, `StringMetroHash64Hasher` and `StringCityHash64Hasher` (on long keys) up to 1.6x slower. `StringXxHash3Hasher` goes the other way on 10–20-character non-ASCII keys, 1.9x slower in the new loop, where the JIT now inlines its 17–32-byte path only partly. The dashboard's string hasher rows move from the first run after this change; no hasher changed.
+- The string hasher benchmarks now give every hasher arm its own loop instead of a one-line call into a shared helper. On an Apple M4 the old arms measured the SipHash hashers 4–9x slower than the new loops do, `StringCityHash64Hasher` 1.55x slower on long keys, and `StringXxHash64Hasher` and `StringMetroHash64Hasher` up to 1.2x slower. `StringXxHash3Hasher` measures slower in the new loops, by 1.9x on non-ASCII keys, and the other hashers move by up to 7%. The dashboard's string hasher rows move from the first run after this change; no hasher changed.
 
 ### Fixed
 
-- The 4.0.0 notes said the one-load word reads made `StringXxHash3Hasher` 1.4–1.7x faster on short, long and non-ASCII keys. Measured in the benchmark's new loops against the code before that change, it is 1.29x faster on 6–12-character keys and 1.74x on 48–80-character ones, but 1.24x slower on 10–20-character non-ASCII keys. The entry's other speedups hold or are slightly larger.
+- The 4.0.0 entry's speedups for the one-load word reads came from the old benchmark arms with a key order the CPU learns, and `StringXxHash3Hasher`'s depend on both. With the loop in the calling method and an order the CPU cannot learn, it hashes 48–80-character keys 1.4x faster than before 4.0 and 6–20-character keys about as fast (Apple M4), not 1.4–1.7x faster on all three key shapes.
 
 ## [4.0.0] - 2026-11-16
 

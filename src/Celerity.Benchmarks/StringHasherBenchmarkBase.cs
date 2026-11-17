@@ -40,8 +40,8 @@ using Celerity.Hashing;
 /// loop. On an Apple M4 that made the SipHash hashers measure 4–9x slower: with even one round left as
 /// a call, their whole state lived on the stack. How much of a deep hasher the JIT inlines still depends
 /// on the caller, so these arms measure one realistic caller, a loop over keys, not every call site.
-/// <see cref="StringXxHash3Hasher"/>, for one, measures slower on 9–16-character keys in this loop
-/// than it did behind the helper.
+/// <see cref="StringXxHash3Hasher"/>, for one, measures slower in this loop than it did behind the
+/// helper, most of all on the non-ASCII sample.
 /// </para>
 /// <para>
 /// The <see cref="Shape"/> parameter sweeps three representative key shapes — short ASCII identifiers,
@@ -77,7 +77,7 @@ public abstract class StringHasherBenchmarkBase
     /// <summary>
     /// Hashes every key through <see cref="string.GetHashCode()"/>, XOR-folding the codes into a single
     /// returned value like the hasher arms. The baseline and every family's same-runner reference measure
-    /// through this one method, so they run identical code. Unlike the hashers, <c>GetHashCode</c>
+    /// through this one method, so they run identical code. Unlike the deeper hashers, <c>GetHashCode</c>
     /// inlines completely even into a one-line arm, so forwarding here compiles to the same loop an arm
     /// of its own would.
     /// </summary>
