@@ -22,33 +22,105 @@ public class StringThroughputHasherBenchmark : StringHasherBenchmarkBase
     [BenchmarkCategory("Hash")]
     public int Bcl_GetHashCode() => HashAllBcl();
 
+    // Each hasher arm holds its own loop instead of forwarding to a shared generic helper;
+    // StringHasherBenchmarkBase explains why.
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Murmur2() => HashAll<StringMurmur2Hasher>();
+    public int Murmur2()
+    {
+        StringMurmur2Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Murmur3() => HashAll<StringMurmur3Hasher>();
+    public int Murmur3()
+    {
+        StringMurmur3Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int XxHash32() => HashAll<StringXxHash32Hasher>();
+    public int XxHash32()
+    {
+        StringXxHash32Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int XxHash64() => HashAll<StringXxHash64Hasher>();
+    public int XxHash64()
+    {
+        StringXxHash64Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int XxHash3() => HashAll<StringXxHash3Hasher>();
+    public int XxHash3()
+    {
+        StringXxHash3Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int CityHash64() => HashAll<StringCityHash64Hasher>();
+    public int CityHash64()
+    {
+        StringCityHash64Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int MetroHash64() => HashAll<StringMetroHash64Hasher>();
+    public int MetroHash64()
+    {
+        StringMetroHash64Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     // ---- IHashProvider64: the un-folded 64-bit surface ----
 
@@ -60,5 +132,15 @@ public class StringThroughputHasherBenchmark : StringHasherBenchmarkBase
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public ulong XxHash64_Hash64() => HashAll64<StringXxHash64Hasher>();
+    public ulong XxHash64_Hash64()
+    {
+        StringXxHash64Hasher hasher = default;
+        string[] k = Keys;
+        ulong acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash64(k[i]);
+        }
+        return acc;
+    }
 }

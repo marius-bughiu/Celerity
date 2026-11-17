@@ -51,31 +51,103 @@ public class StringHasherBenchmark : StringHasherBenchmarkBase
         return acc;
     }
 
+    // Each hasher arm holds its own loop instead of forwarding to a shared generic helper;
+    // StringHasherBenchmarkBase explains why.
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Djb2() => HashAll<StringDjb2Hasher>();
+    public int Djb2()
+    {
+        StringDjb2Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Djb2A() => HashAll<StringDjb2AHasher>();
+    public int Djb2A()
+    {
+        StringDjb2AHasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Sdbm() => HashAll<StringSdbmHasher>();
+    public int Sdbm()
+    {
+        StringSdbmHasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Elf() => HashAll<StringElfHasher>();
+    public int Elf()
+    {
+        StringElfHasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int JenkinsOaat() => HashAll<StringJenkinsOaatHasher>();
+    public int JenkinsOaat()
+    {
+        StringJenkinsOaatHasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Crc32() => HashAll<StringCrc32Hasher>();
+    public int Crc32()
+    {
+        StringCrc32Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 
     [Benchmark]
     [BenchmarkCategory("Hash")]
-    public int Adler32() => HashAll<StringAdler32Hasher>();
+    public int Adler32()
+    {
+        StringAdler32Hasher hasher = default;
+        string[] k = Keys;
+        int acc = 0;
+        for (int i = 0; i < k.Length; i++)
+        {
+            acc ^= hasher.Hash(k[i]);
+        }
+        return acc;
+    }
 }

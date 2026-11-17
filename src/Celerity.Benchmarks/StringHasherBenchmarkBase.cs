@@ -4,7 +4,7 @@ using Celerity.Hashing;
 
 /// <summary>
 /// Shared harness for the <c>string</c> hasher throughput benchmarks: the key sample, the
-/// <see cref="Shape"/> sweep and the devirtualized hashing loops.
+/// <see cref="Shape"/> sweep and the <c>string.GetHashCode()</c> reference loop.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,9 +13,9 @@ using Celerity.Hashing;
 /// and checksums), <see cref="StringFnvHasherBenchmark"/>, <see cref="StringThroughputHasherBenchmark"/>
 /// and <see cref="StringKeyedHasherBenchmark"/>. The split exists only for CI: the benchmark workflow
 /// shards the suite by class, and the comparison as a single 81-case class set a floor under the
-/// heaviest shard that no shard count could lower. Every class inherits the same sample and loops from
-/// here, and the dashboard reads all four as one comparison against the <c>Bcl_GetHashCode</c> baseline
-/// in <see cref="StringHasherBenchmark"/>.
+/// heaviest shard that no shard count could lower. Every class inherits the same sample and the
+/// <c>GetHashCode</c> loop from here, and the dashboard reads all four as one comparison against the
+/// <c>Bcl_GetHashCode</c> baseline in <see cref="StringHasherBenchmark"/>.
 /// </para>
 /// <para>
 /// Splitting gives up one thing the single class had: every row shared a runner with the baseline. The
@@ -27,10 +27,21 @@ using Celerity.Hashing;
 /// </para>
 /// <para>
 /// Each benchmark hashes the same <see cref="HasherKeySamples.DefaultCount"/> distinct keys through one
-/// hasher, invoked via the <c>where THasher : struct, IHashProvider&lt;string&gt;</c> constraint so the
-/// JIT devirtualizes and inlines <c>Hash</c> exactly as it does on a real Celerity collection's probe
-/// path. Every arm XOR-folds its codes into a single returned value, so BenchmarkDotNet consumes the
-/// result and the loop cannot be dead-code-eliminated.
+/// hasher. The arm calls <c>Hash</c> on a <c>default</c> instance of the hasher struct, a direct call
+/// with no interface dispatch, as in a collection specialized for that hasher. Every arm XOR-folds its
+/// codes into a single returned value, so BenchmarkDotNet consumes the result and the loop cannot be
+/// dead-code-eliminated.
+/// </para>
+/// <para>
+/// Every hasher arm holds its own loop rather than forwarding to a shared generic helper. The JIT sizes
+/// a method's inlining budget from that method's own IL, and an arm that only called
+/// <c>HashAll&lt;THasher&gt;()</c> was a few bytes long. Its budget ran out partway down the deeper
+/// hashers and left some of their helpers, <c>AggressiveInlining</c> ones included, as calls inside the
+/// loop. On an Apple M4 that made the SipHash hashers measure 4–9x slower: with even one round left as
+/// a call, their whole state lived on the stack. How much of a deep hasher the JIT inlines still depends
+/// on the caller, so these arms measure one realistic caller, a loop over keys, not every call site.
+/// <see cref="StringXxHash3Hasher"/>, for one, measures slower on the non-ASCII sample in this loop
+/// than it did behind the helper.
 /// </para>
 /// <para>
 /// The <see cref="Shape"/> parameter sweeps three representative key shapes — short ASCII identifiers,
@@ -64,26 +75,11 @@ public abstract class StringHasherBenchmarkBase
     protected string[] Keys => keys;
 
     /// <summary>
-    /// Hashes every key through <typeparamref name="THasher"/>, XOR-folding the codes into a single
-    /// returned value so the JIT cannot elide the loop. The hasher is a stateless struct, instantiated
-    /// once via <c>default</c> outside the loop, matching how the collections hold theirs.
-    /// </summary>
-    protected int HashAll<THasher>() where THasher : struct, IHashProvider<string>
-    {
-        THasher hasher = default;
-        string[] k = keys;
-        int acc = 0;
-        for (int i = 0; i < k.Length; i++)
-        {
-            acc ^= hasher.Hash(k[i]);
-        }
-        return acc;
-    }
-
-    /// <summary>
-    /// Hashes every key through <see cref="string.GetHashCode()"/>, XOR-folding the codes like
-    /// <see cref="HashAll{THasher}"/>. The baseline and every family's same-runner reference measure
-    /// through this one method, so they run identical code.
+    /// Hashes every key through <see cref="string.GetHashCode()"/>, XOR-folding the codes into a single
+    /// returned value like the hasher arms. The baseline and every family's same-runner reference measure
+    /// through this one method, so they run identical code. Unlike the deeper hashers, <c>GetHashCode</c>
+    /// inlines completely even into a one-line arm, so forwarding here compiles to the same loop an arm
+    /// of its own would.
     /// </summary>
     protected int HashAllBcl()
     {
@@ -92,22 +88,6 @@ public abstract class StringHasherBenchmarkBase
         for (int i = 0; i < k.Length; i++)
         {
             acc ^= k[i].GetHashCode();
-        }
-        return acc;
-    }
-
-    /// <summary>
-    /// Hashes every key through <typeparamref name="THasher"/>'s <c>Hash64</c>, XOR-folding the codes
-    /// into a single returned value so the JIT cannot elide the loop.
-    /// </summary>
-    protected ulong HashAll64<THasher>() where THasher : struct, IHashProvider64<string>
-    {
-        THasher hasher = default;
-        string[] k = keys;
-        ulong acc = 0;
-        for (int i = 0; i < k.Length; i++)
-        {
-            acc ^= hasher.Hash64(k[i]);
         }
         return acc;
     }

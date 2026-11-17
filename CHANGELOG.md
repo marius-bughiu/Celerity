@@ -7,10 +7,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Changed
 
 - `StringXxHash3Hasher` now runs its loop for keys longer than 120 characters on SIMD vectors (`Vector128`), as reference XXH3 does, and every hash value is unchanged. At 121, 256 and 512 characters it hashed 4.11–6.48x faster on an Apple M4, an AMD EPYC 7763 and an Intel Xeon 6975P-C, and is now the fastest of the throughput string hashers there, 1.52–2.06x ahead of the next. `StringInternTable<StringXxHash3Hasher>` now probes 128-character tokens 1.3x faster than the default hasher on Apple Silicon, where it probed 2.2x slower.
+- The string hasher benchmarks now give every hasher arm its own loop instead of a one-line call into a shared helper. On an Apple M4 the old arms measured the SipHash hashers 4–9x slower than the new loops do, `StringCityHash64Hasher` 1.55x slower on long keys and `StringXxHash64Hasher` and `StringMetroHash64Hasher` up to 1.2x slower, while `StringXxHash3Hasher` measures 1.9x slower in the new loops on non-ASCII keys and the other hashers move by up to 7%. The dashboard's string hasher rows move from the first run after this change; no hasher changed.
 
 ### Fixed
 
 - The `StringXxHash3Hasher` docs said it typically leads on both short and long keys. Hashing keys of one length in a loop on an Apple M4 and an AMD EPYC 7763, it was the fastest of the throughput hashers at 33, 48 and 64 characters, and `StringCityHash64Hasher` led or tied at 8, 16 and 32. Above 120 characters 4.0.0 ran XXH3's loop for long inputs as scalar code, and at 121, 256 and 512 characters it took 2.21–3.43x as long as `StringCityHash64Hasher`, `StringMetroHash64Hasher` and `StringXxHash64Hasher`. The docs now say where it leads, and `StringHasherKeyLengthBenchmark` measures it.
+- The 4.0.0 entry's speedups for the one-load word reads were measured with a key order the CPU learns. In the benchmark's new loops, with an order too long to learn, `StringCityHash64Hasher` hashes 6–12-character keys 1.3x faster than before 4.0, 10–20-character non-ASCII keys 1.45x faster and 48–80-character keys 1.8x faster, and `StringXxHash3Hasher` 1.15x, 1.16x and 1.45x faster (Apple M4). The entry said 1.6–1.8x and 1.4–1.7x.
 
 ## [4.0.0] - 2026-11-16
 
