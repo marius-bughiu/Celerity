@@ -1,7 +1,8 @@
 # Celerity.Sorting
 
 Non-comparison sorts and selection over primitive keys, an ordinal string
-sort, and a stable k-way merge of sorted runs. Part of the
+sort, a stable k-way merge of sorted runs, and a stable, run-adaptive
+comparison sort. Part of the
 [Celerity](https://github.com/marius-bughiu/Celerity) family of high-performance
 .NET libraries.
 
@@ -35,6 +36,12 @@ scratch. That is exactly the flexibility-for-speed trade Celerity exists to make
   into a destination span, or sequences lazily in `O(k)` memory. .NET has no
   multiway merge; the hand-roll is a `PriorityQueue` that sifts on every
   dequeue and enqueue and is not stable.
+- **`StableSort`** — a **stable** comparison sort for records ordered by a
+  `struct` comparer, in place, keys alone or with a payload. Every BCL sort
+  over an array or span is an unstable introsort; the stable route, LINQ
+  `OrderBy`, allocates on every call. It is **run-adaptive** (Powersort): it
+  finds and merges the runs already in the input, so a sorted list after a
+  few edits, or sorted batches concatenated, costs close to a linear pass.
 
 `RadixSort` and `CountingSort` provide **`SortWithScratch` forms that allocate
 nothing** for their sorts that need pooled buffers, so a hot loop supplies its
@@ -68,6 +75,13 @@ Celerity documents its tradeoffs rather than claiming a blanket win:
   `PriorityQueue` hand-roll on 16 runs of strings — but only 1.15x on `int`
   keys, and for in-memory primitive keys `RadixSort` over the concatenation
   beats any merge.
+
+- **`StableSort` wins by its margin on partly ordered input** (1.69–3.80x LINQ
+  `OrderBy` at 100,000 records) and by a modest one on random input (1.21x).
+  With an expensive comparison and no order in the input it is only about
+  1.15x LINQ, and the unstable `Span.Sort` can be 5% faster. When stability is
+  not needed, introsort is fine; for primitive keys use `RadixSort`, for
+  ordinal strings `StringSort`.
 
 ## Two deliberate floating-point divergences
 

@@ -1,8 +1,8 @@
 # Sorting API reference
 
 `Celerity.Sorting` ships **non-comparison sorts and selection over primitive keys, plus an ordinal
-string sort** and a **k-way merge** of already-sorted runs — the paths the BCL has no equivalent
-for. `Array.Sort` and `MemoryExtensions.Sort<T>` run a scalar comparison introsort for primitive keys
+string sort**, a **k-way merge** of already-sorted runs and a **stable, run-adaptive comparison sort**
+— the paths the BCL has no equivalent for. `Array.Sort` and `MemoryExtensions.Sort<T>` run a scalar comparison introsort for primitive keys
 on every current runtime, and `Array.Sort` is contractually in-place while a radix sort needs `O(n)`
 scratch, so this is a gap the BCL structurally cannot close. For strings the BCL offers only
 comparison sorts, whose every comparison dereferences two strings and re-reads the prefix they share.
@@ -26,6 +26,7 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 - [PartialSort](#partialsort)
 - [StringSort](#stringsort)
 - [KWayMerge](#kwaymerge)
+- [StableSort](#stablesort)
 - [Floating-point ordering](#floating-point-ordering)
 
 ## Choosing a sort
@@ -43,6 +44,8 @@ The package depends only on `Celerity.Primitives`; it does not pull in the colle
 | Strings that carry a payload, or ranking strings without moving them | `StringSort.Sort(keys, values)` / `StringSort.ArgSort` | The same sort; equal keys keep their payload order, which `Array.Sort(keys, items, comparer)` does not promise. |
 | Culture-aware or case-insensitive string order | `Array.Sort` with a `StringComparer` | `StringSort` is ordinal only. With a comparer in the loop, the BCL's introsort is the right tool. |
 | Combining **already-sorted runs** — per-shard results, sorted files, posting lists, LSM compaction | `KWayMerge.Merge` | A stable loser-tree merge: at most `⌈log₂ k⌉` comparisons per element, against a `PriorityQueue` hand-roll's sift per dequeue and per enqueue. Wins most where comparisons are expensive (strings, records); a lazy form streams sequences that never fit in memory. For in-memory **primitive** keys, `RadixSort` over the concatenation is faster still. |
+| Sorting **records by a comparer** where equal keys must keep their input order — grid rows by one column after another, events by timestamp, a multi-pass sort | `StableSort.Sort` | A run-adaptive merge sort (Powersort). `Array.Sort` and `Span.Sort` are unstable; the BCL's stable route, LINQ `OrderBy`, allocates on every call and cannot sort in place. At 100,000 records it is 1.21x faster than LINQ on random keys and 1.69–3.80x faster on partly ordered input, with no allocation. For primitive keys use `RadixSort`, for ordinal strings `StringSort`; both are stable too. |
+| Input that is **already mostly in order** — a sorted list after a few edits, sorted batches concatenated, a sorted body with an appended tail | `StableSort.Sort` | It finds the existing runs and merges them, so its work shrinks with the disorder: `O(n)` on sorted or reversed input, where introsort pays `O(n log n)` regardless. |
 | Fewer than a few hundred elements | `Array.Sort` | Below the crossover the histogram's fixed cost dominates. This is measured, not assumed: the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) sweeps from 100 to 1,000,000 elements so the crossover is read off rather than guessed. |
 | A key range as wide as (or wider than) the element count | `RadixSort` or `Array.Sort` | `CountingSort`'s histogram costs `range` regardless of `n`. Rule of thumb: `range ≲ n`. |
 
@@ -427,6 +430,99 @@ foreach (string line in KWayMerge.Merge(files, default(Ordinal)))
 readonly struct Ordinal : IComparer<string>
 {
     public int Compare(string? x, string? y) => string.CompareOrdinal(x, y);
+}
+```
+
+## StableSort
+
+`StableSort` is a **stable comparison sort**: elements that compare equal keep their input order.
+`Array.Sort`, `List<T>.Sort` and `MemoryExtensions.Sort` are introsorts and say plainly that they
+may reorder equal elements, so the BCL's stable answers are LINQ's `OrderBy(...).ToArray()`, which
+allocates a key array, an index map and the output on every call and cannot sort in place, or tagging
+every element with its position so `Array.Sort` can break ties on it, which copies each element into
+a wider tuple and back. This sort is in place, takes any order a `struct` comparer can express, and
+is **run-adaptive**: it does less work the more order the input already has.
+
+The algorithm is **Powersort** (Munro & Wild, ESA 2018), the merge policy CPython's `list.sort` has
+used since 3.11. It walks the input once, finding each natural run — non-descending, or strictly
+descending, which it reverses in place — and extends any run shorter than 16 elements to 16 by binary
+insertion sort. Each boundary between two adjacent runs gets a *node power*, the depth at which it
+would split a perfectly balanced merge tree over the whole input, and pending runs merge whenever the
+new boundary is shallower than the last one. That gives a near-optimal merge tree for any mix of run
+lengths. Each merge first trims, by binary search, the elements of either run that are already in
+place, then buffers the shorter remaining side.
+
+| Member | Description |
+|---|---|
+| `Sort<T>(Span<T> keys)` | Sorts in ascending order by `IComparable<T>`, keeping equal elements in input order. Nulls sort first. |
+| `Sort<T, TComparer>(Span<T> keys, TComparer comparer)` | The same under a custom order. |
+| `Sort<TKey, TValue>(Span<TKey> keys, Span<TValue> values)` | Sorts the keys, moving the payload with them; equal keys keep their payloads in input order. `values` must be at least as long as `keys`; elements past `keys.Length` are left alone. |
+| `Sort<TKey, TValue, TComparer>(Span<TKey> keys, Span<TValue> values, TComparer comparer)` | The same under a custom order. |
+
+As everywhere in the package, each entry point comes in an `IComparable<T>` form and a **`struct`
+comparer** form the JIT devirtualizes. The parameters are spans, so pass an array as
+`array.AsSpan()`: C# does not infer a generic span parameter from an array argument.
+
+**Exceptions.** The key + payload forms throw `ArgumentException` when `values` is shorter than
+`keys` or shares storage with it (two disjoint slices of one array are fine), before anything moves.
+
+**Properties worth relying on.**
+
+- **Stable**, in both forms.
+- **`O(n)` on sorted or reversed input**, `O(n + n·H)` in general, where `H` is the entropy of the
+  natural run lengths, and `O(n log n)` in the worst case. A sorted input with an appended tail, or a
+  concatenation of a few sorted batches, costs little more than a scan.
+- **Allocates nothing** once the shared pool is warm. Input of up to 16 elements, and input that is
+  already a single run, needs no buffer at all. Above that, each call rents a merge buffer of `n / 2`
+  elements from `ArrayPool<T>.Shared` (and a second one for the payload). The buffers are cleared
+  before they go back to the pool when the element type holds references, so the pool never keeps the
+  caller's objects alive.
+- **A comparer that throws** propagates its exception unchanged, and the span holds a permutation of
+  its input: every merge writes its buffered elements back before the exception leaves it, so nothing
+  is lost or duplicated, and in the key + payload form every key is still paired with its value.
+- **A comparer that is not a consistent total order** gives an unspecified order, but the span still
+  holds a permutation of its input.
+
+**Where it wins, and where it does not.** A local BenchmarkDotNet run on Apple
+Silicon (.NET 10), sorting `(int Key, int Id)` records by `Key`, measured these ratios. The CI series is on
+the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/).
+
+| Input | n | vs LINQ `OrderBy` | vs tag-and-`Span.Sort` | vs unstable `Span.Sort` |
+|---|---|---|---|---|
+| Random keys, about eight copies of each | 1,000 / 100,000 | 1.32x / 1.21x | 1.65x / 1.56x | 1.11x / 1.11x |
+| Sorted, then 1% of keys swapped | 1,000 / 100,000 | 2.54x / 1.69x | 4.48x / 2.99x | — |
+| Sixteen sorted batches, concatenated | 1,000 / 100,000 | 2.82x / 3.80x | 3.79x / 5.44x | — |
+| Records ordered by an ordinal string field | 1,000 / 100,000 | 1.14x / 1.15x | 1.17x / 1.16x | **0.95x** / 1.01x |
+
+`StableSort` allocated nothing in every row; LINQ allocated a copy of the input and more on every call
+(2.8 MB for the 100,000 string records). ⚠️ With an expensive comparison and no order in the input the
+margin is small: on string records it is about 1.15x LINQ, and at 1,000 of them the **unstable**
+`Span.Sort` is 5% faster. A probe on distinct keys (no ties) also put it only about 1.1x ahead of LINQ.
+When stability is not needed and the input has no order, the BCL's introsort is fine. For primitive keys,
+`RadixSort` is stable and does no comparisons at all; for ordinal string keys, `StringSort` reads a shared
+prefix once instead of once per comparison. Both beat any comparison sort on their keys.
+
+```csharp
+using Celerity.Sorting;
+
+// A grid sorted by "last name", then re-sorted by "department": a stable second sort keeps
+// each department's people in last-name order, which an unstable sort does not promise.
+Person[] people = LoadPeople();
+StableSort.Sort(people.AsSpan(), default(ByLastName));
+StableSort.Sort(people.AsSpan(), default(ByDepartment));
+
+// Order events by timestamp, keeping same-tick events in arrival order, with the payload alongside.
+long[] timestamps = events.Select(e => e.Timestamp).ToArray();
+StableSort.Sort(timestamps.AsSpan(), events.AsSpan());
+
+readonly struct ByLastName : IComparer<Person>
+{
+    public int Compare(Person? x, Person? y) => string.CompareOrdinal(x!.LastName, y!.LastName);
+}
+
+readonly struct ByDepartment : IComparer<Person>
+{
+    public int Compare(Person? x, Person? y) => x!.Department.CompareTo(y!.Department);
 }
 ```
 

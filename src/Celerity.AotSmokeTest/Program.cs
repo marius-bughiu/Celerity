@@ -3895,7 +3895,7 @@ void Check(bool condition, string message)
         "EnumMap as IDictionary: boxed key view");
 }
 
-// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596) / KWayMerge.
+// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596) / KWayMerge / StableSort.
 //
 // Every shape that forces a distinct native instantiation: both radix widths, both signed and
 // IEEE-754 key transforms, the key+payload generic over a reference payload (which is where the
@@ -4005,6 +4005,22 @@ void Check(bool condition, string message)
 
     int[] lazy = KWayMerge.Merge(new[] { new[] { 9, 1 }, new[] { 8 }, new[] { 7, 0 } }, default(DescendingIntComparer)).ToArray();
     Check(lazy.AsSpan().SequenceEqual([9, 8, 7, 1, 0]), "KWayMerge.Merge lazy with a struct comparer");
+
+    // StableSort: the natural-order keys-only sort past the 16-element run (so a merge buffer is rented),
+    // the key+payload form over a reference payload, whose pooled buffer is cleared on return, and a
+    // struct comparer, which is a second closed generic over the same merge code.
+    int[] stableKeys = Enumerable.Range(0, 40).Select(i => (i * 7) % 5).ToArray();
+    string[] stableTags = Enumerable.Range(0, 40).Select(i => i.ToString()).ToArray();
+    StableSort.Sort(stableKeys.AsSpan(), stableTags.AsSpan());
+    Check(stableKeys[0] == 0 && stableKeys[^1] == 4 && stableTags[0] == "0" && stableTags[1] == "5", "StableSort stable key+payload");
+
+    int[] stableDescending = Enumerable.Range(0, 40).ToArray();
+    StableSort.Sort(stableDescending.AsSpan(), default(DescendingIntComparer));
+    Check(stableDescending[0] == 39 && stableDescending[^1] == 0, "StableSort with a struct comparer");
+
+    string[] stableWords = Enumerable.Range(0, 40).Select(i => "w" + (39 - i).ToString("D2")).ToArray();
+    StableSort.Sort(stableWords.AsSpan());
+    Check(stableWords[0] == "w00" && stableWords[^1] == "w39", "StableSort natural order over strings");
 }
 
 // Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable / KllSketch.

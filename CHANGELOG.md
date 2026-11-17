@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`StableSort`** (in `Celerity.Sorting`), a stable comparison sort over spans: equal elements keep their input order, which `Array.Sort` and `Span.Sort` do not promise. It sorts in place under any struct comparer, with a key + payload form, and allocates nothing once the shared pool is warm. It adapts to existing order (Powersort), so sorted runs and appended tails cost close to a linear pass. At 100,000 records it is 1.21x faster than LINQ `OrderBy` on random keys and 1.69–3.80x faster on partly ordered input. ⚠️ On string records the margin is only about 1.15x. Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #643.
+
 ### Changed
 
 - `StringXxHash3Hasher` now runs its loop for keys longer than 120 characters on SIMD vectors (`Vector128`), as reference XXH3 does, and every hash value is unchanged. At 121, 256 and 512 characters it hashed 4.11–6.48x faster on an Apple M4, an AMD EPYC 7763 and an Intel Xeon 6975P-C, and is now the fastest of the throughput string hashers there, 1.52–2.06x ahead of the next. `StringInternTable<StringXxHash3Hasher>` now probes 128-character tokens 1.3x faster than the default hasher on Apple Silicon, where it probed 2.2x slower.

@@ -118,6 +118,7 @@ internal static class Differential
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
         ("KWayMerge", KWayMergeCase),
+        ("StableSort", StableSortCase),
         ("SpaceFillingCurve", SpaceFillingCurveCase),
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
@@ -6257,6 +6258,49 @@ internal static class Differential
 
         var lazy = KWayMerge.Merge(runs, default(TupleKeyComparer)).ToArray();
         Check(lazy.AsSpan().SequenceEqual(expected), "KWayMerge lazy merge diverged from a stable sort");
+    }
+
+    // StableSort against a stable LINQ OrderBy. Elements carry a tag the comparer ignores, so the check is
+    // of stability as well as order. The input is built from runs of random lengths, each left as drawn,
+    // sorted ascending or sorted descending, so the run finder, the reversal and every merge shape are hit;
+    // the key+payload form is checked against the same oracle.
+    private static void StableSortCase(Random rng)
+    {
+        int length = rng.Next(0, 4) switch { 0 => rng.Next(0, 17), 1 => rng.Next(17, 100), 2 => rng.Next(100, 1_000), _ => rng.Next(1_000, 5_000) };
+        int keyRange = rng.Next(1, 1_000);
+        var items = new (int Key, int Tag)[length];
+        for (int start = 0; start < length;)
+        {
+            int runLength = Math.Min(length - start, rng.Next(1, 200));
+            for (int i = start; i < start + runLength; i++)
+                items[i] = (rng.Next(keyRange), i);
+
+            int shape = rng.Next(3);
+            if (shape > 0)
+            {
+                Array.Sort(items, start, runLength, Comparer<(int Key, int Tag)>.Create((x, y) => x.Key.CompareTo(y.Key)));
+                if (shape == 2)
+                    Array.Reverse(items, start, runLength);
+
+                // Re-tag in position order so the tags still record the input order the sort must keep.
+                for (int i = start; i < start + runLength; i++)
+                    items[i].Tag = i;
+            }
+
+            start += runLength;
+        }
+
+        var expected = items.OrderBy(e => e.Key).ToArray();
+
+        var keysOnly = ((int Key, int Tag)[])items.Clone();
+        StableSort.Sort(keysOnly.AsSpan(), default(TupleKeyComparer));
+        Check(keysOnly.AsSpan().SequenceEqual(expected), "StableSort.Sort diverged from a stable sort");
+
+        int[] keys = items.Select(e => e.Key).ToArray();
+        int[] tags = items.Select(e => e.Tag).ToArray();
+        StableSort.Sort(keys.AsSpan(), tags.AsSpan());
+        Check(keys.AsSpan().SequenceEqual(expected.Select(e => e.Key).ToArray()), "StableSort key+payload keys diverged");
+        Check(tags.AsSpan().SequenceEqual(expected.Select(e => e.Tag).ToArray()), "StableSort key+payload payload diverged from a stable sort");
     }
 
     private readonly struct TupleKeyComparer : IComparer<(int Key, int Tag)>
