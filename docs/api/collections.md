@@ -8561,7 +8561,7 @@ Commutativity is not required. `Aggregate` folds oldest to newest, so a non-comm
 
 ### The documented BCL-beating workload
 
-A rolling aggregate under a fold with **no inverse**, read after every step: the bitwise OR of capability or error flags seen in the last *n* events, the gcd of recent periods, a min-and-argmin pair, a composed transform over the last *n* operations, or a window maximum. A `Queue<T>` re-fold is `O(w)` per step. This is a constant number of combines.
+A rolling aggregate under a fold with **no inverse**, read after every step: the bitwise OR of capability or error flags seen in the last *n* events, the gcd of recent periods, a composed transform over the last *n* operations, or a window maximum. A `Queue<T>` re-fold is `O(w)` per step. This is a constant number of combines.
 
 BenchmarkDotNet, Apple M4, .NET 10, a full window sliding by 1,000 samples per invocation with the aggregate read after each one:
 
@@ -8584,7 +8584,7 @@ See the [benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collecti
 
 ### Where it loses
 
-- **A window minimum or maximum specifically.** A hand-written **monotonic deque** is the tighter structure there. It drops every element that can never be the extremum again and reads the answer off its front, so it does fewer comparisons. The same benchmark class measures one: at 1,000 and 100,000 it measured between 1.1x faster and 1.1x slower than this type across two runs, which is a wash. A Stopwatch probe at a window of 16 measured the deque **2x faster**. This type is for the folds that trick does not cover (or, and, gcd, argmin pairs, composed functions), and for code that wants one structure for all of them.
+- **A window minimum or maximum specifically.** A hand-written **monotonic deque** is the tighter structure there. It drops every element that can never be the extremum again and reads the answer off its front, so it does fewer comparisons, and since it keeps positions it gives the argmin or argmax for free. The same benchmark class measures one: at 1,000 and 100,000 it measured between 1.1x faster and 1.1x slower than this type across two runs, which is a wash. A Stopwatch probe at a window of 16 measured the deque **2x faster**. This type is for the folds that trick does not cover (or, and, gcd, composed functions), and for code that wants one structure for all of them.
 - **A sum over an integer type.** A running total is simpler and does one add and one subtract per step.
 - **A small window with a cheap fold.** The re-fold's cost grows with the window, and at a few dozen elements a contiguous walk is cheap. A Stopwatch probe at a window of 16 measured the bitwise-or re-fold only 1.3x slower than this type.
 - **Latency-sensitive single steps.** The amortized `O(1)` hides a dequeue that costs `O(n)` combines once per `n` dequeues. A monotonic deque has the same shape: one push can pop every dominated element. If one slow step matters more than the average, a `SegmentTree` ring, at `O(log w)` on every step, is the safer pick.

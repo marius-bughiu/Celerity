@@ -42,7 +42,7 @@ namespace Celerity.Collections;
 /// <b>Where it loses.</b> For a sliding window <b>minimum or maximum</b> specifically, a hand-written monotonic
 /// deque is the tighter answer: it drops every element that can never be the extremum again and reads the
 /// extremum off its front, so it does fewer comparisons. This type is for the folds
-/// that trick does not cover — bitwise <c>or</c> / <c>and</c>, gcd, a min-and-argmin pair, a composed function —
+/// that trick does not cover — bitwise <c>or</c> / <c>and</c>, gcd, a composed function —
 /// and for code that wants one structure for all of them. For a sum over an integer type, a running total is
 /// simpler still.
 /// </para>
