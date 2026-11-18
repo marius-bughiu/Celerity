@@ -34,7 +34,8 @@ namespace Celerity.Tests.Collections;
 /// <see cref="FrozenSortedSet{T}"/> checks a counted source against its own ceiling, the largest whole number of
 /// cache-line nodes one array holds, before it allocates the padded leaf array it copies into.
 /// <see cref="FrozenSortedMap{TKey, TValue}"/> holds its keys in the same layout and checks the same ceiling
-/// before it copies the source's pairs.
+/// before it copies the source's pairs. <see cref="AggregatingQueue{T, TMonoid}"/> sizes its ring from a counted
+/// source and rejects a count past its <c>2^30</c> ceiling before it allocates the ring or enumerates anything.
 /// </para>
 ///
 /// <para>
@@ -124,6 +125,31 @@ public class OversizedSourceAndResidualGuardTests
         Assert.Equal(14, tree.Total);
         Assert.Equal(4, tree[2]);
         Assert.Equal(8, tree.PrefixSum(3));
+    }
+
+    // ---- AggregatingQueue: the ring's power-of-two ceiling -------------------------------------------
+
+    [Fact]
+    public void AggregatingQueueConstructor_ShouldThrowArgumentException_WhenCountedSourceExceedsTheMaximumCount()
+    {
+        // The ring's capacity is a power of two, so the largest it can be is 2^30. The count is checked before
+        // the ring is sized, so a stub that only claims to be enormous reaches the ArgumentException without
+        // allocating anything or being enumerated (its GetEnumerator throws NotSupportedException).
+        var oversized = new LyingCountCollection<int>(int.MaxValue);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(
+            () => new AggregatingQueue<int, SumMonoid<int>>(oversized));
+
+        Assert.Equal("collection", ex.ParamName);
+        Assert.Contains("maximum supported count", ex.Message);
+    }
+
+    [Fact]
+    public void AggregatingQueueConstructor_ShouldThrowArgumentException_JustPastTheCeiling()
+    {
+        var oversized = new LyingCountCollection<int>((1 << 30) + 1);
+
+        Assert.Throws<ArgumentException>(() => new AggregatingQueue<int, SumMonoid<int>>(oversized));
     }
 
     // ---- SegmentTree: the same ceiling, half as tall ------------------------------------------------

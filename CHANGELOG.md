@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`AggregatingQueue<T, TMonoid>`**, a FIFO queue whose `Aggregate` is the fold of its contents under any `IMonoid<T>`, in `O(1)`, with `Enqueue` / `Dequeue` `O(1)` amortized. It keeps a rolling max, bitwise OR, gcd or any fold with no inverse over a count- or time-bounded window. At a 1,000-value window on Apple M4 it measured 116–152x a `Queue<int>` re-folded per step for a maximum, 127x for an OR, and 5–7x a `SegmentTree` ring. For a window min or max, a hand-written monotonic deque ties it, and is 2x faster at 16 values. Ships with its tests, fuzz target, AOT check, benchmark, dashboard cards and docs. Closes #645.
+
 ### Changed
 
 - `StringXxHash3Hasher` now runs its loop for keys longer than 120 characters on SIMD vectors (`Vector128`), as reference XXH3 does, and every hash value is unchanged. At 121, 256 and 512 characters it hashed 4.11–6.48x faster on an Apple M4, an AMD EPYC 7763 and an Intel Xeon 6975P-C, and is now the fastest of the throughput string hashers there, 1.52–2.06x ahead of the next. `StringInternTable<StringXxHash3Hasher>` now probes 128-character tokens 1.3x faster than the default hasher on Apple Silicon, where it probed 2.2x slower.

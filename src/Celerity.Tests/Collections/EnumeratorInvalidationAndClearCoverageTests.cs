@@ -121,6 +121,25 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void AggregatingQueueEnumeratorReset_ShouldThrowInvalidOperationException_WhenQueueModified()
+    {
+        var queue = new AggregatingQueue<int, MaxMonoid<int>>(new[] { 5, 7 });
+
+        var enumerator = queue.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        queue.Enqueue(9);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("The queue was modified during enumeration.", ex.Message);
+
+        // A dequeue is a mutation too, including the one that rebuilds the front from the back.
+        var second = queue.GetEnumerator();
+        queue.Dequeue();
+        Assert.Throws<InvalidOperationException>(() => second.Reset());
+    }
+
+    [Fact]
     public void SegmentTreeEnumeratorReset_ShouldRewindWithoutThrowing_WhenTreeWasNotModified()
     {
         // The counterpart to the FenwickTree case below, and deliberately weaker: the segment tree has no

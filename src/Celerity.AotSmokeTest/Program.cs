@@ -1397,6 +1397,46 @@ void Check(bool condition, string message)
     Check(words.Aggregate == "abc" && words.Query(1, 3) == "bc", "SegmentTree reference-typed elements");
 }
 
+// AggregatingQueue — the sliding-window fold over a struct monoid. The same per-instantiation specialization
+// SegmentTree needs, on a type whose hot path is different: an enqueue folds into a running value, and the dequeue
+// that finds the front empty rebuilds the suffix folds in one pass. Exercise both, the ring growth across a wrap,
+// a reference-typed element (whose dequeued slots must be cleared), clear, and the struct enumerator.
+{
+    var window = new AggregatingQueue<int, MaxMonoid<int>>(4);
+    int[] stream = { 5, 1, 3, 9, 2, 2, 8, 0, 7, 4 };
+    int[] expectedMax = { 5, 5, 5, 9, 9, 9, 8, 8, 8, 7 };
+    bool slidOk = true;
+    for (int i = 0; i < stream.Length; i++)
+    {
+        if (window.Count == 3)
+            window.Dequeue();
+        window.Enqueue(stream[i]);
+        slidOk &= window.Aggregate == expectedMax[i];
+    }
+
+    Check(slidOk && window.Capacity == 4, "AggregatingQueue sliding-window maximum without regrowth");
+
+    var words = new AggregatingQueue<string, AotConcatMonoid>(new[] { "a", "b", "c", "d" });
+    Check(words.Dequeue() == "a" && words.Aggregate == "bcd", "AggregatingQueue flip keeps the fold in order");
+    words.Enqueue("e");
+    words.Enqueue("f");
+    Check(words.Capacity == 8 && words.Aggregate == "bcdef" && words.Peek() == "b",
+        "AggregatingQueue growth across a wrap");
+
+    var seen = new List<string>();
+    foreach (string w in words) seen.Add(w);
+    Check(string.Concat(seen) == "bcdef", "AggregatingQueue enumerates oldest first");
+
+    words.Clear();
+    Check(words.Count == 0 && words.Aggregate == "" && !words.TryDequeue(out _), "AggregatingQueue clear");
+
+    var flags = new AggregatingQueue<int, BitwiseOrMonoid<int>>();
+    flags.Enqueue(0b0001);
+    flags.Enqueue(0b0100);
+    flags.Dequeue();
+    Check(flags.Aggregate == 0b0100, "AggregatingQueue bitwise-or instantiation");
+}
+
 // SparseTable — the build-once half of the range-aggregate space. Everything SegmentTree pins about ILC and
 // struct monoids applies here too, plus one thing specific to this type: the fold arrives constrained to
 // IIdempotentMonoid<T> rather than IMonoid<T>, so the compiler has to specialize against a *derived* generic

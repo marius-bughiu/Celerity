@@ -8540,6 +8540,122 @@ var masks = new SegmentTree<int, BitwiseAndMonoid<int>>(new[] { 0b1111, 0b1110, 
 Console.WriteLine(Convert.ToString(masks.Query(0, 3), 2));   // 1100
 ```
 
+## AggregatingQueue&lt;T, TMonoid&gt;
+
+```csharp
+public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
+    where TMonoid : struct, IMonoid<T>
+```
+
+A FIFO queue that keeps the **fold of everything it holds** under an arbitrary associative operation. `Aggregate` is an `O(1)` read, and `Enqueue` / `Dequeue` are `O(1)` amortized. This is **sliding-window aggregation** with no inverse required. It takes the same [`IMonoid<T>`](#the-fold-imonoidt) folds as `SegmentTree`.
+
+The usual rolling aggregate is a running total: add what enters, subtract what leaves. That needs an inverse, so it covers a sum and nothing else. There is no "un-max", "un-or" or "un-gcd". Without one, the BCL answer is a `Queue<T>` re-folded on every read, which is `O(w)` per step for a window of `w`. A [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) over a ring of `w` slots gets that to `O(log w)`, but only for a window whose length is fixed up front. This type does it in `O(1)` for any window. The caller decides when to dequeue, so a window bounded by count, by time ("the last five seconds") or by anything else is the same code.
+
+### How it works
+
+It is the classic **two-stacks queue**, laid out in one ring buffer with a power-of-two capacity. The older part of the contents (the *front*) stores, beside each element, the fold of that element and everything after it up to the front's end. The newer part (the *back*) keeps only a running fold. `Aggregate` is one combine: the first front slot's fold, then the back's.
+
+An enqueue folds the new element into the back. A dequeue removes the oldest front element. When a dequeue finds the front empty, the whole back becomes the front in one pass from newest to oldest that stores each suffix fold. Each element is combined a constant number of times over its life, so the cost is `O(1)` amortized. The dequeue that triggers the pass pays `O(n)`.
+
+Commutativity is not required. `Aggregate` folds oldest to newest, so a non-commutative monoid (composing affine maps, "last write wins", string concatenation) gets the answer a left-to-right scan of the queue would give. The differential suite and the fuzz target both run on non-commutative folds, since a commutative one cannot tell whether front and back were combined in the right order.
+
+### The documented BCL-beating workload
+
+A rolling aggregate under a fold with **no inverse**, read after every step: the bitwise OR of capability or error flags seen in the last *n* events, the gcd of recent periods, a min-and-argmin pair, a composed transform over the last *n* operations, or a window maximum. A `Queue<T>` re-fold is `O(w)` per step. This is a constant number of combines.
+
+BenchmarkDotNet, Apple M4, .NET 10, a full window sliding by 1,000 samples per invocation with the aggregate read after each one:
+
+| Window | Fold | `Queue<int>` re-fold | `AggregatingQueue` | Ratio |
+| --- | --- | --- | --- | --- |
+| 1,000 | max | 640–659 µs | 4.3–5.5 µs | **116–152x** |
+| 100,000 | max | 60.5 ms | 4.4–5.0 µs | **12,000–13,900x** |
+| 1,000 | or (flag words, 1–3 bits) | 581 µs | 4.6 µs | **127x** |
+| 100,000 | or (flag words, 1–3 bits) | 57.1 ms | 3.9 µs | **~14,800x** |
+
+The ranges span two runs of the same code. The OR rows come from the second run only, since its flag data changed between them. Nothing allocates on either side in the steady state.
+
+The in-library alternative for a fixed-length window, a `SegmentTree` over a ring of `w` slots, measured **5.3–6.7x** slower at 1,000 and **9.4–10x** slower at 100,000 in the same runs, since it pays a `log w` descent per step.
+
+A window OR or AND has a hand-roll of its own: keep the last position each bit was set, and test all 32 per step. It needs no queue at all, but the same benchmark measured it **3.8x** slower than this type at 1,000 and **4.6x** at 100,000. That was on flag words with one to three bits set, its best case, since its update runs once per set bit.
+
+See the [benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=AggregatingQueue) on the dashboard.
+
+### Where it loses
+
+- **A window minimum or maximum specifically.** A hand-written **monotonic deque** is the tighter structure there. It drops every element that can never be the extremum again and reads the answer off its front, so it does fewer comparisons. The same benchmark class measures one: at 1,000 and 100,000 it measured between 1.1x faster and 1.1x slower than this type across two runs, which is a wash. A Stopwatch probe at a window of 16 measured the deque **2x faster**. This type is for the folds that trick does not cover (or, and, gcd, argmin pairs, composed functions), and for code that wants one structure for all of them.
+- **A sum over an integer type.** A running total is simpler and does one add and one subtract per step.
+- **A small window with a cheap fold.** The re-fold's cost grows with the window, and at a few dozen elements a contiguous walk is cheap. A Stopwatch probe at a window of 16 measured the bitwise-or re-fold only 1.3x slower than this type.
+- **Latency-sensitive single steps.** The amortized `O(1)` hides a dequeue that costs `O(n)` combines once per `n` dequeues. A monotonic deque has the same shape: one push can pop every dominated element. If one slow step matters more than the average, a `SegmentTree` ring, at `O(log w)` on every step, is the safer pick.
+
+### Constructors
+
+```csharp
+public AggregatingQueue()                                            // empty, no capacity yet
+public AggregatingQueue(int capacity)                                // rounded up to a power of two
+public AggregatingQueue(int capacity, TMonoid monoid)
+public AggregatingQueue(IEnumerable<T> collection)                   // enqueued in enumeration order
+public AggregatingQueue(IEnumerable<T> collection, TMonoid monoid)
+```
+
+`capacity` must be in `[0, 2^30]` (`ArgumentOutOfRangeException` otherwise) and is rounded up to a power of two, so the ring wraps with a mask. The `IEnumerable<T>` overloads throw `ArgumentNullException` on a null source and `ArgumentException` when a counted source reports more than `2^30` elements, checked before anything is allocated. A counted source only sizes the ring. Its elements are enumerated, so the queue holds exactly what the source yielded. The `monoid`-taking overloads exist for a fold that carries state; a field-free monoid needs neither.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of elements. |
+| `int Capacity { get; }` | The ring's size before it grows: zero or a power of two. |
+| `T Aggregate { get; }` | The fold of every element, oldest to newest, or `Identity` when empty. `O(1)`: one combine. |
+| `void Enqueue(T item)` | Add `item` as the newest element. `O(1)` amortized: one combine, plus a copy of both arrays when the ring is full. Throws `InvalidOperationException` past `2^30` elements. |
+| `T Dequeue()` | Remove and return the oldest element. `O(1)` amortized; the call that finds the front empty pays `O(n)` combines. Throws `InvalidOperationException` when empty. |
+| `bool TryDequeue(out T item)` | `Dequeue` that returns `false` instead of throwing. |
+| `T Peek()` / `bool TryPeek(out T item)` | The oldest element, without removing it. |
+| `void Clear()` | Remove everything and reset `Aggregate` to `Identity`, keeping the capacity. |
+| `Enumerator GetEnumerator()` | Struct enumerator over the elements, oldest first. |
+
+The ring stores two slots per element: the value and its suffix fold. When `T` holds references, a dequeue clears both slots and `Clear` clears both arrays, so a removed element is not kept alive. Every enqueue and dequeue bumps the version, so a live enumerator throws. A `Clear` of an already-empty queue changes nothing and does not. Not thread-safe.
+
+### Choosing it
+
+Reach for `AggregatingQueue<T, TMonoid>` when you add at one end, remove at the other, and need the fold of what is in between after every step, under a fold with no inverse. If the window is a fixed span of a sequence you also edit in the middle, use [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid). If the question is a quantile of the window rather than a fold, use `RollingQuantile<T>` in `Celerity.Statistics`. If you need both ends, use [`Deque<T>`](#dequet), which keeps no aggregate.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Which error flags fired in the last 1,000 requests? OR has no inverse, so a running total cannot forget
+// the request that just left the window. The queue keeps the fold instead.
+var recent = new AggregatingQueue<int, BitwiseOrMonoid<int>>(1_000);
+
+foreach (int flags in requestFlags)
+{
+    if (recent.Count == 1_000)
+        recent.Dequeue();
+    recent.Enqueue(flags);
+
+    if ((recent.Aggregate & TimeoutFlag) != 0)
+        AlertTimeoutsInWindow();
+}
+
+// A time-bounded window is the same code with a different eviction rule.
+var lastFiveSeconds = new AggregatingQueue<long, MaxMonoid<long>>();
+var stamps = new Queue<long>();
+
+void Record(long nowMs, long latency)
+{
+    while (stamps.Count > 0 && stamps.Peek() <= nowMs - 5_000)
+    {
+        stamps.Dequeue();
+        lastFiveSeconds.Dequeue();
+    }
+
+    stamps.Enqueue(nowMs);
+    lastFiveSeconds.Enqueue(latency);
+    Console.WriteLine(lastFiveSeconds.Aggregate);   // worst latency in the last five seconds
+}
+```
+
 ## SparseTable&lt;T, TMonoid&gt;
 
 ```csharp
