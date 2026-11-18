@@ -24,9 +24,11 @@ using Celerity.Collections;
 //                                  is the tighter structure for that fold; this arm is the measurement behind it.
 //   SegmentTree_CrossSlideMax    — a SegmentTree over a ring of ItemCount slots, the in-library way to the same
 //                                  answer for a fixed-length window: O(log w) per step.
-//   BitLastSeen_CrossSlideOr     — the hand-roll for a window OR: the last position each of the 32 bits was set,
-//                                  and a mask of the bits whose last set falls inside the window. O(bits) per step,
-//                                  with no queue at all. It is the OR analogue of the monotonic deque.
+//   BitCounts_CrossSlideOr       — the hand-roll for a window OR: a count per bit of the window's words that set
+//                                  it, plus the mask of bits with a non-zero count. Per-bit counts are an inverse,
+//                                  so this is a running total after all; each step costs one update per set bit of
+//                                  the word entering and the word leaving. It is the OR analogue of the monotonic
+//                                  deque, and on sparse flag words it is the faster of the two.
 //
 // ItemCount is the window size, the axis the comparison turns on: the re-fold grows linearly with it and the
 // segment tree with its logarithm, while the queue does a constant number of combines per step.
@@ -59,9 +61,11 @@ public class AggregatingQueueBenchmark
     private int monoPosition;
     private int monoCursor;
 
-    // Per-bit last-set positions for the OR hand-roll. A bit never set starts one position before any window.
-    private int[] lastSet = null!;
-    private int bitPosition;
+    // Per-bit counts for the OR hand-roll, the window's words in a ring, and the mask of bits with a count.
+    private int[] bitCounts = null!;
+    private int[] bitWindow = null!;
+    private int bitSlot;
+    private int bitMask;
     private int bitCursor;
 
     private SegmentTree<int, MaxMonoid<int>> ring = null!;
@@ -80,7 +84,7 @@ public class AggregatingQueueBenchmark
             samples[i] = random.Next(1_000_000_000);
 
         // Flag words carry one to three set bits each, the shape an error or capability mask has. Sparse words are
-        // the per-bit hand-roll's best case: its update loop runs once per set bit.
+        // the per-bit hand-roll's best case: its updates run once per set bit.
         flagSamples = new int[samples.Length];
         for (int i = 0; i < flagSamples.Length; i++)
         {
@@ -104,8 +108,8 @@ public class AggregatingQueueBenchmark
 
         ring = new SegmentTree<int, MaxMonoid<int>>(ItemCount);
 
-        lastSet = new int[32];
-        Array.Fill(lastSet, -ItemCount - 1);
+        bitCounts = new int[32];
+        bitWindow = new int[ItemCount];
 
         for (int i = 0; i < ItemCount; i++)
         {
@@ -118,7 +122,8 @@ public class AggregatingQueueBenchmark
             int flags = flagSamples[i];
             orWindow.Enqueue(flags);
             orQueue.Enqueue(flags);
-            MarkBits(flags);
+            bitWindow[i] = flags;
+            AddBits(flags);
         }
 
         maxBaselineCursor = maxCursor = orBaselineCursor = orCursor = monoCursor = ringCursor = bitCursor = ItemCount;
@@ -237,21 +242,18 @@ public class AggregatingQueueBenchmark
 
     [BenchmarkCategory("SlideOr")]
     [Benchmark]
-    public long BitLastSeen_CrossSlideOr()
+    public long BitCounts_CrossSlideOr()
     {
         long total = 0;
         for (int i = 0; i < Steps; i++)
         {
-            MarkBits(Next(flagSamples, ref bitCursor));
+            int incoming = Next(flagSamples, ref bitCursor);
+            RemoveBits(bitWindow[bitSlot]);
+            bitWindow[bitSlot] = incoming;
+            bitSlot = bitSlot + 1 == ItemCount ? 0 : bitSlot + 1;
+            AddBits(incoming);
 
-            // The newest element is at bitPosition - 1, so the window is the last ItemCount positions. Compared as an
-            // unsigned difference so it stays right when the position counter wraps over a long run.
-            int newest = bitPosition - 1;
-            int flags = 0;
-            for (int bit = 0; bit < 32; bit++)
-                flags |= ((uint)(newest - lastSet[bit]) < (uint)ItemCount ? 1 : 0) << bit;
-
-            total += flags;
+            total += bitMask;
         }
 
         return total;
@@ -266,17 +268,29 @@ public class AggregatingQueueBenchmark
         return value;
     }
 
-    // Records the current position as the last set of every bit the value carries.
-    private void MarkBits(int value)
+    // Every bit the entering word sets is in the window now, so the mask takes the word whole, with no branch.
+    private void AddBits(int value)
     {
         uint bits = (uint)value;
         while (bits != 0)
         {
-            lastSet[System.Numerics.BitOperations.TrailingZeroCount(bits)] = bitPosition;
+            bitCounts[System.Numerics.BitOperations.TrailingZeroCount(bits)]++;
             bits &= bits - 1;
         }
 
-        bitPosition++;
+        bitMask |= value;
+    }
+
+    private void RemoveBits(int value)
+    {
+        uint bits = (uint)value;
+        while (bits != 0)
+        {
+            int bit = System.Numerics.BitOperations.TrailingZeroCount(bits);
+            if (--bitCounts[bit] == 0)
+                bitMask &= ~(1 << bit);
+            bits &= bits - 1;
+        }
     }
 
     // Pops every tail entry the new value dominates, then appends it. The head is evicted by the caller once it

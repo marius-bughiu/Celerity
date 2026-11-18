@@ -8549,7 +8549,7 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
 
 A FIFO queue that keeps the **fold of everything it holds** under an arbitrary associative operation. `Aggregate` is an `O(1)` read, and `Enqueue` / `Dequeue` are `O(1)` amortized. This is **sliding-window aggregation** with no inverse required. It takes the same [`IMonoid<T>`](#the-fold-imonoidt) folds as `SegmentTree`.
 
-The usual rolling aggregate is a running total: add what enters, subtract what leaves. That needs an inverse, so it covers a sum and nothing else. There is no "un-max", "un-or" or "un-gcd". Without one, the BCL answer is a `Queue<T>` re-folded on every read, which is `O(w)` per step for a window of `w`. A [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) over a ring of `w` slots gets that to `O(log w)`, but only for a window whose length is fixed up front. This type does it in `O(1)` for any window. The caller decides when to dequeue, so a window bounded by count, by time ("the last five seconds") or by anything else is the same code.
+The usual rolling aggregate is a running total: add what enters, subtract what leaves. That needs an inverse, so it covers a sum and little else. There is no "un-max" or "un-gcd", and undoing an OR takes a count per bit. Without one, the BCL answer is a `Queue<T>` re-folded on every read, which is `O(w)` per step for a window of `w`. A [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) over a ring of `w` slots gets that to `O(log w)`, but only for a window whose length is fixed up front. This type does it in `O(1)` for any window. The caller decides when to dequeue, so a window bounded by count, by time ("the last five seconds") or by anything else is the same code.
 
 ### How it works
 
@@ -8576,7 +8576,9 @@ The ranges span two runs of the same code. The OR rows come from the second run 
 
 The in-library alternative for a fixed-length window, a `SegmentTree` over a ring of `w` slots, measured **5.3–6.7x** slower at 1,000 and **9.4–10x** slower at 100,000 in the same runs, since it pays a `log w` descent per step.
 
-A window OR or AND has a hand-roll of its own: keep the last position each bit was set, and test all 32 per step. It needs no queue at all, but the same benchmark measured it **3.8x** slower than this type at 1,000 and **4.6x** at 100,000. That was on flag words with one to three bits set, its best case, since its update runs once per set bit.
+A window OR or AND has a hand-roll of its own: a count per bit of the window's words that set it, which is an inverse after all. It costs one update per set bit of the word entering and the word leaving, so it depends on the data. On flag words with one to three bits set, its best case, the same benchmark measured it **1.5–1.8x** slower than this type at 1,000 and 100,000 across two runs. A Stopwatch probe that runs each loop once put it about **1.3x faster**, so on sparse flags call the two close. On dense random words (about 15 bits set) the probe measured it **5x** slower.
+
+The baseline itself is the plain one. A re-fold over an `int[]` ring with `Vector<int>` is about **6x** faster than walking the `Queue<int>` (a Stopwatch probe at 1,000: ~100 ns a step against 566–718 ns). Against that hand-roll the lead at a 1,000-value window is about 20x, not 120x.
 
 See the [benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=AggregatingQueue) on the dashboard.
 
@@ -8624,8 +8626,8 @@ Reach for `AggregatingQueue<T, TMonoid>` when you add at one end, remove at the 
 ```csharp
 using Celerity.Collections;
 
-// Which error flags fired in the last 1,000 requests? OR has no inverse, so a running total cannot forget
-// the request that just left the window. The queue keeps the fold instead.
+// Which error flags fired in the last 1,000 requests? A plain running OR cannot forget the request that
+// just left the window. The queue keeps the fold instead.
 var recent = new AggregatingQueue<int, BitwiseOrMonoid<int>>(1_000);
 
 foreach (int flags in requestFlags)

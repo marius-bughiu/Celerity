@@ -856,8 +856,8 @@ Console.WriteLine(history.Aggregate);     // 101 — O(1), where SegmentTree.Agg
 `AggregatingQueue<T, TMonoid>` is a FIFO queue whose `Aggregate` is the fold of everything in it, oldest to newest, in `O(1)`. It is the classic two-stacks queue in one ring buffer: the older half stores each element's suffix fold, the newer half one running fold, and a dequeue that empties the older half rebuilds it from the newer one in a single pass. No inverse is needed, so it reaches the folds a running total cannot.
 
 ```csharp
-// The error flags seen in the last 1,000 requests. OR has no inverse, so a running total could not
-// forget the request that just left the window.
+// The error flags seen in the last 1,000 requests. A plain running OR cannot forget the request that
+// just left the window; the queue keeps the fold instead.
 var recent = new AggregatingQueue<int, BitwiseOrMonoid<int>>(1_000);
 
 foreach (int flags in requestFlags)

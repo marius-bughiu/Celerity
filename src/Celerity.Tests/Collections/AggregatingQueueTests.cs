@@ -373,10 +373,12 @@ public class AggregatingQueueTests
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static WeakReference EnqueueThenDequeue(AggregatingQueue<object, LastObjectMonoid> queue)
     {
+        // Enqueued last, so after the flip it is both a value slot and its own suffix fold. (Under this monoid an
+        // older element's fold is the newest element, so it would never test the fold slot.)
         var item = new object();
-        queue.Enqueue(item);
         queue.Enqueue(new object());
-        queue.Dequeue();                                     // flips, then drops the first
+        queue.Enqueue(item);
+        queue.Dequeue();                                     // flips: item's fold slot now holds item
         queue.Dequeue();
         return new WeakReference(item);
     }
@@ -390,6 +392,65 @@ public class AggregatingQueueTests
         queue.Dequeue();                                     // flips: item survives in the front, as value and fold
         queue.Clear();
         return new WeakReference(item);
+    }
+
+    [Fact]
+    public void Clear_ShouldReleaseEveryReference_InAWrappedRing()
+    {
+        // Clear only touches the occupied run, so the run here wraps and spans both the front and the back.
+        var queue = new AggregatingQueue<object, LastObjectMonoid>(4);
+        WeakReference[] refs = FillWrappedThenClear(queue);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.All(refs, r => Assert.False(r.IsAlive));
+        Assert.Empty(queue);
+        Assert.Equal(4, queue.Capacity);
+        GC.KeepAlive(queue);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference[] FillWrappedThenClear(AggregatingQueue<object, LastObjectMonoid> queue)
+    {
+        var items = new object[5];
+        for (int i = 0; i < items.Length; i++)
+            items[i] = new object();
+
+        queue.Enqueue(items[0]);
+        queue.Enqueue(items[1]);
+        queue.Enqueue(items[2]);
+        queue.Dequeue();                                     // flips: items 1, 2 are the front, head at slot 1
+        queue.Enqueue(items[3]);
+        queue.Enqueue(items[4]);                             // wraps into slot 0: the run is slots 1, 2, 3, 0
+        queue.Clear();
+
+        var refs = new WeakReference[5];
+        for (int i = 0; i < refs.Length; i++)
+            refs[i] = new WeakReference(items[i]);
+
+        return refs;
+    }
+
+    [Fact]
+    public void Enqueue_ShouldCommitNothing_WhenTheFoldThrows()
+    {
+        // SumMonoid<decimal> overflows. The failed enqueue must leave the queue exactly as it was, or it would hold
+        // an element its Aggregate does not include.
+        var queue = new AggregatingQueue<decimal, SumMonoid<decimal>>();
+        queue.Enqueue(decimal.MaxValue);
+        var enumerator = queue.GetEnumerator();
+
+        Assert.Throws<OverflowException>(() => queue.Enqueue(1m));
+
+        Assert.Equal(new[] { decimal.MaxValue }, queue);
+        Assert.Equal(decimal.MaxValue, queue.Aggregate);
+        Assert.True(enumerator.MoveNext());                  // nothing changed, so the enumerator survives
+
+        Assert.Equal(decimal.MaxValue, queue.Dequeue());
+        queue.Enqueue(1m);
+        Assert.Equal(1m, queue.Aggregate);
     }
 
     private static IEnumerable<string> Yield(params string[] items)

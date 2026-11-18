@@ -6,7 +6,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ### Added
 
-- **`AggregatingQueue<T, TMonoid>`**, a FIFO queue whose `Aggregate` is the fold of its contents under any `IMonoid<T>`, in `O(1)`, with `Enqueue` / `Dequeue` `O(1)` amortized. It keeps a rolling max, bitwise OR, gcd or any fold with no inverse over a count- or time-bounded window. At a 1,000-value window on Apple M4 it measured 116–152x a `Queue<int>` re-folded per step for a maximum, 127x for an OR, and 5–7x a `SegmentTree` ring. For a window min or max, a hand-written monotonic deque ties it, and is 2x faster at 16 values. Ships with its tests, fuzz target, AOT check, benchmark, dashboard cards and docs. Closes #645.
+- **`AggregatingQueue<T, TMonoid>`**, a FIFO queue whose `Aggregate` is the fold of its contents under any `IMonoid<T>`, in `O(1)`, with `Enqueue` / `Dequeue` `O(1)` amortized. It keeps a rolling max, bitwise OR, gcd or other fold that cannot be subtracted back out, over a count- or time-bounded window. At a 1,000-value window on Apple M4 it measured 116–152x a `Queue<int>` re-folded per step and 5–7x a `SegmentTree` ring. For a window min or max, a hand-written monotonic deque is as fast or faster. Closes #645.
 
 ### Changed
 

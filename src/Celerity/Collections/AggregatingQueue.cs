@@ -18,8 +18,8 @@ namespace Celerity.Collections;
 /// <remarks>
 /// <para>
 /// The usual way to keep a rolling aggregate is a running total: add what enters, subtract what leaves. That needs
-/// an inverse, so it works for a sum and for nothing else in <see cref="IMonoid{T}"/>'s reach — there is no
-/// "un-max", no "un-or", no "un-gcd". Without one, a <see cref="Queue{T}"/> has to re-fold the whole window on
+/// an inverse, so it works for a sum and little else in <see cref="IMonoid{T}"/>'s reach — there is no "un-max" or
+/// "un-gcd", and undoing an OR takes a count per bit. Without one, a <see cref="Queue{T}"/> has to re-fold the whole window on
 /// every read, <c>O(w)</c> per read for a window of <c>w</c>. A <see cref="SegmentTree{T, TMonoid}"/> over a
 /// ring of <c>w</c> slots gets that to <c>O(log w)</c> per step but only for a window whose length is fixed in
 /// advance. This type does it in <c>O(1)</c> amortized for any window: the caller decides when to dequeue, so a
@@ -200,6 +200,10 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
     /// <exception cref="InvalidOperationException">The queue already holds <c>2^30</c> elements.</exception>
     public void Enqueue(T item)
     {
+        // Fold first: a monoid can throw (SumMonoid<decimal> overflows), and nothing may be committed when it does,
+        // or the queue would hold an element its Aggregate does not include.
+        T backFold = _monoid.Combine(_backFold, item);
+
         _version++;
 
         if (_count == _values.Length)
@@ -207,7 +211,7 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
 
         _values[(_head + _count) & _mask] = item;
         _count++;
-        _backFold = _monoid.Combine(_backFold, item);
+        _backFold = backFold;
     }
 
     /// <summary>
@@ -274,10 +278,13 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
         if (_count == 0)
             return;
 
+        // Only the occupied run can hold references. A dequeue clears both slots it vacates and growth copies the
+        // rest as they are, so every slot outside the run is already default, and clearing costs O(Count) rather
+        // than O(Capacity) after a large burst has drained.
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
         {
-            Array.Clear(_values);
-            Array.Clear(_folds);
+            ClearOccupied(_values);
+            ClearOccupied(_folds);
         }
 
         _head = 0;
@@ -338,6 +345,14 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
 
         _frontCount = _count;
         _backFold = _monoid.Identity;
+    }
+
+    // Clears the occupied run of a ring, which wraps at most once.
+    private void ClearOccupied(T[] ring)
+    {
+        int firstRun = Math.Min(_count, ring.Length - _head);
+        Array.Clear(ring, _head, firstRun);
+        Array.Clear(ring, 0, _count - firstRun);
     }
 
     private void Grow()

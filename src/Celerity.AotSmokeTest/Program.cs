@@ -1400,7 +1400,7 @@ void Check(bool condition, string message)
 // AggregatingQueue — the sliding-window fold over a struct monoid. The same per-instantiation specialization
 // SegmentTree needs, on a type whose hot path is different: an enqueue folds into a running value, and the dequeue
 // that finds the front empty rebuilds the suffix folds in one pass. Exercise both, the ring growth across a wrap,
-// a reference-typed element (whose dequeued slots must be cleared), clear, and the struct enumerator.
+// a reference-typed element type, clear, and the struct enumerator.
 {
     var window = new AggregatingQueue<int, MaxMonoid<int>>(4);
     int[] stream = { 5, 1, 3, 9, 2, 2, 8, 0, 7, 4 };
