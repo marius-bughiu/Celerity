@@ -599,8 +599,10 @@ lose:
   retains, and an answer the cheaper `sum` / `sumOfSquares` shortcut gets wrong — not speed.
 
 The numbers above are the CI-tracked ones from the
-[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/); the losing arms are charted
-next to the winning ones so the crossovers can be read off rather than guessed.
+[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), except `RollingQuantile`'s,
+which come from the local run named in its bullet; the dashboard charts its 1,000- to
+100,000-value windows but not the 16- and 100-value ones. The losing arms are charted next to
+the winning ones so the crossovers can be read off rather than guessed.
 
 ## See also
 
