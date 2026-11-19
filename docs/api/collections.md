@@ -8608,7 +8608,7 @@ Any stream that **interleaves range updates with range queries**: reservations (
 | Range add + range max (`MinMaxAddAction` over `MaxMonoid`) vs a `long[]` loop | **2.6x** faster (97 µs vs 253 µs) | **34.5x** faster (1.05 ms vs 36.4 ms) |
 | Range assign + range sum (`SumAssignAction` over `SumMonoid`) vs `Span<T>.Fill` + a sum loop | ⚠️ **1.15x slower** (148 µs vs 128 µs) | **23.6x** faster (0.98 ms vs 23.0 ms) |
 
-Each figure is 1,000 (at 1k) or 2,000 (at 100k) update-and-query pairs, including building the structure. ⚠️ At 1,000 elements range assign + range sum **loses**: `Span<T>.Fill` is vectorized, and filling and summing a few hundred contiguous `long`s costs less than the few dozen node visits per operation the tree makes. Memory is the other price: the padded tree plus its update array is 3–5x a `long[]` of the same length (24–32 bytes per padded leaf for `long`, depending on whether the update is a `long` or a `long?`). See the [lazy segment tree benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=LazySegmentTree) on the dashboard.
+Each figure is 1,000 (at 1k) or 2,000 (at 100k) update-and-query pairs, including building the structure. ⚠️ At 1,000 elements range assign + range sum **loses**: `Span<T>.Fill` is vectorized, and filling and summing a few hundred contiguous `long`s costs less than the few dozen node visits per operation the tree makes. Memory is the other price: the tree takes 24 bytes per padded leaf for `long` with `long` updates and 32 with `long?` updates, and the leaf count pads up to the next power of two. That is 3–6x a `long[]` of the same length with `long` updates and 4–8x with `long?` ones; the high end is a length just past a power of two (65,537 pads to 131,072). See the [lazy segment tree benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=LazySegmentTree) on the dashboard.
 
 `SegmentTree` is not a separate arm: it would turn a `k`-element range update into `k` point updates at `O(log n)` each, strictly more work than the array's `k` stores, so the array is the stronger baseline.
 
@@ -8641,7 +8641,7 @@ It implements `IReadOnlyCollection<T>`, not `IReadOnlyList<T>`: the indexer is `
 
 ### Choosing it
 
-Reach for `LazySegmentTree` when range **updates** and range **queries** interleave. If updates touch one element at a time, [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) does the same job in at most half the cells, with no update array. If the workload is range add and range **sum** and nothing else, two [`FenwickTree<T>`](#fenwicktreet) instances over a difference sequence do it in less memory. If the sequence never changes after you build it, [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid) answers idempotent folds in `O(1)`.
+Reach for `LazySegmentTree` when range **updates** and range **queries** interleave. If updates touch one element at a time, [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) does the same job with no more aggregate cells and no update array. If the workload is range add and range **sum** and nothing else, two [`FenwickTree<T>`](#fenwicktreet) instances over a difference sequence do it in less memory. If the sequence never changes after you build it, [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid) answers idempotent folds in `O(1)`.
 
 ### Usage example
 
