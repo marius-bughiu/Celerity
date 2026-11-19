@@ -470,4 +470,38 @@ public class SortingArgumentValidationTests
         Assert.Equal("indices", ex.ParamName);
         Assert.Equal([-1, -1], indices);
     }
+
+    [Fact]
+    public void StableSort_ShouldThrow_WhenThePayloadIsShorterThanTheKeys()
+    {
+        int[] keys = [3, 2, 1];
+        string[] values = new string[2];
+
+        var ex = Assert.Throws<ArgumentException>(() => StableSort.Sort(keys.AsSpan(), values.AsSpan()));
+        Assert.Equal("values", ex.ParamName);
+        Assert.Equal([3, 2, 1], keys);
+    }
+
+    [Fact]
+    public void StableSort_ShouldThrow_WhenThePayloadSharesStorageWithTheKeys()
+    {
+        int[] buffer = [4, 3, 2, 1];
+
+        var whole = Assert.Throws<ArgumentException>(() => StableSort.Sort(buffer.AsSpan(), buffer.AsSpan()));
+        Assert.Equal("values", whole.ParamName);
+
+        var partial = Assert.Throws<ArgumentException>(() => StableSort.Sort(buffer.AsSpan(0, 3), buffer.AsSpan(1, 3)));
+        Assert.Equal("values", partial.ParamName);
+        Assert.Equal([4, 3, 2, 1], buffer);
+    }
+
+    [Fact]
+    public void StableSort_ShouldNotThrow_WhenThePayloadIsADisjointSliceOfTheSameArray()
+    {
+        int[] buffer = [3, 1, 2, 30, 10, 20];
+
+        StableSort.Sort(buffer.AsSpan(0, 3), buffer.AsSpan(3, 3));
+
+        Assert.Equal([1, 2, 3, 10, 20, 30], buffer);
+    }
 }

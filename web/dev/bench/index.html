@@ -652,6 +652,11 @@ function escapeHtml(s) {
     // which is the other answer: concatenate and Array.Sort. Items is the total across all runs (16, or 256 on
     // MergeWide). Int keys are where the merge's smaller comparison count matters least; MergeStrings is the win.
     { key: 'KWayMerge',           title: 'KWayMerge (16 sorted runs)',               vs: 'PriorityQueue hand-roll; concatenate + Array.Sort on the ConcatSort card', ops: ['Merge', 'MergeWide', 'MergeStrings', 'ConcatSort', 'Lazy'], items: [1000, 100000, 1000000] },
+    // StableSort's ops are input shapes over (int Key, int Id) records, or records keyed by a string on Strings. The
+    // BCL's sorts are unstable, so the charted baseline is the stable one, LINQ OrderBy().ToArray(). The class also
+    // measures the tag-with-position Span.Sort hand-roll and the unstable Span.Sort; those arms carry op names of
+    // their own (Array_Tagged*, Array_Unstable*) so they draw no card, and are read off the BenchmarkDotNet report.
+    { key: 'StableSort',          title: 'StableSort (records by key)',              vs: 'LINQ OrderBy().ToArray()', ops: ['Random', 'NearlySorted', 'SortedRuns', 'Strings'], items: [1000, 100000] },
     // BTreeDictionary / BTreeSet are the ordered containers, benchmarked against the BCL's red-black trees.
     // Mixed (interleaved insert + lookup + in-order range scan) is the documented win workload; RangeScan is
     // the operation SortedDictionary cannot express at all.
