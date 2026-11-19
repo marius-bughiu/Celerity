@@ -12,9 +12,16 @@ namespace Celerity.Collections;
 /// The count is converted with <see cref="INumberBase{TSelf}.CreateTruncating{TOther}(TOther)"/>, which for a
 /// fixed-width integer is exactly right rather than an approximation: <see cref="SumMonoid{T}"/> wraps on
 /// overflow, and adding <c>d</c> to <c>n</c> elements moves a wrapping sum by <c>d × n</c> modulo the type's
-/// width — the same residue the truncated count gives. For <see cref="float"/> and <see cref="double"/> the one
-/// multiplication rounds differently from <c>n</c> separate additions, as any reassociation of a floating-point
-/// sum does.
+/// width — the same residue the truncated count gives. <see cref="Half"/>, which cannot hold a count above 65,504,
+/// is scaled in <see cref="float"/> instead, so a zero update over 65,536 elements stays zero rather than becoming
+/// <c>0 × ∞ = NaN</c>.
+/// </para>
+/// <para>
+/// <b>Floating-point domain.</b> A pending update is the sum of the updates parked on a node, and the tree applies it
+/// in one step where an element-by-element scan adds them one at a time. Floating-point addition is not associative,
+/// so the two agree only while every sum involved is exact — for <see cref="double"/>, integer values below
+/// <c>2^53</c> and other values exact in the mantissa. Outside that, a range's aggregate and the aggregates of its
+/// parts can drift apart by more than one rounding.
 /// </para>
 /// <para>
 /// For range sums under range add with <i>no</i> other fold, two <see cref="FenwickTree{T}"/> instances over a
@@ -39,5 +46,5 @@ public readonly struct SumAddAction<T> : IRangeAction<T, T>
     /// <param name="aggregate">The range's sum before the update.</param>
     /// <param name="count">The number of elements in the range.</param>
     /// <returns><c>aggregate + update × count</c>.</returns>
-    public T Apply(T update, T aggregate, int count) => aggregate + update * T.CreateTruncating(count);
+    public T Apply(T update, T aggregate, int count) => aggregate + RangeCountScale.Multiply(update, count);
 }

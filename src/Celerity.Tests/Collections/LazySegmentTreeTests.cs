@@ -472,6 +472,43 @@ public class LazySegmentTreeTests
     }
 
     [Fact]
+    public void SumActions_ShouldNotOverflowTheCount_WhenTIsHalf()
+    {
+        // Half's largest finite value is 65,504, so converting a count of 65,536 to Half gives infinity, and a zero
+        // update would become 0 × ∞ = NaN. The sum actions scale Half in float instead.
+        var add = default(SumAddAction<Half>);
+        Assert.Equal(Half.Zero, add.Apply(Half.Zero, Half.Zero, 65_536));
+        Assert.Equal((Half)64, add.Apply((Half)(1f / 1024), Half.Zero, 65_536));
+
+        var assign = default(SumAssignAction<Half>);
+        Assert.Equal(Half.Zero, assign.Apply(Half.Zero, (Half)5, 65_536));
+        Assert.Equal((Half)64, assign.Apply((Half)(1f / 1024), Half.Zero, 65_536));
+
+        // End to end: an identity push across a zero-filled tree of that length must leave every query zero.
+        var tree = new LazySegmentTree<Half, Half, SumMonoid<Half>, SumAddAction<Half>>(65_536);
+        tree.Apply(0, 65_536, Half.Zero);
+        Assert.Equal(Half.Zero, tree.Aggregate);
+        Assert.Equal(Half.Zero, tree.Query(3, 40_000));
+    }
+
+    [Fact]
+    public void MinMaxAddAction_ShouldKeepChildReadsConsistent_WhenFloatingPointUpdatesAreExact()
+    {
+        // The documented floating-point domain: values and updates exact in the mantissa. Repeated full-range
+        // updates then compose into pending deltas that agree with element-by-element application, so reads of the
+        // children agree with the root.
+        var tree = new LazySegmentTree<double, double, MaxMonoid<double>, MinMaxAddAction<double>>(new[] { 1d, 2d, 7d, 4d });
+
+        tree.Apply(0, 4, 1e15);
+        tree.Apply(0, 4, -1e15);
+        tree.Apply(1, 3, 0.5);
+
+        Assert.Equal(7.5, tree.Aggregate);
+        Assert.Equal(1d, tree.Query(0, 1));
+        Assert.Equal(new[] { 1d, 2.5, 7.5, 4d }, tree.ToArray());
+    }
+
+    [Fact]
     public void MinMaxAddAction_ShouldMoveTheExtremeByTheUpdateAlone()
     {
         var action = default(MinMaxAddAction<int>);

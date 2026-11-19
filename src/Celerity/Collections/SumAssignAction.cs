@@ -12,7 +12,8 @@ namespace Celerity.Collections;
 /// Assignments do not commute: a later one replaces an earlier one outright, which is what
 /// <see cref="Compose"/> does. As with <see cref="SumAddAction{T}"/>, the count is converted with
 /// <see cref="INumberBase{TSelf}.CreateTruncating{TOther}(TOther)"/>, which gives the exact wrapping sum for a
-/// fixed-width integer.
+/// fixed-width integer; <see cref="Half"/>, which cannot hold a count above 65,504, is scaled in
+/// <see cref="float"/> instead.
 /// </remarks>
 public readonly struct SumAssignAction<T> : IRangeAction<T, T?>
     where T : struct, INumberBase<T>
@@ -32,5 +33,5 @@ public readonly struct SumAssignAction<T> : IRangeAction<T, T?>
     /// <param name="count">The number of elements in the range.</param>
     /// <returns><c>update × count</c>, or <paramref name="aggregate"/> when <paramref name="update"/> is <c>null</c>.</returns>
     public T Apply(T? update, T aggregate, int count) =>
-        update.HasValue ? update.GetValueOrDefault() * T.CreateTruncating(count) : aggregate;
+        update.HasValue ? RangeCountScale.Multiply(update.GetValueOrDefault(), count) : aggregate;
 }
