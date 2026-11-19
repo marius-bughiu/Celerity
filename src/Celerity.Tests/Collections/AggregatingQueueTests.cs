@@ -453,6 +453,73 @@ public class AggregatingQueueTests
         Assert.Equal(1m, queue.Aggregate);
     }
 
+    [Fact]
+    public void Dequeue_ShouldCommitNothing_WhenTheIdentityThrowsDuringAFlip()
+    {
+        var control = new IdentityControl();
+        var queue = new AggregatingQueue<string, ThrowingIdentityMonoid>(
+            new[] { "a", "b", "c" }, new ThrowingIdentityMonoid(control));
+        var enumerator = queue.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        control.ShouldThrow = true;
+        Assert.Throws<InvalidOperationException>(() => queue.Dequeue());
+        control.ShouldThrow = false;
+
+        Assert.Equal(3, queue.Count);
+        Assert.Equal(new[] { "a", "b", "c" }, queue);
+        Assert.Equal("abc", queue.Aggregate);
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("b", enumerator.Current);
+
+        Assert.Equal("a", queue.Dequeue());
+        Assert.Equal("bc", queue.Aggregate);
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+    }
+
+    [Fact]
+    public void Clear_ShouldCommitNothing_WhenTheIdentityThrows()
+    {
+        var control = new IdentityControl();
+        var queue = new AggregatingQueue<string, ThrowingIdentityMonoid>(
+            new[] { "a", "b", "c", "d" }, new ThrowingIdentityMonoid(control));
+        queue.Dequeue();
+        queue.Enqueue("e");                                  // wrapped ring with both front and back populated
+        var enumerator = queue.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        control.ShouldThrow = true;
+        Assert.Throws<InvalidOperationException>(() => queue.Clear());
+        control.ShouldThrow = false;
+
+        Assert.Equal(4, queue.Count);
+        Assert.Equal(new[] { "b", "c", "d", "e" }, queue);
+        Assert.Equal("bcde", queue.Aggregate);
+        Assert.True(enumerator.MoveNext());
+        Assert.Equal("c", enumerator.Current);
+
+        queue.Clear();
+        Assert.Empty(queue);
+        Assert.Equal(string.Empty, queue.Aggregate);
+        Assert.Throws<InvalidOperationException>(() => enumerator.MoveNext());
+        queue.Enqueue("f");
+        Assert.Equal("f", queue.Aggregate);
+    }
+
+    private sealed class IdentityControl
+    {
+        public bool ShouldThrow;
+    }
+
+    private readonly struct ThrowingIdentityMonoid(IdentityControl control) : IMonoid<string>
+    {
+        public string Identity => control.ShouldThrow
+            ? throw new InvalidOperationException("identity unavailable")
+            : string.Empty;
+
+        public string Combine(string left, string right) => left + right;
+    }
+
     private static IEnumerable<string> Yield(params string[] items)
     {
         foreach (string item in items)

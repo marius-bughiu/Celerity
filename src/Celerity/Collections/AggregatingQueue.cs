@@ -278,6 +278,9 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
         if (_count == 0)
             return;
 
+        // Obtain the identity before changing any state: a caller's getter can throw too.
+        T identity = _monoid.Identity;
+
         // Only the occupied run can hold references. A dequeue clears both slots it vacates and growth copies the
         // rest as they are, so every slot outside the run is already default, and clearing costs O(Count) rather
         // than O(Capacity) after a large burst has drained.
@@ -290,7 +293,7 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
         _head = 0;
         _count = 0;
         _frontCount = 0;
-        _backFold = _monoid.Identity;
+        _backFold = identity;
         _version++;
     }
 
@@ -306,10 +309,10 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
 
     private T DequeueCore()
     {
-        _version++;
-
         if (_frontCount == 0)
             Flip();
+
+        _version++;
 
         int head = _head;
         T item = _values[head];
@@ -329,6 +332,7 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
     // Only called with the front empty and the queue non-empty, so the back is everything.
     private void Flip()
     {
+        T identity = _monoid.Identity;
         T[] values = _values;
         T[] folds = _folds;
         int mask = _mask;
@@ -344,7 +348,7 @@ public sealed class AggregatingQueue<T, TMonoid> : IReadOnlyCollection<T>
         }
 
         _frontCount = _count;
-        _backFold = _monoid.Identity;
+        _backFold = identity;
     }
 
     // Clears the occupied run of a ring, which wraps at most once.
