@@ -1970,8 +1970,8 @@ insertion order; returns an **empty group** if the key is absent (no throw).
 | `int CountValues(TKey key)` | Number of values for the key, or `0` if absent. |
 | `bool TryGetValues(TKey key, out ValueGroup values)` | Non-throwing group lookup. |
 | `void Clear()` | Remove all keys and values; key capacity is preserved. |
-| `int EnsureCapacity(int capacity)` | Pre-grow the **key** table to hold at least `capacity` distinct keys without resizing, returning the resulting key capacity. Only the key table is affected; value groups are untouched. Throws `ArgumentOutOfRangeException` on a negative capacity. |
-| `void TrimExcess()` / `void TrimExcess(int capacity)` | Rehash the key table down to the smallest size that still holds the current distinct-key `Count` (or `capacity`). The out-of-band default-key group and the per-key value groups are preserved. `TrimExcess(capacity)` throws if `capacity < Count`. |
+| `int EnsureCapacity(int capacity)` | Pre-grow the **key** table to hold at least `capacity` distinct keys without resizing, returning the resulting key capacity. Only the key table is affected; value groups are untouched. Throws `ArgumentOutOfRangeException` on a negative capacity, or one more than the largest table (2³⁰ slots) can hold at the map's load factor. |
+| `void TrimExcess()` / `void TrimExcess(int capacity)` | Rehash the key table down to the smallest size that still holds the current distinct-key `Count` (or `capacity`). The out-of-band default-key group and the per-key value groups are preserved. `TrimExcess(capacity)` throws if `capacity < Count`, or if `capacity` is more than the largest table can hold, as `EnsureCapacity` does. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator yielding one `Grouping` per distinct key; the default-key group (if present) is yielded first. |
 | `KeyCollection Keys` | Allocation-free struct view over the distinct keys. |
 
@@ -2105,8 +2105,8 @@ throws `ArgumentOutOfRangeException`.
 | `int GetCount(T element)` | The element's multiplicity, or `0` if absent (same as the indexer get). |
 | `bool Contains(T element)` | Whether the element has a multiplicity of at least one. |
 | `void Clear()` | Remove all elements; element capacity is preserved. |
-| `int EnsureCapacity(int capacity)` | Pre-grow the element table to hold at least `capacity` distinct elements without resizing, returning the resulting capacity. Throws `ArgumentOutOfRangeException` on a negative capacity. |
-| `void TrimExcess()` / `void TrimExcess(int capacity)` | Rehash the element table down to the smallest size that still holds the current distinct-element `Count` (or `capacity`). The out-of-band default element and every multiplicity are preserved. `TrimExcess(capacity)` throws if `capacity < Count`. |
+| `int EnsureCapacity(int capacity)` | Pre-grow the element table to hold at least `capacity` distinct elements without resizing, returning the resulting capacity. Throws `ArgumentOutOfRangeException` on a negative capacity, or one more than the largest table (2³⁰ slots) can hold at the multiset's load factor. |
+| `void TrimExcess()` / `void TrimExcess(int capacity)` | Rehash the element table down to the smallest size that still holds the current distinct-element `Count` (or `capacity`). The out-of-band default element and every multiplicity are preserved. `TrimExcess(capacity)` throws if `capacity < Count`, or if `capacity` is more than the largest table can hold, as `EnsureCapacity` does. |
 | `Enumerator GetEnumerator()` | Allocation-free struct enumerator yielding one `KeyValuePair<T,int>` (element → count) per distinct element; the default element (if present) is yielded first. |
 | `ElementCollection Elements` | Allocation-free struct view over the distinct elements (each yielded once, regardless of multiplicity). |
 
