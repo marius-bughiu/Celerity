@@ -417,6 +417,7 @@
     { key: 'StringInternTable',   title: 'StringInternTable',                     vs: 'HashSet<string> via GetAlternateLookup<ReadOnlySpan<char>>' },
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' },
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',    vs: 'long[] (naive range min)' },
+    { key: 'LazySegmentTree',     title: 'LazySegmentTree<long, …> (range update + range query)', vs: 'long[] (loop per range update and per range query)' },
     { key: 'SparseTable',         title: 'SparseTable<long, MinMonoid<long>>',    vs: 'long[] (naive range min) — the SegmentTree head-to-head is measured in the same class but not charted here, since this page plots one Celerity series per card' },
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',       vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards' },
     { key: 'SpatialGrid',         title: 'SpatialGrid<int> (moving points)',      vs: 'Dictionary<(int, int), List<int>> (bucketed grid)' },

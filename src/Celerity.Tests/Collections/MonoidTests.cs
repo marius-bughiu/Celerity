@@ -192,6 +192,41 @@ public class MonoidTests
         Assert.Equal(fenwick.Total, segment.Aggregate);
     }
 
+    [Fact]
+    public void LazySegmentTree_ShouldAgreeWithSegmentTree_OnEveryShippedFold()
+    {
+        // The lazy tree folds with the same IMonoid<T> structs, over a padded layout instead of the 2n one. Point
+        // updates are the operation both trees share, so every shipped fold is reconciled through them.
+        int[] values = { 5, -3, 8, 0, 9, -2, 6, 7, -1 };
+        uint[] masks = { 0b1011, 0b0110, 0b1111, 0b0001, 0b1100 };
+
+        AssertAgree(new SegmentTree<int, MinMonoid<int>>(values),
+            new LazySegmentTree<int, int?, MinMonoid<int>, IdempotentAssignAction<int>>(values));
+        AssertAgree(new SegmentTree<int, MaxMonoid<int>>(values),
+            new LazySegmentTree<int, int?, MaxMonoid<int>, IdempotentAssignAction<int>>(values));
+        AssertAgree(new SegmentTree<int, SumMonoid<int>>(values),
+            new LazySegmentTree<int, int, SumMonoid<int>, SumAddAction<int>>(values));
+        AssertAgree(new SegmentTree<uint, BitwiseAndMonoid<uint>>(masks),
+            new LazySegmentTree<uint, uint?, BitwiseAndMonoid<uint>, IdempotentAssignAction<uint>>(masks));
+        AssertAgree(new SegmentTree<uint, BitwiseOrMonoid<uint>>(masks),
+            new LazySegmentTree<uint, uint?, BitwiseOrMonoid<uint>, IdempotentAssignAction<uint>>(masks));
+
+        static void AssertAgree<T, TUpdate, TMonoid, TAction>(
+            SegmentTree<T, TMonoid> segment, LazySegmentTree<T, TUpdate, TMonoid, TAction> lazy)
+            where TMonoid : struct, IMonoid<T>
+            where TAction : struct, IRangeAction<T, TUpdate>
+        {
+            segment[segment.Count / 2] = segment[0];
+            lazy[lazy.Count / 2] = lazy[0];
+
+            for (int start = 0; start <= segment.Count; start++)
+                for (int end = start; end <= segment.Count; end++)
+                    Assert.Equal(segment.Query(start, end), lazy.Query(start, end));
+
+            Assert.Equal(segment.Aggregate, lazy.Aggregate);
+        }
+    }
+
     // ---- the idempotence law, and which folds claim it ---------------------------------------------
 
     [Fact]

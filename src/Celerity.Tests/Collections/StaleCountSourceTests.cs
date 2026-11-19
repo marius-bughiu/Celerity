@@ -226,6 +226,25 @@ public class StaleCountSourceTests
     [Theory]
     [InlineData(5)]
     [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(0)]
+    public void LazySegmentTree_ShouldFoldExactlyWhatACountedSourceYields(int count)
+    {
+        var tree = new LazySegmentTree<int, int, MinMonoid<int>, MinMaxAddAction<int>>(new StaleCount<int>(count, 5, 3, 8));
+
+        Assert.Equal(new[] { 5, 3, 8 }, tree);
+        Assert.Equal(3, tree.Aggregate);
+
+        // No leaf past the real length may hold a default 0: it would win every minimum after this update. A count of
+        // 4 pads to the same size as the 3 yielded, so the leaves stay put; 5, 2 and 0 pad differently and move.
+        tree.Apply(0, 3, 10);
+        Assert.Equal(13, tree.Aggregate);
+        Assert.Equal(13, tree.Query(1, 3));
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(2)]
     [InlineData(0)]
     public void FenwickTree_ShouldHoldExactlyWhatACountedSourceYields(int count)
     {
@@ -355,6 +374,7 @@ public class StaleCountSourceTests
         Assert.Equal(new[] { 2, 4 }, new Deque<int>(view));
         Assert.Equal(new[] { 2, 4 }, new FrozenSortedSet<int>(view));
         Assert.Equal(new[] { 2, 4 }, new SegmentTree<int, MinMonoid<int>>(view));
+        Assert.Equal(new[] { 2, 4 }, new LazySegmentTree<int, int, MinMonoid<int>, MinMaxAddAction<int>>(view));
 
         // BitPackedArray has a List<ulong> fast path of its own, held to the same exact-type rule.
         Assert.Equal(new[] { 2UL, 4UL }, new BitPackedArray(new EvensOnly<ulong>(1, 2, 3, 4), bitsPerValue: 8));

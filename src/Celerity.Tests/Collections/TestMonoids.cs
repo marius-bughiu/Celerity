@@ -109,3 +109,46 @@ internal readonly struct FlooredMaxMonoid : IIdempotentMonoid<int>
 
     public int Combine(int left, int right) => Math.Max(left, right);
 }
+
+// Range actions that exist only for the LazySegmentTree suites. The shipped actions are all commutative in how
+// they compose (two adds, or a later assign that simply wins), so none of them can observe whether pending updates
+// are composed in the order they were applied; AffineSumAction can. RepeatAssignAction pairs a reference-type,
+// non-commutative fold with an action that needs the node's element count, and ScaledMinMaxAddAction carries state
+// for the instance-taking constructors.
+
+/// <summary>x → x · Mul + Add over sums. Composition is not commutative: (×2, +1) then (×3, +0) is not the reverse.</summary>
+internal readonly struct AffineSumAction : IRangeAction<long, (long Mul, long Add)>
+{
+    public (long Mul, long Add) Identity => (1, 0);
+
+    public (long Mul, long Add) Compose((long Mul, long Add) earlier, (long Mul, long Add) later) =>
+        (earlier.Mul * later.Mul, earlier.Add * later.Mul + later.Add);
+
+    public long Apply((long Mul, long Add) update, long aggregate, int count) =>
+        aggregate * update.Mul + update.Add * count;
+}
+
+/// <summary>Sets every element to one string; over <see cref="ConcatMonoid"/> a range of n becomes n copies.</summary>
+internal readonly struct RepeatAssignAction : IRangeAction<string, string?>
+{
+    public string? Identity => null;
+
+    public string? Compose(string? earlier, string? later) => later ?? earlier;
+
+    public string Apply(string? update, string aggregate, int count) =>
+        update is null ? aggregate : string.Concat(Enumerable.Repeat(update, count));
+}
+
+/// <summary>Adds update × scale to every element, over min or max. The scale is instance state.</summary>
+internal readonly struct ScaledMinMaxAddAction : IRangeAction<int, int>
+{
+    private readonly int _scale;
+
+    public ScaledMinMaxAddAction(int scale) => _scale = scale;
+
+    public int Identity => 0;
+
+    public int Compose(int earlier, int later) => earlier + later;
+
+    public int Apply(int update, int aggregate, int count) => aggregate + update * _scale;
+}

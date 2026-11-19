@@ -1397,6 +1397,42 @@ void Check(bool condition, string message)
     Check(words.Aggregate == "abc" && words.Query(1, 3) == "bc", "SegmentTree reference-typed elements");
 }
 
+// LazySegmentTree — range updates over a struct monoid and a struct range action. Two generic struct arguments
+// now meet in one instantiation, and two of the shipped actions take a Nullable<T> update, so ILC has to compile
+// the constrained IRangeAction<T, T?> calls ahead of time. A reference-typed element type rides along as it does
+// for SegmentTree. Exercise the seeded build, range add over max, range assign over sums (including the null
+// no-op), the indexer through pending updates, the struct enumerator's flush, and clear.
+{
+    var seats = new LazySegmentTree<int, int, MaxMonoid<int>, MinMaxAddAction<int>>(new int[10]);
+    seats.Apply(2, 6, 1);
+    seats.Apply(4, 8, 1);
+    Check(seats.Aggregate == 2 && seats.Query(0, 4) == 1 && seats.Query(8, 10) == 0,
+        "LazySegmentTree range add + range max");
+    Check(seats[5] == 2 && seats[7] == 1, "LazySegmentTree indexer reads through pending updates");
+
+    var ledger = new LazySegmentTree<long, long?, SumMonoid<long>, SumAssignAction<long>>(new long[] { 5, 5, 5, 5, 5, 5, 5 });
+    ledger.Apply(1, 4, 2);
+    ledger.Apply(0, 7, null);
+    Check(ledger.Aggregate == 26 && ledger.Query(0, 3) == 9, "LazySegmentTree range assign + range sum");
+
+    var adds = new LazySegmentTree<long, long, SumMonoid<long>, SumAddAction<long>>(new long[] { 1, 2, 3 });
+    adds.Apply(0, 3, 10);
+    var values = new List<long>();
+    foreach (long v in adds) values.Add(v);
+    Check(values.Count == 3 && values[0] == 11 && values[2] == 13, "LazySegmentTree enumerator flushes pending updates");
+
+    var masks = new LazySegmentTree<uint, uint?, BitwiseOrMonoid<uint>, IdempotentAssignAction<uint>>(new uint[] { 1, 2, 4 });
+    masks.Apply(0, 2, 8u);
+    Check(masks.Aggregate == 12u, "LazySegmentTree idempotent assign instantiation");
+
+    var words = new LazySegmentTree<string, string?, AotConcatMonoid, AotRepeatAssignAction>(new[] { "a", "b", "c", "d" });
+    words.Apply(1, 3, "x");
+    Check(words.Aggregate == "axxd" && words.Query(2, 4) == "xd", "LazySegmentTree reference-typed elements");
+
+    adds.Clear();
+    Check(adds.Count == 3 && adds.Aggregate == 0, "LazySegmentTree clear resets to identity, keeps length");
+}
+
 // SparseTable — the build-once half of the range-aggregate space. Everything SegmentTree pins about ILC and
 // struct monoids applies here too, plus one thing specific to this type: the fold arrives constrained to
 // IIdempotentMonoid<T> rather than IMonoid<T>, so the compiler has to specialize against a *derived* generic
@@ -4387,6 +4423,18 @@ internal readonly struct AotConcatMonoid : IMonoid<string>
     public string Identity => string.Empty;
 
     public string Combine(string left, string right) => left + right;
+}
+
+// A hand-written range action for the LazySegmentTree instantiation above: it sets every element of a range to
+// one string, so over AotConcatMonoid a range of n elements becomes n copies — the action reads the node count.
+internal readonly struct AotRepeatAssignAction : IRangeAction<string, string?>
+{
+    public string? Identity => null;
+
+    public string? Compose(string? earlier, string? later) => later ?? earlier;
+
+    public string Apply(string? update, string aggregate, int count) =>
+        update is null ? aggregate : string.Concat(Enumerable.Repeat(update, count));
 }
 
 // The same idea for the SparseTable instantiation above, with the one difference that matters here: it

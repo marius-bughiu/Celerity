@@ -145,6 +145,48 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void LazySegmentTreeEnumeratorReset_ShouldThrowInvalidOperationException_WhenTreeModified()
+    {
+        var tree = new LazySegmentTree<int, int, MinMonoid<int>, MinMaxAddAction<int>>(new[] { 4, 6, 1, 3 });
+
+        var enumerator = tree.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        tree.Apply(1, 3, 7);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+        Assert.Contains("The lazy segment tree was modified during enumeration.", ex.Message);
+
+        var second = tree.GetEnumerator();
+        tree[2] = 9;
+        Assert.Throws<InvalidOperationException>(() => second.MoveNext());
+    }
+
+    [Fact]
+    public void LazySegmentTreeEnumeratorReset_ShouldRewindWithoutThrowing_WhenOnlyReadsRan()
+    {
+        // Reads push pending updates down — they write to the tree's arrays — but change no logical value, so
+        // they must not close the mutation-free window an enumerator relies on.
+        var tree = new LazySegmentTree<int, int, MinMonoid<int>, MinMaxAddAction<int>>(new[] { 4, 6, 1 });
+        tree.Apply(0, 3, 10);
+
+        var enumerator = tree.GetEnumerator();
+        Assert.True(enumerator.MoveNext());
+
+        _ = tree.Query(1, 2);
+        _ = tree.Aggregate;
+        _ = tree[2];
+
+        enumerator.Reset();
+
+        var values = new List<int>();
+        while (enumerator.MoveNext())
+            values.Add(enumerator.Current);
+
+        Assert.Equal(new[] { 14, 16, 11 }, values);
+    }
+
+    [Fact]
     public void FenwickTreeEnumeratorReset_ShouldRewindWithoutThrowing_WhenMutationWasZeroDelta()
     {
         // A zero delta (and an indexer assignment of the value already stored) leaves every cell

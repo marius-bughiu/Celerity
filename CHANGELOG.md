@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`LazySegmentTree<T, TUpdate, TMonoid, TAction>`**: range updates and range queries, both in `O(log n)`. Add to or assign over every element of a range, then ask any range's min, max or sum; `SegmentTree` updates one element at a time. Updates are a new struct contract, `IRangeAction<T, TUpdate>`, and four ship: range add over sums and over min/max, and range assign over sums and over any idempotent fold. At 100,000 elements, range add + range max runs 34.5x and range assign + range sum 23.6x faster than a `long[]` on an Apple M4; ⚠️ at 1,000 elements range assign + range sum is 1.15x slower. Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #652.
+
 ### Changed
 
 - `StringXxHash3Hasher` now runs its loop for keys longer than 120 characters on SIMD vectors (`Vector128`), as reference XXH3 does, and every hash value is unchanged. At 121, 256 and 512 characters it hashed 4.11–6.48x faster on an Apple M4, an AMD EPYC 7763 and an Intel Xeon 6975P-C, and is now the fastest of the throughput string hashers there, 1.52–2.06x ahead of the next. `StringInternTable<StringXxHash3Hasher>` now probes 128-character tokens 1.3x faster than the default hasher on Apple Silicon, where it probed 2.2x slower.
