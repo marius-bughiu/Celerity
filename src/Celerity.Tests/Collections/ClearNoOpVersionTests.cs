@@ -455,6 +455,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void AggregatingQueueClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var queue = new AggregatingQueue<int, SumMonoid<int>>();
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => queue.GetEnumerator(), queue.Clear, () => queue.Count, () => queue.Enqueue(1));
+    }
+
+    [Fact]
     public void SpatialGridClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var grid = new SpatialGrid<int>(0, 0, 10, 10, 1);

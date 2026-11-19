@@ -304,6 +304,24 @@ public class StaleCountSourceTests
     [InlineData(5)]
     [InlineData(2)]
     [InlineData(0)]
+    public void AggregatingQueue_ShouldFoldExactlyWhatACountedSourceYields(int count)
+    {
+        // The count only sizes the ring; the elements are enumerated, so a stale count can neither add a default
+        // element to the fold nor drop one the source yielded.
+        var queue = new AggregatingQueue<string, ConcatMonoid>(new StaleCount<string>(count, "a", "b", "c"));
+
+        Assert.Equal(new[] { "a", "b", "c" }, queue);
+        Assert.Equal("abc", queue.Aggregate);
+
+        queue.Enqueue("d");
+        Assert.Equal("a", queue.Dequeue());
+        Assert.Equal("bcd", queue.Aggregate);
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(2)]
+    [InlineData(0)]
     public void Deque_ShouldHoldExactlyWhatACountedSourceYields(int count)
     {
         var deque = new Deque<string>(new StaleCount<string>(count, "a", "b", "c"));
@@ -375,6 +393,7 @@ public class StaleCountSourceTests
         Assert.Equal(new[] { 2, 4 }, new FrozenSortedSet<int>(view));
         Assert.Equal(new[] { 2, 4 }, new SegmentTree<int, MinMonoid<int>>(view));
         Assert.Equal(new[] { 2, 4 }, new LazySegmentTree<int, int, MinMonoid<int>, MinMaxAddAction<int>>(view));
+        Assert.Equal(new[] { 2, 4 }, new AggregatingQueue<int, MinMonoid<int>>(view));
 
         // BitPackedArray has a List<ulong> fast path of its own, held to the same exact-type rule.
         Assert.Equal(new[] { 2UL, 4UL }, new BitPackedArray(new EvensOnly<ulong>(1, 2, 3, 4), bitsPerValue: 8));

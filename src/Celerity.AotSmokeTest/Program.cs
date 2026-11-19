@@ -1433,6 +1433,46 @@ void Check(bool condition, string message)
     Check(adds.Count == 3 && adds.Aggregate == 0, "LazySegmentTree clear resets to identity, keeps length");
 }
 
+// AggregatingQueue — the sliding-window fold over a struct monoid. The same per-instantiation specialization
+// SegmentTree needs, on a type whose hot path is different: an enqueue folds into a running value, and the dequeue
+// that finds the front empty rebuilds the suffix folds in one pass. Exercise both, the ring growth across a wrap,
+// a reference-typed element type, clear, and the struct enumerator.
+{
+    var window = new AggregatingQueue<int, MaxMonoid<int>>(4);
+    int[] stream = { 5, 1, 3, 9, 2, 2, 8, 0, 7, 4 };
+    int[] expectedMax = { 5, 5, 5, 9, 9, 9, 8, 8, 8, 7 };
+    bool slidOk = true;
+    for (int i = 0; i < stream.Length; i++)
+    {
+        if (window.Count == 3)
+            window.Dequeue();
+        window.Enqueue(stream[i]);
+        slidOk &= window.Aggregate == expectedMax[i];
+    }
+
+    Check(slidOk && window.Capacity == 4, "AggregatingQueue sliding-window maximum without regrowth");
+
+    var words = new AggregatingQueue<string, AotConcatMonoid>(new[] { "a", "b", "c", "d" });
+    Check(words.Dequeue() == "a" && words.Aggregate == "bcd", "AggregatingQueue flip keeps the fold in order");
+    words.Enqueue("e");
+    words.Enqueue("f");
+    Check(words.Capacity == 8 && words.Aggregate == "bcdef" && words.Peek() == "b",
+        "AggregatingQueue growth across a wrap");
+
+    var seen = new List<string>();
+    foreach (string w in words) seen.Add(w);
+    Check(string.Concat(seen) == "bcdef", "AggregatingQueue enumerates oldest first");
+
+    words.Clear();
+    Check(words.Count == 0 && words.Aggregate == "" && !words.TryDequeue(out _), "AggregatingQueue clear");
+
+    var flags = new AggregatingQueue<int, BitwiseOrMonoid<int>>();
+    flags.Enqueue(0b0001);
+    flags.Enqueue(0b0100);
+    flags.Dequeue();
+    Check(flags.Aggregate == 0b0100, "AggregatingQueue bitwise-or instantiation");
+}
+
 // SparseTable — the build-once half of the range-aggregate space. Everything SegmentTree pins about ILC and
 // struct monoids applies here too, plus one thing specific to this type: the fold arrives constrained to
 // IIdempotentMonoid<T> rather than IMonoid<T>, so the compiler has to specialize against a *derived* generic
@@ -3931,7 +3971,7 @@ void Check(bool condition, string message)
         "EnumMap as IDictionary: boxed key view");
 }
 
-// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596) / KWayMerge.
+// Celerity.Sorting — RadixSort / CountingSort / PartialSort (#309) / StringSort (#596) / KWayMerge / StableSort.
 //
 // Every shape that forces a distinct native instantiation: both radix widths, both signed and
 // IEEE-754 key transforms, the key+payload generic over a reference payload (which is where the
@@ -4041,6 +4081,22 @@ void Check(bool condition, string message)
 
     int[] lazy = KWayMerge.Merge(new[] { new[] { 9, 1 }, new[] { 8 }, new[] { 7, 0 } }, default(DescendingIntComparer)).ToArray();
     Check(lazy.AsSpan().SequenceEqual([9, 8, 7, 1, 0]), "KWayMerge.Merge lazy with a struct comparer");
+
+    // StableSort: the natural-order keys-only sort past the 16-element run (so a merge buffer is rented),
+    // the key+payload form over a reference payload, whose pooled buffer is cleared on return, and a
+    // struct comparer, which is a second closed generic over the same merge code.
+    int[] stableKeys = Enumerable.Range(0, 40).Select(i => (i * 7) % 5).ToArray();
+    string[] stableTags = Enumerable.Range(0, 40).Select(i => i.ToString()).ToArray();
+    StableSort.Sort(stableKeys.AsSpan(), stableTags.AsSpan());
+    Check(stableKeys[0] == 0 && stableKeys[^1] == 4 && stableTags[0] == "0" && stableTags[1] == "5", "StableSort stable key+payload");
+
+    int[] stableDescending = Enumerable.Range(0, 40).ToArray();
+    StableSort.Sort(stableDescending.AsSpan(), default(DescendingIntComparer));
+    Check(stableDescending[0] == 39 && stableDescending[^1] == 0, "StableSort with a struct comparer");
+
+    string[] stableWords = Enumerable.Range(0, 40).Select(i => "w" + (39 - i).ToString("D2")).ToArray();
+    StableSort.Sort(stableWords.AsSpan());
+    Check(stableWords[0] == "w00" && stableWords[^1] == "w39", "StableSort natural order over strings");
 }
 
 // Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable / KllSketch.

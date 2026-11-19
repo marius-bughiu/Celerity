@@ -575,6 +575,11 @@ function escapeHtml(s) {
     // against the same plain long[] (a loop per update, a loop per query). AddMax is range add + range maximum
     // (the reservation workload); AssignSum is range assign + range sum, with Span<T>.Fill on the array side.
     { key: 'LazySegmentTree',     title: 'LazySegmentTree<long, …> (range update + range query)', vs: 'long[] (loop per range update and per range query)', ops: ['AddMax', 'AssignSum'] },
+    // AggregatingQueue keeps the fold of a sliding window under a monoid with no inverse. The baseline is the
+    // Queue<int> a caller writes instead, re-folded after every step (O(w)). Slide is a window maximum and SlideOr
+    // a window bitwise OR. The class also measures a hand-written monotonic deque and a SegmentTree ring for the
+    // maximum; those arms are named *_CrossSlideMax and deliberately not charted (one Celerity value per bucket).
+    { key: 'AggregatingQueue',    title: 'AggregatingQueue<int, TMonoid> (sliding window)', vs: 'Queue<int> re-folded per step', ops: ['Slide', 'SlideOr'] },
     // SparseTable is the build-once counterpart: same fold, same baseline, no updates. Build is charted
     // alongside RangeMin on purpose — the n log n table is what the constant-time query is bought with, and
     // reading either card alone misstates the trade. The class also measures SegmentTree over the same
@@ -656,6 +661,11 @@ function escapeHtml(s) {
     // which is the other answer: concatenate and Array.Sort. Items is the total across all runs (16, or 256 on
     // MergeWide). Int keys are where the merge's smaller comparison count matters least; MergeStrings is the win.
     { key: 'KWayMerge',           title: 'KWayMerge (16 sorted runs)',               vs: 'PriorityQueue hand-roll; concatenate + Array.Sort on the ConcatSort card', ops: ['Merge', 'MergeWide', 'MergeStrings', 'ConcatSort', 'Lazy'], items: [1000, 100000, 1000000] },
+    // StableSort's ops are input shapes over (int Key, int Id) records, or records keyed by a string on Strings. The
+    // BCL's sorts are unstable, so the charted baseline is the stable one, LINQ OrderBy().ToArray(). The class also
+    // measures the tag-with-position Span.Sort hand-roll and the unstable Span.Sort; those arms carry op names of
+    // their own (Array_Tagged*, Array_Unstable*) so they draw no card, and are read off the BenchmarkDotNet report.
+    { key: 'StableSort',          title: 'StableSort (records by key)',              vs: 'LINQ OrderBy().ToArray()', ops: ['Random', 'NearlySorted', 'SortedRuns', 'Strings'], items: [1000, 100000] },
     // BTreeDictionary / BTreeSet are the ordered containers, benchmarked against the BCL's red-black trees.
     // Mixed (interleaved insert + lookup + in-order range scan) is the documented win workload; RangeScan is
     // the operation SortedDictionary cannot express at all.
@@ -752,7 +762,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Queue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

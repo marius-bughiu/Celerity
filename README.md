@@ -41,7 +41,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Prefix trees](docs/collections.md#prefix-trees) | `Trie`, `SuccinctTrie` |
 | [Span-keyed string lookups](docs/collections.md#span-keyed-string-lookups) | `StringInternTable` |
 | [Sorted collections](docs/collections.md#sorted-ordered-collections) | `BTreeDictionary`, `BTreeSet`, `RankedSet`, `RankedDictionary`, `RankedMultiSet`, `FrozenSortedSet`, `FrozenSortedMap` |
-| [Range aggregates](docs/collections.md#range-aggregates) | `FenwickTree`, `SegmentTree`, `LazySegmentTree`, `SparseTable`, `WaveletTree` |
+| [Range aggregates](docs/collections.md#range-aggregates) | `FenwickTree`, `SegmentTree`, `LazySegmentTree`, `SparseTable`, `AggregatingQueue`, `WaveletTree` |
 | [Spatial & interval indexes](docs/collections.md#spatial--interval-indexes) | `KdTree`, `SpatialGrid`, `RTree`, `IntervalTree`, `RangeMap` |
 | [Graphs](docs/collections.md#graphs) | `CompressedGraph` |
 | [Text](docs/collections.md#text) | `SuffixArray`, `AhoCorasick`, `EditDistanceIndex`, `Rope` |
@@ -61,7 +61,7 @@ The [decision table](docs/choosing-a-collection.md) maps a workload to a type in
 | [`Celerity.Collections`](https://www.nuget.org/packages/Celerity.Collections/) | the collections above |
 | [`Celerity.Hashing`](https://www.nuget.org/packages/Celerity.Hashing/) | `IHashProvider<T>`, the struct hashers, `HashQualityEvaluator` — [API](docs/api/hashing.md) |
 | [`Celerity.Primitives`](https://www.nuget.org/packages/Celerity.Primitives/) | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve` — [API](docs/api/utilities.md) |
-| [`Celerity.Sorting`](https://www.nuget.org/packages/Celerity.Sorting/) | `RadixSort`, `CountingSort`, `PartialSort`, `StringSort`, `KWayMerge` — [API](docs/api/sorting.md) |
+| [`Celerity.Sorting`](https://www.nuget.org/packages/Celerity.Sorting/) | `RadixSort`, `CountingSort`, `PartialSort`, `StringSort`, `KWayMerge`, `StableSort` — [API](docs/api/sorting.md) |
 | [`Celerity.Statistics`](https://www.nuget.org/packages/Celerity.Statistics/) | `DDSketch`, `KllSketch`, `ReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable` — [API](docs/api/statistics.md) |
 
 Every package targets `net10.0` and is [Native AOT and trimming compatible](docs/aot.md). On .NET 8 or 9, stay on the [3.6.x line](docs/migration.md#net80--net90--net100--after-36x). Upgrading from 1.x? See the [migration guide](docs/migration.md#200--the-package-split).

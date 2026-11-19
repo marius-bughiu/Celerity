@@ -76,6 +76,7 @@ internal static class Differential
         ("FrozenSortedMap", FrozenSortedMapCase),
         ("SegmentTree", SegmentTreeCase),
         ("LazySegmentTree", LazySegmentTreeCase),
+        ("AggregatingQueue", AggregatingQueueCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
         ("SpatialGrid", SpatialGridCase),
@@ -119,6 +120,7 @@ internal static class Differential
         ("CountingSort", CountingSortCase),
         ("PartialSort", PartialSortCase),
         ("KWayMerge", KWayMergeCase),
+        ("StableSort", StableSortCase),
         ("SpaceFillingCurve", SpaceFillingCurveCase),
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
@@ -2854,6 +2856,85 @@ internal static class Differential
 
         public long Apply((long Mul, long Add) update, long aggregate, int count) =>
             aggregate * update.Mul + update.Add * count;
+    }
+
+    // ---- aggregating queue ---------------------------------------------------
+
+    // The oracle is a Queue<T> re-folded oldest to newest after every operation, which is the definition the
+    // two-stacks layout has to reproduce. The fold is affine-map composition over ulong (wrapping arithmetic):
+    // associative, non-commutative, and it mixes every element into the result, so a front/back combine in the
+    // wrong order or a suffix fold built backwards changes the answer. FirstNonZero would mostly report the oldest
+    // element and miss a corrupted tail. Each case alternates a growth phase, a sliding phase at a drawn window
+    // (the steady state the type is for, which flips every `window` steps) and a draining phase, with a rare
+    // Clear, so the ring grows across a wrap and the front/back boundary moves through every position.
+    private static void AggregatingQueueCase(Random rng)
+    {
+        var sut = rng.Next(0, 2) == 0
+            ? new AggregatingQueue<Affine, AffineCompose>()
+            : new AggregatingQueue<Affine, AffineCompose>(rng.Next(0, 40));
+        var oracle = new Queue<Affine>();
+
+        int ops = OpCount(rng);
+        int window = rng.Next(1, 70);
+        for (int i = 0; i < ops; i++)
+        {
+            int phase = (i / 64) % 3;
+            int draw = rng.Next(0, 1000);
+            var value = new Affine((ulong)rng.NextInt64() | 1, (ulong)rng.NextInt64());
+
+            if (draw == 0)
+            {
+                sut.Clear();
+                oracle.Clear();
+            }
+            else if (phase == 0 || (phase == 1 && oracle.Count < window) || (phase == 2 && draw < 300))
+            {
+                sut.Enqueue(value);
+                oracle.Enqueue(value);
+            }
+            else
+            {
+                bool had = oracle.TryDequeue(out Affine expected);
+                bool got = sut.TryDequeue(out Affine actual);
+                Check(had == got && expected == actual, "AggregatingQueue TryDequeue disagreed");
+
+                // The sliding phase enqueues straight after each dequeue, so the window stays full.
+                if (phase == 1)
+                {
+                    sut.Enqueue(value);
+                    oracle.Enqueue(value);
+                }
+            }
+
+            Check(sut.Count == oracle.Count, "AggregatingQueue Count disagreed");
+            Affine fold = AffineCompose.Fold(oracle);
+            Check(sut.Aggregate == fold, "AggregatingQueue Aggregate disagreed");
+            Check(sut.TryPeek(out Affine head) == oracle.TryPeek(out Affine expectedHead) && head == expectedHead,
+                "AggregatingQueue TryPeek disagreed");
+        }
+
+        Check(sut.SequenceEqual(oracle), "AggregatingQueue enumeration disagreed");
+    }
+
+    private readonly record struct Affine(ulong Mul, ulong Add);
+
+    // Composition of x => x * Mul + Add maps, applied left (older) first. Identity is x => x.
+    private readonly struct AffineCompose : IMonoid<Affine>
+    {
+        public Affine Identity => new(1, 0);
+
+        public Affine Combine(Affine left, Affine right) =>
+            new(unchecked(left.Mul * right.Mul), unchecked((left.Add * right.Mul) + right.Add));
+
+        public static Affine Fold(Queue<Affine> queue)
+        {
+            var monoid = default(AffineCompose);
+            Affine fold = monoid.Identity;
+            foreach (Affine item in queue)
+                fold = monoid.Combine(fold, item);
+
+            return fold;
+        }
     }
 
     // ---- sparse table --------------------------------------------------------
@@ -6378,6 +6459,49 @@ internal static class Differential
 
         var lazy = KWayMerge.Merge(runs, default(TupleKeyComparer)).ToArray();
         Check(lazy.AsSpan().SequenceEqual(expected), "KWayMerge lazy merge diverged from a stable sort");
+    }
+
+    // StableSort against a stable LINQ OrderBy. Elements carry a tag the comparer ignores, so the check is
+    // of stability as well as order. The input is built from runs of random lengths, each left as drawn,
+    // sorted ascending or sorted descending, so the run finder, the reversal and every merge shape are hit;
+    // the key+payload form is checked against the same oracle.
+    private static void StableSortCase(Random rng)
+    {
+        int length = rng.Next(0, 4) switch { 0 => rng.Next(0, 17), 1 => rng.Next(17, 100), 2 => rng.Next(100, 1_000), _ => rng.Next(1_000, 5_000) };
+        int keyRange = rng.Next(1, 1_000);
+        var items = new (int Key, int Tag)[length];
+        for (int start = 0; start < length;)
+        {
+            int runLength = Math.Min(length - start, rng.Next(1, 200));
+            for (int i = start; i < start + runLength; i++)
+                items[i] = (rng.Next(keyRange), i);
+
+            int shape = rng.Next(3);
+            if (shape > 0)
+            {
+                Array.Sort(items, start, runLength, Comparer<(int Key, int Tag)>.Create((x, y) => x.Key.CompareTo(y.Key)));
+                if (shape == 2)
+                    Array.Reverse(items, start, runLength);
+
+                // Re-tag in position order so the tags still record the input order the sort must keep.
+                for (int i = start; i < start + runLength; i++)
+                    items[i].Tag = i;
+            }
+
+            start += runLength;
+        }
+
+        var expected = items.OrderBy(e => e.Key).ToArray();
+
+        var keysOnly = ((int Key, int Tag)[])items.Clone();
+        StableSort.Sort(keysOnly.AsSpan(), default(TupleKeyComparer));
+        Check(keysOnly.AsSpan().SequenceEqual(expected), "StableSort.Sort diverged from a stable sort");
+
+        int[] keys = items.Select(e => e.Key).ToArray();
+        int[] tags = items.Select(e => e.Tag).ToArray();
+        StableSort.Sort(keys.AsSpan(), tags.AsSpan());
+        Check(keys.AsSpan().SequenceEqual(expected.Select(e => e.Key).ToArray()), "StableSort key+payload keys diverged");
+        Check(tags.AsSpan().SequenceEqual(expected.Select(e => e.Tag).ToArray()), "StableSort key+payload payload diverged from a stable sort");
     }
 
     private readonly struct TupleKeyComparer : IComparer<(int Key, int Tag)>

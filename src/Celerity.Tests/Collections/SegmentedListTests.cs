@@ -895,6 +895,34 @@ public class SegmentedListTests
     }
 
     [Fact]
+    public void AddRange_ShouldAppendWhatAListSubclassEnumerates_NotItsStorage()
+    {
+        // Regression (#650): any List<T> had its backing array copied, so a subclass that re-implements
+        // IEnumerable<T> was read as its storage. List<T>.AddRange and the other bulk loaders take what it yields.
+        var source = new TenfoldList { 1, 2, 3 };
+
+        var list = new SegmentedList<int>(source);
+        list.AddRange(source);
+
+        Assert.Equal(new[] { 10, 20, 30, 10, 20, 30 }, list);
+    }
+
+    private sealed class TenfoldList : List<int>, IEnumerable<int>, ICollection<int>
+    {
+        IEnumerator<int> IEnumerable<int>.GetEnumerator()
+        {
+            foreach (int value in (List<int>)this)
+                yield return value * 10;
+        }
+
+        void ICollection<int>.CopyTo(int[] array, int arrayIndex)
+        {
+            foreach (int value in (List<int>)this)
+                array[arrayIndex++] = value * 10;
+        }
+    }
+
+    [Fact]
     public void AddRange_ShouldAppendOneCopy_WhenTheSourceIsACollectionWrappingTheList()
     {
         // Regression: a ReadOnlyCollection<T> over the list used to be enumerated while Add mutated the list

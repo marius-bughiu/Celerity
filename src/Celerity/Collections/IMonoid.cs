@@ -2,7 +2,8 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// An <b>associative</b> binary operation together with its identity element — the algebraic structure
-/// <see cref="SegmentTree{T, TMonoid}"/> folds a range with.
+/// <see cref="SegmentTree{T, TMonoid}"/> folds a range with, and <see cref="AggregatingQueue{T, TMonoid}"/> a sliding
+/// window.
 /// </summary>
 /// <typeparam name="T">The element type the operation combines.</typeparam>
 /// <remarks>
