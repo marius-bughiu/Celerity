@@ -39,8 +39,9 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Range updates are deliberately not supported.</b> Applying an operation to every element of a range in
 /// <c>O(log n)</c> needs lazy propagation, which needs a second monoid describing how updates compose plus a
-/// distributive law relating the two — a different type with a different contract, not an overload of this one.
-/// Update point by point, or apply this tree to a difference sequence.
+/// distributive law relating the two — a different type with a different contract, not an overload of this one:
+/// <see cref="LazySegmentTree{T, TUpdate, TMonoid, TAction}"/>. Prefer this type when updates touch one element at
+/// a time; it needs no more aggregate cells and no update array.
 /// </para>
 /// <para>
 /// It implements <see cref="IReadOnlyList{T}"/>, not merely <see cref="IReadOnlyCollection{T}"/> as

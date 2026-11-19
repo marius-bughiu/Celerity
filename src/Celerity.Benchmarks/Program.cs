@@ -77,6 +77,7 @@ internal class Program
         typeof(RopeBenchmark),
         typeof(FenwickTreeBenchmark),
         typeof(SegmentTreeBenchmark),
+        typeof(LazySegmentTreeBenchmark),
         typeof(AggregatingQueueBenchmark),
         typeof(SparseTableBenchmark),
         typeof(KdTreeBenchmark),

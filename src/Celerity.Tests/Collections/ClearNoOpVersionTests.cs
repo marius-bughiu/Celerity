@@ -589,4 +589,23 @@ public class ClearNoOpVersionTests
         Assert.Throws<InvalidOperationException>(() => overOneValue.MoveNext());
         Assert.Equal(int.MaxValue, tree.Aggregate);
     }
+
+    [Fact]
+    public void LazySegmentTreeClear_ShouldBumpTheVersionUnconditionally_BecauseEmptinessCostsAScan()
+    {
+        // The fifth fixed-length type, and it agrees with SegmentTree: neither of its two contracts carries an
+        // equality obligation, so "already all identity" could only be established by the scan Clear performs.
+        var tree = new LazySegmentTree<int, int, MinMonoid<int>, MinMaxAddAction<int>>(8);
+
+        IEnumerator overAllIdentity = tree.GetEnumerator();
+        tree.Clear();
+        Assert.Throws<InvalidOperationException>(() => overAllIdentity.MoveNext());
+
+        tree[3] = 5;
+        tree.Apply(2, 6, 1);
+        IEnumerator overPendingUpdates = tree.GetEnumerator();
+        tree.Clear();
+        Assert.Throws<InvalidOperationException>(() => overPendingUpdates.MoveNext());
+        Assert.Equal(int.MaxValue, tree.Aggregate);
+    }
 }

@@ -571,6 +571,10 @@ function escapeHtml(s) {
     // SegmentTree covers the folds a Fenwick tree structurally cannot — the baseline is the same plain long[],
     // scanned for the range minimum, because the BCL has no range-aggregate structure at all.
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',       vs: 'long[] (naive range min)', ops: ['Mixed', 'RangeMin'] },
+    // LazySegmentTree is the range-update counterpart: each op is one range update followed by one range query,
+    // against the same plain long[] (a loop per update, a loop per query). AddMax is range add + range maximum
+    // (the reservation workload); AssignSum is range assign + range sum, with Span<T>.Fill on the array side.
+    { key: 'LazySegmentTree',     title: 'LazySegmentTree<long, …> (range update + range query)', vs: 'long[] (loop per range update and per range query)', ops: ['AddMax', 'AssignSum'] },
     // AggregatingQueue keeps the fold of a sliding window under a monoid with no inverse. The baseline is the
     // Queue<int> a caller writes instead, re-folded after every step (O(w)). Slide is a window maximum and SlideOr
     // a window bitwise OR. The class also measures a hand-written monotonic deque and a SegmentTree ring for the

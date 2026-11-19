@@ -8481,7 +8481,7 @@ The usual segment-tree layout pads the leaf count up to a power of two and pays 
 
 ### Range updates are not supported
 
-Applying an operation to every element of a range in `O(log n)` needs lazy propagation, which needs a second monoid describing how updates compose plus a distributive law relating the two. That is a different type with a different contract, not an overload of this one. Update point by point, or apply this tree to a difference sequence.
+Applying an operation to every element of a range in `O(log n)` needs lazy propagation, which needs a second contract describing how updates compose plus a distributive law relating it to the fold. That is a different type, not an overload of this one: [`LazySegmentTree<T, TUpdate, TMonoid, TAction>`](#lazysegmenttreet-tupdate-tmonoid-taction).
 
 ### The documented BCL-beating workload
 
@@ -8516,7 +8516,7 @@ Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`): `i
 
 ### Choosing it
 
-Reach for `SegmentTree<T, TMonoid>` when you maintain a **mutable sequence** and repeatedly ask for the aggregate of a range *while* the values change, under a fold with **no inverse**. If the fold is addition, use `FenwickTree<T>` — same asymptotics, half the memory, shorter constant. If the sequence is **immutable** after you build it, [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid) answers any idempotent fold in `O(1)` — at an `O(n log n)` build and `levels · n` cells — and a precomputed prefix array answers sums in `O(1)` with less code than either. If you **only ever update** and never query a range, a raw array is simpler. And if you need to update whole ranges at a time, this is not the type — see above. This type is not thread-safe; concurrent callers must synchronize externally.
+Reach for `SegmentTree<T, TMonoid>` when you maintain a **mutable sequence** and repeatedly ask for the aggregate of a range *while* the values change, under a fold with **no inverse**. If the fold is addition, use `FenwickTree<T>` — same asymptotics, half the memory, shorter constant. If the sequence is **immutable** after you build it, [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid) answers any idempotent fold in `O(1)` — at an `O(n log n)` build and `levels · n` cells — and a precomputed prefix array answers sums in `O(1)` with less code than either. If you **only ever update** and never query a range, a raw array is simpler. And if you need to update whole ranges at a time, use [`LazySegmentTree<T, TUpdate, TMonoid, TAction>`](#lazysegmenttreet-tupdate-tmonoid-taction). This type is not thread-safe; concurrent callers must synchronize externally.
 
 ### Usage example
 
@@ -8656,6 +8656,137 @@ void Record(long nowMs, long latency)
     lastFiveSeconds.Enqueue(latency);
     Console.WriteLine(lastFiveSeconds.Aggregate);   // worst latency in the last five seconds
 }
+```
+
+
+## LazySegmentTree&lt;T, TUpdate, TMonoid, TAction&gt;
+
+```csharp
+public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCollection<T>
+    where TMonoid : struct, IMonoid<T>
+    where TAction : struct, IRangeAction<T, TUpdate>
+```
+
+A **lazy segment tree** is a fixed-length, array-backed sequence that applies an update to **every element of a half-open range** and answers the aggregate of any range, both in `O(log n)`: range add with range minimum, range assign with range sum, and any other update that distributes over the fold.
+
+It is the type [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) points to when it declines range updates. That tree updates one element at a time, so adding to every element of `[a, b)` costs `b − a` point updates at `O(log n)` each; a plain array makes the update a loop over the slice and every query another loop. The BCL has neither kind of range-aggregate structure. Here an update rewrites only the `O(log n)` nodes that tile its range and parks itself on them ("lazy propagation"); a later operation pushes a parked update one level down only where it has to look underneath.
+
+### The update: `IRangeAction<T, TUpdate>`
+
+```csharp
+public interface IRangeAction<T, TUpdate>
+{
+    TUpdate Identity { get; }                          // the update that changes nothing
+    TUpdate Compose(TUpdate earlier, TUpdate later);   // one update with the effect of earlier, then later
+    T Apply(TUpdate update, T aggregate, int count);   // a range's aggregate after the update, given its length
+}
+```
+
+The fold is the same `IMonoid<T>` the [segment tree](#segmenttreet-tmonoid) takes. The update is a second struct type parameter, so the JIT inlines both. An action must satisfy three laws against the monoid it is paired with:
+
+- **Identity** — `Apply(Identity, a, n)` is `a`, and `Identity` composes away on either side.
+- **Composition** — `Apply(Compose(f, g), a, n)` is `Apply(g, Apply(f, a, n), n)`. `Compose` must be associative but need not be commutative: "set to 3, then add 1" is not "add 1, then set to 3".
+- **Distributivity** — updating a range's aggregate is the same as updating its two halves and folding them: `Apply(f, Combine(a, b), n + m)` is `Combine(Apply(f, a, n), Apply(f, b, m))`.
+
+The `count` argument is what makes the third law reachable for a fold that is not idempotent. Adding `d` to every element moves a range's *minimum* by `d` whatever its length, but its *sum* by `d × count`. That is also why an action is written for a particular fold. Four ship, each naming the folds it is lawful with:
+
+| Action | `TUpdate` | Lawful with | `Apply(u, a, n)` |
+| --- | --- | --- | --- |
+| `SumAddAction<T>` | `T` | `SumMonoid<T>` | `a + u × n` |
+| `MinMaxAddAction<T>` | `T` | `MinMonoid<T>`, `MaxMonoid<T>` | `a + u` |
+| `SumAssignAction<T>` | `T?` | `SumMonoid<T>` | `u × n`, or `a` when `u` is `null` |
+| `IdempotentAssignAction<T>` | `T?` | any `IIdempotentMonoid<T>` (min, max, and, or, gcd) | `u`, or `a` when `u` is `null` |
+
+The two assign actions take a `Nullable<T>` update so that `null` is the update that changes nothing, and a later assignment replaces an earlier one. The sum actions convert the count with `T.CreateTruncating`, which is exact for a wrapping fixed-width integer: adding `d` to `n` elements moves a wrapping sum by `d × n` modulo the width, the same residue the truncated count gives. `Half` cannot hold a count above 65,504, so the sum actions scale it in `float` instead, and a zero update over 65,536 elements stays zero rather than becoming `0 × ∞ = NaN`. `MinMaxAddAction` holds its laws only while no element overflows, since a wrapped value no longer orders where it should.
+
+**Floating-point updates must be exact.** A node's pending update is the composition of every update parked on it, applied in one step, and floating-point addition is not associative. Under `MaxMonoid<double>` over `[1.0, 2.0]`, adding `1e20` and then `-1e20` to the whole range makes the root `0` (each element rounds to `1e20` and back), while the pending update composes to exactly `0`, so a later read of element 0 sees `1`. The add actions are lawful over floating-point `T` only while every sum involved is exact — for `double`, integer values below `2^53` — so prefer an integer `T`.
+
+Pairing an action with a fold it does not distribute over compiles, because an action and a monoid are separate type arguments, but gives unspecified answers. A custom action is a field-free struct. Here is range-multiply over sums:
+
+```csharp
+public readonly struct SumScaleAction : IRangeAction<long, long>
+{
+    public long Identity => 1;
+    public long Compose(long earlier, long later) => earlier * later;
+    public long Apply(long update, long aggregate, int count) => aggregate * update;   // count-independent
+}
+```
+
+### How it works
+
+The leaf count is padded to the next power of two, `size`, and the tree keeps `2 · size` aggregates (the leaf for index `i` at `size + i`) plus `size` pending updates, one per internal node. A node at depth `d` covers `size >> d` leaves, so the count an action needs comes from the node index rather than a stored field. Padding leaves hold the identity and never receive an update, because an update lands only on nodes lying wholly inside its range.
+
+`Apply` and `Query` first push the pending updates on the two paths from the root to the range's ends, then walk the range bottom-up as the segment tree does: `Apply` rewrites each covering node and parks the update on it, then refolds the boundary paths; `Query` folds the covering nodes into a left and a right accumulator, which keeps a non-commutative fold in index order. Pending updates compose in the order they were applied. The padding is also why `Aggregate` is a constant-time root read here, where `SegmentTree.Aggregate` is a query.
+
+### The documented BCL-beating workload
+
+Any stream that **interleaves range updates with range queries**: reservations ("book a seat on every slot of `[a, b)`", "what is the peak occupancy over `[c, e)`?"), span painting with span totals, capacity checks over a schedule. Against a plain array both halves are `O(n)` per operation; here both are `O(log n)`. Measured with BenchmarkDotNet on Apple M4 (.NET 10.0.10, 15 measured iterations of 250 ms and six warmup iterations), `long` values, one range update followed by one range query over an independently drawn range:
+
+| Workload | 1,000 elements | 100,000 elements |
+| --- | --- | --- |
+| Range add + range max (`MinMaxAddAction` over `MaxMonoid`) vs a `long[]` loop | **2.5x** faster (97.1 µs vs 242.8 µs) | **31.8x** faster (1.107 ms vs 35.219 ms) |
+| Range assign + range sum (`SumAssignAction` over `SumMonoid`) vs `Span<T>.Fill` + a sum loop | ⚠️ **roughly tied** (139.1 µs vs 139.7 µs) | **28.4x** faster (0.795 ms vs 22.604 ms) |
+
+Each figure is 1,000 (at 1k) or 2,000 (at 100k) update-and-query pairs, including building the structure. ⚠️ At 1,000 elements range assign + range sum has **no reliable speed advantage**: the measured means are within 1%, with roughly 8% standard deviation. `Span<T>.Fill` is vectorized, so filling and summing a few hundred contiguous `long`s can match or beat the tree’s node visits. Memory is the other price: the tree takes 24 bytes per padded leaf for `long` with `long` updates and 32 with `long?` updates, and the leaf count pads up to the next power of two. That is 3–6x a `long[]` of the same length with `long` updates and 4–8x with `long?` ones; the high end is a length just past a power of two (65,537 pads to 131,072). See the [lazy segment tree benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=LazySegmentTree) on the dashboard.
+
+`SegmentTree` is not a separate arm: it would turn a `k`-element range update into `k` point updates at `O(log n)` each, strictly more work than the array's `k` stores, so the array is the stronger baseline.
+
+### Constructors
+
+```csharp
+public LazySegmentTree(int length)                                          // length elements, all Identity
+public LazySegmentTree(int length, TMonoid monoid, TAction action)
+public LazySegmentTree(IEnumerable<T> values)                               // O(n) build seeded with values, in order
+public LazySegmentTree(IEnumerable<T> values, TMonoid monoid, TAction action)
+```
+
+`length` must be non-negative and at most `2^29` (536,870,912): the leaf count rounds up to a power of two and the layout stores two cells per leaf (`ArgumentOutOfRangeException` otherwise; the `IEnumerable<T>` overloads report an oversized source as `ArgumentException`, checking a counted source before allocating). The length is **fixed** at construction. The `IEnumerable<T>` overloads throw `ArgumentNullException` on a null source and copy what the source yields. The instance-taking overloads exist for a fold or an action that carries state; field-free ones need neither.
+
+### Methods and properties
+
+| Member | Description |
+| --- | --- |
+| `int Count { get; }` | The number of logical elements (the fixed length). |
+| `T Aggregate { get; }` | The fold of every element — `Query(0, Count)`, and `Identity` for an empty tree. `O(1)`, a root read. |
+| `T this[int index] { get; set; }` | Get/set the logical value at `index`, `O(log n)` either way: both push the pending updates above the element down to it first. |
+| `void Apply(int start, int endExclusive, TUpdate update)` | Apply `update` to every element of `[start, endExclusive)`, in `O(log n)`. An empty range is a no-op and does not bump the version. |
+| `T Query(int start, int endExclusive)` | The fold of the elements in `[start, endExclusive)`, in `O(log n)`. An empty range yields `Identity`. |
+| `void Clear()` | Reset every element to `Identity` and discard every pending update (`O(n)`); the length is unchanged. |
+| `Enumerator GetEnumerator()` | Struct enumerator yielding the logical values in index order. Pushes every pending update down once (`O(n)`), then reads the leaves directly. |
+
+It implements `IReadOnlyCollection<T>`, not `IReadOnlyList<T>`: the indexer is `O(log n)`, so a consumer that indexes in a loop would pay `O(n log n)` where it expects `O(n)`. Enumerate instead.
+
+**Reads write.** `Query`, the indexer's getter and `GetEnumerator` push pending updates down the paths they read. That changes no logical value, so it does not bump the version or invalidate an enumerator, but it does write to the tree's arrays: unlike `SegmentTree`, two threads must not even *read* one tree at the same time. Every mutation bumps the version — a non-empty `Apply`, an indexer assignment, and `Clear` — even when it leaves the values as they were, since neither contract carries an equality obligation. Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`) under the same half-open convention as `SegmentTree`. Not thread-safe, reads included.
+
+**Callback failures and recovery.** If a monoid or range-action callback throws during an update, query, indexer access or enumeration preparation, the original exception propagates and the tree becomes faulted. Existing enumerators are invalidated; subsequent reads and writes, including `Aggregate`, throw `InvalidOperationException` instead of exposing partially updated values. `Count` remains available. Call `Clear()` to reset every element to the monoid identity and restore normal use, or construct a new tree. `Clear` obtains both identities before changing any data, so an identity getter that throws leaves the previous state intact; recovery succeeds only when both getters succeed. Invalid index or range arguments do not fault a healthy tree.
+
+### Choosing it
+
+Reach for `LazySegmentTree` when range **updates** and range **queries** interleave. If updates touch one element at a time, [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid) does the same job with no more aggregate cells and no update array. If the workload is range add and range **sum** and nothing else, two [`FenwickTree<T>`](#fenwicktreet) instances over a difference sequence do it in less memory. If the sequence never changes after you build it, [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid) answers idempotent folds in `O(1)`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Seat reservations over 24 hourly slots: book a seat for a time range, ask for the peak occupancy.
+var seats = new LazySegmentTree<int, int, MaxMonoid<int>, MinMaxAddAction<int>>(new int[24]);
+
+seats.Apply(9, 12, 1);                    // 09:00–12:00
+seats.Apply(10, 14, 1);                   // 10:00–14:00
+seats.Apply(11, 13, 1);                   // 11:00–13:00
+
+Console.WriteLine(seats.Aggregate);       // 3 — the busiest hour of the day
+Console.WriteLine(seats.Query(9, 11));    // 2 — peak between 09:00 and 11:00
+Console.WriteLine(seats.Query(13, 24));   // 1
+
+seats.Apply(10, 14, -1);                  // the second booking is cancelled
+Console.WriteLine(seats.Aggregate);       // 2
+
+// Range assign over sums: repaint a span, total another.
+var ledger = new LazySegmentTree<long, long?, SumMonoid<long>, SumAssignAction<long>>(new long[] { 5, 5, 5, 5, 5, 5 });
+ledger.Apply(1, 4, 2);                    // set elements 1–3 to 2
+Console.WriteLine(ledger.Query(0, 6));    // 21 — 5 + 2 + 2 + 2 + 5 + 5
 ```
 
 ## SparseTable&lt;T, TMonoid&gt;

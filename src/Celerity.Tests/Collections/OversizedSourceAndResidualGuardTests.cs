@@ -187,6 +187,33 @@ public class OversizedSourceAndResidualGuardTests
         Assert.Equal(1, tree.Query(0, 3));
     }
 
+    // ---- LazySegmentTree: a power-of-two ceiling --------------------------------------------------
+
+    [Fact]
+    public void LazySegmentTreeConstructor_ShouldThrowArgumentException_WhenCountedSourceExceedsTheMaximumLength()
+    {
+        // The lazy tree pads its leaf count to a power of two and stores two cells per leaf, so its ceiling is
+        // 2^29 — reached by the same count-first ordering, before CountedSource allocates anything.
+        var oversized = new LyingCountCollection<long>(int.MaxValue);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(
+            () => new LazySegmentTree<long, long, SumMonoid<long>, SumAddAction<long>>(oversized));
+
+        Assert.Equal("values", ex.ParamName);
+        Assert.Contains("maximum supported length", ex.Message);
+    }
+
+    [Fact]
+    public void LazySegmentTreeConstructor_ShouldAcceptCountedSource_WhenCountIsWithinTheMaximumLength()
+    {
+        var tree = new LazySegmentTree<int, int, MinMonoid<int>, MinMaxAddAction<int>>(new List<int> { 3, 1, 4, 1, 5 });
+
+        Assert.Equal(5, tree.Count);
+        Assert.Equal(1, tree.Aggregate);
+        Assert.Equal(4, tree[2]);
+        Assert.Equal(1, tree.Query(0, 3));
+    }
+
     // ---- SparseTable: a ceiling that moves with the length -----------------------------------------
 
     [Fact]

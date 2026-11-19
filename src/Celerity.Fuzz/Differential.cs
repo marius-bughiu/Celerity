@@ -75,6 +75,7 @@ internal static class Differential
         ("FrozenSortedSet", FrozenSortedSetCase),
         ("FrozenSortedMap", FrozenSortedMapCase),
         ("SegmentTree", SegmentTreeCase),
+        ("LazySegmentTree", LazySegmentTreeCase),
         ("AggregatingQueue", AggregatingQueueCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
@@ -2735,6 +2736,126 @@ internal static class Differential
         }
 
         CheckSegmentTree(sut, oracle, rng, exhaustive: true);
+    }
+
+    // ---- lazy segment tree ---------------------------------------------------
+
+    // Two trees driven by the same range-update script, each against a plain array that applies every update
+    // element by element. Both are chosen so the order of operations is observable, which a commutative fold
+    // and a commutative update would hide:
+    // - "the first non-zero value wins" under range *assign*: a non-commutative fold, so a mis-ordered refold or
+    //   query changes the answer, and a padding leaf that received an assignment would surface as a phantom value;
+    // - x -> a*x + b over range *sums*: updates that do not commute, so composing a node's pending update in the
+    //   wrong order changes the sum, and the per-node element count reaches the answer through the b term.
+    // Most checks read only the root and a few sampled ranges, because reading every element pushes every
+    // pending update and would flush the very state a missed push hides in; the end of the case reads it all.
+    private static void LazySegmentTreeCase(Random rng)
+    {
+        int length = rng.Next(1, 130);
+        var firstOracle = new int[length];
+        var affineOracle = new long[length];
+        for (int i = 0; i < length; i++)
+        {
+            firstOracle[i] = rng.Next(0, 4) == 0 ? 0 : rng.Next(1, 100);
+            affineOracle[i] = rng.Next(-100, 100);
+        }
+
+        var first = new LazySegmentTree<int, int?, FirstNonZero, IdempotentAssignAction<int>>(firstOracle);
+        var affine = new LazySegmentTree<long, (long Mul, long Add), SumMonoid<long>, FuzzAffineSum>(affineOracle);
+
+        int ops = OpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int a = rng.Next(0, length + 1);
+            int b = rng.Next(0, length + 1);
+            if (a > b)
+                (a, b) = (b, a);
+
+            switch (rng.Next(0, 20))
+            {
+                case 0:
+                    first.Clear();
+                    affine.Clear();
+                    Array.Clear(firstOracle);
+                    Array.Clear(affineOracle);
+                    break;
+                case < 4:
+                {
+                    int index = rng.Next(0, length);
+                    first[index] = firstOracle[index] = rng.Next(0, 100);
+                    affine[index] = affineOracle[index] = rng.Next(-100, 100);
+                    break;
+                }
+
+                default:
+                {
+                    int? assigned = rng.Next(0, 5) == 0 ? null : rng.Next(0, 100);
+                    first.Apply(a, b, assigned);
+                    if (assigned is int v)
+                        Array.Fill(firstOracle, v, a, b - a);
+
+                    // Multipliers in {-1, 1} keep the sums bounded however long the script runs.
+                    (long Mul, long Add) update = (rng.Next(0, 2) == 0 ? -1 : 1, rng.Next(-100, 100));
+                    affine.Apply(a, b, update);
+                    for (int j = a; j < b; j++)
+                        affineOracle[j] = affineOracle[j] * update.Mul + update.Add;
+                    break;
+                }
+            }
+
+            Check(first.Aggregate == FoldFirstNonZero(firstOracle, 0, length), "LazySegmentTree first-non-zero Aggregate disagreed");
+            Check(affine.Aggregate == SumRange(affineOracle, 0, length), "LazySegmentTree affine Aggregate disagreed");
+
+            for (int q = 0; q < 4; q++)
+            {
+                int qa = rng.Next(0, length + 1);
+                int qb = rng.Next(0, length + 1);
+                if (qa > qb)
+                    (qa, qb) = (qb, qa);
+
+                Check(first.Query(qa, qb) == FoldFirstNonZero(firstOracle, qa, qb), $"LazySegmentTree first-non-zero Query({qa}, {qb}) disagreed");
+                Check(affine.Query(qa, qb) == SumRange(affineOracle, qa, qb), $"LazySegmentTree affine Query({qa}, {qb}) disagreed");
+            }
+        }
+
+        for (int start = 0; start <= length; start++)
+        {
+            for (int end = start; end <= length; end++)
+            {
+                Check(first.Query(start, end) == FoldFirstNonZero(firstOracle, start, end), $"LazySegmentTree first-non-zero Query({start}, {end}) disagreed");
+                Check(affine.Query(start, end) == SumRange(affineOracle, start, end), $"LazySegmentTree affine Query({start}, {end}) disagreed");
+            }
+        }
+
+        for (int i = 0; i < length; i++)
+        {
+            Check(first[i] == firstOracle[i], $"LazySegmentTree first-non-zero indexer {i} disagreed");
+            Check(affine[i] == affineOracle[i], $"LazySegmentTree affine indexer {i} disagreed");
+        }
+
+        Check(first.SequenceEqual(firstOracle), "LazySegmentTree first-non-zero enumeration disagreed");
+        Check(affine.SequenceEqual(affineOracle), "LazySegmentTree affine enumeration disagreed");
+    }
+
+    private static long SumRange(long[] values, int start, int endExclusive)
+    {
+        long sum = 0;
+        for (int i = start; i < endExclusive; i++)
+            sum += values[i];
+
+        return sum;
+    }
+
+    // x -> x * Mul + Add, lifted to sums: a range of n elements moves from s to s * Mul + Add * n.
+    private readonly struct FuzzAffineSum : IRangeAction<long, (long Mul, long Add)>
+    {
+        public (long Mul, long Add) Identity => (1, 0);
+
+        public (long Mul, long Add) Compose((long Mul, long Add) earlier, (long Mul, long Add) later) =>
+            (earlier.Mul * later.Mul, earlier.Add * later.Mul + later.Add);
+
+        public long Apply((long Mul, long Add) update, long aggregate, int count) =>
+            aggregate * update.Mul + update.Add * count;
     }
 
     // ---- aggregating queue ---------------------------------------------------
