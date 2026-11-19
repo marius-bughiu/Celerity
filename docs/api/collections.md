@@ -8720,14 +8720,14 @@ The leaf count is padded to the next power of two, `size`, and the tree keeps `2
 
 ### The documented BCL-beating workload
 
-Any stream that **interleaves range updates with range queries**: reservations ("book a seat on every slot of `[a, b)`", "what is the peak occupancy over `[c, e)`?"), span painting with span totals, capacity checks over a schedule. Against a plain array both halves are `O(n)` per operation; here both are `O(log n)`. Measured with BenchmarkDotNet's default job on Apple M4, `long` values, one range update followed by one range query over an independently drawn range:
+Any stream that **interleaves range updates with range queries**: reservations ("book a seat on every slot of `[a, b)`", "what is the peak occupancy over `[c, e)`?"), span painting with span totals, capacity checks over a schedule. Against a plain array both halves are `O(n)` per operation; here both are `O(log n)`. Measured with BenchmarkDotNet on Apple M4 (.NET 10.0.10, 15 measured iterations of 250 ms and six warmup iterations), `long` values, one range update followed by one range query over an independently drawn range:
 
 | Workload | 1,000 elements | 100,000 elements |
 | --- | --- | --- |
-| Range add + range max (`MinMaxAddAction` over `MaxMonoid`) vs a `long[]` loop | **2.6x** faster (97 µs vs 253 µs) | **34.5x** faster (1.05 ms vs 36.4 ms) |
-| Range assign + range sum (`SumAssignAction` over `SumMonoid`) vs `Span<T>.Fill` + a sum loop | ⚠️ **1.15x slower** (148 µs vs 128 µs) | **23.6x** faster (0.98 ms vs 23.0 ms) |
+| Range add + range max (`MinMaxAddAction` over `MaxMonoid`) vs a `long[]` loop | **2.5x** faster (97.1 µs vs 242.8 µs) | **31.8x** faster (1.107 ms vs 35.219 ms) |
+| Range assign + range sum (`SumAssignAction` over `SumMonoid`) vs `Span<T>.Fill` + a sum loop | ⚠️ **roughly tied** (139.1 µs vs 139.7 µs) | **28.4x** faster (0.795 ms vs 22.604 ms) |
 
-Each figure is 1,000 (at 1k) or 2,000 (at 100k) update-and-query pairs, including building the structure. ⚠️ At 1,000 elements range assign + range sum **loses**: `Span<T>.Fill` is vectorized, and filling and summing a few hundred contiguous `long`s costs less than the few dozen node visits per operation the tree makes. Memory is the other price: the tree takes 24 bytes per padded leaf for `long` with `long` updates and 32 with `long?` updates, and the leaf count pads up to the next power of two. That is 3–6x a `long[]` of the same length with `long` updates and 4–8x with `long?` ones; the high end is a length just past a power of two (65,537 pads to 131,072). See the [lazy segment tree benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=LazySegmentTree) on the dashboard.
+Each figure is 1,000 (at 1k) or 2,000 (at 100k) update-and-query pairs, including building the structure. ⚠️ At 1,000 elements range assign + range sum has **no reliable speed advantage**: the measured means are within 1%, with roughly 8% standard deviation. `Span<T>.Fill` is vectorized, so filling and summing a few hundred contiguous `long`s can match or beat the tree’s node visits. Memory is the other price: the tree takes 24 bytes per padded leaf for `long` with `long` updates and 32 with `long?` updates, and the leaf count pads up to the next power of two. That is 3–6x a `long[]` of the same length with `long` updates and 4–8x with `long?` ones; the high end is a length just past a power of two (65,537 pads to 131,072). See the [lazy segment tree benchmark](https://marius-bughiu.github.io/Celerity/dev/bench/?collection=LazySegmentTree) on the dashboard.
 
 `SegmentTree` is not a separate arm: it would turn a `k`-element range update into `k` point updates at `O(log n)` each, strictly more work than the array's `k` stores, so the array is the stronger baseline.
 
@@ -8757,6 +8757,8 @@ public LazySegmentTree(IEnumerable<T> values, TMonoid monoid, TAction action)
 It implements `IReadOnlyCollection<T>`, not `IReadOnlyList<T>`: the indexer is `O(log n)`, so a consumer that indexes in a loop would pay `O(n log n)` where it expects `O(n)`. Enumerate instead.
 
 **Reads write.** `Query`, the indexer's getter and `GetEnumerator` push pending updates down the paths they read. That changes no logical value, so it does not bump the version or invalidate an enumerator, but it does write to the tree's arrays: unlike `SegmentTree`, two threads must not even *read* one tree at the same time. Every mutation bumps the version — a non-empty `Apply`, an indexer assignment, and `Clear` — even when it leaves the values as they were, since neither contract carries an equality obligation. Index and range arguments are bounds-checked (`ArgumentOutOfRangeException`) under the same half-open convention as `SegmentTree`. Not thread-safe, reads included.
+
+**Callback failures and recovery.** If a monoid or range-action callback throws during an update, query, indexer access or enumeration preparation, the original exception propagates and the tree becomes faulted. Existing enumerators are invalidated; subsequent reads and writes, including `Aggregate`, throw `InvalidOperationException` instead of exposing partially updated values. `Count` remains available. Call `Clear()` to reset every element to the monoid identity and restore normal use, or construct a new tree. `Clear` obtains both identities before changing any data, so an identity getter that throws leaves the previous state intact; recovery succeeds only when both getters succeed. Invalid index or range arguments do not fault a healthy tree.
 
 ### Choosing it
 

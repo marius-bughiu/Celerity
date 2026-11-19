@@ -63,6 +63,15 @@ namespace Celerity.Collections;
 /// the version — <see cref="Apply"/> over a non-empty range, an indexer assignment and <see cref="Clear"/> — even
 /// when it happens to leave the values as they were, because neither contract carries an equality obligation.
 /// </para>
+/// <para>
+/// <b>Callback failures.</b> If a monoid or action member throws during an update, query, indexer access or
+/// enumeration preparation, the exception propagates unchanged and the tree becomes faulted. An operation may
+/// already have changed some internal nodes, so further reads and writes throw <see cref="InvalidOperationException"/>
+/// instead of exposing inconsistent values. Existing enumerators are invalidated. <see cref="Count"/> remains
+/// available; a successful <see cref="Clear"/> resets all values to the monoid's identity and makes the tree usable
+/// again. Invalid arguments do not fault the tree. If either identity getter throws during <see cref="Clear"/>,
+/// the tree's previous contents and fault state are preserved.
+/// </para>
 /// </remarks>
 public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCollection<T>
     where TMonoid : struct, IMonoid<T>
@@ -91,6 +100,10 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
     // Bumped on every mutation (Apply over a non-empty range / indexer set / Clear) so active enumerators throw on
     // concurrent modification. A push moves pending updates without changing a logical value and does not bump it.
     private int _version;
+
+    // Callback failures can interrupt a push or update after some nodes have changed. Refuse logical access until
+    // Clear replaces both arrays' contents, rather than returning aggregates inconsistent with the leaves.
+    private bool _faulted;
 
     /// <summary>
     /// The largest logical length a tree can hold. The leaf count rounds up to a power of two and the aggregate array
@@ -223,14 +236,22 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
             Pull(k);
     }
 
-    /// <summary>Gets the number of logical elements in the tree (its fixed length).</summary>
+    /// <summary>Gets the fixed number of logical elements, including while the tree is faulted.</summary>
     public int Count => _length;
 
     /// <summary>
     /// Gets the aggregate of every logical element — equivalent to <c>Query(0, Count)</c>, and the monoid's identity
     /// for an empty tree. This is an <c>O(1)</c> root read: the root already has every update applied.
     /// </summary>
-    public T Aggregate => _tree[1];
+    /// <exception cref="InvalidOperationException">A callback failed; call <see cref="Clear"/> before reading again.</exception>
+    public T Aggregate
+    {
+        get
+        {
+            ThrowIfFaulted();
+            return _tree[1];
+        }
+    }
 
     /// <summary>
     /// Gets or sets the logical value at <paramref name="index"/>, in <c>O(log n)</c> either way: both first push
@@ -240,6 +261,7 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
     /// <param name="index">The zero-based logical index. Must be in <c>[0, Count)</c>.</param>
     /// <returns>The current logical value at <paramref name="index"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is out of range.</exception>
+    /// <exception cref="InvalidOperationException">A callback failed; call <see cref="Clear"/> before accessing elements again.</exception>
     public T this[int index]
     {
         get
@@ -247,22 +269,32 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
             if ((uint)index >= (uint)_length)
                 ThrowIndexOutOfRange(index);
 
-            int leaf = index + _size;
-            PushPath(leaf);
-            return _tree[leaf];
+            ThrowIfFaulted();
+            try
+            {
+                return GetAtCore(index);
+            }
+            catch
+            {
+                MarkFaulted();
+                throw;
+            }
         }
         set
         {
             if ((uint)index >= (uint)_length)
                 ThrowIndexOutOfRange(index);
 
-            int leaf = index + _size;
-            PushPath(leaf);
-            _tree[leaf] = value;
-            for (int i = 1; i <= _log; i++)
-                Pull(leaf >> i);
-
-            _version++;
+            ThrowIfFaulted();
+            try
+            {
+                SetAtCore(index, value);
+            }
+            catch
+            {
+                MarkFaulted();
+                throw;
+            }
         }
     }
 
@@ -274,12 +306,27 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
     /// <param name="endExclusive">The exclusive upper bound. Must be in <c>[start, Count]</c>.</param>
     /// <param name="update">The update to apply to every element of the range.</param>
     /// <exception cref="ArgumentOutOfRangeException">The range is invalid or out of bounds.</exception>
+    /// <exception cref="InvalidOperationException">A callback failed; call <see cref="Clear"/> before updating again.</exception>
     public void Apply(int start, int endExclusive, TUpdate update)
     {
         ValidateRange(start, endExclusive);
+        ThrowIfFaulted();
         if (start == endExclusive)
             return;
 
+        try
+        {
+            ApplyCore(start, endExclusive, update);
+        }
+        catch
+        {
+            MarkFaulted();
+            throw;
+        }
+    }
+
+    private void ApplyCore(int start, int endExclusive, TUpdate update)
+    {
         int l = start + _size;
         int r = endExclusive + _size;
 
@@ -316,9 +363,24 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
     /// <param name="endExclusive">The exclusive upper bound. Must be in <c>[start, Count]</c>.</param>
     /// <returns>The aggregate of the logical elements in the half-open range.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The range is invalid or out of bounds.</exception>
+    /// <exception cref="InvalidOperationException">A callback failed; call <see cref="Clear"/> before querying again.</exception>
     public T Query(int start, int endExclusive)
     {
         ValidateRange(start, endExclusive);
+        ThrowIfFaulted();
+        try
+        {
+            return QueryCore(start, endExclusive);
+        }
+        catch
+        {
+            MarkFaulted();
+            throw;
+        }
+    }
+
+    private T QueryCore(int start, int endExclusive)
+    {
         if (start == endExclusive)
             return _monoid.Identity;
 
@@ -346,11 +408,18 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
     /// <summary>
     /// Resets every logical element to the monoid's identity and discards every pending update. Runs in
     /// <c>O(n)</c>, and bumps the version unconditionally, as <see cref="SegmentTree{T, TMonoid}.Clear"/> does.
+    /// A successful clear also recovers a faulted tree. If either identity getter throws, the exception propagates
+    /// unchanged and the previous contents, fault state and enumerator versions are preserved.
     /// </summary>
     public void Clear()
     {
-        Array.Fill(_tree, _monoid.Identity);
-        Array.Fill(_pending, _action.Identity);
+        // Obtain both callback results before writing either array: a failed recovery must not mix cleared
+        // aggregates with the old pending updates, or change a healthy tree's contents.
+        T identity = _monoid.Identity;
+        TUpdate updateIdentity = _action.Identity;
+        Array.Fill(_tree, identity);
+        Array.Fill(_pending, updateIdentity);
+        _faulted = false;
         _version++;
     }
 
@@ -360,7 +429,22 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
     /// <c>O(n)</c> overall rather than an <c>O(log n)</c> read per element.
     /// </summary>
     /// <returns>A struct enumerator over the logical values.</returns>
+    /// <exception cref="InvalidOperationException">A callback failed; call <see cref="Clear"/> before enumerating again.</exception>
     public Enumerator GetEnumerator()
+    {
+        ThrowIfFaulted();
+        try
+        {
+            return GetEnumeratorCore();
+        }
+        catch
+        {
+            MarkFaulted();
+            throw;
+        }
+    }
+
+    private Enumerator GetEnumeratorCore()
     {
         for (int k = 1; k < _size; k++)
             Push(k);
@@ -373,6 +457,38 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     // ---- internals ---------------------------------------------------------------------------------
+
+    private void ThrowIfFaulted()
+    {
+        if (_faulted)
+            throw new InvalidOperationException("A monoid or action callback failed. Call Clear before using the tree again.");
+    }
+
+    private void MarkFaulted()
+    {
+        _faulted = true;
+        _version++;
+    }
+
+    // Keep exception handlers in the public wrappers, so the callback and tree-walking loops do not pay for
+    // exception-handler spills on every iteration. No journal or per-operation allocation is needed.
+    private T GetAtCore(int index)
+    {
+        int leaf = index + _size;
+        PushPath(leaf);
+        return _tree[leaf];
+    }
+
+    private void SetAtCore(int index, T value)
+    {
+        int leaf = index + _size;
+        PushPath(leaf);
+        _tree[leaf] = value;
+        for (int i = 1; i <= _log; i++)
+            Pull(leaf >> i);
+
+        _version++;
+    }
 
     private static (int Size, int Log) SizeFor(int length)
     {
@@ -476,7 +592,7 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
 
         /// <summary>Advances the enumerator to the next logical value.</summary>
         /// <returns><c>true</c> if there is a next value; otherwise <c>false</c>.</returns>
-        /// <exception cref="InvalidOperationException">The tree was modified during enumeration.</exception>
+        /// <exception cref="InvalidOperationException">The tree was modified or faulted during enumeration.</exception>
         public bool MoveNext()
         {
             if (_version != _tree._version)
@@ -496,7 +612,7 @@ public sealed class LazySegmentTree<T, TUpdate, TMonoid, TAction> : IReadOnlyCol
         }
 
         /// <summary>Resets the enumerator to before the first value.</summary>
-        /// <exception cref="InvalidOperationException">The tree was modified during enumeration.</exception>
+        /// <exception cref="InvalidOperationException">The tree was modified or faulted during enumeration.</exception>
         public void Reset()
         {
             if (_version != _tree._version)
