@@ -7,6 +7,7 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Added
 
 - **`AggregatingQueue<T, TMonoid>`**, a FIFO queue whose `Aggregate` is the fold of its contents under any `IMonoid<T>`, in `O(1)`, with `Enqueue` / `Dequeue` `O(1)` amortized. It keeps a rolling max, bitwise OR, gcd or other fold that cannot be subtracted back out, over a count- or time-bounded window. At a 1,000-value window on Apple M4 it measured 116–152x a `Queue<int>` re-folded per step and 5–7x a `SegmentTree` ring. For a window min or max, a hand-written monotonic deque is as fast or faster. Closes #645.
+- **`StableSort`** (in `Celerity.Sorting`), a stable comparison sort over spans: equal elements keep their input order, which `Array.Sort` and `Span.Sort` do not promise. It sorts in place under any struct comparer, with a key + payload form, and allocates nothing once the shared pool is warm. It adapts to existing order (Powersort), so sorted runs and appended tails cost close to a linear pass. At 100,000 records it is 1.21x faster than LINQ `OrderBy` on random keys and 1.69–3.80x faster on partly ordered input. ⚠️ On string records the margin is only about 1.15x. Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #643.
 
 ### Changed
 

@@ -20,7 +20,7 @@ src/
 │   └── README.md                # The package's NuGet readme
 ├── Celerity.Hashing/            # IHashProvider<T> and the struct hashers (Int32WangNaiveHasher.cs, StringFnV1AHasher.cs, …)
 ├── Celerity.Primitives/         # FastUtils, struct PRNGs, VarInt, SpanBits, BitWriter/BitReader, FastGuid, SimdReductions, Branchless, SortedSpan, Morton/Hilbert curves
-├── Celerity.Sorting/            # RadixSort, CountingSort, PartialSort, StringSort, KWayMerge
+├── Celerity.Sorting/            # RadixSort, CountingSort, PartialSort, StringSort, KWayMerge, StableSort
 ├── Celerity.Statistics/         # DDSketch, KllSketch, ReservoirSampler, RunningStatistics, RollingQuantile, AliasTable
 ├── Celerity.Ring/               # Showcase: consistent-hash, rendezvous and Maglev routing
 ├── Celerity.Sentinel/           # Showcase: streaming abuse / heavy-hitter detection
