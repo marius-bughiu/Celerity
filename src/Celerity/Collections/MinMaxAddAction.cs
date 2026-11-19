@@ -11,7 +11,7 @@ namespace Celerity.Collections;
 /// <remarks>
 /// <para>
 /// This is the headline lazy-segment-tree workload: "book one seat on every slot of <c>[a, b)</c>" as a range add,
-/// "is there a free seat anywhere in <c>[c, e)</c>?" as a range maximum. Neither <see cref="FenwickTree{T}"/> nor
+/// "what is the peak occupancy in <c>[c, e)</c>?" as a range maximum. Neither <see cref="FenwickTree{T}"/> nor
 /// <see cref="SegmentTree{T, TMonoid}"/> can do both in <c>O(log n)</c>.
 /// </para>
 /// <para>
