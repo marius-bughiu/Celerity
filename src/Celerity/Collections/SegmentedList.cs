@@ -233,7 +233,8 @@ public sealed class SegmentedList<T> : IList<T>, IReadOnlyList<T>
             case T[] array:
                 AppendSpan(array);
                 break;
-            case List<T> list:
+            case List<T> list when list.GetType() == typeof(List<T>):
+                // The exact type only: a subclass can re-implement IEnumerable<T> and yield something else.
                 AppendSpan(CollectionsMarshal.AsSpan(list));
                 break;
             case ArraySegment<T> segment:
