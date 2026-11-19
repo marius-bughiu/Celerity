@@ -571,6 +571,11 @@ function escapeHtml(s) {
     // SegmentTree covers the folds a Fenwick tree structurally cannot — the baseline is the same plain long[],
     // scanned for the range minimum, because the BCL has no range-aggregate structure at all.
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',       vs: 'long[] (naive range min)', ops: ['Mixed', 'RangeMin'] },
+    // AggregatingQueue keeps the fold of a sliding window under a monoid with no inverse. The baseline is the
+    // Queue<int> a caller writes instead, re-folded after every step (O(w)). Slide is a window maximum and SlideOr
+    // a window bitwise OR. The class also measures a hand-written monotonic deque and a SegmentTree ring for the
+    // maximum; those arms are named *_CrossSlideMax and deliberately not charted (one Celerity value per bucket).
+    { key: 'AggregatingQueue',    title: 'AggregatingQueue<int, TMonoid> (sliding window)', vs: 'Queue<int> re-folded per step', ops: ['Slide', 'SlideOr'] },
     // SparseTable is the build-once counterpart: same fold, same baseline, no updates. Build is charted
     // alongside RangeMin on purpose — the n log n table is what the constant-time query is bought with, and
     // reading either card alone misstates the trade. The class also measures SegmentTree over the same
@@ -753,7 +758,7 @@ function escapeHtml(s) {
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Queue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
   var ITEM_COUNT_FOR_HEADLINE = 100000;
 
   var data = window.BENCHMARK_DATA;

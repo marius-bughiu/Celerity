@@ -75,6 +75,7 @@ internal static class Differential
         ("FrozenSortedSet", FrozenSortedSetCase),
         ("FrozenSortedMap", FrozenSortedMapCase),
         ("SegmentTree", SegmentTreeCase),
+        ("AggregatingQueue", AggregatingQueueCase),
         ("SparseTable", SparseTableCase),
         ("KdTree", KdTreeCase),
         ("SpatialGrid", SpatialGridCase),
@@ -2734,6 +2735,85 @@ internal static class Differential
         }
 
         CheckSegmentTree(sut, oracle, rng, exhaustive: true);
+    }
+
+    // ---- aggregating queue ---------------------------------------------------
+
+    // The oracle is a Queue<T> re-folded oldest to newest after every operation, which is the definition the
+    // two-stacks layout has to reproduce. The fold is affine-map composition over ulong (wrapping arithmetic):
+    // associative, non-commutative, and it mixes every element into the result, so a front/back combine in the
+    // wrong order or a suffix fold built backwards changes the answer. FirstNonZero would mostly report the oldest
+    // element and miss a corrupted tail. Each case alternates a growth phase, a sliding phase at a drawn window
+    // (the steady state the type is for, which flips every `window` steps) and a draining phase, with a rare
+    // Clear, so the ring grows across a wrap and the front/back boundary moves through every position.
+    private static void AggregatingQueueCase(Random rng)
+    {
+        var sut = rng.Next(0, 2) == 0
+            ? new AggregatingQueue<Affine, AffineCompose>()
+            : new AggregatingQueue<Affine, AffineCompose>(rng.Next(0, 40));
+        var oracle = new Queue<Affine>();
+
+        int ops = OpCount(rng);
+        int window = rng.Next(1, 70);
+        for (int i = 0; i < ops; i++)
+        {
+            int phase = (i / 64) % 3;
+            int draw = rng.Next(0, 1000);
+            var value = new Affine((ulong)rng.NextInt64() | 1, (ulong)rng.NextInt64());
+
+            if (draw == 0)
+            {
+                sut.Clear();
+                oracle.Clear();
+            }
+            else if (phase == 0 || (phase == 1 && oracle.Count < window) || (phase == 2 && draw < 300))
+            {
+                sut.Enqueue(value);
+                oracle.Enqueue(value);
+            }
+            else
+            {
+                bool had = oracle.TryDequeue(out Affine expected);
+                bool got = sut.TryDequeue(out Affine actual);
+                Check(had == got && expected == actual, "AggregatingQueue TryDequeue disagreed");
+
+                // The sliding phase enqueues straight after each dequeue, so the window stays full.
+                if (phase == 1)
+                {
+                    sut.Enqueue(value);
+                    oracle.Enqueue(value);
+                }
+            }
+
+            Check(sut.Count == oracle.Count, "AggregatingQueue Count disagreed");
+            Affine fold = AffineCompose.Fold(oracle);
+            Check(sut.Aggregate == fold, "AggregatingQueue Aggregate disagreed");
+            Check(sut.TryPeek(out Affine head) == oracle.TryPeek(out Affine expectedHead) && head == expectedHead,
+                "AggregatingQueue TryPeek disagreed");
+        }
+
+        Check(sut.SequenceEqual(oracle), "AggregatingQueue enumeration disagreed");
+    }
+
+    private readonly record struct Affine(ulong Mul, ulong Add);
+
+    // Composition of x => x * Mul + Add maps, applied left (older) first. Identity is x => x.
+    private readonly struct AffineCompose : IMonoid<Affine>
+    {
+        public Affine Identity => new(1, 0);
+
+        public Affine Combine(Affine left, Affine right) =>
+            new(unchecked(left.Mul * right.Mul), unchecked((left.Add * right.Mul) + right.Add));
+
+        public static Affine Fold(Queue<Affine> queue)
+        {
+            var monoid = default(AffineCompose);
+            Affine fold = monoid.Identity;
+            foreach (Affine item in queue)
+                fold = monoid.Combine(fold, item);
+
+            return fold;
+        }
     }
 
     // ---- sparse table --------------------------------------------------------

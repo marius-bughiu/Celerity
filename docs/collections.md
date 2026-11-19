@@ -783,6 +783,7 @@ ReadOnlySpan<string> names = shards.Values[r];
 - `FenwickTree<T>` — a **Binary Indexed Tree** over a fixed-length numeric sequence (`where T : struct, INumber<T>`): **point update** and **prefix / range sum** both in `O(log n)`, in one flat array with no per-node overhead. The prefix-sum structure the BCL lacks — running aggregates, rank / order-statistics counters, cumulative-frequency tables — where a plain array is `O(n)` per query (recompute the slice) *or* `O(n)` per update (fix the suffix). Wins precisely when updates and partial-sum queries interleave.
 - `SegmentTree<T, TMonoid>` — range aggregates over an arbitrary **associative** fold: **point update** and **range query** both in `O(log n)`, in one flat array of `2n` cells. The half of the range-query space a Fenwick tree cannot reach — its query is the *difference* of two prefix folds, so it needs an inverse, while a segment tree stores each node's fold outright. That puts range **min**, **max**, **gcd**, bitwise **and**/**or** and any monoid you write in reach. The BCL has no range-aggregate structure at all, so the baseline is a plain array scanned per query. `SumMonoid` / `MinMonoid` / `MaxMonoid` / `BitwiseAndMonoid` / `BitwiseOrMonoid` ship built in, as struct type parameters so the fold inlines; non-commutative folds are safe, since the query preserves index order.
 - `SparseTable<T, TMonoid>` — the **build-once** counterpart: the same range fold, answered in **`O(1)`** — two array reads and one combine, no descent. It precomputes the fold of every power-of-two window and covers a range with the two anchored at its ends; those windows *always overlap* — completely, when the range length is itself a power of two — so the fold must be **idempotent**, and that law is enforced by the compiler rather than by a doc note — the type takes `IIdempotentMonoid<T>`, which `Min` / `Max` / `BitwiseAnd` / `BitwiseOr` implement and `SumMonoid` deliberately does not, so `SparseTable<int, SumMonoid<int>>` will not build. The query measures roughly **9–11×** a `SegmentTree` over the same sequence at 1k and **16–19×** at 100k (and ~100× / ~8,200× the array scan), paid for with a **~4–5× slower build** and **5–8.5× the memory** — so it wins on a sequence built once and queried past roughly **800–1,000** times at 1k, **65,000** at 100k. Immutable, so once built an instance is safe to share for reading — provided the fold is too, since every query calls it.
+- `AggregatingQueue<T, TMonoid>` — a FIFO queue that keeps the **fold of its contents** under the same monoids, so a **sliding-window** min, max, bitwise or / and, gcd or any fold you write is an `O(1)` read, with `Enqueue` / `Dequeue` `O(1)` amortized. A running total needs an inverse, so it covers only sums; without one the BCL answer is a `Queue<T>` re-folded every step, `O(w)` for a window of `w`, and a `SegmentTree` ring is `O(log w)` and fixed-length. The caller decides when to dequeue, so count- and time-bounded windows are the same code. For a window **min or max** specifically, a hand-written monotonic deque is the tighter structure, and the [API reference](api/collections.md#aggregatingqueuet-tmonoid) measures both.
 - `WaveletTree` — an **immutable** succinct index over a fixed sequence of `int` values that answers the questions a range fold cannot: the **`k`-th smallest value inside a positional window** (`Quantile`), how many values in that window fall in a **value band** (`RangeCount`), and the rank of a single value — each `O(log σ)` over the *distinct* values, independent of how wide the window is: one descent for `Quantile` and `Rank`, two for `RangeCount` (one per band edge). `Select` is the one query outside that bound — it binary-searches `Rank`, so `O(log n · log σ)`. A `SegmentTree` folds a window down to one value and so structurally cannot reach the `k`-th; a `RankedSet`, like the BCL's `ImmutableSortedSet<T>`, ranks a whole set with no positional window and no duplicates; nothing in the BCL answers a windowed quantile or band count without a pass over the window. The baseline is what a caller writes by hand — `Array.Sort` over a copy of the window for a quantile, a counting loop for a band — and at a million values with a 1% window the quantile is **~3,100× faster** and the band count **~45×**. Build-once, and it *loses* to a plain scan on a short window; both are measured in [the API reference](api/collections.md#wavelettree).
 
 ### Examples
@@ -849,6 +850,25 @@ Console.WriteLine(history.Aggregate);     // 101 — O(1), where SegmentTree.Agg
 ```
 
 **The build is the price.** `O(n log n)` into `levels × n` cells against a segment tree's `O(n)` into `2n`: about 4–5× the build time and 5–8.5× the memory. It repays at roughly 800–1,000 queries at 1,000 elements and 65,000 at 100,000 — below that, `SegmentTree` is the better type even on a sequence that never changes.
+
+#### A rolling fold with no inverse — AggregatingQueue
+
+`AggregatingQueue<T, TMonoid>` is a FIFO queue whose `Aggregate` is the fold of everything in it, oldest to newest, in `O(1)`. It is the classic two-stacks queue in one ring buffer: the older half stores each element's suffix fold, the newer half one running fold, and a dequeue that empties the older half rebuilds it from the newer one in a single pass. No inverse is needed, so it reaches the folds a running total cannot.
+
+```csharp
+// The error flags seen in the last 1,000 requests. A plain running OR cannot forget the request that
+// just left the window; the queue keeps the fold instead.
+var recent = new AggregatingQueue<int, BitwiseOrMonoid<int>>(1_000);
+
+foreach (int flags in requestFlags)
+{
+    if (recent.Count == 1_000)
+        recent.Dequeue();
+    recent.Enqueue(flags);
+
+    Console.WriteLine(recent.Aggregate);   // O(1): one combine, whatever the window
+}
+```
 
 #### The k-th smallest value inside a window — WaveletTree
 

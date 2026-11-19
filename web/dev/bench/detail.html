@@ -417,6 +417,7 @@
     { key: 'StringInternTable',   title: 'StringInternTable',                     vs: 'HashSet<string> via GetAlternateLookup<ReadOnlySpan<char>>' },
     { key: 'FenwickTree',         title: 'FenwickTree<long>',                     vs: 'long[] (naive prefix sum)' },
     { key: 'SegmentTree',         title: 'SegmentTree<long, MinMonoid<long>>',    vs: 'long[] (naive range min)' },
+    { key: 'AggregatingQueue',    title: 'AggregatingQueue<int, TMonoid> (sliding window)', vs: 'Queue<int> re-folded per step — the monotonic-deque and SegmentTree-ring arms are measured in the same class but not charted here' },
     { key: 'SparseTable',         title: 'SparseTable<long, MinMonoid<long>>',    vs: 'long[] (naive range min) — the SegmentTree head-to-head is measured in the same class but not charted here, since this page plots one Celerity series per card' },
     { key: 'KdTree',              title: 'KdTree<int> (2-D spatial index)',       vs: 'SpatialPoint[] scan — naive, or x-sorted on the Sorted/Slab cards' },
     { key: 'SpatialGrid',         title: 'SpatialGrid<int> (moving points)',      vs: 'Dictionary<(int, int), List<int>> (bucketed grid)' },
@@ -462,7 +463,7 @@
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.
   // 'Array' is the plain-array reference the FenwickTree benchmark measures against — the BCL has no
   // prefix-sum type, so a raw long[] is the honest baseline there.
-  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
+  var BCL_TYPES = new Set(['Dictionary', 'OrderedDictionary', 'HashSet', 'FrozenDictionary', 'FrozenSet', 'BitArray', 'LinkedList', 'PriorityQueue', 'Queue', 'Array', 'List', 'SortedDictionary', 'SortedList', 'SortedSet', 'Linq', 'String', 'StringBuilder', 'Regex', 'ImmutableList', 'ImmutableArray', 'ImmutableDictionary', 'ImmutableSortedDictionary', 'ImmutableSortedSet', 'ImmutableHashSet']);
   var SUPPORTED_ITEM_COUNTS = [1000, 100000];
 
   // ---- Read URL params ----
