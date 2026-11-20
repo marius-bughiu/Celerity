@@ -101,6 +101,20 @@ public class ExceptWithLazySelfViewTests
     }
 
     [Fact]
+    public void CompressedLongSet_ExceptWith_ShouldFailFast_OverALazyViewOfItself()
+    {
+        const long Base = 1L << 40;
+        var set = new CompressedLongSet();
+        for (long i = 0; i < 16; i++)
+            set.Add(Base + i);
+
+        Assert.Throws<InvalidOperationException>(() => set.ExceptWith(set.Where(x => x < Base + 8)));
+
+        set.ExceptWith(set.Where(x => x < Base + 8).ToList());
+        Assert.Equal(Enumerable.Range(8, 8).Select(x => Base + x), set.Order());
+    }
+
+    [Fact]
     public void EnumSet_ExceptWith_ShouldFailFast_OverALazyViewOfItself()
     {
         var set = new EnumSet<Flag>(new[] { Flag.A, Flag.B, Flag.C, Flag.D });

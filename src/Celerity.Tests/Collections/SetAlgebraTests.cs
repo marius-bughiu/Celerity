@@ -45,6 +45,7 @@ public class SetAlgebraTests
         Assert.IsAssignableFrom<ISet<int>>(new SparseSet(16));
         Assert.IsAssignableFrom<ISet<int>>(new HierarchicalBitSet(16));
         Assert.IsAssignableFrom<ISet<int>>(new CompressedIntSet());
+        Assert.IsAssignableFrom<ISet<long>>(new CompressedLongSet());
         using var pooled = new PooledCeleritySet<int, Int32WangNaiveHasher>();
         Assert.IsAssignableFrom<ISet<int>>(pooled);
     }
@@ -69,6 +70,24 @@ public class SetAlgebraTests
         Assert.True(set.IsSubsetOf(new[] { 2, 4, 8, int.MinValue }));
         Assert.True(set.Overlaps(new[] { 4, int.MaxValue }));
         Assert.False(set.SetEquals(new[] { 2 }));
+    }
+
+    // The same plain-sequence pin for the 64-bit sibling, with values that only a long holds.
+    [Fact]
+    public void CompressedLongSet_SetAlgebra_MatchesHashSet_ThroughThePlainSequencePath()
+    {
+        const long Big = 1L << 40;
+        var set = new CompressedLongSet(new[] { 1L, Big, Big + 1, long.MinValue });
+
+        set.UnionWith(new[] { Big + 1, Big + 2, long.MaxValue });
+        Assert.Equal(new[] { long.MinValue, 1L, Big, Big + 1, Big + 2, long.MaxValue }, set);
+
+        set.IntersectWith(new[] { Big, Big + 2, long.MinValue, 7L });
+        Assert.Equal(new[] { long.MinValue, Big, Big + 2 }, set);
+
+        Assert.True(set.IsSubsetOf(new[] { Big, Big + 2, long.MinValue, 9L }));
+        Assert.True(set.Overlaps(new[] { Big + 2, long.MaxValue }));
+        Assert.False(set.SetEquals(new[] { Big }));
     }
 
     // SparseSet carries a bounded universe, so its ISet<int> algebra matches HashSet

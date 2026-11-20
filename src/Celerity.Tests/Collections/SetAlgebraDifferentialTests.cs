@@ -103,6 +103,16 @@ public class SetAlgebraDifferentialTests
     public void CompressedIntSet_MatchesHashSet(int seed) =>
         RunDifferential(() => new CompressedIntSet(), i => i, seed);
 
+    // The map spreads the small universe across chunk keys that differ only above bit 32, so
+    // values sharing their low 32 bits must land in distinct chunks.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(1234)]
+    [InlineData(98765)]
+    public void CompressedLongSet_MatchesHashSet(int seed) =>
+        RunDifferential<long>(() => new CompressedLongSet(), i => ((long)(i & 3) << 40) + (i >> 2) - (1L << 41), seed);
+
     private static void RunDifferential<T>(Func<ISet<T>> factory, Func<int, T> map, int seed)
     {
         var rng = new Random(seed);

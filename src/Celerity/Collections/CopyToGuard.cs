@@ -50,7 +50,7 @@ internal static class CopyToGuard
     /// <param name="arrayIndex">The index copying would begin at.</param>
     /// <param name="count">
     /// How many elements the copy would write. Widened to <see cref="long"/> so
-    /// <c>CompressedIntSet</c> can pass its <c>long</c> cardinality without first evaluating an
+    /// <c>CompressedIntSet</c> and <c>CompressedLongSet</c> can pass their <c>long</c> cardinality without first evaluating an
     /// <c>int</c> <c>Count</c> that would throw <see cref="OverflowException"/> ahead of argument
     /// validation. The subtraction below cannot overflow either way: the two checks above leave
     /// <paramref name="arrayIndex"/> in <c>[0, array.Length]</c>.

@@ -30,7 +30,7 @@ if (byName.TryGetValue("bob", out int id))
 | Family | Types |
 |---|---|
 | [Dictionaries](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#dictionaries) | `CelerityDictionary`, `IntDictionary`, `LongDictionary`, `RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`, `LinkedDictionary`, `BiDictionary`, `FrozenCelerityDictionary`, `CelerityMultiMap`, `CelerityMultiSet`, `SmallDictionary`, `EnumMap`, `SparseMap`, `SlotMap`, `PersistentHashMap`, `PersistentSortedMap` |
-| [Sets](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sets) | `CeleritySet`, `IntSet`, `LongSet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `FrozenCeleritySet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`, `PersistentHashSet`, `PersistentSortedSet` |
+| [Sets](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sets) | `CeleritySet`, `IntSet`, `LongSet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `FrozenCeleritySet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`, `CompressedLongSet`, `PersistentHashSet`, `PersistentSortedSet` |
 | [Caches](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#caches) | `LruCache`, `LfuCache`, `SieveCache` |
 | [Sequences](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sequences) | `Deque`, `BTreeList`, `GapBuffer`, `SegmentedList`, `PersistentVector` |
 | [Union-find](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#union-find) | `DisjointSet` |

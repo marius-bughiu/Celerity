@@ -9,7 +9,7 @@ namespace Celerity.Tests.Collections;
 /// <see cref="CeleritySet{T, THasher}"/>, <see cref="SwissSet{T, THasher}"/>,
 /// <see cref="RobinHoodSet{T, THasher}"/>, <see cref="HashCachingSet{T, THasher}"/>,
 /// <see cref="LinkedSet{T, THasher}"/>,
-/// <see cref="CompressedIntSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/> and
+/// <see cref="CompressedIntSet"/>, <see cref="CompressedLongSet"/>, the build-once <see cref="FrozenCeleritySet{THasher}"/> and
 /// <see cref="FrozenSortedSet{T}"/>, and the
 /// immutable <see cref="PersistentHashSet{T, THasher}"/> and <see cref="PersistentSortedSet{T, TComparer}"/>.
 ///
@@ -2077,6 +2077,54 @@ public class SetIEnumerableConstructorTests
 
         Assert.Equal(3, set.Count);
         foreach (int item in new[] { 1, 2, 3 })
+            Assert.True(set.Contains(item));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  CompressedLongSet — the 64-bit chunk-compressed integer set
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CompressedLongSet_ShouldThrow_WhenSourceIsNull()
+    {
+        IEnumerable<long>? source = null;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new CompressedLongSet(source!));
+
+        Assert.Equal("source", ex.ParamName);
+    }
+
+    [Fact]
+    public void CompressedLongSet_ShouldDedupeSource_AcrossTheWholeLongRange()
+    {
+        var set = new CompressedLongSet(new[] { 0L, long.MinValue, 0L, long.MaxValue, long.MinValue, -1L, 1L << 32 });
+
+        Assert.Equal(5, set.Count);
+        Assert.Equal(new[] { long.MinValue, -1L, 0L, 1L << 32, long.MaxValue }, set);
+    }
+
+    [Fact]
+    public void CompressedLongSet_ShouldCopyAllElements_FromNonCollectionEnumerableSource()
+    {
+        // 5000 elements in one chunk past 2^40 push the container past the array→bitmap crossover
+        // while the constructor is still filling it.
+        const long Base = 1L << 40;
+        var set = new CompressedLongSet(Enumerable.Range(0, 5000).Reverse().Select(i => Base + i));
+
+        Assert.Equal(5000, set.Count);
+        Assert.Equal(Enumerable.Range(0, 5000).Select(i => Base + i), set);
+    }
+
+    [Fact]
+    public void CompressedLongSet_ShouldBeIndependentOfTheSource()
+    {
+        var source = new List<long> { 1L, 1L << 40, -(1L << 50) };
+
+        var set = new CompressedLongSet(source);
+        source.Clear();
+
+        Assert.Equal(3, set.Count);
+        foreach (long item in new[] { 1L, 1L << 40, -(1L << 50) })
             Assert.True(set.Contains(item));
     }
 
