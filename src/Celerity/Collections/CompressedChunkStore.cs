@@ -35,8 +35,8 @@ internal struct CompressedChunkStore
 
     // The array/bitmap crossover, and the reason it is 4096: 4096 ushorts and 1024 ulongs are both
     // 8 KB, so above this point the bitmap is never larger and answers Contains in O(1) rather than
-    // O(log n). It is also the cap on how many ushorts an array container ever holds (one more,
-    // transiently, on the insert that tips it over before it is promoted).
+    // O(log n). It is also the cap on how many ushorts an array container ever holds: the insert
+    // that would exceed it promotes the chunk to a bitmap instead.
     private const int ArrayToBitmapThreshold = 4096;
 
     private const int InitialValueCapacity = 4;
@@ -450,17 +450,25 @@ internal struct CompressedChunkStore
         if (found >= 0)
             return false;
 
+        // The insert that would take the array past the crossover promotes it to a bitmap first and
+        // sets the bit there. Promoting before the write (rather than after, as an overfull array)
+        // means the one allocation on this path happens while the chunk is still unchanged, so an
+        // allocation failure cannot leave the chunk ahead of the store's total.
+        if (c.Cardinality == ArrayToBitmapThreshold)
+        {
+            ToBitmap(ref c);
+            c.Bitmap![low >> 6] |= 1UL << (low & 63);
+            c.Cardinality++;
+            return true;
+        }
+
         int insert = ~found;
         if (c.Cardinality == c.Values!.Length)
-            Array.Resize(ref c.Values, Math.Min(ArrayToBitmapThreshold + 1, c.Values.Length * 2));
+            Array.Resize(ref c.Values, Math.Min(ArrayToBitmapThreshold, c.Values.Length * 2));
 
         Array.Copy(c.Values, insert, c.Values, insert + 1, c.Cardinality - insert);
         c.Values[insert] = low;
         c.Cardinality++;
-
-        if (c.Cardinality > ArrayToBitmapThreshold)
-            ToBitmap(ref c);
-
         return true;
     }
 
