@@ -484,6 +484,8 @@ function escapeHtml(s) {
     // container form each 65,536-value chunk lands in — sorted array, bitmap or run — follows entirely
     // from the shape of the data.
     { key: 'CompressedIntSet',    title: 'CompressedIntSet',                         vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'IntersectSparse', 'IntersectDense', 'IntersectClustered', 'Union', 'Except'] },
+    // CompressedLongSet is its 64-bit sibling over the same containers; the keys sit past 2^40.
+    { key: 'CompressedLongSet',   title: 'CompressedLongSet',                        vs: 'HashSet<long>',         ops: ['Add', 'Contains', 'IntersectSparse', 'IntersectDense', 'IntersectClustered', 'Union', 'Except'] },
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },
