@@ -230,6 +230,14 @@ public class CopyToArgumentGuardTests
         AssertCopyToContract<int>(3, set.CopyTo);
     }
 
+    [Fact]
+    public void CompressedLongSet_ShouldValidateCopyToArguments()
+    {
+        CompressedLongSet set = new(new[] { 1L, 1L << 40, long.MinValue });
+
+        AssertCopyToContract<long>(3, set.CopyTo);
+    }
+
     // ── Dictionaries, and their key / value views ─────────────────────────────
 
     [Fact]
@@ -459,7 +467,7 @@ public class CopyToArgumentGuardTests
     // name it is missing, not as silent divergence.
     private static readonly HashSet<string> Covered = new(StringComparer.Ordinal)
     {
-        "BitPackedArray", "BTreeList", "BTreeSet", "CeleritySet", "CompressedIntSet", "Deque", "EnumSet", "GapBuffer",
+        "BitPackedArray", "BTreeList", "BTreeSet", "CeleritySet", "CompressedIntSet", "CompressedLongSet", "Deque", "EnumSet", "GapBuffer",
         "HashCachingSet",
         "HierarchicalBitSet", "IntSet", "LinkedSet", "LongSet", "PersistentVector", "PooledCeleritySet", "RankedMultiSet", "RankedSet",
         "RobinHoodSet", "SegmentedList", "SmallSet", "SparseSet", "SwissSet",

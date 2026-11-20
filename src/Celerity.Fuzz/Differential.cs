@@ -53,6 +53,7 @@ internal static class Differential
         ("SparseMap", SparseMapCase),
         ("SlotMap", SlotMapCase),
         ("CompressedIntSet", CompressedIntSetCase),
+        ("CompressedLongSet", CompressedLongSetCase),
         ("BTreeDictionary", BTreeDictionaryCase),
         ("BTreeSet", BTreeSetCase),
         ("RankedSet", RankedSetCase),
@@ -1423,6 +1424,119 @@ internal static class Differential
 
         Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
         foreach (int item in oracle)
+            Check(sut.Contains(item), $"Contains({item}) said absent");
+    }
+
+    // CompressedLongSet shares CompressedIntSet's container engine, so the container state machine is
+    // already fuzzed above; what is new is the 48-bit chunk key. The same op mix therefore runs over
+    // four bands chosen to stress the key mapping: one straddling zero, one past 2^40, one exactly
+    // 2^32 above it (identical low 32 bits, so only the key's upper half tells them apart), and one
+    // just below long.MaxValue, where the sign-flipped key is at its maximum. The last band stops
+    // 2 * CompressedDomain short of the top so a range add cannot overflow.
+    private const long CompressedLongBand = 1L << 40;
+
+    private static void CompressedLongSetCase(Random rng)
+    {
+        var sut = new CompressedLongSet();
+        var oracle = new HashSet<long>();
+        var other = new CompressedLongSet();
+        var otherOracle = new HashSet<long>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            long item = CompressedLongValue(rng);
+            switch (rng.Next(0, 24))
+            {
+                case < 8:
+                    Check(sut.TryAdd(item) == oracle.Add(item), $"Add({item})");
+                    break;
+                case < 12:
+                    Check(sut.Remove(item) == oracle.Remove(item), $"Remove({item})");
+                    break;
+                case < 15:
+                    Check(other.TryAdd(item) == otherOracle.Add(item), $"other.Add({item})");
+                    break;
+                case < 17:
+                {
+                    long hi = item + rng.Next(0, 600);
+                    long added = sut.AddRange(item, hi);
+                    long expected = 0;
+                    for (long v = item; v <= hi; v++)
+                    {
+                        if (oracle.Add(v))
+                            expected++;
+                    }
+
+                    Check(added == expected, $"AddRange({item}, {hi}) reported {added}, expected {expected}");
+                    break;
+                }
+
+                case < 19:
+                    sut.Optimize();
+                    break;
+                case 19:
+                    sut.UnionWith(other);
+                    oracle.UnionWith(otherOracle);
+                    break;
+                case 20:
+                    sut.IntersectWith(other);
+                    oracle.IntersectWith(otherOracle);
+                    break;
+                case 21:
+                    sut.ExceptWith(other);
+                    oracle.ExceptWith(otherOracle);
+                    break;
+                case 22:
+                    sut.SymmetricExceptWith(other);
+                    oracle.SymmetricExceptWith(otherOracle);
+                    break;
+                default:
+                    sut.Clear();
+                    oracle.Clear();
+                    break;
+            }
+
+            Check(sut.Count == oracle.Count, $"Count {sut.Count} != {oracle.Count} at op {i}");
+        }
+
+        Check(sut.Cardinality == oracle.Count, $"Cardinality {sut.Cardinality} != {oracle.Count}");
+        Check(sut.IntersectCount(other) == oracle.Count(otherOracle.Contains), "IntersectCount disagreed");
+        Check(sut.SetEquals(other) == oracle.SetEquals(otherOracle), "SetEquals disagreed");
+        Check(sut.Overlaps(other) == oracle.Overlaps(otherOracle), "Overlaps disagreed");
+        Check(sut.IsSubsetOf(other) == oracle.IsSubsetOf(otherOracle), "IsSubsetOf disagreed");
+        Check(sut.IsSupersetOf(other) == oracle.IsSupersetOf(otherOracle), "IsSupersetOf disagreed");
+
+        CheckContents(sut, oracle);
+        sut.Optimize();
+        CheckContents(sut, oracle);
+    }
+
+    private static long CompressedLongValue(Random rng) =>
+        rng.Next(0, 4) switch
+        {
+            0 => rng.Next(-CompressedDomain, CompressedDomain),
+            1 => CompressedLongBand + rng.Next(0, CompressedDomain),
+            2 => CompressedLongBand + (1L << 32) + rng.Next(0, CompressedDomain),
+            _ => long.MaxValue - 2L * CompressedDomain + rng.Next(0, CompressedDomain),
+        };
+
+    private static void CheckContents(CompressedLongSet sut, HashSet<long> oracle)
+    {
+        int enumerated = 0;
+        long previous = long.MinValue;
+        bool first = true;
+        foreach (long item in sut)
+        {
+            Check(oracle.Contains(item), $"enumeration yielded absent {item}");
+            Check(first || item > previous, $"enumeration went backwards at {item}");
+            previous = item;
+            first = false;
+            enumerated++;
+        }
+
+        Check(enumerated == oracle.Count, $"enumeration count {enumerated} != {oracle.Count}");
+        foreach (long item in oracle)
             Check(sut.Contains(item), $"Contains({item}) said absent");
     }
 

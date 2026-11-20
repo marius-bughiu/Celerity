@@ -236,14 +236,15 @@ foreach (var entry in versions.EnumerateRange(1_500, 3_500))
 - `SparseSet` — bounded-universe integer set (Briggs–Torczon sparse set): `O(1)` `Clear` that leaves the backing arrays untouched, plus dense, cache-friendly iteration — for clear-and-rebuild "visited" sets over ids in `[0, N)` (graph traversal, ECS, sweep-line). Costs `O(Universe)` memory.
 - `HierarchicalBitSet` — **ordered** bounded-universe integer set: a bit vector under a 64-ary tree of summary words, so `TryGetMin` / `TryGetMax`, successor (`TryGetLowerBound` / `TryGetUpperBound`) and predecessor (`TryGetFloor` / `TryGetPredecessor`) read a few words — `O(log₆₄ Universe)` — and enumeration is ascending. At 100,000 values in an 800,000 universe it answers a successor query **32x** faster than `SortedSet<int>` and **18.9x** faster than `BTreeSet<int>`, at 39x less memory. For lowest-free-id allocators, next-occupied-slot scans and integer priority queues that need `Remove`. Costs about `Universe / 8` bytes.
 - `CompressedIntSet` — **exact, compressed** set of 32-bit integers: each 65,536-value chunk is stored as a sorted array or a bitmap by density, with an opt-in run-length form for clustered data that `Optimize()` and `AddRange` produce. Set algebra runs word-parallel inside a chunk and skips a whole chunk with one comparison, memory is ~10x below `HashSet<int>` (far more when dense or clustered), and enumeration is **in ascending order**. For huge-and-sparse integer sets — posting lists, row-id sets, cohort intersection. No portable Roaring format: this is an in-process structure, not an interop codec.
+- `CompressedLongSet` — the **64-bit** sibling of `CompressedIntSet`: the same containers, the same API and the same ascending-order enumeration over `long`, with the chunk index keyed by a value's top 48 bits. For clustered 64-bit ids (row ids past 2^31, sequential or block-allocated ids) where `HashSet<long>` is the only exact BCL option. It compresses clustered data, not uniformly random 64-bit values, which land one per chunk.
 - `PersistentHashSet<T, THasher>` — **immutable** hash set: `PersistentHashMap`'s CHAMP trie with the values taken out. A single-element edit returns a new set **sharing** all but one root-to-leaf path of the old one's storage, an edit that changes nothing hands back the receiver, and `Union` / `Except` / `Intersect` / `SymmetricExcept` run through a builder. Against `ImmutableHashSet<T>`'s AVL tree of branching factor two with a heap node per distinct hash, a membership test is a few popcount-indexed array reads rather than a pointer chase per level. For membership state tested far more often than it is written and still handed to readers as a snapshot. Implements `IReadOnlySet<T>`.
 - `PersistentSortedSet<T, TComparer>` — **immutable sorted** set: `PersistentSortedMap`'s path-copying **B+ tree** with the values taken out. A single-element edit returns a new set **sharing** all but one root-to-leaf path, an edit that changes nothing hands back the receiver, and it answers the ordered queries `ImmutableSortedSet<T>` lacks — lower and upper bound, floor and predecessor, and an `O(log n + k)` `EnumerateRange` — alongside `Min` / `Max`. Equality is the comparer's, set algebra included. No positional access: for rank and select use `RankedSet` or `ImmutableSortedSet<T>`. For sorted membership state handed to readers as a snapshot: a free-id pool, a set of active timestamps asked "the next one after *t*". Implements `IReadOnlySet<T>`.
 
-The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`) all implement **`ISet<T>`** and **`IReadOnlySet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used. (The bounded-domain sets, `EnumSet`, `SparseSet` and `HierarchicalBitSet`, are the exception to "drop in anywhere": they store only values in their fixed domain, so a mutating op that must add an out-of-domain value throws.)
+The mutable sets (`CeleritySet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `IntSet`, `LongSet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`, `CompressedLongSet`) all implement **`ISet<T>`** and **`IReadOnlySet<T>`** — the full `HashSet<T>` set-algebra surface (`UnionWith` / `IntersectWith` / `ExceptWith` / `SymmetricExceptWith` and the `IsSubsetOf` / `IsSupersetOf` / `Overlaps` / `SetEquals` query family, plus `CopyTo`) with BCL semantics — so they drop in wherever a `HashSet<T>` is used. (The bounded-domain sets, `EnumSet`, `SparseSet` and `HierarchicalBitSet`, are the exception to "drop in anywhere": they store only values in their fixed domain, so a mutating op that must add an out-of-domain value throws.)
 
 ### Examples
 
-#### Sets — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, LinkedSet, FrozenCeleritySet, SmallSet, EnumSet, SparseSet, HierarchicalBitSet, CompressedIntSet
+#### Sets — IntSet, CeleritySet, SwissSet, RobinHoodSet, HashCachingSet, LinkedSet, FrozenCeleritySet, SmallSet, EnumSet, SparseSet, HierarchicalBitSet, CompressedIntSet, CompressedLongSet
 
 ```csharp
 var seen = new IntSet();
@@ -359,6 +360,15 @@ foreach (int id in termA) Render(id);                            // ascending, a
 
 var recent = new CompressedIntSet();
 recent.AddRange(90_000_000, 99_999_999);                         // 10M ids as one run pair per chunk
+```
+
+`CompressedLongSet` is the same structure over `long`, for ids that outgrew 32 bits. It runs the same container code; only the chunk index is wider, keyed by a value's top 48 bits. Its caveat is about shape: it compresses because neighbouring values share a 65,536-value chunk, so it suits sequential, block-allocated or range-clustered ids and not values scattered uniformly over the 64-bit space, which land one per chunk.
+
+```csharp
+var open   = new CompressedLongSet(RowIdsWhere("status = 'open'"));   // row ids past 2^32
+var europe = new CompressedLongSet(RowIdsWhere("region = 'eu'"));
+open.IntersectWith(europe);                                      // chunk-wise, as above
+foreach (long rowId in open) Fetch(rowId);                       // ascending
 ```
 
 #### An immutable set — PersistentHashSet

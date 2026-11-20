@@ -1328,6 +1328,34 @@ void Check(bool condition, string message)
     Check(((IReadOnlySet<int>)left).IsSubsetOf(new[] { -1, 2, 3, 7 }), "CompressedIntSet IReadOnlySet<int>");
 }
 
+// CompressedLongSet — the 64-bit sibling. It shares CompressedIntSet's container engine, so what
+// this roots is the long wrapper: its 48-bit chunk keys, the long enumerator, the range add across
+// several chunks past 2^32, and the chunk-wise algebra over the long instantiations.
+{
+    const long Big = 1L << 40;
+    var cls = new CompressedLongSet(new[] { 5L, 5L, Big, Big + (1L << 32), long.MinValue, long.MaxValue });
+    Check(cls.Count == 5 && cls.Cardinality == 5, "CompressedLongSet source ctor dedupe");
+    Check(cls.Contains(Big) && cls.Contains(Big + (1L << 32)) && !cls.Contains(Big + 1),
+        "CompressedLongSet keeps values sharing their low 32 bits apart");
+
+    var order = new List<long>();
+    foreach (long x in cls) order.Add(x);
+    Check(order.Count == 5 && order[0] == long.MinValue && order[4] == long.MaxValue,
+        "CompressedLongSet enumerates in ascending signed order");
+
+    var runs = new CompressedLongSet();
+    Check(runs.AddRange(Big - 70_000, Big + 70_000) == 140_001, "CompressedLongSet AddRange across chunks");
+    runs.Optimize();
+    Check(runs.Count == 140_001 && runs.MemoryUsageInBytes < 1024, "CompressedLongSet run encoding");
+
+    var left = new CompressedLongSet(new[] { Big + 1, Big + 2, Big + 3 });
+    var right = new CompressedLongSet(new[] { Big + 2, Big + 3, Big + 4 });
+    Check(left.IntersectCount(right) == 2, "CompressedLongSet IntersectCount");
+    left.IntersectWith(right);
+    Check(left.Count == 2 && left.Contains(Big + 2), "CompressedLongSet chunk-wise intersect");
+    Check(((IReadOnlySet<long>)left).IsSubsetOf(new[] { Big + 2, Big + 3, 7L }), "CompressedLongSet IReadOnlySet<long>");
+}
+
 // FenwickTree — Binary Indexed Tree over a numeric sequence. This is the one collection
 // built on generic math (INumber<T>), so the static abstract interface members resolve
 // through constrained calls the AOT compiler must specialize per T — worth pinning here

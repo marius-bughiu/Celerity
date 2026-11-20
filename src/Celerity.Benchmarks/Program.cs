@@ -44,6 +44,7 @@ internal class Program
         typeof(SparseMapBenchmark),
         typeof(SlotMapBenchmark),
         typeof(CompressedIntSetBenchmark),
+        typeof(CompressedLongSetBenchmark),
         typeof(BloomFilterBenchmark),
         typeof(CuckooFilterBenchmark),
         typeof(XorFilterBenchmark),

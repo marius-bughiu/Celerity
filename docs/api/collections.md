@@ -2969,6 +2969,142 @@ Console.WriteLine(recentlyIngested.MemoryUsageInBytes); // hundreds of bytes, no
 
 ---
 
+## CompressedLongSet
+
+```csharp
+public sealed class CompressedLongSet : ISet<long>, IReadOnlySet<long>
+```
+
+The **64-bit sibling of [`CompressedIntSet`](#compressedintset)**: an exact, compressed set of
+`long` values with the same containers, the same API and the same contracts. Everything in the
+`CompressedIntSet` section above — the two caveats (no portable Roaring format, not the only
+compressed set in .NET), the container table, explicit compression, `Remove` never demoting a
+representation, the set-operation semantics — applies unchanged, because the two types run the
+**same container code**. This section covers only what differs.
+
+| Shape | Type |
+|---|---|
+| values fit an `int` | [`CompressedIntSet`](#compressedintset) |
+| **values need 64 bits** — row ids past 2^31, 64-bit document or event ids, file offsets | **`CompressedLongSet`** |
+| unbounded, hash-probed, no compression | [`LongSet`](#longset) / `HashSet<long>` |
+
+### What changes at 64 bits
+
+- **The chunk index.** A value's top **48** bits (sign bit flipped) are its chunk key and its low
+  16 bits its offset in the chunk. A 32-bit set has at most 65,536 chunks; this one has one per
+  populated 65,536-value window, with no fixed ceiling.
+- **It compresses clustered 64-bit data, not uniformly random 64-bit data.** Compression comes
+  from many values sharing a chunk. Values spread uniformly over the 64-bit space land one per
+  chunk, and each then costs an index entry plus a small array, which is more than a
+  `HashSet<long>` entry. Sequential ids, block-allocated ids, timestamps at a fixed resolution and
+  row ids in a range are the shapes this type is for; hashes and random GUID halves are not.
+  `MemoryUsageInBytes` tells you which one you have.
+- **`AddRange` costs one index entry per chunk it touches.** A fresh chunk is still a single
+  four-byte run pair, but a range a billion values wide spans about 15,000 chunks, where the 32-bit
+  set's whole range is at most 65,536. A range spanning more than `Array.MaxLength` chunks (about
+  1.4 × 10^14 values) can never be stored and is rejected up front with
+  `ArgumentOutOfRangeException`, before the set is touched. Each new chunk is inserted into the
+  sorted index on its own, so a wide range is cheapest added above the existing chunks or into an
+  empty set; below many of them, every new chunk shifts the ones that follow.
+- **`Cardinality` cannot overflow.** At most `Array.MaxLength` × 65,536 values are storable, which
+  fits a `long`. `Count` still throws `OverflowException` past `int.MaxValue`, which a wide
+  `AddRange` reaches cheaply.
+
+Enumeration is in ascending signed order, from `long.MinValue` to `long.MaxValue`.
+
+### The documented BCL-beating workload
+
+The same as `CompressedIntSet`'s, moved past the 32-bit boundary: set algebra over ~1M values drawn
+from a ~100M-value window. Measured on an Apple M4 (.NET 10, median of 15 runs, operands rebuilt
+before each) with every value offset by 2^40, against `HashSet<long>`:
+
+| 1M × 1M, sparse | `HashSet<long>` | `CompressedLongSet` | Ratio |
+|---|---|---|---|
+| `IntersectWith` | 36.3 ms | 5.86 ms | **6.2x** |
+| `UnionWith` | 30.8 ms | 7.30 ms | **4.2x** |
+| `ExceptWith` | 17.3 ms | 6.91 ms | **2.5x** |
+| Retained heap (`GC.GetTotalMemory`) | 23.3 MB | 4.2 MB | **5.5x** less |
+
+`CompressedIntSet` on the same values with the offset removed measured within 3% on every row,
+so the wider chunk index costs nothing measurable here. Those are one-machine Stopwatch numbers;
+the dashboard's `CompressedLongSet` card carries the CI measurements at 1,000 and 100,000
+elements.
+
+### Constructors
+
+```csharp
+CompressedLongSet()
+CompressedLongSet(IEnumerable<long> source)
+```
+
+- The default constructor allocates no chunk storage until the first value is added.
+- The `source` constructor silently deduplicates (matching BCL `HashSet<long>(IEnumerable<long>)`)
+  and throws `ArgumentNullException` when `source` is `null`. There is no capacity parameter.
+
+### Properties
+
+- `long Cardinality { get; }` — the number of elements. Always correct.
+- `int Count { get; }` — the same number as an `int`. **Throws `OverflowException`** past
+  `int.MaxValue` elements.
+- `long MemoryUsageInBytes { get; }` — the chunk index plus every container payload, excluding
+  object headers. Counts the index's capacity, so it stays non-zero after `Clear()` until
+  `Optimize()`.
+
+### Methods
+
+- `void Add(long item)` — throws `ArgumentException` on a duplicate.
+- `bool TryAdd(long item)` — `true` if added, `false` if already present.
+- `long AddRange(long start, long endInclusive)` — adds every value in the inclusive range and
+  returns how many were new. Throws `ArgumentOutOfRangeException` if `endInclusive < start` or the
+  range spans more than `Array.MaxLength` chunks.
+- `bool Contains(long item)` — `O(log c)` over the `c` populated chunks to find the chunk, then
+  `O(1)` in a bitmap chunk or `O(log n)` in an array or run chunk.
+- `bool Remove(long item)` — `true` if removed. A chunk emptied by its last removal is dropped.
+- `void Clear()` — empties the set; a `Clear()` on an empty set leaves enumerators valid.
+- `void Optimize()` — re-encodes every chunk in its smallest form and trims the index. Purely a
+  representation change; enumerators stay valid.
+- `long IntersectCount(CompressedLongSet other)` — the size of the intersection, without building
+  it. Throws `ArgumentNullException` for a `null` argument.
+- `Enumerator GetEnumerator()` — allocation-free struct enumerator, ascending signed order.
+- `void CopyTo(long[] array, int arrayIndex)` — under [the library's `CopyTo` argument contract](#the-copyto-argument-contract).
+
+### Set operations (`ISet<long>` and `IReadOnlySet<long>`)
+
+The same surface and semantics as `CompressedIntSet`'s: `UnionWith`, `IntersectWith`,
+`ExceptWith`, `SymmetricExceptWith`, `IsSubsetOf`, `IsProperSubsetOf`, `IsSupersetOf`,
+`IsProperSupersetOf`, `Overlaps`, `SetEquals`, each taking the chunk-wise path when `other` is also
+a `CompressedLongSet` and falling back to an element-at-a-time implementation otherwise. A
+`CompressedIntSet` is an `IEnumerable<int>`, so it cannot be passed as `other` here; convert it
+once with `new CompressedLongSet(intSet.Select(x => (long)x))` and keep the result.
+
+`ISet<long>.Add(long)` returns `bool`, the concrete `Add(long)` throws on a duplicate, and
+`ICollection<long>.Add(long)` ignores duplicates. The type is single-threaded, and any structural
+mutation invalidates active enumerators.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+
+// Row ids in a table that passed 2^31 rows long ago: two filters' matching rows.
+var matchesStatus = new CompressedLongSet(RowIdsWhere("status = 'open'"));
+var matchesRegion = new CompressedLongSet(RowIdsWhere("region = 'eu'"));
+matchesStatus.Optimize();
+
+long both = matchesStatus.IntersectCount(matchesRegion);  // nothing materialized
+matchesStatus.IntersectWith(matchesRegion);               // chunk-wise; skips unshared chunks
+foreach (long rowId in matchesStatus)                     // ascending, allocation-free
+    Fetch(rowId);
+
+// A freshly ingested id block is one run pair per 65,536-value chunk.
+var ingested = new CompressedLongSet();
+ingested.AddRange(5_000_000_000, 5_009_999_999);          // 10M ids past 2^32
+ingested.Optimize();
+Console.WriteLine(ingested.MemoryUsageInBytes);           // a few kilobytes
+```
+
+---
+
 ## EnumMap&lt;TEnum, TValue&gt;
 
 ```csharp
