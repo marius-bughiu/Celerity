@@ -79,6 +79,14 @@ namespace Celerity.Collections;
 /// <see langword="long"/> <see cref="Cardinality"/>, so they keep working past
 /// <see cref="int.MaxValue"/> elements.
 /// </para>
+/// <para>
+/// <b>Allocation failure during set algebra.</b> When the other set is also a
+/// <see cref="CompressedIntSet"/>, an <see cref="OutOfMemoryException"/> from
+/// <see cref="UnionWith"/>, <see cref="IntersectWith"/>, <see cref="ExceptWith"/> or
+/// <see cref="SymmetricExceptWith"/> may leave this set inconsistent. Discard this set and its
+/// existing enumerators; rollback and recovery are not guaranteed. <see cref="AddRange"/> instead
+/// leaves a valid, possibly partially updated set if allocation fails.
+/// </para>
 /// </remarks>
 public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
 {
@@ -180,6 +188,10 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// <see cref="MemoryUsageInBytes"/> excludes too) — which is why this is the cheap way to build a
     /// clustered set. A range overlapping an existing chunk merges into it and the chunk is left in
     /// its natural form; call <see cref="Optimize"/> afterwards to re-compress those.
+    /// <para>
+    /// If allocation fails, values already added remain in a valid set. Existing enumerators are
+    /// invalidated if the contents changed; the operation does not roll back completed additions.
+    /// </para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="endInclusive"/> is less than <paramref name="start"/>.</exception>
     public long AddRange(int start, int endInclusive)
@@ -311,6 +323,11 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// in both.
     /// </summary>
     /// <param name="other">The collection to union into this set.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedIntSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void UnionWith(IEnumerable<int> other)
     {
@@ -334,6 +351,11 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// Modifies the set to contain only elements that are also present in <paramref name="other"/>.
     /// </summary>
     /// <param name="other">The collection to intersect with this set.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedIntSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void IntersectWith(IEnumerable<int> other)
     {
@@ -367,6 +389,11 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// Removes every element in <paramref name="other"/> from the set.
     /// </summary>
     /// <param name="other">The collection of elements to remove.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedIntSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void ExceptWith(IEnumerable<int> other)
     {
@@ -397,6 +424,11 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
     /// <paramref name="other"/>, but not both.
     /// </summary>
     /// <param name="other">The collection to apply the symmetric difference with.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedIntSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void SymmetricExceptWith(IEnumerable<int> other)
     {

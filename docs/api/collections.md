@@ -2932,6 +2932,12 @@ Fallbacks that depend on the receiver's size use its `long` `Cardinality`, so th
 past `int.MaxValue` elements, where `Count` throws. If you are intersecting two of these
 sets, keep both as `CompressedIntSet`; do not project one through LINQ first.
 
+**Allocation failure.** When `other` is also a `CompressedIntSet`, an `OutOfMemoryException`
+from `UnionWith`, `IntersectWith`, `ExceptWith` or `SymmetricExceptWith` may leave the receiver
+inconsistent. Discard that set and its existing enumerators; rollback and recovery are not
+guaranteed. `AddRange` instead leaves a valid set containing any additions completed before an
+allocation failure, and invalidates existing enumerators if its contents changed.
+
 As with the other sets, `ISet<int>.Add(int)` returns `bool` (equivalent to `TryAdd`), the concrete
 `public void Add(int)` keeps its throw-on-duplicate behaviour, and `ICollection<int>.Add(int)`
 ignores duplicates.
@@ -3076,6 +3082,12 @@ The same surface and semantics as `CompressedIntSet`'s: `UnionWith`, `IntersectW
 a `CompressedLongSet` and falling back to an element-at-a-time implementation otherwise. A
 `CompressedIntSet` is an `IEnumerable<int>`, so it cannot be passed as `other` here; convert it
 once with `new CompressedLongSet(intSet.Select(x => (long)x))` and keep the result.
+
+**Allocation failure.** When `other` is also a `CompressedLongSet`, an `OutOfMemoryException`
+from `UnionWith`, `IntersectWith`, `ExceptWith` or `SymmetricExceptWith` may leave the receiver
+inconsistent. Discard that set and its existing enumerators; rollback and recovery are not
+guaranteed. `AddRange` instead leaves a valid set containing any additions completed before an
+allocation failure, and invalidates existing enumerators if its contents changed.
 
 `ISet<long>.Add(long)` returns `bool`, the concrete `Add(long)` throws on a duplicate, and
 `ICollection<long>.Add(long)` ignores duplicates. The type is single-threaded, and any structural

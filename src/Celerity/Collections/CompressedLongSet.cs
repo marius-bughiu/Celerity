@@ -73,6 +73,14 @@ namespace Celerity.Collections;
 /// <see langword="long"/> <see cref="Cardinality"/>, so they keep working past
 /// <see cref="int.MaxValue"/> elements.
 /// </para>
+/// <para>
+/// <b>Allocation failure during set algebra.</b> When the other set is also a
+/// <see cref="CompressedLongSet"/>, an <see cref="OutOfMemoryException"/> from
+/// <see cref="UnionWith"/>, <see cref="IntersectWith"/>, <see cref="ExceptWith"/> or
+/// <see cref="SymmetricExceptWith"/> may leave this set inconsistent. Discard this set and its
+/// existing enumerators; rollback and recovery are not guaranteed. <see cref="AddRange"/> instead
+/// leaves a valid, possibly partially updated set if allocation fails.
+/// </para>
 /// </remarks>
 public sealed class CompressedLongSet : ISet<long>, IReadOnlySet<long>
 {
@@ -184,6 +192,10 @@ public sealed class CompressedLongSet : ISet<long>, IReadOnlySet<long>
     /// rejected up front, before the set is touched. Each new chunk is inserted into the sorted index on
     /// its own, so a wide range is cheapest added above the set's existing chunks (or into an empty
     /// set); added below many of them, every new chunk shifts those that follow.
+    /// </para>
+    /// <para>
+    /// If allocation fails, values already added remain in a valid set. Existing enumerators are
+    /// invalidated if the contents changed; the operation does not roll back completed additions.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -324,6 +336,11 @@ public sealed class CompressedLongSet : ISet<long>, IReadOnlySet<long>
     /// in both.
     /// </summary>
     /// <param name="other">The collection to union into this set.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedLongSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void UnionWith(IEnumerable<long> other)
     {
@@ -347,6 +364,11 @@ public sealed class CompressedLongSet : ISet<long>, IReadOnlySet<long>
     /// Modifies the set to contain only elements that are also present in <paramref name="other"/>.
     /// </summary>
     /// <param name="other">The collection to intersect with this set.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedLongSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void IntersectWith(IEnumerable<long> other)
     {
@@ -380,6 +402,11 @@ public sealed class CompressedLongSet : ISet<long>, IReadOnlySet<long>
     /// Removes every element in <paramref name="other"/> from the set.
     /// </summary>
     /// <param name="other">The collection of elements to remove.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedLongSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void ExceptWith(IEnumerable<long> other)
     {
@@ -410,6 +437,11 @@ public sealed class CompressedLongSet : ISet<long>, IReadOnlySet<long>
     /// <paramref name="other"/>, but not both.
     /// </summary>
     /// <param name="other">The collection to apply the symmetric difference with.</param>
+    /// <remarks>
+    /// When <paramref name="other"/> is a <see cref="CompressedLongSet"/>, an
+    /// <see cref="OutOfMemoryException"/> may leave this set inconsistent. Discard this set and its
+    /// existing enumerators; rollback and recovery are not guaranteed.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <c>null</c>.</exception>
     public void SymmetricExceptWith(IEnumerable<long> other)
     {
