@@ -11,9 +11,10 @@ namespace Celerity.Tests.Collections;
 ///
 /// <para>
 /// The domain is what makes this worth running: a narrow one forces every value into a single chunk
-/// and drives it through the array &#8594; bitmap &#8594; run transitions repeatedly, a wide one
-/// spreads the values across hundreds of chunks so the chunk-index merge does the work, and the
-/// origins include <see cref="long.MinValue"/>, the top of the range, both 32-bit boundaries and a
+/// and drives it through the array &#8594; bitmap &#8594; run transitions repeatedly, and a
+/// generated band count copies that domain into up to four bands spaced either three chunks apart
+/// or exactly 2^32 apart — values sharing their low 32 bits, which only the upper half of the 48-bit
+/// key tells apart — so the chunk-index merge and skip paths do real work. The origins include <see cref="long.MinValue"/>, the top of the range, both 32-bit boundaries and a
 /// point past 2^40, so the sign-flipped 48-bit chunk key is exercised at both ends and across the
 /// <see cref="int"/> range's edges. The container state machine is the whole risk surface of this
 /// type, and a script that reaches a divergence shrinks to a minimal reproduction with the seed
@@ -37,8 +38,12 @@ public class CompressedLongSetDifferentialTests
         long.MaxValue - 100_000,
     };
 
-    private static readonly Gen<(int OriginIndex, int Width, uint Seed)> GenScript =
-        Gen.Select(Gen.Int[0, Origins.Length - 1], Gen.Int[4, 30_000], Gen.UInt);
+    // The two band spacings: three chunks (neighbouring index entries with a gap between them) and
+    // 2^32 (identical low 32 bits, distinct chunk keys).
+    private static readonly long[] BandStrides = { 3L * 65_536, 1L << 32 };
+
+    private static readonly Gen<(int OriginIndex, int Width, int Bands, int StrideIndex, uint Seed)> GenScript =
+        Gen.Select(Gen.Int[0, Origins.Length - 1], Gen.Int[4, 30_000], Gen.Int[1, 4], Gen.Int[0, 1], Gen.UInt);
 
     [Fact]
     public void EveryOperation_ShouldMatchTheHashSetOracle()
@@ -47,6 +52,10 @@ public class CompressedLongSetDifferentialTests
         {
             long origin = Origins[spec.OriginIndex];
             var rng = new Random((int)spec.Seed);
+
+            // Bands step away from whichever end of the range the origin is near, so none overflows.
+            long bandStep = origin >= 0 ? -BandStrides[spec.StrideIndex] : BandStrides[spec.StrideIndex];
+            long Value(Random random) => origin + (random.Next(spec.Bands) * bandStep) + random.Next(spec.Width);
 
             var sut = new CompressedLongSet();
             var oracle = new HashSet<long>();
@@ -61,14 +70,14 @@ public class CompressedLongSetDifferentialTests
                     case 1:
                     case 2:
                     {
-                        long value = Value(rng, origin, spec.Width);
+                        long value = Value(rng);
                         Assert.Equal(oracle.Add(value), sut.TryAdd(value));
                         break;
                     }
 
                     case 3:
                     {
-                        long value = Value(rng, origin, spec.Width);
+                        long value = Value(rng);
                         Assert.Equal(oracle.Remove(value), sut.Remove(value));
                         break;
                     }
@@ -76,7 +85,7 @@ public class CompressedLongSetDifferentialTests
                     case 4:
                     {
                         // A range-add is the only way a run container is produced without Optimize.
-                        long lo = Value(rng, origin, spec.Width);
+                        long lo = Value(rng);
                         long hi = lo + rng.Next(0, Math.Min(spec.Width, 400));
                         long added = sut.AddRange(lo, hi);
                         long expected = 0;
@@ -96,7 +105,7 @@ public class CompressedLongSetDifferentialTests
 
                     case 6:
                     {
-                        long value = Value(rng, origin, spec.Width);
+                        long value = Value(rng);
                         Assert.Equal(otherOracle.Add(value), otherSut.TryAdd(value));
                         break;
                     }
@@ -138,7 +147,7 @@ public class CompressedLongSetDifferentialTests
 
                     default:
                     {
-                        long value = Value(rng, origin, spec.Width);
+                        long value = Value(rng);
                         Assert.Equal(oracle.Contains(value), sut.Contains(value));
                         break;
                     }
@@ -189,6 +198,4 @@ public class CompressedLongSetDifferentialTests
             Assert.Equal(oracle.OrderBy(v => v), sut);
         }, iter: 40);
     }
-
-    private static long Value(Random rng, long origin, int width) => origin + rng.Next(width);
 }

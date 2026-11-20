@@ -43,23 +43,26 @@ internal struct CompressedChunkStore
 
     internal enum ContainerKind : byte
     {
-        /// <summary>Sorted distinct offsets in <c>Values[0, Length)</c>.</summary>
+        /// <summary>Sorted distinct offsets in <c>Values[0, Cardinality)</c>; the array may be longer.</summary>
         Array,
 
         /// <summary>A 1024-word bitmap over the chunk's 65,536 offsets.</summary>
         Bitmap,
 
-        /// <summary>(start, lengthMinusOne) pairs in <c>Values[0, Length)</c>, ascending and disjoint.</summary>
+        /// <summary>(start, lengthMinusOne) pairs filling <c>Values</c> exactly, ascending and disjoint.</summary>
         Run,
     }
 
+    // 32 bytes. There is deliberately no separate length field: an array container's used length is
+    // always its Cardinality, and a run container's pair array is always allocated to exact size, so
+    // its length is Values.Length. Keeping the struct at 32 bytes rather than 40 is worth ~3% on
+    // Contains, which binary-searches this array.
     internal struct Chunk
     {
         public ulong Key;
         public ushort[]? Values;
         public ulong[]? Bitmap;
         public int Cardinality;
-        public int Length;
         public ContainerKind Kind;
     }
 
@@ -140,8 +143,9 @@ internal struct CompressedChunkStore
 
     // Adds every value from (firstKey, firstLow) to (lastKey, lastLow) inclusive. The caller has
     // already checked the range is non-empty and that it spans a storable number of chunks.
-    // Cardinality is updated chunk by chunk rather than once at the end, so it stays equal to what
-    // the index holds even if a wide range fails part-way through on an allocation.
+    // AddRunToChunk updates Cardinality for each chunk as soon as that chunk's values are in place,
+    // so it stays equal to what the index holds even if a wide range fails part-way through on an
+    // allocation.
     internal long AddRange(ulong firstKey, ushort firstLow, ulong lastKey, ushort lastLow)
     {
         long added = 0;
@@ -149,9 +153,7 @@ internal struct CompressedChunkStore
         {
             ushort lo = k == firstKey ? firstLow : (ushort)0;
             ushort hi = k == lastKey ? lastLow : (ushort)0xFFFF;
-            long chunkAdded = AddRunToChunk(k, lo, hi);
-            Cardinality += chunkAdded;
-            added += chunkAdded;
+            added += AddRunToChunk(k, lo, hi);
         }
 
         return added;
@@ -200,30 +202,32 @@ internal struct CompressedChunkStore
         return ~lo;
     }
 
+    // Both inserts allocate the payload before MakeRoomForChunk opens the slot, so an allocation
+    // failure leaves the index exactly as it was rather than holding a stale or empty chunk.
     private void InsertEmptyChunk(int index, ulong key)
     {
-        MakeRoomForChunk(index);
-        Chunks[index] = new Chunk
+        var chunk = new Chunk
         {
             Key = key,
             Kind = ContainerKind.Array,
             Values = new ushort[InitialValueCapacity],
-            Length = 0,
             Cardinality = 0,
         };
+        MakeRoomForChunk(index);
+        Chunks[index] = chunk;
     }
 
     private void InsertRunChunk(int index, ulong key, ushort lo, ushort hi)
     {
-        MakeRoomForChunk(index);
-        Chunks[index] = new Chunk
+        var chunk = new Chunk
         {
             Key = key,
             Kind = ContainerKind.Run,
             Values = new ushort[] { lo, (ushort)(hi - lo) },
-            Length = 2,
             Cardinality = hi - lo + 1,
         };
+        MakeRoomForChunk(index);
+        Chunks[index] = chunk;
     }
 
     private void MakeRoomForChunk(int index)
@@ -256,11 +260,11 @@ internal struct CompressedChunkStore
             return BitmapContains(c.Bitmap!, low);
 
         if (c.Kind == ContainerKind.Array)
-            return BinarySearchValues(c.Values!, c.Length, low) >= 0;
+            return BinarySearchValues(c.Values!, c.Cardinality, low) >= 0;
 
         // Run: locate the pair whose start is the greatest one not above `low`.
         ushort[] runs = c.Values!;
-        int lo = 0, hi = (c.Length >> 1) - 1;
+        int lo = 0, hi = (runs.Length >> 1) - 1;
         while (lo <= hi)
         {
             int mid = (int)(((uint)lo + (uint)hi) >> 1);
@@ -321,7 +325,6 @@ internal struct CompressedChunkStore
         c.Bitmap = bits;
         c.Kind = ContainerKind.Bitmap;
         c.Values = null;
-        c.Length = 0;
     }
 
     // Materializes the chunk as a sorted array. Only ever called when the cardinality fits one.
@@ -334,7 +337,6 @@ internal struct CompressedChunkStore
             values[n++] = v;
 
         c.Values = values;
-        c.Length = n;
         c.Kind = ContainerKind.Array;
         c.Bitmap = null;
     }
@@ -403,7 +405,6 @@ internal struct CompressedChunkStore
         pairs[n++] = (ushort)(previous - start);
 
         c.Values = pairs;
-        c.Length = n;
         c.Kind = ContainerKind.Run;
         c.Bitmap = null;
     }
@@ -445,17 +446,16 @@ internal struct CompressedChunkStore
             return true;
         }
 
-        int found = BinarySearchValues(c.Values!, c.Length, low);
+        int found = BinarySearchValues(c.Values!, c.Cardinality, low);
         if (found >= 0)
             return false;
 
         int insert = ~found;
-        if (c.Length == c.Values!.Length)
+        if (c.Cardinality == c.Values!.Length)
             Array.Resize(ref c.Values, Math.Min(ArrayToBitmapThreshold + 1, c.Values.Length * 2));
 
-        Array.Copy(c.Values, insert, c.Values, insert + 1, c.Length - insert);
+        Array.Copy(c.Values, insert, c.Values, insert + 1, c.Cardinality - insert);
         c.Values[insert] = low;
-        c.Length++;
         c.Cardinality++;
 
         if (c.Cardinality > ArrayToBitmapThreshold)
@@ -480,12 +480,11 @@ internal struct CompressedChunkStore
             return true;
         }
 
-        int found = BinarySearchValues(c.Values!, c.Length, low);
+        int found = BinarySearchValues(c.Values!, c.Cardinality, low);
         if (found < 0)
             return false;
 
-        Array.Copy(c.Values!, found + 1, c.Values!, found, c.Length - found - 1);
-        c.Length--;
+        Array.Copy(c.Values!, found + 1, c.Values!, found, c.Cardinality - found - 1);
         c.Cardinality--;
         return true;
     }
@@ -498,6 +497,7 @@ internal struct CompressedChunkStore
         if (index < 0)
         {
             InsertRunChunk(~index, key, lo, hi);
+            Cardinality += hi - lo + 1;
             return hi - lo + 1;
         }
 
@@ -506,8 +506,13 @@ internal struct CompressedChunkStore
         ToBitmap(ref c);
         SetBitRange(c.Bitmap!, lo, hi);
         c.Cardinality = PopCount(c.Bitmap!);
+
+        // Count the new values before the demotion below allocates, so a failure there leaves the
+        // chunk as a valid bitmap and the total in step with it.
+        int delta = c.Cardinality - before;
+        Cardinality += delta;
         NormalizeBitmap(ref c);
-        return c.Cardinality - before;
+        return delta;
     }
 
     private static void SetBitRange(ulong[] bits, int lo, int hi)
@@ -583,17 +588,19 @@ internal struct CompressedChunkStore
             c.Bitmap = bits;
             c.Kind = ContainerKind.Bitmap;
             c.Values = null;
-            c.Length = 0;
         }
         else
         {
-            ushort[] values = c.Values is { } existing && existing.Length >= _scratchCount
-                ? existing
+            // Only an array container's storage is reused. A run container's pairs must not be
+            // overwritten in place: when the operation changed nothing, the wrapper does not
+            // invalidate enumerators, and a live cursor would go on reading the new offsets as
+            // (start, length) pairs.
+            ushort[] values = c.Kind == ContainerKind.Array && c.Values!.Length >= _scratchCount
+                ? c.Values
                 : new ushort[_scratchCount];
             Array.Copy(_scratchValues!, values, _scratchCount);
             c.Values = values;
             c.Kind = ContainerKind.Array;
-            c.Length = _scratchCount;
             c.Bitmap = null;
         }
 
@@ -942,10 +949,13 @@ internal struct CompressedChunkStore
         if (source.Kind == ContainerKind.Bitmap)
             copy.Bitmap = (ulong[])source.Bitmap!.Clone();
         else
-            copy.Values = source.Values![..source.Length];
+            copy.Values = source.Values![..UsedValues(in source)];
 
         return copy;
     }
+
+    // How many entries of Values a non-bitmap chunk actually uses (see the note on Chunk).
+    private static int UsedValues(in Chunk c) => c.Kind == ContainerKind.Run ? c.Values!.Length : c.Cardinality;
 
     internal readonly long IntersectCount(ref CompressedChunkStore other)
     {
@@ -1208,7 +1218,7 @@ internal struct CompressedChunkStore
         {
             if (_chunk.Kind == ContainerKind.Array)
             {
-                if (_index < _chunk.Length)
+                if (_index < _chunk.Cardinality)
                 {
                     value = _chunk.Values![_index++];
                     return true;
@@ -1222,7 +1232,7 @@ internal struct CompressedChunkStore
             {
                 if (_runNext > _runEnd)
                 {
-                    if (_index >= _chunk.Length)
+                    if (_index >= _chunk.Values!.Length)
                     {
                         value = 0;
                         return false;

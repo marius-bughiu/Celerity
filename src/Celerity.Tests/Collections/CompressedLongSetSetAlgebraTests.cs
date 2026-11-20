@@ -738,4 +738,71 @@ public class CompressedLongSetSetAlgebraTests
         Assert.Throws<ArgumentNullException>(() => set.Overlaps(null!));
         Assert.Throws<ArgumentNullException>(() => set.SetEquals(null!));
     }
+
+    // ---- a no-op operation must not rewrite a run container under a live enumerator ----
+
+    // Regression: a set operation that changes nothing does not invalidate enumerators, but its
+    // result was written back into the left chunk's existing storage — which, for a run container,
+    // is the (start, length) pair array a live enumerator is still reading. After AddRange(10, 11)
+    // stored [10, 1], a no-op union with {10} wrote [10, 11] there, and the enumerator then
+    // yielded 10 through 21.
+    public static TheoryData<string> NoOpOperations => new() { "Union", "Intersect", "Except" };
+
+    [Theory]
+    [MemberData(nameof(NoOpOperations))]
+    public void NoOpSetOperation_ShouldNotCorruptALiveEnumerator_OverARunContainer(string operation)
+    {
+        const long Base = 1L << 40;
+        var set = new CompressedLongSet();
+        set.AddRange(Base + 10, Base + 11); // a fresh chunk, so a single run pair
+
+        var other = operation switch
+        {
+            "Union" => new CompressedLongSet(new long[] { Base + 10 }),
+            "Intersect" => new CompressedLongSet(new long[] { Base + 10, Base + 11 }),
+            _ => new CompressedLongSet(new long[] { Base + 500 }), // same chunk, disjoint from the set
+        };
+
+        // Created but not yet advanced: the cursor has not read the run pair, so it reads whatever
+        // is in that array when it first moves.
+        using var enumerator = set.GetEnumerator();
+
+        switch (operation)
+        {
+            case "Union":
+                set.UnionWith(other);
+                break;
+            case "Intersect":
+                set.IntersectWith(other);
+                break;
+            default:
+                set.ExceptWith(other);
+                break;
+        }
+
+        var rest = new List<long>();
+        while (enumerator.MoveNext())
+            rest.Add(enumerator.Current);
+
+        Assert.Equal(new long[] { Base + 10, Base + 11 }, rest);
+        Assert.Equal(new long[] { Base + 10, Base + 11 }, set);
+    }
+
+    // A union that copies over a run-encoded chunk this set does not have must clone the pair array
+    // at its exact length and keep it independent of the source.
+    [Fact]
+    public void UnionWith_ShouldCopyARunChunkTheSetLacks_IndependentlyOfTheSource()
+    {
+        const long Base = 1L << 40;
+        var set = new CompressedLongSet(new long[] { Base + 1 });
+        var other = new CompressedLongSet();
+        other.AddRange(Base + 200_000, Base + 200_009); // a run pair in a chunk `set` lacks
+
+        set.UnionWith(other);
+        other.Remove(Base + 200_005);                   // expands other's run; must not touch set
+
+        Assert.Equal(11, set.Count);
+        Assert.True(set.Contains(Base + 200_005));
+        Assert.Equal(new long[] { Base + 1 }.Concat(Enumerable.Range(0, 10).Select(i => Base + 200_000 + i)), set);
+    }
 }

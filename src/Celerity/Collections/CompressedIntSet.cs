@@ -188,11 +188,18 @@ public sealed class CompressedIntSet : ISet<int>, IReadOnlySet<int>
             throw new ArgumentOutOfRangeException(nameof(endInclusive), endInclusive, "The end of the range must not be less than the start.");
 
         // ChunkKey is monotone in the signed value, so the range spans a contiguous run of keys.
-        long added = _store.AddRange(ChunkKey(start), Low(start), ChunkKey(endInclusive), Low(endInclusive));
-        if (added != 0)
-            _version++;
-
-        return added;
+        // As in CompressedLongSet: the version moves whenever the contents did, even if an allocation
+        // fails part-way through the range.
+        long before = _store.Cardinality;
+        try
+        {
+            return _store.AddRange(ChunkKey(start), Low(start), ChunkKey(endInclusive), Low(endInclusive));
+        }
+        finally
+        {
+            if (_store.Cardinality != before)
+                _version++;
+        }
     }
 
     /// <summary>
