@@ -413,6 +413,7 @@ foreach (int id in free.EnumerateRange(5, 12))
 - `LruCache<TKey, TValue, THasher>` — fixed-capacity **least-recently-used cache** with `O(1)` get/put and automatic eviction of the least-recently-used entry. Recency runs through an intrusive doubly-linked list over fixed-size arrays, so the hot get/put/evict path **allocates nothing** — unlike the idiomatic `Dictionary` + `LinkedList` LRU that heap-allocates a node per insert. Reads count as uses (a hit promotes the entry to most-recently-used); `TryPeek` / `ContainsKey` inspect without disturbing recency.
 - `LfuCache<TKey, TValue, THasher>` — fixed-capacity **least-frequently-used cache** with expected-`O(1)` get/put and ties broken by least-recently-used. Its *eviction bookkeeping* is `O(1)` **worst case** rather than logarithmic; the key-index lookup is what leaves the end-to-end bound expected, as everywhere else in the library. It covers the failure mode recency cannot see: **an LRU is scan-vulnerable**, so one sequential pass over a capacity's worth of cold keys evicts the whole hot set. Here a scan key arrives at frequency 1, so **a scan of any length costs at most one entry that has been read more than once**. Entries still at frequency 1 are not protected: they sit at the scan's own frequency and are older, so a scan takes them. That is the policy, not a gap in it — an entry used exactly once has demonstrated no reuse to protect. Frequency buckets and their entry chains sit in fixed-size arrays, so the hot path **allocates nothing** — against an idiomatic `Dictionary` + `SortedSet` LFU that is `O(log n)` per operation and allocates a tree node per insert. Frequencies never age, which is the tradeoff: use it for a stable, skewed popularity distribution and keep `LruCache` for recency-dominated ones.
 - `SieveCache<TKey, TValue, THasher>` — fixed-capacity cache with **SIEVE eviction** (NSDI 2024). A hit sets one visited flag instead of relinking a node, so reads are cheaper than an LRU's and **leave active enumerators valid**; an insert into a full cache sweeps a hand over an insertion-ordered queue and evicts the first entry not used since the hand last passed it. On a Zipf(1.0) trace it misses **40% of the time against `LruCache`'s 49%**, about level with `LfuCache` without counts that never age. Fixed node storage, so the hot path **allocates nothing**. Hits are 11.3x faster than an idiomatic `Dictionary` + `LinkedList` LRU and eviction churn is faster too; only misses over a wide key space are slower, about 2x, as they are for `LruCache`.
+- `TinyLfuCache<TKey, TValue, THasher>` — fixed-capacity cache with **W-TinyLFU admission** (the policy behind Java's Caffeine). New keys enter a 1% LRU window; a key leaving the window displaces the main region's victim only if a **frequency sketch** says it was used more often recently, and the sketch remembers keys that are no longer resident and halves its counts as it goes. The other three caches forget a key once it is evicted, so on a **loop over more keys than the cache holds** (a batch job re-reading a table, a crawler revisiting a site) they all miss every request; this one misses **34%** on a loop over 1.5x its capacity. It is level with the best of them on a stationary Zipf stream, and its counts age where `LfuCache`'s do not. A fixed 1% window can lose to `LruCache` on recency-dominated traffic. Fixed node storage plus eight bytes of sketch per entry, so the hot path **allocates nothing**. Hits are 1.9x faster than an idiomatic `Dictionary` + `LinkedList` LRU but 3.7x slower than `LruCache`'s, and eviction churn is 1.8x slower than the baseline: the sketch is the price, worth paying when a miss is expensive.
 
 ### Examples
 
@@ -459,6 +460,21 @@ Console.WriteLine(cache.ContainsKey(1)); // True  (spared once by the read)
 
 foreach (var entry in cache)
     _ = cache[entry.Key]; // legal: a hit is not a structural change
+```
+
+`TinyLfuCache` adds memory the other three lack. Each of them judges a key only while it is resident: `LfuCache`'s count restarts at 1 when an evicted key returns, and `SieveCache`'s visited flag goes with the entry. So none can learn from a key that keeps coming back after eviction, and a loop over more keys than the cache holds defeats all three: each key returns just after it was evicted. `TinyLfuCache` keeps a compact **frequency sketch** of every key it has seen, resident or not, and halves it every `10 × capacity` recorded accesses so old popularity fades. New keys enter a small LRU window. A key leaving the window has to beat the main region's least-recently-used entry on that estimate to stay; on a tie it goes. A key put is always resident; what admission decides is which older entry leaves. On seeded traces at capacity 1,024 it misses 34.1% of a loop over 1.5x capacity, where `LruCache`, `LfuCache` and `SieveCache` miss 100%, and 56.8% of Zipf traffic mixed with a loop against `SieveCache`'s 70.9%; on plain Zipf it is level (39.9% against 40.2%). See [the API reference](api/collections.md#tinylfucachetkey-tvalue-thasher).
+
+```csharp
+var cache = new TinyLfuCache<long, string, Int64WangHasher>(capacity: 100);
+
+// A job loops over 150 ids, more than the cache holds, twenty times.
+int misses = 0;
+for (int pass = 0; pass < 20; pass++)
+    for (long id = 0; id < 150; id++)
+        if (!cache.TryGet(id, out _)) { misses++; cache[id] = $"row {id}"; }
+
+Console.WriteLine(misses);                       // 1,298 of 3,000; an LruCache of 100 misses all 3,000
+Console.WriteLine(cache.GetFrequencyEstimate(7)); // the sketch's estimate, resident or not
 ```
 
 ## Sequences
