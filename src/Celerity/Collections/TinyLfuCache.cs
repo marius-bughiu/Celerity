@@ -4,7 +4,7 @@ using Celerity.Hashing;
 namespace Celerity.Collections;
 
 /// <summary>
-/// A fixed-capacity cache with <b>W-TinyLFU</b> eviction (Einziger, Eytan, Friedman and Manes, 2017;
+/// A fixed-capacity cache with <b>W-TinyLFU</b> eviction (Einziger, Friedman and Manes, 2017;
 /// the policy behind Java's Caffeine): a small LRU <i>window</i> that every new entry enters, in front
 /// of a segmented-LRU <i>main</i> region guarded by a frequency filter, so an entry evicted from the
 /// window replaces the main region's victim only if it has been accessed more often recently.
@@ -45,8 +45,8 @@ namespace Celerity.Collections;
 /// the entry to the front of its segment.
 /// </para>
 /// <para>
-/// <b>The frequency estimate</b> is a count-min sketch of 4-bit counters, eight bytes per unit of
-/// capacity, that records every hit and every insert. Every counter is halved each time ten times
+/// <b>The frequency estimate</b> is a count-min sketch of 4-bit counters, one 8-byte word per unit of
+/// capacity rounded up to a power of two (8&#8211;16 bytes per entry), that records every hit and every insert. Every counter is halved each time ten times
 /// <see cref="Capacity"/> accesses have been recorded, so an access counts fully for one such period,
 /// half for the next, and so on: the estimate is of <i>recent</i> frequency. A miss through
 /// <see cref="TryGet(TKey, out TValue)"/> is not recorded, since the insert that follows it would
@@ -65,7 +65,7 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Cost.</b> Every operation is one key-index lookup plus <c>O(1)</c> list work; a hit or an
 /// insert also updates four sketch counters, and an insert into a full cache reads eight. The halving
-/// sweeps the sketch, eight bytes per unit of capacity, once per ten times <see cref="Capacity"/>
+/// sweeps the sketch, 8&#8211;16 bytes per entry, once per ten times <see cref="Capacity"/>
 /// recorded accesses, so it is <c>O(1)</c> amortized. Node storage, the key index and the sketch are
 /// allocated once at construction, so the hot get/put/evict path performs no allocation. The sketch
 /// makes this the most expensive of the library's caches per operation: a hit costs several times what

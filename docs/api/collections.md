@@ -5734,7 +5734,7 @@ foreach (KeyValuePair<long, Product?> entry in cache)
 
 ## TinyLfuCache&lt;TKey, TValue, THasher&gt;
 
-A fixed-capacity cache with **W-TinyLFU eviction** (Einziger, Eytan, Friedman and Manes, *TinyLFU: A
+A fixed-capacity cache with **W-TinyLFU eviction** (Einziger, Friedman and Manes, *TinyLFU: A
 Highly Efficient Cache Admission Policy*, 2017; the policy behind Java's Caffeine), parameterized on a
 custom hash provider. Every new key enters a small LRU *window*. A key leaving the window replaces the
 main region's victim only if a frequency sketch says it was used more often recently, and the sketch
@@ -5777,14 +5777,14 @@ used and which holds the keys, is the one the other caches use (see [The key ind
 - **`Remove`** unlinks the entry from whichever segment holds it. **`Clear`** empties every segment and
   forgets every frequency.
 
-With capacity 1 there is no main region, so the cache is a one-entry LRU. With capacity 2–4 the
+With capacity 1 there is no main region, so the cache is a one-entry LRU. With capacity 2 the
 protected share rounds down to zero, so a promoted entry drops straight back to probation.
 
 ### The frequency sketch
 
 The sketch is a count-min sketch of 4-bit counters, sixteen to a `ulong`, with one `ulong` per unit of
-capacity rounded up to a power of two (at least 8, at most 2<sup>27</sup>). That is about eight bytes
-per entry. Each key maps to four counters, picked from a 64-bit mix of its 32-bit hash, and its
+capacity rounded up to a power of two (at least 8, at most 2<sup>27</sup>). That is 8 to 16 bytes
+per entry, depending on how far the rounding reaches. Each key maps to four counters, picked from a 64-bit mix of its 32-bit hash, and its
 estimate is the smallest of the four. Collisions can only overstate an estimate, and a counter
 saturates at 15.
 
@@ -5841,7 +5841,7 @@ cache's own work; in a real cache each one is a trip to whatever the cache front
 |---|---:|---:|---:|---:|
 | `Get` (1,024 warm hits) | 100,000 | 19.56 µs | 10.09 µs | **1.94x faster** |
 | `ZipfWorkload` (get, put on miss) | 100,000 | 2.67 ms | 2.55 ms | 1.05x faster, 0 B vs 2.36 MB |
-| `LoopWorkload` (get, put on miss) | 100,000 | 1.44 ms | 1.12 ms | **1.29x faster**, 0 B vs 4.8 MB |
+| `LoopWorkload` (get, put on miss) | 100,000 | 1.44 ms | 1.12 ms | 1.29x faster (34% misses vs 100%), 0 B vs 4.8 MB |
 | `Put` (eviction churn) | 1,000 | 14.27 µs | 15.10 µs | about even, 0 B vs 48.7 KB |
 | `Put` (eviction churn) | 100,000 | 1.29 ms | 2.29 ms | **1.78x slower**, 0 B vs 4.8 MB |
 | `GetMissing` | 100,000 | 198 µs | 265 µs | 1.34x slower |

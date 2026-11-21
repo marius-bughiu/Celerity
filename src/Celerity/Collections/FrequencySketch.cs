@@ -29,7 +29,7 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// The table holds one <see cref="ulong"/> (sixteen counters) per unit of capacity, rounded up to a
-/// power of two and capped at 2<sup>27</sup> words (1 GiB), so it costs eight bytes per cache entry.
+/// power of two and capped at 2<sup>27</sup> words (1 GiB), so it costs 8&#8211;16 bytes per cache entry, depending on how far the rounding reaches.
 /// It is a mutable struct: the cache holds it in a non-<see langword="readonly"/> field and calls it in
 /// place.
 /// </para>
