@@ -5793,8 +5793,9 @@ estimate, and a counter saturates at 15.
 - **Not recorded:** a miss through `TryGet`, because the insert that usually follows it records the
   access, and every peek (`TryPeek`, `ContainsKey`, `GetFrequencyEstimate`, enumeration).
 - **Ageing:** whenever the accesses the sketch holds reach `10 × Capacity`, every counter is halved.
-  A halving keeps about half of them, so the first comes after `10 × Capacity` recorded accesses and
-  later ones after roughly `5 × Capacity`, as in Caffeine. An access counts fully until the next
+  A halving keeps at most half of them, so the first comes after `10 × Capacity` recorded accesses and
+  later ones after `5`–`10 × Capacity` (about `6 × Capacity` on uniform and all-unique traffic), as in
+  Caffeine. An access counts fully until the next
   halving, half after it, and so on, so the estimate is of *recent* frequency. Accesses whose four
   counters are already saturated are not recorded.
 - **History outlives residency.** An evicted or removed key keeps its counts until they age out, so a
@@ -5808,7 +5809,7 @@ port does not, so a caller who knows the hasher and controls the keys can choose
 
 Every operation is one index lookup plus `O(1)` list work. A hit or an insert also updates four
 sketch counters, and an insert into a full cache reads eight more for the admission test. The halving
-sweeps the sketch about once per `5 × Capacity` recorded accesses, so it is `O(1)` amortized. Nothing on the
+sweeps the sketch about once per `5`–`10 × Capacity` recorded accesses, so it is `O(1)` amortized. Nothing on the
 get/put/evict path allocates after construction.
 
 ### Miss ratio
