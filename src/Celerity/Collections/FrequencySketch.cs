@@ -21,11 +21,14 @@ namespace Celerity.Collections;
 /// the same decisions as a full count at an eighth of the memory.
 /// </para>
 /// <para>
-/// The halving is what makes the frequencies <i>recent</i>: an access counts fully in the period it
-/// happened, half in the next, a quarter in the one after. A key that was hot long ago therefore loses
+/// The halving is what makes the frequencies <i>recent</i>: an access counts fully until the next
+/// halving, half after it, a quarter after the one after. A key that was hot long ago therefore loses
 /// to a key that is hot now, which is the failure an unaged LFU cannot avoid. This is the reset
 /// operation of Einziger, Friedman and Manes, <i>"TinyLFU: A Highly Efficient Cache Admission
-/// Policy"</i>, with the sample size at ten times the capacity, as in their paper and in Caffeine.
+/// Policy"</i>, with the sample size at ten times the capacity, as in their paper and in Caffeine. The
+/// sample size bounds the accesses the sketch <i>holds</i>, not the gap between halvings: a halving
+/// keeps about half of what was recorded, so the first comes after ten times the capacity and later
+/// ones after roughly five times.
 /// </para>
 /// <para>
 /// The table holds one <see cref="ulong"/> (sixteen counters) per unit of capacity, rounded up to a

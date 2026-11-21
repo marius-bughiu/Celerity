@@ -192,6 +192,25 @@ public class TinyLfuCacheEvictionTests
     }
 
     [Fact]
+    public void LaterHalvings_ComeSoonerThanTheFirst_BecauseAHalvingKeepsHalfTheSample()
+    {
+        // The sample size bounds the accesses the sketch holds, not the gap between halvings. Capacity 4
+        // has 128 counters and a sample of 40; a halving leaves at least (40 - 128 / 4) / 2 = 4 accesses
+        // held, so the second halving comes within 36 more recorded accesses, not another 40.
+        var cache = new TinyLfuCache<int, int, Int32WangHasher>(4);
+        cache[7] = 7;
+        for (int i = 0; i < 11; i++)
+            _ = cache[7];
+        for (int i = 0; i < 28; i++)
+            cache[1000 + i] = i;
+        Assert.Equal(6, cache.GetFrequencyEstimate(7)); // the first halving, after exactly 40
+
+        for (int i = 0; i < 36; i++)
+            cache[2000 + i] = i;
+        Assert.Equal(3, cache.GetFrequencyEstimate(7)); // the second, within 36
+    }
+
+    [Fact]
     public void FrequencyHistory_OutlivesEvictionAndRemoval()
     {
         var cache = new TinyLfuCache<int, int, Int32WangHasher>(2);

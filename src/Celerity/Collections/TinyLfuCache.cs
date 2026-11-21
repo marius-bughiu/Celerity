@@ -46,9 +46,12 @@ namespace Celerity.Collections;
 /// </para>
 /// <para>
 /// <b>The frequency estimate</b> is a count-min sketch of 4-bit counters, one 8-byte word per unit of
-/// capacity rounded up to a power of two (8&#8211;16 bytes per entry), that records every hit and every insert. Every counter is halved each time ten times
-/// <see cref="Capacity"/> accesses have been recorded, so an access counts fully for one such period,
-/// half for the next, and so on: the estimate is of <i>recent</i> frequency. A miss through
+/// capacity rounded up to a power of two (8&#8211;16 bytes per entry), that records every hit and
+/// every insert. Every counter is halved whenever the accesses the sketch holds reach ten times
+/// <see cref="Capacity"/>. A halving keeps about half of them, so the first comes after ten times
+/// <see cref="Capacity"/> recorded accesses and later ones after roughly five times. An access
+/// therefore counts fully until the next halving, half after it, and so on: the estimate is of
+/// <i>recent</i> frequency. A miss through
 /// <see cref="TryGet(TKey, out TValue)"/> is not recorded, since the insert that follows it would
 /// record it again; use <see cref="GetFrequencyEstimate(TKey)"/> to read the estimate for any key,
 /// resident or not. Admission is deterministic: unlike Caffeine, there is no random admission of a
@@ -65,7 +68,7 @@ namespace Celerity.Collections;
 /// <para>
 /// <b>Cost.</b> Every operation is one key-index lookup plus <c>O(1)</c> list work; a hit or an
 /// insert also updates four sketch counters, and an insert into a full cache reads eight. The halving
-/// sweeps the sketch, 8&#8211;16 bytes per entry, once per ten times <see cref="Capacity"/>
+/// sweeps the sketch, 8&#8211;16 bytes per entry, about once per five times <see cref="Capacity"/>
 /// recorded accesses, so it is <c>O(1)</c> amortized. Node storage, the key index and the sketch are
 /// allocated once at construction, so the hot get/put/evict path performs no allocation. The sketch
 /// makes this the most expensive of the library's caches per operation: a hit costs several times what
@@ -281,8 +284,9 @@ public class TinyLfuCache<TKey, TValue, THasher>
     /// <param name="key">The key to estimate.</param>
     /// <returns>
     /// The estimated number of recent uses. Collisions in the sketch can only overstate it, counters
-    /// saturate at <c>15</c>, and every estimate halves each time ten times <see cref="Capacity"/>
-    /// accesses have been recorded.
+    /// saturate at <c>15</c>, and every estimate halves whenever the accesses the sketch holds reach
+    /// ten times <see cref="Capacity"/> (after the first halving, roughly every five times
+    /// <see cref="Capacity"/> recorded accesses).
     /// </returns>
     /// <remarks>
     /// This is the number admission compares: when the cache is full, the entry leaving the window

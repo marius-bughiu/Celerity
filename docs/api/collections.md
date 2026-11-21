@@ -5783,17 +5783,20 @@ protected share rounds down to zero, so a promoted entry drops straight back to 
 ### The frequency sketch
 
 The sketch is a count-min sketch of 4-bit counters, sixteen to a `ulong`, with one `ulong` per unit of
-capacity rounded up to a power of two (at least 8, at most 2<sup>27</sup>). That is 8 to 16 bytes
-per entry, depending on how far the rounding reaches. Each key maps to four counters, picked from a 64-bit mix of its 32-bit hash, and its
-estimate is the smallest of the four. Collisions can only overstate an estimate, and a counter
-saturates at 15.
+capacity rounded up to a power of two (at least 8, at most 2<sup>27</sup>). For capacities from 8 to
+2<sup>27</sup> that is 8–16 bytes per entry, depending on how far the rounding reaches; below 8 the
+64-byte minimum costs more per entry. Each key maps to four counters, picked from a 64-bit mix of its
+32-bit hash, and its estimate is the smallest of the four. Collisions can only overstate an
+estimate, and a counter saturates at 15.
 
 - **Recorded:** every hit (indexer get, `TryGet`, an overwriting `AddOrUpdate`) and every insert.
 - **Not recorded:** a miss through `TryGet`, because the insert that usually follows it records the
   access, and every peek (`TryPeek`, `ContainsKey`, `GetFrequencyEstimate`, enumeration).
-- **Ageing:** each time `10 × Capacity` accesses have been recorded, every counter is halved. An access
-  counts fully for one such period, half for the next, and so on, so the estimate is of *recent*
-  frequency. Accesses whose four counters are already saturated are not counted toward the period.
+- **Ageing:** whenever the accesses the sketch holds reach `10 × Capacity`, every counter is halved.
+  A halving keeps about half of them, so the first comes after `10 × Capacity` recorded accesses and
+  later ones after roughly `5 × Capacity`, as in Caffeine. An access counts fully until the next
+  halving, half after it, and so on, so the estimate is of *recent* frequency. Accesses whose four
+  counters are already saturated are not recorded.
 - **History outlives residency.** An evicted or removed key keeps its counts until they age out, so a
   key that keeps returning is admitted on its record.
 
@@ -5805,7 +5808,7 @@ port does not, so a caller who knows the hasher and controls the keys can choose
 
 Every operation is one index lookup plus `O(1)` list work. A hit or an insert also updates four
 sketch counters, and an insert into a full cache reads eight more for the admission test. The halving
-sweeps the sketch once per `10 × Capacity` recorded accesses, so it is `O(1)` amortized. Nothing on the
+sweeps the sketch about once per `5 × Capacity` recorded accesses, so it is `O(1)` amortized. Nothing on the
 get/put/evict path allocates after construction.
 
 ### Miss ratio
