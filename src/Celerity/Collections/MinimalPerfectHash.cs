@@ -41,8 +41,9 @@ namespace Celerity.Collections;
 /// separated. Construction sorts the hashes once to find them: a group of keys that are all equal is one key
 /// given more than once, and collapses to a single index; a group holding different keys is a genuine hash
 /// collision — near certain past ~100,000 string keys with a 32-bit hasher, which reaches only 2^32 values —
-/// and its keys go to a small exact table keyed by the keys themselves. Construction therefore never throws
-/// on a valid source, and <see cref="Count"/> is the number of distinct keys. A hasher that
+/// and its keys go to a small exact table of the keys, searched by the hash already computed rather than
+/// hashed again. Construction never throws on a valid source, and <see cref="Count"/> is the number of
+/// distinct keys. A hasher that
 /// implements <see cref="IHashProvider64{T}"/> keeps that table empty in practice.
 /// </para>
 /// <para>
@@ -77,7 +78,9 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
     private readonly ulong[] _bits;          // every level's bits, each level starting on a word boundary
     private readonly uint[] _ranks;          // set bits before each 256-bit block
     private readonly Level[] _levels;        // where each level starts in _bits, and its width
-    private readonly CelerityDictionary<T, int, THasher>? _fallback; // keys no level could separate
+    private readonly ulong[] _fallbackHashes; // keys no level could separate: their hashes, sorted...
+    private readonly T[] _fallbackKeys;       // ...and the keys, index i holding slot _placed + i
+    private readonly int _placed;             // keys the levels answer, which come first in [0, Count)
     private readonly int _count;
     private readonly double _gamma;
     private readonly THasher _hasher;
@@ -136,7 +139,7 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
         // a lookup of one of those keys could find another key's bit and return that key's index.
         Array.Sort(hashes, origin);
         var comparer = EqualityComparer<T>.Default;
-        List<int>? exact = null;
+        List<(ulong Hash, int Origin)>? exact = null;
         int remaining = 0;
         int poison = 0;
         for (int i = 0; i < n;)
@@ -156,9 +159,9 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
             }
             else
             {
-                exact ??= new List<int>();
+                exact ??= new List<(ulong, int)>();
                 for (int k = i; k < end; k++)
-                    exact.Add(origin[k]);
+                    exact.Add((hashes[k], origin[k]));
                 origin[remaining] = -1;
                 poison++;
             }
@@ -253,21 +256,31 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
         for (int i = 0; i < remaining; i++)
         {
             if (origin[i] >= 0)
-                (exact ??= new List<int>()).Add(origin[i]);
+                (exact ??= new List<(ulong, int)>()).Add((hashes[i], origin[i]));
         }
 
-        int count = placed;
+        // The exact table is a sorted array of the keys' full hashes beside the keys themselves, searched by
+        // the hash GetIndex has already computed, so a key answered here costs no second hasher call. Equal
+        // keys are folded as they are added, which keeps the table sized by distinct keys, not occurrences.
+        var fallbackHashes = new List<ulong>();
+        var fallbackKeys = new List<T>();
         if (exact is not null)
         {
-            _fallback = new CelerityDictionary<T, int, THasher>(exact.Count);
-            foreach (int i in exact)
+            exact.Sort(static (a, b) => a.Hash.CompareTo(b.Hash));
+            foreach ((ulong hash, int from) in exact)
             {
-                if (_fallback.TryAdd(source[i], count))
-                    count++;
+                if (!InTrailingRun(fallbackHashes, fallbackKeys, hash, source[from], comparer))
+                {
+                    fallbackHashes.Add(hash);
+                    fallbackKeys.Add(source[from]);
+                }
             }
         }
 
-        _count = count;
+        _fallbackHashes = fallbackHashes.ToArray();
+        _fallbackKeys = fallbackKeys.ToArray();
+        _placed = placed;
+        _count = placed + _fallbackKeys.Length;
     }
 
     /// <summary>Gets the number of distinct keys, which is also the size of the index range <c>[0, Count)</c>.</summary>
@@ -284,7 +297,7 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
     /// share their full 64-bit hash with a different key, and the rare key left over when a small level
     /// settles nothing. Zero for a 64-bit hasher in practice.
     /// </summary>
-    public int FallbackCount => _fallback?.Count ?? 0;
+    public int FallbackCount => _fallbackKeys.Length;
 
     /// <summary>
     /// Gets the storage cost of the level bit arrays and their popcount index, in bits per key. Returns 0 for
@@ -319,13 +332,48 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
                 return Rank(w, word, shift);
         }
 
-        return FallbackIndex(key);
+        return _fallbackKeys.Length == 0 ? -1 : FallbackIndex(key, h);
     }
 
-    // Kept out of line so the level walk above stays small: the table is empty in practice.
+    // Kept out of line so the level walk above stays small: the table is empty in practice. Finds the run of
+    // entries carrying the key's hash by binary search, then compares keys within it.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private int FallbackIndex(T key) =>
-        _fallback is not null && _fallback.TryGetValue(key, out int index) ? index : -1;
+    private int FallbackIndex(T key, ulong hash)
+    {
+        ulong[] hashes = _fallbackHashes;
+        int lo = 0;
+        int hi = hashes.Length;
+        while (lo < hi)
+        {
+            int mid = (int)((uint)(lo + hi) >> 1);
+            if (hashes[mid] < hash)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+
+        var comparer = EqualityComparer<T>.Default;
+        for (int i = lo; i < hashes.Length && hashes[i] == hash; i++)
+        {
+            if (comparer.Equals(_fallbackKeys[i], key))
+                return _placed + i;
+        }
+
+        return -1;
+    }
+
+    // During construction: whether an equal key is already among the trailing entries that share its hash.
+    // Entries arrive in hash order, so only the trailing run can hold one.
+    private static bool InTrailingRun(List<ulong> hashes, List<T> keys, ulong hash, T key, EqualityComparer<T> comparer)
+    {
+        for (int i = hashes.Count - 1; i >= 0 && hashes[i] == hash; i--)
+        {
+            if (comparer.Equals(keys[i], key))
+                return true;
+        }
+
+        return false;
+    }
 
     // Set bits before bit `shift` of word `w`: the block's cumulative count, the whole words before `w`
     // in its 256-bit block, and the low bits of `w` itself.

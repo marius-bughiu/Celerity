@@ -136,6 +136,70 @@ public class MinimalPerfectHashCollisionTests
         public ulong Hash64(int key) => key >= 10 ? 0xFFFF_0000_0000_0000UL : (ulong)key;
     }
 
+    // Pairs below 100 collide, as LowPairsHasher; every call is counted, so a test can pin how often the
+    // function hashes. The count is per hasher type and only the test below uses this one.
+    private struct CountingPairsHasher : IHashProvider<int>
+    {
+        public static int Calls;
+
+        public int Hash(int key)
+        {
+            Interlocked.Increment(ref Calls);
+            return key < 100 ? key >> 1 : key;
+        }
+    }
+
+    [Fact]
+    public void TheHasherRunsOncePerKey_EvenForKeysInTheExactTable()
+    {
+        int[] keys = Enumerable.Range(0, 2000).ToArray();
+        CountingPairsHasher.Calls = 0;
+        var mph = new MinimalPerfectHash<int, CountingPairsHasher>(keys);
+
+        Assert.Equal(keys.Length, CountingPairsHasher.Calls);
+        Assert.True(mph.FallbackCount >= 100);
+
+        // A key from the exact table, one from the levels, and non-members: one call each.
+        foreach (int probe in new[] { 3, 1500, 7_000_000, -5 })
+        {
+            CountingPairsHasher.Calls = 0;
+            mph.GetIndex(probe);
+            Assert.Equal(1, CountingPairsHasher.Calls);
+        }
+    }
+
+    [Fact]
+    public void TheExactTable_IsSizedByDistinctKeys_NotOccurrences()
+    {
+        // A mixed collision run of 100,000 copies of one key plus one other key holds two distinct keys, and
+        // the table must keep two entries, not one per occurrence.
+        int[] keys = Enumerable.Repeat(1, 100_000).Append(2).ToArray();
+        var mph = new MinimalPerfectHash<int, ConstantHasher>(keys);
+
+        Assert.Equal(2, mph.Count);
+        Assert.Equal(2, mph.FallbackCount);
+        AssertBijection(mph, [1, 2]);
+
+        var stored = (Array)typeof(MinimalPerfectHash<int, ConstantHasher>)
+            .GetField("_fallbackKeys", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(mph)!;
+        Assert.Equal(2, stored.Length);
+    }
+
+    [Fact]
+    public void NonMembers_MissTheExactTable_WhicheverSideOfItTheirHashFalls()
+    {
+        // The table holds hashes 1 and 2; probes hash below, between-and-equal-but-different, and above them.
+        var mph = new MinimalPerfectHash<int, RawHasher>([1, 2]);
+
+        Assert.Equal(-1, mph.GetIndex(0));
+        Assert.Equal(-1, mph.GetIndex(3));
+        Assert.Equal(-1, mph.GetIndex(int.MaxValue));
+
+        var constant = new MinimalPerfectHash<int, ConstantHasher>([10, 20]);
+        Assert.Equal(-1, constant.GetIndex(30)); // same hash as both entries, equal to neither
+    }
+
     [Fact]
     public void A32BitHasher_ManyKeys_HandlesItsBirthdayCollisions()
     {

@@ -4081,7 +4081,8 @@ bit test and a popcount per level.
 position at every level, so no level can separate them. Construction sorts the hashes once to
 find them. A group of keys that all compare equal is one key given more than once and
 collapses to a single index. A group holding different keys is a real hash collision, and its
-keys go to a small exact table keyed by the keys themselves (`FallbackCount`). With a 32-bit
+keys go to a small exact table: the keys themselves, sorted by hash and searched with the hash
+the lookup already computed, so the hasher still runs once per lookup (`FallbackCount`). With a 32-bit
 hasher such collisions are near certain past about 100,000 string keys, because the hasher
 reaches only 2<sup>32</sup> values: 221 of a million URL-shaped keys under
 `StringFnV1AHasher`. With a 64-bit hasher the table stays empty in practice. Construction
