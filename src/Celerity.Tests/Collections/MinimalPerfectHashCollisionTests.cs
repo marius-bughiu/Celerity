@@ -187,6 +187,26 @@ public class MinimalPerfectHashCollisionTests
     }
 
     [Fact]
+    public void ManyDistinctKeysSharingOneHash_BuildInLinearTime()
+    {
+        // 50,000 distinct keys under a constant hasher, each given twice: folding them pairwise would cost
+        // over a billion comparisons. Lookups still scan the one shared-hash run, as in any hash table under
+        // a constant hasher, so only a sample is checked.
+        int[] keys = Enumerable.Range(0, 50_000).SelectMany(i => new[] { i, i }).ToArray();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var mph = new MinimalPerfectHash<int, ConstantHasher>(keys);
+        sw.Stop();
+
+        Assert.Equal(50_000, mph.Count);
+        Assert.Equal(50_000, mph.FallbackCount);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5), $"construction took {sw.Elapsed}");
+
+        var sample = Enumerable.Range(0, 50).Select(i => i * 997).ToArray();
+        Assert.Equal(sample.Length, sample.Select(mph.GetIndex).Distinct().Count());
+        Assert.All(sample, k => Assert.InRange(mph.GetIndex(k), 0, mph.Count - 1));
+    }
+
+    [Fact]
     public void NonMembers_MissTheExactTable_WhicheverSideOfItTheirHashFalls()
     {
         // The table holds hashes 1 and 2; probes hash below, between-and-equal-but-different, and above them.

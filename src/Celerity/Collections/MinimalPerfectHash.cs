@@ -261,15 +261,18 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
 
         // The exact table is a sorted array of the keys' full hashes beside the keys themselves, searched by
         // the hash GetIndex has already computed, so a key answered here costs no second hasher call. Equal
-        // keys are folded as they are added, which keeps the table sized by distinct keys, not occurrences.
+        // keys are folded as they are added, through a set that lives only for construction, so the table is
+        // sized by distinct keys rather than occurrences and the fold stays linear however many distinct keys
+        // share one hash.
         var fallbackHashes = new List<ulong>();
         var fallbackKeys = new List<T>();
         if (exact is not null)
         {
             exact.Sort(static (a, b) => a.Hash.CompareTo(b.Hash));
+            var folded = new HashSet<T>(comparer);
             foreach ((ulong hash, int from) in exact)
             {
-                if (!InTrailingRun(fallbackHashes, fallbackKeys, hash, source[from], comparer))
+                if (folded.Add(source[from]))
                 {
                     fallbackHashes.Add(hash);
                     fallbackKeys.Add(source[from]);
@@ -360,19 +363,6 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
         }
 
         return -1;
-    }
-
-    // During construction: whether an equal key is already among the trailing entries that share its hash.
-    // Entries arrive in hash order, so only the trailing run can hold one.
-    private static bool InTrailingRun(List<ulong> hashes, List<T> keys, ulong hash, T key, EqualityComparer<T> comparer)
-    {
-        for (int i = hashes.Count - 1; i >= 0 && hashes[i] == hash; i--)
-        {
-            if (comparer.Equals(keys[i], key))
-                return true;
-        }
-
-        return false;
     }
 
     // Set bits before bit `shift` of word `w`: the block's cumulative count, the whole words before `w`
