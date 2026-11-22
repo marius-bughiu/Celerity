@@ -4,6 +4,8 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-22
+
 ### Added
 
 - **`CompressedLongSet`**, the 64-bit sibling of `CompressedIntSet`: an exact compressed set of `long` values with the same API, containers and ascending enumeration, for clustered ids that no longer fit an `int`. On an Apple M4 at 1M values over a 100M window past 2^40, it intersected 6.2x faster than `HashSet<long>` and retained 5.5x less heap. It compresses clustered data, not values spread uniformly over the 64-bit range. Ships with dedicated and shared-suite tests, a CsCheck property, a fuzz target, a benchmark, dashboard cards, an AOT check and docs. Closes #654.
@@ -917,7 +919,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v4.1.0
 [4.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v4.0.0
 [3.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.6.0
 [3.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.5.0
