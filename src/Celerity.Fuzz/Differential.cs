@@ -68,6 +68,7 @@ internal static class Differential
         ("BloomFilter", BloomFilterCase),
         ("CuckooFilter", CuckooFilterCase),
         ("XorFilter", XorFilterCase),
+        ("MinimalPerfectHash", MinimalPerfectHashCase),
         ("BitSet", BitSetCase),
         ("BitPackedArray", BitPackedArrayCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
@@ -2231,6 +2232,51 @@ internal static class Differential
         if (oracle.Count == 0)
             for (int k = MinKey; k <= MaxKey; k++)
                 Check(!sut.Contains(k), $"empty xor filter reported {k} present");
+    }
+
+    // ---- minimal perfect hash (build-once, exact on members) ----------------
+
+    // The function must be a bijection from the distinct keys onto [0, Count), with Count equal to the
+    // oracle's size. The shared tiny key domain would never fill a second level, so this case draws its own:
+    // up to 3,000 keys from a domain a few times wider, so duplicates still occur and later levels fill. Half
+    // the trials hash with a colliding hasher, so the exact table and the poison entries that keep its keys'
+    // positions clear are exercised alongside the levels, at a random gamma.
+    private static void MinimalPerfectHashCase(Random rng)
+    {
+        int size = rng.Next(0, 3000);
+        int domain = Math.Max(1, size * rng.Next(1, 4));
+        var keys = new int[size];
+        for (int i = 0; i < size; i++)
+            keys[i] = rng.Next(-domain, domain);
+
+        var oracle = new HashSet<int>(keys);
+        double gamma = 1.0 + rng.NextDouble() * 4.0;
+
+        if (rng.Next(2) == 0)
+            CheckMinimalPerfectHash(new MinimalPerfectHash<int, Int32WangNaiveHasher>(keys, gamma), oracle);
+        else
+            CheckMinimalPerfectHash(new MinimalPerfectHash<int, FuzzPairCollidingHasher>(keys, gamma), oracle);
+    }
+
+    private static void CheckMinimalPerfectHash<THasher>(MinimalPerfectHash<int, THasher> sut, HashSet<int> oracle)
+        where THasher : struct, IHashProvider<int>
+    {
+        Check(sut.Count == oracle.Count, $"distinct count {sut.Count} != oracle {oracle.Count}");
+
+        var seen = new bool[sut.Count];
+        foreach (int k in oracle)
+        {
+            int index = sut.GetIndex(k);
+            Check(index >= 0 && index < sut.Count, $"index {index} for {k} is outside [0, {sut.Count})");
+            Check(!seen[index], $"index {index} given to two keys (second: {k})");
+            seen[index] = true;
+        }
+    }
+
+    // Collides keys in pairs inside [-64, 64) and hashes every other key to itself.
+    private readonly struct FuzzPairCollidingHasher : IHashProvider<int>
+    {
+        public int Hash(int key) => key is >= -64 and < 64 ? key >> 1 : key;
     }
 
     // ---- bit set (exact, two-directional) -----------------------------------

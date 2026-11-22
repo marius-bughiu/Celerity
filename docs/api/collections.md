@@ -4038,6 +4038,164 @@ bool MightBeIssued(string apiKey)
 
 ---
 
+## MinimalPerfectHash&lt;T, THasher&gt;
+
+A **build-once, immutable minimal perfect hash function**: it maps each key of a fixed set of
+`n` keys to its own distinct index in `[0, n)`, and stores **none of the keys** — about **3.7
+bits per key** at the default `Gamma`. Use it to give each key of a static set a dense slot
+in a value array: words to embedding rows, URLs to counters, a build-time symbol table to a
+value array.
+
+```csharp
+public class MinimalPerfectHash<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+The BCL answer to "which slot is this key's?" is a `Dictionary<TKey, int>` or a
+`FrozenDictionary<TKey, int>`, and both store every key, so the index costs the keys plus the
+table. Measured with a forced full GC around construction, a `FrozenDictionary<string, int>`
+over URL-shaped keys retains about **60 bytes per key** (64.5 at 100,000 keys, 60.6 at a
+million) on top of the strings it references. `MinimalPerfectHash` retains **0.46 bytes per
+key** at both sizes: about **130x less**, and small enough to stay in cache when the
+dictionary does not.
+
+> **It does not answer membership.** `GetIndex` returns a distinct index in `[0, Count)` for
+> every key of the construction set, but for a key that was **not** in the set it returns
+> either `-1` or an arbitrary index in that same range, because there is no stored key to
+> compare against. If a lookup can be asked about keys outside the set, store each key (or a
+> fingerprint of it) at its index and compare, as the usage example below does. When the
+> keys must be stored anyway and memory does not matter, `FrozenDictionary` is simpler.
+
+### How it works
+
+The construction is **BBHash** (Limasset, Rizk, Chikhi &amp; Peterlongo, *"Fast and scalable
+minimal perfect hashing for massive key sets"*, SEA 2017). Level 0 is a bit array of `γ·n`
+bits. Each key hashes to one position in it; a position hit by exactly one key keeps its bit,
+and the keys that collided move on to level 1, sized `γ·`(keys left), and so on until every
+key has a bit. A key's index is the number of set bits before its own across all levels, read
+from a popcount index kept per 256 bits (12.5% on top of the levels). With `γ = 2` about 61%
+of keys settle at level 0, so a member lookup visits 1.6 levels on average: one hash, then a
+bit test and a popcount per level.
+
+**Keys sharing a full hash.** Two keys whose 64-bit hashes are equal land on the same
+position at every level, so no level can separate them. Construction sorts the hashes once to
+find them. A group of keys that all compare equal is one key given more than once and
+collapses to a single index. A group holding different keys is a real hash collision, and its
+keys go to a small exact table keyed by the keys themselves (`FallbackCount`). With a 32-bit
+hasher such collisions are near certain past about 100,000 string keys, because the hasher
+reaches only 2<sup>32</sup> values: 221 of a million URL-shaped keys under
+`StringFnV1AHasher`. With a 64-bit hasher the table stays empty in practice. Construction
+therefore never throws on a valid source.
+
+### Constructors
+
+```csharp
+public MinimalPerfectHash(IEnumerable<T> keys)
+public MinimalPerfectHash(IEnumerable<T> keys, double gamma)
+```
+
+Builds the function over the distinct keys of `keys`. The source is enumerated once, and
+duplicates collapse to one index. `gamma` (default `DefaultGamma`, 2.0) is the number of bits
+per remaining key each level is sized at, from `MinGamma` (1.0) to `MaxGamma` (10.0). A larger
+value settles more keys per level, so construction is faster and lookups visit fewer levels,
+at more bits per key. Measured over a million keys, popcount index included: 3.1 bits at
+1.0, 3.7 at 2.0 and 4.7 at 3.0. A gamma of 1.0 is the smallest but builds about 4x slower
+than 2.0, because it needs 25 levels instead of 14.
+
+**Throws:**
+
+- `ArgumentNullException` if `keys` is `null` (checked before `gamma`).
+- `ArgumentOutOfRangeException` if `gamma` is not a number in `[MinGamma, MaxGamma]`. NaN and
+  infinity are rejected.
+
+### Methods and properties
+
+- `int GetIndex(T key)` — the key's index: distinct for every key of the set, and in
+  `[0, Count)`. For a key outside the set: `-1`, or an index that belongs to another key.
+- `int Count { get; }` — the number of distinct keys, which is also the size of the index
+  range.
+- `double Gamma { get; }` — the bits per remaining key each level was sized at.
+- `int LevelCount { get; }` — the number of bit-array levels the construction used. A member
+  lookup reads at most this many, and usually one or two.
+- `int FallbackCount { get; }` — the number of distinct keys answered from the exact table:
+  keys sharing their full 64-bit hash with a different key, and the rare key left over when a
+  small late level settles nothing. Zero in practice with a 64-bit hasher.
+- `double BitsPerKey { get; }` — the levels and their popcount index, in bits per key; `0`
+  for an empty function. The exact table is not included.
+- `const double DefaultGamma`, `MinGamma`, `MaxGamma` — 2.0, 1.0 and 10.0.
+
+### Default-key handling
+
+The function stores no keys, so `default(T)` — a zero `int`, `Guid.Empty`, the empty string —
+is an ordinary key. A `null` reference is mapped to a fixed hash, so the hasher (the string
+hashers throw on `null`) is never called with it.
+
+### Performance
+
+`MinimalPerfectHashBenchmark` maps URL-shaped strings of about 40 characters onto `[0, n)`
+with `StringXxHash3Hasher`, against `FrozenDictionary<string, int>`. Each lookup round probes
+every key through 16 independent shuffles, so the branch predictor cannot learn which level a
+key settles in. Measured on an Apple M4 (.NET 10, default BenchmarkDotNet job):
+
+| Operation | Keys | `FrozenDictionary` | `MinimalPerfectHash` | Ratio |
+|---|---:|---:|---:|---:|
+| Build | 1,000 | 238 µs | 20.2 µs | **11.7x faster** |
+| Build | 100,000 | 24.1 ms | 5.69 ms | **4.2x faster** |
+| Lookup, per key | 1,000 | 3.9 ns | 20.5 ns | 5.3x slower |
+| Lookup, per key | 100,000 | 10.0 ns | 23.7 ns | 2.4x slower |
+| Lookup, per key | 1,000,000 | 46.3 ns | 66.1 ns | 1.43x slower |
+| Verified lookup, per key | 1,000 | 3.9 ns | 21.7 ns | 5.6x slower |
+| Verified lookup, per key | 100,000 | 10.0 ns | 25.8 ns | 2.6x slower |
+| Verified lookup, per key | 1,000,000 | 34.4 ns | 44.1 ns | 1.28x slower |
+| Retained memory, per key | 100,000 | 64.5 B | 0.47 B | **138x less** |
+| Retained memory, per key | 1,000,000 | 60.6 B | 0.46 B | **130x less** |
+
+The million-key rows come from the same class run with its item count raised; CI measures 1,000
+and 100,000. The two million-key lookup categories ran one after the other and both arms
+came out about a third faster in the second, so compare the ratio within a row, not times across rows. The memory rows come from a forced full GC before and after construction, since
+BenchmarkDotNet reports bytes allocated rather than retained.
+
+`FrozenDictionary` is the stronger of the two BCL baselines for string keys. At build time it
+finds a few character positions that tell this key set apart and hashes only those, while the
+function hashes every character with XXH3. That is why the frozen dictionary wins lookups at
+every measured size, by the most where its table fits in cache. **Read the memory column before the time columns: the function is
+the choice when the key → slot index has to be small, not when it has to be the fastest.**
+Verifying a key against a stored key array costs a random read into that array, which is
+what the `VerifiedLookup` row adds.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A static vocabulary mapped onto rows of an embedding table, built once at startup.
+string[] vocabulary = LoadVocabulary();
+var slot = new MinimalPerfectHash<string, StringXxHash3Hasher>(vocabulary);
+
+var words = new string[slot.Count];      // the key at each slot, kept to reject unknown words
+var vectors = new float[slot.Count][];
+foreach (string word in vocabulary)
+{
+    int i = slot.GetIndex(word);
+    words[i] = word;
+    vectors[i] = LoadVector(word);
+}
+
+float[]? Lookup(string word)
+{
+    int i = slot.GetIndex(word);
+    // -1, or another word's slot, for a word outside the vocabulary.
+    return i >= 0 && words[i] == word ? vectors[i] : null;
+}
+```
+
+When every lookup is known to be a member (a value array keyed by the same set the function
+was built from), the stored-key array and the comparison can go, and the slot index costs
+about half a byte per key.
+
+---
+
 ## BitSet
 
 A dense, fixed-length array of bits packed into 64-bit words. It is the **exact,

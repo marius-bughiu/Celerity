@@ -139,6 +139,30 @@ public class SketchHashProvider64Tests
     }
 
     [Fact]
+    public void MinimalPerfectHash_UsesHash64_WhenTheHasherProvidesOne()
+    {
+        long[] elements = new long[N];
+        for (int i = 0; i < N; i++)
+            elements[i] = i;
+
+        // The 32-bit hash is constant, so on that path every key would share one hash and land in the
+        // exact table. Keys reaching the levels at all shows the 64-bit result was used.
+        var mph = new MinimalPerfectHash<long, DisagreeingHasher>(elements);
+
+        Assert.Equal(N, mph.Count);
+        Assert.Equal(0, mph.FallbackCount);
+        Assert.True(mph.LevelCount > 0);
+
+        var seen = new bool[N];
+        foreach (long e in elements)
+        {
+            int index = mph.GetIndex(e);
+            Assert.False(seen[index], $"index {index} given twice");
+            seen[index] = true;
+        }
+    }
+
+    [Fact]
     public void XorFilter_UsesHash64_WhenTheHasherProvidesOne()
     {
         long[] elements = new long[N];
@@ -235,6 +259,7 @@ public class SketchHashProvider64Tests
             typeof(BloomFilter<,>),
             typeof(CuckooFilter<,>),
             typeof(XorFilter<,>),
+            typeof(MinimalPerfectHash<,>),
             typeof(CountMinSketch<,>),
             typeof(MinHashSketch<,>),
         ];
@@ -282,6 +307,10 @@ public class SketchHashProvider64Tests
         Assert.True(xor.Contains(null!));
         Assert.True(xor.Contains("a"));
         Assert.True(xor.Contains("c"));
+
+        var mph = new MinimalPerfectHash<string, StringXxHash64Hasher>(["a", null!, "c"]);
+        Assert.Equal(3, mph.Count);
+        Assert.Equal(3, new[] { mph.GetIndex("a"), mph.GetIndex(null!), mph.GetIndex("c") }.Distinct().Count());
     }
 
     [Fact]
