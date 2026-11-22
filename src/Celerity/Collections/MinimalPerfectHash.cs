@@ -262,8 +262,9 @@ public class MinimalPerfectHash<T, THasher> where THasher : struct, IHashProvide
         // The exact table is a sorted array of the keys' full hashes beside the keys themselves, searched by
         // the hash GetIndex has already computed, so a key answered here costs no second hasher call. Equal
         // keys are folded as they are added, through a set that lives only for construction, so the table is
-        // sized by distinct keys rather than occurrences and the fold stays linear however many distinct keys
-        // share one hash.
+        // sized by distinct keys rather than occurrences. The set hashes with the keys' own GetHashCode rather
+        // than THasher, so the fold is expected linear however many keys share one THasher hash; it degrades
+        // toward quadratic only if GetHashCode collides on those same keys too.
         var fallbackHashes = new List<ulong>();
         var fallbackKeys = new List<T>();
         if (exact is not null)
