@@ -277,8 +277,14 @@ The textbook weighted reservoir is Efraimidis and Spirakis' **A-Res**: give ever
 `U^(1/w)` and keep the `k` largest. It is exact, but every item pays a random draw and a logarithm.
 This type is the same paper's **A-ExpJ**, the exponential-jumps form, which is to A-Res what Algorithm L
 is to Algorithm R. Once the reservoir is full it draws how much *weight* must pass before the next item
-can enter. Every item in between costs one subtraction and one comparison, so the whole stream takes
-`O(k · log(n / k))` draws instead of `n`. The sample has exactly A-Res's distribution. The test suite
+can enter. Every item in between costs one subtraction and one comparison. The sample has exactly
+A-Res's distribution.
+
+How much that saves depends on the weights. About `k · ln(W / W_k)` items enter, where `W` is the
+stream's total weight and `W_k` that of its first `k` items. With comparable weights that is
+`k · ln(n / k)`, about 700 entries in a stream of a hundred thousand at `k = 100`. A stream whose
+weights keep growing, each item outweighing everything before it, enters nearly every item, and then
+the sampler costs about what the hand-roll does. The test suite
 checks this against exact successive-sampling probabilities, for one sampler and for a merge of two.
 
 The keys are held as `ln(−ln U) − ln w`, the logarithm of A-Res's exponential form. `U^(1/w)` rounds

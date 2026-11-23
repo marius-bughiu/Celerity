@@ -15,8 +15,10 @@ using Celerity.Statistics;
 // Its cost is per item: every item, retained or not, pays a random draw and a logarithm, and a heap
 // operation when it gets in. The sampler is the same paper's A-ExpJ, which draws how much weight must pass
 // before the next item can enter, so an item it skips costs one subtraction and one comparison. The gap is
-// the price of a draw and a log per item, and it widens with the stream: O(k log(n / k)) draws in all,
-// against n.
+// the price of a draw and a log per item, and it widens with the stream: with the comparable weights
+// used here about k ln(n / k) items enter, against n draws for the hand-roll. (Weights that keep growing
+// along the stream would make nearly every item enter, and erase the gap; that is a property of the
+// workload, documented with the type.)
 //
 // Two ops:
 //

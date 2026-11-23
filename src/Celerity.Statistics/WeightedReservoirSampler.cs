@@ -31,9 +31,12 @@ namespace Celerity.Statistics;
 /// This type is the same paper's <strong>A-ExpJ</strong>, the exponential-jumps form, which is to
 /// A-Res what Li's Algorithm L is to Algorithm R. Once the reservoir is full it draws how much
 /// <em>weight</em> must pass before the next item can enter, and every item in between costs one
-/// subtraction and one comparison: no random draw, no logarithm, no heap. Over the whole stream it
-/// makes <c>O(k · log(n / k))</c> draws instead of <c>n</c>, and the sample it keeps has exactly
-/// A-Res's distribution.
+/// subtraction and one comparison: no random draw, no logarithm, no heap. The sample it keeps has
+/// exactly A-Res's distribution. How many items enter depends on the weights: about
+/// <c>k · ln(W / W_k)</c>, where <c>W</c> is the stream's total weight and <c>W_k</c> that of its first
+/// <c>k</c> items. When the weights are comparable that is <c>k · ln(n / k)</c>, far fewer than
+/// <c>n</c>. A stream whose weights keep growing, so that each item outweighs everything before
+/// it, enters nearly every item and pays a per-item cost like A-Res's.
 /// </para>
 /// <para>
 /// <strong>Weights near the ends of the double range</strong>, beyond about <c>1e±290</c>, would put
@@ -171,8 +174,7 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// arithmetic.
     /// </summary>
     /// <remarks>
-    /// This is the denominator a Horvitz–Thompson estimate needs, and it is a floating-point
-    /// running sum: exact for integer weights while it stays below <c>2^53</c>, and subject to
+    /// It is a floating-point running sum: exact for integer weights while it stays below <c>2^53</c>, and subject to
     /// the usual rounding beyond that or for fractional weights. It is <c>+∞</c> once the sum
     /// overflows, which needs weights near <see cref="double.MaxValue"/>; sampling is unaffected.
     /// </remarks>
