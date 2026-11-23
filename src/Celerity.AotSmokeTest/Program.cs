@@ -4127,11 +4127,13 @@ void Check(bool condition, string message)
     Check(stableWords[0] == "w00" && stableWords[^1] == "w39", "StableSort natural order over strings");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable / KllSketch.
+// Celerity.Statistics — DDSketch / ReservoirSampler / WeightedReservoirSampler / RunningStatistics (#377) / RollingQuantile /
+// AliasTable / KllSketch.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
-// generator, so the struct-PRNG generic is closed twice), the moment accumulator, which is a
+// generator, so the struct-PRNG generic is closed twice), the weighted sampler over the same two shapes and
+// generators, with its span overload and its merge, the moment accumulator, which is a
 // mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
 // quantile over a value type and a reference type, whose heap entries are a generic struct, the alias
 // table's constrained-generic draw closed over two generators, and the KLL sketch over both, whose sorted
@@ -4169,6 +4171,29 @@ void Check(bool condition, string message)
     var words = new ReservoirSampler<string, Xoshiro256StarStar>(3, new Xoshiro256StarStar(7UL));
     words.Add(["alpha", "beta", "gamma", "delta"]);
     Check(words.Count == 3 && words[0] is not null, "ReservoirSampler over a reference type and a second generator");
+
+    var weightedNumbers = new WeightedReservoirSampler<int>(capacity: 8, seed: 42UL);
+    weightedNumbers.Add(-1, 0d);
+    for (int i = 0; i < 5_000; i++)
+    {
+        weightedNumbers.Add(i, 1d + (i % 7));
+    }
+
+    Check(weightedNumbers.Count == 8 && weightedNumbers.TotalSeen == 5_001 && weightedNumbers.IsFull, "WeightedReservoirSampler over a value type");
+    Check(weightedNumbers.TotalWeight == 19_995d && !weightedNumbers.Sample.Contains(-1), "WeightedReservoirSampler never retains a zero weight");
+
+    var weightedWords = new WeightedReservoirSampler<string, Xoshiro256StarStar>(3, new Xoshiro256StarStar(7UL));
+    weightedWords.Add(["alpha", "beta", "gamma", "delta"], [1d, 2d, 0d, 3d]);
+    Check(
+        weightedWords.Count == 3 && weightedWords.Contains("alpha") && weightedWords.Contains("beta") && weightedWords.Contains("delta"),
+        "WeightedReservoirSampler over a reference type and a second generator");
+
+    var weightedShard = new WeightedReservoirSampler<string, Xoshiro256StarStar>(3, new Xoshiro256StarStar(11UL));
+    weightedShard.Add(["epsilon", "zeta"], [5d, 5d]);
+    weightedWords.Merge(weightedShard);
+    Check(
+        weightedWords.Count == 3 && weightedWords.TotalSeen == 6 && weightedWords.TotalWeight == 16d && !weightedWords.Contains("gamma"),
+        "WeightedReservoirSampler merge");
 
     RunningStatistics[] perBucket = new RunningStatistics[2];
     perBucket[1].Add([2d, 4d, 4d, 4d, 5d, 5d, 7d, 9d]);

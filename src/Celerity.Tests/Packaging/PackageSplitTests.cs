@@ -96,6 +96,7 @@ public class PackageSplitTests
         Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(DDSketch)));
         Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(RunningStatistics)));
         Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(ReservoirSampler<int>)));
+        Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(WeightedReservoirSampler<int>)));
         Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(RollingQuantile<int>)));
         Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(AliasTable)));
         Assert.Equal(StatisticsAssembly, AssemblyOf(typeof(KllSketch<int>)));

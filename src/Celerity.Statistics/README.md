@@ -25,6 +25,12 @@ means keeping the stream, which is the one thing a stream will not let you do.
   reproducible on a given runtime and platform — but not promised byte-identical
   across them, because the skip arithmetic runs through `Math.Log` / `Math.Exp`,
   whose last bit .NET does not fix across runtimes.
+- **`WeightedReservoirSampler<T>`** — a fixed-size **weighted** sample, without
+  replacement, of a stream of unknown length and total weight: each item is
+  offered with a weight, and the sample is distributed like `k` successive
+  draws in proportion to weight. Efraimidis–Spirakis **A-ExpJ**, so once the
+  reservoir is full a skipped item costs one subtraction, not a random draw and
+  a logarithm. Shards **merge exactly**.
 - **`RunningStatistics`** — count, mean, variance, standard deviation, skewness,
   kurtosis, min and max in a **single pass**, using Welford's recurrence
   extended to the fourth moment. A mutable struct, so `default` is a valid empty
@@ -57,7 +63,8 @@ means keeping the stream, which is the one thing a stream will not let you do.
 - **`ReservoirSampler` has no `Merge`.** A uniform merge of two reservoirs needs
   a hypergeometric draw over the two stream lengths; replaying one side's
   retained items into the other over-weights the shorter stream. Rather than
-  ship a subtly biased merge, it ships without one.
+  ship a subtly biased merge, it ships without one. `WeightedReservoirSampler`
+  does merge, exactly, because its keys are drawn per item.
 - **`RunningStatistics` wins on accuracy, not on speed.** It is measurably
   *slower* than the two-pass LINQ shape — CI puts it at 1.9× — because it
   maintains all four moments on every `Add`. What it buys is a single pass over
@@ -79,6 +86,11 @@ means keeping the stream, which is the one thing a stream will not let you do.
 - **`ReservoirSampler` loses on short streams**, where Algorithm L's
   transcendentals dominate: 6.2× slower than materializing at a thousand items,
   1.7× faster at a hundred thousand. The crossover is around ten thousand.
+
+- **`WeightedReservoirSampler` loses on short streams** too. With a 100-item
+  sample it measured 1.3–1.4× slower than the `PriorityQueue` A-Res hand-roll
+  at a thousand items, and 4.1× (per item) to 5.5× (span) faster at a hundred
+  thousand. The crossover is around 30 to 50 times the capacity.
 
 ## Quick start
 
@@ -106,6 +118,13 @@ var sample = new ReservoirSampler<string>(capacity: 1_000, seed: 42);
 foreach (string line in logLines)
 {
     sample.Add(line);
+}
+
+// 100 requests, each kept in proportion to how long it took.
+var slowest = new WeightedReservoirSampler<string>(capacity: 100, seed: 42);
+foreach ((string path, double ms) in requests)
+{
+    slowest.Add(path, ms);
 }
 
 // Single-pass moments, no allocation.

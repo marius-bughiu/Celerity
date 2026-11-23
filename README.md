@@ -62,7 +62,7 @@ The [decision table](docs/choosing-a-collection.md) maps a workload to a type in
 | [`Celerity.Hashing`](https://www.nuget.org/packages/Celerity.Hashing/) | `IHashProvider<T>`, the struct hashers, `HashQualityEvaluator` — [API](docs/api/hashing.md) |
 | [`Celerity.Primitives`](https://www.nuget.org/packages/Celerity.Primitives/) | `FastUtils`, struct PRNGs, `VarInt`, `FastGuid`, `SortedSpan`, `MortonCurve` / `HilbertCurve` — [API](docs/api/utilities.md) |
 | [`Celerity.Sorting`](https://www.nuget.org/packages/Celerity.Sorting/) | `RadixSort`, `CountingSort`, `PartialSort`, `StringSort`, `KWayMerge`, `StableSort` — [API](docs/api/sorting.md) |
-| [`Celerity.Statistics`](https://www.nuget.org/packages/Celerity.Statistics/) | `DDSketch`, `KllSketch`, `ReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable` — [API](docs/api/statistics.md) |
+| [`Celerity.Statistics`](https://www.nuget.org/packages/Celerity.Statistics/) | `DDSketch`, `KllSketch`, `ReservoirSampler`, `WeightedReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable` — [API](docs/api/statistics.md) |
 
 Every package targets `net10.0` and is [Native AOT and trimming compatible](docs/aot.md). On .NET 8 or 9, stay on the [3.6.x line](docs/migration.md#net80--net90--net100--after-36x). Upgrading from 1.x? See the [migration guide](docs/migration.md#200--the-package-split).
 

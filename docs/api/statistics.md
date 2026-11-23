@@ -22,6 +22,7 @@ in the collections.
 - [Choosing a summary](#choosing-a-summary)
 - [DDSketch](#ddsketch)
 - [ReservoirSampler](#reservoirsampler)
+- [WeightedReservoirSampler](#weightedreservoirsampler)
 - [RunningStatistics](#runningstatistics)
 - [RollingQuantile](#rollingquantile)
 - [AliasTable](#aliastable)
@@ -40,6 +41,7 @@ in the collections.
 | Values near zero, mixed signs, or a few distinct values with heavy ties | `KllSketch<T>` | A relative error says little near zero, and discrete data puts thousands of ranks on one value; a rank bound holds for both. |
 | A rolling median or p99 over the last *w* values — a median filter, a "spike over the recent median" alarm | `RollingQuantile<T>` | Exact, `O(log w)` per value and `O(1)` to read. It holds the window, which is what makes it exact; `DDSketch` cannot forget old values. |
 | A bounded sample of a stream of unknown length — log lines, trace spans, request bodies | `ReservoirSampler<T>` | `O(k)` memory and `O(k · log(n / k))` random draws, uniform to the precision of the generator, and it never needs to know `n`. |
+| A bounded **weighted** sample of a stream — requests by latency, log lines by bytes, accounts by spend | `WeightedReservoirSampler<T>` | Successive weighted sampling without replacement, `O(k)` memory, one subtraction per skipped item, and an exact `Merge` across shards. `ReservoirSampler` is uniform only and `AliasTable` needs every weight up front. |
 | Draw outcomes at random in proportion to fixed weights — a traffic split, a loot table, a Monte-Carlo step, negative sampling | `AliasTable` | `O(1)` a draw after an `O(n)` build, where the prefix-sum search everyone writes is `O(log n)` dependent loads a draw. The BCL's `Random.GetItems` is uniform only. |
 | Mean and standard deviation of a stream, or of one bucket among many | `RunningStatistics` | One pass, no allocation, numerically stable, and a `struct` so per-bucket accumulators live inline. |
 | Skewness / kurtosis | `RunningStatistics` | Welford extended to the fourth moment (Terriberry). There is no BCL equivalent at all. |
@@ -242,6 +244,92 @@ the `k` output slots come from each side from a hypergeometric distribution over
 lengths. Replaying one side's retained items into the other over-weights the shorter stream. Rather
 than ship a subtly biased merge, the sampler ships without one: sample the shards separately, or
 feed one sampler.
+
+## WeightedReservoirSampler
+
+A fixed-size **weighted** sample, without replacement, of a stream whose length and total weight
+are not known in advance. It does for weights what `ReservoirSampler` does for a uniform sample, and
+unlike `AliasTable` it needs no weight before it starts.
+
+```csharp
+// Keep 100 requests, each in proportion to how long it took.
+var slowest = new WeightedReservoirSampler<Request>(capacity: 100, seed: 42);
+
+foreach (Request request in requests)
+{
+    slowest.Add(request, request.Elapsed.TotalMilliseconds);
+}
+
+foreach (Request kept in slowest.Sample)
+{
+    Console.WriteLine(kept.Path);
+}
+```
+
+The retained sample has the distribution of `k` successive draws **without replacement**, each draw
+picking a remaining item with probability proportional to its weight. An item twice as heavy is twice
+as likely to be the first one chosen. Only the ratios between weights matter, so they need not sum to
+anything.
+
+### A-ExpJ, not A-Res
+
+The textbook weighted reservoir is Efraimidis and Spirakis' **A-Res**: give every item the key
+`U^(1/w)` and keep the `k` largest. It is exact, but every item pays a random draw and a logarithm.
+This type is the same paper's **A-ExpJ**, the exponential-jumps form, which is to A-Res what Algorithm L
+is to Algorithm R. Once the reservoir is full it draws how much *weight* must pass before the next item
+can enter. Every item in between costs one subtraction and one comparison, so the whole stream takes
+`O(k · log(n / k))` draws instead of `n`. The sample has exactly A-Res's distribution. The test suite
+checks this against exact successive-sampling probabilities, for one sampler and for a merge of two.
+
+The keys are held as `ln(−ln U) − ln w`, the logarithm of A-Res's exponential form. `U^(1/w)` rounds
+to exactly 1 at a weight of `1e300`, and `−ln(U) / w` overflows at `1e-310`. The logarithm is finite
+for every positive finite weight, subnormals included, and it orders items the same way.
+
+### Surface
+
+| Member | Notes |
+|---|---|
+| `WeightedReservoirSampler<T>(int capacity, ulong seed)` | The convenience form, on a seeded `Pcg32`. |
+| `WeightedReservoirSampler<T, TRng>(int capacity, TRng rng)` | Any `struct` `IRandomSource`, such as `Xoshiro256StarStar` or `WyRand`. |
+| `Add(T item, double weight)` | Returns whether the item was retained. A weight of `0` is counted and never retained. A negative, `NaN` or infinite weight throws `ArgumentOutOfRangeException` and changes nothing. |
+| `Add(ReadOnlySpan<T> items, ReadOnlySpan<double> weights)` | One weight per item, in order. Every weight is validated before the first item is offered, so a bad one leaves the sampler untouched. Past the fill it runs the countdown in locals, which makes it the faster way in. |
+| `Merge(WeightedReservoirSampler<T, TRng> other)` | Folds another sampler of the same capacity in, exactly. See below. |
+| `Sample` | A `ReadOnlySpan<T>` over the sampler's own storage, with no copy and no allocation. |
+| `Count` / `Capacity` / `TotalSeen` / `TotalWeight` / `IsFull` | Retained, budget, stream length (zero weights included), the running weight sum, and whether the reservoir filled. |
+| `this[int index]`, `GetEnumerator()` | The type implements `IReadOnlyList<T>`. |
+| `Clear()` | Discards the sample, the stream position and the weight total, leaving the generator where it is. |
+
+The retained items are in arbitrary order: not stream order and not weight order. The `Sample` span
+and any enumerator are invalidated by a later `Add`, `Merge` or `Clear`. The enumerator enforces
+this, including after an `Add` that discards its item, as `ReservoirSampler`'s does.
+
+`TotalWeight` is a `double` running sum: exact for integer weights below `2^53`, rounded like any
+floating-point sum otherwise, and `+∞` once the sum overflows. Sampling does not depend on it.
+
+Seeding gives the same guarantee as `ReservoirSampler`: the same seed and the same stream of items
+and weights produce the same sample on the same runtime and platform, but not byte-identically
+across platforms, because the keys and jumps go through `Math.Log` and `Math.Exp`.
+
+### Merging
+
+Unlike the uniform sampler, this one merges, and the merge is exact. A-Res keys are drawn
+independently per item, so the `k` smallest keys of two reservoirs together are the `k` smallest of
+the two streams together. `Merge` keeps those and adds the counters, then draws the next jump afresh
+from the merged threshold. The exponential jump is memoryless, so redrawing it at any point is
+allowed.
+
+```csharp
+var left = new WeightedReservoirSampler<string>(capacity: 50, seed: 1);
+var right = new WeightedReservoirSampler<string>(capacity: 50, seed: 2);
+
+// ...feed each shard on its own thread...
+
+left.Merge(right); // a weighted sample of both shards' streams together
+```
+
+Two requirements: the samplers must have the same capacity, and they must be seeded differently.
+Two samplers seeded alike draw the same keys in the same order, so their merge is correlated rather
+than random.
 
 ## RunningStatistics
 
@@ -556,7 +644,7 @@ The CI-tracked numbers are on the [dashboard](https://marius-bughiu.github.io/Ce
 
 ## Where these lose
 
-Celerity documents its tradeoffs rather than claiming a blanket win. All six of these are on the
+Celerity documents its tradeoffs rather than claiming a blanket win. All of these are on the
 [benchmark dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), including the arms they
 lose:
 
@@ -573,6 +661,13 @@ lose:
   replacement, and at a thousand items that is most of the work: CI measures it **6.2× slower**
   than materializing and shuffling. By a hundred thousand it is **1.7× faster** and holds 100
   items instead of 100,000. The crossover is around ten thousand — below that, materialize.
+- **`WeightedReservoirSampler` loses on short streams**, for the same reason as the uniform one:
+  every replacement pays several transcendentals, and the A-Res hand-roll it replaces pays one
+  logarithm an item. With a 100-item sample, a local run (Apple M4, .NET 10) measured it **1.4×
+  slower** per item and **1.3× slower** through the span overload at a thousand items. At a
+  hundred thousand it was **4.1× and 5.5× faster**. A Stopwatch sweep put the crossover at about
+  3,000 to 5,000 items, which is 30 to 50 times the capacity. Below that, the hand-roll is cheaper,
+  and both hold only `k` items.
 - **`RollingQuantile`'s margin is narrow on a small window.** Against the careful sorted-array
   hand-roll, a local run (Apple M-series, .NET 10) measured **2.5× faster at a 1,000-value window,
   5.0× at 10,000 and 32× at 100,000**, and still about 2× at 16 and 100. No crossover turned up, but
@@ -599,9 +694,10 @@ lose:
   retains, and an answer the cheaper `sum` / `sumOfSquares` shortcut gets wrong — not speed.
 
 The numbers above are the CI-tracked ones from the
-[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), except `RollingQuantile`'s,
-which come from the local run named in its bullet; the dashboard charts its 1,000- to
-100,000-value windows but not the 16- and 100-value ones. The losing arms are charted next to
+[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), except `RollingQuantile`'s
+and `WeightedReservoirSampler`'s, which come from the local runs named in their bullets. The
+dashboard charts `RollingQuantile`'s 1,000- to 100,000-value windows but not the 16- and 100-value
+ones, and `WeightedReservoirSampler`'s CI figures will appear there after the first run on `main`. The losing arms are charted next to
 the winning ones so the crossovers can be read off rather than guessed.
 
 ## See also
@@ -609,8 +705,9 @@ the winning ones so the crossovers can be read off rather than guessed.
 - [Collections API](collections.md) — including the sketches (`HyperLogLog`, `CountMinSketch`,
   `TopKSketch`, `MinHashSketch`) that summarize a stream's *cardinality*, *frequencies* and
   *overlap with another stream* rather than its distribution.
-- [Utilities API](utilities.md) — the seedable struct PRNGs that the sampler and `AliasTable` draw from.
+- [Utilities API](utilities.md) — the seedable struct PRNGs that the samplers and `AliasTable` draw from.
 - [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch`, `RunningStatistics`,
   `RollingQuantile` and `KllSketch` reconcile against exact oracles, and `AliasTable` against its weights over an
-  evenly spaced sweep of generator outputs. The sampler's is invariant fuzzing, because uniformity is
-  distributional and no single case can measure it.
+  evenly spaced sweep of generator outputs. The two samplers' are invariant fuzzing, because their
+  distributions cannot be measured from a single case. The unit tests check `WeightedReservoirSampler`'s
+  distribution against exact successive-sampling probabilities.

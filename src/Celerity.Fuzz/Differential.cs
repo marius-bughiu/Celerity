@@ -126,6 +126,7 @@ internal static class Differential
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
         ("ReservoirSampler", ReservoirSamplerCase),
+        ("WeightedReservoirSampler", WeightedReservoirSamplerCase),
         ("RollingQuantile", RollingQuantileCase),
         ("AliasTable", AliasTableCase),
         ("KllSketch", KllSketchCase),
@@ -6916,6 +6917,116 @@ internal static class Differential
         {
             for (int i = 0; i < length; i++)
                 Check(sampler[i] == i, "ReservoirSampler reordered an unfilled reservoir");
+        }
+    }
+
+    /// <summary>
+    /// Invariant fuzzing for the weighted sampler, as for <see cref="ReservoirSamplerCase"/>: there is no
+    /// exact oracle for a random sample, so it asserts what must hold whatever the draws are.
+    /// </summary>
+    /// <remarks>
+    /// Weights mix zeros (counted, never retained), tiny (<c>1e-300</c>) and huge (<c>1e300</c>) values,
+    /// which push the log-space keys to both ends of their range, with ordinary ones. The stream is fed in
+    /// runs alternating between the per-item <c>Add</c> and the span overload, so the batch path's
+    /// in-locals countdown and the per-item path hand the jump back and forth. Then a second, independently
+    /// seeded sampler takes a split of a stream and is merged in. The checks: <c>TotalSeen</c> and
+    /// <c>TotalWeight</c> match the stream, exactly <c>min(capacity, positive-weight items)</c> are retained,
+    /// each was offered with a positive weight and appears once, and a stream with no more positive items
+    /// than the capacity is kept whole. The weighted inclusion probabilities are distributional and live
+    /// in the unit tests.
+    /// </remarks>
+    private static void WeightedReservoirSamplerCase(Random rng)
+    {
+        int capacity = rng.Next(1, 40);
+
+        var left = new WeightedReservoirSampler<int>(capacity, (ulong)rng.NextInt64());
+        var right = new WeightedReservoirSampler<int>(capacity, (ulong)rng.NextInt64());
+
+        // One stream of ids, split at a random point: [0, split) goes to left, [split, length) to right.
+        int length = rng.Next(0, 500);
+        int split = rng.Next(0, length + 1);
+        var weights = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            weights[i] = rng.Next(8) switch
+            {
+                0 or 1 => 0d,
+                2 => 1e-300,
+                3 => 1e300,
+                4 => double.Epsilon,
+                _ => rng.NextDouble() * 100d,
+            };
+        }
+
+        FeedWeighted(rng, left, weights, 0, split);
+        CheckWeightedSampler(left, capacity, weights, 0, split, sequentialTotal: true, "WeightedReservoirSampler");
+
+        FeedWeighted(rng, right, weights, split, length);
+        CheckWeightedSampler(right, capacity, weights, split, length, sequentialTotal: true, "WeightedReservoirSampler (second shard)");
+
+        double expectedTotal = left.TotalWeight + right.TotalWeight;
+        left.Merge(right);
+        Check(left.TotalWeight == expectedTotal, "WeightedReservoirSampler.Merge did not sum the weight totals");
+        CheckWeightedSampler(left, capacity, weights, 0, length, sequentialTotal: false, "WeightedReservoirSampler.Merge");
+        CheckWeightedSampler(right, capacity, weights, split, length, sequentialTotal: true, "WeightedReservoirSampler.Merge changed its argument");
+    }
+
+    // Feeds ids [from, to) with their weights, in runs that alternate between per-item Add and the span Add.
+    private static void FeedWeighted(Random rng, WeightedReservoirSampler<int> sampler, double[] weights, int from, int to)
+    {
+        int i = from;
+        while (i < to)
+        {
+            int run = Math.Min(to - i, rng.Next(1, 64));
+            if (rng.Next(2) == 0)
+            {
+                for (int j = i; j < i + run; j++)
+                    Check(sampler.Add(j, weights[j]) == false || weights[j] > 0d, "WeightedReservoirSampler retained a zero-weight item");
+            }
+            else
+            {
+                var ids = new int[run];
+                for (int j = 0; j < run; j++)
+                    ids[j] = i + j;
+                sampler.Add(ids, weights.AsSpan(i, run));
+            }
+
+            i += run;
+        }
+    }
+
+    private static void CheckWeightedSampler(WeightedReservoirSampler<int> sampler, int capacity, double[] weights, int from, int to, bool sequentialTotal, string label)
+    {
+        int positives = 0;
+        double total = 0d;
+        for (int i = from; i < to; i++)
+        {
+            if (weights[i] > 0d)
+                positives++;
+            total += weights[i];
+        }
+
+        Check(sampler.TotalSeen == to - from, $"{label} miscounted the stream");
+        Check(sampler.Count == Math.Min(capacity, positives), $"{label} retained the wrong number of items");
+        Check(sampler.IsFull == (positives >= capacity), $"{label} misreported fullness");
+
+        // A merged total is (left + right), not the left-to-right running sum, so only an unmerged
+        // sampler's total is compared bit-for-bit here; the merge's is checked by its caller.
+        if (sequentialTotal)
+            Check(sampler.TotalWeight == total, $"{label} misreported the weight total");
+
+        var retained = new HashSet<int>();
+        foreach (int item in sampler.Sample.ToArray())
+        {
+            Check(item >= from && item < to, $"{label} retained an item that was never added");
+            Check(weights[item] > 0d, $"{label} retained a zero-weight item");
+            Check(retained.Add(item), $"{label} retained the same item twice");
+        }
+
+        if (positives <= capacity)
+        {
+            for (int i = from; i < to; i++)
+                Check(retained.Contains(i) == (weights[i] > 0d), $"{label} dropped a positive-weight item from an unfilled reservoir");
         }
     }
 

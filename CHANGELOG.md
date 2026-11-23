@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`WeightedReservoirSampler<T>`** (in `Celerity.Statistics`) keeps a fixed-size weighted sample, without replacement, of a stream of unknown length and total weight, and merges shards exactly. On an Apple M4 with a 100-item sample it was 4.1–5.5x faster than a `PriorityQueue` A-Res hand-roll at 100,000 items and 1.3–1.4x slower at 1,000. Closes #660.
+
 ## [4.1.0] - 2026-11-22
 
 ### Added
