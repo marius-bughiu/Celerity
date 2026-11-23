@@ -581,6 +581,97 @@ public class WeightedReservoirSamplerTests
     }
 
     [Fact]
+    public void AddSpan_ShouldSnapshotWeights_ThatAliasTheSamplersOwnStorage()
+    {
+        // For T = double the retained sample can be passed back as the weights. A replacement made
+        // while consuming them would rewrite a weight after validation: here, the -1 item could
+        // be read back as a weight of -1, slipping past the check and leaving TotalWeight at 2.
+        for (ulong seed = 1; seed <= 64; seed++)
+        {
+            var sampler = new WeightedReservoirSampler<double>(2, seed);
+            sampler.Add(1d, 1d);
+            sampler.Add(1d, 1d);
+
+            sampler.Add([-1d, -2d], sampler.Sample);
+
+            Assert.Equal(4d, sampler.TotalWeight);
+            Assert.Equal(4, sampler.TotalSeen);
+        }
+    }
+
+    [Fact]
+    public void AddSpan_ShouldSnapshotItems_ThatAliasTheSamplersOwnStorage()
+    {
+        for (ulong seed = 1; seed <= 64; seed++)
+        {
+            var sampler = new WeightedReservoirSampler<int>(4, seed);
+            sampler.Add([10, 20, 30, 40], [1d, 1d, 1d, 1d]);
+            int[] before = sampler.Sample.ToArray();
+
+            // Offering the sample to itself must offer the four values it held at the call, each
+            // exactly once, whatever the replacements do to the storage meanwhile.
+            sampler.Add(sampler.Sample, [5d, 5d, 5d, 5d]);
+
+            Assert.Equal(8, sampler.TotalSeen);
+            Assert.All(sampler.Sample.ToArray(), item => Assert.Contains(item, before));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Add_ShouldNotStoreAnUnbeatableKey_WhenTheCountdownIsRunDownToASubnormal(bool batched)
+    {
+        // Replays the sampler's own arithmetic to run the countdown down to double.Epsilon: each
+        // weight is the largest double below what remains, so what remains shrinks by a factor of
+        // about 2^53 per item without ever reaching zero. The item that finally completes the
+        // jump has a probability mass below the threshold near 5e-324. Forming that mass times a
+        // draw directly rounded to zero and stored a key of −∞, which no later item could beat.
+        ulong[] script = Enumerable.Range(1, 997).Select(i => (ulong)i * 0x9E3779B97F4A7C15UL).ToArray();
+        var sampler = new WeightedReservoirSampler<int, ScriptedRandom>(1, new ScriptedRandom(script));
+
+        static double Unit(ulong word) => ((word >> 12) + 0.5d) * (1.0d / (1UL << 52));
+        double key = Math.Log(-Math.Log(Unit(script[0])) / 1d);
+        double remaining = -Math.Log(Unit(script[1])) * Math.Exp(-key);
+
+        Assert.True(sampler.Add(-1, 1d));
+
+        var chain = new List<double>();
+        while (remaining > double.Epsilon)
+        {
+            double weight = Math.BitDecrement(remaining);
+            chain.Add(weight);
+            remaining -= weight;
+        }
+
+        Assert.Equal(double.Epsilon, remaining);
+        if (batched)
+        {
+            sampler.Add(Enumerable.Repeat(-2, chain.Count).ToArray(), chain.ToArray());
+            sampler.Add([-3], [double.Epsilon]);
+        }
+        else
+        {
+            foreach (double weight in chain)
+            {
+                Assert.False(sampler.Add(-2, weight));
+            }
+
+            Assert.True(sampler.Add(-3, double.Epsilon));
+        }
+
+        Assert.Equal([-3], sampler.Sample.ToArray());
+
+        // A finite key is soon beaten by ordinary items; a key of −∞ never would be.
+        for (int i = 0; i < 10_000 && sampler[0] == -3; i++)
+        {
+            sampler.Add(i, 1d);
+        }
+
+        Assert.NotEqual(-3, sampler[0]);
+    }
+
+    [Fact]
     public void Indexer_ShouldReturnTheRetainedItems()
     {
         var sampler = new WeightedReservoirSampler<string>(3, 1UL);

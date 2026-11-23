@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Celerity.Primitives;
 
 namespace Celerity.Statistics;
@@ -273,7 +275,10 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// <remarks>
     /// Every weight is validated before the first item is offered, so a bad weight anywhere in
     /// the batch leaves the sampler exactly as it was. Otherwise this is the same as calling
-    /// <see cref="Add(T, double)"/> once per item.
+    /// <see cref="Add(T, double)"/> once per item. A span that overlaps the sampler's own storage,
+    /// such as its <see cref="Sample"/>, is copied before anything else happens, so the
+    /// replacements this call makes cannot rewrite input it has yet to read; that copy is the
+    /// only allocation the method makes.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <paramref name="weights"/> is not the same length as <paramref name="items"/>, or one of
@@ -290,6 +295,22 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
             throw new ArgumentException(
                 "There must be exactly one weight per item.",
                 nameof(weights));
+        }
+
+        // A span over this sampler's own storage (its Sample, or for T = double the same memory
+        // passed as weights) would be rewritten by the replacements this call makes, after it was
+        // validated. Snapshot it first; this is the only path that allocates.
+        if (items.Overlaps(_items))
+        {
+            items = items.ToArray();
+        }
+
+        if (typeof(T) == typeof(double) &&
+            weights.Overlaps(MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<T, double>(ref MemoryMarshal.GetArrayDataReference(_items)),
+                _items.Length)))
+        {
+            weights = weights.ToArray();
         }
 
         // Checked before anything changes, so an overflowing batch is rejected whole.
@@ -502,9 +523,26 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
         // mass below the threshold. Jumps are drawn only while the threshold key is within
         // JumpKeyLimit, so E_T is a normal double here; a product that overflows gives p = 1.
         double a = weight * Math.Exp(_keys[0]);
-        double p = a < Ln2 ? -StableLogMath.ExpM1(-a) : 1d - Math.Exp(-a);
+        double key;
 
-        ReplaceRoot(item, LogExponential(-StableLogMath.Log1P(-p * NextUnitInterval()), weight));
+        if (a < Ln2)
+        {
+            // Small mass: E / E_T = V · q · g, with q = p / a and g = −ln(1 − p·V) / (p·V). Both
+            // ratios stay near 1 however small a is, so the key is formed relative to the
+            // threshold and nothing underflows. Forming p·V directly would round to zero once a
+            // countdown had been run down to a subnormal remainder, and store a key of −∞ that no
+            // later item could ever displace.
+            double v = NextUnitInterval();
+            double q = StableLogMath.OneMinusExpNegativeRatio(a);
+            key = _keys[0] + Math.Log(v * q * StableLogMath.Log1PRatio(-(a * q * v)));
+        }
+        else
+        {
+            double p = 1d - Math.Exp(-a);
+            key = LogExponential(-StableLogMath.Log1P(-p * NextUnitInterval()), weight);
+        }
+
+        ReplaceRoot(item, key);
         DrawJump();
     }
 
