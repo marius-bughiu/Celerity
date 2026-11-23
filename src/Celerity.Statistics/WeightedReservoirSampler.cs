@@ -640,12 +640,15 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
 
         while (true)
         {
-            int child = (2 * index) + 1;
-            if (child >= count)
+            // Unsigned, because 2 · index + 1 passes int.MaxValue once the capacity exceeds 2^30,
+            // and a negative child would slip past the bound. index < 2^31, so this cannot wrap.
+            uint firstChild = (2u * (uint)index) + 1u;
+            if (firstChild >= (uint)count)
             {
                 break;
             }
 
+            int child = (int)firstChild;
             int right = child + 1;
             if (right < count && _keys[right] > _keys[child])
             {
