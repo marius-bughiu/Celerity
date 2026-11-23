@@ -32,11 +32,11 @@ namespace Celerity.Statistics;
 /// A-Res what Li's Algorithm L is to Algorithm R. Once the reservoir is full it draws how much
 /// <em>weight</em> must pass before the next item can enter, and every item in between costs one
 /// subtraction and one comparison: no random draw, no logarithm, no heap. The sample it keeps has
-/// exactly A-Res's distribution. How many items enter depends on the weights: about
-/// <c>k · ln(W / W_k)</c>, where <c>W</c> is the stream's total weight and <c>W_k</c> that of its first
-/// <c>k</c> items. When the weights are comparable that is <c>k · ln(n / k)</c>, far fewer than
-/// <c>n</c>. A stream whose weights keep growing, so that each item outweighs everything before
-/// it, enters nearly every item and pays a per-item cost like A-Res's.
+/// exactly A-Res's distribution. How many items enter, each paying a few transcendentals and a
+/// heap step, depends on the weights. When they are comparable it is about <c>k · ln(n / k)</c>,
+/// far fewer than <c>n</c>. Skewed weights can move it either way, and a stream whose weights keep
+/// growing, so that each item outweighs everything before it, enters nearly every item and pays
+/// a per-item cost like A-Res's.
 /// </para>
 /// <para>
 /// <strong>Weights near the ends of the double range</strong>, beyond about <c>1e±290</c>, would put
