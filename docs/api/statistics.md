@@ -299,7 +299,7 @@ on the threshold, not on a draw, so it does not bias the sample.
 | `WeightedReservoirSampler<T>(int capacity, ulong seed)` | The convenience form, on a seeded `Pcg32`. |
 | `WeightedReservoirSampler<T, TRng>(int capacity, TRng rng)` | Any `struct` `IRandomSource`, such as `Xoshiro256StarStar` or `WyRand`. |
 | `Add(T item, double weight)` | Returns whether the item was retained. A weight of `0` is counted and never retained. A negative, `NaN` or infinite weight throws `ArgumentOutOfRangeException` and changes nothing. `TotalSeen` is checked: past `long.MaxValue`, which only repeated merges can reach, `Add` and `Merge` throw `OverflowException` and change nothing. |
-| `Add(ReadOnlySpan<T> items, ReadOnlySpan<double> weights)` | One weight per item, in order. Every weight is validated before the first item is offered, so a bad one leaves the sampler untouched. Past the fill it runs the countdown in locals, which makes it the faster way in. |
+| `Add(ReadOnlySpan<T> items, ReadOnlySpan<double> weights)` | One weight per item, in order. Every weight is validated before the first item is offered, so a bad one leaves the sampler untouched. Past the fill it runs the countdown in locals, which makes it the faster way in. A span over the sampler's own storage, such as its `Sample`, is copied first, and that copy is the only allocation an `Add` makes. |
 | `Merge(WeightedReservoirSampler<T, TRng> other)` | Folds another sampler of the same capacity in, exactly. See below. |
 | `Sample` | A `ReadOnlySpan<T>` over the sampler's own storage, with no copy and no allocation. |
 | `Count` / `Capacity` / `TotalSeen` / `TotalWeight` / `IsFull` | Retained, budget, stream length (zero weights included), the running weight sum, and whether the reservoir filled. |
