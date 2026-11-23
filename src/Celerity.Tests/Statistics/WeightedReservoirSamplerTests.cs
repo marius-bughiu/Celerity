@@ -422,12 +422,11 @@ public class WeightedReservoirSamplerTests
     }
 
     [Fact]
-    public void Add_ShouldNeverRetainAZeroWeight_EvenWhenTheJumpHasRunDownToZero()
+    public void Add_ShouldNeverRetainAZeroWeight_InThePerItemMode()
     {
-        // Word 0 is the smallest draw (2^-53) and gives the filling item a key so large that the
-        // jump drawn from word MaxValue (1 − 2^-53) underflows to exactly zero. A zero-weight item
-        // offered then subtracts nothing and leaves the countdown at zero, so only the weight
-        // check keeps it out.
+        // Word 0 is the smallest draw (2^-53) and gives a double.Epsilon-weight item a key near
+        // 748, outside the range a jump is drawn in, so the countdown is NaN: every later item is
+        // judged by a key of its own. A zero weight must still be turned away before it draws one.
         var rng = new ScriptedRandom([0UL, ulong.MaxValue]);
         var sampler = new WeightedReservoirSampler<int, ScriptedRandom>(1, rng);
         sampler.Add(1, double.Epsilon);
@@ -436,20 +435,149 @@ public class WeightedReservoirSamplerTests
         Assert.False(sampler.Add(4, 0d));
         Assert.Equal([1], sampler.Sample.ToArray());
 
+        // Item 6 draws word MaxValue (1 − 2^-53): a key near 708, which beats 748.
         sampler.Add([5, 6], [0d, double.Epsilon]);
         Assert.Equal([6], sampler.Sample.ToArray());
         Assert.Equal(6, sampler.TotalSeen);
     }
 
     [Fact]
-    public void Add_ShouldReplaceOnTheNextPositiveWeight_WhenTheJumpHasRunDownToZero()
+    public void Add_ShouldJudgeEachItemByItsOwnKey_WhenTheThresholdIsOutsideTheJumpRange()
     {
-        var rng = new ScriptedRandom([0UL, ulong.MaxValue]);
-        var sampler = new WeightedReservoirSampler<int, ScriptedRandom>(1, rng);
-        sampler.Add(1, double.Epsilon);
+        var winning = new WeightedReservoirSampler<int, ScriptedRandom>(1, new ScriptedRandom([0UL, ulong.MaxValue]));
+        winning.Add(1, double.Epsilon);
+        Assert.True(winning.Add(2, double.Epsilon));
+        Assert.Equal([2], winning.Sample.ToArray());
 
-        Assert.True(sampler.Add(2, double.Epsilon));
-        Assert.Equal([2], sampler.Sample.ToArray());
+        // Every draw is word 0, so every key ties the threshold, and a tie does not displace it.
+        var tied = new WeightedReservoirSampler<int, ScriptedRandom>(1, new ScriptedRandom([0UL]));
+        tied.Add(1, double.Epsilon);
+        Assert.False(tied.Add(2, double.Epsilon));
+        tied.Add([3, 4], [double.Epsilon, double.Epsilon]);
+        Assert.Equal([1], tied.Sample.ToArray());
+    }
+
+    [Fact]
+    public void Add_ShouldReturnToJumps_WhenAReplacementBringsTheThresholdBackIntoRange()
+    {
+        // A 1e-300 weight puts the threshold key near +690, outside the jump range. A weight-1
+        // item then wins on its own key (near 0), and from there the countdown resumes: a long
+        // stream of weight-1 items must keep replacing at the rate a capacity-1 sample implies.
+        var sampler = new WeightedReservoirSampler<int>(1, 21UL);
+        sampler.Add(-1, 1e-300);
+
+        int replacements = 0;
+        for (int i = 0; i < 100_000; i++)
+        {
+            if (sampler.Add(i, 1d))
+            {
+                replacements++;
+            }
+        }
+
+        // At capacity 1 the i-th weight-1 item replaces with probability about 1 / i, so the
+        // expected count is about ln(100,000) + 0.58 ≈ 12.1.
+        Assert.InRange(replacements, 3, 30);
+        Assert.NotEqual(-1, sampler[0]);
+    }
+
+    [Theory]
+    [InlineData(1e-318)]
+    [InlineData(1e-305)]
+    [InlineData(1e300)]
+    [InlineData(2.5e307)]
+    public void Add_ShouldDependOnlyOnTheWeightRatios_AtEveryScale(double scale)
+    {
+        // The same ratios as the exact-probability test, scaled to the subnormal range, to either
+        // side of the jump range, and to just under double.MaxValue. Before the per-item mode, the
+        // top scale overflowed the jump to +∞ and closed the reservoir after the fill.
+        double[] ratios = [1d, 2d, 3d, 4d, 5d, 6d, 7d, 0.5d];
+        double[] exact = ExactInclusionProbabilities(ratios, k: 3);
+        double[] weights = ratios.Select(r => r * scale).ToArray();
+        int[] items = Enumerable.Range(0, ratios.Length).ToArray();
+        const int Trials = 40_000;
+        var counts = new int[ratios.Length];
+
+        for (int t = 0; t < Trials; t++)
+        {
+            var sampler = new WeightedReservoirSampler<int>(3, ((ulong)t * 0x9E3779B97F4A7C15UL) + 7UL);
+            if (t % 2 == 0)
+            {
+                sampler.Add(items, weights);
+            }
+            else
+            {
+                for (int i = 0; i < items.Length; i++)
+                {
+                    sampler.Add(items[i], weights[i]);
+                }
+            }
+
+            foreach (int item in sampler.Sample)
+            {
+                counts[item]++;
+            }
+        }
+
+        AssertFrequenciesMatch(exact, counts, Trials);
+    }
+
+    [Theory]
+    [InlineData(double.Epsilon)]
+    [InlineData(1d)]
+    [InlineData(double.MaxValue)]
+    public void Add_ShouldBeUniform_ForEqualWeights_AtEitherEndOfTheDoubleRange(double weight)
+    {
+        const int Items = 8;
+        const int Trials = 40_000;
+        var counts = new int[Items];
+
+        for (int t = 0; t < Trials; t++)
+        {
+            var sampler = new WeightedReservoirSampler<int>(1, (ulong)t + 1UL);
+            for (int i = 0; i < Items; i++)
+            {
+                sampler.Add(i, weight);
+            }
+
+            counts[sampler[0]]++;
+        }
+
+        AssertFrequenciesMatch(Enumerable.Repeat(1d / Items, Items).ToArray(), counts, Trials);
+    }
+
+    [Fact]
+    public void Merge_Add_AndAddSpan_ShouldThrowOverflow_AndChangeNothing_WhenTotalSeenWouldPassLongMaxValue()
+    {
+        // TotalSeen doubles on every round trip of a merge, so 2^63 is reachable without a long
+        // stream. Sum the powers 2^0 … 2^62 into one sampler to land exactly on long.MaxValue.
+        var full = new WeightedReservoirSampler<int>(2, 1UL);
+        var power = new WeightedReservoirSampler<int>(2, 2UL);
+        var scratch = new WeightedReservoirSampler<int>(2, 3UL);
+        power.Add(7, 1d);
+
+        for (int k = 0; k < 63; k++)
+        {
+            full.Merge(power);
+            if (k < 62)
+            {
+                scratch.Clear();
+                scratch.Merge(power);
+                power.Merge(scratch);
+            }
+        }
+
+        Assert.Equal(long.MaxValue, full.TotalSeen);
+        int[] before = full.Sample.ToArray();
+        Assert.Contains(7, before);
+
+        Assert.Throws<OverflowException>(() => full.Add(9, 1d));
+        Assert.Throws<OverflowException>(() => full.Add(9, 0d));
+        Assert.Throws<OverflowException>(() => full.Add([9], [1d]));
+        Assert.Throws<OverflowException>(() => full.Merge(power));
+
+        Assert.Equal(long.MaxValue, full.TotalSeen);
+        Assert.Equal(before, full.Sample.ToArray());
     }
 
     [Fact]

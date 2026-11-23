@@ -285,13 +285,20 @@ The keys are held as `ln(−ln U) − ln w`, the logarithm of A-Res's exponentia
 to exactly 1 at a weight of `1e300`, and `−ln(U) / w` overflows at `1e-310`. The logarithm is finite
 for every positive finite weight, subnormals included, and it orders items the same way.
 
+The jump itself is a weight, and at the far ends of the double range it would leave the range too:
+a threshold built from weights near `1e308` puts it past `double.MaxValue`, and one built from
+subnormal weights makes it a subnormal with only a few bits of precision. While the threshold is in
+that zone, which takes weights beyond about `1e±290`, the sampler draws a key per item instead, which
+is A-Res itself. The result is still exact, at the hand-roll's cost per item. The switch depends only
+on the threshold, not on a draw, so it does not bias the sample.
+
 ### Surface
 
 | Member | Notes |
 |---|---|
 | `WeightedReservoirSampler<T>(int capacity, ulong seed)` | The convenience form, on a seeded `Pcg32`. |
 | `WeightedReservoirSampler<T, TRng>(int capacity, TRng rng)` | Any `struct` `IRandomSource`, such as `Xoshiro256StarStar` or `WyRand`. |
-| `Add(T item, double weight)` | Returns whether the item was retained. A weight of `0` is counted and never retained. A negative, `NaN` or infinite weight throws `ArgumentOutOfRangeException` and changes nothing. |
+| `Add(T item, double weight)` | Returns whether the item was retained. A weight of `0` is counted and never retained. A negative, `NaN` or infinite weight throws `ArgumentOutOfRangeException` and changes nothing. `TotalSeen` is checked: past `long.MaxValue`, which only repeated merges can reach, `Add` and `Merge` throw `OverflowException` and change nothing. |
 | `Add(ReadOnlySpan<T> items, ReadOnlySpan<double> weights)` | One weight per item, in order. Every weight is validated before the first item is offered, so a bad one leaves the sampler untouched. Past the fill it runs the countdown in locals, which makes it the faster way in. |
 | `Merge(WeightedReservoirSampler<T, TRng> other)` | Folds another sampler of the same capacity in, exactly. See below. |
 | `Sample` | A `ReadOnlySpan<T>` over the sampler's own storage, with no copy and no allocation. |

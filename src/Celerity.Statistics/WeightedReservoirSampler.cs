@@ -34,6 +34,11 @@ namespace Celerity.Statistics;
 /// A-Res's distribution.
 /// </para>
 /// <para>
+/// <strong>Weights near the ends of the double range</strong>, beyond about <c>1e±290</c>, would put
+/// the jump itself outside the double range. While the sample's threshold is there, the sampler
+/// draws a key per item, which is A-Res exactly: still correct, at the hand-roll's cost per item.
+/// </para>
+/// <para>
 /// <strong>A weight of zero</strong> is accepted and never retained: the item is counted in
 /// <see cref="TotalSeen"/> and changes nothing else. A negative, <c>NaN</c> or infinite weight
 /// throws.
@@ -51,9 +56,11 @@ namespace Celerity.Statistics;
 /// produce the same sample on the same runtime and platform. As with
 /// <see cref="ReservoirSampler{T, TRng}"/>, that stops short of a cross-platform promise: the
 /// keys and jumps run through <c>Math.Log</c> and <c>Math.Exp</c>, whose last bit .NET does not
-/// fix across runtimes or architectures. The decisions are exact in real arithmetic and land
-/// within a few ulps of their true probability in floating point, some fourteen orders of
-/// magnitude below the sampling noise of the sample itself.
+/// fix across runtimes or architectures. The decisions are exact in real arithmetic, and in
+/// floating point they carry a small relative error: a few ulps for ordinary weights, and about
+/// <c>1e-13</c> at the extremes of the double range, where the threshold is rebuilt from a key
+/// near 700 through <c>Math.Exp</c>. Either is many orders of magnitude below the sampling noise
+/// of the sample itself.
 /// </para>
 /// <para>
 /// The retained sample is exposed as a <see cref="ReadOnlySpan{T}"/> over the sampler's own
@@ -75,6 +82,15 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
 {
     /// <summary><c>ln 2</c>: where <c>1 − e^−a</c> switches from the <c>expm1</c> form to the direct one.</summary>
     private const double Ln2 = 0.6931471805599453d;
+
+    /// <summary>
+    /// The largest threshold key, in magnitude, at which the jump is drawn. Inside it the jump
+    /// <c>−ln(U) · e^{−key}</c> is a normal double for every draw (between about <c>1.7e-307</c>
+    /// and <c>4.5e292</c>), so the countdown is exact. Outside it, which takes weights beyond about
+    /// <c>1e±290</c>, the jump would overflow or lose its precision as a subnormal, and the
+    /// sampler draws a key per item instead.
+    /// </summary>
+    private const double JumpKeyLimit = 670d;
 
     private readonly T[] _items;
 
@@ -208,6 +224,10 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="weight"/> is negative, <c>NaN</c> or infinite. The sampler is unchanged.
     /// </exception>
+    /// <exception cref="OverflowException">
+    /// <see cref="TotalSeen"/> is already <see cref="long.MaxValue"/>, which only merges can reach.
+    /// The sampler is unchanged.
+    /// </exception>
     public bool Add(T item, double weight)
     {
         // One comparison pair admits exactly the positive finite weights; zero and the invalid
@@ -217,7 +237,7 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
             return AddZeroWeight(weight);
         }
 
-        _seen++;
+        _seen = checked(_seen + 1);
         _version++;
         _totalWeight += weight;
 
@@ -228,6 +248,12 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
             {
                 _remaining = remaining;
                 return false;
+            }
+
+            // A NaN countdown is the per-item mode: the threshold is outside the jump's range.
+            if (double.IsNaN(remaining))
+            {
+                return Offer(item, weight);
             }
 
             Enter(item, weight);
@@ -253,6 +279,10 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// <paramref name="weights"/> is not the same length as <paramref name="items"/>, or one of
     /// its weights is negative, <c>NaN</c> or infinite.
     /// </exception>
+    /// <exception cref="OverflowException">
+    /// The batch would take <see cref="TotalSeen"/> past <see cref="long.MaxValue"/>. Nothing is
+    /// offered.
+    /// </exception>
     public void Add(ReadOnlySpan<T> items, ReadOnlySpan<double> weights)
     {
         if (weights.Length != items.Length)
@@ -261,6 +291,9 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
                 "There must be exactly one weight per item.",
                 nameof(weights));
         }
+
+        // Checked before anything changes, so an overflowing batch is rejected whole.
+        long seen = checked(_seen + items.Length);
 
         foreach (double weight in weights)
         {
@@ -286,7 +319,7 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
 
         // The reservoir is full: run the jump countdown in locals, so the loop is one subtraction,
         // one addition and one well-predicted branch per item, with no field traffic between them.
-        _seen += items.Length - i;
+        _seen = seen;
         _version++;
 
         double remaining = _remaining;
@@ -298,10 +331,18 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
             total += weight;
             remaining -= weight;
 
-            // A zero weight never enters, even when the jump has already run down to zero.
-            if (remaining <= 0d && weight != 0d)
+            // !(remaining > 0) also catches the NaN of per-item mode. A zero weight never enters.
+            if (!(remaining > 0d) && weight != 0d)
             {
-                Enter(items[i], weight);
+                if (double.IsNaN(remaining))
+                {
+                    Offer(items[i], weight);
+                }
+                else
+                {
+                    Enter(items[i], weight);
+                }
+
                 remaining = _remaining;
             }
         }
@@ -336,6 +377,10 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// <exception cref="ArgumentException">
     /// <paramref name="other"/> is this sampler, or its capacity differs from this one's.
     /// </exception>
+    /// <exception cref="OverflowException">
+    /// The two <see cref="TotalSeen"/> counts sum past <see cref="long.MaxValue"/>. This sampler is
+    /// unchanged.
+    /// </exception>
     public void Merge(WeightedReservoirSampler<T, TRng> other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -354,6 +399,9 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
                 nameof(other));
         }
 
+        // Checked before the heap changes, so an overflowing merge leaves this sampler as it was.
+        long seen = checked(_seen + other._seen);
+
         for (int i = 0; i < other._filled; i++)
         {
             double key = other._keys[i];
@@ -368,7 +416,7 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
             }
         }
 
-        _seen += other._seen;
+        _seen = seen;
         _totalWeight += other._totalWeight;
         _version++;
 
@@ -425,7 +473,7 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
                 "Weight must be non-negative and finite.");
         }
 
-        _seen++;
+        _seen = checked(_seen + 1);
         _version++;
         return false;
     }
@@ -451,10 +499,9 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
         // The threshold as an exponential variate is E_T = e^{_keys[0]}, and the item's key E is
         // exponential with rate w, conditioned on E < E_T. That is a truncated exponential:
         // E = −ln(1 − p·V) / w for V uniform, with p = 1 − e^{−a}, a = w · E_T, the probability
-        // mass below the threshold. When the threshold itself is not a normal double, a is formed
-        // in log space instead, so neither factor has to be representable on its own.
-        double threshold = Math.Exp(_keys[0]);
-        double a = double.IsNormal(threshold) ? weight * threshold : Math.Exp(Math.Log(weight) + _keys[0]);
+        // mass below the threshold. Jumps are drawn only while the threshold key is within
+        // JumpKeyLimit, so E_T is a normal double here; a product that overflows gives p = 1.
+        double a = weight * Math.Exp(_keys[0]);
         double p = a < Ln2 ? -StableLogMath.ExpM1(-a) : 1d - Math.Exp(-a);
 
         ReplaceRoot(item, LogExponential(-StableLogMath.Log1P(-p * NextUnitInterval()), weight));
@@ -466,12 +513,40 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// to the threshold's exponential key, <c>−ln(U) / E_T</c>.
     /// </summary>
     /// <remarks>
-    /// It may round to <c>+∞</c> (the reservoir is then closed for the rest of a stream, which is
-    /// the true limit) or to <c>0</c> (the next item of positive weight enters). Both are what
-    /// the real-valued jump does at those magnitudes.
+    /// <para>
+    /// Inside <see cref="JumpKeyLimit"/> the jump is always a positive normal double, so it neither
+    /// overflows nor loses its precision as a subnormal.
+    /// </para>
+    /// <para>
+    /// Outside it, no jump is drawn and the countdown becomes <c>NaN</c>, which sends every later
+    /// item to <see cref="Offer"/> until a replacement brings the threshold back into range. The
+    /// switch depends only on the threshold, never on a draw, so it does not bias the sample: the
+    /// jump and the per-item key are two exact ways of deciding the next item, and the exponential
+    /// is memoryless between them.
+    /// </para>
     /// </remarks>
     private void DrawJump() =>
-        _remaining = -Math.Log(NextUnitInterval()) * Math.Exp(-_keys[0]);
+        _remaining = Math.Abs(_keys[0]) <= JumpKeyLimit
+            ? -Math.Log(NextUnitInterval()) * Math.Exp(-_keys[0])
+            : double.NaN;
+
+    /// <summary>
+    /// The per-item mode: A-Res itself. The item draws its own key and replaces the threshold if it
+    /// beats it. Used only while the threshold is beyond the range in which a jump is a normal
+    /// double, which takes weights near the ends of the double range.
+    /// </summary>
+    private bool Offer(T item, double weight)
+    {
+        double key = LogExponential(-Math.Log(NextUnitInterval()), weight);
+        if (key >= _keys[0])
+        {
+            return false;
+        }
+
+        ReplaceRoot(item, key);
+        DrawJump();
+        return true;
+    }
 
     /// <summary>
     /// The stored key for an exponential variate <c>numerator / weight</c>: its logarithm, taken
