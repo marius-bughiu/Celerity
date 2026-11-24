@@ -40,7 +40,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- ReservoirSampler and WeightedReservoirSampler draw its skips from the Celerity.Primitives struct PRNGs. -->
+		<!-- ReservoirSampler and WeightedReservoirSampler draw their skips from the Celerity.Primitives struct PRNGs. -->
 		<ProjectReference Include="..\Celerity.Primitives\Celerity.Primitives.csproj" />
 	</ItemGroup>
 
