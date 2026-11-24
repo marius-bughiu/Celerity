@@ -508,6 +508,7 @@ function escapeHtml(s) {
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] },
     { key: 'LfuCache',            title: 'LfuCache<int, int, ...>',                  vs: 'Dictionary + SortedSet LFU', ops: ['Put', 'Get', 'GetMissing'] },
     { key: 'SieveCache',          title: 'SieveCache<int, int, ...>',                vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing', 'ZipfWorkload'] },
+    { key: 'TinyLfuCache',        title: 'TinyLfuCache<int, int, ...>',              vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing', 'ZipfWorkload', 'LoopWorkload'] },
     // Deque is a sequence collection benchmarked against LinkedList (the BCL's only O(1)-both-ends type).
     { key: 'Deque',               title: 'Deque<int>',                               vs: 'LinkedList<int>',       ops: ['PushFront', 'Queue', 'Enumerate'] },
     // BTreeList is the positional list, benchmarked against the List<int> it replaces: Insert and RemoveAt at

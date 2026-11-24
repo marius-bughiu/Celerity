@@ -625,6 +625,38 @@ void Check(bool condition, string message)
     Check(seen == 2, "SieveCache hit keeps enumerator valid");
 }
 
+// TinyLfuCache — fixed-capacity cache with W-TinyLFU admission. Exercise put/get, the out-of-band
+// default/zero key, the frequency sketch (estimates for resident and evicted keys), admission on a
+// strict win and rejection on a tie, the window-probation-protected struct enumerator, peek/remove,
+// and Clear forgetting every frequency.
+{
+    // Capacity 2: a one-entry window over a one-entry main region.
+    var cache = new TinyLfuCache<int, string, Int32WangNaiveHasher>(2);
+    cache[0] = "zero"; // out-of-band default key
+    cache[1] = "one";  // 0 overflows the window into probation
+    Check(cache.Count == 2 && cache[0] == "zero", "TinyLfuCache put/get + default key");
+    Check(cache.GetFrequencyEstimate(0) == 2 && cache.GetFrequencyEstimate(1) == 1, "TinyLfuCache frequency estimates");
+
+    // The full cache compares candidate 1 (one use) with victim 0 (two): a tie or loss evicts the candidate.
+    cache[2] = "two";
+    Check(cache.ContainsKey(0) && !cache.ContainsKey(1) && cache.ContainsKey(2), "TinyLfuCache rejects the colder candidate");
+    Check(cache.GetFrequencyEstimate(1) == 1, "TinyLfuCache remembers an evicted key");
+
+    _ = cache[2];
+    _ = cache[2];
+    cache[3] = "three"; // candidate 2 (three uses) beats victim 0 (two)
+    Check(!cache.ContainsKey(0) && cache.ContainsKey(2), "TinyLfuCache admits the hotter candidate");
+
+    var order = new List<int>();
+    foreach (var kvp in cache) order.Add(kvp.Key);
+    Check(order.Count == 2 && order[0] == 3 && order[1] == 2, "TinyLfuCache window-then-main enumeration");
+
+    Check(cache.TryPeek(2, out string? peeked) && peeked == "two", "TinyLfuCache TryPeek");
+    Check(cache.Remove(2, out string? removed) && removed == "two", "TinyLfuCache Remove out value");
+    cache.Clear();
+    Check(cache.Count == 0 && cache.GetFrequencyEstimate(2) == 0, "TinyLfuCache Clear forgets frequencies");
+}
+
 // Deque — growable double-ended queue over a circular buffer. Exercise both-ends push/pop,
 // the front-relative indexer, wrap-around growth, Try* peeks, the front-to-back struct
 // enumerator, and the IEnumerable constructor.

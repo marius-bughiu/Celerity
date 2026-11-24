@@ -7,6 +7,12 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 ### Added
 
 - **`MinimalPerfectHash<T, THasher>`**, a build-once function that gives each key of a fixed set its own index in `[0, n)` without storing the keys: about 3.7 bits per key, 130x less retained memory than a `FrozenDictionary<string, int>` at a million keys. It is not a membership test, since a key outside the set gets `-1` or another key's index. On Apple M4 lookups were 1.43x (1M keys) to 5.3x (1,000) slower than the frozen dictionary, and builds 4–12x faster. Ships with tests, a benchmark, dashboard cards, a fuzz target, an AOT check and docs. Closes #658.
+- **`TinyLfuCache<TKey, TValue, THasher>`**, a fixed-capacity cache with W-TinyLFU admission, the policy behind Java's Caffeine: a frequency sketch that remembers evicted keys decides whether a key leaving a small LRU window may displace an older entry. On a loop over 1.5x its capacity it missed 34% of requests where `LruCache`, `LfuCache` and `SieveCache` miss all of them, and it is level with the best of them on a stationary Zipf stream. ⚠️ Per operation it is the slowest of the four caches (a hit costs about 3.7x an `LruCache` hit, still 1.9x faster than an idiomatic `Dictionary` + `LinkedList` LRU), and `LruCache` can still miss less on recency-dominated traffic. Ships with dedicated and shared-suite tests, a CsCheck property, a fuzz target, a benchmark, dashboard cards, an AOT check and docs. Closes #656.
+
+## [4.1.0] - 2026-11-22
+
+### Added
+
 - **`CompressedLongSet`**, the 64-bit sibling of `CompressedIntSet`: an exact compressed set of `long` values with the same API, containers and ascending enumeration, for clustered ids that no longer fit an `int`. On an Apple M4 at 1M values over a 100M window past 2^40, it intersected 6.2x faster than `HashSet<long>` and retained 5.5x less heap. It compresses clustered data, not values spread uniformly over the 64-bit range. Ships with dedicated and shared-suite tests, a CsCheck property, a fuzz target, a benchmark, dashboard cards, an AOT check and docs. Closes #654.
 - **`LazySegmentTree<T, TUpdate, TMonoid, TAction>`** applies updates and queries aggregates over ranges in `O(log n)`, with four shipped add/assign actions. On Apple M4 at 100,000 elements, range add/max and assign/sum measured 31.8x and 28.4x faster than array loops; small assign/sum workloads were roughly tied. Callback failures require `Clear()` before reuse, preventing inconsistent results. Closes #652.
 - **`AggregatingQueue<T, TMonoid>`**, a FIFO queue whose `Aggregate` is the fold of its contents under any `IMonoid<T>`, in `O(1)`, with `Enqueue` / `Dequeue` `O(1)` amortized. It keeps a rolling max, bitwise OR, gcd or other fold that cannot be subtracted back out, over a count- or time-bounded window. At a 1,000-value window on Apple M4 it measured 116–152x a `Queue<int>` re-folded per step and 5–7x a `SegmentTree` ring. For a window min or max, a hand-written monotonic deque is as fast or faster. Closes #645.
@@ -918,7 +924,8 @@ First successful 1.1.x publish. Tags `v1.1.0` and `v1.1.1` exist on the reposito
 
 Initial public versions, including `CelerityDictionary<TKey, TValue, THasher>`, `IntDictionary<TValue>`, the `Int32WangNaiveHasher`, `Int64Murmur3Hasher`, and `StringFnV1AHasher` hash providers, and the BenchmarkDotNet benchmark suite comparing `CelerityDictionary` against the BCL `Dictionary<int, int>`. See the git history under tags `v0.1.*` for specifics.
 
-[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/marius-bughiu/Celerity/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v4.1.0
 [4.0.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v4.0.0
 [3.6.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.6.0
 [3.5.0]: https://github.com/marius-bughiu/Celerity/releases/tag/v3.5.0

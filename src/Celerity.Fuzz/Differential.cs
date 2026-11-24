@@ -61,6 +61,7 @@ internal static class Differential
         ("RankedMultiSet", RankedMultiSetCase),
         ("LfuCache", LfuCacheCase),
         ("SieveCache", SieveCacheCase),
+        ("TinyLfuCache", TinyLfuCacheCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -1974,6 +1975,154 @@ internal static class Differential
 
         // The queue itself: insertion order, newest first, untouched by hits.
         CheckSameSequence(sut.Select(e => e.Key), order, "enumeration");
+    }
+
+    // TinyLfuCache vs a list-based reference W-TinyLFU: three Lists (window, probation, protected, each
+    // most-recently-used first) re-deriving the documented segment shares, candidate/victim choice,
+    // strict-win admission, promotion and demotion. The one input shared with the type under test is
+    // the frequency estimate, read from the SUT just before each insert, because the sketch's collisions
+    // are part of its output; the sketch itself is checked against exact counts in the xUnit suite.
+    // Most cases use capacities 1-24 over the shared key range, where the window is one entry and the
+    // protected share runs from zero up; one case in eight takes a capacity of 200-230 over a key domain
+    // of its own, so the window holds two entries and the main region actually fills.
+    private static void TinyLfuCacheCase(Random rng)
+    {
+        bool wide = rng.Next(0, 8) == 0;
+        int capacity = wide ? rng.Next(200, 231) : rng.Next(1, 25);
+        int keyLo = wide ? 0 : MinKey;
+        int keyHi = wide ? capacity + 30 : MaxKey;
+        var sut = new TinyLfuCache<int, int, Int32WangNaiveHasher>(capacity);
+
+        int windowCap = Math.Max(1, capacity / 100);
+        int mainCap = capacity - windowCap;
+        int protectedCap = mainCap * 4 / 5;
+        var window = new List<int>();
+        var probation = new List<int>();
+        var guarded = new List<int>();
+        var values = new Dictionary<int, int>();
+
+        void Use(int key)
+        {
+            if (window.Remove(key))
+            {
+                window.Insert(0, key);
+            }
+            else if (guarded.Remove(key))
+            {
+                guarded.Insert(0, key);
+            }
+            else
+            {
+                probation.Remove(key);
+                guarded.Insert(0, key);
+                if (guarded.Count > protectedCap)
+                {
+                    int demoted = guarded[^1];
+                    guarded.RemoveAt(guarded.Count - 1);
+                    probation.Insert(0, demoted);
+                }
+            }
+        }
+
+        void Put(int key, int value)
+        {
+            if (values.ContainsKey(key))
+            {
+                values[key] = value;
+                Use(key);
+                return;
+            }
+            if (values.Count == capacity)
+            {
+                int candidate = window[^1];
+                window.RemoveAt(window.Count - 1);
+                int evicted = candidate;
+                if (mainCap > 0)
+                {
+                    int victim = probation[^1];
+                    if (sut.GetFrequencyEstimate(candidate) > sut.GetFrequencyEstimate(victim))
+                    {
+                        evicted = victim;
+                        probation.RemoveAt(probation.Count - 1);
+                        probation.Insert(0, candidate);
+                    }
+                }
+                values.Remove(evicted);
+            }
+            else if (window.Count == windowCap)
+            {
+                int overflow = window[^1];
+                window.RemoveAt(window.Count - 1);
+                probation.Insert(0, overflow);
+            }
+            values[key] = value;
+            window.Insert(0, key);
+        }
+
+        int ops = wide ? rng.Next(0, 2000) : OpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int key = rng.Next(keyLo, keyHi + 1);
+            int value = rng.Next();
+            switch (rng.Next(0, 40))
+            {
+                case < 14:
+                    Put(key, value);
+                    sut.AddOrUpdate(key, value);
+                    break;
+                case < 28:
+                {
+                    bool hit = values.TryGetValue(key, out int expected);
+                    if (hit) Use(key);
+                    Check(sut.TryGet(key, out int actual) == hit, $"TryGet({key}) hit");
+                    Check(!hit || actual == expected, $"TryGet({key}) value");
+                    break;
+                }
+                case < 32:
+                {
+                    bool added = !values.ContainsKey(key);
+                    if (added) Put(key, value);
+                    Check(sut.TryAdd(key, value) == added, $"TryAdd({key})");
+                    break;
+                }
+                case < 36:
+                {
+                    bool removed = values.Remove(key);
+                    if (removed && !window.Remove(key) && !probation.Remove(key))
+                        guarded.Remove(key);
+                    Check(sut.Remove(key) == removed, $"Remove({key})");
+                    break;
+                }
+                case < 39:
+                    // A peek must not count as a use in either implementation.
+                    Check(sut.TryPeek(key, out int peeked) == values.ContainsKey(key), $"TryPeek({key})");
+                    Check(!values.TryGetValue(key, out int want) || peeked == want, $"TryPeek({key}) value");
+                    break;
+                default:
+                    if (rng.Next(0, 4) != 0)
+                        break; // keep Clear rare, so the segments fill and the sketch builds history
+                    sut.Clear();
+                    window.Clear();
+                    probation.Clear();
+                    guarded.Clear();
+                    values.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == values.Count, $"Count {sut.Count} != {values.Count}");
+        Check(sut.Count <= capacity, $"Count {sut.Count} exceeds capacity {capacity}");
+
+        for (int k = keyLo; k <= keyHi; k++)
+        {
+            bool expectedPresent = values.ContainsKey(k);
+            Check(sut.ContainsKey(k) == expectedPresent, $"ContainsKey({k})");
+            Check(sut.TryPeek(k, out int v) == expectedPresent, $"TryPeek({k})");
+            Check(!expectedPresent || v == values[k], $"value at {k}");
+        }
+
+        // The segments themselves: window, probation, protected, each newest first.
+        CheckSameSequence(sut.Select(e => e.Key), [.. window, .. probation, .. guarded], "enumeration");
     }
 
     // LfuCache vs a sort-based reference LFU. The BCL has no cache of any policy, so the oracle is the

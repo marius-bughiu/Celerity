@@ -59,6 +59,7 @@ internal class Program
         typeof(LruCacheBenchmark),
         typeof(LfuCacheBenchmark),
         typeof(SieveCacheBenchmark),
+        typeof(TinyLfuCacheBenchmark),
         typeof(DequeBenchmark),
         typeof(PersistentVectorBenchmark),
         typeof(PersistentHashMapBenchmark),
