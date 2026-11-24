@@ -2945,6 +2945,35 @@ void Check(bool condition, string message)
     Check(guidXor.Contains(Guid.Empty), "XorFilter<Guid> empty-guid element");
 }
 
+// MinimalPerfectHash — build-once key -> [0, n) bijection that stores no keys. Exercise the 32-bit and
+// 64-bit hasher paths, the sort-based duplicate fold, the exact table for keys sharing a full hash, the
+// null key that must never reach the string hasher, and the rank lookup across several levels.
+{
+    int[] ids = Enumerable.Range(0, 5000).Select(i => i * 31 + 7).ToArray();
+    var mph = new MinimalPerfectHash<int, Int32Murmur3Hasher>(ids.Concat(ids.Take(100)));
+    var seen = new bool[mph.Count];
+    bool bijection = mph.Count == ids.Length;
+    foreach (int id in ids)
+    {
+        int index = mph.GetIndex(id);
+        bijection &= index >= 0 && index < mph.Count && !seen[index];
+        if (bijection) seen[index] = true;
+    }
+    Check(bijection, "MinimalPerfectHash bijection with duplicates folded");
+    Check(mph.LevelCount > 1 && mph.BitsPerKey > 3d && mph.BitsPerKey < 5d, "MinimalPerfectHash levels and bits/key");
+
+    var words = new MinimalPerfectHash<string, StringFnV1AHasher>(new[] { "alpha", "beta", null!, "" });
+    Check(words.Count == 4 && new[] { words.GetIndex("alpha"), words.GetIndex("beta"), words.GetIndex(null!), words.GetIndex("") }
+        .Distinct().Count() == 4, "MinimalPerfectHash<string> with a null key");
+
+    var wide = new MinimalPerfectHash<string, StringXxHash3Hasher>(new[] { "x", "y", "z" }, 3.0);
+    Check(wide.Count == 3 && wide.FallbackCount == 0 && wide.Gamma == 3.0, "MinimalPerfectHash 64-bit hasher path");
+
+    var colliding = new MinimalPerfectHash<int, AotConstantHasher>(new[] { 1, 2, 3, 3 });
+    Check(colliding.Count == 3 && colliding.FallbackCount == 3 && colliding.GetIndex(9) == -1,
+        "MinimalPerfectHash exact table for shared hashes");
+}
+
 // BitSet — dense exact bit vector. Exercise Set / Get / Flip / SetAll / Count
 // (popcount), the SIMD-accelerated bulk And / Or / Xor / Not, the tail-bit masking
 // past Length, and both enumerators so the AOT publish compiles the Vector<ulong>
@@ -4584,4 +4613,11 @@ internal enum AotSparseFlags
     None = 0,
     First = 1 << 0,
     Far = 1 << 17,
+}
+
+// Hashes every key alike, so MinimalPerfectHash can place none of them in a level and must answer them all
+// from its exact table.
+internal readonly struct AotConstantHasher : IHashProvider<int>
+{
+    public int Hash(int key) => 0;
 }

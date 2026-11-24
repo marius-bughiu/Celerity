@@ -1260,6 +1260,7 @@ Timers thread through one flat entry array as intrusive lists, so there is no ob
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
 - `CuckooFilter<T, THasher>` — **probabilistic** membership that **supports deletion**: fingerprint buckets, **no false negatives**, tunable false-positive rate, ≤2 cache lines per lookup. The Bloom filter you can `Remove` from.
 - `XorFilter<T, THasher>` — **probabilistic** membership that is **build-once & immutable**: ~9.84 bits/element (smaller than a Bloom filter at the same rate), three probes + two XORs per lookup (branch-free). The smallest, fastest-to-query filter for a fixed element set.
+- `MinimalPerfectHash<T, THasher>` — a **build-once key → slot index that stores no keys**: each key of a fixed set gets its own index in `[0, n)` for about **3.7 bits per key**, against roughly 60 bytes per key for a `FrozenDictionary<TKey, int>` (130x less retained memory at a million string keys). It does not answer membership: a key outside the set gets `-1` or another key's index, so store the keys alongside when that matters. The trade is lookup time: 1.43x the frozen dictionary's at a million keys, 2.4x at 100,000 and 5.3x at 1,000. It builds 4–12x faster.
 - `BitSet` — dense, **exact** bit vector in 64-bit words: `O(n/64)` hardware popcount (`Count`) and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `BitArray`.
 - `BitPackedArray` — a **fixed-width packed integer array**: every element stored in exactly `w` bits (1 to 64), end to end in 64-bit words, with `O(1)` branch-free reads and in-place writes. A million 20-bit codes take **2.5 MB instead of an `int[]`'s 4 MB** (1.6× smaller); reads cost ~1.6–1.7× and writes ~2× the array's. Values wider than `w` are rejected, not truncated. .NET's only sub-byte storage is `BitArray` (one bit per element) and `BitVector32` (a few fields in one 32-bit integer).
 - `RankSelectBitVector` — **immutable** succinct index over a dense bit vector: `Rank(i)` (set bits below `i`) in `O(1)` and `Select(k)` (position of the `k`-th set bit) in `O(log n)`, for 25% space over the bits. The BCL has no rank or select anywhere, so the baseline is a hand-rolled `O(i/64)` popcount loop. **Build-once** — any mutation means rebuilding the index, so keep mutating vectors in `BitSet` and snapshot once they settle.
@@ -1297,6 +1298,15 @@ Console.WriteLine(recent.Contains(42)); // False
 var known = new XorFilter<string, StringXxHash3Hasher>(issuedApiKeys); // built once, then read-only
 Console.WriteLine(known.Contains("key-abc")); // True if issued (or a ~0.4% false positive)
 Console.WriteLine(known.Contains("key-zzz")); // False (no false negatives)
+```
+
+`MinimalPerfectHash` gives each key of a **fixed** set its own slot in `[0, n)` without storing the keys, so a dense value array can stand in for a dictionary at about half a byte of index per key. The catch is that a key outside the set still gets an answer (`-1` or another key's slot), so keep the keys at their slots and compare when non-members can be asked about.
+
+```csharp
+var slot = new MinimalPerfectHash<string, StringXxHash3Hasher>(vocabulary); // ~3.7 bits per key
+var counts = new int[slot.Count];
+foreach (string token in corpus)
+    counts[slot.GetIndex(token)]++;         // every token is in the vocabulary
 ```
 
 `HyperLogLog` estimates the **distinct count** of a stream from a fixed ~16&#160;KB of registers that never grow with the data (~0.8% error). Add-and-estimate only; `Precision` sets the accuracy trade-off (`StandardError` ≈ `1.04/√m`); merge equal-precision estimators with `UnionWith`.
