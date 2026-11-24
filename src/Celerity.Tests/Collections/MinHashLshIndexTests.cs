@@ -270,6 +270,44 @@ public class MinHashLshIndexTests
     }
 
     [Fact]
+    public void Query_ShouldCountCandidatesPassedToAdd_EvenWhenASetDestinationAlreadyHoldsThem()
+    {
+        var index = new MinHashLshIndex<int, int, Int32Murmur3Hasher>(0.5);
+        index.Add(1, Sketch(0, 300));
+        index.Add(2, Sketch(0, 300));
+        var results = new HashSet<int> { 1 };
+
+        Assert.Equal(2, index.Query(Sketch(0, 300), results));
+        Assert.Equal(new[] { 1, 2 }, results.OrderBy(k => k));
+    }
+
+    [Fact]
+    public void Query_ShouldReportAKeyOnce_WhenItFirstMatchesALateBand()
+    {
+        // 1,024 one-row bands at precision 10, and a hasher that puts element x in register
+        // x mod 1024. The stored set fills register r with r; the query fills registers 512 and up
+        // with the same elements and the first 512 with others, so the key first matches band 512
+        // and then matches every band after it. The earlier-band rescan this replaced was
+        // quadratic in exactly this shape.
+        var index = new MinHashLshIndex<int, int, RegisterModuloHasher>(bandCount: 1024, rowsPerBand: 1, precision: 10);
+        index.Add(7, new MinHashSketch<int, RegisterModuloHasher>(Enumerable.Range(0, 1024), 10));
+        var query = new MinHashSketch<int, RegisterModuloHasher>(
+            Enumerable.Range(512, 512).Concat(Enumerable.Range(1024, 512)), 10);
+        var results = new List<int>();
+
+        Assert.Equal(1, index.Query(query, results));
+        Assert.Equal(new[] { 7 }, results);
+    }
+
+    // Element x lands in register x mod 1024 at precision 10, with value x.
+    private struct RegisterModuloHasher : IHashProvider<int>, IHashProvider64<int>
+    {
+        public int Hash(int key) => key;
+
+        public ulong Hash64(int key) => ((ulong)(key & 1023) << 54) | (uint)key;
+    }
+
+    [Fact]
     public void Query_ShouldReturnZero_WhenTheIndexIsEmpty()
     {
         var index = new MinHashLshIndex<int, int, Int32Murmur3Hasher>(0.5);

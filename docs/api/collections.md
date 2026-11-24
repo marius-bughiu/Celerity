@@ -4983,9 +4983,11 @@ have. Keys are compared with `keyComparer`, or `EqualityComparer<TKey>.Default`.
 - `bool ContainsKey(TKey key)`, `int Count { get; }`, `void Clear()` — the usual
   members. `Clear()` keeps the capacity, and clearing an empty index does not invalidate
   enumerators.
-- `int Query(MinHashSketch<T, THasher> sketch, ICollection<TKey> results)` — appends each
-  candidate once and returns how many it appended. The index allocates nothing; `results`
-  may grow. A query does not modify the index, so concurrent queries with no concurrent
+- `int Query(MinHashSketch<T, THasher> sketch, ICollection<TKey> results)` — passes each
+  candidate to `results.Add` once and returns how many it passed. A destination that ignores
+  keys it already holds, like a `HashSet<T>` reused across queries, can grow by less. A key
+  matching several bands is deduplicated in pooled scratch, so the index allocates nothing;
+  `results` may grow. A query does not modify the index, so concurrent queries with no concurrent
   writer are safe.
 - `List<TKey> Query(MinHashSketch<T, THasher> sketch)` — the same, into a new list.
 - `double CandidateProbability(double jaccard)` — `1 − (1 − J^r)^b`, the chance a pair with
@@ -5015,8 +5017,8 @@ is the contract.
 
 | 16 queries | 1,000 stored sets | 100,000 stored sets |
 | --- | ---: | ---: |
-| `MinHashLshIndex.Query` | 19.3 µs | 22.4 µs |
-| `List` scan with `EstimateJaccard` | 5,479 µs (284x) | 541,866 µs (~24,200x) |
+| `MinHashLshIndex.Query` | 22.9 µs | 24.9 µs |
+| `List` scan with `EstimateJaccard` | 5,470 µs (239x) | 538,838 µs (~21,600x) |
 | Allocated | 0 B vs 0 B | 0 B vs 0 B |
 
 The scan grows linearly with the stored sets; the index does not. What the index costs

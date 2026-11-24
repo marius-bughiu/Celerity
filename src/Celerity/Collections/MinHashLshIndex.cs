@@ -458,13 +458,19 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     /// </summary>
     /// <param name="sketch">The query sketch. It must have the index's <see cref="Precision"/>.</param>
     /// <param name="results">The collection the candidates are added to. Existing contents are kept.</param>
-    /// <returns>The number of keys appended.</returns>
+    /// <returns>
+    /// The number of candidates passed to <paramref name="results"/>' <c>Add</c>, each once. For a
+    /// destination that ignores a key it already holds, such as a <see cref="HashSet{T}"/> reused
+    /// across queries, this can be more than the destination grew.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="sketch"/> or <paramref name="results"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="sketch"/> has a different precision.</exception>
     /// <remarks>
     /// The cost is one densify-and-hash pass over the sketch plus a walk of the <see cref="BandCount"/>
-    /// matching buckets, so it grows with the number of candidates, not with <see cref="Count"/>. The
-    /// index allocates nothing; <paramref name="results"/> may grow. Candidates are not verified; see
+    /// matching buckets, so it grows with the number of candidates, not with <see cref="Count"/>. A
+    /// key found in several bands is reported once: the matches are gathered, sorted and
+    /// deduplicated in pooled scratch, so the index allocates nothing; <paramref name="results"/> may
+    /// grow. Candidates are reported in no particular order. Candidates are not verified; see
     /// the type remarks. A query does not modify the index, but <paramref name="results"/> must not
     /// be a collection whose <c>Add</c> modifies the index.
     /// </remarks>
@@ -482,35 +488,49 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
             : (rented = ArrayPool<ulong>.Shared.Rent(_bandCount));
         query = query[.._bandCount];
 
+        int[]? rentedHits = null;
+        Span<int> hits = stackalloc int[StackScratchLimit];
+        int hitCount = 0;
         int found = 0;
         try
         {
             ComputeBandHashes(sketch.Registers, query);
-            int version = _version;
+
+            // Every slot met in any matching bucket; a key that matches several bands appears once
+            // per band and is deduplicated below.
             for (int band = 0; band < _bandCount; band++)
             {
                 if (!_heads[band].TryGetValue(query[band], out int node))
                     continue;
 
-                while (node >= 0)
+                for (; node >= 0; node = _nodeNext[node])
                 {
-                    int slot = node / _bandCount;
-                    if (!MatchedEarlierBand(slot * _bandCount, query, band))
-                    {
-                        results.Add(_keys[slot]);
-                        found++;
-                        if (version != _version)
-                            throw new InvalidOperationException("The index was modified while a query was adding results.");
-                    }
-
-                    node = _nodeNext[node];
+                    if (hitCount == hits.Length)
+                        hits = GrowHits(hits, ref rentedHits);
+                    hits[hitCount++] = node / _bandCount;
                 }
+            }
+
+            Span<int> slots = hits[..hitCount];
+            slots.Sort();
+            int version = _version;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (i > 0 && slots[i] == slots[i - 1])
+                    continue;
+
+                results.Add(_keys[slots[i]]);
+                found++;
+                if (version != _version)
+                    throw new InvalidOperationException("The index was modified while a query was adding results.");
             }
         }
         finally
         {
             if (rented is not null)
                 ArrayPool<ulong>.Shared.Return(rented);
+            if (rentedHits is not null)
+                ArrayPool<int>.Shared.Return(rentedHits);
         }
 
         return found;
@@ -539,18 +559,15 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    // A key found in `band` was already reported if its node in an earlier band carries the
-    // query's hash for that band, since the walk of that band's bucket reached it first.
-    private bool MatchedEarlierBand(int baseNode, ReadOnlySpan<ulong> query, int band)
+    // Moves the hits into a pooled buffer twice the size, returning the previous pooled one.
+    private static Span<int> GrowHits(Span<int> hits, ref int[]? rented)
     {
-        ReadOnlySpan<ulong> hashes = _nodeHash.AsSpan(baseNode, band);
-        for (int earlier = 0; earlier < hashes.Length; earlier++)
-        {
-            if (hashes[earlier] == query[earlier])
-                return true;
-        }
-
-        return false;
+        int[] next = ArrayPool<int>.Shared.Rent(hits.Length * 2);
+        hits.CopyTo(next);
+        if (rented is not null)
+            ArrayPool<int>.Shared.Return(rented);
+        rented = next;
+        return next;
     }
 
     private void Grow()
