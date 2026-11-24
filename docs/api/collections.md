@@ -5194,8 +5194,10 @@ is the contract.
 | `List` scan with `EstimateJaccard` | 5,470 µs (239x) | 538,838 µs (~21,600x) |
 | Allocated | 0 B vs 0 B | 0 B vs 0 B |
 
-The scan grows linearly with the stored sets; the index does not. What the index costs
-instead is building it and holding it. A Stopwatch probe at 100,000 keys measured adds at
+On this corpus, the scan grows linearly with the stored sets while the index touches
+roughly the same number of band hits. A corpus with more matching bucket entries increases
+query work and scratch storage; these timings do not imply constant cost as the index grows.
+Building and retaining the index also cost time and memory. A Stopwatch probe at 100,000 keys measured adds at
 about 5 µs each at 42 bands (a 0.5 threshold) and 3 µs at 17 bands (0.8), and the index
 retained about 2.2 KB and 0.9 KB per key, including growth slack. That is on top of any
 sketches you keep to verify candidates.
@@ -5213,9 +5215,9 @@ Use something else when:
 - only **exact** duplicates matter: hash the whole set and use a dictionary;
 - you have a few hundred sets: an `EstimateJaccard` scan is short, and it has no banding
   misses (it is still an estimate, with the sketch's error);
-- a missed near-duplicate is unacceptable: compare the exact sets. Building the index with a
-  lower threshold than the one you verify against lifts the curve near 1 at your real
-  cut-off and makes misses rarer, but neither the index nor a sketch scan can rule them out.
+- a missed near-duplicate is unacceptable: compare the exact sets. Choosing a layout whose
+  ideal curve is higher at your verification cut-off can be a useful tuning starting point,
+  but measure recall on your corpus; neither the index nor a sketch scan can rule out misses.
 
 ### Usage example
 
