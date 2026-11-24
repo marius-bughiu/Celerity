@@ -1251,6 +1251,7 @@ Timers thread through one flat entry array as intrusive lists, so there is no ob
 - `HyperLogLog<T, THasher>` — **probabilistic** cardinality estimator: counts *distinct* elements from a fixed ~16&#160;KB of registers (~0.8% error), never growing with the data. Mergeable.
 - `SlidingHyperLogLog<T, THasher>` — **probabilistic** distinct count over a **time window** ("unique users in the last 5 minutes"): `Add(item, timestamp)`, then `EstimateCardinality(since)` for any window chosen at query time, from a fixed ~1.7&#160;MB (~1.6% error). Out-of-order adds, exact merges, and bit-for-bit HyperLogLog's answer over the in-window elements.
 - `MinHashSketch<T, THasher>` — **probabilistic** similarity sketch: estimates the *Jaccard similarity* of two sets from a fixed 2&#160;KB per set (standard error up to ~0.031 for large sets; not a hard bound), comparing in `O(registers)` however large the sets are. Mergeable.
+- `MinHashLshIndex<TKey, T, THasher>` — **probabilistic near-duplicate search** over stored `MinHashSketch`es: banded locality-sensitive hashing returns the keys whose sets are *likely* similar to a query, in time that grows with the number of matches rather than with the number of stored sets. Thousands of times faster than scanning 100,000 sketches with `EstimateJaccard`; candidates are approximate in both directions, so verify the ones you act on.
 - `CountMinSketch<T, THasher>` — **probabilistic** frequency estimator: estimates per-element counts from a fixed grid, **never underestimating** (overestimate bounded by `epsilon · TotalCount`). Mergeable.
 - `TopKSketch<T, THasher>` — **probabilistic** top-k / heavy-hitters sketch (Space-Saving): reports a stream's most frequent elements from a fixed `k` monitors in `O(k)` memory, **never underestimating** and never missing a hitter above `TotalCount / k`.
 
@@ -1308,6 +1309,18 @@ Console.WriteLine(active.EstimateCardinality(now - TimeSpan.FromMinutes(5).Ticks
 var a = new MinHashSketch<string, StringXxHash64Hasher>(shinglesOfDocA);
 var b = new MinHashSketch<string, StringXxHash64Hasher>(shinglesOfDocB);
 Console.WriteLine(a.EstimateJaccard(b)); // ≈ |A ∩ B| / |A ∪ B|, from 2 KB each
+```
+
+`MinHashLshIndex` finds which **stored** sketches are near-duplicates of a new one without comparing it against all of them. Give it the Jaccard threshold you care about and it picks the band layout; a query returns candidates, each once, which you then verify with `EstimateJaccard`. Small sets work too: empty registers are densified before banding, so two short documents do not collide just because both left most registers empty.
+
+```csharp
+var index = new MinHashLshIndex<string, string, StringXxHash64Hasher>(threshold: 0.8);
+foreach (var (url, shingles) in crawledPages)
+    index.Add(url, new MinHashSketch<string, StringXxHash64Hasher>(shingles));
+
+var page = new MinHashSketch<string, StringXxHash64Hasher>(shinglesOfNewPage);
+foreach (string url in index.Query(page))
+    Console.WriteLine(url); // likely ≥ 0.8 similar; check with EstimateJaccard before acting
 ```
 
 `CountMinSketch` estimates **per-element frequencies** from a fixed grid of counters that never grows with the distinct-key count, and **never underestimates** (overestimate bounded by `epsilon · TotalCount`). Add-and-estimate only; `epsilon` / `delta` set the trade-off; merge equally-sized sketches with `UnionWith`.

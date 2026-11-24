@@ -4,6 +4,10 @@ All notable changes to Celerity are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **`MinHashLshIndex<TKey, T, THasher>`** finds which of many stored `MinHashSketch`es are likely near-duplicates of a query, without comparing against each one. Give it a Jaccard threshold and it chooses the band layout; small sets are densified so they do not all collide. On an Apple M4, 16 queries over 100,000 stored sets took 17.6 µs against 539 ms for an `EstimateJaccard` scan, with no allocation. Results are unverified candidates, and the index uses about as much memory per key as a 2 KB sketch at a 0.5 threshold. Ships with tests, a CsCheck property, a fuzz target, a benchmark, dashboard cards, an AOT check and docs. Closes #662.
+
 ## [4.1.0] - 2026-11-22
 
 ### Added

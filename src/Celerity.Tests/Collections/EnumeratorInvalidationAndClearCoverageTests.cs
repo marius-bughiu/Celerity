@@ -692,6 +692,39 @@ public class EnumeratorInvalidationAndClearCoverageTests
     }
 
     [Fact]
+    public void MinHashLshIndexClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
+    {
+        var index = new MinHashLshIndex<string, int, Int32WangHasher>(0.5);
+        var enumerator = index.GetEnumerator();
+
+        index.Clear();
+
+        Assert.Equal(0, index.Count);
+        Assert.False(enumerator.MoveNext());
+
+        var sketch = new MinHashSketch<int, Int32WangHasher>(new[] { 1, 2, 3 });
+        index.Add("a", sketch);
+        Assert.Equal(new[] { "a" }, index.Query(sketch));
+    }
+
+    [Fact]
+    public void MinHashLshIndexClear_ShouldReleaseKeys_WhenKeysAreReferenceTyped()
+    {
+        var index = new MinHashLshIndex<string, int, Int32WangHasher>(0.5);
+        var sketch = new MinHashSketch<int, Int32WangHasher>(new[] { 1, 2, 3 });
+        index.Add("a", sketch);
+        index.Add("b", new MinHashSketch<int, Int32WangHasher>(new[] { 4, 5, 6 }));
+
+        index.Clear();
+
+        Assert.Equal(0, index.Count);
+        Assert.Empty(index);
+        Assert.False(index.ContainsKey("a"));
+        Assert.Empty(index.Query(sketch));
+        Assert.True(index.TryAdd("a", sketch));
+    }
+
+    [Fact]
     public void LruCacheClear_ShouldBeNoOpAndKeepEnumeratorsValid_WhenAlreadyEmpty()
     {
         var cache = new LruCache<int, string, Int32WangHasher>(4);

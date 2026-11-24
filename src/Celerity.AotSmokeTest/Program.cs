@@ -3389,6 +3389,44 @@ void Check(bool condition, string message)
     Check(longA.EstimateJaccard(longB) == 0d, "MinHashSketch with a 64-bit hasher");
 }
 
+// MinHashLshIndex — banded LSH over MinHashSketch. Exercise both constructors (the threshold one
+// runs the parameter search), Add / TryAdd / Remove / ContainsKey / Clear, both Query overloads,
+// densification of a sparse sketch, and the struct enumerator, over int and string keys so the AOT
+// publish compiles the band hashing, the rented-scratch paths and the bucket chains.
+{
+    var index = new MinHashLshIndex<string, int, Int32WangNaiveHasher>(0.5);
+    var (bands, rows) = MinHashLshIndex<string, int, Int32WangNaiveHasher>.GetOptimalParameters(0.5, 8);
+    Check(index.BandCount == bands && index.RowsPerBand == rows, "MinHashLshIndex threshold ctor");
+
+    var doc = new MinHashSketch<int, Int32WangNaiveHasher>(Enumerable.Range(0, 1_000));
+    var edit = new MinHashSketch<int, Int32WangNaiveHasher>(Enumerable.Range(50, 1_000));
+    var other = new MinHashSketch<int, Int32WangNaiveHasher>(Enumerable.Range(10_000, 1_000));
+    index.Add("doc", doc);
+    Check(index.TryAdd("edit", edit) && !index.TryAdd("edit", edit), "MinHashLshIndex TryAdd");
+    index.Add("other", other);
+
+    List<string> found = index.Query(doc);
+    Check(found.Contains("doc") && found.Contains("edit") && !found.Contains("other"), "MinHashLshIndex Query");
+
+    var tiny = new MinHashSketch<int, Int32WangNaiveHasher>(new[] { 7, 8 });
+    index.Add("tiny", tiny);
+    var appended = new List<string>();
+    Check(index.Query(tiny, appended) == 1 && appended[0] == "tiny", "MinHashLshIndex densified small set");
+
+    Check(index.Remove("edit") && !index.ContainsKey("edit") && index.Count == 3, "MinHashLshIndex Remove");
+    int keys = 0;
+    foreach (string key in index) keys++;
+    Check(keys == 3, "MinHashLshIndex enumeration");
+    index.Clear();
+    Check(index.Count == 0 && index.Query(doc).Count == 0, "MinHashLshIndex Clear");
+
+    // Many one-row bands over a large sketch: every scratch buffer is rented.
+    var wide = new MinHashLshIndex<int, int, Int32WangNaiveHasher>(1024, 1, precision: 10);
+    var sparse = new MinHashSketch<int, Int32WangNaiveHasher>(Enumerable.Range(0, 30), 10);
+    wide.Add(1, sparse);
+    Check(wide.Query(sparse).Count == 1 && wide.CandidateProbability(1d) == 1d, "MinHashLshIndex rented scratch");
+}
+
 // CountMinSketch — probabilistic frequency estimator (no out-of-band slot; default(T)
 // is an ordinary element, a null reference is mapped to a fixed base hash so the hasher
 // is never called with null). Exercise Add / Add(count) / EstimateCount / Clear /

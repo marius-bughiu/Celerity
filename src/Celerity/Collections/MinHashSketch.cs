@@ -80,7 +80,7 @@ public class MinHashSketch<T, THasher> where THasher : struct, IHashProvider<T>
     // A register's value is the low (64 - precision) bits of a hash, so with precision >= 4
     // every stored value is below 2^60 and the all-ones word can never be one: it marks a
     // register no element has reached.
-    private const ulong EmptyRegister = ulong.MaxValue;
+    internal const ulong EmptyRegister = ulong.MaxValue;
 
     private readonly ulong[] _registers;
     private readonly int _precision;     // p
@@ -268,6 +268,10 @@ public class MinHashSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// count are preserved.
     /// </summary>
     public void Clear() => _registers.AsSpan().Fill(EmptyRegister);
+
+    // The raw registers, for MinHashLshIndex to band. Read-only to it; an empty register holds
+    // EmptyRegister.
+    internal ReadOnlySpan<ulong> Registers => _registers;
 
     private void ThrowIfIncompatible(MinHashSketch<T, THasher> other)
     {

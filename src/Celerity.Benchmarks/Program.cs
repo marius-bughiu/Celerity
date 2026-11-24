@@ -53,6 +53,7 @@ internal class Program
         typeof(HyperLogLogBenchmark),
         typeof(SlidingHyperLogLogBenchmark),
         typeof(MinHashSketchBenchmark),
+        typeof(MinHashLshIndexBenchmark),
         typeof(CountMinSketchBenchmark),
         typeof(TopKSketchBenchmark),
         typeof(LruCacheBenchmark),

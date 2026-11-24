@@ -4861,6 +4861,8 @@ Use something else when:
 - you need the **exact** intersection, or the elements themselves: two `HashSet<T>`s;
 - you need the **size** of a set, not its overlap with another: `HyperLogLog<T, THasher>`;
 - you need **membership** of one element: `BloomFilter<T, THasher>`;
+- you need the sets **similar to one set** among many stored ones: index the sketches in a
+  [`MinHashLshIndex`](#minhashlshindextkey-t-thasher) instead of comparing against each;
 - one set is tiny. With a handful of elements the exact intersection is already cheap, and
   the sketch's error is that of the few registers they fill.
 
@@ -4890,6 +4892,182 @@ if (a.EstimateJaccard(b) > 0.8)
 
 // Sketch of A ∪ B, exactly as if built from both documents.
 a.UnionWith(b);
+```
+
+## MinHashLshIndex&lt;TKey, T, THasher&gt;
+
+A **near-duplicate search index** over [`MinHashSketch`](#minhashsketcht-thasher)es. It
+stores one sketch per key and, given a query sketch, returns the keys whose sets are
+*likely* to be similar to it without comparing the query against every stored sketch.
+`MinHashSketch` makes comparing two sets cheap, but finding the near-duplicates of one set
+among `n` stored ones is still `n` calls to `EstimateJaccard`, and deduplicating a corpus is
+`n²` of them. .NET has nothing that indexes similarity.
+
+```csharp
+public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
+    where TKey : notnull
+    where THasher : struct, IHashProvider<T>
+```
+
+The contract:
+
+- **Query cost follows the matches, not the index size.** A query densifies and hashes the
+  sketch once and reads one bucket per band. It costs about the same at 100,000 stored sets
+  as at 1,000.
+- **Approximate in both directions.** A pair with Jaccard similarity `J` is returned with
+  probability `1 − (1 − J^r)^b` (`CandidateProbability`). A similar pair can be missed, and
+  a dissimilar one returned. Candidates are not verified, so check the ones you act on with
+  `EstimateJaccard` or against the exact sets.
+- **Indexes a snapshot.** `Add` bands the sketch as it is at the time of the call and keeps
+  no reference to it. To re-index a changed sketch, `Remove` the key and add it again.
+
+### How it works
+
+This is the classic **banding** technique (Leskovec, Rajaraman &amp; Ullman, *Mining of
+Massive Datasets*, ch. 3). The first `b · r` registers are split into `b` bands of `r`
+registers each, and each band is hashed to a bucket. Two sketches are candidates when they
+agree on every register of at least one band. Each register agrees with probability `J`, so
+the candidate probability is an S-curve in `J`: near 0 well below its knee, near 1 well
+above it, with the knee close to `(1/b)^(1/r)`.
+
+The threshold constructor chooses `b` and `r` with `GetOptimalParameters`, which tries every
+pair with `b · r ≤ 2^precision` and keeps the one with the smallest false-positive area
+(the curve integrated below the threshold) plus false-negative area (one minus the curve,
+integrated above it). At the default precision 8, a 0.5 threshold gives 42 bands of 6 rows
+and a 0.8 threshold 17 bands of 15.
+
+`MinHashSketch` is a one-permutation sketch, so a set with fewer elements than registers
+leaves some registers empty. Two small sets would then agree on any band of empty registers
+whatever they contain, and every short document would land in the same buckets. The index
+**densifies** the registers it bands instead: an empty register borrows the value of the
+first non-empty register in a fixed pseudo-random order of its own (Shrivastava, *Optimal
+Densification for Fast and Accurate Minwise Hashing*, ICML 2017). That keeps the agreement
+probability per register at `J`, and the sketch itself is not changed. Densifying is a few
+operations per register while most registers are filled, and grows as a sketch gets
+emptier. Sketches of the empty set have nothing to borrow, so they all share every bucket and
+are returned for each other, consistent with `EstimateJaccard` reporting `1` for two empty
+sketches.
+
+### Constructors
+
+```csharp
+public MinHashLshIndex(
+    double threshold,
+    int precision = 8,
+    IEqualityComparer<TKey>? keyComparer = null)
+
+public MinHashLshIndex(
+    int bandCount,
+    int rowsPerBand,
+    int precision = 8,
+    IEqualityComparer<TKey>? keyComparer = null)
+```
+
+The first overload places the curve's knee at `threshold`. The second takes the band layout
+directly. `precision` is the `MinHashSketch.Precision` every added or queried sketch must
+have. Keys are compared with `keyComparer`, or `EqualityComparer<TKey>.Default`.
+
+**Throws:** `ArgumentOutOfRangeException` if `threshold` is not strictly between 0 and 1,
+`precision` is outside `[4, 16]`, `bandCount` or `rowsPerBand` is below 1, or
+`bandCount · rowsPerBand` exceeds `2^precision`.
+
+### Methods and properties
+
+- `void Add(TKey key, MinHashSketch<T, THasher> sketch)` — indexes `key` under the sketch's
+  current registers. Throws `ArgumentException` if the key is already present.
+- `bool TryAdd(TKey key, MinHashSketch<T, THasher> sketch)` — the same, returning `false`
+  and changing nothing if the key is already present.
+- `bool Remove(TKey key)` — removes the key from every bucket; `false` if it was absent.
+- `bool ContainsKey(TKey key)`, `int Count { get; }`, `void Clear()` — the usual
+  members. `Clear()` keeps the capacity, and clearing an empty index does not invalidate
+  enumerators.
+- `int Query(MinHashSketch<T, THasher> sketch, ICollection<TKey> results)` — appends each
+  candidate once and returns how many it appended. The index allocates nothing; `results`
+  may grow. A query does not modify the index, so concurrent queries with no concurrent
+  writer are safe.
+- `List<TKey> Query(MinHashSketch<T, THasher> sketch)` — the same, into a new list.
+- `double CandidateProbability(double jaccard)` — `1 − (1 − J^r)^b`, the chance a pair with
+  that similarity is returned under ideal MinHash.
+- `static (int BandCount, int RowsPerBand) GetOptimalParameters(double threshold, int precision)`
+  — the search the threshold constructor runs: about a millisecond at precision 8, on the
+  order of a second at 16.
+- `int BandCount`, `int RowsPerBand`, `int Precision`, `IEqualityComparer<TKey> KeyComparer`.
+- `GetEnumerator()` — a struct enumerator over the keys, in no particular order.
+
+Every method that takes a sketch throws `ArgumentNullException` for a `null` sketch and
+`ArgumentException` if its precision differs from the index's. `null` keys throw
+`ArgumentNullException`.
+
+### Performance
+
+100,000 or 1,000 stored sets of 200 random elements, sketched at precision 8. Every 100th set
+is an original followed by four copies with 10% of their elements replaced (`J ≈ 0.82`); the
+rest are unrelated. Each invocation runs 16 queries spread over the originals (at 1,000 sets
+there are only ten, so some appear twice). The baseline is
+`MinHashSketch`'s own answer: a `List` of sketches scanned with `EstimateJaccard`, keeping
+those at or above 0.5. The index is built for the same 0.5 threshold, and both sides return
+the original and its four copies. Local default-job BenchmarkDotNet run on an Apple M4,
+.NET 10. The CI series on the [dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/)
+is the contract.
+
+| 16 queries | 1,000 stored sets | 100,000 stored sets |
+| --- | ---: | ---: |
+| `MinHashLshIndex.Query` | 16.8 µs | 17.6 µs |
+| `List` scan with `EstimateJaccard` | 5,403 µs (322x) | 538,844 µs (~30,600x) |
+| Allocated | 0 B vs 0 B | 0 B vs 0 B |
+
+The scan grows linearly with the stored sets; the index does not. What the index costs
+instead is building it and holding it. A Stopwatch probe at 100,000 keys measured adds at
+about 5 µs each at 42 bands (a 0.5 threshold) and 3 µs at 17 bands (0.8), and the index
+retained about 2.3 KB and 0.9 KB per key, including growth slack. That is on top of any
+sketches you keep to verify candidates.
+
+### Choosing it
+
+Reach for `MinHashLshIndex` when you hold **many** sets and need the ones similar to a given
+set: deduplicating a crawled-page or document corpus, finding near-copies of a record,
+grouping by overlap. Build a sketch per set, index them, and verify the candidates a query
+returns.
+
+Use something else when:
+
+- you compare **one pair** at a time: `MinHashSketch.EstimateJaccard` directly;
+- only **exact** duplicates matter: hash the whole set and use a dictionary;
+- you have a few hundred sets: the scan is short, and exact;
+- a missed near-duplicate is unacceptable: the scan, or an index with a lower threshold
+  than the one you verify against, so the curve is near 1 at your real cut-off.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+static MinHashSketch<string, StringXxHash64Hasher> Sketch(string text)
+{
+    string[] words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    var sketch = new MinHashSketch<string, StringXxHash64Hasher>();
+    for (int i = 0; i + 2 < words.Length; i++)
+        sketch.Add($"{words[i]} {words[i + 1]} {words[i + 2]}");
+    return sketch;
+}
+
+var sketches = new Dictionary<string, MinHashSketch<string, StringXxHash64Hasher>>();
+var index = new MinHashLshIndex<string, string, StringXxHash64Hasher>(threshold: 0.7);
+foreach (var (url, text) in pages)
+{
+    var sketch = Sketch(text);
+    sketches[url] = sketch;
+    index.Add(url, sketch);
+}
+
+// Candidates for one new page, verified before use.
+var incoming = Sketch(newPageText);
+foreach (string url in index.Query(incoming))
+{
+    if (incoming.EstimateJaccard(sketches[url]) >= 0.8)
+        Console.WriteLine($"near-duplicate of {url}");
+}
 ```
 
 ## CountMinSketch&lt;T, THasher&gt;
