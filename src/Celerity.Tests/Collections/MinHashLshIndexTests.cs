@@ -155,6 +155,40 @@ public class MinHashLshIndexTests
     }
 
     [Theory]
+    [InlineData(12, 0.99, 13, 315)]   // a 32-interval grid chose (10, 409), missing the knee
+    [InlineData(12, 0.02, 4096, 1)]
+    [InlineData(10, 0.97, 9, 113)]
+    public void GetOptimalParameters_ShouldResolveSteepCurves_AtHighPrecisionAndExtremeThresholds(
+        int precision, double threshold, int rivalBands, int rivalRows)
+    {
+        // Integrate the chosen layout and a strong rival on a very fine grid; the search must not
+        // pick a layout measurably worse than the rival.
+        static double Error(double t, int b, int r)
+        {
+            const int Steps = 200_000;
+            double fp = 0, fn = 0;
+            for (int i = 0; i < Steps; i++)
+            {
+                double s = (i + 0.5) / Steps;
+                double p = 1 - Math.Pow(1 - Math.Pow(s, r), b);
+                if (s < t)
+                    fp += p / Steps;
+                else
+                    fn += (1 - p) / Steps;
+            }
+
+            return fp + fn;
+        }
+
+        var (bands, rows) = MinHashLshIndex<int, int, Int32Murmur3Hasher>.GetOptimalParameters(threshold, precision);
+
+        Assert.InRange(bands * rows, 1, 1 << precision);
+        double chosen = Error(threshold, bands, rows);
+        double rival = Error(threshold, rivalBands, rivalRows);
+        Assert.True(chosen <= rival * 1.01 + 1e-6, $"chose ({bands}, {rows}) with {chosen}, rival {rival}");
+    }
+
+    [Theory]
     [InlineData(0d)]
     [InlineData(1d)]
     [InlineData(double.NaN)]
@@ -428,6 +462,42 @@ public class MinHashLshIndexTests
 
         Assert.Equal(new[] { "empty1", "empty2" }, index.Query(Sketch(Array.Empty<int>())).OrderBy(k => k));
         Assert.Equal(new[] { "full" }, index.Query(Sketch(0, 100)));
+    }
+
+    [Fact]
+    public void EmptySketches_ShouldNotMatch_ASetWhoseHashIsAllOnes()
+    {
+        // The one element's full hash is ulong.MaxValue, the constant an empty sketch's rows are
+        // filled with; without a seed of their own the two matched every band.
+        var index = new MinHashLshIndex<int, int, AllOnesHasher>(0.5);
+        var empty = new MinHashSketch<int, AllOnesHasher>();
+        var ones = new MinHashSketch<int, AllOnesHasher>(new[] { 7 });
+        index.Add(0, empty);
+        index.Add(1, ones);
+
+        Assert.Equal(0d, empty.EstimateJaccard(ones));
+        Assert.Equal(new[] { 0 }, index.Query(empty));
+        Assert.Equal(new[] { 1 }, index.Query(ones));
+    }
+
+    private struct AllOnesHasher : IHashProvider<int>, IHashProvider64<int>
+    {
+        public int Hash(int key) => -1;
+
+        public ulong Hash64(int key) => ulong.MaxValue;
+    }
+
+    [Theory]
+    [InlineData(16, 8_192)]   // one register in eight filled: walked, not scanned
+    [InlineData(16, 40)]      // sparse: scanned
+    public void LargeSketches_ShouldDensifyEitherWay_AndStillMatchThemselves(int precision, int elements)
+    {
+        var index = new MinHashLshIndex<int, int, Int32Murmur3Hasher>(bandCount: 4096, rowsPerBand: 16, precision);
+        var sketch = Sketch(0, elements, precision);
+        index.Add(1, sketch);
+        index.Add(2, Sketch(1_000_000, elements, precision));
+
+        Assert.Equal(new[] { 1 }, index.Query(sketch));
     }
 
     [Theory]

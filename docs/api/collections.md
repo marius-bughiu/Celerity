@@ -4930,10 +4930,11 @@ agree on every register of at least one band. Each register agrees with probabil
 the candidate probability is an S-curve in `J`: near 0 well below its knee, near 1 well
 above it, with the knee close to `(1/b)^(1/r)`.
 
-The threshold constructor chooses `b` and `r` with `GetOptimalParameters`, which tries every
-pair with `b · r ≤ 2^precision` and keeps the one with the smallest false-positive area
-(the curve integrated below the threshold) plus false-negative area (one minus the curve,
-integrated above it). At the default precision 8, a 0.5 threshold gives 42 bands of 6 rows
+The threshold constructor chooses `b` and `r` with `GetOptimalParameters`, which tries the
+pairs with `b · r ≤ 2^precision` whose curve crosses within 0.25 of the threshold and keeps
+the one with the smallest false-positive area (the curve integrated below the threshold) plus
+false-negative area (one minus the curve, integrated above it). The areas are integrated
+adaptively, so the steep curves of many-row layouts are resolved. At the default precision 8, a 0.5 threshold gives 42 bands of 6 rows
 and a 0.8 threshold 17 bands of 15.
 
 `MinHashSketch` is a one-permutation sketch, so a set with fewer elements than registers
@@ -4944,7 +4945,8 @@ first non-empty register in a fixed pseudo-random order of its own (Shrivastava,
 Densification for Fast and Accurate Minwise Hashing*, ICML 2017). That keeps the agreement
 probability per register at `J`, and the sketch itself is not changed. Densifying is a few
 operations per register while most registers are filled, and grows as a sketch gets
-emptier. Sketches of the empty set have nothing to borrow, so they all share every bucket and
+emptier, to at most about `m^1.5` steps for `m` registers (under a millisecond at the default
+precision). Sketches of the empty set have nothing to borrow, so they all share every bucket and
 are returned for each other, consistent with `EstimateJaccard` reporting `1` for two empty
 sketches.
 
@@ -4989,8 +4991,9 @@ have. Keys are compared with `keyComparer`, or `EqualityComparer<TKey>.Default`.
 - `double CandidateProbability(double jaccard)` — `1 − (1 − J^r)^b`, the chance a pair with
   that similarity is returned under ideal MinHash.
 - `static (int BandCount, int RowsPerBand) GetOptimalParameters(double threshold, int precision)`
-  — the search the threshold constructor runs: about a millisecond at precision 8, on the
-  order of a second at 16.
+  — the search the threshold constructor runs: several milliseconds at precision 8 and a
+  second or more at 16. To build many indexes with one layout, call it once and use the
+  explicit constructor.
 - `int BandCount`, `int RowsPerBand`, `int Precision`, `IEqualityComparer<TKey> KeyComparer`.
 - `GetEnumerator()` — a struct enumerator over the keys, in no particular order.
 
@@ -5012,8 +5015,8 @@ is the contract.
 
 | 16 queries | 1,000 stored sets | 100,000 stored sets |
 | --- | ---: | ---: |
-| `MinHashLshIndex.Query` | 17.8 µs | 19.8 µs |
-| `List` scan with `EstimateJaccard` | 5,496 µs (309x) | 540,001 µs (~27,200x) |
+| `MinHashLshIndex.Query` | 19.3 µs | 22.4 µs |
+| `List` scan with `EstimateJaccard` | 5,479 µs (284x) | 541,866 µs (~24,200x) |
 | Allocated | 0 B vs 0 B | 0 B vs 0 B |
 
 The scan grows linearly with the stored sets; the index does not. What the index costs

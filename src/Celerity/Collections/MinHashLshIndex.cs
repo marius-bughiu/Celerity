@@ -46,8 +46,8 @@ namespace Celerity.Collections;
 /// register borrows the value of the first non-empty register in a fixed pseudo-random order of its
 /// own (Shrivastava, <em>Optimal Densification for Fast and Accurate Minwise Hashing</em>,
 /// ICML&#160;2017), which keeps the per-register agreement probability at <c>J</c>. The sketch
-/// itself is not changed. Densifying costs more as a sketch gets emptier; it is a few operations
-/// per register while most registers are filled. Sketches of the empty set have no values to
+/// itself is not changed. Densifying costs more as a sketch gets emptier: a few operations
+/// per register while most registers are filled, and at most about <c>m^1.5</c> steps in all. Sketches of the empty set have no values to
 /// borrow, so they all share every bucket and are returned for each other, consistent with
 /// <see cref="MinHashSketch{T,THasher}.EstimateJaccard"/> reporting <c>1</c> for two empty sketches.
 /// </para>
@@ -86,6 +86,9 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     private const int FreeSlot = -2;
 
     private const ulong Golden = 0x9E3779B97F4A7C15UL;
+
+    // Mixed into the band seeds of an empty sketch; see ComputeBandHashes.
+    private const ulong EmptyTag = 0xD6E8FEB86659FD93UL;
 
     private readonly int _precision;
     private readonly int _bandCount;
@@ -247,11 +250,13 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     /// is out of range.
     /// </exception>
     /// <remarks>
-    /// Every pair with <c>b · r ≤ 2^precision</c> is tried, and the one with the smallest
-    /// false-positive area (the curve integrated over <c>[0, threshold]</c>) plus false-negative
-    /// area (one minus the curve, integrated over <c>[threshold, 1]</c>) wins. The search is
-    /// <c>O(m log m)</c> curve integrations for <c>m = 2^precision</c> registers: about a
-    /// millisecond at the default precision, and on the order of a second at the maximum.
+    /// Of the pairs with <c>b · r ≤ 2^precision</c> whose curve crosses within 0.25 of the
+    /// threshold, the one with the smallest false-positive area (the curve integrated over
+    /// <c>[0, threshold]</c>) plus false-negative area (one minus the curve, integrated over
+    /// <c>[threshold, 1]</c>) wins; the areas are integrated adaptively, so steep curves are
+    /// resolved. The search takes several milliseconds at the default precision and grows with
+    /// the register count, to a second or more at the maximum; to build many indexes with one
+    /// layout, call it once and pass the result to the explicit constructor.
     /// </remarks>
     public static (int BandCount, int RowsPerBand) GetOptimalParameters(double threshold, int precision)
     {
@@ -268,6 +273,15 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
             int maxRows = registers / bands;
             for (int rows = 1; rows <= maxRows; rows++)
             {
+                // The curve crosses from low to high near (1/b)^(1/r), which rises with r. A layout
+                // whose crossing is far from the threshold puts a wide band of similarities on the
+                // wrong side and cannot be the best, so it is not integrated.
+                double knee = Math.Pow(bands, -1d / rows);
+                if (knee < threshold - KneeWindow)
+                    continue;
+                if (knee > threshold + KneeWindow)
+                    break;
+
                 double error = FalsePositiveArea(threshold, bands, rows) + FalseNegativeArea(threshold, bands, rows);
                 if (error < bestError)
                 {
@@ -585,10 +599,13 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
 
         try
         {
-            Densify(registers, dense, _precision);
+            // An empty sketch has no hashes to band, so it is banded from a seed of its own: filling
+            // its rows with any 64-bit constant would collide with a set whose one element hashes
+            // to that constant.
+            ulong tag = Densify(registers, dense, _precision) ? 0 : EmptyTag;
             for (int band = 0; band < destination.Length; band++)
             {
-                ulong hash = Mix64(((ulong)band + 1) * Golden);
+                ulong hash = Mix64((((ulong)band + 1) * Golden) ^ tag);
                 ReadOnlySpan<ulong> rows = dense.Slice(band * _rowsPerBand, _rowsPerBand);
                 for (int row = 0; row < rows.Length; row++)
                     hash = Mix64(hash ^ rows[row]);
@@ -602,45 +619,51 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
         }
     }
 
-    // Fills dense[i] for i < dense.Length with the full 64-bit hash of the element register i holds
+    // Returns false, with dense filled by a constant, for a sketch with no filled register.
+    // Otherwise fills dense[i] for i < dense.Length with the full 64-bit hash of the element register i holds
     // (its index in the top bits, its value below) or, when register i is empty, of the element in
     // the first non-empty register in register i's own probe order. That order is the
     // affine permutation t -> (a·t + c) mod m with a odd, both drawn from a hash of i, so it is the
     // same for every sketch and independent of their contents — which is all the collision
-    // argument needs. The first ProbeLimit steps are walked directly; past them the donor is the
-    // non-empty register with the smallest position in the order, found by inverting the
-    // permutation, which is the same register the walk would have reached.
-    private static void Densify(ReadOnlySpan<ulong> registers, Span<ulong> dense, int precision)
+    // argument needs. The donor is found either by walking the order or, for a sparse sketch after
+    // ProbeLimit steps, as the filled register with the smallest position in it, by inverting the
+    // permutation; both give the same register.
+    private static bool Densify(ReadOnlySpan<ulong> registers, Span<ulong> dense, int precision)
     {
         if (!registers.ContainsAnyExcept(MinHashSketch<T, THasher>.EmptyRegister))
         {
             dense.Fill(MinHashSketch<T, THasher>.EmptyRegister);
-            return;
+            return false;
         }
 
         ulong mask = (1UL << precision) - 1;
 
-        // The non-empty registers, listed the first time a register needs the fallback.
         int[]? rented = null;
         Span<int> filled = registers.Length <= StackScratchLimit * 2
             ? stackalloc int[StackScratchLimit * 2]
             : (rented = ArrayPool<int>.Shared.Rent(registers.Length));
-        int filledCount = -1;
 
         try
         {
+            // Both routes find the same donor, so the cheaper one can be chosen per sketch. Walking
+            // the order takes about m / k steps per empty register and the scan k, so walk when
+            // k² ≥ m; the scan still tries a few steps of the walk first, and lists the filled
+            // registers only once one needs it. Either way the pass is at most about m^1.5 steps.
+            long filledCount = registers.Length - registers.Count(MinHashSketch<T, THasher>.EmptyRegister);
+            ulong walkLimit = filledCount * filledCount >= registers.Length ? ulong.MaxValue : ProbeLimit;
+            int listed = -1;
             int valueBits = 64 - precision;
             for (int i = 0; i < dense.Length; i++)
             {
                 int source = i;
                 if (registers[i] == MinHashSketch<T, THasher>.EmptyRegister)
                 {
-                    source = ProbeDonor(registers, i, mask);
+                    source = ProbeDonor(registers, i, mask, walkLimit);
                     if (source < 0)
                     {
-                        if (filledCount < 0)
-                            filledCount = ListFilled(registers, filled);
-                        source = FallbackDonor(filled[..filledCount], i, mask);
+                        if (listed < 0)
+                            listed = ListFilled(registers, filled);
+                        source = FallbackDonor(filled[..listed], i, mask);
                     }
                 }
 
@@ -655,13 +678,16 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
             if (rented is not null)
                 ArrayPool<int>.Shared.Return(rented);
         }
+
+        return true;
     }
 
-    // Walks the first ProbeLimit steps of register's order; -1 if every one is empty.
-    private static int ProbeDonor(ReadOnlySpan<ulong> registers, int register, ulong mask)
+    // Walks the first `limit` steps of register's order; -1 if every one is empty. The order is a
+    // permutation, so an unbounded walk over a sketch with a filled register always finds one.
+    private static int ProbeDonor(ReadOnlySpan<ulong> registers, int register, ulong mask, ulong limit)
     {
         (ulong multiplier, ulong offset) = Order(register);
-        for (ulong step = 0; step < ProbeLimit; step++)
+        for (ulong step = 0; step < limit; step++)
         {
             int candidate = (int)((multiplier * step + offset) & mask);
             if (registers[candidate] != MinHashSketch<T, THasher>.EmptyRegister)
@@ -734,25 +760,62 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     private static double Curve(double jaccard, int bands, int rows)
         => 1d - Math.Pow(1d - Math.Pow(jaccard, rows), bands);
 
-    // Simpson's rule over 32 intervals; the curve is smooth, and the search only compares areas.
-    private const int Intervals = 32;
+    // Adaptive Simpson's rule. A fixed grid misses the knee of a steep curve (many rows, a
+    // threshold near 0 or 1), which is exactly where the search has to tell layouts apart, so the
+    // range is cut into Pieces and each is refined until two halves agree to within Tolerance or
+    // MaxDepth halvings, the finest step being 1 / (Pieces · 2^MaxDepth) of the range.
+    private const int Pieces = 16;
+
+    // How far from the threshold a layout's crossing may sit and still be integrated.
+    private const double KneeWindow = 0.25;
+    private const int MaxDepth = 12;
+    private const double Tolerance = 1e-10;
 
     private static double FalsePositiveArea(double threshold, int bands, int rows)
-    {
-        double width = threshold / Intervals;
-        double sum = Curve(0d, bands, rows) + Curve(threshold, bands, rows);
-        for (int i = 1; i < Intervals; i++)
-            sum += (i % 2 == 1 ? 4d : 2d) * Curve(i * width, bands, rows);
-        return sum * width / 3d;
-    }
+        => Area(0d, threshold, bands, rows, complement: false);
 
     private static double FalseNegativeArea(double threshold, int bands, int rows)
+        => Area(threshold, 1d, bands, rows, complement: true);
+
+    private static double Area(double from, double to, int bands, int rows, bool complement)
     {
-        double width = (1d - threshold) / Intervals;
-        double sum = 2d - Curve(threshold, bands, rows) - Curve(1d, bands, rows);
-        for (int i = 1; i < Intervals; i++)
-            sum += (i % 2 == 1 ? 4d : 2d) * (1d - Curve(threshold + i * width, bands, rows));
-        return sum * width / 3d;
+        double width = (to - from) / Pieces;
+        double total = 0d;
+        for (int piece = 0; piece < Pieces; piece++)
+        {
+            double a = from + piece * width;
+            double b = piece == Pieces - 1 ? to : a + width;
+            double fa = Integrand(a, bands, rows, complement);
+            double fb = Integrand(b, bands, rows, complement);
+            double fm = Integrand((a + b) / 2, bands, rows, complement);
+            double whole = (b - a) / 6 * (fa + 4 * fm + fb);
+            total += Refine(a, b, fa, fm, fb, whole, Tolerance / Pieces, MaxDepth, bands, rows, complement);
+        }
+
+        return total;
+    }
+
+    private static double Refine(
+        double a, double b, double fa, double fm, double fb, double whole,
+        double tolerance, int depth, int bands, int rows, bool complement)
+    {
+        double m = (a + b) / 2;
+        double flm = Integrand((a + m) / 2, bands, rows, complement);
+        double frm = Integrand((m + b) / 2, bands, rows, complement);
+        double left = (m - a) / 6 * (fa + 4 * flm + fm);
+        double right = (b - m) / 6 * (fm + 4 * frm + fb);
+        double delta = left + right - whole;
+        if (depth == 0 || Math.Abs(delta) <= 15 * tolerance)
+            return left + right + delta / 15;
+
+        return Refine(a, m, fa, flm, fm, left, tolerance / 2, depth - 1, bands, rows, complement)
+            + Refine(m, b, fm, frm, fb, right, tolerance / 2, depth - 1, bands, rows, complement);
+    }
+
+    private static double Integrand(double s, int bands, int rows, bool complement)
+    {
+        double p = Curve(s, bands, rows);
+        return complement ? 1d - p : p;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
