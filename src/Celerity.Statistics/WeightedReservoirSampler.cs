@@ -91,9 +91,9 @@ public class WeightedReservoirSampler<T, TRng> : IReadOnlyList<T>
     /// <summary>
     /// The largest threshold key, in magnitude, at which the jump is drawn. Inside it the jump
     /// <c>−ln(U) · e^{−key}</c> is a normal double for every draw (between about <c>1.7e-307</c>
-    /// and <c>4.5e292</c>), so the countdown is exact. Outside it, which takes weights beyond about
-    /// <c>1e±290</c>, the jump would overflow or lose its precision as a subnormal, and the
-    /// sampler draws a key per item instead.
+    /// and <c>4.5e292</c>), avoiding overflow and subnormal precision loss in the jump. The
+    /// countdown remains subject to floating-point rounding. Outside it, which takes weights
+    /// beyond about <c>1e±290</c>, the sampler draws a key per item instead.
     /// </summary>
     private const double JumpKeyLimit = 670d;
 
