@@ -491,6 +491,44 @@ public class MinHashLshIndexTests
         Assert.Throws<InvalidOperationException>(() => index.Query(Sketch(0, 100), results));
     }
 
+    [Fact]
+    public void TryAdd_ShouldLeaveTheIndexUnchanged_WhenTheKeyComparerThrowsWhileInserting()
+    {
+        var comparer = new ThrowingComparer();
+        var index = new MinHashLshIndex<int, int, Int32Murmur3Hasher>(0.5, keyComparer: comparer);
+        index.Add(1, Sketch(0, 100));
+        index.Add(2, Sketch(1000, 100));
+        index.Remove(1);   // leaves a free slot, so the failed add would have consumed it
+        var sketch = Sketch(5000, 100);
+
+        // TryAdd hashes the key once to look it up and again to insert it; fail the second.
+        comparer.ThrowAfter = 1;
+        Assert.Throws<InvalidOperationException>(() => index.TryAdd(3, sketch));
+        comparer.ThrowAfter = int.MaxValue;
+
+        Assert.Equal(1, index.Count);
+        Assert.Equal(new[] { 2 }, index.ToArray());
+        Assert.Empty(index.Query(sketch));
+        Assert.True(index.TryAdd(3, sketch));
+        Assert.True(index.TryAdd(4, Sketch(9000, 100)));
+        Assert.Equal(new[] { 3 }, index.Query(sketch));
+        Assert.Equal(new[] { 2, 3, 4 }, index.OrderBy(k => k));
+    }
+
+    private sealed class ThrowingComparer : IEqualityComparer<int>
+    {
+        public int ThrowAfter { get; set; } = int.MaxValue;
+
+        public bool Equals(int x, int y) => x == y;
+
+        public int GetHashCode(int obj)
+        {
+            if (ThrowAfter-- <= 0)
+                throw new InvalidOperationException("comparer failed");
+            return obj;
+        }
+    }
+
     // A results collection whose Add removes the key it is given from the index.
     private sealed class RemovingCollection(MinHashLshIndex<int, int, Int32Murmur3Hasher> index) : List<int>, ICollection<int>
     {

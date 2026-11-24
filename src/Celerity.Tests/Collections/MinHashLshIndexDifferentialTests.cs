@@ -56,7 +56,8 @@ public class MinHashLshIndexDifferentialTests
         return (int)(((z | 1) * (ulong)step + (z >> 32)) & (Registers - 1));
     }
 
-    // Walks each empty register's whole order, which reaches every register once.
+    // Walks each empty register's whole order, which reaches every register once, and returns
+    // each element's full hash (register index on top, value below), as the index bands it.
     private static ulong[] Densify(ulong[] registers)
     {
         if (registers.All(v => v == Empty))
@@ -65,9 +66,10 @@ public class MinHashLshIndexDifferentialTests
         var dense = new ulong[Registers];
         for (int i = 0; i < Registers; i++)
         {
-            dense[i] = registers[i];
-            for (int step = 0; dense[i] == Empty; step++)
-                dense[i] = registers[Probe(i, step)];
+            int source = i;
+            for (int step = 0; registers[source] == Empty; step++)
+                source = Probe(i, step);
+            dense[i] = ((ulong)source << (64 - Precision)) | registers[source];
         }
 
         return dense;
@@ -82,6 +84,21 @@ public class MinHashLshIndexDifferentialTests
         }
 
         return false;
+    }
+
+    [Fact]
+    public void DisjointSingletons_ShouldNotMatch_WhenTheirValuesCoincideInDifferentRegisters()
+    {
+        // {0} and {1} both store value 0, in registers 0 and 1. Densified by value alone, both
+        // became sixteen zeroes and matched every band despite estimating a Jaccard of 0.
+        var index = new MinHashLshIndex<int, int, RegisterValueHasher>(Registers, 1, Precision);
+        var zero = new MinHashSketch<int, RegisterValueHasher>(new[] { 0 }, Precision);
+        var one = new MinHashSketch<int, RegisterValueHasher>(new[] { 1 }, Precision);
+        index.Add(0, zero);
+
+        Assert.Equal(0d, zero.EstimateJaccard(one));
+        Assert.Empty(index.Query(one));
+        Assert.Equal(new[] { 0 }, index.Query(zero));
     }
 
     private enum Op { Add, Remove, Query, Clear }

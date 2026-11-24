@@ -94,8 +94,9 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     // Key -> entry slot.
     private readonly Dictionary<TKey, int> _entryOf;
 
-    // Band hash -> the first node of that bucket's chain.
-    private readonly Dictionary<ulong, int> _heads;
+    // Per band: band hash -> the first node of that bucket's chain. One map per band, so a node
+    // reached from band j's map always belongs to band j.
+    private readonly Dictionary<ulong, int>[] _heads;
 
     // Per entry slot: the key. Per node (entry * _bandCount + band): the band's hash and the chain
     // links. A free slot has _nodePrev[slot * _bandCount] == FreeSlot and keeps the next free slot
@@ -181,7 +182,9 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
         _bandCount = bandCount;
         _rowsPerBand = rowsPerBand;
         _entryOf = new Dictionary<TKey, int>(keyComparer);
-        _heads = new Dictionary<ulong, int>();
+        _heads = new Dictionary<ulong, int>[bandCount];
+        for (int band = 0; band < bandCount; band++)
+            _heads[band] = new Dictionary<ulong, int>();
         _keys = Array.Empty<TKey>();
         _nodeHash = Array.Empty<ulong>();
         _nodeNext = Array.Empty<int>();
@@ -314,7 +317,8 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
         // failed add leaves the index as it was.
         if (_freeHead < 0 && _used == _keys.Length)
             Grow();
-        _heads.EnsureCapacity(_heads.Count + _bandCount);
+        foreach (Dictionary<ulong, int> heads in _heads)
+            heads.EnsureCapacity(heads.Count + 1);
         _entryOf.EnsureCapacity(_count + 1);
 
         ulong[]? rented = null;
@@ -340,23 +344,21 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     // allocates: TryAdd reserved the capacity.
     private void Link(TKey key, ReadOnlySpan<ulong> hashes)
     {
-        int slot;
+        // The key map goes first: it is the one step that calls out (to the key comparer), so if
+        // that throws, no slot or bucket has been touched yet.
+        int slot = _freeHead >= 0 ? _freeHead : _used;
+        _entryOf.Add(key, slot);
         if (_freeHead >= 0)
-        {
-            slot = _freeHead;
             _freeHead = _nodeNext[slot * _bandCount];
-        }
         else
-        {
-            slot = _used++;
-        }
+            _used++;
 
         int baseNode = slot * _bandCount;
         hashes.CopyTo(_nodeHash.AsSpan(baseNode, _bandCount));
         for (int band = 0; band < _bandCount; band++)
         {
             int node = baseNode + band;
-            ref int head = ref CollectionsMarshal.GetValueRefOrAddDefault(_heads, hashes[band], out bool exists);
+            ref int head = ref CollectionsMarshal.GetValueRefOrAddDefault(_heads[band], hashes[band], out bool exists);
             int next = exists ? head : -1;
             _nodeNext[node] = next;
             _nodePrev[node] = -1;
@@ -366,7 +368,6 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
         }
 
         _keys[slot] = key;
-        _entryOf.Add(key, slot);
         _count++;
         _version++;
     }
@@ -393,9 +394,9 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
             if (prev >= 0)
                 _nodeNext[prev] = next;
             else if (next >= 0)
-                _heads[_nodeHash[node]] = next;
+                _heads[band][_nodeHash[node]] = next;
             else
-                _heads.Remove(_nodeHash[node]);
+                _heads[band].Remove(_nodeHash[node]);
         }
 
         _keys[slot] = default!;
@@ -427,7 +428,8 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
             return;
 
         _entryOf.Clear();
-        _heads.Clear();
+        foreach (Dictionary<ulong, int> heads in _heads)
+            heads.Clear();
         if (RuntimeHelpers.IsReferenceOrContainsReferences<TKey>())
             Array.Clear(_keys, 0, _used);
         _used = 0;
@@ -473,7 +475,7 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
             int version = _version;
             for (int band = 0; band < _bandCount; band++)
             {
-                if (!_heads.TryGetValue(query[band], out int node))
+                if (!_heads[band].TryGetValue(query[band], out int node))
                     continue;
 
                 while (node >= 0)
@@ -600,8 +602,9 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
         }
     }
 
-    // Fills dense[i] for i < dense.Length with register i, or, when register i is empty, with the
-    // value of the first non-empty register in register i's own probe order. That order is the
+    // Fills dense[i] for i < dense.Length with the full 64-bit hash of the element register i holds
+    // (its index in the top bits, its value below) or, when register i is empty, of the element in
+    // the first non-empty register in register i's own probe order. That order is the
     // affine permutation t -> (a·t + c) mod m with a odd, both drawn from a hash of i, so it is the
     // same for every sketch and independent of their contents — which is all the collision
     // argument needs. The first ProbeLimit steps are walked directly; past them the donor is the
@@ -626,23 +629,25 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
 
         try
         {
+            int valueBits = 64 - precision;
             for (int i = 0; i < dense.Length; i++)
             {
-                ulong value = registers[i];
-                if (value == MinHashSketch<T, THasher>.EmptyRegister)
+                int source = i;
+                if (registers[i] == MinHashSketch<T, THasher>.EmptyRegister)
                 {
-                    int donor = ProbeDonor(registers, i, mask);
-                    if (donor < 0)
+                    source = ProbeDonor(registers, i, mask);
+                    if (source < 0)
                     {
                         if (filledCount < 0)
                             filledCount = ListFilled(registers, filled);
-                        donor = FallbackDonor(filled[..filledCount], i, mask);
+                        source = FallbackDonor(filled[..filledCount], i, mask);
                     }
-
-                    value = registers[donor];
                 }
 
-                dense[i] = value;
+                // The register a value sits in is the top bits of the element's hash, so put them
+                // back: two elements in different registers can share the low bits, and a
+                // borrowed value must still name the element it came from.
+                dense[i] = ((ulong)source << valueBits) | registers[source];
             }
         }
         finally

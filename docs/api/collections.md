@@ -5012,14 +5012,14 @@ is the contract.
 
 | 16 queries | 1,000 stored sets | 100,000 stored sets |
 | --- | ---: | ---: |
-| `MinHashLshIndex.Query` | 16.8 µs | 17.6 µs |
-| `List` scan with `EstimateJaccard` | 5,403 µs (322x) | 538,844 µs (~30,600x) |
+| `MinHashLshIndex.Query` | 17.8 µs | 19.8 µs |
+| `List` scan with `EstimateJaccard` | 5,496 µs (309x) | 540,001 µs (~27,200x) |
 | Allocated | 0 B vs 0 B | 0 B vs 0 B |
 
 The scan grows linearly with the stored sets; the index does not. What the index costs
 instead is building it and holding it. A Stopwatch probe at 100,000 keys measured adds at
 about 5 µs each at 42 bands (a 0.5 threshold) and 3 µs at 17 bands (0.8), and the index
-retained about 2.3 KB and 0.9 KB per key, including growth slack. That is on top of any
+retained about 2.2 KB and 0.9 KB per key, including growth slack. That is on top of any
 sketches you keep to verify candidates.
 
 ### Choosing it
