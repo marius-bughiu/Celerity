@@ -61,6 +61,7 @@ internal static class Differential
         ("RankedMultiSet", RankedMultiSetCase),
         ("LfuCache", LfuCacheCase),
         ("SieveCache", SieveCacheCase),
+        ("TinyLfuCache", TinyLfuCacheCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -68,6 +69,7 @@ internal static class Differential
         ("BloomFilter", BloomFilterCase),
         ("CuckooFilter", CuckooFilterCase),
         ("XorFilter", XorFilterCase),
+        ("MinimalPerfectHash", MinimalPerfectHashCase),
         ("BitSet", BitSetCase),
         ("BitPackedArray", BitPackedArrayCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
@@ -1976,6 +1978,154 @@ internal static class Differential
         CheckSameSequence(sut.Select(e => e.Key), order, "enumeration");
     }
 
+    // TinyLfuCache vs a list-based reference W-TinyLFU: three Lists (window, probation, protected, each
+    // most-recently-used first) re-deriving the documented segment shares, candidate/victim choice,
+    // strict-win admission, promotion and demotion. The one input shared with the type under test is
+    // the frequency estimate, read from the SUT just before each insert, because the sketch's collisions
+    // are part of its output; the sketch itself is checked against exact counts in the xUnit suite.
+    // Most cases use capacities 1-24 over the shared key range, where the window is one entry and the
+    // protected share runs from zero up; one case in eight takes a capacity of 200-230 over a key domain
+    // of its own, so the window holds two entries and the main region actually fills.
+    private static void TinyLfuCacheCase(Random rng)
+    {
+        bool wide = rng.Next(0, 8) == 0;
+        int capacity = wide ? rng.Next(200, 231) : rng.Next(1, 25);
+        int keyLo = wide ? 0 : MinKey;
+        int keyHi = wide ? capacity + 30 : MaxKey;
+        var sut = new TinyLfuCache<int, int, Int32WangNaiveHasher>(capacity);
+
+        int windowCap = Math.Max(1, capacity / 100);
+        int mainCap = capacity - windowCap;
+        int protectedCap = mainCap * 4 / 5;
+        var window = new List<int>();
+        var probation = new List<int>();
+        var guarded = new List<int>();
+        var values = new Dictionary<int, int>();
+
+        void Use(int key)
+        {
+            if (window.Remove(key))
+            {
+                window.Insert(0, key);
+            }
+            else if (guarded.Remove(key))
+            {
+                guarded.Insert(0, key);
+            }
+            else
+            {
+                probation.Remove(key);
+                guarded.Insert(0, key);
+                if (guarded.Count > protectedCap)
+                {
+                    int demoted = guarded[^1];
+                    guarded.RemoveAt(guarded.Count - 1);
+                    probation.Insert(0, demoted);
+                }
+            }
+        }
+
+        void Put(int key, int value)
+        {
+            if (values.ContainsKey(key))
+            {
+                values[key] = value;
+                Use(key);
+                return;
+            }
+            if (values.Count == capacity)
+            {
+                int candidate = window[^1];
+                window.RemoveAt(window.Count - 1);
+                int evicted = candidate;
+                if (mainCap > 0)
+                {
+                    int victim = probation[^1];
+                    if (sut.GetFrequencyEstimate(candidate) > sut.GetFrequencyEstimate(victim))
+                    {
+                        evicted = victim;
+                        probation.RemoveAt(probation.Count - 1);
+                        probation.Insert(0, candidate);
+                    }
+                }
+                values.Remove(evicted);
+            }
+            else if (window.Count == windowCap)
+            {
+                int overflow = window[^1];
+                window.RemoveAt(window.Count - 1);
+                probation.Insert(0, overflow);
+            }
+            values[key] = value;
+            window.Insert(0, key);
+        }
+
+        int ops = wide ? rng.Next(0, 2000) : OpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int key = rng.Next(keyLo, keyHi + 1);
+            int value = rng.Next();
+            switch (rng.Next(0, 40))
+            {
+                case < 14:
+                    Put(key, value);
+                    sut.AddOrUpdate(key, value);
+                    break;
+                case < 28:
+                {
+                    bool hit = values.TryGetValue(key, out int expected);
+                    if (hit) Use(key);
+                    Check(sut.TryGet(key, out int actual) == hit, $"TryGet({key}) hit");
+                    Check(!hit || actual == expected, $"TryGet({key}) value");
+                    break;
+                }
+                case < 32:
+                {
+                    bool added = !values.ContainsKey(key);
+                    if (added) Put(key, value);
+                    Check(sut.TryAdd(key, value) == added, $"TryAdd({key})");
+                    break;
+                }
+                case < 36:
+                {
+                    bool removed = values.Remove(key);
+                    if (removed && !window.Remove(key) && !probation.Remove(key))
+                        guarded.Remove(key);
+                    Check(sut.Remove(key) == removed, $"Remove({key})");
+                    break;
+                }
+                case < 39:
+                    // A peek must not count as a use in either implementation.
+                    Check(sut.TryPeek(key, out int peeked) == values.ContainsKey(key), $"TryPeek({key})");
+                    Check(!values.TryGetValue(key, out int want) || peeked == want, $"TryPeek({key}) value");
+                    break;
+                default:
+                    if (rng.Next(0, 4) != 0)
+                        break; // keep Clear rare, so the segments fill and the sketch builds history
+                    sut.Clear();
+                    window.Clear();
+                    probation.Clear();
+                    guarded.Clear();
+                    values.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == values.Count, $"Count {sut.Count} != {values.Count}");
+        Check(sut.Count <= capacity, $"Count {sut.Count} exceeds capacity {capacity}");
+
+        for (int k = keyLo; k <= keyHi; k++)
+        {
+            bool expectedPresent = values.ContainsKey(k);
+            Check(sut.ContainsKey(k) == expectedPresent, $"ContainsKey({k})");
+            Check(sut.TryPeek(k, out int v) == expectedPresent, $"TryPeek({k})");
+            Check(!expectedPresent || v == values[k], $"value at {k}");
+        }
+
+        // The segments themselves: window, probation, protected, each newest first.
+        CheckSameSequence(sut.Select(e => e.Key), [.. window, .. probation, .. guarded], "enumeration");
+    }
+
     // LfuCache vs a sort-based reference LFU. The BCL has no cache of any policy, so the oracle is the
     // definition rather than a BCL type: every key carries its use count and the stamp of its most
     // recent use, and the eviction order is "lowest count first, oldest stamp breaking ties" — read off
@@ -2232,6 +2382,51 @@ internal static class Differential
         if (oracle.Count == 0)
             for (int k = MinKey; k <= MaxKey; k++)
                 Check(!sut.Contains(k), $"empty xor filter reported {k} present");
+    }
+
+    // ---- minimal perfect hash (build-once, exact on members) ----------------
+
+    // The function must be a bijection from the distinct keys onto [0, Count), with Count equal to the
+    // oracle's size. The shared tiny key domain would never fill a second level, so this case draws its own:
+    // up to 3,000 keys from a domain a few times wider, so duplicates still occur and later levels fill. Half
+    // the trials hash with a colliding hasher, so the exact table and the poison entries that keep its keys'
+    // positions clear are exercised alongside the levels, at a random gamma.
+    private static void MinimalPerfectHashCase(Random rng)
+    {
+        int size = rng.Next(0, 3000);
+        int domain = Math.Max(1, size * rng.Next(1, 4));
+        var keys = new int[size];
+        for (int i = 0; i < size; i++)
+            keys[i] = rng.Next(-domain, domain);
+
+        var oracle = new HashSet<int>(keys);
+        double gamma = 1.0 + rng.NextDouble() * 4.0;
+
+        if (rng.Next(2) == 0)
+            CheckMinimalPerfectHash(new MinimalPerfectHash<int, Int32WangNaiveHasher>(keys, gamma), oracle);
+        else
+            CheckMinimalPerfectHash(new MinimalPerfectHash<int, FuzzPairCollidingHasher>(keys, gamma), oracle);
+    }
+
+    private static void CheckMinimalPerfectHash<THasher>(MinimalPerfectHash<int, THasher> sut, HashSet<int> oracle)
+        where THasher : struct, IHashProvider<int>
+    {
+        Check(sut.Count == oracle.Count, $"distinct count {sut.Count} != oracle {oracle.Count}");
+
+        var seen = new bool[sut.Count];
+        foreach (int k in oracle)
+        {
+            int index = sut.GetIndex(k);
+            Check(index >= 0 && index < sut.Count, $"index {index} for {k} is outside [0, {sut.Count})");
+            Check(!seen[index], $"index {index} given to two keys (second: {k})");
+            seen[index] = true;
+        }
+    }
+
+    // Collides keys in pairs inside [-64, 64) and hashes every other key to itself.
+    private readonly struct FuzzPairCollidingHasher : IHashProvider<int>
+    {
+        public int Hash(int key) => key is >= -64 and < 64 ? key >> 1 : key;
     }
 
     // ---- bit set (exact, two-directional) -----------------------------------

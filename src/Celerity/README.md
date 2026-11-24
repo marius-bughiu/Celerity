@@ -31,7 +31,7 @@ if (byName.TryGetValue("bob", out int id))
 |---|---|
 | [Dictionaries](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#dictionaries) | `CelerityDictionary`, `IntDictionary`, `LongDictionary`, `RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`, `LinkedDictionary`, `BiDictionary`, `FrozenCelerityDictionary`, `CelerityMultiMap`, `CelerityMultiSet`, `SmallDictionary`, `EnumMap`, `SparseMap`, `SlotMap`, `PersistentHashMap`, `PersistentSortedMap` |
 | [Sets](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sets) | `CeleritySet`, `IntSet`, `LongSet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `FrozenCeleritySet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`, `CompressedLongSet`, `PersistentHashSet`, `PersistentSortedSet` |
-| [Caches](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#caches) | `LruCache`, `LfuCache`, `SieveCache` |
+| [Caches](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#caches) | `LruCache`, `LfuCache`, `SieveCache`, `TinyLfuCache` |
 | [Sequences](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sequences) | `Deque`, `BTreeList`, `GapBuffer`, `SegmentedList`, `PersistentVector` |
 | [Union-find](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#union-find) | `DisjointSet` |
 | [Priority queues](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#priority-queues) | `IndexedPriorityQueue`, `MinMaxHeap`, `RadixHeap` |
@@ -43,7 +43,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Graphs](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#graphs) | `CompressedGraph` |
 | [Text](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#text) | `SuffixArray`, `AhoCorasick`, `EditDistanceIndex`, `Rope` |
 | [Timers](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#timers) | `TimerWheel` |
-| [Probabilistic & bit-level](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
+| [Probabilistic & bit-level](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
 
 ## Choosing a collection
 

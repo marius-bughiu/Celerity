@@ -34,7 +34,7 @@ if (byName.TryGetValue("bob", out int id))
 |---|---|
 | [Dictionaries](docs/collections.md#dictionaries) | `CelerityDictionary`, `IntDictionary`, `LongDictionary`, `RobinHoodDictionary`, `SwissDictionary`, `HashCachingDictionary`, `PooledCelerityDictionary`, `LinkedDictionary`, `BiDictionary`, `FrozenCelerityDictionary`, `CelerityMultiMap`, `CelerityMultiSet`, `SmallDictionary`, `EnumMap`, `SparseMap`, `SlotMap`, `PersistentHashMap`, `PersistentSortedMap` |
 | [Sets](docs/collections.md#sets) | `CeleritySet`, `IntSet`, `LongSet`, `SwissSet`, `RobinHoodSet`, `HashCachingSet`, `PooledCeleritySet`, `LinkedSet`, `FrozenCeleritySet`, `SmallSet`, `EnumSet`, `SparseSet`, `HierarchicalBitSet`, `CompressedIntSet`, `CompressedLongSet`, `PersistentHashSet`, `PersistentSortedSet` |
-| [Caches](docs/collections.md#caches) | `LruCache`, `LfuCache`, `SieveCache` |
+| [Caches](docs/collections.md#caches) | `LruCache`, `LfuCache`, `SieveCache`, `TinyLfuCache` |
 | [Sequences](docs/collections.md#sequences) | `Deque`, `BTreeList`, `GapBuffer`, `SegmentedList`, `PersistentVector` |
 | [Union-find](docs/collections.md#union-find) | `DisjointSet` |
 | [Priority queues](docs/collections.md#priority-queues) | `IndexedPriorityQueue`, `MinMaxHeap`, `RadixHeap` |
@@ -46,7 +46,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Graphs](docs/collections.md#graphs) | `CompressedGraph` |
 | [Text](docs/collections.md#text) | `SuffixArray`, `AhoCorasick`, `EditDistanceIndex`, `Rope` |
 | [Timers](docs/collections.md#timers) | `TimerWheel` |
-| [Probabilistic & bit-level](docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
+| [Probabilistic & bit-level](docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
 
 ## Choosing a collection
 
