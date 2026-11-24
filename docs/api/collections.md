@@ -5070,13 +5070,15 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
 
 The contract:
 
-- **Query cost follows the matches, not the index size.** A query densifies and hashes the
-  sketch once and reads one bucket per band. It costs about the same at 100,000 stored sets
-  as at 1,000.
-- **Approximate in both directions.** A pair with Jaccard similarity `J` is returned with
-  probability `1 − (1 − J^r)^b` (`CandidateProbability`). A similar pair can be missed, and
-  a dissimilar one returned. Candidates are not verified, so check the ones you act on with
-  `EstimateJaccard` or against the exact sets.
+- **Query cost follows matching bucket hits.** A query densifies and hashes the sketch once
+  and reads one bucket per band, including false-positive candidates. It need not scan every
+  stored sketch, but large buckets can still make a query costly. On the benchmark corpus below,
+  query time was about the same at 100,000 stored sets as at 1,000.
+- **Approximate in both directions.** The ideal independent-MinHash model returns a pair
+  with Jaccard similarity `J` with probability `1 − (1 − J^r)^b` (`CandidateProbability`).
+  This index's registers are dependent, so the curve is a tuning model, not a recall guarantee.
+  A similar pair can be missed, and a dissimilar one returned. Candidates are not verified, so
+  check the ones you act on with `EstimateJaccard` or against the exact sets.
 - **Indexes a snapshot.** `Add` bands the sketch as it is at the time of the call and keeps
   no reference to it. To re-index a changed sketch, `Remove` the key and add it again.
 
@@ -5085,27 +5087,34 @@ The contract:
 This is the classic **banding** technique (Leskovec, Rajaraman &amp; Ullman, *Mining of
 Massive Datasets*, ch. 3). The first `b · r` registers are split into `b` bands of `r`
 registers each, and each band is hashed to a bucket. Two sketches are candidates when they
-agree on every register of at least one band. Each register agrees with probability `J`, so
-the candidate probability is an S-curve in `J`: near 0 well below its knee, near 1 well
-above it, with the knee close to `(1/b)^(1/r)`.
+agree on every register of at least one band. For independent MinHash registers with agreement
+probability `J`, the candidate probability is an S-curve in `J`: near 0 well below its knee,
+near 1 well above it, with the knee close to `(1/b)^(1/r)`. One-permutation registers are
+dependent, especially after densifying small sets, so actual candidate rates can differ.
 
 The threshold constructor chooses `b` and `r` with `GetOptimalParameters`, which tries the
-pairs with `b · r ≤ 2^precision` whose curve crosses within 0.25 of the threshold and keeps
-the one with the smallest false-positive area (the curve integrated below the threshold) plus
-false-negative area (one minus the curve, integrated above it). The areas are integrated
-adaptively, so the steep curves of many-row layouts are resolved. At the default precision 8, a 0.5 threshold gives 42 bands of 6 rows
-and a 0.8 threshold 17 bands of 15.
+pairs with `b · r ≤ 2^precision` whose proxy knee `b^(-1/r)` is within 0.25 of the threshold.
+It keeps the one with the lowest numerically estimated false-positive area (the model's curve
+integrated below the threshold) plus false-negative area (one minus the curve, integrated
+above it). This weights both areas equally over a uniform similarity axis. Adaptive integration
+has a finite depth limit, and the restricted search does not certify a global optimum or
+workload recall. At the default precision 8, a 0.5 threshold gives 42 bands of 6 rows and a
+0.8 threshold 17 bands of 15.
 
 `MinHashSketch` is a one-permutation sketch, so a set with fewer elements than registers
 leaves some registers empty. Two small sets would then agree on any band of empty registers
 whatever they contain, and every short document would land in the same buckets. The index
 **densifies** the registers it bands instead: an empty register borrows the value of the
-first non-empty register in a fixed pseudo-random order of its own (Shrivastava, *Optimal
-Densification for Fast and Accurate Minwise Hashing*, ICML 2017). That keeps the agreement
-probability per register at `J`, and the sketch itself is not changed. Densifying is a few
-operations per register while most registers are filled, and grows as a sketch gets
-emptier, to at most about `m^1.5` steps for `m` registers (under a millisecond at the default
-precision). Sketches of the empty set have nothing to borrow, so they all share every bucket and
+first non-empty register in a fixed pseudo-random order of its own. This affine-probe variant
+is inspired by the densification literature (Shrivastava, *Optimal Densification for Fast and
+Accurate Minwise Hashing*, ICML 2017); no variance-optimality guarantee is asserted for this
+variant. Under ideal random element hashing without collisions, the per-register agreement
+probability is `J`. Each output chooses the minimum under a fixed ordering of element hashes,
+so the minimum of two sets' union is equally likely to be any element and belongs to their
+intersection with probability `J`. This marginal property does not imply independent registers.
+The sketch itself is not changed. For `m` registers, densifying takes expected `O(m^1.5)` work
+under uniformly distributed occupied bins, with a deterministic `O(m²)` worst-case bound.
+Sketches of the empty set have nothing to borrow, so they all share every bucket and
 are returned for each other, consistent with `EstimateJaccard` reporting `1` for two empty
 sketches.
 
@@ -5124,8 +5133,8 @@ public MinHashLshIndex(
     IEqualityComparer<TKey>? keyComparer = null)
 ```
 
-The first overload places the curve's knee at `threshold`. The second takes the band layout
-directly. `precision` is the `MinHashSketch.Precision` every added or queried sketch must
+The first overload chooses a layout around `threshold` using the model above. The second
+takes the band layout directly. `precision` is the `MinHashSketch.Precision` every added or queried sketch must
 have. Keys are compared with `keyComparer`, or `EqualityComparer<TKey>.Default`.
 
 **Throws:** `ArgumentOutOfRangeException` if `threshold` is not strictly between 0 and 1,
@@ -5154,8 +5163,8 @@ have. Keys are compared with `keyComparer`, or `EqualityComparer<TKey>.Default`.
   allocate; `results` may also grow. A query does not modify the index, so concurrent queries
   with no concurrent writer are safe.
 - `List<TKey> Query(MinHashSketch<T, THasher> sketch)` — the same, into a new list.
-- `double CandidateProbability(double jaccard)` — `1 − (1 − J^r)^b`, the chance a pair with
-  that similarity is returned under ideal MinHash.
+- `double CandidateProbability(double jaccard)` — `1 − (1 − J^r)^b`, the candidate probability
+  under the ideal independent-MinHash model, not a recall guarantee for the index.
 - `static (int BandCount, int RowsPerBand) GetOptimalParameters(double threshold, int precision)`
   — the search the threshold constructor runs: several milliseconds at precision 8 and a
   second or more at 16. To build many indexes with one layout, call it once and use the

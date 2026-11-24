@@ -6,8 +6,9 @@ namespace Celerity.Tests.Collections;
 /// <summary>
 /// Statistical tests that a <see cref="MinHashLshIndex{TKey,T,THasher}"/> returns a pair with about
 /// the probability its <see cref="MinHashLshIndex{TKey,T,THasher}.CandidateProbability"/> curve
-/// promises, for large sets and for sets far smaller than the register count (where densification
-/// does the work), and that it finds near-duplicates in a corpus of unrelated sets. Every data set is
+/// models, for large sets and for sets far smaller than the register count (where densification
+/// does the work), and that it finds near-duplicates in a corpus of unrelated sets. These checks
+/// cover the chosen corpora, not a probability guarantee for all inputs. Every data set is
 /// deterministic, so the measured rates are stable across runs.
 /// </summary>
 public class MinHashLshIndexAccuracyTests

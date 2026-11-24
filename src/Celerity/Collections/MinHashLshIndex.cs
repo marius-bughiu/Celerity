@@ -17,26 +17,27 @@ namespace Celerity.Collections;
 /// A <see cref="MinHashSketch{T,THasher}"/> makes comparing two sets cheap, but finding the
 /// near-duplicates of one set among <c>n</c> stored ones is still <c>n</c> calls to
 /// <see cref="MinHashSketch{T,THasher}.EstimateJaccard"/>, and deduplicating a corpus is
-/// <c>n²</c> of them. This index answers the same question in time that depends on how many
-/// similar sets there are, not on <c>n</c>: a query hashes <see cref="BandCount"/> bands and reads
-/// that many buckets.
+/// <c>n²</c> of them. This index's query cost depends on the matching bucket hits, including
+/// false-positive candidates: a query hashes <see cref="BandCount"/> bands and reads that many
+/// buckets. It need not scan every stored sketch, but large buckets can still make a query costly.
 /// </para>
 /// <para>
 /// This is the classic <em>banding</em> technique (Leskovec, Rajaraman &amp; Ullman, <em>Mining of
 /// Massive Datasets</em>, ch. 3). The first <c>b · r</c> registers of a sketch are split into
 /// <c>b</c> = <see cref="BandCount"/> bands of <c>r</c> = <see cref="RowsPerBand"/> registers
 /// each, and each band is hashed to a bucket. Two sketches are <em>candidates</em> when they agree
-/// on every register of at least one band. Each register agrees with probability equal to the
-/// Jaccard similarity <c>J</c>, so a pair is returned with probability
-/// <c>1 − (1 − J^r)^b</c> (<see cref="CandidateProbability"/>), an S-curve that is near 0 well below
-/// its knee and near 1 well above it. The <see cref="MinHashLshIndex(double, int, IEqualityComparer{TKey})"/>
-/// constructor places that knee at a threshold by choosing <c>b</c> and <c>r</c> to minimise the
-/// area of false positives below it plus false negatives above it.
+/// on every register of at least one band. Under the model of independent MinHash registers,
+/// a pair with Jaccard similarity <c>J</c> is returned with probability
+/// <c>1 − (1 − J^r)^b</c> (<see cref="CandidateProbability"/>). This one-permutation index has
+/// dependent registers, especially after densifying small sets, so that curve is a tuning model,
+/// not a recall guarantee. The <see cref="MinHashLshIndex(double, int, IEqualityComparer{TKey})"/>
+/// constructor chooses <c>b</c> and <c>r</c> around a threshold using the model's estimated
+/// false-positive area below it plus false-negative area above it.
 /// </para>
 /// <para>
 /// The answer is <strong>approximate in both directions</strong>. A pair above the threshold can
-/// be missed (with probability <c>(1 − J^r)^b</c>), and a pair below it can be returned; the index
-/// does not verify candidates. When the precision matters, check each candidate's sketch with
+/// be missed, and a pair below it can be returned; the index does not verify candidates.
+/// When the precision matters, check each candidate's sketch with
 /// <see cref="MinHashSketch{T,THasher}.EstimateJaccard"/>, or its exact set, before acting on it.
 /// </para>
 /// <para>
@@ -44,11 +45,14 @@ namespace Celerity.Collections;
 /// than registers leaves some registers empty, and two small sets would agree on an all-empty band
 /// whatever they contain. The index therefore <em>densifies</em> the registers it bands: an empty
 /// register borrows the value of the first non-empty register in a fixed pseudo-random order of its
-/// own (Shrivastava, <em>Optimal Densification for Fast and Accurate Minwise Hashing</em>,
-/// ICML&#160;2017), which keeps the per-register agreement probability at <c>J</c>. The sketch
-/// itself is not changed. Densifying costs more as a sketch gets emptier: a few operations
-/// per register while most registers are filled, and at most about <c>m^1.5</c> steps in all. Sketches of the empty set have no values to
-/// borrow, so they all share every bucket and are returned for each other, consistent with
+/// own. This affine-probe variant is inspired by the densification literature (Shrivastava,
+/// <em>Optimal Densification for Fast and Accurate Minwise Hashing</em>, ICML&#160;2017);
+/// no variance-optimality guarantee is asserted for this variant. Under ideal random element
+/// hashing without collisions, each register's agreement probability is <c>J</c>. The sketch
+/// itself is not changed. For <c>m</c> registers, densifying takes expected <c>O(m^1.5)</c> work
+/// under uniformly distributed occupied bins, with a deterministic <c>O(m²)</c> worst-case bound.
+/// Sketches of the empty set have no values to borrow, so they all share every bucket and
+/// are returned for each other, consistent with
 /// <see cref="MinHashSketch{T,THasher}.EstimateJaccard"/> reporting <c>1</c> for two empty sketches.
 /// </para>
 /// <para>
@@ -216,15 +220,15 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     public IEqualityComparer<TKey> KeyComparer => _entryOf.Comparer;
 
     /// <summary>
-    /// Returns the probability that a query returns a stored key whose set has Jaccard similarity
-    /// <paramref name="jaccard"/> to the query's set: <c>1 − (1 − J^r)^b</c>.
+    /// Returns the candidate probability under the ideal independent-MinHash model for Jaccard
+    /// similarity <paramref name="jaccard"/>: <c>1 − (1 − J^r)^b</c>.
     /// </summary>
     /// <param name="jaccard">A Jaccard similarity in <c>[0, 1]</c>.</param>
-    /// <returns>The candidate probability, in <c>[0, 1]</c>.</returns>
+    /// <returns>The model's candidate probability, in <c>[0, 1]</c>.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="jaccard"/> is outside <c>[0, 1]</c>.</exception>
     /// <remarks>
-    /// This is the probability under ideal MinHash. Sketch estimation noise, and the dependence
-    /// between densified registers of very small sets, move individual pairs off the curve.
+    /// The index's one-permutation registers are dependent, especially after densifying small
+    /// sets, so actual candidate rates can differ from this curve. It is not a recall guarantee.
     /// </remarks>
     public double CandidateProbability(double jaccard)
     {
@@ -235,8 +239,8 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     }
 
     /// <summary>
-    /// Chooses the band count and rows per band whose candidate-probability curve best separates
-    /// pairs above <paramref name="threshold"/> from pairs below it.
+    /// Chooses a band count and rows per band by minimising the numerically estimated error area
+    /// around <paramref name="threshold"/> under the ideal independent-MinHash model.
     /// </summary>
     /// <param name="threshold">The Jaccard similarity to separate at. Must be strictly between 0 and 1.</param>
     /// <param name="precision">
@@ -250,13 +254,16 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     /// is out of range.
     /// </exception>
     /// <remarks>
-    /// Of the pairs with <c>b · r ≤ 2^precision</c> whose curve crosses within 0.25 of the
-    /// threshold, the one with the smallest false-positive area (the curve integrated over
-    /// <c>[0, threshold]</c>) plus false-negative area (one minus the curve, integrated over
-    /// <c>[threshold, 1]</c>) wins; the areas are integrated adaptively, so steep curves are
-    /// resolved. The search takes several milliseconds at the default precision and grows with
-    /// the register count, to a second or more at the maximum; to build many indexes with one
-    /// layout, call it once and pass the result to the explicit constructor.
+    /// Of the pairs with <c>b · r ≤ 2^precision</c> whose proxy knee <c>b^(-1/r)</c> is within
+    /// 0.25 of the threshold, the one with the lowest numerically estimated false-positive area
+    /// (the model's curve integrated over <c>[0, threshold]</c>) plus false-negative area
+    /// (one minus the curve, integrated over
+    /// <c>[threshold, 1]</c>) wins. This weights both areas equally over a uniform similarity
+    /// axis. Adaptive integration has a finite depth limit, and the restricted search does not
+    /// certify a global optimum or workload recall. The search takes several milliseconds at
+    /// the default precision and grows with the register count, to a second or more at the
+    /// maximum; to build many indexes with one layout, call it once and pass the result to the
+    /// explicit constructor.
     /// </remarks>
     public static (int BandCount, int RowsPerBand) GetOptimalParameters(double threshold, int precision)
     {
@@ -273,9 +280,9 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
             int maxRows = registers / bands;
             for (int rows = 1; rows <= maxRows; rows++)
             {
-                // The curve crosses from low to high near (1/b)^(1/r), which rises with r. A layout
-                // whose crossing is far from the threshold puts a wide band of similarities on the
-                // wrong side and cannot be the best, so it is not integrated.
+                // Restrict the search to layouts whose proxy knee (1/b)^(1/r) is near the
+                // threshold. This pragmatic search bound is not a proof of global optimality.
+                // The proxy rises with r, so the upper bound lets this inner loop stop early.
                 double knee = Math.Pow(bands, -1d / rows);
                 if (knee < threshold - KneeWindow)
                     continue;
@@ -644,10 +651,13 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     // (its index in the top bits, its value below) or, when register i is empty, of the element in
     // the first non-empty register in register i's own probe order. That order is the
     // affine permutation t -> (a·t + c) mod m with a odd, both drawn from a hash of i, so it is the
-    // same for every sketch and independent of their contents — which is all the collision
-    // argument needs. The donor is found either by walking the order or, for a sparse sketch after
-    // ProbeLimit steps, as the filled register with the smallest position in it, by inverting the
-    // permutation; both give the same register.
+    // same for every sketch and independent of their contents. Each output is the minimum under
+    // a fixed hash order: its own bin first, then the probe order, then low hash within each bin.
+    // Under ideal random collision-free element hashes the union's winner is symmetric over its
+    // elements, so its membership in the intersection gives marginal agreement J. This does not
+    // make different output registers independent. The donor is found either by walking the
+    // order or, for a sparse sketch after ProbeLimit steps, as the filled register with the
+    // smallest position in it, by inverting the permutation; both give the same register.
     private static bool Densify(ReadOnlySpan<ulong> registers, Span<ulong> dense, int precision)
     {
         if (!registers.ContainsAnyExcept(MinHashSketch<T, THasher>.EmptyRegister))
@@ -665,10 +675,12 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
 
         try
         {
-            // Both routes find the same donor, so the cheaper one can be chosen per sketch. Walking
-            // the order takes about m / k steps per empty register and the scan k, so walk when
-            // k² ≥ m; the scan still tries a few steps of the walk first, and lists the filled
-            // registers only once one needs it. Either way the pass is at most about m^1.5 steps.
+            // Both routes find the same donor, so the cheaper one can be chosen per sketch. With
+            // uniformly distributed occupied bins, walking takes expected O(m / k) steps per
+            // empty register and the scan O(k), so walk when k² ≥ m. The scan still tries a few
+            // steps of the walk first, and lists the filled
+            // registers only once one needs it. This gives expected O(m^1.5) work under that
+            // occupancy model; an arbitrary occupied-bin pattern has only an O(m²) bound.
             long filledCount = registers.Length - registers.Count(MinHashSketch<T, THasher>.EmptyRegister);
             ulong walkLimit = filledCount * filledCount >= registers.Length ? ulong.MaxValue : ProbeLimit;
             int listed = -1;
