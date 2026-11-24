@@ -101,6 +101,7 @@ internal static class Differential
         ("SortedSpan", SortedSpanCase),
         ("HyperLogLog", HyperLogLogCase),
         ("MinHashSketch", MinHashSketchCase),
+        ("MinHashLshIndex", MinHashLshIndexCase),
         ("CountMinSketch", CountMinSketchCase),
         ("BloomFilterMerge", BloomFilterMergeCase),
         ("CuckooFilterMerge", CuckooFilterMergeCase),
@@ -6041,6 +6042,86 @@ internal static class Differential
             Check(estimate == 1d, $"equal sets estimated {estimate}, not 1");
         else if (!setA.Overlaps(setB))
             Check(estimate == 0d, $"disjoint sets estimated {estimate}, not 0");
+    }
+
+    // MinHashLshIndex returns candidates, which are approximate in general, but with a bijective
+    // hasher three relations are exact: a stored set equal to the query (its sketch estimates 1)
+    // shares every band and must be returned; a non-empty stored set disjoint from a non-empty
+    // query shares no register value, even after densification, which only copies a set's own
+    // values, so it must not be; and the empty set matches exactly the stored empty sets. Keys,
+    // count and enumeration track a dictionary model, each candidate is returned once, and the
+    // band layout is drawn per case so one-row and many-row bands are both exercised.
+    private static void MinHashLshIndexCase(Random rng)
+    {
+        const int Precision = 6;
+        int bands = 1 << rng.Next(0, 7);
+        int rows = rng.Next(1, (1 << Precision) / bands + 1);
+        var index = new MinHashLshIndex<int, int, Int32Murmur3Hasher>(bands, rows, Precision);
+        var model = new Dictionary<int, HashSet<int>>();
+        int ops = OpCount(rng);
+
+        HashSet<int> RandomSet()
+        {
+            var set = new HashSet<int>();
+            int size = rng.Next(0, 5) == 0 ? 0 : rng.Next(1, 12);
+            while (set.Count < size)
+                set.Add(Key(rng));
+            return set;
+        }
+
+        MinHashSketch<int, Int32Murmur3Hasher> SketchOf(HashSet<int> set) => new(set, Precision);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int key = rng.Next(0, 16);
+            switch (rng.Next(0, 100))
+            {
+                case < 40:
+                {
+                    HashSet<int> set = RandomSet();
+                    bool added = index.TryAdd(key, SketchOf(set));
+                    Check(added == model.TryAdd(key, set), $"TryAdd({key}) returned {added}");
+                    break;
+                }
+
+                case < 55:
+                    Check(index.Remove(key) == model.Remove(key), $"Remove({key}) disagrees with the model");
+                    break;
+
+                case < 99:
+                {
+                    HashSet<int> query = model.Count > 0 && rng.Next(0, 2) == 0
+                        ? model.Values.ElementAt(rng.Next(0, model.Count))
+                        : RandomSet();
+                    var results = new List<int>();
+                    int returned = index.Query(SketchOf(query), results);
+                    Check(returned == results.Count, "Query's count differs from what it appended");
+                    Check(results.Distinct().Count() == results.Count, "Query returned a key twice");
+                    foreach (int candidate in results)
+                        Check(model.ContainsKey(candidate), $"Query returned absent key {candidate}");
+
+                    foreach (var (stored, set) in model)
+                    {
+                        bool returnedIt = results.Contains(stored);
+                        if (set.SetEquals(query))
+                            Check(returnedIt, $"an equal set ({stored}) was not returned");
+                        else if (set.Count == 0 || query.Count == 0 || !set.Overlaps(query))
+                            Check(!returnedIt, $"a disjoint set ({stored}) was returned");
+                    }
+
+                    break;
+                }
+
+                default:
+                    index.Clear();
+                    model.Clear();
+                    break;
+            }
+
+            Check(index.Count == model.Count, $"Count {index.Count}, model {model.Count}");
+        }
+
+        Check(index.OrderBy(k => k).SequenceEqual(model.Keys.OrderBy(k => k)), "enumeration differs from the model");
     }
 
     // MinHash: merge takes the per-register minimum, which is exactly the register state the

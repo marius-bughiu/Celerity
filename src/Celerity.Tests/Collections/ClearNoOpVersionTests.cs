@@ -380,6 +380,15 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void MinHashLshIndexClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var index = new MinHashLshIndex<int, int, Int32WangHasher>(0.5);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => index.GetEnumerator(), index.Clear, () => index.Count,
+            () => index.Add(1, new MinHashSketch<int, Int32WangHasher>(new[] { 1, 2, 3 })));
+    }
+
+    [Fact]
     public void StringInternTableClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var table = new StringInternTable();

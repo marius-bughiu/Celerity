@@ -46,7 +46,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Graphs](docs/collections.md#graphs) | `CompressedGraph` |
 | [Text](docs/collections.md#text) | `SuffixArray`, `AhoCorasick`, `EditDistanceIndex`, `Rope` |
 | [Timers](docs/collections.md#timers) | `TimerWheel` |
-| [Probabilistic & bit-level](docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
+| [Probabilistic & bit-level](docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `MinHashLshIndex`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
 
 ## Choosing a collection
 

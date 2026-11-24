@@ -43,7 +43,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Graphs](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#graphs) | `CompressedGraph` |
 | [Text](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#text) | `SuffixArray`, `AhoCorasick`, `EditDistanceIndex`, `Rope` |
 | [Timers](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#timers) | `TimerWheel` |
-| [Probabilistic & bit-level](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
+| [Probabilistic & bit-level](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `MinHashLshIndex`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |
 
 ## Choosing a collection
 
