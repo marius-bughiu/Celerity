@@ -489,6 +489,10 @@ function escapeHtml(s) {
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },
+    // MinimalPerfectHash maps the same string key set onto [0, n) as a FrozenDictionary<string, int> does, but
+    // stores no keys; its win is retained memory, which no timing card can show. VerifiedLookup adds the stored-key
+    // comparison a caller needs when non-members can be asked about.
+    { key: 'MinimalPerfectHash',  title: 'MinimalPerfectHash<string, ...>',          vs: 'FrozenDictionary<string, int>', ops: ['Build', 'Lookup', 'VerifiedLookup'] },
     // BitSet is a dense bit vector benchmarked at 1024 / 1,000,000 bits (not the 1k /
     // 100k the hash tables use), so it carries its own item counts.
     { key: 'BitSet',              title: 'BitSet',                                   vs: 'BitArray',              ops: ['PopCount', 'And', 'Or', 'Xor'], items: [1024, 1000000] },
@@ -504,6 +508,7 @@ function escapeHtml(s) {
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] },
     { key: 'LfuCache',            title: 'LfuCache<int, int, ...>',                  vs: 'Dictionary + SortedSet LFU', ops: ['Put', 'Get', 'GetMissing'] },
     { key: 'SieveCache',          title: 'SieveCache<int, int, ...>',                vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing', 'ZipfWorkload'] },
+    { key: 'TinyLfuCache',        title: 'TinyLfuCache<int, int, ...>',              vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing', 'ZipfWorkload', 'LoopWorkload'] },
     // Deque is a sequence collection benchmarked against LinkedList (the BCL's only O(1)-both-ends type).
     { key: 'Deque',               title: 'Deque<int>',                               vs: 'LinkedList<int>',       ops: ['PushFront', 'Queue', 'Enumerate'] },
     // BTreeList is the positional list, benchmarked against the List<int> it replaces: Insert and RemoveAt at
