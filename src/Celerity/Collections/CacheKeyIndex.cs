@@ -6,7 +6,8 @@ namespace Celerity.Collections;
 
 /// <summary>
 /// The key&#8594;node-slot index shared by the bounded caches (<see cref="LruCache{TKey, TValue, THasher}"/>,
-/// <see cref="SieveCache{TKey, TValue, THasher}"/> and <see cref="LfuCache{TKey, TValue, THasher}"/>):
+/// <see cref="SieveCache{TKey, TValue, THasher}"/>, <see cref="LfuCache{TKey, TValue, THasher}"/> and
+/// <see cref="TinyLfuCache{TKey, TValue, THasher}"/>):
 /// a separately-chained hash table whose chains are threaded through the caches' own fixed node slots.
 /// </summary>
 /// <remarks>
@@ -81,9 +82,16 @@ internal readonly struct CacheKeyIndex<TKey, THasher>
     /// Returns the node slot holding <paramref name="key"/>, or <c>-1</c> when it is not resident.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int Find(TKey key)
+    internal int Find(TKey key) => Find(key, HashOf(key));
+
+    /// <summary>
+    /// Returns the node slot holding <paramref name="key"/>, or <c>-1</c> when it is not resident, given
+    /// the key's <paramref name="hash"/> as <see cref="HashOf(TKey)"/> computes it. For a caller that
+    /// needs the hash for something else too, so the key is hashed once.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int Find(TKey key, int hash)
     {
-        int hash = HashOf(key);
         int[] chainNext = _chainNext;
         int[] hashes = _hashes;
         TKey[] keys = Keys;
@@ -109,9 +117,16 @@ internal readonly struct CacheKeyIndex<TKey, THasher>
     /// key is absent and the slot is not linked into any chain.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void Insert(int node, TKey key)
+    internal void Insert(int node, TKey key) => Insert(node, key, HashOf(key));
+
+    /// <summary>
+    /// Records <paramref name="key"/>, whose <see cref="HashOf(TKey)"/> is <paramref name="hash"/>, as
+    /// resident in <paramref name="node"/>. The caller guarantees the key is absent and the slot is not
+    /// linked into any chain.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void Insert(int node, TKey key, int hash)
     {
-        int hash = HashOf(key);
         ref int bucket = ref _buckets[hash & _mask];
         Keys[node] = key;
         _hashes[node] = hash;
@@ -153,8 +168,18 @@ internal readonly struct CacheKeyIndex<TKey, THasher>
         Array.Clear(Keys);
     }
 
+    /// <summary>
+    /// The full hash recorded for the resident slot <paramref name="node"/>.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int HashOf(TKey key)
+    internal int HashAt(int node) => _hashes[node];
+
+    /// <summary>
+    /// The hash the index files <paramref name="key"/> under: the hasher's, except that the default key
+    /// hashes to <c>0</c> without consulting it.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static int HashOf(TKey key)
     {
         // default(TKey) — a null reference, a Nullable<T> without a value, or 0 for an integer — never
         // reaches the hasher, which may not accept it. The dictionary this index replaced kept the

@@ -430,6 +430,14 @@ public class ClearNoOpVersionTests
     }
 
     [Fact]
+    public void TinyLfuCacheClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
+    {
+        var cache = new TinyLfuCache<int, string, Int32WangHasher>(capacity: 4);
+        AssertClearBumpsVersionOnlyWhenItRemovesSomething(
+            () => cache.GetEnumerator(), cache.Clear, () => cache.Count, () => cache.Add(1, "a"));
+    }
+
+    [Fact]
     public void IndexedPriorityQueueClear_ShouldNotBumpTheVersion_WhenAlreadyEmpty()
     {
         var queue = new IndexedPriorityQueue<int, int, Int32WangHasher>();
