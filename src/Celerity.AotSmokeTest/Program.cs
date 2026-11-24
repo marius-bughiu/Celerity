@@ -625,6 +625,38 @@ void Check(bool condition, string message)
     Check(seen == 2, "SieveCache hit keeps enumerator valid");
 }
 
+// TinyLfuCache — fixed-capacity cache with W-TinyLFU admission. Exercise put/get, the out-of-band
+// default/zero key, the frequency sketch (estimates for resident and evicted keys), admission on a
+// strict win and rejection on a tie, the window-probation-protected struct enumerator, peek/remove,
+// and Clear forgetting every frequency.
+{
+    // Capacity 2: a one-entry window over a one-entry main region.
+    var cache = new TinyLfuCache<int, string, Int32WangNaiveHasher>(2);
+    cache[0] = "zero"; // out-of-band default key
+    cache[1] = "one";  // 0 overflows the window into probation
+    Check(cache.Count == 2 && cache[0] == "zero", "TinyLfuCache put/get + default key");
+    Check(cache.GetFrequencyEstimate(0) == 2 && cache.GetFrequencyEstimate(1) == 1, "TinyLfuCache frequency estimates");
+
+    // The full cache compares candidate 1 (one use) with victim 0 (two): a tie or loss evicts the candidate.
+    cache[2] = "two";
+    Check(cache.ContainsKey(0) && !cache.ContainsKey(1) && cache.ContainsKey(2), "TinyLfuCache rejects the colder candidate");
+    Check(cache.GetFrequencyEstimate(1) == 1, "TinyLfuCache remembers an evicted key");
+
+    _ = cache[2];
+    _ = cache[2];
+    cache[3] = "three"; // candidate 2 (three uses) beats victim 0 (two)
+    Check(!cache.ContainsKey(0) && cache.ContainsKey(2), "TinyLfuCache admits the hotter candidate");
+
+    var order = new List<int>();
+    foreach (var kvp in cache) order.Add(kvp.Key);
+    Check(order.Count == 2 && order[0] == 3 && order[1] == 2, "TinyLfuCache window-then-main enumeration");
+
+    Check(cache.TryPeek(2, out string? peeked) && peeked == "two", "TinyLfuCache TryPeek");
+    Check(cache.Remove(2, out string? removed) && removed == "two", "TinyLfuCache Remove out value");
+    cache.Clear();
+    Check(cache.Count == 0 && cache.GetFrequencyEstimate(2) == 0, "TinyLfuCache Clear forgets frequencies");
+}
+
 // Deque — growable double-ended queue over a circular buffer. Exercise both-ends push/pop,
 // the front-relative indexer, wrap-around growth, Try* peeks, the front-to-back struct
 // enumerator, and the IEnumerable constructor.
@@ -2913,6 +2945,35 @@ void Check(bool condition, string message)
     Check(guidXor.Contains(Guid.Empty), "XorFilter<Guid> empty-guid element");
 }
 
+// MinimalPerfectHash — build-once key -> [0, n) bijection that stores no keys. Exercise the 32-bit and
+// 64-bit hasher paths, the sort-based duplicate fold, the exact table for keys sharing a full hash, the
+// null key that must never reach the string hasher, and the rank lookup across several levels.
+{
+    int[] ids = Enumerable.Range(0, 5000).Select(i => i * 31 + 7).ToArray();
+    var mph = new MinimalPerfectHash<int, Int32Murmur3Hasher>(ids.Concat(ids.Take(100)));
+    var seen = new bool[mph.Count];
+    bool bijection = mph.Count == ids.Length;
+    foreach (int id in ids)
+    {
+        int index = mph.GetIndex(id);
+        bijection &= index >= 0 && index < mph.Count && !seen[index];
+        if (bijection) seen[index] = true;
+    }
+    Check(bijection, "MinimalPerfectHash bijection with duplicates folded");
+    Check(mph.LevelCount > 1 && mph.BitsPerKey > 3d && mph.BitsPerKey < 5d, "MinimalPerfectHash levels and bits/key");
+
+    var words = new MinimalPerfectHash<string, StringFnV1AHasher>(new[] { "alpha", "beta", null!, "" });
+    Check(words.Count == 4 && new[] { words.GetIndex("alpha"), words.GetIndex("beta"), words.GetIndex(null!), words.GetIndex("") }
+        .Distinct().Count() == 4, "MinimalPerfectHash<string> with a null key");
+
+    var wide = new MinimalPerfectHash<string, StringXxHash3Hasher>(new[] { "x", "y", "z" }, 3.0);
+    Check(wide.Count == 3 && wide.FallbackCount == 0 && wide.Gamma == 3.0, "MinimalPerfectHash 64-bit hasher path");
+
+    var colliding = new MinimalPerfectHash<int, AotConstantHasher>(new[] { 1, 2, 3, 3 });
+    Check(colliding.Count == 3 && colliding.FallbackCount == 3 && colliding.GetIndex(9) == -1,
+        "MinimalPerfectHash exact table for shared hashes");
+}
+
 // BitSet — dense exact bit vector. Exercise Set / Get / Flip / SetAll / Count
 // (popcount), the SIMD-accelerated bulk And / Or / Xor / Not, the tail-bit masking
 // past Length, and both enumerators so the AOT publish compiles the Vector<ulong>
@@ -4165,11 +4226,13 @@ void Check(bool condition, string message)
     Check(stableWords[0] == "w00" && stableWords[^1] == "w39", "StableSort natural order over strings");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / RunningStatistics (#377) / RollingQuantile / AliasTable / KllSketch.
+// Celerity.Statistics — DDSketch / ReservoirSampler / WeightedReservoirSampler / RunningStatistics (#377) / RollingQuantile /
+// AliasTable / KllSketch.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
-// generator, so the struct-PRNG generic is closed twice), the moment accumulator, which is a
+// generator, so the struct-PRNG generic is closed twice), the weighted sampler over the same two shapes and
+// generators, with its span overload and its merge, the moment accumulator, which is a
 // mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
 // quantile over a value type and a reference type, whose heap entries are a generic struct, the alias
 // table's constrained-generic draw closed over two generators, and the KLL sketch over both, whose sorted
@@ -4207,6 +4270,29 @@ void Check(bool condition, string message)
     var words = new ReservoirSampler<string, Xoshiro256StarStar>(3, new Xoshiro256StarStar(7UL));
     words.Add(["alpha", "beta", "gamma", "delta"]);
     Check(words.Count == 3 && words[0] is not null, "ReservoirSampler over a reference type and a second generator");
+
+    var weightedNumbers = new WeightedReservoirSampler<int>(capacity: 8, seed: 42UL);
+    weightedNumbers.Add(-1, 0d);
+    for (int i = 0; i < 5_000; i++)
+    {
+        weightedNumbers.Add(i, 1d + (i % 7));
+    }
+
+    Check(weightedNumbers.Count == 8 && weightedNumbers.TotalSeen == 5_001 && weightedNumbers.IsFull, "WeightedReservoirSampler over a value type");
+    Check(weightedNumbers.TotalWeight == 19_995d && !weightedNumbers.Sample.Contains(-1), "WeightedReservoirSampler never retains a zero weight");
+
+    var weightedWords = new WeightedReservoirSampler<string, Xoshiro256StarStar>(3, new Xoshiro256StarStar(7UL));
+    weightedWords.Add(["alpha", "beta", "gamma", "delta"], [1d, 2d, 0d, 3d]);
+    Check(
+        weightedWords.Count == 3 && weightedWords.Contains("alpha") && weightedWords.Contains("beta") && weightedWords.Contains("delta"),
+        "WeightedReservoirSampler over a reference type and a second generator");
+
+    var weightedShard = new WeightedReservoirSampler<string, Xoshiro256StarStar>(3, new Xoshiro256StarStar(11UL));
+    weightedShard.Add(["epsilon", "zeta"], [5d, 5d]);
+    weightedWords.Merge(weightedShard);
+    Check(
+        weightedWords.Count == 3 && weightedWords.TotalSeen == 6 && weightedWords.TotalWeight == 16d && !weightedWords.Contains("gamma"),
+        "WeightedReservoirSampler merge");
 
     RunningStatistics[] perBucket = new RunningStatistics[2];
     perBucket[1].Add([2d, 4d, 4d, 4d, 5d, 5d, 7d, 9d]);
@@ -4590,4 +4676,11 @@ internal enum AotSparseFlags
     None = 0,
     First = 1 << 0,
     Far = 1 << 17,
+}
+
+// Hashes every key alike, so MinimalPerfectHash can place none of them in a level and must answer them all
+// from its exact table.
+internal readonly struct AotConstantHasher : IHashProvider<int>
+{
+    public int Hash(int key) => 0;
 }

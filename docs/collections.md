@@ -413,6 +413,7 @@ foreach (int id in free.EnumerateRange(5, 12))
 - `LruCache<TKey, TValue, THasher>` — fixed-capacity **least-recently-used cache** with `O(1)` get/put and automatic eviction of the least-recently-used entry. Recency runs through an intrusive doubly-linked list over fixed-size arrays, so the hot get/put/evict path **allocates nothing** — unlike the idiomatic `Dictionary` + `LinkedList` LRU that heap-allocates a node per insert. Reads count as uses (a hit promotes the entry to most-recently-used); `TryPeek` / `ContainsKey` inspect without disturbing recency.
 - `LfuCache<TKey, TValue, THasher>` — fixed-capacity **least-frequently-used cache** with expected-`O(1)` get/put and ties broken by least-recently-used. Its *eviction bookkeeping* is `O(1)` **worst case** rather than logarithmic; the key-index lookup is what leaves the end-to-end bound expected, as everywhere else in the library. It covers the failure mode recency cannot see: **an LRU is scan-vulnerable**, so one sequential pass over a capacity's worth of cold keys evicts the whole hot set. Here a scan key arrives at frequency 1, so **a scan of any length costs at most one entry that has been read more than once**. Entries still at frequency 1 are not protected: they sit at the scan's own frequency and are older, so a scan takes them. That is the policy, not a gap in it — an entry used exactly once has demonstrated no reuse to protect. Frequency buckets and their entry chains sit in fixed-size arrays, so the hot path **allocates nothing** — against an idiomatic `Dictionary` + `SortedSet` LFU that is `O(log n)` per operation and allocates a tree node per insert. Frequencies never age, which is the tradeoff: use it for a stable, skewed popularity distribution and keep `LruCache` for recency-dominated ones.
 - `SieveCache<TKey, TValue, THasher>` — fixed-capacity cache with **SIEVE eviction** (NSDI 2024). A hit sets one visited flag instead of relinking a node, so reads are cheaper than an LRU's and **leave active enumerators valid**; an insert into a full cache sweeps a hand over an insertion-ordered queue and evicts the first entry not used since the hand last passed it. On a Zipf(1.0) trace it misses **40% of the time against `LruCache`'s 49%**, about level with `LfuCache` without counts that never age. Fixed node storage, so the hot path **allocates nothing**. Hits are 11.3x faster than an idiomatic `Dictionary` + `LinkedList` LRU and eviction churn is faster too; only misses over a wide key space are slower, about 2x, as they are for `LruCache`.
+- `TinyLfuCache<TKey, TValue, THasher>` — fixed-capacity cache with **W-TinyLFU admission** (the policy behind Java's Caffeine). New keys enter a 1% LRU window; a key leaving the window displaces the main region's victim only if a **frequency sketch** says it was used more often recently, and the sketch remembers keys that are no longer resident and halves its counts as it goes. The other three caches forget a key once it is evicted, so on a **loop over more keys than the cache holds** (a batch job re-reading a table, a crawler revisiting a site) they all miss every request; this one misses **34%** on a loop over 1.5x its capacity. It is level with the best of them on a stationary Zipf stream, and its counts age where `LfuCache`'s do not. A fixed 1% window can lose to `LruCache` on recency-dominated traffic. Fixed node storage plus 8–16 bytes of sketch per entry, so the hot path **allocates nothing**. Hits are 1.9x faster than an idiomatic `Dictionary` + `LinkedList` LRU but 3.7x slower than `LruCache`'s, and eviction churn is 1.8x slower than the baseline: the sketch is the price, worth paying when a miss is expensive.
 
 ### Examples
 
@@ -459,6 +460,21 @@ Console.WriteLine(cache.ContainsKey(1)); // True  (spared once by the read)
 
 foreach (var entry in cache)
     _ = cache[entry.Key]; // legal: a hit is not a structural change
+```
+
+`TinyLfuCache` adds memory the other three lack. Each of them judges a key only while it is resident: `LfuCache`'s count restarts at 1 when an evicted key returns, and `SieveCache`'s visited flag goes with the entry. So none can learn from a key that keeps coming back after eviction, and a loop over more keys than the cache holds defeats all three: each key returns just after it was evicted. `TinyLfuCache` keeps a compact **frequency sketch** of every key it has seen, resident or not, and halves it whenever the accesses it holds reach `10 × capacity` (every `5`–`10 × capacity` new ones after the first halving) so old popularity fades. New keys enter a small LRU window. A key leaving the window has to beat the main region's least-recently-used entry on that estimate to stay; on a tie it goes. A key put is always resident; what admission decides is which older entry leaves. On seeded traces at capacity 1,024 it misses 34.1% of a loop over 1.5x capacity, where `LruCache`, `LfuCache` and `SieveCache` miss 100%, and 56.8% of Zipf traffic mixed with a loop against `SieveCache`'s 70.9%; on plain Zipf it is level (39.9% against 40.2%). See [the API reference](api/collections.md#tinylfucachetkey-tvalue-thasher).
+
+```csharp
+var cache = new TinyLfuCache<long, string, Int64WangHasher>(capacity: 100);
+
+// A job loops over 150 ids, more than the cache holds, twenty times.
+int misses = 0;
+for (int pass = 0; pass < 20; pass++)
+    for (long id = 0; id < 150; id++)
+        if (!cache.TryGet(id, out _)) { misses++; cache[id] = $"row {id}"; }
+
+Console.WriteLine(misses);                       // 1,298 of 3,000; an LruCache of 100 misses all 3,000
+Console.WriteLine(cache.GetFrequencyEstimate(7)); // the sketch's estimate, resident or not
 ```
 
 ## Sequences
@@ -1244,6 +1260,7 @@ Timers thread through one flat entry array as intrusive lists, so there is no ob
 - `BloomFilter<T, THasher>` — **probabilistic** membership: bit-array storage, **no false negatives**, tunable false-positive rate, a fraction of a `HashSet<T>`'s memory. Add-and-test only.
 - `CuckooFilter<T, THasher>` — **probabilistic** membership that **supports deletion**: fingerprint buckets, **no false negatives**, tunable false-positive rate, ≤2 cache lines per lookup. The Bloom filter you can `Remove` from.
 - `XorFilter<T, THasher>` — **probabilistic** membership that is **build-once & immutable**: ~9.84 bits/element (smaller than a Bloom filter at the same rate), three probes + two XORs per lookup (branch-free). The smallest, fastest-to-query filter for a fixed element set.
+- `MinimalPerfectHash<T, THasher>` — a **build-once key → slot index that stores no keys**: each key of a fixed set gets its own index in `[0, n)` for about **3.7 bits per key**, against roughly 60 bytes per key for a `FrozenDictionary<TKey, int>` (130x less retained memory at a million string keys). It does not answer membership: a key outside the set gets `-1` or another key's index, so store the keys alongside when that matters. The trade is lookup time: 1.43x the frozen dictionary's at a million keys, 2.4x at 100,000 and 5.3x at 1,000. It builds 4–12x faster.
 - `BitSet` — dense, **exact** bit vector in 64-bit words: `O(n/64)` hardware popcount (`Count`) and SIMD bulk `And`/`Or`/`Xor`/`Not`. A faster, count-aware `BitArray`.
 - `BitPackedArray` — a **fixed-width packed integer array**: every element stored in exactly `w` bits (1 to 64), end to end in 64-bit words, with `O(1)` branch-free reads and in-place writes. A million 20-bit codes take **2.5 MB instead of an `int[]`'s 4 MB** (1.6× smaller); reads cost ~1.6–1.7× and writes ~2× the array's. Values wider than `w` are rejected, not truncated. .NET's only sub-byte storage is `BitArray` (one bit per element) and `BitVector32` (a few fields in one 32-bit integer).
 - `RankSelectBitVector` — **immutable** succinct index over a dense bit vector: `Rank(i)` (set bits below `i`) in `O(1)` and `Select(k)` (position of the `k`-th set bit) in `O(log n)`, for 25% space over the bits. The BCL has no rank or select anywhere, so the baseline is a hand-rolled `O(i/64)` popcount loop. **Build-once** — any mutation means rebuilding the index, so keep mutating vectors in `BitSet` and snapshot once they settle.
@@ -1282,6 +1299,15 @@ Console.WriteLine(recent.Contains(42)); // False
 var known = new XorFilter<string, StringXxHash3Hasher>(issuedApiKeys); // built once, then read-only
 Console.WriteLine(known.Contains("key-abc")); // True if issued (or a ~0.4% false positive)
 Console.WriteLine(known.Contains("key-zzz")); // False (no false negatives)
+```
+
+`MinimalPerfectHash` gives each key of a **fixed** set its own slot in `[0, n)` without storing the keys, so a dense value array can stand in for a dictionary at about half a byte of index per key. The catch is that a key outside the set still gets an answer (`-1` or another key's slot), so keep the keys at their slots and compare when non-members can be asked about.
+
+```csharp
+var slot = new MinimalPerfectHash<string, StringXxHash3Hasher>(vocabulary); // ~3.7 bits per key
+var counts = new int[slot.Count];
+foreach (string token in corpus)
+    counts[slot.GetIndex(token)]++;         // every token is in the vocabulary
 ```
 
 `HyperLogLog` estimates the **distinct count** of a stream from a fixed ~16&#160;KB of registers that never grow with the data (~0.8% error). Add-and-estimate only; `Precision` sets the accuracy trade-off (`StandardError` ≈ `1.04/√m`); merge equal-precision estimators with `UnionWith`.

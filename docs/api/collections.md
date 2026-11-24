@@ -4038,6 +4038,165 @@ bool MightBeIssued(string apiKey)
 
 ---
 
+## MinimalPerfectHash&lt;T, THasher&gt;
+
+A **build-once, immutable minimal perfect hash function**: it maps each key of a fixed set of
+`n` keys to its own distinct index in `[0, n)`, and stores **none of the keys** — about **3.7
+bits per key** at the default `Gamma`. Use it to give each key of a static set a dense slot
+in a value array: words to embedding rows, URLs to counters, a build-time symbol table to a
+value array.
+
+```csharp
+public class MinimalPerfectHash<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+The BCL answer to "which slot is this key's?" is a `Dictionary<TKey, int>` or a
+`FrozenDictionary<TKey, int>`, and both store every key, so the index costs the keys plus the
+table. Measured with a forced full GC around construction, a `FrozenDictionary<string, int>`
+over URL-shaped keys retains about **60 bytes per key** (64.5 at 100,000 keys, 60.6 at a
+million) on top of the strings it references. `MinimalPerfectHash` retains **0.46 bytes per
+key** at both sizes: about **130x less**, and small enough to stay in cache when the
+dictionary does not.
+
+> **It does not answer membership.** `GetIndex` returns a distinct index in `[0, Count)` for
+> every key of the construction set, but for a key that was **not** in the set it returns
+> either `-1` or an arbitrary index in that same range, because there is no stored key to
+> compare against. If a lookup can be asked about keys outside the set, store each key (or a
+> fingerprint of it) at its index and compare, as the usage example below does. When the
+> keys must be stored anyway and memory does not matter, `FrozenDictionary` is simpler.
+
+### How it works
+
+The construction is **BBHash** (Limasset, Rizk, Chikhi &amp; Peterlongo, *"Fast and scalable
+minimal perfect hashing for massive key sets"*, SEA 2017). Level 0 is a bit array of `γ·n`
+bits. Each key hashes to one position in it; a position hit by exactly one key keeps its bit,
+and the keys that collided move on to level 1, sized `γ·`(keys left), and so on until every
+key has a bit. A key's index is the number of set bits before its own across all levels, read
+from a popcount index kept per 256 bits (12.5% on top of the levels). With `γ = 2` about 61%
+of keys settle at level 0, so a member lookup visits 1.6 levels on average: one hash, then a
+bit test and a popcount per level.
+
+**Keys sharing a full hash.** Two keys whose 64-bit hashes are equal land on the same
+position at every level, so no level can separate them. Construction sorts the hashes once to
+find them. A group of keys that all compare equal is one key given more than once and
+collapses to a single index. A group holding different keys is a real hash collision, and its
+keys go to a small exact table: the keys themselves, sorted by hash and searched with the hash
+the lookup already computed, so the hasher still runs once per lookup (`FallbackCount`). With a 32-bit
+hasher such collisions are near certain past about 100,000 string keys, because the hasher
+reaches only 2<sup>32</sup> values: 221 of a million URL-shaped keys under
+`StringFnV1AHasher`. With a 64-bit hasher the table stays empty in practice. Construction
+therefore never throws on a valid source.
+
+### Constructors
+
+```csharp
+public MinimalPerfectHash(IEnumerable<T> keys)
+public MinimalPerfectHash(IEnumerable<T> keys, double gamma)
+```
+
+Builds the function over the distinct keys of `keys`. The source is enumerated once, and
+duplicates collapse to one index. `gamma` (default `DefaultGamma`, 2.0) is the number of bits
+per remaining key each level is sized at, from `MinGamma` (1.0) to `MaxGamma` (10.0). A larger
+value settles more keys per level, so construction is faster and lookups visit fewer levels,
+at more bits per key. Measured over a million keys, popcount index included: 3.1 bits at
+1.0, 3.7 at 2.0 and 4.7 at 3.0. A gamma of 1.0 is the smallest but builds about 4x slower
+than 2.0, because it needs 25 levels instead of 14.
+
+**Throws:**
+
+- `ArgumentNullException` if `keys` is `null` (checked before `gamma`).
+- `ArgumentOutOfRangeException` if `gamma` is not a number in `[MinGamma, MaxGamma]`. NaN and
+  infinity are rejected.
+
+### Methods and properties
+
+- `int GetIndex(T key)` — the key's index: distinct for every key of the set, and in
+  `[0, Count)`. For a key outside the set: `-1`, or an index that belongs to another key.
+- `int Count { get; }` — the number of distinct keys, which is also the size of the index
+  range.
+- `double Gamma { get; }` — the bits per remaining key each level was sized at.
+- `int LevelCount { get; }` — the number of bit-array levels the construction used. A member
+  lookup reads at most this many, and usually one or two.
+- `int FallbackCount { get; }` — the number of distinct keys answered from the exact table:
+  keys sharing their full 64-bit hash with a different key, and the rare key left over when a
+  small late level settles nothing. Zero in practice with a 64-bit hasher.
+- `double BitsPerKey { get; }` — the levels and their popcount index, in bits per key; `0`
+  for an empty function. The exact table is not included.
+- `const double DefaultGamma`, `MinGamma`, `MaxGamma` — 2.0, 1.0 and 10.0.
+
+### Default-key handling
+
+The function stores no keys, so `default(T)` — a zero `int`, `Guid.Empty`, the empty string —
+is an ordinary key. A `null` reference is mapped to a fixed hash, so the hasher (the string
+hashers throw on `null`) is never called with it.
+
+### Performance
+
+`MinimalPerfectHashBenchmark` maps URL-shaped strings of about 40 characters onto `[0, n)`
+with `StringXxHash3Hasher`, against `FrozenDictionary<string, int>`. Each lookup round probes
+every key through 16 independent shuffles, so the branch predictor cannot learn which level a
+key settles in. Measured on an Apple M4 (.NET 10, default BenchmarkDotNet job):
+
+| Operation | Keys | `FrozenDictionary` | `MinimalPerfectHash` | Ratio |
+|---|---:|---:|---:|---:|
+| Build | 1,000 | 238 µs | 20.2 µs | **11.7x faster** |
+| Build | 100,000 | 24.1 ms | 5.69 ms | **4.2x faster** |
+| Lookup, per key | 1,000 | 3.9 ns | 20.5 ns | 5.3x slower |
+| Lookup, per key | 100,000 | 10.0 ns | 23.7 ns | 2.4x slower |
+| Lookup, per key | 1,000,000 | 46.3 ns | 66.1 ns | 1.43x slower |
+| Verified lookup, per key | 1,000 | 3.9 ns | 21.7 ns | 5.6x slower |
+| Verified lookup, per key | 100,000 | 10.0 ns | 25.8 ns | 2.6x slower |
+| Verified lookup, per key | 1,000,000 | 34.4 ns | 44.1 ns | 1.28x slower |
+| Retained memory, per key | 100,000 | 64.5 B | 0.47 B | **138x less** |
+| Retained memory, per key | 1,000,000 | 60.6 B | 0.46 B | **130x less** |
+
+The million-key rows come from the same class run with its item count raised; CI measures 1,000
+and 100,000. The two million-key lookup categories ran one after the other and both arms
+came out about a third faster in the second, so compare the ratio within a row, not times across rows. The memory rows come from a forced full GC before and after construction, since
+BenchmarkDotNet reports bytes allocated rather than retained.
+
+`FrozenDictionary` is the stronger of the two BCL baselines for string keys. At build time it
+finds a few character positions that tell this key set apart and hashes only those, while the
+function hashes every character with XXH3. That is why the frozen dictionary wins lookups at
+every measured size, by the most where its table fits in cache. **Read the memory column before the time columns: the function is
+the choice when the key → slot index has to be small, not when it has to be the fastest.**
+Verifying a key against a stored key array costs a random read into that array, which is
+what the `VerifiedLookup` row adds.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A static vocabulary mapped onto rows of an embedding table, built once at startup.
+string[] vocabulary = LoadVocabulary();
+var slot = new MinimalPerfectHash<string, StringXxHash3Hasher>(vocabulary);
+
+var words = new string[slot.Count];      // the key at each slot, kept to reject unknown words
+var vectors = new float[slot.Count][];
+foreach (string word in vocabulary)
+{
+    int i = slot.GetIndex(word);
+    words[i] = word;
+    vectors[i] = LoadVector(word);
+}
+
+float[]? Lookup(string word)
+{
+    int i = slot.GetIndex(word);
+    // -1, or another word's slot, for a word outside the vocabulary.
+    return i >= 0 && words[i] == word ? vectors[i] : null;
+}
+```
+
+When every lookup is known to be a member (a value array keyed by the same set the function
+was built from), the stored-key array and the comparison can go, and the slot index costs
+about half a byte per key.
+
+---
+
 ## BitSet
 
 A dense, fixed-length array of bits packed into 64-bit words. It is the **exact,
@@ -5469,7 +5628,7 @@ without invoking the hasher, so a hasher is never handed `0`, `null` or an empty
 
 ### The key index
 
-All three caches (`LruCache`, `LfuCache`, `SieveCache`) share one key→slot index. A slot never moves
+All four caches (`LruCache`, `LfuCache`, `SieveCache`, `TinyLfuCache`) share one key→slot index. A slot never moves
 while its entry is resident, so the index stores no entries of its own. Each bucket holds the first
 slot of its chain, and each slot records its key, its full hash and the next slot in the same bucket.
 There are at least twice as many buckets as slots, so a full cache leaves most buckets empty and a
@@ -5920,6 +6079,218 @@ Product GetProduct(long id)
 // Reads do not invalidate an enumerator, so a snapshot can be taken while serving hits.
 foreach (KeyValuePair<long, Product?> entry in cache)
     _ = GetProduct(entry.Key);
+```
+
+## TinyLfuCache&lt;TKey, TValue, THasher&gt;
+
+A fixed-capacity cache with **W-TinyLFU eviction** (Einziger, Friedman and Manes, *TinyLFU: A
+Highly Efficient Cache Admission Policy*, 2017; the policy behind Java's Caffeine), parameterized on a
+custom hash provider. Every new key enters a small LRU *window*. A key leaving the window replaces the
+main region's victim only if a frequency sketch says it was used more often recently, and the sketch
+remembers keys that are no longer resident.
+
+```csharp
+public class TinyLfuCache<TKey, TValue, THasher>
+    : IReadOnlyCollection<KeyValuePair<TKey, TValue?>>
+    where THasher : struct, IHashProvider<TKey>
+```
+
+The library's other three caches judge a key only by what happened while it was resident.
+[`LruCache`](#lrucachetkey-tvalue-thasher) keeps recency, [`LfuCache`](#lfucachetkey-tvalue-thasher)
+keeps a use count that resets to 1 when the key is evicted and comes back, and
+[`SieveCache`](#sievecachetkey-tvalue-thasher) keeps one visited flag. None of them can learn from a key
+that keeps returning after it was evicted. The plainest case is a **loop over more keys than the
+cache holds**: a batch job re-reading a table, a crawler revisiting a site, a working set just over
+capacity. Each key comes back just after an LRU-ordered cache has evicted it, so all three miss
+**every** request. `TinyLfuCache` counts those returns in its sketch, keeps most of the loop resident,
+and misses about a third of them. It stays level with the best of the other three on a stationary
+Zipf stream, and the sketch ages, so popularity that drifts does not pin stale keys the way
+`LfuCache`'s counts do.
+
+### How it works
+
+Capacity is split three ways: a **window** of 1% (at least one entry), and a **main region** of the
+rest, divided into a **protected** segment of 80% and a **probation** segment. Each segment is an LRU
+list threaded through one fixed array of node structs. The key→slot index, which is where `THasher` is
+used and which holds the keys, is the one the other caches use (see [The key index](#the-key-index)).
+
+- **A new key** always goes to the front of the window, so a key just put is always resident.
+- **When the window overflows**, its least-recently-used entry, the *candidate*, moves to the front of
+  probation. While the cache has room that move is free. Once the cache is full, the candidate has to
+  earn it against probation's least-recently-used entry, the *victim*. The candidate stays and the
+  victim is evicted only if the candidate's frequency estimate is **strictly** higher. On a tie or a
+  loss the candidate is evicted.
+- **A hit in probation** promotes the entry to the front of protected. If protected is then over its
+  share, its least-recently-used entry drops back to the front of probation. **A hit in the window or
+  in protected** moves the entry to the front of its segment.
+- **`Remove`** unlinks the entry from whichever segment holds it. **`Clear`** empties every segment and
+  forgets every frequency.
+
+With capacity 1 there is no main region, so the cache is a one-entry LRU. With capacity 2 the
+protected share rounds down to zero, so a promoted entry drops straight back to probation.
+
+### The frequency sketch
+
+The sketch is a count-min sketch of 4-bit counters, sixteen to a `ulong`, with one `ulong` per unit of
+capacity rounded up to a power of two (at least 8, at most 2<sup>27</sup>). For capacities from 8 to
+2<sup>27</sup> that is 8–16 bytes per entry, depending on how far the rounding reaches; below 8 the
+64-byte minimum costs more per entry. Each key maps to four counters, picked from a 64-bit mix of its
+32-bit hash, and its estimate is the smallest of the four. Collisions can only overstate an
+estimate, and a counter saturates at 15.
+
+- **Recorded:** every hit (indexer get, `TryGet`, an overwriting `AddOrUpdate`) and every insert.
+- **Not recorded:** a miss through `TryGet`, because the insert that usually follows it records the
+  access, and every peek (`TryPeek`, `ContainsKey`, `GetFrequencyEstimate`, enumeration).
+- **Ageing:** whenever the accesses the sketch holds reach `10 × Capacity`, every counter is halved.
+  A halving keeps at most half of them, so the first comes after `10 × Capacity` recorded accesses and
+  later ones after `5`–`10 × Capacity` (about `6 × Capacity` on uniform and all-unique traffic), as in
+  Caffeine. An access counts fully until the next
+  halving, half after it, and so on, so the estimate is of *recent* frequency. Accesses whose four
+  counters are already saturated are not recorded.
+- **History outlives residency.** An evicted or removed key keeps its counts until they age out, so a
+  key that keeps returning is admitted on its record.
+
+Admission is deterministic. Caffeine also admits a warm candidate at random now and then, so an
+attacker who controls the key stream cannot keep a victim resident by colliding it in the sketch. This
+port does not, so a caller who knows the hasher and controls the keys can choose which keys collide.
+
+### Cost
+
+Every operation is one index lookup plus `O(1)` list work. A hit or an insert also updates four
+sketch counters, and an insert into a full cache reads eight more for the admission test. The halving
+sweeps the sketch about once per `5`–`10 × Capacity` recorded accesses, so it is `O(1)` amortized. Nothing on the
+get/put/evict path allocates after construction.
+
+### Miss ratio
+
+Measured on seeded traces of 1,000,000 requests at capacity 1,024, with a get followed by a put on a
+miss. Every policy saw the identical request stream. The three marked rows are pinned by tests.
+
+| Trace | `TinyLfuCache` | `SieveCache` | `LfuCache` | `LruCache` |
+|---|---:|---:|---:|---:|
+| Loop over 1.5 × capacity keys (pinned) | **34.1%** | 100% | 100% | 100% |
+| Loop over 4 × capacity keys | **76.4%** | 100% | 100% | 100% |
+| Zipf(1.0) interleaved 1:1 with a loop over 2 × capacity keys (pinned) | **56.8%** | 70.9% | 70.9% | 79.0% |
+| Zipf(1.0) over 100,000 keys (pinned) | 39.9% | 40.2% | 40.5% | 49.2% |
+| Zipf(1.0), popular keys replaced every 250,000 requests | 41.2% | 42.0% | 69.2% | 49.2% |
+
+A stationary Zipf stream is where the other frequency-aware caches already do well, and
+`TinyLfuCache` is level with them there. The loops are where it is alone: no policy without memory of
+non-resident keys can hit on them. On the last row the ageing keeps it level with `SieveCache`, while
+`LfuCache`'s counts never age and leave it holding the previous phase's keys.
+
+**Where it loses.** The window is a fixed 1%, so a trace whose recency is most of the signal can favour
+`LruCache`. On the shifting trace at capacity 10,000, `LruCache` misses 27.2% against `TinyLfuCache`'s
+30.4%. Caffeine sizes its window adaptively to close that gap; this port does not. Measure against
+your own trace before you switch.
+
+### Performance
+
+From `TinyLfuCacheBenchmark` (capacity 1,024, Apple M4, .NET 10, default job). The baseline is the
+idiomatic .NET LRU, a `Dictionary` keyed to `LinkedList` nodes. Misses cost nothing here beyond the
+cache's own work; in a real cache each one is a trip to whatever the cache fronts.
+
+| Arm | Items | Baseline LRU | `TinyLfuCache` | Ratio |
+|---|---:|---:|---:|---:|
+| `Get` (1,024 warm hits) | 100,000 | 19.56 µs | 10.09 µs | **1.94x faster** |
+| `ZipfWorkload` (get, put on miss) | 100,000 | 2.67 ms | 2.55 ms | 1.05x faster, 0 B vs 2.36 MB |
+| `LoopWorkload` (get, put on miss) | 100,000 | 1.44 ms | 1.12 ms | 1.29x faster (34% misses vs 100%), 0 B vs 4.8 MB |
+| `Put` (eviction churn) | 1,000 | 14.27 µs | 15.10 µs | about even, 0 B vs 48.7 KB |
+| `Put` (eviction churn) | 100,000 | 1.29 ms | 2.29 ms | **1.78x slower**, 0 B vs 4.8 MB |
+| `GetMissing` | 100,000 | 198 µs | 265 µs | 1.34x slower |
+
+**The price of the sketch.** Every hit and insert updates four counters, and every insert into a full
+cache reads eight more, so this is the slowest of the four caches per operation. On the same warm
+hits `LruCache` takes 2.76 µs, about 3.7x less, and on the loop `SieveCache` takes 0.55 ms, half the
+time, while missing every request. The benchmark's `Get` arm cycles through the warm keys in order,
+which is also the worst case for the segments: each hit lands on probation's oldest entry, promotes
+it and demotes another. `TinyLfuCache` pays off when a miss costs more than the tens of nanoseconds
+it spends per operation, which is the usual reason to have a cache.
+
+### Constructors
+
+```csharp
+public TinyLfuCache(int capacity)
+
+public TinyLfuCache(
+    int capacity,
+    IEnumerable<KeyValuePair<TKey, TValue?>> source)
+```
+
+The first overload creates an empty cache that retains at most `capacity` entries. The `source`
+overload inserts each pair in enumeration order through `AddOrUpdate`. A later duplicate key
+therefore overwrites the earlier value and counts as a use of it, and a source with more than
+`capacity` distinct keys evicts under the W-TinyLFU policy as it goes.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `capacity` is less than 1.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This takes priority over an
+  invalid `capacity`.
+
+### Methods and properties
+
+- `int Capacity` — the maximum number of entries retained.
+- `int Count` — the current number of entries (never greater than `Capacity`).
+- `TValue? this[TKey key]` — **get** is a use (records an access and moves the entry forward) and
+  throws `KeyNotFoundException` if absent; **set** behaves like `AddOrUpdate`.
+- `bool TryGet(TKey key, out TValue? value)` — a *use* on a hit; a miss records nothing.
+- `bool TryPeek(TKey key, out TValue? value)` — reads without counting a use.
+- `bool ContainsKey(TKey key)` — membership test; does not count a use.
+- `int GetFrequencyEstimate(TKey key)` — the sketch's estimate of recent uses, `0` to `15`, for any
+  key, resident or not. This is the number admission compares. It records nothing.
+- `void AddOrUpdate(TKey key, TValue? value)` — inserts at the front of the window (evicting one entry
+  first if full), or overwrites an existing value and counts a use.
+- `void Add(TKey key, TValue? value)` — inserts; throws `ArgumentException` if the key exists.
+- `bool TryAdd(TKey key, TValue? value)` — inserts if absent (evicting one first if full); returns
+  `false` and leaves the cache unchanged, recording nothing, if the key exists.
+- `bool Remove(TKey key)` / `bool Remove(TKey key, out TValue? value)` — removes an entry,
+  optionally returning its value. The key's frequency history stays in the sketch.
+- `void Clear()` — removes all entries and resets the sketch; the backing storage is retained.
+- `Enumerator GetEnumerator()` — an allocation-free struct enumerator yielding the **window, then
+  probation, then protected**, each from most to least recently used. Enumeration is a peek.
+
+### Enumeration and versioning
+
+`MoveNext` and `Reset` throw `InvalidOperationException` after an insert, an eviction, a successful
+`Remove`, a `Clear` of a non-empty cache, or a use that moved an entry. A use moves nothing only when
+the entry is already the most-recently-used entry of the window or of protected, so that use, a value
+overwrite of such an entry, a rejected `TryAdd`, a failed `Remove`, every peek and a `Clear` of an
+empty cache leave active enumerators valid. A `Clear` of an empty cache still resets the sketch.
+
+### Default-key handling
+
+`default(TKey)` — `0` for `int`, `null` for reference types — is a valid key, and the whole surface
+works with it, `GetFrequencyEstimate` included. The key index hashes the default key to a fixed value
+without invoking the hasher, and the sketch uses that same value.
+
+### Thread safety
+
+`TinyLfuCache` is not thread-safe; concurrent callers must synchronize externally. A read updates the
+sketch and usually relinks an entry, so even a read-only workload is a write to shared state.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// A nightly job re-reads 15,000 customer records through a cache of 10,000. An LRU-ordered cache
+// evicts each record just before the next pass needs it; TinyLFU keeps most of them resident.
+var cache = new TinyLfuCache<long, Customer, Int64WangHasher>(capacity: 10_000);
+
+Customer GetCustomer(long id)
+{
+    if (cache.TryGet(id, out Customer? cached))
+        return cached!;               // a hit records a use and moves the entry forward
+
+    Customer fresh = LoadFromDatabase(id);
+    cache[id] = fresh;                // enters the window; an older entry may lose admission
+    return fresh;
+}
+
+// The estimate is available for keys that are not resident, too.
+int recentUses = cache.GetFrequencyEstimate(42);
 ```
 
 ## Deque&lt;T&gt;

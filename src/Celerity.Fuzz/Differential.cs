@@ -61,6 +61,7 @@ internal static class Differential
         ("RankedMultiSet", RankedMultiSetCase),
         ("LfuCache", LfuCacheCase),
         ("SieveCache", SieveCacheCase),
+        ("TinyLfuCache", TinyLfuCacheCase),
         ("CelerityMultiMap", CelerityMultiMapCase),
         ("FrozenCelerityDictionary", FrozenCase),
         ("FrozenCeleritySet", FrozenSetCase),
@@ -68,6 +69,7 @@ internal static class Differential
         ("BloomFilter", BloomFilterCase),
         ("CuckooFilter", CuckooFilterCase),
         ("XorFilter", XorFilterCase),
+        ("MinimalPerfectHash", MinimalPerfectHashCase),
         ("BitSet", BitSetCase),
         ("BitPackedArray", BitPackedArrayCase),
         ("RankSelectBitVector", RankSelectBitVectorCase),
@@ -127,6 +129,7 @@ internal static class Differential
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
         ("ReservoirSampler", ReservoirSamplerCase),
+        ("WeightedReservoirSampler", WeightedReservoirSamplerCase),
         ("RollingQuantile", RollingQuantileCase),
         ("AliasTable", AliasTableCase),
         ("KllSketch", KllSketchCase),
@@ -1976,6 +1979,154 @@ internal static class Differential
         CheckSameSequence(sut.Select(e => e.Key), order, "enumeration");
     }
 
+    // TinyLfuCache vs a list-based reference W-TinyLFU: three Lists (window, probation, protected, each
+    // most-recently-used first) re-deriving the documented segment shares, candidate/victim choice,
+    // strict-win admission, promotion and demotion. The one input shared with the type under test is
+    // the frequency estimate, read from the SUT just before each insert, because the sketch's collisions
+    // are part of its output; the sketch itself is checked against exact counts in the xUnit suite.
+    // Most cases use capacities 1-24 over the shared key range, where the window is one entry and the
+    // protected share runs from zero up; one case in eight takes a capacity of 200-230 over a key domain
+    // of its own, so the window holds two entries and the main region actually fills.
+    private static void TinyLfuCacheCase(Random rng)
+    {
+        bool wide = rng.Next(0, 8) == 0;
+        int capacity = wide ? rng.Next(200, 231) : rng.Next(1, 25);
+        int keyLo = wide ? 0 : MinKey;
+        int keyHi = wide ? capacity + 30 : MaxKey;
+        var sut = new TinyLfuCache<int, int, Int32WangNaiveHasher>(capacity);
+
+        int windowCap = Math.Max(1, capacity / 100);
+        int mainCap = capacity - windowCap;
+        int protectedCap = mainCap * 4 / 5;
+        var window = new List<int>();
+        var probation = new List<int>();
+        var guarded = new List<int>();
+        var values = new Dictionary<int, int>();
+
+        void Use(int key)
+        {
+            if (window.Remove(key))
+            {
+                window.Insert(0, key);
+            }
+            else if (guarded.Remove(key))
+            {
+                guarded.Insert(0, key);
+            }
+            else
+            {
+                probation.Remove(key);
+                guarded.Insert(0, key);
+                if (guarded.Count > protectedCap)
+                {
+                    int demoted = guarded[^1];
+                    guarded.RemoveAt(guarded.Count - 1);
+                    probation.Insert(0, demoted);
+                }
+            }
+        }
+
+        void Put(int key, int value)
+        {
+            if (values.ContainsKey(key))
+            {
+                values[key] = value;
+                Use(key);
+                return;
+            }
+            if (values.Count == capacity)
+            {
+                int candidate = window[^1];
+                window.RemoveAt(window.Count - 1);
+                int evicted = candidate;
+                if (mainCap > 0)
+                {
+                    int victim = probation[^1];
+                    if (sut.GetFrequencyEstimate(candidate) > sut.GetFrequencyEstimate(victim))
+                    {
+                        evicted = victim;
+                        probation.RemoveAt(probation.Count - 1);
+                        probation.Insert(0, candidate);
+                    }
+                }
+                values.Remove(evicted);
+            }
+            else if (window.Count == windowCap)
+            {
+                int overflow = window[^1];
+                window.RemoveAt(window.Count - 1);
+                probation.Insert(0, overflow);
+            }
+            values[key] = value;
+            window.Insert(0, key);
+        }
+
+        int ops = wide ? rng.Next(0, 2000) : OpCount(rng);
+        for (int i = 0; i < ops; i++)
+        {
+            int key = rng.Next(keyLo, keyHi + 1);
+            int value = rng.Next();
+            switch (rng.Next(0, 40))
+            {
+                case < 14:
+                    Put(key, value);
+                    sut.AddOrUpdate(key, value);
+                    break;
+                case < 28:
+                {
+                    bool hit = values.TryGetValue(key, out int expected);
+                    if (hit) Use(key);
+                    Check(sut.TryGet(key, out int actual) == hit, $"TryGet({key}) hit");
+                    Check(!hit || actual == expected, $"TryGet({key}) value");
+                    break;
+                }
+                case < 32:
+                {
+                    bool added = !values.ContainsKey(key);
+                    if (added) Put(key, value);
+                    Check(sut.TryAdd(key, value) == added, $"TryAdd({key})");
+                    break;
+                }
+                case < 36:
+                {
+                    bool removed = values.Remove(key);
+                    if (removed && !window.Remove(key) && !probation.Remove(key))
+                        guarded.Remove(key);
+                    Check(sut.Remove(key) == removed, $"Remove({key})");
+                    break;
+                }
+                case < 39:
+                    // A peek must not count as a use in either implementation.
+                    Check(sut.TryPeek(key, out int peeked) == values.ContainsKey(key), $"TryPeek({key})");
+                    Check(!values.TryGetValue(key, out int want) || peeked == want, $"TryPeek({key}) value");
+                    break;
+                default:
+                    if (rng.Next(0, 4) != 0)
+                        break; // keep Clear rare, so the segments fill and the sketch builds history
+                    sut.Clear();
+                    window.Clear();
+                    probation.Clear();
+                    guarded.Clear();
+                    values.Clear();
+                    break;
+            }
+        }
+
+        Check(sut.Count == values.Count, $"Count {sut.Count} != {values.Count}");
+        Check(sut.Count <= capacity, $"Count {sut.Count} exceeds capacity {capacity}");
+
+        for (int k = keyLo; k <= keyHi; k++)
+        {
+            bool expectedPresent = values.ContainsKey(k);
+            Check(sut.ContainsKey(k) == expectedPresent, $"ContainsKey({k})");
+            Check(sut.TryPeek(k, out int v) == expectedPresent, $"TryPeek({k})");
+            Check(!expectedPresent || v == values[k], $"value at {k}");
+        }
+
+        // The segments themselves: window, probation, protected, each newest first.
+        CheckSameSequence(sut.Select(e => e.Key), [.. window, .. probation, .. guarded], "enumeration");
+    }
+
     // LfuCache vs a sort-based reference LFU. The BCL has no cache of any policy, so the oracle is the
     // definition rather than a BCL type: every key carries its use count and the stamp of its most
     // recent use, and the eviction order is "lowest count first, oldest stamp breaking ties" — read off
@@ -2232,6 +2383,51 @@ internal static class Differential
         if (oracle.Count == 0)
             for (int k = MinKey; k <= MaxKey; k++)
                 Check(!sut.Contains(k), $"empty xor filter reported {k} present");
+    }
+
+    // ---- minimal perfect hash (build-once, exact on members) ----------------
+
+    // The function must be a bijection from the distinct keys onto [0, Count), with Count equal to the
+    // oracle's size. The shared tiny key domain would never fill a second level, so this case draws its own:
+    // up to 3,000 keys from a domain a few times wider, so duplicates still occur and later levels fill. Half
+    // the trials hash with a colliding hasher, so the exact table and the poison entries that keep its keys'
+    // positions clear are exercised alongside the levels, at a random gamma.
+    private static void MinimalPerfectHashCase(Random rng)
+    {
+        int size = rng.Next(0, 3000);
+        int domain = Math.Max(1, size * rng.Next(1, 4));
+        var keys = new int[size];
+        for (int i = 0; i < size; i++)
+            keys[i] = rng.Next(-domain, domain);
+
+        var oracle = new HashSet<int>(keys);
+        double gamma = 1.0 + rng.NextDouble() * 4.0;
+
+        if (rng.Next(2) == 0)
+            CheckMinimalPerfectHash(new MinimalPerfectHash<int, Int32WangNaiveHasher>(keys, gamma), oracle);
+        else
+            CheckMinimalPerfectHash(new MinimalPerfectHash<int, FuzzPairCollidingHasher>(keys, gamma), oracle);
+    }
+
+    private static void CheckMinimalPerfectHash<THasher>(MinimalPerfectHash<int, THasher> sut, HashSet<int> oracle)
+        where THasher : struct, IHashProvider<int>
+    {
+        Check(sut.Count == oracle.Count, $"distinct count {sut.Count} != oracle {oracle.Count}");
+
+        var seen = new bool[sut.Count];
+        foreach (int k in oracle)
+        {
+            int index = sut.GetIndex(k);
+            Check(index >= 0 && index < sut.Count, $"index {index} for {k} is outside [0, {sut.Count})");
+            Check(!seen[index], $"index {index} given to two keys (second: {k})");
+            seen[index] = true;
+        }
+    }
+
+    // Collides keys in pairs inside [-64, 64) and hashes every other key to itself.
+    private readonly struct FuzzPairCollidingHasher : IHashProvider<int>
+    {
+        public int Hash(int key) => key is >= -64 and < 64 ? key >> 1 : key;
     }
 
     // ---- bit set (exact, two-directional) -----------------------------------
@@ -6997,6 +7193,116 @@ internal static class Differential
         {
             for (int i = 0; i < length; i++)
                 Check(sampler[i] == i, "ReservoirSampler reordered an unfilled reservoir");
+        }
+    }
+
+    /// <summary>
+    /// Invariant fuzzing for the weighted sampler, as for <see cref="ReservoirSamplerCase"/>: there is no
+    /// exact oracle for a random sample, so it asserts what must hold whatever the draws are.
+    /// </summary>
+    /// <remarks>
+    /// Weights mix zeros (counted, never retained), tiny (<c>1e-300</c>) and huge (<c>1e300</c>) values,
+    /// which push the log-space keys to both ends of their range, with ordinary ones. The stream is fed in
+    /// runs alternating between the per-item <c>Add</c> and the span overload, so the batch path's
+    /// in-locals countdown and the per-item path hand the jump back and forth. Then a second, independently
+    /// seeded sampler takes a split of a stream and is merged in. The checks: <c>TotalSeen</c> and
+    /// <c>TotalWeight</c> match the stream, exactly <c>min(capacity, positive-weight items)</c> are retained,
+    /// each was offered with a positive weight and appears once, and a stream with no more positive items
+    /// than the capacity is kept whole. The weighted inclusion probabilities are distributional and live
+    /// in the unit tests.
+    /// </remarks>
+    private static void WeightedReservoirSamplerCase(Random rng)
+    {
+        int capacity = rng.Next(1, 40);
+
+        var left = new WeightedReservoirSampler<int>(capacity, (ulong)rng.NextInt64());
+        var right = new WeightedReservoirSampler<int>(capacity, (ulong)rng.NextInt64());
+
+        // One stream of ids, split at a random point: [0, split) goes to left, [split, length) to right.
+        int length = rng.Next(0, 500);
+        int split = rng.Next(0, length + 1);
+        var weights = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            weights[i] = rng.Next(8) switch
+            {
+                0 or 1 => 0d,
+                2 => 1e-300,
+                3 => 1e300,
+                4 => double.Epsilon,
+                _ => rng.NextDouble() * 100d,
+            };
+        }
+
+        FeedWeighted(rng, left, weights, 0, split);
+        CheckWeightedSampler(left, capacity, weights, 0, split, sequentialTotal: true, "WeightedReservoirSampler");
+
+        FeedWeighted(rng, right, weights, split, length);
+        CheckWeightedSampler(right, capacity, weights, split, length, sequentialTotal: true, "WeightedReservoirSampler (second shard)");
+
+        double expectedTotal = left.TotalWeight + right.TotalWeight;
+        left.Merge(right);
+        Check(left.TotalWeight == expectedTotal, "WeightedReservoirSampler.Merge did not sum the weight totals");
+        CheckWeightedSampler(left, capacity, weights, 0, length, sequentialTotal: false, "WeightedReservoirSampler.Merge");
+        CheckWeightedSampler(right, capacity, weights, split, length, sequentialTotal: true, "WeightedReservoirSampler.Merge changed its argument");
+    }
+
+    // Feeds ids [from, to) with their weights, in runs that alternate between per-item Add and the span Add.
+    private static void FeedWeighted(Random rng, WeightedReservoirSampler<int> sampler, double[] weights, int from, int to)
+    {
+        int i = from;
+        while (i < to)
+        {
+            int run = Math.Min(to - i, rng.Next(1, 64));
+            if (rng.Next(2) == 0)
+            {
+                for (int j = i; j < i + run; j++)
+                    Check(sampler.Add(j, weights[j]) == false || weights[j] > 0d, "WeightedReservoirSampler retained a zero-weight item");
+            }
+            else
+            {
+                var ids = new int[run];
+                for (int j = 0; j < run; j++)
+                    ids[j] = i + j;
+                sampler.Add(ids, weights.AsSpan(i, run));
+            }
+
+            i += run;
+        }
+    }
+
+    private static void CheckWeightedSampler(WeightedReservoirSampler<int> sampler, int capacity, double[] weights, int from, int to, bool sequentialTotal, string label)
+    {
+        int positives = 0;
+        double total = 0d;
+        for (int i = from; i < to; i++)
+        {
+            if (weights[i] > 0d)
+                positives++;
+            total += weights[i];
+        }
+
+        Check(sampler.TotalSeen == to - from, $"{label} miscounted the stream");
+        Check(sampler.Count == Math.Min(capacity, positives), $"{label} retained the wrong number of items");
+        Check(sampler.IsFull == (positives >= capacity), $"{label} misreported fullness");
+
+        // A merged total is (left + right), not the left-to-right running sum, so only an unmerged
+        // sampler's total is compared bit-for-bit here; the merge's is checked by its caller.
+        if (sequentialTotal)
+            Check(sampler.TotalWeight == total, $"{label} misreported the weight total");
+
+        var retained = new HashSet<int>();
+        foreach (int item in sampler.Sample.ToArray())
+        {
+            Check(item >= from && item < to, $"{label} retained an item that was never added");
+            Check(weights[item] > 0d, $"{label} retained a zero-weight item");
+            Check(retained.Add(item), $"{label} retained the same item twice");
+        }
+
+        if (positives <= capacity)
+        {
+            for (int i = from; i < to; i++)
+                Check(retained.Contains(i) == (weights[i] > 0d), $"{label} dropped a positive-weight item from an unfilled reservoir");
         }
     }
 

@@ -151,6 +151,10 @@ public class StatisticsArgumentValidationTests
         sampler.Add(ReadOnlySpan<int>.Empty);
         Assert.Equal(0, sampler.TotalSeen);
 
+        var weighted = new WeightedReservoirSampler<int>(capacity: 4, seed: 1UL);
+        weighted.Add(ReadOnlySpan<int>.Empty, ReadOnlySpan<double>.Empty);
+        Assert.Equal(0, weighted.TotalSeen);
+
         var rolling = new RollingQuantile<int>(windowSize: 4, quantile: 0.5d);
         rolling.Add(ReadOnlySpan<int>.Empty);
         Assert.Equal(0, rolling.Count);
