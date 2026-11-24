@@ -4986,9 +4986,14 @@ have. Keys are compared with `keyComparer`, or `EqualityComparer<TKey>.Default`.
 - `int Query(MinHashSketch<T, THasher> sketch, ICollection<TKey> results)` — passes each
   candidate to `results.Add` once and returns how many it passed. A destination that ignores
   keys it already holds, like a `HashSet<T>` reused across queries, can grow by less. A key
-  matching several bands is deduplicated in pooled scratch, so the index allocates nothing;
-  `results` may grow. A query does not modify the index, so concurrent queries with no concurrent
-  writer are safe.
+  matching several bands contributes one hit per matching band before deduplication. After the
+  densify-and-hash pass and bucket walks, sorting costs `O(h log h)` and the temporary hit buffer
+  takes `O(h)` space for `h` total band hits, at most `Count · BandCount`. This can be much larger
+  than the number of distinct candidates when many sketches match many bands. Small scratch
+  buffers use the stack; larger ones are rented and returned. With suitable buffers available in
+  the pool, the query allocates no managed scratch, but a first, larger or contended query can
+  allocate; `results` may also grow. A query does not modify the index, so concurrent queries
+  with no concurrent writer are safe.
 - `List<TKey> Query(MinHashSketch<T, THasher> sketch)` — the same, into a new list.
 - `double CandidateProbability(double jaccard)` — `1 − (1 − J^r)^b`, the chance a pair with
   that similarity is returned under ideal MinHash.

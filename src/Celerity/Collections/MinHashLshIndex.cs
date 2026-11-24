@@ -466,11 +466,14 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
     /// <exception cref="ArgumentNullException"><paramref name="sketch"/> or <paramref name="results"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="sketch"/> has a different precision.</exception>
     /// <remarks>
-    /// The cost is one densify-and-hash pass over the sketch plus a walk of the <see cref="BandCount"/>
-    /// matching buckets, so it grows with the number of candidates, not with <see cref="Count"/>. A
-    /// key found in several bands is reported once: the matches are gathered, sorted and
-    /// deduplicated in pooled scratch, so the index allocates nothing; <paramref name="results"/> may
-    /// grow. Candidates are reported in no particular order. Candidates are not verified; see
+    /// The cost is one densify-and-hash pass over the sketch, a walk of the matching buckets, and
+    /// <c>O(h log h)</c> sorting for <c>h</c> total band hits. A key contributes one hit per matching
+    /// band before deduplication, so the <c>O(h)</c> temporary hit buffer can be much larger than the
+    /// number of distinct candidates; <c>h</c> is at most <c>Count · BandCount</c>. Small scratch
+    /// buffers are stack-allocated; larger ones are rented and returned. With suitable buffers
+    /// available in the pool, the query allocates no managed scratch, but a first, larger or
+    /// contended query can allocate. The destination <paramref name="results"/> may also grow.
+    /// Candidates are reported once each, in no particular order. Candidates are not verified; see
     /// the type remarks. A query does not modify the index, but <paramref name="results"/> must not
     /// be a collection whose <c>Add</c> modifies the index.
     /// </remarks>
