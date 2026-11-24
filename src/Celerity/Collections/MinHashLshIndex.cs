@@ -569,16 +569,20 @@ public class MinHashLshIndex<TKey, T, THasher> : IReadOnlyCollection<TKey>
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    // Moves the hits into a pooled buffer twice the size, returning the previous pooled one.
+    // Moves the hits into a larger pooled buffer, returning the previous pooled one.
     private static Span<int> GrowHits(Span<int> hits, ref int[]? rented)
     {
-        int[] next = ArrayPool<int>.Shared.Rent(hits.Length * 2);
+        int[] next = ArrayPool<int>.Shared.Rent(NextHitCapacity(hits.Length));
         hits.CopyTo(next);
         if (rented is not null)
             ArrayPool<int>.Shared.Return(rented);
         rented = next;
         return next;
     }
+
+    // A query can collect at most one hit per node, so Array.MaxLength also bounds its hits.
+    // Widen before doubling: a valid buffer of 2^30 hits must grow without wrapping negative.
+    private static int NextHitCapacity(int current) => (int)Math.Min(2L * current, Array.MaxLength);
 
     private void Grow()
     {

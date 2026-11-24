@@ -299,6 +299,36 @@ public class MinHashLshIndexTests
         Assert.Equal(new[] { 7 }, results);
     }
 
+    [Theory]
+    [InlineData(256, 512)]
+    [InlineData(512, 1024)]
+    [InlineData(1 << 29, 1 << 30)]
+    public void NextHitCapacity_ShouldDouble_WhenTheResultFits(int current, int expected)
+    {
+        Assert.Equal(expected, NextHitCapacity(current));
+    }
+
+    [Theory]
+    [InlineData(1 << 30)]
+    [InlineData(int.MaxValue - 100)]
+    public void NextHitCapacity_ShouldClamp_BeforeSignedDoublingOverflows(int current)
+    {
+        // Exercise the arithmetic used by GrowHits without allocating multi-gigabyte buffers.
+        // The node arrays permit more than 2^30 total hits, where signed doubling wraps negative.
+        Assert.Equal(Array.MaxLength, NextHitCapacity(current));
+    }
+
+    [Fact]
+    public void NextHitCapacity_ShouldClamp_WhenDoublingExceedsTheArrayLimit()
+    {
+        Assert.Equal(Array.MaxLength, NextHitCapacity(Array.MaxLength / 2 + 1));
+    }
+
+    private static int NextHitCapacity(int current)
+        => (int)typeof(MinHashLshIndex<int, int, Int32Murmur3Hasher>)
+            .GetMethod("NextHitCapacity", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, new object[] { current })!;
+
     // Element x lands in register x mod 1024 at precision 10, with value x.
     private struct RegisterModuloHasher : IHashProvider<int>, IHashProvider64<int>
     {
