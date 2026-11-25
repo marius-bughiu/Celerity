@@ -763,6 +763,7 @@ function escapeHtml(s) {
     // Welford against the LINQ two-pass. Expect a factor near one on Moments: the reason to prefer this
     // type is that the faster one-pass shortcut is numerically wrong, which a chart cannot show.
     { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',      vs: 'LINQ two-pass mean / variance', ops: ['Moments', 'Accumulate'] },
+    { key: 'RunningCovariance',   title: 'RunningCovariance (two-variable fit)',     vs: 'LINQ two-pass covariance / slope', ops: ['Fit', 'Accumulate'] },
     // Celerity.Ring. ItemCount is the node count. The baseline is the hand-rolled ring (a sorted uint[] of 160
     // virtual nodes per node and Array.BinarySearch) with the same key hash, so GetNode isolates the structure.
     // Churn (one node leaves and rejoins) is the cost Maglev pays for its one-load lookup, and it loses there:

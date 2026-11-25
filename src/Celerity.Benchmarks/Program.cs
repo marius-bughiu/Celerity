@@ -118,6 +118,7 @@ internal class Program
         typeof(RollingQuantileBenchmark),
         typeof(AliasTableBenchmark),
         typeof(RunningStatisticsBenchmark),
+        typeof(RunningCovarianceBenchmark),
         // Celerity.Ring's charted sweep: Maglev's one-load lookup and its rebuild cost against a hand-rolled
         // ring. The package's other benchmark (RingBenchmark) stays in the extended suite.
         typeof(MaglevHashBenchmark),

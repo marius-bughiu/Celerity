@@ -4,8 +4,8 @@ namespace Celerity.Tests.Statistics;
 
 /// <summary>
 /// Reconciles the streaming types against the exact answers they approximate: <see cref="DDSketch"/>
-/// against a sorted array of every value it consumed, and <see cref="RunningStatistics"/> against a
-/// two-pass computation of the same moments.
+/// against a sorted array of every value it consumed, and <see cref="RunningStatistics"/> and
+/// <see cref="RunningCovariance"/> against a two-pass computation of the same moments.
 /// </summary>
 /// <remarks>
 /// Each case is a pure function of its seed, so a failure reproduces exactly. The distributions
@@ -156,6 +156,92 @@ public class StatisticsDifferentialTests
         Assert.Equal(whole.Kurtosis, merged.Kurtosis, Tolerance(whole.Kurtosis, 1e-5));
         Assert.Equal(whole.Min, merged.Min);
         Assert.Equal(whole.Max, merged.Max);
+    }
+
+    [Theory]
+    [InlineData("uniform", 1)]
+    [InlineData("uniform", 2)]
+    [InlineData("lognormal", 1)]
+    [InlineData("signed", 1)]
+    [InlineData("duplicated", 1)]
+    public void RunningCovariance_ShouldMatchATwoPassComputation(string shape, int seed)
+    {
+        double[] xs = Generate(shape, seed, 5_000);
+        double[] noise = Generate(shape, seed + 100, 5_000);
+        double[] ys = new double[xs.Length];
+        for (int i = 0; i < xs.Length; i++)
+        {
+            ys[i] = (0.5d * xs[i]) + noise[i];
+        }
+
+        var span = new RunningCovariance(xs, ys);
+        var perPair = new RunningCovariance();
+        for (int i = 0; i < xs.Length; i++)
+        {
+            perPair.Add(xs[i], ys[i]);
+        }
+
+        double meanX = xs.Average();
+        double meanY = ys.Average();
+        double sxx = 0d;
+        double syy = 0d;
+        double sxy = 0d;
+        for (int i = 0; i < xs.Length; i++)
+        {
+            sxx += (xs[i] - meanX) * (xs[i] - meanX);
+            syy += (ys[i] - meanY) * (ys[i] - meanY);
+            sxy += (xs[i] - meanX) * (ys[i] - meanY);
+        }
+
+        double correlation = sxy / Math.Sqrt(sxx * syy);
+        double slope = sxy / sxx;
+
+        foreach (RunningCovariance fit in new[] { span, perPair })
+        {
+            Assert.Equal(xs.Length, fit.Count);
+            Assert.Equal(meanX, fit.MeanX, Tolerance(meanX, 1e-9));
+            Assert.Equal(meanY, fit.MeanY, Tolerance(meanY, 1e-9));
+            Assert.Equal(sxx / xs.Length, fit.PopulationVarianceX, Tolerance(sxx / xs.Length, 1e-8));
+            Assert.Equal(syy / xs.Length, fit.PopulationVarianceY, Tolerance(syy / xs.Length, 1e-8));
+            Assert.Equal(sxy / xs.Length, fit.PopulationCovariance, Tolerance(sxy / xs.Length, 1e-8));
+            Assert.Equal(correlation, fit.Correlation, 1e-9);
+            Assert.Equal(slope, fit.Slope, Tolerance(slope, 1e-8));
+            Assert.Equal(meanY - (slope * meanX), fit.Intercept, Tolerance(meanY, 1e-8));
+        }
+    }
+
+    [Theory]
+    [InlineData("uniform", 1)]
+    [InlineData("lognormal", 2)]
+    [InlineData("signed", 3)]
+    public void RunningCovarianceMerge_ShouldMatchASequentialPass_AcrossUnevenShards(
+        string shape,
+        int seed)
+    {
+        double[] xs = Generate(shape, seed, 5_000);
+        double[] ys = Generate(shape, seed + 50, 5_000);
+
+        var whole = new RunningCovariance(xs, ys);
+
+        int[] bounds = [0, 17, 500, 1_800, xs.Length];
+        var merged = new RunningCovariance();
+        for (int i = 1; i < bounds.Length; i++)
+        {
+            int start = bounds[i - 1];
+            int length = bounds[i] - start;
+            merged.Merge(new RunningCovariance(xs.AsSpan(start, length), ys.AsSpan(start, length)));
+        }
+
+        Assert.Equal(whole.Count, merged.Count);
+        Assert.Equal(whole.MeanX, merged.MeanX, Tolerance(whole.MeanX, 1e-9));
+        Assert.Equal(whole.MeanY, merged.MeanY, Tolerance(whole.MeanY, 1e-9));
+        Assert.Equal(whole.PopulationVarianceX, merged.PopulationVarianceX, Tolerance(whole.PopulationVarianceX, 1e-8));
+        Assert.Equal(whole.PopulationVarianceY, merged.PopulationVarianceY, Tolerance(whole.PopulationVarianceY, 1e-8));
+        Assert.Equal(
+            whole.PopulationCovariance,
+            merged.PopulationCovariance,
+            Tolerance(Math.Sqrt(whole.PopulationVarianceX * whole.PopulationVarianceY), 1e-8));
+        Assert.Equal(whole.Correlation, merged.Correlation, 1e-9);
     }
 
     /// <summary>

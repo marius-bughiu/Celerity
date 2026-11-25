@@ -24,6 +24,7 @@ in the collections.
 - [ReservoirSampler](#reservoirsampler)
 - [WeightedReservoirSampler](#weightedreservoirsampler)
 - [RunningStatistics](#runningstatistics)
+- [RunningCovariance](#runningcovariance)
 - [RollingQuantile](#rollingquantile)
 - [AliasTable](#aliastable)
 - [KllSketch](#kllsketch)
@@ -45,6 +46,7 @@ in the collections.
 | Draw outcomes at random in proportion to fixed weights — a traffic split, a loot table, a Monte-Carlo step, negative sampling | `AliasTable` | `O(1)` a draw after an `O(n)` build, where the prefix-sum search everyone writes is `O(log n)` dependent loads a draw. The BCL's `Random.GetItems` is uniform only. |
 | Mean and standard deviation of a stream, or of one bucket among many | `RunningStatistics` | One pass, no allocation, numerically stable, and a `struct` so per-bucket accumulators live inline. |
 | Skewness / kurtosis | `RunningStatistics` | Welford extended to the fourth moment (Terriberry). There is no BCL equivalent at all. |
+| How two streams move together — correlation, covariance, a trend line of one against the other | `RunningCovariance` | Covariance, Pearson r and the least-squares slope / intercept / R² in one pass with no allocation. The span overload measured 6.0–6.6× faster than the LINQ two-pass locally. Merges across shards. |
 | Mean of a sequence you can enumerate twice and that fits in memory | `Enumerable.Average` | If the two-pass shape is available and the magnitudes are ordinary, LINQ is fine. |
 
 ## DDSketch
@@ -421,6 +423,96 @@ ref RunningStatistics slot = ref CollectionsMarshal.GetValueRefOrAddDefault(byEn
 slot.Add(latency);
 ```
 
+## RunningCovariance
+
+Single-pass, allocation-free statistics of **two** streams — how they move together.
+`RunningStatistics` summarizes one variable; this relates two: both means and variances, the
+covariance, the Pearson correlation, and the ordinary-least-squares line of `y` on `x`.
+
+```csharp
+var fit = new RunningCovariance();
+
+foreach (Request request in stream)
+{
+    fit.Add(request.PayloadKilobytes, request.LatencyMilliseconds);
+}
+
+Console.WriteLine($"r = {fit.Correlation:F3}, R² = {fit.RSquared:F3}");
+Console.WriteLine($"latency ≈ {fit.Slope:F2} ms/KB × size + {fit.Intercept:F1} ms");
+```
+
+Data already in memory goes through the span overload, which is the fast path:
+
+```csharp
+var fit = new RunningCovariance(xs, ys);   // or fit.Add(xs, ys)
+```
+
+### Why not four running sums
+
+The BCL has nothing that relates two variables. The LINQ answer — `Average` both sequences, then
+`Zip` and sum the cross deviations — is a two-pass shape that needs both sequences in memory and pays
+a delegate call per pair. The one-pass shortcut, accumulating `Σx`, `Σy`, `Σxy` and `Σx²` and
+forming `(nΣxy − ΣxΣy) / (nΣx² − (Σx)²)`, cancels catastrophically for the reason given under
+[RunningStatistics](#why-not-sum-and-sumofsquares). With x near `1e8` and a spread of a few units,
+it reports a positive slope for data whose true slope is close to −1. The test suite pins that case.
+
+### How it works
+
+`Add(x, y)` runs the bivariate form of Welford's recurrence, which updates both means and the three
+central co-moments directly. The reciprocal of the count is computed off the dependency chain, so
+each mean's loop-carried work is a subtract and a multiply-add rather than a division.
+
+`Add(xs, ys)` does not run the recurrence. It cuts the spans into 256-pair blocks and computes
+each block's means and co-moments with a **corrected two-pass** over data that is still in L1, using
+`Vector<double>`. It then folds each block in with the same update `Merge` uses. Two consequences:
+
+- It agrees with per-pair adds up to floating-point rounding, not bit for bit, and its last bits can
+  differ between machines with different vector widths.
+- A block whose sum is not finite falls back to per-pair adds. That happens when the block holds a
+  `NaN` or an infinity, or finite values large enough to overflow a sum. So validation stops at the
+  first bad pair, with the pairs before it accumulated, just as it does for per-pair adds.
+
+Each block mean is clamped into the block's range. A mean always lies there, and the clamp keeps a
+repeated value exact: `0.1 × 3 / 3` is not `0.1` in binary floating point, so without the clamp a
+constant coordinate would show a tiny spurious variance and a meaningless slope instead of `NaN`.
+
+### Surface
+
+| Member | Notes |
+|---|---|
+| `Count` / `MeanX` / `MeanY` | |
+| `VarianceX` / `VarianceY` / `StandardDeviationX` / `StandardDeviationY` | The unbiased `n − 1` estimators. |
+| `PopulationVarianceX` / `PopulationVarianceY` | The `n` denominator forms. |
+| `Covariance` / `PopulationCovariance` | `n − 1` and `n` denominators. |
+| `Correlation` | Pearson r, clamped to `[−1, 1]`. |
+| `Slope` / `Intercept` / `RSquared` | The least-squares line of `y` on `x`. `RSquared` is `Correlation²`. |
+| `Add(double, double)` / `Add(ReadOnlySpan<double>, ReadOnlySpan<double>)` | One pair, or the pairs `(x[i], y[i])` in order. The spans must be the same length. |
+| `Merge(in RunningCovariance)` / `Combine(in, in)` | Chan's pairwise update for the co-moment as well as the variances. |
+| `Clear()` | Back to the empty state. |
+
+Undefined statistics return `NaN` rather than throwing: the means, population variances and
+`PopulationCovariance` on an empty accumulator; the sample variances, deviations and `Covariance`
+below two pairs; `Slope` and `Intercept` when every `x` is identical (a vertical line has no slope);
+and `Correlation` and `RSquared` when either coordinate has zero variance. A constant `y` with
+varying `x` therefore has a slope of `0` and an `RSquared` of `NaN`. The line fits exactly, but
+there is no variance for it to explain.
+
+The domain, the count limits and the mutable-struct semantics are the same as `RunningStatistics`.
+`Add` rejects a `NaN` or infinite coordinate with an `ArgumentOutOfRangeException` naming `x` or `y`.
+The span overload also throws `ArgumentException` for spans of different lengths, and does so before
+accumulating anything. An array of per-bucket fits lives inline, and a dictionary value accumulates
+through `CollectionsMarshal.GetValueRefOrAddDefault`.
+
+### Against the BCL
+
+A local run (Apple M4, .NET 10, BDN default job) against the LINQ two-pass slope — `Average`,
+`Average`, `Zip(...).Sum()`, `Sum(...)`:
+
+| Pairs | `Fit` (span overload) | `Accumulate` (one `Add` per pair, vs a `List<(double, double)>` append) |
+|---|---|---|
+| 1,000 | **6.0× faster**, 0 B vs 256 B | **1.27× slower**, 0 B vs 32 KB |
+| 100,000 | **6.6× faster**, 0 B vs 256 B | **1.11× faster**, 0 B vs 4.0 MB |
+
 ## RollingQuantile
 
 The exact quantile of the most recent `w` values of a stream — a rolling median, p95 or any other
@@ -705,12 +797,16 @@ lose:
   two-pass LINQ shape** at both sizes, because the accumulator maintains all four moments on
   every `Add` while that caller reads two. It buys a single pass over a stream it never
   retains, and an answer the cheaper `sum` / `sumOfSquares` shortcut gets wrong — not speed.
+- **`RunningCovariance.Add(x, y)` one pair at a time is no faster than appending to a list.** A local
+  run measured it **1.27× slower** than a `List<(double, double)>` append at a thousand pairs and
+  about even (1.11× faster) at a hundred thousand. Its per-pair win is memory that stays flat, not
+  speed. Hand it spans when the data is already in memory: that path is 6.0–6.6× faster than LINQ.
 
 The numbers above are the CI-tracked ones from the
-[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), except `RollingQuantile`'s
-and `WeightedReservoirSampler`'s, which come from the local runs named in their bullets. The
+[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/), except `RollingQuantile`'s,
+`WeightedReservoirSampler`'s and `RunningCovariance`'s, which come from the local runs named in their bullets. The
 dashboard charts `RollingQuantile`'s 1,000- to 100,000-value windows but not the 16- and 100-value
-ones, and `WeightedReservoirSampler`'s CI figures will appear there after the first run on `main`. The losing arms are charted next to
+ones, and `RunningCovariance`'s CI figures will appear there after its first run on `main`. The losing arms are charted next to
 the winning ones so the crossovers can be read off rather than guessed.
 
 ## See also

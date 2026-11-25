@@ -135,6 +135,28 @@ public class StatisticsArgumentValidationTests
             () => new RunningStatistics([1d, double.NaN]));
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void RunningCovarianceAdd_ShouldThrow_WhenEitherCoordinateIsNotFinite(double value)
+    {
+        var fit = new RunningCovariance();
+
+        Assert.Equal("x", Assert.Throws<ArgumentOutOfRangeException>(() => fit.Add(value, 1d)).ParamName);
+        Assert.Equal("y", Assert.Throws<ArgumentOutOfRangeException>(() => fit.Add(1d, value)).ParamName);
+        Assert.Equal(0, fit.Count);
+    }
+
+    [Fact]
+    public void RunningCovarianceConstructor_ShouldThrow_WhenTheSpansAreInvalid()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new RunningCovariance([1d, double.NaN], [1d, 2d]));
+        Assert.Throws<ArgumentException>(
+            () => new RunningCovariance([1d, 2d], [1d]));
+    }
+
     [Fact]
     public void EmptySpans_ShouldBeANoOpEverywhere()
     {
@@ -146,6 +168,9 @@ public class StatisticsArgumentValidationTests
 
         var stats = new RunningStatistics(ReadOnlySpan<double>.Empty);
         Assert.Equal(0, stats.Count);
+
+        var fit = new RunningCovariance(ReadOnlySpan<double>.Empty, ReadOnlySpan<double>.Empty);
+        Assert.Equal(0, fit.Count);
 
         var sampler = new ReservoirSampler<int>(capacity: 4, seed: 1UL);
         sampler.Add(ReadOnlySpan<int>.Empty);
