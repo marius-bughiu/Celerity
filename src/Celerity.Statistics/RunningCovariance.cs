@@ -259,7 +259,7 @@ public struct RunningCovariance
         _count = count;
 
         // From the empty state the means start at zero, so the first pair needs no special
-        // case: the means become (x, y) exactly and every co-moment gains dx * 0.
+        // case: the means become (x, y) exactly and the co-moment weight (n - 1) / n is zero.
         //
         // The reciprocal depends only on the count, so it is computed off the critical path:
         // each mean's loop-carried chain is a subtract and a multiply-add rather than a
@@ -267,16 +267,20 @@ public struct RunningCovariance
         // rounding per increment, an increment that is already a 1/n share of the delta.
         double reciprocal = 1d / count;
         double dx = x - _meanX;
-        double meanX = _meanX + (dx * reciprocal);
         double dy = y - _meanY;
-        double meanY = _meanY + (dy * reciprocal);
-        double ry = y - meanY;
+        _meanX += dx * reciprocal;
+        _meanY += dy * reciprocal;
 
-        _meanX = meanX;
-        _meanY = meanY;
-        _m2X += dx * (x - meanX);
-        _m2Y += dy * ry;
-        _cXY += dx * ry;
+        // The co-moments grow by dx * dy * (n - 1) / n, formed from the deltas taken before
+        // the means moved. The equivalent residual form, dx * (x - newMean), depends on how the
+        // new mean rounded: when it lands exactly on x (the mean of 1e16 + 2 and 1e16 is
+        // 1e16), the residual is zero and the spread is lost. The weight is applied to one
+        // factor before the product, so no intermediate exceeds the result.
+        double weight = (count - 1) * reciprocal;
+        double weightedDx = dx * weight;
+        _m2X += dx * weightedDx;
+        _m2Y += dy * (dy * weight);
+        _cXY += dy * weightedDx;
     }
 
     /// <summary>
@@ -418,11 +422,17 @@ public struct RunningCovariance
         // nA * n / total, formed from the fraction n / total so no intermediate exceeds the
         // larger count and the mean shift never multiplies a delta by a raw count.
         double fraction = (double)n / total;
-        double weight = fraction * nA;
 
-        _m2X += m2X + (dx * dx * weight);
-        _m2Y += m2Y + (dy * dy * weight);
-        _cXY += cXY + (dx * dy * weight);
+        // Each delta is scaled by the square root of the weight before the product, so the
+        // only way the correction overflows is if the correction itself does: dx * dx alone
+        // overflows from a spread of about 1.3e154, where a weight of 1/2 brings it back in.
+        double scale = Math.Sqrt(fraction * nA);
+        double scaledDx = dx * scale;
+        double scaledDy = dy * scale;
+
+        _m2X += m2X + (scaledDx * scaledDx);
+        _m2Y += m2Y + (scaledDy * scaledDy);
+        _cXY += cXY + (scaledDx * scaledDy);
         _meanX += dx * fraction;
         _meanY += dy * fraction;
         _count = total;

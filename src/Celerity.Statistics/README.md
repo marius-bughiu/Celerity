@@ -78,7 +78,7 @@ means keeping the stream, which is the one thing a stream will not let you do.
   a stream it never retains, and an answer the `sum` / `sumOfSquares` shortcut
   gets wrong: that one is cheaper still and can return a negative variance.
 - **`RunningCovariance` one pair at a time is about even with a list append**:
-  1.27× slower at a thousand pairs, 1.11× faster at a hundred thousand (local
+  1.29× slower at a thousand pairs, 1.10× faster at a hundred thousand (local
   run). Its per-pair win is flat memory. Hand it spans when the data is in
   memory, which measured 6.0–6.6× faster than the LINQ two-pass.
 - **`RollingQuantile` holds its window**, `w` values plus `2w` ints, and answers

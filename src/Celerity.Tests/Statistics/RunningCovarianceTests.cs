@@ -145,6 +145,52 @@ public class RunningCovarianceTests
     }
 
     [Fact]
+    public void Add_ShouldKeepTheSpread_WhenTheNewMeanRoundsOntoTheIncomingValue()
+    {
+        // 1e16 + 1 is not representable, so the mean of {1e16 + 2, 1e16} rounds onto 1e16 itself.
+        // An update built from the residual x - newMean then adds nothing; one built from the
+        // delta before the update does not depend on how the mean rounded.
+        var fit = new RunningCovariance();
+        fit.Add(1e16 + 2d, 1d);
+        fit.Add(1e16, 0d);
+
+        var swapped = new RunningCovariance();
+        swapped.Add(1d, 1e16 + 2d);
+        swapped.Add(0d, 1e16);
+
+        Assert.Equal(2d, fit.VarianceX);
+        Assert.Equal(0.5d, fit.VarianceY);
+        Assert.Equal(1d, fit.Covariance);
+        Assert.Equal(0.5d, fit.Slope);
+        Assert.Equal(2d, swapped.VarianceY);
+        Assert.Equal(1d, swapped.Covariance);
+        Assert.Equal(2d, swapped.Slope);
+    }
+
+    [Fact]
+    public void Merge_ShouldNotOverflow_WhereOnlyTheUnweightedSquareWould()
+    {
+        // The merged co-moments are about 1.125e308, which fits; the raw squared delta between
+        // the two shard means, 2.25e308, does not. The weight has to be applied before squaring.
+        var left = new RunningCovariance();
+        left.Add(0d, 0d);
+        var right = new RunningCovariance();
+        right.Add(1.5e154, 1.5e154);
+
+        RunningCovariance merged = RunningCovariance.Combine(left, right);
+
+        var sequential = new RunningCovariance();
+        sequential.Add(0d, 0d);
+        sequential.Add(1.5e154, 1.5e154);
+
+        Assert.True(double.IsFinite(merged.Covariance));
+        Assert.Equal(1d, merged.Slope, Tolerance);
+        Assert.Equal(1d, merged.Correlation, Tolerance);
+        Assert.Equal(sequential.Covariance, merged.Covariance, sequential.Covariance * 1e-12);
+        Assert.Equal(1d, sequential.Slope, Tolerance);
+    }
+
+    [Fact]
     public void Slope_ShouldBeNaN_WhenEveryXIsIdentical()
     {
         var fit = new RunningCovariance([4d, 4d, 4d], [1d, 2d, 9d]);

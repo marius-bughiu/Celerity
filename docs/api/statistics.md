@@ -510,8 +510,8 @@ A local run (Apple M4, .NET 10, BDN default job) against the LINQ two-pass slope
 
 | Pairs | `Fit` (span overload) | `Accumulate` (one `Add` per pair, vs a `List<(double, double)>` append) |
 |---|---|---|
-| 1,000 | **6.0× faster**, 0 B vs 256 B | **1.27× slower**, 0 B vs 32 KB |
-| 100,000 | **6.6× faster**, 0 B vs 256 B | **1.11× faster**, 0 B vs 4.0 MB |
+| 1,000 | **6.0× faster**, 0 B vs 256 B | **1.29× slower**, 0 B vs 32 KB |
+| 100,000 | **6.6× faster**, 0 B vs 256 B | **1.10× faster**, 0 B vs 4.0 MB |
 
 ## RollingQuantile
 
@@ -798,8 +798,8 @@ lose:
   every `Add` while that caller reads two. It buys a single pass over a stream it never
   retains, and an answer the cheaper `sum` / `sumOfSquares` shortcut gets wrong — not speed.
 - **`RunningCovariance.Add(x, y)` one pair at a time is no faster than appending to a list.** A local
-  run measured it **1.27× slower** than a `List<(double, double)>` append at a thousand pairs and
-  about even (1.11× faster) at a hundred thousand. Its per-pair win is memory that stays flat, not
+  run measured it **1.29× slower** than a `List<(double, double)>` append at a thousand pairs and
+  about even (1.10× faster) at a hundred thousand. Its per-pair win is memory that stays flat, not
   speed. Hand it spans when the data is already in memory: that path is 6.0–6.6× faster than LINQ.
 
 The numbers above are the CI-tracked ones from the
