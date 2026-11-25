@@ -275,12 +275,15 @@ public struct RunningCovariance
         // the means moved. The equivalent residual form, dx * (x - newMean), depends on how the
         // new mean rounded: when it lands exactly on x (the mean of 1e16 + 2 and 1e16 is
         // 1e16), the residual is zero and the spread is lost. The weight is applied to one
-        // factor before the product, so no intermediate exceeds the result.
+        // factor before the product, so no intermediate exceeds the result. For the cross term
+        // that factor is the larger delta: weighting a subnormal one first can round it to
+        // zero and erase a covariance the product itself could represent.
         double weight = (count - 1) * reciprocal;
         double weightedDx = dx * weight;
+        double weightedDy = dy * weight;
         _m2X += dx * weightedDx;
-        _m2Y += dy * (dy * weight);
-        _cXY += dy * weightedDx;
+        _m2Y += dy * weightedDy;
+        _cXY += Math.Abs(dx) >= Math.Abs(dy) ? dy * weightedDx : dx * weightedDy;
     }
 
     /// <summary>
@@ -301,6 +304,7 @@ public struct RunningCovariance
     /// <see cref="long.MaxValue"/>. Nothing is accumulated.
     /// </exception>
     /// <remarks>
+    /// <para>
     /// Faster than one <see cref="Add(double, double)"/> per pair, because it does not run the
     /// per-pair recurrence at all. It cuts the spans into blocks of 256 pairs, computes each
     /// block's means and co-moments directly with a corrected two-pass over data already in
@@ -309,6 +313,15 @@ public struct RunningCovariance
     /// result therefore agrees with per-pair adds up to floating-point rounding rather than
     /// bit-for-bit, and its last bits can differ between machines with different vector
     /// widths.
+    /// </para>
+    /// <para>
+    /// Each block's mean is held as a single <see cref="double"/>. When the spread of the data
+    /// is down at the resolution of the values themselves — <c>1e16</c> and <c>1e16 + 2</c>,
+    /// whose mean is not representable — the rounding of each block mean drops variance
+    /// <em>between</em> blocks that per-pair adds keep. Subtract a reference value (any one
+    /// sample will do) from each coordinate before accumulating such data; the covariance,
+    /// correlation and slope do not change under a shift.
+    /// </para>
     /// </remarks>
     public void Add(ReadOnlySpan<double> x, ReadOnlySpan<double> y)
     {
@@ -442,8 +455,8 @@ public struct RunningCovariance
     /// Accumulates one block of at most <see cref="BlockLength"/> pairs: a corrected two-pass
     /// over the block, then a merge. Falls back to per-pair adds — which validate, and stop at
     /// the first bad pair with the pairs before it accumulated — when a block sum is not
-    /// finite, which is exactly when the block holds a NaN or an infinity, or finite values
-    /// large enough to overflow a sum.
+    /// finite (the block holds a NaN or an infinity, or finite values large enough to overflow
+    /// a sum), or when its squared deviations overflow or underflow.
     /// </summary>
     private void AddBlock(ReadOnlySpan<double> x, ReadOnlySpan<double> y)
     {
@@ -500,11 +513,7 @@ public struct RunningCovariance
 
         if (!double.IsFinite(sumX) || !double.IsFinite(sumY))
         {
-            for (int i = 0; i < length; i++)
-            {
-                Add(x[i], y[i]);
-            }
-
+            AddPairs(x, y);
             return;
         }
 
@@ -552,6 +561,17 @@ public struct RunningCovariance
             xy += dx * dy;
         }
 
+        // Squared deviations live at the square of the data's scale, so they can leave the
+        // double range where the data and the per-pair recurrence do not: a spread near 1e154
+        // overflows them, and one near 1e-162 underflows them to zero. Either way the block's
+        // answer is wrong where per-pair adds are not, so the block falls back to them. A
+        // coordinate with spread whose squares summed to zero is exactly the underflow case.
+        if (!double.IsFinite(xx + yy) || (xx == 0d && maxX > minX) || (yy == 0d && maxY > minY))
+        {
+            AddPairs(x, y);
+            return;
+        }
+
         double correctionX = devX / length;
         double correctionY = devY / length;
 
@@ -565,6 +585,18 @@ public struct RunningCovariance
             Math.Max(xx - (devX * correctionX), 0d),
             Math.Max(yy - (devY * correctionY), 0d),
             xy - (devX * correctionY));
+    }
+
+    /// <summary>
+    /// The span path's fallback: one <see cref="Add(double, double)"/> per pair, which
+    /// validates each pair and stops at the first bad one with the pairs before it accumulated.
+    /// </summary>
+    private void AddPairs(ReadOnlySpan<double> x, ReadOnlySpan<double> y)
+    {
+        for (int i = 0; i < x.Length; i++)
+        {
+            Add(x[i], y[i]);
+        }
     }
 
     // Built out of line so the add path stays small enough to inline. Called only when at

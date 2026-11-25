@@ -191,6 +191,85 @@ public class RunningCovarianceTests
     }
 
     [Fact]
+    public void Add_ShouldKeepASubnormalCrossProduct_WhicheverDeltaIsLarger()
+    {
+        // Weighting the subnormal delta first would round 0.5 * double.Epsilon to zero before
+        // the large delta could scale it back up.
+        var fit = new RunningCovariance();
+        fit.Add(0d, 0d);
+        fit.Add(double.Epsilon, 1e154);
+
+        var swapped = new RunningCovariance();
+        swapped.Add(0d, 0d);
+        swapped.Add(1e154, double.Epsilon);
+
+        double expected = double.Epsilon * 5e153;
+        Assert.True(expected > 0d);
+        Assert.Equal(expected, fit.Covariance);
+        Assert.Equal(expected, swapped.Covariance);
+    }
+
+    [Fact]
+    public void SpanAdd_ShouldFallBackToPerPairAdds_WhenBlockSquaresOverflow()
+    {
+        // Neighbouring doubles near 1e170 are about 1.3e154 apart, so a block deviation can be a
+        // whole ulp and its square overflows, while per-pair adds weight it by (n - 1) / n first.
+        // The second shape puts the outlier in the scalar tail on any vector width.
+        double a = 1e170;
+        double b = Math.BitIncrement(a);
+        double[][] shapes =
+        [
+            [a, b],
+            [.. Enumerable.Repeat(a, Vector<double>.Count + 1), b],
+        ];
+
+        foreach (double[] values in shapes)
+        {
+            var perPair = new RunningCovariance();
+            foreach (double value in values)
+            {
+                perPair.Add(value, value);
+            }
+
+            var span = new RunningCovariance(values, values);
+
+            Assert.True(double.IsFinite(perPair.Covariance));
+            Assert.Equal(perPair.Covariance, span.Covariance);
+            Assert.Equal(perPair.VarianceX, span.VarianceX);
+            Assert.Equal(1d, span.Slope);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SpanAdd_ShouldFallBackToPerPairAdds_WhenBlockSquaresUnderflow(bool underflowInY)
+    {
+        // Deviations of 1.5e-162 square to below half of double.Epsilon, so the block's sum of
+        // squares is zero although the coordinate has spread. Per-pair adds keep a second moment
+        // of double.Epsilon.
+        double[] tiny = [0d, 3e-162];
+        double[] ordinary = [0d, 1d];
+        double[] xs = underflowInY ? ordinary : tiny;
+        double[] ys = tiny;
+
+        var perPair = new RunningCovariance();
+        for (int i = 0; i < xs.Length; i++)
+        {
+            perPair.Add(xs[i], ys[i]);
+        }
+
+        var span = new RunningCovariance(xs, ys);
+
+        // Sample statistics: with two pairs the population forms halve double.Epsilon to zero.
+        Assert.Equal(double.Epsilon, perPair.VarianceY);
+        Assert.Equal(perPair.VarianceX, span.VarianceX);
+        Assert.Equal(perPair.VarianceY, span.VarianceY);
+        Assert.Equal(perPair.Covariance, span.Covariance);
+        Assert.Equal(perPair.Slope, span.Slope);
+    }
+
+    [Fact]
     public void Slope_ShouldBeNaN_WhenEveryXIsIdentical()
     {
         var fit = new RunningCovariance([4d, 4d, 4d], [1d, 2d, 9d]);

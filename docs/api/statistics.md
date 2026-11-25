@@ -470,7 +470,13 @@ each block's means and co-moments with a **corrected two-pass** over data that i
   differ between machines with different vector widths.
 - A block whose sum is not finite falls back to per-pair adds. That happens when the block holds a
   `NaN` or an infinity, or finite values large enough to overflow a sum. So validation stops at the
-  first bad pair, with the pairs before it accumulated, just as it does for per-pair adds.
+  first bad pair, with the pairs before it accumulated, just as it does for per-pair adds. A block
+  also falls back when its squared deviations leave the `double` range — a spread near `1e154`
+  overflows them and one near `1e-162` underflows them — which the per-pair recurrence survives.
+- Each block mean is a single `double`. When the spread is down at the resolution of the values
+  themselves (`1e16` and `1e16 + 2`, whose mean is not representable), that rounding drops variance
+  *between* blocks that per-pair adds keep. Subtract a reference value — any one sample — from each
+  coordinate first; covariance, correlation and slope do not change under a shift.
 
 Each block mean is clamped into the block's range. A mean always lies there, and the clamp keeps a
 repeated value exact: `0.1 × 3 / 3` is not `0.1` in binary floating point, so without the clamp a
@@ -510,8 +516,8 @@ A local run (Apple M4, .NET 10, BDN default job) against the LINQ two-pass slope
 
 | Pairs | `Fit` (span overload) | `Accumulate` (one `Add` per pair, vs a `List<(double, double)>` append) |
 |---|---|---|
-| 1,000 | **6.0× faster**, 0 B vs 256 B | **1.29× slower**, 0 B vs 32 KB |
-| 100,000 | **6.6× faster**, 0 B vs 256 B | **1.10× faster**, 0 B vs 4.0 MB |
+| 1,000 | **6.0× faster**, 0 B vs 256 B | **1.22× slower**, 0 B vs 32 KB |
+| 100,000 | **6.6× faster**, 0 B vs 256 B | **1.16× faster**, 0 B vs 4.0 MB |
 
 ## RollingQuantile
 
@@ -798,8 +804,8 @@ lose:
   every `Add` while that caller reads two. It buys a single pass over a stream it never
   retains, and an answer the cheaper `sum` / `sumOfSquares` shortcut gets wrong — not speed.
 - **`RunningCovariance.Add(x, y)` one pair at a time is no faster than appending to a list.** A local
-  run measured it **1.29× slower** than a `List<(double, double)>` append at a thousand pairs and
-  about even (1.10× faster) at a hundred thousand. Its per-pair win is memory that stays flat, not
+  run measured it **1.22× slower** than a `List<(double, double)>` append at a thousand pairs and
+  about even (1.16× faster) at a hundred thousand. Its per-pair win is memory that stays flat, not
   speed. Hand it spans when the data is already in memory: that path is 6.0–6.6× faster than LINQ.
 
 The numbers above are the CI-tracked ones from the
