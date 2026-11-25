@@ -77,6 +77,9 @@ public struct RunningCovariance
     // a multiple of every Vector<double> width so only the final block has a scalar tail.
     private const int BlockLength = 256;
 
+    // The smallest positive normal double, 2^-1022. Below it a value loses precision bit by bit.
+    private const double SmallestNormal = 2.2250738585072014E-308;
+
     private long _count;
     private double _meanX;
     private double _meanY;
@@ -436,16 +439,31 @@ public struct RunningCovariance
         // larger count and the mean shift never multiplies a delta by a raw count.
         double fraction = (double)n / total;
 
-        // Each delta is scaled by the square root of the weight before the product, so the
-        // only way the correction overflows is if the correction itself does: dx * dx alone
-        // overflows from a spread of about 1.3e154, where a weight of 1/2 brings it back in.
-        double scale = Math.Sqrt(fraction * nA);
+        // For the squares, each delta is scaled by the square root of the weight before the
+        // product, so the correction overflows only if the correction itself does: dx * dx
+        // alone overflows from a spread of about 1.3e154, where a weight of 1/2 brings it back.
+        double weight = fraction * nA;
+        double scale = Math.Sqrt(weight);
         double scaledDx = dx * scale;
         double scaledDy = dy * scale;
 
+        // The cross term takes the weight on one delta instead, chosen so that the weighted
+        // factor can neither underflow nor overflow on its own: a weight below one shrinks the
+        // larger delta (a subnormal one would round, as sqrt-scaling it does), and a weight
+        // above one grows the smaller.
+        double large = dx;
+        double small = dy;
+        if (Math.Abs(dy) > Math.Abs(dx))
+        {
+            large = dy;
+            small = dx;
+        }
+
+        double cross = weight <= 1d ? small * (large * weight) : large * (small * weight);
+
         _m2X += m2X + (scaledDx * scaledDx);
         _m2Y += m2Y + (scaledDy * scaledDy);
-        _cXY += cXY + (scaledDx * scaledDy);
+        _cXY += cXY + cross;
         _meanX += dx * fraction;
         _meanY += dy * fraction;
         _count = total;
@@ -563,10 +581,13 @@ public struct RunningCovariance
 
         // Squared deviations live at the square of the data's scale, so they can leave the
         // double range where the data and the per-pair recurrence do not: a spread near 1e154
-        // overflows them, and one near 1e-162 underflows them to zero. Either way the block's
-        // answer is wrong where per-pair adds are not, so the block falls back to them. A
-        // coordinate with spread whose squares summed to zero is exactly the underflow case.
-        if (!double.IsFinite(xx + yy) || (xx == 0d && maxX > minX) || (yy == 0d && maxY > minY))
+        // overflows them, and one near 1e-162 underflows them into the subnormal range, where
+        // they keep few or no significant bits. Either way the block's answer is wrong where
+        // per-pair adds are not, so the block falls back to them. A coordinate with spread
+        // whose squares summed below the smallest normal double is the underflow case.
+        if (!double.IsFinite(xx + yy)
+            || (xx < SmallestNormal && maxX > minX)
+            || (yy < SmallestNormal && maxY > minY))
         {
             AddPairs(x, y);
             return;

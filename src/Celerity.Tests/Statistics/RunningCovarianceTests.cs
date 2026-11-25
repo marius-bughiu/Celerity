@@ -269,6 +269,71 @@ public class RunningCovarianceTests
         Assert.Equal(perPair.Slope, span.Slope);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Merge_ShouldKeepASubnormalCrossProduct_WhicheverDeltaIsLarger(bool swap)
+    {
+        // A merge weight of 1/2 (two singletons) must go on the large delta: sqrt-scaling the
+        // subnormal one rounds it back to double.Epsilon and overstates the result by 41%.
+        (double, double) Pair(double a, double b) => swap ? (b, a) : (a, b);
+
+        var left = new RunningCovariance();
+        (double x0, double y0) = Pair(0d, 0d);
+        left.Add(x0, y0);
+        var right = new RunningCovariance();
+        (double x1, double y1) = Pair(double.Epsilon, 1e154);
+        right.Add(x1, y1);
+
+        Assert.Equal(double.Epsilon * 5e153, RunningCovariance.Combine(left, right).Covariance);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Merge_ShouldWeightTheSmallerDelta_WhenTheWeightExceedsOne(bool swap)
+    {
+        // Two shards of 4 give a weight of 2. Weighting the large delta first would overflow
+        // (2 * 1e308) where the cross term itself (1e308 * 0.5 * 2 = 1e308) fits.
+        var left = new RunningCovariance();
+        var right = new RunningCovariance();
+        for (int i = 0; i < 4; i++)
+        {
+            left.Add(0d, 0d);
+            if (swap)
+            {
+                right.Add(0.5d, 1e308);
+            }
+            else
+            {
+                right.Add(1e308, 0.5d);
+            }
+        }
+
+        RunningCovariance merged = RunningCovariance.Combine(left, right);
+
+        Assert.Equal(1e308 / 7d, merged.Covariance, 1e296);
+    }
+
+    [Fact]
+    public void SpanAdd_ShouldFallBackToPerPairAdds_WhenBlockSquaresAreSubnormal()
+    {
+        // The block's sum of squares here is nonzero but subnormal, with too few significant
+        // bits left to describe the spread: it reported correlation 0.72 for collinear pairs.
+        double[] xs = [0d, 3.2e-162];
+        double[] ys = [0d, 1d];
+
+        var perPair = new RunningCovariance();
+        perPair.Add(xs[0], ys[0]);
+        perPair.Add(xs[1], ys[1]);
+
+        var span = new RunningCovariance(xs, ys);
+
+        Assert.Equal(1d, span.Correlation);
+        Assert.Equal(perPair.VarianceX, span.VarianceX);
+        Assert.Equal(perPair.Covariance, span.Covariance);
+    }
+
     [Fact]
     public void Slope_ShouldBeNaN_WhenEveryXIsIdentical()
     {
