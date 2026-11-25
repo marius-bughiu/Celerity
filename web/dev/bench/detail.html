@@ -464,6 +464,7 @@
     { key: 'RollingQuantile',     title: 'RollingQuantile<T> (sliding-window median)', vs: 'sorted int[] + Queue<int>', items: [1000, 10000, 100000] },
     { key: 'AliasTable',          title: 'AliasTable (weighted sampling)',        vs: 'prefix sums + Array.BinarySearch', items: [100, 10000, 1000000] },
     { key: 'RunningStatistics',   title: 'RunningStatistics (Welford moments)',   vs: 'LINQ two-pass mean / variance' },
+    { key: 'RunningCovariance',   title: 'RunningCovariance (two-variable fit)',   vs: 'LINQ two-pass covariance / slope' },
     { key: 'MaglevHash',          title: 'MaglevHash<TNode, TKey, THasher>',      vs: 'sorted uint[] ring + Array.BinarySearch', items: [10, 100, 1000] }
   ];
   // Baseline (non-Celerity) type names, as they appear in the `<TypeName>_<Op>` benchmark method names.

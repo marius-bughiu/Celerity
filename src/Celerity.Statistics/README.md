@@ -36,6 +36,13 @@ means keeping the stream, which is the one thing a stream will not let you do.
   extended to the fourth moment. A mutable struct, so `default` is a valid empty
   accumulator and an array of per-bucket statistics costs no allocations.
   Mergeable by Chan's parallel formulas.
+- **`RunningCovariance`** — the same idea for **two** streams: both means and
+  variances, covariance, Pearson correlation and the least-squares slope,
+  intercept and R² of `y` on `x`, in a single pass with no allocation. Stable
+  where the four-running-sums shortcut reports a wrong-signed slope. The span
+  overload computes 256-pair blocks with a SIMD two-pass and was measured 6.0–6.6×
+  faster than the LINQ two-pass locally; one pair at a time it is about even
+  with a list append. Mergeable.
 - **`RollingQuantile<T>`** — the **exact** quantile (a rolling median, p99, …)
   of the last `w` values of a stream, `O(log w)` per value and `O(1)` to read.
   Two heaps meet at the quantile, and a slot index replaces the expiring value
@@ -70,6 +77,10 @@ means keeping the stream, which is the one thing a stream will not let you do.
   maintains all four moments on every `Add`. What it buys is a single pass over
   a stream it never retains, and an answer the `sum` / `sumOfSquares` shortcut
   gets wrong: that one is cheaper still and can return a negative variance.
+- **`RunningCovariance` one pair at a time is about even with a list append**:
+  1.22× slower at a thousand pairs, 1.16× faster at a hundred thousand (local
+  run). Its per-pair win is flat memory. Hand it spans when the data is in
+  memory, which measured 6.0–6.6× faster than the LINQ two-pass.
 - **`RollingQuantile` holds its window**, `w` values plus `2w` ints, and answers
   one quantile per instance. Against a sorted array plus a queue it is 2.5×
   faster at a 1,000-value window and 32× at 100,000.
@@ -131,6 +142,10 @@ foreach ((string path, double ms) in requests)
 var stats = new RunningStatistics();
 stats.Add(payloadSizes);
 Console.WriteLine($"{stats.Mean:F1} ± {stats.StandardDeviation:F1} bytes");
+
+// How latency tracks payload size: correlation and a least-squares line.
+var fit = new RunningCovariance(payloadSizes, latenciesMs);
+Console.WriteLine($"r = {fit.Correlation:F2}; {fit.Slope:F4} ms per byte");
 
 // The exact median of the last 1,001 samples, updated per sample.
 var median = new RollingQuantile<double>(windowSize: 1_001, quantile: 0.5);

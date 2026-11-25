@@ -16,7 +16,7 @@ The core family:
 - `Celerity.Hashing/` — `IHashProvider<T>` and the struct hashers.
 - `Celerity.Primitives/` — `FastUtils`, struct PRNGs, `VarInt`, `SpanBits`, `FastGuid`, `SortedSpan`.
 - `Celerity.Sorting/` — `RadixSort`, `CountingSort`, `PartialSort`, `StringSort`, `KWayMerge`, `StableSort`.
-- `Celerity.Statistics/` — `DDSketch`, `ReservoirSampler`, `WeightedReservoirSampler`, `RunningStatistics`, `RollingQuantile`, `AliasTable`, `KllSketch`.
+- `Celerity.Statistics/` — `DDSketch`, `ReservoirSampler`, `WeightedReservoirSampler`, `RunningStatistics`, `RunningCovariance`, `RollingQuantile`, `AliasTable`, `KllSketch`.
 
 The showcase packages — standalone libraries built *on top of* the core family, each with its own test project:
 

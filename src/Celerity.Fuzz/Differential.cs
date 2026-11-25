@@ -128,6 +128,7 @@ internal static class Differential
         ("SpaceFillingCurve", SpaceFillingCurveCase),
         ("DDSketch", DDSketchCase),
         ("RunningStatistics", RunningStatisticsCase),
+        ("RunningCovariance", RunningCovarianceCase),
         ("ReservoirSampler", ReservoirSamplerCase),
         ("WeightedReservoirSampler", WeightedReservoirSamplerCase),
         ("RollingQuantile", RollingQuantileCase),
@@ -7154,6 +7155,103 @@ internal static class Differential
         Check(Close(merged.Mean, stats.Mean, 1e-9), "RunningStatistics merge diverged on the mean");
         Check(Close(merged.PopulationVariance, stats.PopulationVariance, 1e-7),
             "RunningStatistics merge diverged on the variance");
+    }
+
+    /// <summary>
+    /// Reconciles <see cref="RunningCovariance"/> against a shifted two-pass computation of the
+    /// same co-moments, its blocked span overload against per-pair adds, and its merge against a
+    /// single pass over the whole stream.
+    /// </summary>
+    private static void RunningCovarianceCase(Random rng)
+    {
+        int length = rng.Next(2, 1_100);
+        double offset = rng.Next(4) switch
+        {
+            0 => 0d,
+            1 => 1e6,
+            2 => -1e5,
+            _ => 1e9,
+        };
+
+        // Sometimes one coordinate is constant, sometimes a repeated value with no exact mean,
+        // so the zero-spread contract is fuzzed alongside the ordinary case.
+        int shape = rng.Next(4);
+        double slope = (rng.NextDouble() * 6) - 3;
+        double[] xs = new double[length];
+        double[] ys = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            xs[i] = shape == 0 ? offset + 0.1 : offset + ((rng.NextDouble() * 200) - 100);
+            ys[i] = shape == 1 ? 0.3 : (slope * (xs[i] - offset)) + ((rng.NextDouble() * 50) - 25);
+        }
+
+        var span = new RunningCovariance(xs, ys);
+        var perPair = new RunningCovariance();
+        for (int i = 0; i < length; i++)
+            perPair.Add(xs[i], ys[i]);
+
+        // The reference works in a frame shifted by the first pair, which keeps the reference
+        // itself out of the cancellation the accumulator is being checked for.
+        double shiftX = xs[0];
+        double shiftY = ys[0];
+        double meanDX = 0;
+        double meanDY = 0;
+        for (int i = 0; i < length; i++)
+        {
+            meanDX += xs[i] - shiftX;
+            meanDY += ys[i] - shiftY;
+        }
+
+        meanDX /= length;
+        meanDY /= length;
+
+        double sxx = 0;
+        double syy = 0;
+        double sxy = 0;
+        for (int i = 0; i < length; i++)
+        {
+            double dx = (xs[i] - shiftX) - meanDX;
+            double dy = (ys[i] - shiftY) - meanDY;
+            sxx += dx * dx;
+            syy += dy * dy;
+            sxy += dx * dy;
+        }
+
+        double spread = Math.Sqrt(sxx * syy) / length;
+
+        foreach (RunningCovariance fit in new[] { span, perPair })
+        {
+            Check(fit.Count == length, "RunningCovariance lost pairs");
+            Check(Close(fit.MeanX, shiftX + meanDX, 1e-9), "RunningCovariance diverged on the x mean");
+            Check(Close(fit.MeanY, shiftY + meanDY, 1e-9), "RunningCovariance diverged on the y mean");
+            Check(Close(fit.PopulationVarianceX, sxx / length, 1e-7), "RunningCovariance diverged on the x variance");
+            Check(Close(fit.PopulationVarianceY, syy / length, 1e-7), "RunningCovariance diverged on the y variance");
+            Check(
+                Math.Abs(fit.PopulationCovariance - (sxy / length)) <= 1e-7 * (spread + 1),
+                "RunningCovariance diverged on the covariance");
+            Check((shape == 0) == (fit.PopulationVarianceX == 0), "RunningCovariance misreported a constant x");
+            Check((shape == 1) == (fit.PopulationVarianceY == 0), "RunningCovariance misreported a constant y");
+            Check(double.IsNaN(fit.Slope) == (shape == 0), "RunningCovariance slope contract");
+
+            double r = fit.Correlation;
+            Check(shape <= 1 ? double.IsNaN(r) : r >= -1 && r <= 1, "RunningCovariance correlation out of range");
+        }
+
+        // An uneven split, mixing the two entry points across the cut.
+        int cut = rng.Next(1, length);
+        var merged = new RunningCovariance(xs.AsSpan(0, cut), ys.AsSpan(0, cut));
+        var tail = new RunningCovariance();
+        for (int i = cut; i < length; i++)
+            tail.Add(xs[i], ys[i]);
+        merged.Merge(tail);
+
+        Check(merged.Count == length, "RunningCovariance merge lost pairs");
+        Check(Close(merged.MeanX, span.MeanX, 1e-9), "RunningCovariance merge diverged on the x mean");
+        Check(Close(merged.PopulationVarianceY, span.PopulationVarianceY, 1e-7),
+            "RunningCovariance merge diverged on the y variance");
+        Check(
+            Math.Abs(merged.PopulationCovariance - span.PopulationCovariance) <= 1e-7 * (spread + 1),
+            "RunningCovariance merge diverged on the covariance");
     }
 
     /// <summary>

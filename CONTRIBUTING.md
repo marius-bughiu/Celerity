@@ -26,7 +26,7 @@ src/
 ├── Celerity.Hashing/         The Celerity.Hashing package. IHashProvider<T>, the hashers, the evaluators.
 ├── Celerity.Primitives/      The Celerity.Primitives package. FastUtils, struct PRNGs, VarInt, FastGuid.
 ├── Celerity.Sorting/         The Celerity.Sorting package. RadixSort, CountingSort, PartialSort, StringSort, KWayMerge, StableSort.
-├── Celerity.Statistics/      The Celerity.Statistics package. DDSketch, KllSketch, ReservoirSampler, WeightedReservoirSampler, RunningStatistics, RollingQuantile, AliasTable.
+├── Celerity.Statistics/      The Celerity.Statistics package. DDSketch, KllSketch, ReservoirSampler, WeightedReservoirSampler, RunningStatistics, RunningCovariance, RollingQuantile, AliasTable.
 ├── Celerity.Ring/            The Celerity.Ring package. Consistent-hash, rendezvous and Maglev routing.
 ├── Celerity.Sentinel/        The Celerity.Sentinel package. Streaming abuse / heavy-hitter detection.
 ├── Celerity.Cardinality/     The Celerity.Cardinality package. Approximate COUNT(DISTINCT) and windowed dedup.

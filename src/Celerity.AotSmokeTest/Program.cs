@@ -4226,14 +4226,15 @@ void Check(bool condition, string message)
     Check(stableWords[0] == "w00" && stableWords[^1] == "w39", "StableSort natural order over strings");
 }
 
-// Celerity.Statistics — DDSketch / ReservoirSampler / WeightedReservoirSampler / RunningStatistics (#377) / RollingQuantile /
+// Celerity.Statistics — DDSketch / ReservoirSampler / WeightedReservoirSampler / RunningStatistics (#377) / RunningCovariance / RollingQuantile /
 // AliasTable / KllSketch.
 //
 // The shapes that force distinct native instantiations: the sketch's two ladders and its zero
 // counter, the sampler over both a value-typed and a reference-typed element (and over a second
 // generator, so the struct-PRNG generic is closed twice), the weighted sampler over the same two shapes and
 // generators, with its span overload and its merge, the moment accumulator, which is a
-// mutable struct whose ref-accumulation path is the one a caller is meant to use, and the rolling
+// mutable struct whose ref-accumulation path is the one a caller is meant to use, its two-variable
+// sibling, whose span overload runs on Vector<double>, and the rolling
 // quantile over a value type and a reference type, whose heap entries are a generic struct, the alias
 // table's constrained-generic draw closed over two generators, and the KLL sketch over both, whose sorted
 // view pairs a generic key array with a weight array in one Array.Sort.
@@ -4301,6 +4302,25 @@ void Check(bool condition, string message)
 
     RunningStatistics combined = RunningStatistics.Combine(perBucket[1], new RunningStatistics([1d, 9d]));
     Check(combined.Count == 10 && combined.Min == 1d && combined.Max == 9d, "RunningStatistics merge");
+
+    // The span overload runs the Vector<double> block path; the per-pair adds run the scalar
+    // recurrence through an array element, the ref a caller is meant to use.
+    double[] payload = new double[300];
+    double[] latency = new double[300];
+    for (int i = 0; i < payload.Length; i++)
+    {
+        payload[i] = i;
+        latency[i] = (2.5d * i) + 40d;
+    }
+
+    RunningCovariance[] fits = new RunningCovariance[2];
+    fits[0].Add(payload, latency);
+    fits[1].Add(1_000d, 2_540d);
+    fits[1].Add(1_001d, 2_542.5d);
+    Check(Math.Abs(fits[0].Slope - 2.5d) < 1e-9 && Math.Abs(fits[0].Intercept - 40d) < 1e-6, "RunningCovariance span fit");
+    Check(Math.Abs(fits[0].Correlation - 1d) < 1e-12, "RunningCovariance correlation");
+    RunningCovariance mergedFit = RunningCovariance.Combine(fits[0], fits[1]);
+    Check(mergedFit.Count == 302 && Math.Abs(mergedFit.Slope - 2.5d) < 1e-9, "RunningCovariance merge");
 
     var median = new RollingQuantile<double>(windowSize: 5, quantile: 0.5d);
     median.Add([9d, 1d, 7d, 3d, 5d]);
