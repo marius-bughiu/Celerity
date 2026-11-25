@@ -335,6 +335,35 @@ public class RunningCovarianceTests
     }
 
     [Fact]
+    public void Correlation_ShouldNotDependOnWhichCoordinateIsX()
+    {
+        // Two divisions round differently in the two orders, so an implementation that divides
+        // by the x root first reports a different last bit (or, for a vanishing r, an underflow)
+        // once the coordinates are swapped.
+        int mismatches = 0;
+        for (int seed = 0; seed < 200; seed++)
+        {
+            var random = new Random(seed);
+            double[] xs = new double[40];
+            double[] ys = new double[40];
+            for (int i = 0; i < xs.Length; i++)
+            {
+                xs[i] = random.NextDouble() * 1e3;
+                ys[i] = (random.NextDouble() * 1e-3) + (xs[i] * 1e-7);
+            }
+
+            var fit = new RunningCovariance(xs, ys);
+            var swapped = new RunningCovariance(ys, xs);
+            if (fit.Correlation != swapped.Correlation)
+            {
+                mismatches++;
+            }
+        }
+
+        Assert.Equal(0, mismatches);
+    }
+
+    [Fact]
     public void Slope_ShouldBeNaN_WhenEveryXIsIdentical()
     {
         var fit = new RunningCovariance([4d, 4d, 4d], [1d, 2d, 9d]);

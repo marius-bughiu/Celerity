@@ -193,10 +193,15 @@ public struct RunningCovariance
                 return double.NaN;
             }
 
-            // Divided down one root at a time rather than by sqrt(_m2X * _m2Y): that product
-            // can overflow or underflow while the ratio is an ordinary number, and
-            // |_cXY| <= sqrt(_m2X) * sqrt(_m2Y) (Cauchy–Schwarz) keeps each step in range.
-            return Math.Clamp(_cXY / Math.Sqrt(_m2X) / Math.Sqrt(_m2Y), -1d, 1d);
+            // Divided down one root at a time rather than by sqrt(_m2X * _m2Y), which can
+            // overflow or underflow while the ratio is an ordinary number. The smaller root goes
+            // first: by Cauchy–Schwarz the intermediate is then r times the larger root, as large
+            // as it can be (so it underflows only for a vanishing r) and never above that root
+            // (so it cannot overflow). Ordering by size rather than by coordinate also makes the
+            // answer independent of which variable is called x.
+            double rootX = Math.Sqrt(_m2X);
+            double rootY = Math.Sqrt(_m2Y);
+            return Math.Clamp(_cXY / Math.Min(rootX, rootY) / Math.Max(rootX, rootY), -1d, 1d);
         }
     }
 
