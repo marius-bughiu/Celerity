@@ -5468,19 +5468,25 @@ using Celerity.Hashing;
 var pricing = new ThetaSketch<long, Int64Murmur3Hasher>();
 var signup = new ThetaSketch<long, Int64Murmur3Hasher>();
 foreach (var visit in visits)
-    (visit.Page == "/pricing" ? pricing : signup).Add(visit.UserId);
+{
+    if (visit.Page == "/pricing")
+        pricing.Add(visit.UserId);
+    else if (visit.Page == "/signup")
+        signup.Add(visit.UserId);
+}
 
 Console.WriteLine(pricing.EstimateCardinality()); // distinct visitors of /pricing
 
-// Freeze them to combine: who saw pricing and then signed up, and who did not.
+// Freeze them to combine: who visited both pages, and who visited /pricing but not /signup.
+// The sketches keep hashes, not timestamps, so "both" says nothing about which came first.
 var p = pricing.Compact();
 var s = signup.Compact();
-var converted = CompactThetaSketch<long, Int64Murmur3Hasher>.Intersect(p, s);
-var bounced = CompactThetaSketch<long, Int64Murmur3Hasher>.Except(p, s);
+var both = CompactThetaSketch<long, Int64Murmur3Hasher>.Intersect(p, s);
+var pricingOnly = CompactThetaSketch<long, Int64Murmur3Hasher>.Except(p, s);
 
-Console.WriteLine($"{converted.EstimateCardinality():F0} converted " +
-    $"(95%: {converted.GetLowerBound(2):F0}–{converted.GetUpperBound(2):F0})");
-Console.WriteLine($"{bounced.EstimateCardinality():F0} did not");
+Console.WriteLine($"{both.EstimateCardinality():F0} visited both " +
+    $"(95%: {both.GetLowerBound(2):F0}–{both.GetUpperBound(2):F0})");
+Console.WriteLine($"{pricingOnly.EstimateCardinality():F0} visited /pricing but not /signup");
 
 // Per-shard sketches merge into one.
 pricing.UnionWith(pricingFromOtherShard);

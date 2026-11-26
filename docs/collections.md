@@ -1355,8 +1355,9 @@ foreach (string url in index.Query(page))
 ```csharp
 var sawPricing = new ThetaSketch<long, Int64Murmur3Hasher>(pricingVisitorIds).Compact();
 var signedUp = new ThetaSketch<long, Int64Murmur3Hasher>(signupUserIds).Compact();
-var converted = CompactThetaSketch<long, Int64Murmur3Hasher>.Intersect(sawPricing, signedUp);
-Console.WriteLine($"{converted.EstimateCardinality():F0} ({converted.GetLowerBound(2):F0}–{converted.GetUpperBound(2):F0})");
+var both = CompactThetaSketch<long, Int64Murmur3Hasher>.Intersect(sawPricing, signedUp);
+// Users in both sets; the sketches keep no order, so this is not "signed up after pricing".
+Console.WriteLine($"{both.EstimateCardinality():F0} ({both.GetLowerBound(2):F0}–{both.GetUpperBound(2):F0})");
 ```
 
 `CountMinSketch` estimates **per-element frequencies** from a fixed grid of counters that never grows with the distinct-key count, and **never underestimates** (overestimate bounded by `epsilon · TotalCount`). Add-and-estimate only; `epsilon` / `delta` set the trade-off; merge equally-sized sketches with `UnionWith`.
