@@ -5357,7 +5357,8 @@ the result of a set operation.
   count over `Theta`. Exact while `IsEstimationMode` is `false`.
 - `double GetLowerBound(int standardDeviations)` /
   `double GetUpperBound(int standardDeviations)` — an approximate confidence interval at 1,
-  2 or 3 standard deviations (roughly 68%, 95% or 99.7% per side). It inverts the normal
+  2 or 3 standard deviations: the range between the two bounds covers the true count with
+  roughly 68%, 95% or 99.7% confidence. It inverts the normal
   approximation to the binomial (the Wilson score interval), so it stays honest when few
   values are retained. Both equal the exact count in exact mode, and the lower bound is never
   below `RetainedCount`. Throws `ArgumentOutOfRangeException` for any other number of
@@ -5377,8 +5378,12 @@ the result of a set operation.
 - `double Theta { get; }` — the sampling rate, in `(0, 1]`.
 - `bool IsEstimationMode { get; }` — whether `Theta` is below `1`.
 - `bool IsEmpty { get; }` — whether the sketch summarizes the empty set (`O(1)`).
-- `double StandardError { get; }` — `1 / sqrt(k)`, the approximate relative standard error
-  in estimation mode. A dispersion, not a bound.
+- `double StandardError { get; }` — `1 / sqrt(k)`, the *nominal* relative standard error in
+  estimation mode: that of a sketch fed its stream directly, which holds at least `k` values.
+  It is fixed by the precision, so it overstates the accuracy of a sketch holding fewer
+  values, such as one that merged in a lower-precision sketch or a sparse set expression. A
+  dispersion, not a bound; for merged results read `GetLowerBound` / `GetUpperBound`, which
+  are computed from the values actually held.
 
 `CompactThetaSketch<T, THasher>` exposes the same `RetainedCount`, `Theta`,
 `IsEstimationMode`, `IsEmpty`, `EstimateCardinality()`, `GetLowerBound(int)` and

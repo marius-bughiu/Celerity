@@ -94,8 +94,8 @@ public sealed class CompactThetaSketch<T, THasher> where THasher : struct, IHash
     /// Gets an approximate lower bound on the number of distinct elements, at the given number
     /// of standard deviations. It is never below <see cref="RetainedCount"/>.
     /// </summary>
-    /// <param name="standardDeviations">1, 2 or 3 — roughly 68%, 95% or 99.7% confidence for
-    /// each side of the interval.</param>
+    /// <param name="standardDeviations">1, 2 or 3. The interval between the lower and upper
+    /// bounds at that width covers the true count with roughly 68%, 95% or 99.7% confidence.</param>
     /// <returns>The lower bound.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="standardDeviations"/> is not 1, 2 or 3.
@@ -109,8 +109,8 @@ public sealed class CompactThetaSketch<T, THasher> where THasher : struct, IHash
     /// still positive: the sample saw nothing, but at the sampling rate it could have missed a
     /// few elements.
     /// </summary>
-    /// <param name="standardDeviations">1, 2 or 3 — roughly 68%, 95% or 99.7% confidence for
-    /// each side of the interval.</param>
+    /// <param name="standardDeviations">1, 2 or 3. The interval between the lower and upper
+    /// bounds at that width covers the true count with roughly 68%, 95% or 99.7% confidence.</param>
     /// <returns>The upper bound.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="standardDeviations"/> is not 1, 2 or 3.

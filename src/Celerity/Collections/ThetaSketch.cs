@@ -196,10 +196,15 @@ public class ThetaSketch<T, THasher> where THasher : struct, IHashProvider<T>
     public bool IsEmpty => _count == 0 && !IsEstimationMode;
 
     /// <summary>
-    /// Gets the approximate relative standard error of <see cref="EstimateCardinality"/> in
-    /// estimation mode, <c>1 / sqrt(k)</c>. It is a dispersion, not a bound; use
-    /// <see cref="GetLowerBound"/> and <see cref="GetUpperBound"/> for an interval. In exact
-    /// mode the count carries no error.
+    /// Gets the <em>nominal</em> relative standard error of <see cref="EstimateCardinality"/>
+    /// in estimation mode, <c>1 / sqrt(k)</c>: the error of a sketch fed its stream directly,
+    /// which holds at least <c>k</c> values once it samples. It is fixed by
+    /// <see cref="Precision"/> and does not track the sketch's contents, so it overstates the
+    /// accuracy of a sketch that holds fewer values — one that has merged in a lower-precision
+    /// sketch or a sparse set expression through <see cref="UnionWith(CompactThetaSketch{T,THasher})"/>.
+    /// It is a dispersion, not a bound; <see cref="GetLowerBound"/> and
+    /// <see cref="GetUpperBound"/> give an interval computed from the values actually held, and
+    /// are the figures to use for merged results. In exact mode the count carries no error.
     /// </summary>
     public double StandardError => 1d / Math.Sqrt(NominalEntries);
 
@@ -229,8 +234,8 @@ public class ThetaSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// number of standard deviations. It is never below <see cref="RetainedCount"/>, and it
     /// equals the exact count when the sketch is not in estimation mode.
     /// </summary>
-    /// <param name="standardDeviations">1, 2 or 3 — roughly 68%, 95% or 99.7% confidence for
-    /// each side of the interval.</param>
+    /// <param name="standardDeviations">1, 2 or 3. The interval between the lower and upper
+    /// bounds at that width covers the true count with roughly 68%, 95% or 99.7% confidence.</param>
     /// <returns>The lower bound.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="standardDeviations"/> is not 1, 2 or 3.
@@ -243,8 +248,8 @@ public class ThetaSketch<T, THasher> where THasher : struct, IHashProvider<T>
     /// number of standard deviations. It equals the exact count when the sketch is not in
     /// estimation mode.
     /// </summary>
-    /// <param name="standardDeviations">1, 2 or 3 — roughly 68%, 95% or 99.7% confidence for
-    /// each side of the interval.</param>
+    /// <param name="standardDeviations">1, 2 or 3. The interval between the lower and upper
+    /// bounds at that width covers the true count with roughly 68%, 95% or 99.7% confidence.</param>
     /// <returns>The upper bound.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="standardDeviations"/> is not 1, 2 or 3.
