@@ -2970,7 +2970,7 @@ foreach (int documentId in termA) // ascending order, no allocation
 var recentlyIngested = new CompressedIntSet();
 recentlyIngested.AddRange(90_000_000, 99_999_999); // 10M ids
 recentlyIngested.Optimize();
-Console.WriteLine(recentlyIngested.MemoryUsageInBytes); // hundreds of bytes, not tens of megabytes
+Console.WriteLine(recentlyIngested.MemoryUsageInBytes); // a few kilobytes, not tens of megabytes
 ```
 
 ---
