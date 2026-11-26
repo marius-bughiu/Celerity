@@ -8,9 +8,11 @@ namespace Celerity.Collections;
 /// </summary>
 /// <remarks>
 /// A sketch is a retained count <c>n</c> and an inclusive threshold <c>T</c> on hash values
-/// drawn uniformly from <c>[1, 2^63]</c>, so each distinct element is retained with
-/// probability <c>p = T / 2^63</c> and <c>n</c> is binomial in the true cardinality
-/// <c>N</c> with that rate. The estimate is <c>n / p</c>, which is unbiased.
+/// drawn uniformly from <c>[1, 2^63]</c>, with <c>p = T / 2^63</c>. The estimate is
+/// <c>n / p</c>, unbiased by the K-Minimum-Values / theta-sketch result even though <c>T</c>
+/// is chosen from the data. The confidence bounds model <c>n</c> as binomial in the true
+/// cardinality <c>N</c> at rate <c>p</c>, the standard approximation for these sketches: exact
+/// for a fixed threshold, and close for one set by an order statistic.
 /// </remarks>
 internal static class ThetaMath
 {

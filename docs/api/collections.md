@@ -5296,9 +5296,14 @@ This is the K-Minimum-Values **theta sketch** (Dasgupta, Lang, Rhodes &amp; Thal
 Each element is hashed once to 64 bits and mapped to a 63-bit sample value. The sketch keeps
 every distinct value at or below a threshold `θ` and none above it. While `θ` is `1` that is
 every value, and the count is exact. When the sketch holds more than `1.5 · k` values it keeps
-the `k` smallest and lowers `θ` to just below the next. Because hashes are uniform, each
-distinct element is then retained with probability `θ`, independently of the others, so the
-estimate is the retained count divided by `θ`, which is unbiased.
+the `k` smallest and lowers `θ` to just below the next. The estimate is the retained count
+divided by `θ`. `θ` is not a fixed rate chosen in advance: it is set from the data, as the
+`(k + 1)`-th smallest hash, so the retained values are not an independent coin flip per
+element. The estimator is unbiased all the same; that is the KMV result (`k / U(k+1)` for
+the `(k + 1)`-th smallest of `N` uniform hashes has expectation `N`), which the theta-sketch
+framework extends to the counts between rebuilds and to the set operations below. The
+confidence bounds treat the retained count as binomial at rate `θ`, which is the standard
+approximation for these sketches rather than an exact model.
 
 Two sketches built with the same hasher sample the same elements at the same values. Cut both
 down to the smaller of their two thresholds and they are samples of their sets taken at one

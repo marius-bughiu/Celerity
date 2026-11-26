@@ -15,10 +15,11 @@ namespace Celerity.Collections;
 /// This is a <em>theta sketch</em> (the K-Minimum-Values framework of Dasgupta, Lang, Rhodes
 /// and Thaler, 2016). Every element is hashed to a 63-bit value, and the sketch keeps the
 /// <see cref="NominalEntries"/> (<c>k</c>) smallest distinct values it has seen together with
-/// a threshold <c>θ</c>: every value below <c>θ</c> is retained and none above it. Because the
-/// hashes are uniform, the retained values are a uniform sample of the distinct elements in
-/// which each one is kept with probability <c>θ</c>, so the cardinality is estimated as the
-/// retained count divided by <c>θ</c>. While fewer than about <c>k</c> distinct elements have
+/// a threshold <c>θ</c>: every value below <c>θ</c> is retained and none above it. The
+/// cardinality is estimated as the retained count divided by <c>θ</c>. <c>θ</c> is set from the
+/// data (as the <c>(k + 1)</c>-th smallest hash), not fixed in advance, so this is not
+/// independent sampling at a fixed rate; the estimator is unbiased by the K-Minimum-Values
+/// result, which the theta-sketch framework extends to merges and set expressions. While fewer than about <c>k</c> distinct elements have
 /// been seen, <c>θ</c> is <c>1</c>, every element is retained and the count is exact
 /// (<see cref="IsEstimationMode"/> is <c>false</c>).
 /// </para>
