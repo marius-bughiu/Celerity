@@ -166,6 +166,38 @@ public class SketchMergeDifferentialTests
         }
     }
 
+    // Theta: a merge lowers the threshold to the smaller of the two and keeps every value of either
+    // operand at or below it, trimming to k with a rebuild — so the merged sketch holds exactly the
+    // values the union of the two compact snapshots holds below its threshold, and counts the
+    // union exactly while it is not sampling. A 64-value domain at k = 16 samples routinely.
+    [Fact]
+    public void ThetaSketch_UnionWith_KeepsEveryValueBelowTheMergedThreshold()
+    {
+        for (int seed = 0; seed < Seeds; seed++)
+        {
+            var rng = new Random(seed);
+            var a = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+            var b = new ThetaSketch<int, Int32Murmur3Hasher>(rng.Next(4, 6));
+            var union = new HashSet<int>();
+
+            int opsA = OpCount(rng);
+            for (int i = 0; i < opsA; i++) { int k = rng.Next(-32, 32); a.Add(k); union.Add(k); }
+            int opsB = OpCount(rng);
+            for (int i = 0; i < opsB; i++) { int k = rng.Next(-32, 32); b.Add(k); union.Add(k); }
+
+            CompactThetaSketch<int, Int32Murmur3Hasher> expected = CompactThetaSketch<int, Int32Murmur3Hasher>.Union(a.Compact(), b.Compact());
+            a.UnionWith(b);
+            CompactThetaSketch<int, Int32Murmur3Hasher> merged = a.Compact();
+
+            Assert.True(CompactThetaSketch<int, Int32Murmur3Hasher>.Except(merged, expected).RetainedCount == 0,
+                $"seed {seed}: merged sketch holds a value neither operand did");
+            Assert.True(CompactThetaSketch<int, Int32Murmur3Hasher>.Except(expected, merged).RetainedCount == 0,
+                $"seed {seed}: merged sketch dropped a value below its threshold");
+            if (!a.IsEstimationMode)
+                Assert.True(a.EstimateCardinality() == union.Count, $"seed {seed}: exact merge miscounted the union");
+        }
+    }
+
     // Count-Min: merge adds counters elementwise, so the never-underestimate guarantee extends to
     // the combined stream and the total count is exactly the sum of both operands' totals.
     [Fact]

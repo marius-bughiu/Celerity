@@ -716,7 +716,7 @@ the winning ones so the crossovers can be read off rather than guessed.
 ## See also
 
 - [Collections API](collections.md) — including the sketches (`HyperLogLog`, `CountMinSketch`,
-  `TopKSketch`, `MinHashSketch`) that summarize a stream's *cardinality*, *frequencies* and
+  `TopKSketch`, `MinHashSketch`, `ThetaSketch`) that summarize a stream's *cardinality*, *frequencies* and
   *overlap with another stream* rather than its distribution.
 - [Utilities API](utilities.md) — the seedable struct PRNGs that the samplers and `AliasTable` draw from.
 - [Testing & coverage](../testing.md) — the fuzz targets. `DDSketch`, `RunningStatistics`,

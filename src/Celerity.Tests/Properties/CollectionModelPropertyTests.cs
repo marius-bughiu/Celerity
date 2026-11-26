@@ -1032,6 +1032,67 @@ public class CollectionModelPropertyTests
         }, iter: 2000);
     }
 
+    // ---- ThetaSketch (probabilistic) vs two HashSet<int> --------------------
+
+    // A theta sketch keeps the smallest hash values of its set. With a bijective hasher every
+    // retained value is exactly one real element, so the model can pin several relations: a
+    // sketch that is not sampling counts its oracle exactly, emptiness tracks the oracle, a
+    // sketch never retains more than 1.5k values or more than its set has, and every set
+    // expression keeps no more values than the exact expression has elements — exactly that
+    // many when both operands are exact. Precision 4 over a 64-value domain samples routinely.
+    private static readonly Gen<List<(MinHashOp, int)>> GenThetaOps =
+        Gen.Select(
+            Gen.Int[0, 99].Select(n =>
+                n < 46 ? MinHashOp.AddA :
+                n < 92 ? MinHashOp.AddB :
+                n < 96 ? MinHashOp.ClearA : MinHashOp.ClearB),
+            Gen.Int[-32, 31])
+        .List[0, 160];
+
+    [Fact]
+    public void ThetaSketch_ShouldMatchExactSetRelations_VsBclHashSet()
+    {
+        GenThetaOps.Sample(ops =>
+        {
+            var a = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+            var b = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+            var setA = new HashSet<int>();
+            var setB = new HashSet<int>();
+
+            foreach (var (op, item) in ops)
+            {
+                switch (op)
+                {
+                    case MinHashOp.AddA: a.Add(item); setA.Add(item); break;
+                    case MinHashOp.AddB: b.Add(item); setB.Add(item); break;
+                    case MinHashOp.ClearA: a.Clear(); setA.Clear(); break;
+                    case MinHashOp.ClearB: b.Clear(); setB.Clear(); break;
+                }
+            }
+
+            foreach (var (sketch, set) in new[] { (a, setA), (b, setB) })
+            {
+                Assert.Equal(set.Count == 0, sketch.IsEmpty);
+                Assert.InRange(sketch.RetainedCount, 0, Math.Min(set.Count, 24));
+                if (!sketch.IsEstimationMode)
+                    Assert.Equal(set.Count, sketch.EstimateCardinality());
+            }
+
+            CompactThetaSketch<int, Int32Murmur3Hasher> ca = a.Compact(), cb = b.Compact();
+            bool exact = !a.IsEstimationMode && !b.IsEstimationMode;
+            void Expect(CompactThetaSketch<int, Int32Murmur3Hasher> result, int truth)
+            {
+                Assert.InRange(result.RetainedCount, 0, truth);
+                if (exact)
+                    Assert.Equal(truth, result.EstimateCardinality());
+            }
+
+            Expect(CompactThetaSketch<int, Int32Murmur3Hasher>.Union(ca, cb), setA.Union(setB).Count());
+            Expect(CompactThetaSketch<int, Int32Murmur3Hasher>.Intersect(ca, cb), setA.Intersect(setB).Count());
+            Expect(CompactThetaSketch<int, Int32Murmur3Hasher>.Except(ca, cb), setA.Except(setB).Count());
+        }, iter: 2000);
+    }
+
     // ---- CountMinSketch (probabilistic) vs Dictionary<int,long> -------------
 
     // A Count-Min sketch never underestimates a frequency (counters only accumulate, and
