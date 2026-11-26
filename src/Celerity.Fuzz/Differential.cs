@@ -102,12 +102,14 @@ internal static class Differential
         ("HyperLogLog", HyperLogLogCase),
         ("MinHashSketch", MinHashSketchCase),
         ("MinHashLshIndex", MinHashLshIndexCase),
+        ("ThetaSketch", ThetaSketchCase),
         ("CountMinSketch", CountMinSketchCase),
         ("BloomFilterMerge", BloomFilterMergeCase),
         ("CuckooFilterMerge", CuckooFilterMergeCase),
         ("HyperLogLogMerge", HyperLogLogMergeCase),
         ("SlidingHyperLogLog", SlidingHyperLogLogCase),
         ("MinHashSketchMerge", MinHashSketchMergeCase),
+        ("ThetaSketchMerge", ThetaSketchMergeCase),
         ("CountMinSketchMerge", CountMinSketchMergeCase),
         ("BloomFilterHash64", BloomFilterHash64Case),
         ("CuckooFilterHash64", CuckooFilterHash64Case),
@@ -6044,6 +6046,54 @@ internal static class Differential
             Check(estimate == 0d, $"disjoint sets estimated {estimate}, not 0");
     }
 
+    // ThetaSketch keeps the smallest hash values of a set, and with a bijective hasher (Murmur3's
+    // fmix32, then the bijective SplitMix64 widening) every retained value is exactly one real
+    // element, so several relations are exact: a sketch that is not sampling counts its oracle
+    // exactly, an empty oracle is an empty sketch, and every set expression keeps no more values
+    // than the exact expression has elements (and exactly that many when both operands are
+    // exact). Precision 4 (k = 16) over a 64-value domain crosses into sampling routinely.
+    private static void ThetaSketchCase(Random rng)
+    {
+        var a = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+        var b = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+        var setA = new HashSet<int>();
+        var setB = new HashSet<int>();
+        int ops = OpCount(rng);
+
+        for (int i = 0; i < ops; i++)
+        {
+            int item = rng.Next(-32, 32);
+            switch (rng.Next(0, 20))
+            {
+                case < 9: a.Add(item); setA.Add(item); break;
+                case < 18: b.Add(item); setB.Add(item); break;
+                case 18: a.Clear(); setA.Clear(); break;
+                default: b.Clear(); setB.Clear(); break;
+            }
+        }
+
+        foreach (var (sketch, set) in new[] { (a, setA), (b, setB) })
+        {
+            Check(sketch.IsEmpty == (set.Count == 0), "IsEmpty disagrees with the oracle");
+            Check(sketch.RetainedCount <= Math.Min(set.Count, 24), $"retained {sketch.RetainedCount} of {set.Count}");
+            if (!sketch.IsEstimationMode)
+                Check(sketch.EstimateCardinality() == set.Count, $"exact sketch estimated {sketch.EstimateCardinality()}, not {set.Count}");
+        }
+
+        CompactThetaSketch<int, Int32Murmur3Hasher> ca = a.Compact(), cb = b.Compact();
+        bool exact = !a.IsEstimationMode && !b.IsEstimationMode;
+        void Expect(CompactThetaSketch<int, Int32Murmur3Hasher> result, int truth, string op)
+        {
+            Check(result.RetainedCount <= truth, $"{op} kept {result.RetainedCount} values of {truth}");
+            if (exact)
+                Check(result.EstimateCardinality() == truth, $"exact {op} estimated {result.EstimateCardinality()}, not {truth}");
+        }
+
+        Expect(CompactThetaSketch<int, Int32Murmur3Hasher>.Union(ca, cb), setA.Union(setB).Count(), "union");
+        Expect(CompactThetaSketch<int, Int32Murmur3Hasher>.Intersect(ca, cb), setA.Intersect(setB).Count(), "intersection");
+        Expect(CompactThetaSketch<int, Int32Murmur3Hasher>.Except(ca, cb), setA.Except(setB).Count(), "difference");
+    }
+
     // MinHashLshIndex returns candidates, which are approximate in general, but with a bijective
     // hasher three relations are exact: a stored set equal to the query (its sketch estimates 1)
     // shares every band and must be returned; a non-empty stored set disjoint from a non-empty
@@ -6142,6 +6192,31 @@ internal static class Differential
 
         Check(a.EstimateJaccard(new MinHashSketch<int, Int32Murmur3Hasher>(union, 6)) == 1d,
             "merged sketch differs from the sketch of the union");
+    }
+
+    // ThetaSketch: a merge lowers the threshold to the smaller of the two and keeps every value of
+    // either operand at or below it (trimmed to k with a rebuild), so the merged sketch holds
+    // exactly the values the union of the two compact snapshots holds below its threshold, and
+    // counts the union exactly while it is not sampling.
+    private static void ThetaSketchMergeCase(Random rng)
+    {
+        var a = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+        var b = new ThetaSketch<int, Int32Murmur3Hasher>(rng.Next(4, 6));
+        var union = new HashSet<int>();
+
+        int opsA = OpCount(rng);
+        for (int i = 0; i < opsA; i++) { int k = rng.Next(-32, 32); a.Add(k); union.Add(k); }
+        int opsB = OpCount(rng);
+        for (int i = 0; i < opsB; i++) { int k = rng.Next(-32, 32); b.Add(k); union.Add(k); }
+
+        CompactThetaSketch<int, Int32Murmur3Hasher> expected = CompactThetaSketch<int, Int32Murmur3Hasher>.Union(a.Compact(), b.Compact());
+        a.UnionWith(b);
+        CompactThetaSketch<int, Int32Murmur3Hasher> merged = a.Compact();
+
+        Check(CompactThetaSketch<int, Int32Murmur3Hasher>.Except(merged, expected).RetainedCount == 0, "merged sketch holds a value neither operand did");
+        Check(CompactThetaSketch<int, Int32Murmur3Hasher>.Except(expected, merged).RetainedCount == 0, "merged sketch dropped a value below its threshold");
+        if (!a.IsEstimationMode)
+            Check(a.EstimateCardinality() == union.Count, $"exact merge estimated {a.EstimateCardinality()}, not {union.Count}");
     }
 
     // HyperLogLog: merge takes the per-register maximum, which is exactly the register state the

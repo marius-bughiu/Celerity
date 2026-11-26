@@ -101,6 +101,19 @@ public class SketchHashProvider64Tests
     }
 
     [Fact]
+    public void ThetaSketch_UsesHash64_WhenTheHasherProvidesOne()
+    {
+        // On the 32-bit path every element would hash to one value and the sketch would hold
+        // a single entry; the 64-bit path keeps the N elements apart, and N fits in exact mode.
+        var sketch = new ThetaSketch<long, DisagreeingHasher>();
+        for (long i = 0; i < N; i++)
+            sketch.Add(i);
+
+        Assert.False(sketch.IsEstimationMode);
+        Assert.Equal(N, sketch.EstimateCardinality());
+    }
+
+    [Fact]
     public void BloomFilter_UsesHash64_WhenTheHasherProvidesOne()
     {
         var filter = new BloomFilter<long, DisagreeingHasher>(N, 0.01);
@@ -212,6 +225,7 @@ public class SketchHashProvider64Tests
         var cms = new CountMinSketch<long, Fold32Hasher>(0.001, 0.01);
         var minHash = new MinHashSketch<long, Fold32Hasher>();
         var minHashHalf = new MinHashSketch<long, Fold32Hasher>();
+        var theta = new ThetaSketch<long, Fold32Hasher>();
 
         for (long i = 0; i < N; i++)
         {
@@ -222,9 +236,11 @@ public class SketchHashProvider64Tests
             bloom.Add(i);
             cuckoo.Add(i);
             cms.Add(i);
+            theta.Add(i);
         }
 
         Assert.InRange(hll.EstimateCardinality(), N * 0.9, N * 1.1);
+        Assert.Equal(N, theta.EstimateCardinality()); // exact mode: no 32-bit collision in N
         Assert.InRange(minHash.EstimateJaccard(minHashHalf), 0.33, 0.67); // exact J = 0.5
         for (long i = 0; i < N; i++)
         {
@@ -262,6 +278,8 @@ public class SketchHashProvider64Tests
             typeof(MinimalPerfectHash<,>),
             typeof(CountMinSketch<,>),
             typeof(MinHashSketch<,>),
+            typeof(ThetaSketch<,>),
+            typeof(CompactThetaSketch<,>),
         ];
 
         foreach (Type sketch in sketches)
@@ -302,6 +320,9 @@ public class SketchHashProvider64Tests
         Assert.True(bloom.Contains(null!));
         Assert.True(cuckoo.Contains(null!));
         Assert.True(cms.EstimateCount(null!) >= 1);
+
+        var theta = new ThetaSketch<string, StringXxHash64Hasher>([null!, "a", null!]);
+        Assert.Equal(2d, theta.EstimateCardinality());
 
         var xor = new XorFilter<string, StringXxHash64Hasher>(["a", null!, "c"]);
         Assert.True(xor.Contains(null!));

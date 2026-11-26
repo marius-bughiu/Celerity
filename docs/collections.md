@@ -1269,6 +1269,7 @@ Timers thread through one flat entry array as intrusive lists, so there is no ob
 - `SlidingHyperLogLog<T, THasher>` — **probabilistic** distinct count over a **time window** ("unique users in the last 5 minutes"): `Add(item, timestamp)`, then `EstimateCardinality(since)` for any window chosen at query time, from a fixed ~1.7&#160;MB (~1.6% error). Out-of-order adds, exact merges, and bit-for-bit HyperLogLog's answer over the in-window elements.
 - `MinHashSketch<T, THasher>` — **probabilistic** similarity sketch: estimates the *Jaccard similarity* of two sets from a fixed 2&#160;KB per set (standard error up to ~0.031 for large sets; not a hard bound), comparing in `O(registers)` however large the sets are. Mergeable.
 - `MinHashLshIndex<TKey, T, THasher>` — **probabilistic near-duplicate search** over stored `MinHashSketch`es: banded locality-sensitive hashing returns the keys whose sets are *likely* similar to a query, with query work driven by matching band hits and their sorting. In the planted near-duplicate benchmark it was thousands of times faster than scanning 100,000 sketches with `EstimateJaccard`; larger matching buckets increase work. Candidates are approximate in both directions, so measure recall on your data and verify the ones you act on.
+- `ThetaSketch<T, THasher>` — **probabilistic distinct count with set expressions**: counts distinct elements exactly up to 6,144 at the default precision, then samples them in at most 64&#160;KB (~1.6% error), and — unlike `HyperLogLog` — estimates **intersections and differences** of two sets (`|A ∩ B|`, `|A \ B|`) from compact snapshots, with confidence bounds. Mergeable.
 - `CountMinSketch<T, THasher>` — **probabilistic** frequency estimator: estimates per-element counts from a fixed grid, **never underestimating** (overestimate bounded by `epsilon · TotalCount`). Mergeable.
 - `TopKSketch<T, THasher>` — **probabilistic** top-k / heavy-hitters sketch (Space-Saving): reports a stream's most frequent elements from a fixed `k` monitors in `O(k)` memory, **never underestimating** and never missing a hitter above `TotalCount / k`.
 
@@ -1347,6 +1348,16 @@ foreach (var (url, shingles) in crawledPages)
 var page = new MinHashSketch<string, StringXxHash64Hasher>(shinglesOfNewPage);
 foreach (string url in index.Query(page))
     Console.WriteLine(url); // likely ≥ 0.8 similar; check with EstimateJaccard before acting
+```
+
+`ThetaSketch` counts distinct elements like `HyperLogLog` does, but keeps a *sample* of the hash values rather than register maxima, so two sketches can be **intersected and differenced**: freeze each with `Compact()` and combine them with `CompactThetaSketch.Intersect`, `Except` and `Union`. Each result reports an estimate and a confidence interval; an intersection that is a small share of the union is estimated from few sampled values, so read the bounds. Below about 6,000 distinct elements (at the default precision) every answer is exact.
+
+```csharp
+var sawPricing = new ThetaSketch<long, Int64Murmur3Hasher>(pricingVisitorIds).Compact();
+var signedUp = new ThetaSketch<long, Int64Murmur3Hasher>(signupUserIds).Compact();
+var both = CompactThetaSketch<long, Int64Murmur3Hasher>.Intersect(sawPricing, signedUp);
+// Users in both sets; the sketches keep no order, so this is not "signed up after pricing".
+Console.WriteLine($"{both.EstimateCardinality():F0} ({both.GetLowerBound(2):F0}–{both.GetUpperBound(2):F0})");
 ```
 
 `CountMinSketch` estimates **per-element frequencies** from a fixed grid of counters that never grows with the distinct-key count, and **never underestimates** (overestimate bounded by `epsilon · TotalCount`). Add-and-estimate only; `epsilon` / `delta` set the trade-off; merge equally-sized sketches with `UnionWith`.

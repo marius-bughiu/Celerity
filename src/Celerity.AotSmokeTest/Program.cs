@@ -3450,6 +3450,51 @@ void Check(bool condition, string message)
     Check(longA.EstimateJaccard(longB) == 0d, "MinHashSketch with a 64-bit hasher");
 }
 
+// ThetaSketch / CompactThetaSketch — KMV distinct-count sketch with set expressions (no
+// out-of-band slot; default(T) is an ordinary element, a null reference is mapped to a fixed
+// hash). Exercise exact mode, the growth and rebuild into estimation mode, UnionWith over both
+// operand types, Compact and the three set operations, the bounds and Clear across int / string /
+// long-with-64-bit-hasher instantiations so the AOT publish compiles both Hash64 arms.
+{
+    var a = new ThetaSketch<int, Int32WangNaiveHasher>();
+    Check(a.IsEmpty && a.EstimateCardinality() == 0d && a.Theta == 1d, "ThetaSketch empty");
+    Check(a.Precision == ThetaSketch<int, Int32WangNaiveHasher>.DefaultPrecision && a.NominalEntries == 4096,
+        "ThetaSketch default precision");
+
+    for (int i = 0; i < 1_000; i++) a.Add(i);
+    Check(!a.IsEstimationMode && a.EstimateCardinality() == 1_000d, "ThetaSketch exact mode");
+
+    var big = new ThetaSketch<int, Int32WangNaiveHasher>(Enumerable.Range(0, 200_000), 10);
+    Check(big.IsEstimationMode && Math.Abs(big.EstimateCardinality() - 200_000) <= 200_000 * big.StandardError * 4,
+        "ThetaSketch estimate within bound");
+    Check(big.GetLowerBound(2) <= 200_000 && big.GetUpperBound(2) >= 200_000, "ThetaSketch bounds");
+
+    var other = new ThetaSketch<int, Int32WangNaiveHasher>(Enumerable.Range(500, 1_000));
+    var both = CompactThetaSketch<int, Int32WangNaiveHasher>.Intersect(a.Compact(), other.Compact());
+    var onlyA = CompactThetaSketch<int, Int32WangNaiveHasher>.Except(a.Compact(), other.Compact());
+    var either = CompactThetaSketch<int, Int32WangNaiveHasher>.Union(a.Compact(), other.Compact());
+    Check(both.EstimateCardinality() == 500d && onlyA.EstimateCardinality() == 500d && either.EstimateCardinality() == 1_500d,
+        "ThetaSketch set expressions");
+
+    a.UnionWith(other);
+    Check(a.EstimateCardinality() == 1_500d, "ThetaSketch UnionWith");
+    var c = new ThetaSketch<int, Int32WangNaiveHasher>();
+    c.UnionWith(both);
+    Check(c.EstimateCardinality() == 500d, "ThetaSketch UnionWith(compact)");
+
+    a.Clear();
+    Check(a.IsEmpty, "ThetaSketch clear");
+
+    var str = new ThetaSketch<string, StringFnV1AHasher>(new[] { "alice", "bob", "alice" });
+    str.Add(null!);
+    Check(str.EstimateCardinality() == 3d, "ThetaSketch<string> ctor + null element");
+
+    var longSketch = new ThetaSketch<long, Int64WangHasher>(8);
+    for (long i = 0; i < 100_000; i++) longSketch.Add(i);
+    Check(Math.Abs(longSketch.EstimateCardinality() - 100_000) <= 100_000 * longSketch.StandardError * 4,
+        "ThetaSketch with a 64-bit hasher");
+}
+
 // MinHashLshIndex — banded LSH over MinHashSketch. Exercise both constructors (the threshold one
 // runs the parameter search), Add / TryAdd / Remove / ContainsKey / Clear, both Query overloads,
 // densification of a sparse sketch, and the struct enumerator, over int and string keys so the AOT

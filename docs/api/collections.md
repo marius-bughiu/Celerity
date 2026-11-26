@@ -4713,7 +4713,10 @@ analytics and query planners, and deduplicated counting across distributed shard
 locally, then `UnionWith` the partial estimators). If you need an exact count, to test
 membership of a specific element, or to retrieve the stored elements, use a
 `HashSet<T>` / `CeleritySet<T, THasher>` instead; for approximate *membership* (rather
-than counting), use `BloomFilter<T, THasher>`.
+than counting), use `BloomFilter<T, THasher>`. If you also need the distinct count of an
+**intersection or difference** of two streams, use [`ThetaSketch`](#thetasketcht-thasher):
+`HyperLogLog` can only reach those by inclusion–exclusion, whose error is relative to the
+union rather than to the answer.
 
 ### Usage example
 
@@ -5019,6 +5022,8 @@ Use something else when:
 
 - you need the **exact** intersection, or the elements themselves: two `HashSet<T>`s;
 - you need the **size** of a set, not its overlap with another: `HyperLogLog<T, THasher>`;
+- you need the **size of the overlap** (`|A ∩ B|`, or `|A \ B|`) rather than its ratio:
+  [`ThetaSketch`](#thetasketcht-thasher);
 - you need **membership** of one element: `BloomFilter<T, THasher>`;
 - you need the sets **similar to one set** among many stored ones: index the sketches in a
   [`MinHashLshIndex`](#minhashlshindextkey-t-thasher) instead of comparing against each;
@@ -5250,6 +5255,246 @@ foreach (string url in index.Query(incoming))
     if (incoming.EstimateJaccard(sketches[url]) >= 0.8)
         Console.WriteLine($"near-duplicate of {url}");
 }
+```
+
+## ThetaSketch&lt;T, THasher&gt;
+
+A mergeable **distinct-count sketch with set expressions**, parameterized on a custom hash
+provider. Like [`HyperLogLog`](#hyperloglogt-thasher) it estimates how many distinct elements
+a stream holds in bounded memory. Unlike it, two sketches can also be **intersected** and
+**differenced**: `|A ∩ B|` ("users who visited both pages"), `|A \ B|` ("customers of A who
+never bought from B"), and any composition such as `|(A ∪ B) ∩ C|`. The exact answers need
+both sets in full: `HashSet<T>`s and an `O(|A|)` membership pass per question.
+
+```csharp
+public class ThetaSketch<T, THasher>
+    where THasher : struct, IHashProvider<T>
+
+public sealed class CompactThetaSketch<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+The contract is the theta-sketch trade-off:
+
+- **Exact, then bounded.** Until it has seen about `1.5 · k` distinct elements
+  (`k = 2^precision`, 4,096 by default) the sketch holds every hash and counts exactly.
+  After that it holds between `k` and `1.5 · k` eight-byte hash values, 64&#160;KB at most at
+  the default precision, however long the stream.
+- **Set expressions.** `Compact()` freezes a sketch into an immutable, sorted
+  `CompactThetaSketch`; `CompactThetaSketch.Union`, `Intersect` and `Except` combine two of
+  them in one merge pass and return another, so expressions compose.
+- **Approximate answers with error bars.** A single sketch's relative standard error is about
+  `1 / sqrt(k)` (1.6% by default). An intersection or difference is estimated from the share
+  of the sample that lands in it, so a result holding a fraction `f` of the union has a
+  relative error of about `1 / sqrt(f · k)`. `GetLowerBound` / `GetUpperBound` give an
+  approximate confidence interval that reflects this.
+- **Add-only.** It cannot remove an element or say whether a specific element was added.
+
+### How it works
+
+This is the K-Minimum-Values **theta sketch** (Dasgupta, Lang, Rhodes &amp; Thaler, 2016).
+Each element is hashed once to 64 bits and mapped to a 63-bit sample value. The sketch keeps
+every distinct value at or below a threshold `θ` and none above it. While `θ` is `1` that is
+every value, and the count is exact. When the sketch holds more than `1.5 · k` values it keeps
+the `k` smallest and lowers `θ` to just below the next. The estimate is the retained count
+divided by `θ`. `θ` is not a fixed rate chosen in advance: it is set from the data, as the
+`(k + 1)`-th smallest hash, so the retained values are not an independent coin flip per
+element. The estimator is unbiased all the same; that is the KMV result (`k / U(k+1)` for
+the `(k + 1)`-th smallest of `N` uniform hashes has expectation `N`), which the theta-sketch
+framework extends to the counts between rebuilds and to the set operations below. The
+confidence bounds treat the retained count as binomial at rate `θ`, which is the standard
+approximation for these sketches rather than an exact model.
+
+Two sketches built with the same hasher sample the same elements at the same values. Cut both
+down to the smaller of their two thresholds and they are samples of their sets taken at one
+rate. The values in both are then a sample of the intersection, the values in only the first a
+sample of the difference, and the estimate is again the count over `θ`. That is what
+`HyperLogLog` cannot do: its registers keep a maximum, not a sample, so the only intersection
+it offers is inclusion–exclusion, `|A| + |B| − |A ∪ B|`. That subtracts two large estimates to
+get a small one, and its error is relative to the union, not to the answer.
+
+The table is open-addressed with linear probing and starts at 32 slots, doubling while the
+sketch is still exact, so a sketch of a small set stays small. Once the sketch samples, an
+element whose value is above `θ` costs one hash and one compare and never touches the table,
+and `θ` keeps falling as the stream grows, so almost every element of a long stream takes
+that path.
+
+Hashing follows `HyperLogLog`. A hasher implementing
+[`IHashProvider64<T>`](hashing.md#ihashprovider64t) supplies all 64 bits. A 32-bit-only
+hasher has its code avalanched by the SplitMix64 finalizer, a bijection, so two elements
+collide only when their 32-bit codes do. Only sketches built with the same `THasher` can be
+combined, which the type parameters enforce.
+
+### Constructors
+
+```csharp
+public ThetaSketch(int precision = 12)
+
+public ThetaSketch(
+    IEnumerable<T> source,
+    int precision = 12)
+```
+
+The first overload creates an empty sketch. The `IEnumerable<T>` overload adds every element
+of the source; duplicates do not change the sketch.
+
+`precision` must be between `MinPrecision` (4, `k = 16`) and `MaxPrecision` (20,
+`k = 1,048,576`, a 16&#160;MB table) inclusive. Each step up doubles the memory ceiling and
+divides the standard error by about 1.41.
+
+**Throws:**
+
+- `ArgumentOutOfRangeException` if `precision` is outside `[MinPrecision, MaxPrecision]`.
+- `ArgumentNullException` if `source` is `null` (enumerable overload). This check beats
+  the precision validation, so a `null` source with a bad precision surfaces as
+  `ArgumentNullException`.
+
+A `CompactThetaSketch` has no public constructor: get one from `ThetaSketch.Compact()` or as
+the result of a set operation.
+
+### Methods and properties
+
+`ThetaSketch<T, THasher>`:
+
+- `void Add(T item)` — adds an element. An element already represented, or one whose value
+  is above the threshold, does not change the sketch.
+- `double EstimateCardinality()` — the estimated number of distinct elements: the retained
+  count over `Theta`. Exact while `IsEstimationMode` is `false`.
+- `double GetLowerBound(int standardDeviations)` /
+  `double GetUpperBound(int standardDeviations)` — an approximate confidence interval at 1,
+  2 or 3 standard deviations: the range between the two bounds covers the true count with
+  roughly 68%, 95% or 99.7% confidence. Up to 120 retained values the bounds come from exact
+  Poisson tails, which keep their coverage when only a handful of values are retained (a
+  sparse intersection) and give an empty estimation-mode result a positive upper bound; they
+  are conservative, wider than needed, when `Theta` is close to 1. Above 120 they use the
+  Wilson score interval of the binomial. Both equal the exact count in exact mode, and the lower bound is never
+  below `RetainedCount`. Throws `ArgumentOutOfRangeException` for any other number of
+  standard deviations.
+- `void UnionWith(ThetaSketch<T, THasher> other)` — merges another sketch in place, so this
+  sketch afterwards summarizes the **union**. The threshold drops to the smaller of the two,
+  and the merged sketch keeps every value of either sketch below it, trimmed to this sketch's
+  `NominalEntries`. Precisions may differ; the result keeps this sketch's. Merging a sketch
+  into itself does nothing. Throws `ArgumentNullException` on `null`.
+- `void UnionWith(CompactThetaSketch<T, THasher> other)` — the same for a compact sketch,
+  which may be the result of a set expression, so `(A ∩ B) ∪ C` can be accumulated.
+- `CompactThetaSketch<T, THasher> Compact()` — an immutable, sorted snapshot, unaffected by
+  later adds. Copies and sorts the retained values: `O(n log n)` in `RetainedCount`.
+- `void Clear()` — resets to empty. Keeps the precision and the table it has grown to.
+- `int Precision { get; }`, `int NominalEntries { get; }` (`k = 2^precision`).
+- `int RetainedCount { get; }` — the hash values held: the exact distinct count in exact mode.
+- `double Theta { get; }` — the sampling rate, in `(0, 1]`.
+- `bool IsEstimationMode { get; }` — whether `Theta` is below `1`.
+- `bool IsEmpty { get; }` — whether the sketch summarizes the empty set (`O(1)`).
+- `double StandardError { get; }` — `1 / sqrt(k)`, the *nominal* relative standard error in
+  estimation mode: that of a sketch fed its stream directly, which holds at least `k` values.
+  It is fixed by the precision, so it overstates the accuracy of a sketch holding fewer
+  values, such as one that merged in a lower-precision sketch or a sparse set expression. A
+  dispersion, not a bound; for merged results read `GetLowerBound` / `GetUpperBound`, which
+  are computed from the values actually held.
+
+`CompactThetaSketch<T, THasher>` exposes the same `RetainedCount`, `Theta`,
+`IsEstimationMode`, `IsEmpty`, `EstimateCardinality()`, `GetLowerBound(int)` and
+`GetUpperBound(int)`, plus three static operations. Each takes two compact sketches, throws
+`ArgumentNullException` on `null`, restricts both to the smaller of their thresholds, walks
+the two sorted value arrays once (`O(n + m)`), and returns a new compact sketch:
+
+- `Union(a, b)` — `A ∪ B`: every value of either. It keeps all of them, so the result can
+  hold as many values as both operands together; to union many sketches in bounded memory,
+  accumulate them with `ThetaSketch.UnionWith` instead.
+- `Intersect(a, b)` — `A ∩ B`: the values in both. Exactly empty if either operand is.
+- `Except(a, b)` — `A \ B`: the values in `a` and not in `b`. Exactly empty if `a` is.
+
+An estimation-mode result with no values, such as an intersection that caught nothing, is not
+`IsEmpty`: the sample saw nothing at rate `θ`, but the set may still hold elements it missed,
+and `GetUpperBound` says how many.
+
+Neither type is thread-safe for writes; a `CompactThetaSketch` is immutable and safe to share.
+
+### Default-element handling
+
+The sketch stores hash values, not elements, so there is no empty-slot sentinel among the
+elements. `default(T)` — a zero `int`, `Guid.Empty`, or the empty string — is counted like
+any other element. An empty table slot is marked by `0`, which no sample value can be, since
+sample values start at `1`. A `null` reference is mapped to a fixed base hash so the sketch
+never invokes the hasher with `null`, matching the library's out-of-band-`null` convention.
+
+### Performance
+
+Two sets of `ItemCount` elements each sharing half of them, against `HashSet<int>`. Local
+default-job run on an Apple M4. The CI series on the
+[dashboard](https://marius-bughiu.github.io/Celerity/dev/bench/) is the contract.
+
+| Operation | 1,000 elements | 100,000 elements |
+| --- | ---: | ---: |
+| Size of the intersection (`Intersect` of two compact sketches vs a `HashSet.Contains` pass) | 1.71 µs vs 2.18 µs (1.28x) | 10.1 µs vs 818 µs (81x) |
+| Build one set (`Add` × n vs `HashSet<int>.Add` × n) | 5.21 µs vs 5.99 µs (1.15x) | 675 µs vs 1,103 µs (1.6x) |
+| Allocated per build | 32,744 B vs 58,600 B | 131,097 B vs 4,831,074 B |
+
+At 1,000 elements the sketch is still exact, so the intersection is a sorted merge against
+hash probes and the answer is exact too. At 100,000 it samples: the intersection merges the two samples, between 4,096 and
+6,144 values each, instead of probing 100,000 elements, and the estimate of the 50,000 shared
+elements carries a relative standard error of about 2.8%. The compact snapshots were taken
+outside the measured region, which is how they are used: frozen once, queried many times;
+`Compact()` itself copies and sorts the retained values. The build stays ahead because once
+the sketch samples, most elements are rejected by one compare against the threshold.
+
+The intersection's error grows as the overlap shrinks. In the accuracy tests, at a 1%
+overlap of two 100,000-element sets and equal memory (32&#160;KB each), the theta
+intersection's error was smaller than `HyperLogLog` inclusion–exclusion's.
+
+### Choosing it
+
+Reach for `ThetaSketch` when you need **distinct counts of set expressions** over data too
+large to keep: audience overlap ("users who saw campaign A and campaign B"), retention
+("users active last week and this week"), funnel steps, or deduplicated counts sliced by
+several dimensions and recombined at query time. Keep one compact sketch per slice, and
+answer `|A ∩ B|` or `|A \ B|` from two of them without touching the raw data. Per-shard
+sketches merge with `UnionWith`.
+
+Use something else when:
+
+- you only need **one** distinct count, or unions: `HyperLogLog<T, THasher>` is smaller for
+  the same error (16&#160;KB for ~0.8% at its default precision, against 64&#160;KB for ~1.6%
+  here) and also mergeable;
+- you need the **similarity** of two sets as a ratio, from a fixed and smaller footprint:
+  [`MinHashSketch`](#minhashsketcht-thasher);
+- you need the **exact** answer, or the elements themselves: `HashSet<T>`;
+- the intersection is a **tiny** share of the union. Its estimate rests on the few sampled
+  values that land in it, so check `GetLowerBound` / `GetUpperBound` before acting on it, or
+  raise the precision.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// One sketch per page, built from the user ids that visited it.
+var pricing = new ThetaSketch<long, Int64Murmur3Hasher>();
+var signup = new ThetaSketch<long, Int64Murmur3Hasher>();
+foreach (var visit in visits)
+{
+    if (visit.Page == "/pricing")
+        pricing.Add(visit.UserId);
+    else if (visit.Page == "/signup")
+        signup.Add(visit.UserId);
+}
+
+Console.WriteLine(pricing.EstimateCardinality()); // distinct visitors of /pricing
+
+// Freeze them to combine: who visited both pages, and who visited /pricing but not /signup.
+// The sketches keep hashes, not timestamps, so "both" says nothing about which came first.
+var p = pricing.Compact();
+var s = signup.Compact();
+var both = CompactThetaSketch<long, Int64Murmur3Hasher>.Intersect(p, s);
+var pricingOnly = CompactThetaSketch<long, Int64Murmur3Hasher>.Except(p, s);
+
+Console.WriteLine($"{both.EstimateCardinality():F0} visited both " +
+    $"(95%: {both.GetLowerBound(2):F0}–{both.GetUpperBound(2):F0})");
+Console.WriteLine($"{pricingOnly.EstimateCardinality():F0} visited /pricing but not /signup");
+
+// Per-shard sketches merge into one.
+pricing.UnionWith(pricingFromOtherShard);
 ```
 
 ## CountMinSketch&lt;T, THasher&gt;

@@ -506,6 +506,9 @@ function escapeHtml(s) {
     // MinHashLshIndex finds the near-duplicates of a set among ItemCount stored sketches. The baseline is the
     // scan MinHashSketch already offers: one EstimateJaccard per stored sketch. Items are stored sets here.
     { key: 'MinHashLshIndex',     title: 'MinHashLshIndex<TKey, T, ...>',            vs: 'List<MinHashSketch> scan', ops: ['Query'] },
+    // ThetaSketch counts distinct elements and, from two compact snapshots, the size of an intersection.
+    // Intersect is |A ∩ B| of two built sets: HashSet probes vs one merge pass over the sketches' sorted samples.
+    { key: 'ThetaSketch',         title: 'ThetaSketch<T, ...>',                      vs: 'HashSet<int>',          ops: ['Add', 'Intersect'] },
     { key: 'CountMinSketch',      title: 'CountMinSketch<T, ...>',                   vs: 'Dictionary<int, int>',  ops: ['Add', 'Estimate'] },
     { key: 'TopKSketch',          title: 'TopKSketch<T, ...>',                       vs: 'Dictionary<int, int>',  ops: ['Add', 'TopK'] },
     { key: 'LruCache',            title: 'LruCache<int, int, ...>',                  vs: 'Dictionary + LinkedList LRU', ops: ['Put', 'Get', 'GetMissing'] },
