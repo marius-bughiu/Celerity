@@ -5358,9 +5358,11 @@ the result of a set operation.
 - `double GetLowerBound(int standardDeviations)` /
   `double GetUpperBound(int standardDeviations)` — an approximate confidence interval at 1,
   2 or 3 standard deviations: the range between the two bounds covers the true count with
-  roughly 68%, 95% or 99.7% confidence. It inverts the normal
-  approximation to the binomial (the Wilson score interval), so it stays honest when few
-  values are retained. Both equal the exact count in exact mode, and the lower bound is never
+  roughly 68%, 95% or 99.7% confidence. Up to 120 retained values the bounds come from exact
+  Poisson tails, which keep their coverage when only a handful of values are retained (a
+  sparse intersection) and give an empty estimation-mode result a positive upper bound; they
+  are conservative, wider than needed, when `Theta` is close to 1. Above 120 they use the
+  Wilson score interval of the binomial. Both equal the exact count in exact mode, and the lower bound is never
   below `RetainedCount`. Throws `ArgumentOutOfRangeException` for any other number of
   standard deviations.
 - `void UnionWith(ThetaSketch<T, THasher> other)` — merges another sketch in place, so this

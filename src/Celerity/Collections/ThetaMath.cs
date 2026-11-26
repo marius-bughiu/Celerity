@@ -26,39 +26,105 @@ internal static class ThetaMath
 
     internal static double Estimate(int retained, ulong threshold) => retained / ToTheta(threshold);
 
+    // Below this many retained values the bounds come from exact Poisson tails; above it the
+    // normal approximation is accurate and the Wilson form is used.
+    private const int ExactTailLimit = 120;
+
+    // One-sided tail probabilities of the standard normal at 1, 2 and 3 standard deviations,
+    // indexed by the number of standard deviations.
+    private static readonly double[] OneSidedTail = [0d, 0.15865525393145707, 0.022750131948179209, 0.0013498980316301035];
+
     internal static double LowerBound(int retained, ulong threshold, int standardDeviations)
     {
-        (double centre, double spread, double p) = Interval(retained, threshold, standardDeviations);
+        ValidateStandardDeviations(standardDeviations);
+        if (threshold == FullThreshold)
+            return retained;
+
+        double p = ToTheta(threshold);
+        double lambda = retained <= ExactTailLimit
+            ? PoissonLowerMean(retained, OneSidedTail[standardDeviations])
+            : Wilson(retained, p, standardDeviations, -1d);
 
         // The retained values are distinct elements of the set, so the set has at least that
-        // many; the binomial bound can dip a hair below when p is close to 1.
-        return Math.Max(retained, (centre - spread) / p);
+        // many; a bound on the mean can dip a hair below when p is close to 1.
+        return Math.Max(retained, lambda / p);
     }
 
     internal static double UpperBound(int retained, ulong threshold, int standardDeviations)
     {
-        (double centre, double spread, double p) = Interval(retained, threshold, standardDeviations);
-        return (centre + spread) / p;
+        ValidateStandardDeviations(standardDeviations);
+        if (threshold == FullThreshold)
+            return retained;
+
+        double p = ToTheta(threshold);
+        double lambda = retained <= ExactTailLimit
+            ? PoissonUpperMean(retained, OneSidedTail[standardDeviations])
+            : Wilson(retained, p, standardDeviations, 1d);
+        return lambda / p;
+    }
+
+    private static void ValidateStandardDeviations(int standardDeviations)
+    {
+        if (standardDeviations is < 1 or > 3)
+            throw new ArgumentOutOfRangeException(nameof(standardDeviations), standardDeviations,
+                "The number of standard deviations must be 1, 2 or 3.");
     }
 
     // Inverts the normal approximation to the binomial (the Wilson score interval) for the
     // expected retained count λ = N·p: the λ that put the observed n exactly z standard
     // deviations away solve (n − λ)² = z²·λ·(1 − p), giving
-    // λ = n + z²q/2 ± z·sqrt(n·q + z²q²/4) with q = 1 − p. Unlike n/p ± z·sd it stays honest
-    // when n is small, including an empty intersection (n = 0), whose upper bound is
-    // z²q/p rather than zero. In exact mode q = 0 and both bounds collapse to n.
-    private static (double Centre, double Spread, double P) Interval(int retained, ulong threshold, int standardDeviations)
+    // λ = n + z²q/2 ± z·sqrt(n·q + z²q²/4) with q = 1 − p. Used only above ExactTailLimit
+    // retained values, where the normal approximation holds.
+    private static double Wilson(int retained, double p, int z, double sign)
     {
-        if (standardDeviations is < 1 or > 3)
-            throw new ArgumentOutOfRangeException(nameof(standardDeviations), standardDeviations,
-                "The number of standard deviations must be 1, 2 or 3.");
-
-        double p = ToTheta(threshold);
         double q = 1d - p;
-        double z2q = (double)standardDeviations * standardDeviations * q;
-        double centre = retained + z2q / 2d;
-        double spread = standardDeviations * Math.Sqrt(retained * q + z2q * q / 4d);
-        return (centre, spread, p);
+        double z2q = (double)z * z * q;
+        return retained + z2q / 2d + sign * z * Math.Sqrt(retained * q + z2q * q / 4d);
+    }
+
+    // Exact one-sided bounds on the mean of the retained count for small counts, where the
+    // normal approximation badly overstates coverage: with a true count of 100 sampled at
+    // θ = 0.001 (λ = 0.1), the Wilson interval excludes the truth whenever one value is retained,
+    // covering 90% instead of 95%. The retained count is binomial with mean λ = N·p; its
+    // Poisson limit has a variance λ at least the binomial's λ·(1 − p), so these bounds are
+    // exact as p → 0 and conservative (wider) as p grows.
+    //
+    // Upper: the λ at which observing n or fewer has probability α. Lower: the λ at which
+    // observing n or more has probability α, which is 0 when n = 0.
+    private static double PoissonUpperMean(int n, double alpha) =>
+        SolvePoissonMean(n, alpha, n + 10d * Math.Sqrt(n + 1d) + 20d);
+
+    private static double PoissonLowerMean(int n, double alpha) =>
+        n == 0 ? 0d : SolvePoissonMean(n - 1, 1d - alpha, n);
+
+    // Bisects for the λ in [0, high] where P(X ≤ m) = target for X ~ Poisson(λ). The CDF falls
+    // monotonically as λ grows, so the bracket shrinks toward the unique root.
+    private static double SolvePoissonMean(int m, double target, double high)
+    {
+        double low = 0d;
+        for (int iteration = 0; iteration < 100; iteration++)
+        {
+            double mid = (low + high) / 2d;
+            if (PoissonCdf(m, mid) > target)
+                low = mid;
+            else
+                high = mid;
+        }
+
+        return (low + high) / 2d;
+    }
+
+    private static double PoissonCdf(int m, double lambda)
+    {
+        double term = Math.Exp(-lambda);
+        double sum = term;
+        for (int i = 1; i <= m; i++)
+        {
+            term *= lambda / i;
+            sum += term;
+        }
+
+        return sum;
     }
 
     // SplitMix64 finalizer seeded with the 32-bit base hash widened by the golden-ratio

@@ -184,6 +184,40 @@ public class ThetaSketchAccuracyTests
     }
 
     [Fact]
+    public void Bounds_KeepTheirCoverage_ForASparseIntersection()
+    {
+        // Two 100,000-element sets at k = 16 (θ ≈ 2 × 10^-4) sharing 500 elements: the
+        // intersection's expected retained count is about 0.1. A normal-approximation interval
+        // excludes the truth whenever a single shared value is sampled (about 9.5% of the time);
+        // exact Poisson tails miss only when two or more are, about 0.5%.
+        const int Shared = 500, Only = 99_500, Trials = 300;
+        int misses = 0;
+        for (int t = 0; t < Trials; t++)
+        {
+            var a = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+            var b = new ThetaSketch<int, Int32Murmur3Hasher>(4);
+            int offset = t * 1_000_003;
+            for (int i = 0; i < Shared; i++)
+            {
+                a.Add(offset + i);
+                b.Add(offset + i);
+            }
+            for (int i = 0; i < Only; i++)
+            {
+                a.Add(offset + Shared + i);
+                b.Add(offset + Shared + Only + i);
+            }
+
+            CompactThetaSketch<int, Int32Murmur3Hasher> both = CompactThetaSketch<int, Int32Murmur3Hasher>.Intersect(a.Compact(), b.Compact());
+            if (Shared < both.GetLowerBound(2) || Shared > both.GetUpperBound(2))
+                misses++;
+        }
+
+        // The nominal two-sided miss rate at two standard deviations is 4.6%, 14 of 300.
+        Assert.InRange(misses, 0, 14);
+    }
+
+    [Fact]
     public void MergedShards_EstimateTheUnion_AsWellAsOneSketch()
     {
         // Sixteen shards of one stream, each sketched separately and merged.
