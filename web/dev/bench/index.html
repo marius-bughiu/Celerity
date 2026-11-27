@@ -628,6 +628,11 @@ function escapeHtml(s) {
     // order, against which the traversal and the build both lose at 1k and win only narrowly at 100k, and only
     // the transpose stays decisive.
     { key: 'CompressedGraph',     title: 'CompressedGraph (CSR)',                    vs: 'Dictionary<int, List<int>>, or List<int>[] on the Array/Neighbors/Topological/Reverse cards', ops: ['Neighbors', 'Traverse', 'TraverseArray', 'TraverseTight', 'Topological', 'Reverse', 'ReverseTight', 'Build', 'BuildTight'] },
+    // AncestryIndex is the tree axis: the BCL has no tree type, so the baseline is an int[] of parents walked
+    // with a precomputed depth array (its best case). IsAncestor and Lca run on a shallow random recursive tree,
+    // where the walk is short and the margin smallest; DeepLca runs on a deep one, where the walk's cost grows
+    // with the tree. Build charges the baseline for its depth array.
+    { key: 'AncestryIndex',       title: 'AncestryIndex (rooted forest)',            vs: 'int[] parents walked with a precomputed depth array', ops: ['IsAncestor', 'Lca', 'DeepLca', 'Build'] },
     // SuffixArray is the text axis, where the BCL ships a scan and no index at all. Two baselines, and the
     // second is the one that matters: String_* is MemoryExtensions.IndexOf, which is O(n) per query however
     // many follow, while Dictionary_* on the CountIndexed card is the k-gram inverted index a caller writes

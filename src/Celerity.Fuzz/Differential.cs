@@ -90,6 +90,7 @@ internal static class Differential
         ("MinMaxHeap", MinMaxHeapCase),
         ("RadixHeap", RadixHeapCase),
         ("CompressedGraph", CompressedGraphCase),
+        ("AncestryIndex", AncestryIndexCase),
         ("SuffixArray", SuffixArrayCase),
         ("AhoCorasick", AhoCorasickCase),
         ("EditDistanceIndex", EditDistanceIndexCase),
@@ -3747,6 +3748,109 @@ internal static class Differential
 
 
     // ---- compressed graph ----------------------------------------------------
+
+    // ---- ancestry index ------------------------------------------------------
+
+    // AncestryIndex is immutable, so the randomization is in the forest: a random node count that spans
+    // several 64-position blocks of the range-minimum structure, a shape knob that runs from a near-path
+    // (every pair blocks apart in preorder) to a bushy recursive tree, a few extra roots so the "different
+    // trees" answers are reached, and ids shuffled so a parent's id is unrelated to its children's. Every
+    // query is reconciled against the parent walk it exists to replace.
+    private static void AncestryIndexCase(Random rng)
+    {
+        int count = rng.Next(0, 700);
+        int reach = rng.Next(1, 12) == 1 ? int.MaxValue : rng.Next(1, 6);
+        int[] topological = new int[count];
+        for (int i = 0; i < count; i++)
+        {
+            topological[i] = i == 0 || rng.Next(40) == 0
+                ? -1
+                : i - 1 - rng.Next(Math.Min(i, reach));
+        }
+
+        int[] label = Enumerable.Range(0, count).ToArray();
+        rng.Shuffle(label);
+        int[] parents = new int[count];
+        for (int i = 0; i < count; i++)
+            parents[label[i]] = topological[i] < 0 ? -1 : label[topological[i]];
+
+        var sut = new AncestryIndex(parents);
+
+        int[] depth = new int[count];
+        for (int v = 0; v < count; v++)
+        {
+            for (int u = parents[v]; u >= 0; u = parents[u])
+                depth[v]++;
+        }
+
+        Check(sut.Count == count, "AncestryIndex Count disagreed");
+        Check(sut.Height == (count == 0 ? 0 : depth.Max() + 1), "AncestryIndex Height disagreed");
+
+        for (int v = 0; v < count; v++)
+        {
+            Check(sut.GetDepth(v) == depth[v], $"AncestryIndex GetDepth({v}) disagreed");
+            Check(sut.GetParent(v) == parents[v], $"AncestryIndex GetParent({v}) disagreed");
+            Check(sut.Preorder[sut.GetPreorderIndex(v)] == v, $"AncestryIndex preorder position of {v} disagreed");
+        }
+
+        for (int trial = 0; trial < 300 && count > 0; trial++)
+        {
+            int a = rng.Next(count);
+            int b = rng.Next(count);
+
+            var above = new HashSet<int>();
+            for (int v = a; v >= 0; v = parents[v])
+                above.Add(v);
+
+            int lca = -1;
+            for (int v = b; v >= 0; v = parents[v])
+            {
+                if (above.Contains(v))
+                {
+                    lca = v;
+                    break;
+                }
+            }
+
+            Check(sut.LowestCommonAncestor(a, b) == lca, $"AncestryIndex LowestCommonAncestor({a}, {b}) disagreed");
+            Check(sut.IsAncestor(a, b) == (lca == a) && sut.IsAncestor(b, a) == above.Contains(b),
+                $"AncestryIndex IsAncestor({a}, {b}) disagreed");
+            Check(sut.Distance(a, b) == (lca < 0 ? -1 : depth[a] + depth[b] - 2 * depth[lca]),
+                $"AncestryIndex Distance({a}, {b}) disagreed");
+
+            int levels = rng.Next(depth[a] + 2);
+            int climbed = a;
+            for (int k = 0; k < levels && climbed >= 0; k++)
+                climbed = parents[climbed];
+
+            Check(sut.GetAncestor(a, levels) == climbed, $"AncestryIndex GetAncestor({a}, {levels}) disagreed");
+
+            int size = 0;
+            foreach (int u in sut.GetSubtree(a))
+            {
+                size++;
+                int w = u;
+                while (w >= 0 && w != a)
+                    w = parents[w];
+
+                Check(w == a, $"AncestryIndex GetSubtree({a}) held a non-descendant");
+            }
+
+            int expectedSize = 0;
+            for (int u = 0; u < count; u++)
+            {
+                int w = u;
+                while (w >= 0 && w != a)
+                    w = parents[w];
+
+                if (w == a)
+                    expectedSize++;
+            }
+
+            Check(size == expectedSize && sut.GetSubtreeSize(a) == expectedSize,
+                $"AncestryIndex subtree size of {a} disagreed");
+        }
+    }
 
     // The oracle is the adjacency map the type replaces. What is on trial is the compressed layout: every
     // answer is a slice of one shared array, so a build that misplaces an offset — by a duplicate collapsed,

@@ -37,7 +37,7 @@ namespace Celerity.Tests.Collections;
 /// entirely: they track no version and expose no enumerator, so there is nothing for a redundant
 /// <c>Clear()</c> to invalidate. The <b>build-once</b> types are out of scope one step further still —
 /// <see cref="WaveletTree"/>, <see cref="SparseTable{T, TMonoid}"/>, <see cref="EliasFanoSequence"/>,
-/// <see cref="FrozenSortedSet{T}"/> and <see cref="FrozenSortedMap{TKey, TValue}"/> are
+/// <see cref="FrozenSortedSet{T}"/>, <see cref="FrozenSortedMap{TKey, TValue}"/> and <see cref="AncestryIndex"/> are
 /// immutable after construction, so
 /// they expose no <c>Clear()</c> to be redundant and carry no version for one to bump; their enumerators
 /// cannot be invalidated by anything and are pinned on that basis in their own suites.
