@@ -29,7 +29,7 @@ namespace Celerity.Collections;
 /// unsigned compare. For the lowest common ancestor of two nodes <c>u</c>, <c>v</c> with <c>u</c> earlier in
 /// preorder, the shallowest node strictly after <c>u</c> and up to <c>v</c> in preorder is a child of their
 /// common ancestor, so the answer is that node's parent — a range-minimum query over the preorder depths. That
-/// query is answered in <c>O(1)</c> with linear space: a sparse table over blocks of 64 positions handles the
+/// query is answered in <c>O(1)</c>: a sparse table over blocks of 64 positions handles the
 /// whole blocks, and a 64-bit mask per position (a monotonic stack recorded as bits) handles the partial blocks
 /// at either end with one trailing-zero count each. In a forest, two nodes in different trees have a root
 /// between them in preorder, whose parent is <c>-1</c> — so the same query reports "no common ancestor"
@@ -44,8 +44,12 @@ namespace Celerity.Collections;
 /// <see cref="SegmentTree{T, TMonoid}"/> laid out in preorder.
 /// </para>
 /// <para>
-/// <b>What it costs.</b> Construction is <c>O(n)</c> and allocates about 40 bytes per node, which
-/// <see cref="MemoryUsageInBytes"/> reports exactly. The structure is fixed at construction: a changed
+/// <b>What it costs.</b> Every pass of the build is linear except the block sparse table, which holds
+/// <c>(n / 64) * (floor(log2(n / 64)) + 1)</c> entries: <c>O(n + (n / 64) log(n / 64))</c> in all, and fewer
+/// than <c>0.4n</c> table entries for any forest an array can hold. The index retains about 41 bytes of array
+/// payload per node on a bushy tree (40 fixed, plus 1.4 for the block table at 100,000 nodes) and up to four
+/// more on a deep one, since the per-depth directory holds one <see cref="int"/> per distinct depth;
+/// <see cref="MemoryUsageInBytes"/> reports the exact figure. The structure is fixed at construction: a changed
 /// hierarchy means building a new index. That is the trade — on a tree that changes on every request, the
 /// parent walk's zero setup cost wins, and on a shallow tree that fits in cache the walk is only a handful of
 /// cached loads, so the margin there is small. The index earns its place on a hierarchy that is queried far
@@ -106,7 +110,8 @@ public sealed class AncestryIndex
     private readonly int _rootCount;
 
     /// <summary>
-    /// Builds the index over the forest described by <paramref name="parents"/>, in <c>O(n)</c>.
+    /// Builds the index over the forest described by <paramref name="parents"/>, in
+    /// <c>O(n + (n / 64) log(n / 64))</c>: linear passes plus the block sparse table.
     /// </summary>
     /// <param name="parents">
     /// The parent of each node: <c>parents[i]</c> is the id of node <c>i</c>'s parent, or <c>-1</c> if node
@@ -281,8 +286,10 @@ public sealed class AncestryIndex
     public ReadOnlySpan<int> Preorder => _order;
 
     /// <summary>
-    /// Gets the number of bytes held by the index's arrays: about 40 per node, plus a sparse table over blocks
-    /// of 64 nodes that adds well under one byte per node.
+    /// Gets the payload bytes of the arrays the index retains: 40 per node, the block sparse table (about 1.4
+    /// per node at 100,000 nodes, growing with <c>log(n / 64)</c>), and four per distinct depth, which is up to
+    /// four more per node on a path-like tree. Object headers and the temporary arrays the constructor
+    /// allocates and drops are not counted.
     /// </summary>
     public long MemoryUsageInBytes =>
         (long)_nodes.Length * Unsafe.SizeOf<NodeInfo>()

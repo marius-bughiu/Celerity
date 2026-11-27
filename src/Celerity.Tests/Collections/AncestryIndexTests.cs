@@ -316,6 +316,25 @@ public class AncestryIndexTests
     }
 
     [Fact]
+    public void MemoryUsageInBytes_ShouldMatchTheDocumentedComposition()
+    {
+        // 40 bytes per node, the block sparse table, and four bytes per entry of the per-depth directory
+        // (Height + 1 entries). A star of 100,000 nodes has 1,563 blocks, so 11 table rows of 8-byte entries:
+        // the 137,544 bytes the API reference quotes.
+        int[] star = new int[100_000];
+        Array.Fill(star, 0);
+        star[0] = -1;
+        Assert.Equal(40L * 100_000 + 137_544 + 4 * 3, new AncestryIndex(star).MemoryUsageInBytes);
+
+        // A path of 1,000 nodes: 16 blocks, 5 rows; and one directory entry per depth, the deep-tree surcharge.
+        int[] path = new int[1_000];
+        for (int i = 0; i < path.Length; i++)
+            path[i] = i - 1;
+
+        Assert.Equal(40L * 1_000 + 16 * 5 * 8 + 4 * 1_001, new AncestryIndex(path).MemoryUsageInBytes);
+    }
+
+    [Fact]
     public void MemoryUsageInBytes_Empty_ShouldCountOnlyTheLevelSentinel()
     {
         Assert.Equal(sizeof(int), new AncestryIndex(ReadOnlySpan<int>.Empty).MemoryUsageInBytes);

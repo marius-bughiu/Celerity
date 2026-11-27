@@ -11200,12 +11200,14 @@ A build-once, immutable index over a **rooted forest** given as a parent array �
 The constructor numbers the nodes in **preorder** — children in ascending id order, trees in ascending root id order — which puts every subtree in one contiguous run. That gives three things at once:
 
 - **Ancestry is a range check.** `a` is an ancestor of `b` exactly when `b`'s preorder number falls inside `a`'s run: one subtraction and one unsigned compare, over a 16-byte per-node entry that holds the parent, depth, preorder number and subtree size together.
-- **The lowest common ancestor is a range minimum.** For `u` before `v` in preorder, the shallowest node strictly after `u` and up to `v` is a child of their common ancestor, so the answer is that node's parent. The range minimum is `O(1)` with linear space: a sparse table over blocks of 64 positions covers the whole blocks, and a 64-bit mask per position — a monotonic stack recorded as bits — answers the partial blocks at either end with one trailing-zero count each. In a forest, two nodes in different trees always have a root between them in preorder, and a root's parent is `-1`, so the same query answers "no common ancestor" with no separate check.
+- **The lowest common ancestor is a range minimum.** For `u` before `v` in preorder, the shallowest node strictly after `u` and up to `v` is a child of their common ancestor, so the answer is that node's parent. The range minimum is `O(1)`: a sparse table over blocks of 64 positions covers the whole blocks, and a 64-bit mask per position — a monotonic stack recorded as bits — answers the partial blocks at either end with one trailing-zero count each. In a forest, two nodes in different trees always have a root between them in preorder, and a root's parent is `-1`, so the same query answers "no common ancestor" with no separate check.
 - **A subtree is a slice.** `GetSubtree(v)` is `Preorder.Slice(GetPreorderIndex(v), GetSubtreeSize(v))`, so "everyone under this manager" needs no traversal and no allocation, and a per-node value array laid out in preorder turns subtree totals into range queries on a [`FenwickTree<T>`](#fenwicktreet) or [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid).
 
 The level ancestor binary-searches the nodes at the target depth, stored in preorder: the ancestor is the last of them before the node, because any later one at that depth would sit inside the ancestor's own subtree, where every node is deeper.
 
-Construction is `O(n)` — a counting pass for the child lists, a breadth-first pass for depths, a bottom-up pass for sizes and a top-down pass for preorder numbers, none of them recursive, so a path of a million nodes builds without a stack overflow. The index holds about **40 bytes per node**, which `MemoryUsageInBytes` reports exactly.
+Construction is a counting pass for the child lists, a breadth-first pass for depths, a bottom-up pass for sizes and a top-down pass for preorder numbers — all linear and none recursive, so a path of a million nodes builds without a stack overflow — plus the block sparse table, which holds `(n / 64) · (⌊log₂(n / 64)⌋ + 1)` entries. That makes the whole build `O(n + (n / 64) log(n / 64))`: not strictly linear, but the table stays under `0.4n` entries for any forest an array can hold.
+
+The index retains **40 bytes of array payload per node**, plus the block table (137,544 bytes at 100,000 nodes, about 1.4 per node) and four bytes per distinct depth — negligible on a bushy tree, up to four more per node on a path. `MemoryUsageInBytes` reports the exact payload; it does not count object headers or the temporary arrays the constructor drops.
 
 <a id="measured-ancestryindex"></a>
 
@@ -11230,12 +11232,12 @@ Neither side allocates on a query. The build row compares the whole index agains
 
 | Member | Behaviour |
 | --- | --- |
-| `AncestryIndex(ReadOnlySpan<int> parents)` | Build, `O(n)`. `parents[i]` is node `i`'s parent or `-1` for a root; any number of roots, including none. The span is copied. `ArgumentException` (parameter `parents`) for an entry below `-1`, at or above `parents.Length`, equal to its own index, or a cycle of parent links. |
+| `AncestryIndex(ReadOnlySpan<int> parents)` | Build, `O(n + (n / 64) log(n / 64))`. `parents[i]` is node `i`'s parent or `-1` for a root; any number of roots, including none. The span is copied. `ArgumentException` (parameter `parents`) for an entry below `-1`, at or above `parents.Length`, equal to its own index, or a cycle of parent links. |
 | `int Count { get; }` | Number of nodes. Ids run over `[0, Count)`. |
 | `int RootCount { get; }` | Number of roots. |
 | `int Height { get; }` | Number of distinct depths: `0` for an empty forest, otherwise the deepest node's depth plus one. |
 | `ReadOnlySpan<int> Preorder { get; }` | Every node in preorder (children by ascending id, trees by ascending root id). |
-| `long MemoryUsageInBytes { get; }` | Bytes held by the index's arrays. |
+| `long MemoryUsageInBytes { get; }` | Payload bytes of the arrays the index retains (no object headers, no construction temporaries). |
 | `int GetParent(int node)` | The parent, or `-1` for a root. `O(1)`. |
 | `int GetDepth(int node)` | Edges to the root; `0` for a root. `O(1)`. |
 | `int GetSubtreeSize(int node)` | Nodes in the subtree, itself included. `O(1)`. |
