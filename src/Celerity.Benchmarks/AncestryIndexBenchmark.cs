@@ -21,9 +21,10 @@ using Celerity.Collections;
 // per query grows with n.
 //
 // Node ids are shuffled after the shape is built, so neither side gets the locality a "parents before
-// children" numbering would hand the walk for free. The query pairs come from a pool far larger than one
-// invocation's batch and the arms step through it, so the walk's data-dependent loop exits cannot be learned
-// by the branch predictor from a short replayed batch.
+// children" numbering would hand the walk for free. Each invocation takes the next batch from a fixed pool
+// rather than replaying one batch: 128 distinct batches (524,288 pairs) on the shallow tree, 64 (16,384 pairs)
+// on the deep one, where every baseline query is already a long walk. That limits how much of the walk's
+// data-dependent loop-exit pattern the branch predictor can learn from replay; it does not rule it out.
 [MemoryDiagnoser]
 [CategoriesColumn]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]

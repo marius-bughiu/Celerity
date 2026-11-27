@@ -11213,7 +11213,7 @@ The index retains **40 bytes of array payload per node**, plus the block table (
 
 ### Measured
 
-Apple M4, .NET 10, BenchmarkDotNet default job. Each arm answers one batch of queries (4,096; 256 on the deep tree) drawn from a pool of over half a million pairs, so the walk's loop exits cannot be memorized by the branch predictor. Node ids are shuffled, so neither side gets the locality of a "parents before children" numbering. The baseline is the parent walk **given a precomputed depth array**, its best case.
+Apple M4, .NET 10, BenchmarkDotNet default job. Each invocation answers the next batch from a fixed pool of query pairs and moves on, rather than replaying one batch: 4,096 queries from a pool of 524,288 pairs on the shallow tree (128 distinct batches), and 256 from a pool of 16,384 on the deep tree (64 batches), where each baseline query already walks hundreds to tens of thousands of levels. Rotating limits how much of the walk's loop-exit pattern the branch predictor can learn from a replayed batch; it does not rule that out. Node ids are shuffled, so neither side gets the locality of a "parents before children" numbering. The baseline is the parent walk **given a precomputed depth array**, its best case.
 
 | Arm | Tree | 1,000 nodes | 100,000 nodes |
 | --- | --- | --- | --- |
