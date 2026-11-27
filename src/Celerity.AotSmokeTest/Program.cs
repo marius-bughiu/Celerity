@@ -1784,6 +1784,35 @@ void Check(bool condition, string message)
     Check(owners.CountContaining("f") == 1 && owners.Count == 2, "IntervalTree custom comparer instantiation");
 }
 
+// AncestryIndex — the build-once rooted-forest index. No generics; what ILC has to keep is the intrinsic-heavy
+// query path (BitOperations.TrailingZeroCount / Log2 over the range-minimum masks, an Unsafe.Add node read) and
+// the ReadOnlySpan<int> slices over the type's own preorder array. Build a forest wide enough to span several
+// 64-position blocks, then exercise every query and both "different trees" answers.
+{
+    // A path 0 <- 1 <- ... <- 199 with a leaf hanging off every spine node, plus a separate two-node tree.
+    int[] ancestryParents = new int[402];
+    for (int i = 0; i < 200; i++)
+    {
+        ancestryParents[i] = i - 1;
+        ancestryParents[200 + i] = i;
+    }
+
+    ancestryParents[400] = -1;
+    ancestryParents[401] = 400;
+    var ancestry = new AncestryIndex(ancestryParents);
+
+    Check(ancestry.Count == 402 && ancestry.RootCount == 2 && ancestry.Height == 201, "AncestryIndex shape");
+    Check(ancestry.IsAncestor(3, 399) && !ancestry.IsAncestor(399, 3), "AncestryIndex.IsAncestor");
+    Check(ancestry.LowestCommonAncestor(210, 390) == 10, "AncestryIndex LCA across blocks");
+    Check(ancestry.LowestCommonAncestor(5, 401) == -1 && ancestry.Distance(5, 401) == -1,
+        "AncestryIndex different trees");
+    Check(ancestry.Distance(210, 390) == 182, "AncestryIndex.Distance");
+    Check(ancestry.GetAncestor(199, 150) == 49 && ancestry.GetRoot(399) == 0, "AncestryIndex level ancestor");
+    Check(ancestry.GetSubtree(198).Length == 4 && ancestry.GetSubtreeSize(401) == 1, "AncestryIndex subtree span");
+    Check(ancestry.Preorder[ancestry.GetPreorderIndex(250)] == 250, "AncestryIndex preorder position");
+    Check(ancestry.MemoryUsageInBytes > 0, "AncestryIndex memory usage");
+}
+
 // CompressedGraph — the build-once CSR graph. What is ILC-specific here is less the generics (there are none)
 // than the memory shapes: Neighbors hands back a ReadOnlySpan<int> over the type's own field, both traversals
 // rent from ArrayPool<T>.Shared and return, and the build path runs MemoryExtensions.Sort and BinarySearch over

@@ -1081,6 +1081,8 @@ A write that changes nothing — assigning a value a single range already holds,
 
 - `CompressedGraph` — a build-once **graph**, stored compressed sparse row (CSR): two flat `int[]`, so a vertex's neighbours are a `ReadOnlySpan<int>` slice of one contiguous array rather than a heap object of their own. .NET ships no graph, no adjacency list and no traversal of any kind, so the idiom is `Dictionary<int, List<int>>` — or `List<int>[]` once you notice the ids are dense — and both are benchmarked. Dependency and build ordering, package and module resolution, link and follower graphs, reachability and impact analysis. Neighbour iteration, breadth-first traversal, `Reverse()` (the transpose, `O(V + E)`, which the adjacency map has to rebuild list by list) and a topological order, with the destination buffer doubling as the traversal queue so a repeated walk allocates nothing once the `ArrayPool` it borrows its visited set from is warm. **Not a speed win over a hand-roll you write carefully**, and the benchmark says so: against an `int[][]` sized exactly and filled in vertex order, the traversal and the build are both within about 1.2x at 100k vertices — a wash — and both *lose* at 1k. What survives is the **transpose (2.5–3.0x)**, a **1.8x smaller footprint**, and not writing or maintaining the traversal, Kahn's algorithm, the transpose and the sorted-target invariant. Against the idiomatic `Dictionary<int, List<int>>` the same arms are 2.5–2.6x, 3.1–3.8x and 3.6x less memory.
 
+- `AncestryIndex` — a build-once index over a **rooted forest** given as a parent array: an org chart, a category taxonomy, a folder tree, a first-parent commit chain. .NET ships no tree type, so the idiom is an `int[]` of parents and a loop that climbs it, paying the tree's depth in dependent loads per query. This answers *is `a` above `b`?*, the lowest common ancestor and the distance between two nodes in `O(1)`, the ancestor `k` levels up in `O(log n)`, and returns a subtree as a `ReadOnlySpan<int>` slice. Against the parent walk given a precomputed depth array, `IsAncestor` measured 4.3–4.6x and the common ancestor on a deep tree 12.6x at 1,000 nodes and about 2,700x at 100,000 (Apple M4). **On a shallow tree the LCA gain is small** — a tie at 1,000 nodes, 1.75x at 100,000 — and the build costs 5.7–7.4x the depth array, so it pays off on a hierarchy that is queried far more often than it changes. About 41–45 bytes per node; immutable.
+
 ### Examples
 
 #### Walk a graph, or resolve a dependency order — CompressedGraph
@@ -1117,6 +1119,32 @@ int count = builds.CopyBreadthFirstOrder(0, reached);   // 0 1 3 4
 ```
 
 Vertices are dense ids in `[0, VertexCount)`, so per-vertex payload goes in an array of your own indexed the same way. Duplicate edges collapse, self-loops are kept, and an undirected graph is built by supplying each edge in both directions. The graph is immutable, so adding an edge means building a new one.
+
+#### Ask who is above whom in a hierarchy — AncestryIndex
+
+`AncestryIndex` takes the parent array a hierarchy already is — `parents[i]` is node `i`'s parent, `-1` for a root — and answers ancestry questions without climbing it. Ids are dense; map string or GUID keys to `[0, n)` once, alongside the array.
+
+```csharp
+// An org chart: 0 is the CEO; 1 and 2 report to 0; 3 and 4 to 1; 5 to 2.
+var org = new AncestryIndex(new[] { -1, 0, 0, 1, 1, 2 });
+
+org.IsAncestor(1, 4);              // true  — 1 manages 4, directly or not
+org.LowestCommonAncestor(3, 5);    // 0     — the first manager both report up to
+org.Distance(3, 5);                // 4     — edges on the path between them
+org.GetAncestor(4, 2);             // 0     — two levels up
+org.GetSubtree(1).ToArray();       // [1, 3, 4] — everyone under 1, no traversal
+
+// Subtree totals: lay a per-node value out in preorder once, then any subtree is a range.
+int[] cost = { 10, 20, 30, 40, 50, 60 };
+long[] prefix = new long[org.Count + 1];
+for (int i = 0; i < org.Count; i++)
+    prefix[i + 1] = prefix[i] + cost[org.Preorder[i]];
+
+int start = org.GetPreorderIndex(1);
+long underOne = prefix[start + org.GetSubtreeSize(1)] - prefix[start];   // 110
+```
+
+Ancestry is inclusive (a node is its own ancestor), nodes in different trees of a forest have no common ancestor (`-1`), and the index is immutable — a reorganized hierarchy means building a new one.
 
 ## Text
 

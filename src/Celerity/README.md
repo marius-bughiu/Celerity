@@ -40,7 +40,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Sorted collections](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#sorted-ordered-collections) | `BTreeDictionary`, `BTreeSet`, `RankedSet`, `RankedDictionary`, `RankedMultiSet`, `FrozenSortedSet`, `FrozenSortedMap` |
 | [Range aggregates](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#range-aggregates) | `FenwickTree`, `SegmentTree`, `LazySegmentTree`, `SparseTable`, `AggregatingQueue`, `WaveletTree` |
 | [Spatial & interval indexes](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#spatial--interval-indexes) | `KdTree`, `SpatialGrid`, `RTree`, `IntervalTree`, `RangeMap` |
-| [Graphs](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#graphs) | `CompressedGraph` |
+| [Graphs](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#graphs) | `CompressedGraph`, `AncestryIndex` |
 | [Text](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#text) | `SuffixArray`, `AhoCorasick`, `EditDistanceIndex`, `Rope` |
 | [Timers](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#timers) | `TimerWheel` |
 | [Probabilistic & bit-level](https://github.com/marius-bughiu/Celerity/blob/main/docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `MinHashLshIndex`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |

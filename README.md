@@ -43,7 +43,7 @@ if (byName.TryGetValue("bob", out int id))
 | [Sorted collections](docs/collections.md#sorted-ordered-collections) | `BTreeDictionary`, `BTreeSet`, `RankedSet`, `RankedDictionary`, `RankedMultiSet`, `FrozenSortedSet`, `FrozenSortedMap` |
 | [Range aggregates](docs/collections.md#range-aggregates) | `FenwickTree`, `SegmentTree`, `LazySegmentTree`, `SparseTable`, `AggregatingQueue`, `WaveletTree` |
 | [Spatial & interval indexes](docs/collections.md#spatial--interval-indexes) | `KdTree`, `SpatialGrid`, `RTree`, `IntervalTree`, `RangeMap` |
-| [Graphs](docs/collections.md#graphs) | `CompressedGraph` |
+| [Graphs](docs/collections.md#graphs) | `CompressedGraph`, `AncestryIndex` |
 | [Text](docs/collections.md#text) | `SuffixArray`, `AhoCorasick`, `EditDistanceIndex`, `Rope` |
 | [Timers](docs/collections.md#timers) | `TimerWheel` |
 | [Probabilistic & bit-level](docs/collections.md#probabilistic--bit-level) | `BloomFilter`, `CuckooFilter`, `XorFilter`, `MinimalPerfectHash`, `HyperLogLog`, `SlidingHyperLogLog`, `MinHashSketch`, `MinHashLshIndex`, `CountMinSketch`, `TopKSketch`, `BitSet`, `BitPackedArray`, `RankSelectBitVector`, `EliasFanoSequence` |

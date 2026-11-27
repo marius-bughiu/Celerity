@@ -90,6 +90,7 @@ internal class Program
         typeof(IntervalTreeBenchmark),
         typeof(RangeMapBenchmark),
         typeof(CompressedGraphBenchmark),
+        typeof(AncestryIndexBenchmark),
         typeof(BTreeDictionaryBenchmark),
         typeof(BTreeSetBenchmark),
         typeof(RankedSetBenchmark),

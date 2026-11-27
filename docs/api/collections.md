@@ -11185,6 +11185,107 @@ int count = builds.CopyBreadthFirstOrder(0, reached);
 Console.WriteLine(string.Join(" ", reached[..count]));  // 0 1 3 4
 ```
 
+## AncestryIndex
+
+```csharp
+public sealed class AncestryIndex
+```
+
+A build-once, immutable index over a **rooted forest** given as a parent array — an org chart, a category taxonomy, a directory tree, a bill of materials, a commit history's first-parent chain. It answers *is `a` above `b`?* in `O(1)`, the **lowest common ancestor** and the **distance** between two nodes in `O(1)`, the ancestor `k` levels up in `O(log n)`, and hands back every descendant of a node as a `ReadOnlySpan<int>` slice with no traversal.
+
+.NET ships no tree type, so a hierarchy is almost always an `int[] parents` (or a parent property on an entity) and a loop that walks it. Every step of that walk is a load that depends on the one before, so each query costs the tree's depth in dependent cache misses — cheap on a shallow tree that fits in cache, and linear in the depth on a deep one, which is the shape (long management chains, deep folder trees, version histories) where these questions get asked most. The baseline in the benchmark is that walk at its best: given a precomputed depth array, so the deeper node is lifted straight to the other's level.
+
+### How it works
+
+The constructor numbers the nodes in **preorder** — children in ascending id order, trees in ascending root id order — which puts every subtree in one contiguous run. That gives three things at once:
+
+- **Ancestry is a range check.** `a` is an ancestor of `b` exactly when `b`'s preorder number falls inside `a`'s run: one subtraction and one unsigned compare, over a 16-byte per-node entry that holds the parent, depth, preorder number and subtree size together.
+- **The lowest common ancestor is a range minimum.** For `u` before `v` in preorder, the shallowest node strictly after `u` and up to `v` is a child of their common ancestor, so the answer is that node's parent. The range minimum is `O(1)`: a sparse table over blocks of 64 positions covers the whole blocks, and a 64-bit mask per position — a monotonic stack recorded as bits — answers the partial blocks at either end with one trailing-zero count each. In a forest, two nodes in different trees always have a root between them in preorder, and a root's parent is `-1`, so the same query answers "no common ancestor" with no separate check.
+- **A subtree is a slice.** `GetSubtree(v)` is `Preorder.Slice(GetPreorderIndex(v), GetSubtreeSize(v))`, so "everyone under this manager" needs no traversal and no allocation, and a per-node value array laid out in preorder turns subtree totals into range queries on a [`FenwickTree<T>`](#fenwicktreet) or [`SegmentTree<T, TMonoid>`](#segmenttreet-tmonoid).
+
+The level ancestor binary-searches the nodes at the target depth, stored in preorder: the ancestor is the last of them before the node, because any later one at that depth would sit inside the ancestor's own subtree, where every node is deeper.
+
+Construction is a counting pass for the child lists, a breadth-first pass for depths, a bottom-up pass for sizes and a top-down pass for preorder numbers — all linear and none recursive, so a path of a million nodes builds without a stack overflow — plus the block sparse table, which holds `(n / 64) · (⌊log₂(n / 64)⌋ + 1)` entries. That makes the whole build `O(n + (n / 64) log(n / 64))`: not strictly linear, but the table stays under `0.4n` entries for any forest an array can hold.
+
+The index retains **40 bytes of array payload per node**, plus the block table (137,544 bytes at 100,000 nodes, about 1.4 per node) and four bytes per distinct depth — negligible on a bushy tree, up to four more per node on a path. `MemoryUsageInBytes` reports the exact payload; it does not count object headers or the temporary arrays the constructor drops.
+
+<a id="measured-ancestryindex"></a>
+
+### Measured
+
+Apple M4, .NET 10, BenchmarkDotNet default job. Each invocation answers the next batch from a fixed pool of query pairs and moves on, rather than replaying one batch: 4,096 queries from a pool of 524,288 pairs on the shallow tree (128 distinct batches), and 256 from a pool of 16,384 on the deep tree (64 batches), where each baseline query already walks hundreds to tens of thousands of levels. Rotating limits how much of the walk's loop-exit pattern the branch predictor can learn from a replayed batch; it does not rule that out. Node ids are shuffled, so neither side gets the locality of a "parents before children" numbering. The baseline is the parent walk **given a precomputed depth array**, its best case.
+
+| Arm | Tree | 1,000 nodes | 100,000 nodes |
+| --- | --- | --- | --- |
+| `IsAncestor` | shallow (random recursive, depth ≈ ln n) | **4.3x** (42.9 → 9.9 µs) | **4.6x** (65.6 → 14.3 µs) |
+| `LowestCommonAncestor` | shallow | **0.97x — a tie** (97.8 → 94.5 µs) | **1.75x** (230 → 132 µs) |
+| `LowestCommonAncestor` | deep (depth ≈ 0.4 n) | **12.6x** (51.4 → 4.1 µs) | **~2,700x** (17.6 ms → 6.5 µs) |
+| Build | shallow | **7.4x slower** (3.4 → 25.4 µs) | **5.7x slower** (0.94 → 5.36 ms) |
+
+Neither side allocates on a query. The build row compares the whole index against the baseline's only precomputation, the depth array.
+
+**Read the shallow rows as the floor.** A random recursive tree is about 7 levels deep at a thousand nodes and 12 at a hundred thousand, so the walk is a handful of loads; on a thousand nodes the index also fits in L1, and its range-minimum query — itself a chain of about five dependent loads — lands level with the walk. `IsAncestor` still wins there, because it is one range check rather than a range minimum. The deep rows are where the type earns its place: the walk's cost grows with the depth and the index's does not.
+
+**The build is the price.** At 100,000 nodes it costs about 4.4 ms more than computing depths, which `IsAncestor` repays after roughly 350,000 queries on the shallow tree and the deep-tree LCA after about 65. At 1,000 nodes the break-even is about 2,700 and 120 queries. A hierarchy rebuilt more often than that is better served by the walk.
+
+### API
+
+| Member | Behaviour |
+| --- | --- |
+| `AncestryIndex(ReadOnlySpan<int> parents)` | Build, `O(n + (n / 64) log(n / 64))`. `parents[i]` is node `i`'s parent or `-1` for a root; any number of roots, including none. The span is copied. `ArgumentException` (parameter `parents`) for an entry below `-1`, at or above `parents.Length`, equal to its own index, or a cycle of parent links. |
+| `int Count { get; }` | Number of nodes. Ids run over `[0, Count)`. |
+| `int RootCount { get; }` | Number of roots. |
+| `int Height { get; }` | Number of distinct depths: `0` for an empty forest, otherwise the deepest node's depth plus one. |
+| `ReadOnlySpan<int> Preorder { get; }` | Every node in preorder (children by ascending id, trees by ascending root id). |
+| `long MemoryUsageInBytes { get; }` | Payload bytes of the arrays the index retains (no object headers, no construction temporaries). |
+| `int GetParent(int node)` | The parent, or `-1` for a root. `O(1)`. |
+| `int GetDepth(int node)` | Edges to the root; `0` for a root. `O(1)`. |
+| `int GetSubtreeSize(int node)` | Nodes in the subtree, itself included. `O(1)`. |
+| `int GetPreorderIndex(int node)` | The node's position in `Preorder`; its subtree is the next `GetSubtreeSize(node)` positions. `O(1)`. |
+| `ReadOnlySpan<int> GetSubtree(int node)` | The node and its descendants in preorder, as a slice of `Preorder`. `O(1)`, no allocation. |
+| `bool IsAncestor(int ancestor, int node)` | Inclusive: `true` when `ancestor == node`. `false` across trees. `O(1)`. |
+| `int LowestCommonAncestor(int first, int second)` | The deepest common ancestor, each node counting as its own; `-1` across trees. `O(1)`. |
+| `int Distance(int first, int second)` | Edges on the path between them; `-1` across trees. `O(1)`. |
+| `int GetAncestor(int node, int levels)` | The ancestor `levels` steps up: the node for `0`, the parent for `1`; `-1` past the root. `O(log n)`. `ArgumentOutOfRangeException` for negative `levels`. |
+| `int GetRoot(int node)` | The root of the node's tree. `O(log n)`. |
+
+Every member that takes a node id throws `ArgumentOutOfRangeException` for one outside `[0, Count)`, naming the offending parameter.
+
+### Behaviour notes
+
+- **Build-once.** The index is immutable; a changed hierarchy means building a new one, as with [`CompressedGraph`](#compressedgraph) and [`SparseTable<T, TMonoid>`](#sparsetablet-tmonoid). Nothing mutates, so concurrent readers need no synchronization.
+- **Dense ids only.** Node ids are array indices. A hierarchy keyed by strings or GUIDs maps them to `[0, n)` first (a `Dictionary<TKey, int>` built once alongside the parent array), and keeps any per-node payload in arrays indexed the same way.
+- **Ancestry is inclusive.** A node is its own ancestor, which is the convention that makes `LowestCommonAncestor(v, v) == v` and `LowestCommonAncestor(a, b) == a` whenever `a` is above `b`. For a strict test, also check `ancestor != node`.
+- **No edge weights.** `Distance` counts edges. A weighted path length is `w(u) + w(v) - 2 * w(lca)` over a per-node "weight from the root" array of your own, computed once in `Preorder` order.
+- **Where it loses.** On a hierarchy that changes on every request, the walk's zero setup wins; and on a small, shallow tree that fits in cache, the walk is a handful of cached loads, so the margin there is modest — see the 1,000-node rows above.
+
+### Example
+
+```csharp
+// parents[i] is the parent of node i, or -1 for a root.
+//        0
+//      /   \
+//     1     2
+//    / \     \
+//   3   4     5
+var tree = new AncestryIndex(new[] { -1, 0, 0, 1, 1, 2 });
+
+tree.IsAncestor(1, 4);            // true
+tree.LowestCommonAncestor(3, 5);  // 0
+tree.Distance(3, 5);              // 4
+tree.GetAncestor(4, 2);           // 0
+tree.GetSubtree(1).ToArray();     // [1, 3, 4]
+
+// Subtree totals as range sums: lay a per-node value out in preorder once.
+int[] headcountCost = { 10, 20, 30, 40, 50, 60 };
+long[] prefix = new long[tree.Count + 1];
+for (int i = 0; i < tree.Count; i++)
+    prefix[i + 1] = prefix[i] + headcountCost[tree.Preorder[i]];
+
+int start = tree.GetPreorderIndex(1);
+long underNode1 = prefix[start + tree.GetSubtreeSize(1)] - prefix[start];   // 20 + 40 + 50 = 110
+```
+
 ## SuffixArray
 
 ```csharp
