@@ -4099,8 +4099,10 @@ Use `XorFilter` below about twenty thousand elements and `BinaryFuseFilter` abov
 
 > **Hash entropy.** As for `XorFilter`: the 64-bit key is the hasher's own `Hash64` when it
 > implements [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise the 32-bit code
-> widened with `fmix64`, which leaves the reachable space at 2<sup>32</sup>. Past ~10<sup>8</sup>
-> elements, use a 64-bit hasher.
+> widened with `fmix64`, which leaves the reachable space at 2<sup>32</sup>. An absent element
+> whose 32-bit code matches a stored one always tests present, which adds about `n / 2^32` to the
+> 0.39% fingerprint rate: 0.02% at a million elements, 0.23% at ten million (≈ 0.62% in all). From
+> about a million elements, use a 64-bit hasher such as `StringXxHash3Hasher` or `Int64WangHasher`.
 
 ### Constructor
 
@@ -4115,8 +4117,10 @@ and the store is sized for that count, not for the source length.
 **Throws:**
 
 - `ArgumentNullException` if `source` is `null`.
-- `InvalidOperationException` if the peeling construction fails to converge after its retry
-  budget — not reachable at the sizing this type uses, and kept only as a guard.
+- `InvalidOperationException` if the peel fails under every seed in its retry budget. An
+  ordinary input fails a seed only occasionally, so this takes a source built to do it: the seed
+  schedule is fixed, and a caller who controls the element hashes can plant one fully colliding
+  pair per seed. Do not build from untrusted elements with a hasher an adversary can invert.
 
 ### Methods and properties
 

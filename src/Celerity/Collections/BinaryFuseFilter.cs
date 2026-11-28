@@ -101,8 +101,10 @@ public class BinaryFuseFilter<T, THasher> where THasher : struct, IHashProvider<
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <c>null</c>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The peeling construction failed to converge after its retry budget — not reachable at the sizing this
-    /// type uses, and kept only as a guard.
+    /// The peeling construction failed under every seed in its retry budget. Random or ordinary inputs fail a
+    /// seed only occasionally, so this takes a deliberately constructed source: the seed schedule is fixed, and
+    /// a caller who controls the element hashes can plant, for each seed, a pair of elements that share all
+    /// three slots. Do not build from untrusted elements with a hasher an adversary can invert.
     /// </exception>
     public BinaryFuseFilter(IEnumerable<T> source)
     {
@@ -230,11 +232,9 @@ public class BinaryFuseFilter<T, THasher> where THasher : struct, IHashProvider<
 
     // ── construction ─────────────────────────────────────────────────────────────────────
 
-    // Wraps the retry driver in its non-convergence guard. Unreachable through the public API: the seed chain
-    // is independent of the element set, duplicate hashes are collapsed before peeling, and at the paper's
-    // sizing a fresh seed peels with high probability, so no input stalls every attempt.
-    [ExcludeFromCodeCoverage(Justification = "Unreachable: no element set can stall the peel across every " +
-        "MaxConstructionAttempts seed, because the seed schedule is independent of the keys.")]
+    // Wraps the retry driver in its non-convergence guard. An ordinary input stalls a seed only occasionally,
+    // but the seed schedule is fixed, so an input built to stall every seed in it (one pair of elements per seed
+    // whose hashes share all three slots) exhausts the budget and reaches the throw.
     private static void BuildOrThrow(ulong[] keys, int segmentCount, byte[] store, out ulong seed)
     {
         if (!TryBuild(keys, segmentCount, store, out seed))
@@ -243,10 +243,7 @@ public class BinaryFuseFilter<T, THasher> where THasher : struct, IHashProvider<
     }
 
     // Retry driver: allocates the peel scratch once, then re-runs the peel under a fresh seed until one
-    // succeeds. Excluded from coverage for the same reason as XorFilter's: exhausting the retries is not
-    // reachable, so the loop's exit branch is dead, and a loop-exit branch cannot be excluded without the
-    // loop. The stall path a caller can actually reach lives in TryPeel, which stays measured.
-    [ExcludeFromCodeCoverage(Justification = "Unreachable: the retries cannot be exhausted; see BuildOrThrow.")]
+    // succeeds or the budget runs out.
     private static bool TryBuild(ulong[] keys, int segmentCount, byte[] store, out ulong seed)
     {
         int capacity = store.Length;
