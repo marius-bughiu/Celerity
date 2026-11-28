@@ -189,6 +189,32 @@ public class SketchHashProvider64Tests
     }
 
     [Fact]
+    public void BinaryFuseFilter_UsesHash64_WhenTheHasherProvidesOne()
+    {
+        long[] elements = new long[N];
+        for (int i = 0; i < N; i++)
+            elements[i] = i;
+
+        // As for XorFilter: on the 32-bit path every element shares one key, so the filter would
+        // represent a single entry and report everything present.
+        var filter = new BinaryFuseFilter<long, DisagreeingHasher>(elements);
+        Assert.Equal(N, filter.Count);
+
+        foreach (long e in elements)
+            Assert.True(filter.Contains(e), $"false negative for {e}");
+
+        int falsePositives = 0;
+        for (long i = N; i < N * 2; i++)
+        {
+            if (filter.Contains(i))
+                falsePositives++;
+        }
+
+        Assert.True(falsePositives < N / 10,
+            $"{falsePositives} false positives out of {N} — the filter looks blind to the element value.");
+    }
+
+    [Fact]
     public void CountMinSketch_UsesHash64_WhenTheHasherProvidesOne()
     {
         var sketch = new CountMinSketch<long, DisagreeingHasher>(0.001, 0.01);
@@ -259,6 +285,7 @@ public class SketchHashProvider64Tests
             typeof(BloomFilter<,>),
             typeof(CuckooFilter<,>),
             typeof(XorFilter<,>),
+            typeof(BinaryFuseFilter<,>),
             typeof(MinimalPerfectHash<,>),
             typeof(CountMinSketch<,>),
             typeof(MinHashSketch<,>),
@@ -307,6 +334,11 @@ public class SketchHashProvider64Tests
         Assert.True(xor.Contains(null!));
         Assert.True(xor.Contains("a"));
         Assert.True(xor.Contains("c"));
+
+        var fuse = new BinaryFuseFilter<string, StringXxHash64Hasher>(["a", null!, "c"]);
+        Assert.True(fuse.Contains(null!));
+        Assert.True(fuse.Contains("a"));
+        Assert.True(fuse.Contains("c"));
 
         var mph = new MinimalPerfectHash<string, StringXxHash64Hasher>(["a", null!, "c"]);
         Assert.Equal(3, mph.Count);

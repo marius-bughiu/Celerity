@@ -4,9 +4,10 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Boundary behaviour of the two probabilistic filters that only shows up in states the ordinary
+/// Boundary behaviour of the probabilistic filters that only shows up in states the ordinary
 /// tests never reach: <see cref="CuckooFilter{T,THasher}"/>'s single-entry <em>victim cache</em>, and
-/// <see cref="XorFilter{T,THasher}"/>'s peel-and-reseed construction loop.
+/// <see cref="XorFilter{T,THasher}"/>'s and <see cref="BinaryFuseFilter{T,THasher}"/>'s peel-and-reseed
+/// construction loops.
 ///
 /// <para>
 /// <b>The victim cache.</b> When an insertion exhausts its eviction budget the cuckoo filter parks the
@@ -297,6 +298,119 @@ public class FilterEdgeCaseCoverageTests
         Assert.Equal(0d, filter.BitsPerElement);
         Assert.False(filter.Contains(0));
         Assert.False(filter.Contains(12345));
+    }
+
+    // ---------------------------------------------------------------
+    //  BinaryFuseFilter — construction
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BinaryFuseFilter_ShouldRetryWithAFreshSeed_WhenTheFirstPeelAttemptStalls()
+    {
+        // A two-element set gets the smallest store, one segment of four for the first slot plus the
+        // two after it. Under the first internal construction seed, 0 and 4 land on the same three
+        // slots, which leaves every slot they touch at degree two: nothing peels, the 2-core survives,
+        // and construction has to reseed. The pair is specific to that seed and store size, so a
+        // change to either retires the case.
+        var filter = new BinaryFuseFilter<int, Int32IdentityHasher>(new[] { 0, 4 });
+
+        Assert.Equal(2, filter.Count);
+        Assert.Equal(12, filter.SlotCount);
+        Assert.True(filter.Contains(0));
+        Assert.True(filter.Contains(4));
+    }
+
+    [Fact]
+    public void BinaryFuseFilter_ShouldSizeToTheMinimumStore_WhenSourceIsEmpty()
+    {
+        // An empty or one-element set gets the formula's smallest segment (four slots) and one
+        // segment for the first slot, plus the two the second and third slots need: twelve bytes.
+        var empty = new BinaryFuseFilter<int, Int32IdentityHasher>(Array.Empty<int>());
+        var single = new BinaryFuseFilter<int, Int32IdentityHasher>(new[] { 7 });
+
+        Assert.Equal(0, empty.Count);
+        Assert.Equal(12, empty.SlotCount);
+        Assert.Equal(0d, empty.BitsPerElement);
+        Assert.False(empty.Contains(0));
+        Assert.False(empty.Contains(12345));
+
+        Assert.Equal(12, single.SlotCount);
+        Assert.True(single.Contains(7));
+    }
+
+    [Fact]
+    public void BinaryFuseFilter_ShouldThrow_WhenEverySeedInTheBudgetIsStalledByAPlantedPair()
+    {
+        // The seed schedule is fixed, so a source can be built to stall all of it: for each of the 1,024
+        // seeds, plant a pair of keys whose mixed hashes differ only in bit 12. At 2,048 keys the segment is
+        // 256 slots, so the second and third slots read bits 18–25 and 0–7, and the first slot is the high
+        // half of hash · 2,304 (nine segments of 256), which a difference of 4,096 cannot move. The pair shares all three slots
+        // under its own seed, no slot it touches can fall to degree one, and that seed's peel fails.
+        //
+        // The identity Hash64 makes each element's key the value itself, so a key is chosen by inverting
+        // the filter's mix: key = Unmix(hash) - seed. This pins the seed schedule and the mix, so a change to
+        // either retires the case.
+        const int Attempts = 1024;
+        var rng = new Random(675);
+        var keys = new List<long>(2 * Attempts);
+        ulong seed = 0x726b2b9d438b9d4dUL;
+        for (int attempt = 0; attempt < Attempts; attempt++)
+        {
+            ulong hash = (ulong)rng.NextInt64() & ~(1UL << 12);
+            keys.Add((long)(Unmix(hash) - seed));
+            keys.Add((long)(Unmix(hash | (1UL << 12)) - seed));
+            seed = Mix(seed + 0x9E3779B97F4A7C15UL);
+        }
+
+        Assert.Equal(2 * Attempts, keys.Distinct().Count());
+        var error = Assert.Throws<InvalidOperationException>(
+            () => new BinaryFuseFilter<long, IdentityHash64Hasher>(keys));
+        Assert.Contains("failed to converge", error.Message);
+
+        // Drop one pair and the seed it was planted for peels, so the same source minus two keys builds.
+        var filter = new BinaryFuseFilter<long, IdentityHash64Hasher>(keys.Skip(2));
+        Assert.Equal(2 * Attempts - 2, filter.Count);
+        foreach (long key in keys.Skip(2))
+            Assert.True(filter.Contains(key));
+    }
+
+    // A 64-bit hasher whose key is the element itself, so a test can choose an element's hash exactly.
+    private struct IdentityHash64Hasher : IHashProvider<long>, IHashProvider64<long>
+    {
+        public int Hash(long key) => (int)key;
+
+        public ulong Hash64(long key) => (ulong)key;
+    }
+
+    // The filter's mix (Murmur3 fmix64) and its inverse. x ^= x >> 33 is its own inverse, and each multiply
+    // is undone by the constant's inverse modulo 2^64.
+    private static ulong Mix(ulong x)
+    {
+        x ^= x >> 33;
+        x *= 0xFF51AFD7ED558CCDUL;
+        x ^= x >> 33;
+        x *= 0xC4CEB9FE1A85EC53UL;
+        x ^= x >> 33;
+        return x;
+    }
+
+    private static ulong Unmix(ulong x)
+    {
+        x ^= x >> 33;
+        x *= InverseModulo64(0xC4CEB9FE1A85EC53UL);
+        x ^= x >> 33;
+        x *= InverseModulo64(0xFF51AFD7ED558CCDUL);
+        x ^= x >> 33;
+        return x;
+    }
+
+    // Newton's iteration for the inverse of an odd number modulo 2^64; each step doubles the correct bits.
+    private static ulong InverseModulo64(ulong a)
+    {
+        ulong inverse = a;
+        for (int i = 0; i < 5; i++)
+            inverse *= 2 - a * inverse;
+        return inverse;
     }
 
     // ---------------------------------------------------------------

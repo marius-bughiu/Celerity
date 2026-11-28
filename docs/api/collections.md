@@ -3968,7 +3968,9 @@ Reach for `XorFilter` when the element set is **known up front and does not chan
 allow/deny lists, a precomputed "have I seen this key?" gate in front of an expensive exact
 lookup, read-only shard membership. If the set grows over the filter's lifetime use
 `BloomFilter`; if it also shrinks use `CuckooFilter`; if you need exact membership or to
-enumerate the elements use `FrozenCeleritySet` / `CeleritySet`.
+enumerate the elements use `FrozenCeleritySet` / `CeleritySet`. For a fixed set above about
+twenty thousand elements, [`BinaryFuseFilter`](#binaryfusefiltert-thasher) is the same filter
+in less memory (≈ 9.0 bits per element at a million).
 
 ### Sizing and the false-positive rate
 
@@ -4033,6 +4035,131 @@ bool MightBeIssued(string apiKey)
     if (!known.Contains(apiKey))
         return false;
     return Database.ApiKeyExists(apiKey);
+}
+```
+
+---
+
+## BinaryFuseFilter&lt;T, THasher&gt;
+
+A **build-once, immutable** **probabilistic** set membership filter, and the successor to
+[`XorFilter<T, THasher>`](#xorfiltert-thasher): the same 8-bit fingerprint, the same
+**no false negatives** and fixed ~0.39% false-positive rate, the same three-read lookup — but
+**smaller for large sets and faster to query**. Like `XorFilter` there is **no `Add`, `Remove`,
+or `Clear`**: the element set is supplied once and the filter is then read-only.
+
+```csharp
+public class BinaryFuseFilter<T, THasher>
+    where THasher : struct, IHashProvider<T>
+```
+
+### How it works
+
+The structure is the **binary fuse filter** of Graf &amp; Lemire (*"Binary Fuse Filters: Fast and
+Smaller Than Xor Filters"*, ACM JEA 2022). The query is an xor filter's —
+
+```
+fingerprint(x) == store[h0] XOR store[h1] XOR store[h2]
+```
+
+— and construction is the same peel. What changes is where the three slots are. An xor filter
+cuts its store into three thirds and puts one slot of every element in each. A binary fuse filter
+cuts it into **many segments of a power-of-two length** and puts an element's three slots in
+**three consecutive segments**: `h0` anywhere in the first `segmentCount` segments, `h1` and
+`h2` one and two segments further on. Two things follow.
+
+- **Fewer spare slots.** The locality makes the peel converge with less headroom, so the store
+  tends to `1.125 · n` bytes for a large set, against an xor filter's `1.23 · n`.
+- **Faster lookups.** On an Apple M4 a `Contains` was about **1.34x faster** than `XorFilter`'s
+  at both 1,000 and 100,000 elements, for hits and misses alike, and about 3x faster than a
+  `HashSet<int>` at 100,000 (at 1,000 it ties the hash set on hits and is 1.19x slower on misses).
+- **About the same build cost.** Construction counting-sorts the hashed keys by segment before
+  peeling, but at these sizes that bought no speed: the build was 1.25x slower than
+  `XorFilter`'s at 1,000 elements and 1.06x slower at 100,000, both dominated by deduplicating
+  the source and by the peel itself. Either filter builds several times slower than a
+  `HashSet<int>`; they are for sets that are built rarely and read often.
+
+### Choosing between it and `XorFilter`
+
+**The saving is a large-set effect.** The slot factor the peel needs rises as the set shrinks —
+`max(1.125, 0.875 + 0.25 · ln(10⁶) / ln n)`, the paper's sizing rule — so the two filters are
+about the same size at twenty thousand elements, and below that the fuse filter is the larger
+one:
+
+| Elements | `XorFilter` bits/element | `BinaryFuseFilter` bits/element |
+|---:|---:|---:|
+| 1,000 | 10.08 | 11.26 |
+| 10,000 | 9.86 | 10.24 |
+| 20,000 | 9.85 | 9.83 |
+| 100,000 | 9.84 | 9.50 |
+| 1,000,000 | 9.84 | 9.04 |
+
+Use `XorFilter` below about twenty thousand elements and `BinaryFuseFilter` above it.
+`BitsPerElement` reports what a built filter actually costs.
+
+> **Hash entropy.** As for `XorFilter`: the 64-bit key is the hasher's own `Hash64` when it
+> implements [`IHashProvider64<T>`](hashing.md#ihashprovider64t), and otherwise the 32-bit code
+> widened with `fmix64`, which leaves the reachable space at 2<sup>32</sup>. An absent element
+> whose 32-bit code matches a stored one always tests present, which adds about `n / 2^32` to the
+> 0.39% fingerprint rate: 0.02% at a million elements, 0.23% at ten million (≈ 0.62% in all). From
+> about a million elements, use a 64-bit hasher such as `StringXxHash3Hasher` or `Int64WangHasher`.
+
+### Constructor
+
+```csharp
+public BinaryFuseFilter(IEnumerable<T> source)
+```
+
+Builds a filter holding exactly the elements of `source`. The constructor **deduplicates
+internally** on the 64-bit element hash, so `Count` is the number of *distinct* element hashes
+and the store is sized for that count, not for the source length.
+
+**Throws:**
+
+- `ArgumentNullException` if `source` is `null`.
+- `InvalidOperationException` if the peel fails under every seed in its retry budget. An
+  ordinary input fails a seed only occasionally, so this takes a source built to do it: the seed
+  schedule is fixed, and a caller who controls the element hashes can plant one fully colliding
+  pair per seed. That needs no inversion: the hashers are unkeyed, so a pair can be found by
+  brute force. Treat a source an adversary controls as able to raise this exception.
+
+### Methods and properties
+
+- `bool Contains(T item)` — `false` ⇒ definitely absent (no false negatives); `true` ⇒
+  probably present, subject to the ~0.4% false-positive rate.
+- `int Count { get; }` — the number of distinct element hashes represented.
+- `int SlotCount { get; }` — the number of 8-bit fingerprint slots, which is also the filter's
+  size in bytes: whole segments, `segmentCount + 2` of them.
+- `const int FingerprintBits` — fixed at 8.
+- `double FalsePositiveRate { get; }` — the fixed theoretical rate, `1 / 2⁸ ≈ 0.0039`.
+- `double BitsPerElement { get; }` — `SlotCount · 8 / Count`: ≈ 9.0 at a million elements,
+  more for smaller sets (see the table above); `0` for an empty filter.
+
+### Default-element handling
+
+As for `XorFilter`: the filter stores fingerprints, not keys, so `default(T)` (a zero `int`,
+`Guid.Empty`, the empty string) is an ordinary element, and a `null` reference is mapped to a
+fixed base hash so the hasher is never called with `null`.
+
+### Usage example
+
+```csharp
+using Celerity.Collections;
+using Celerity.Hashing;
+
+// Ten million known-bad URLs, rebuilt nightly and read-only in between. At this size the
+// filter costs ~9.0 bits per URL — about 11 MB — where an XorFilter would take ~12 MB.
+string[] blockList = LoadBlockList();
+var blocked = new BinaryFuseFilter<string, StringXxHash3Hasher>(blockList);
+
+bool ShouldBlock(string url)
+{
+    // A false lets the request through immediately (no false negatives). About 0.4% of
+    // *absent* URLs also pass the filter, so a true is confirmed against the authoritative
+    // list, which makes the final answer exact. When most requests are absent, most of the
+    // filter's trues are those false positives: the filter's job is to skip the store for
+    // the rest.
+    return blocked.Contains(url) && BlockListStore.Contains(url);
 }
 ```
 

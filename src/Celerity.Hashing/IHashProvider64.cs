@@ -11,7 +11,7 @@ namespace Celerity.Hashing;
 /// table masks the code down to a bucket index and resolves the rest by comparing keys, so
 /// a collision costs a probe, not a wrong answer. The probabilistic sketches
 /// (<c>HyperLogLog</c>, <c>SlidingHyperLogLog</c>, <c>MinHashSketch</c>, <c>BloomFilter</c>,
-/// <c>CuckooFilter</c>, <c>XorFilter</c>, <c>CountMinSketch</c>) are different: they never store the element, so two elements that
+/// <c>CuckooFilter</c>, <c>XorFilter</c>, <c>BinaryFuseFilter</c>, <c>CountMinSketch</c>) are different: they never store the element, so two elements that
 /// hash alike are <em>indistinguishable forever</em>. Their error budgets are derived
 /// assuming the hash space is large enough that such collisions are negligible.
 /// </para>

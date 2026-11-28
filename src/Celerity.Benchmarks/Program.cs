@@ -48,6 +48,7 @@ internal class Program
         typeof(BloomFilterBenchmark),
         typeof(CuckooFilterBenchmark),
         typeof(XorFilterBenchmark),
+        typeof(BinaryFuseFilterBenchmark),
         typeof(MinimalPerfectHashBenchmark),
         typeof(BitSetBenchmark),
         typeof(RankSelectBitVectorBenchmark),

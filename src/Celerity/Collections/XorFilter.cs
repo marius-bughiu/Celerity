@@ -56,7 +56,8 @@ namespace Celerity.Collections;
 /// lookup, read-only shard membership. If the set grows over the filter's lifetime use
 /// <see cref="BloomFilter{T,THasher}"/>; if it also shrinks use <see cref="CuckooFilter{T,THasher}"/>; if you
 /// need exact membership or to enumerate the elements use <see cref="FrozenCeleritySet"/> /
-/// <see cref="CeleritySet{T,THasher}"/>.
+/// <see cref="CeleritySet{T,THasher}"/>. Above about twenty thousand elements,
+/// <see cref="BinaryFuseFilter{T,THasher}"/> is the same kind of filter in less memory.
 /// </para>
 /// </remarks>
 /// <typeparam name="T">The type of elements tested for membership.</typeparam>
