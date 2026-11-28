@@ -157,7 +157,9 @@ public class BinaryFuseFilter<T, THasher> where THasher : struct, IHashProvider<
 
     /// <summary>
     /// Gets the theoretical false-positive probability of the filter: <c>1 / 2^FingerprintBits ≈ 0.39%</c>.
-    /// Independent of the element count, since the filter is sized exactly for its element set at build time.
+    /// With a well-mixing 64-bit hasher it does not depend on the element count, since the filter is sized
+    /// exactly for its element set at build time. A 32-bit-only hasher adds roughly <c>Count / 2^32</c> to the
+    /// realized rate, and a degenerate one more; this property reports the fingerprint rate alone.
     /// </summary>
     public double FalsePositiveRate => 1.0 / (1 << FingerprintBits);
 
