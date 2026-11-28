@@ -4,9 +4,10 @@ using Celerity.Hashing;
 namespace Celerity.Tests.Collections;
 
 /// <summary>
-/// Boundary behaviour of the two probabilistic filters that only shows up in states the ordinary
+/// Boundary behaviour of the probabilistic filters that only shows up in states the ordinary
 /// tests never reach: <see cref="CuckooFilter{T,THasher}"/>'s single-entry <em>victim cache</em>, and
-/// <see cref="XorFilter{T,THasher}"/>'s peel-and-reseed construction loop.
+/// <see cref="XorFilter{T,THasher}"/>'s and <see cref="BinaryFuseFilter{T,THasher}"/>'s peel-and-reseed
+/// construction loops.
 ///
 /// <para>
 /// <b>The victim cache.</b> When an insertion exhausts its eviction budget the cuckoo filter parks the
@@ -297,6 +298,44 @@ public class FilterEdgeCaseCoverageTests
         Assert.Equal(0d, filter.BitsPerElement);
         Assert.False(filter.Contains(0));
         Assert.False(filter.Contains(12345));
+    }
+
+    // ---------------------------------------------------------------
+    //  BinaryFuseFilter — construction
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void BinaryFuseFilter_ShouldRetryWithAFreshSeed_WhenTheFirstPeelAttemptStalls()
+    {
+        // A two-element set gets the smallest store, one segment of four for the first slot plus the
+        // two after it. Under the first internal construction seed, 0 and 4 land on the same three
+        // slots, which leaves every slot they touch at degree two: nothing peels, the 2-core survives,
+        // and construction has to reseed. The pair is specific to that seed and store size, so a
+        // change to either retires the case.
+        var filter = new BinaryFuseFilter<int, Int32IdentityHasher>(new[] { 0, 4 });
+
+        Assert.Equal(2, filter.Count);
+        Assert.Equal(12, filter.SlotCount);
+        Assert.True(filter.Contains(0));
+        Assert.True(filter.Contains(4));
+    }
+
+    [Fact]
+    public void BinaryFuseFilter_ShouldSizeToTheMinimumStore_WhenSourceIsEmpty()
+    {
+        // An empty or one-element set gets the formula's smallest segment (four slots) and one
+        // segment for the first slot, plus the two the second and third slots need: twelve bytes.
+        var empty = new BinaryFuseFilter<int, Int32IdentityHasher>(Array.Empty<int>());
+        var single = new BinaryFuseFilter<int, Int32IdentityHasher>(new[] { 7 });
+
+        Assert.Equal(0, empty.Count);
+        Assert.Equal(12, empty.SlotCount);
+        Assert.Equal(0d, empty.BitsPerElement);
+        Assert.False(empty.Contains(0));
+        Assert.False(empty.Contains(12345));
+
+        Assert.Equal(12, single.SlotCount);
+        Assert.True(single.Contains(7));
     }
 
     // ---------------------------------------------------------------

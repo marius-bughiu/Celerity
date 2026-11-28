@@ -489,6 +489,7 @@ function escapeHtml(s) {
     { key: 'BloomFilter',         title: 'BloomFilter<int, ...>',                    vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing'] },
     { key: 'CuckooFilter',        title: 'CuckooFilter<int, ...>',                   vs: 'HashSet<int>',          ops: ['Add', 'Contains', 'ContainsMissing', 'Remove'] },
     { key: 'XorFilter',           title: 'XorFilter<int, ...>',                      vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },
+    { key: 'BinaryFuseFilter',    title: 'BinaryFuseFilter<int, ...>',               vs: 'HashSet<int>',          ops: ['Build', 'Contains', 'ContainsMissing'] },
     // MinimalPerfectHash maps the same string key set onto [0, n) as a FrozenDictionary<string, int> does, but
     // stores no keys; its win is retained memory, which no timing card can show. VerifiedLookup adds the stored-key
     // comparison a caller needs when non-members can be asked about.

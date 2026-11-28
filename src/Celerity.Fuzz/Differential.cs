@@ -69,6 +69,7 @@ internal static class Differential
         ("BloomFilter", BloomFilterCase),
         ("CuckooFilter", CuckooFilterCase),
         ("XorFilter", XorFilterCase),
+        ("BinaryFuseFilter", BinaryFuseFilterCase),
         ("MinimalPerfectHash", MinimalPerfectHashCase),
         ("BitSet", BitSetCase),
         ("BitPackedArray", BitPackedArrayCase),
@@ -112,6 +113,7 @@ internal static class Differential
         ("BloomFilterHash64", BloomFilterHash64Case),
         ("CuckooFilterHash64", CuckooFilterHash64Case),
         ("XorFilterHash64", XorFilterHash64Case),
+        ("BinaryFuseFilterHash64", BinaryFuseFilterHash64Case),
         ("HyperLogLogHash64", HyperLogLogHash64Case),
         ("CountMinSketchHash64", CountMinSketchHash64Case),
         ("PersistentVector", PersistentVectorCase),
@@ -2383,6 +2385,43 @@ internal static class Differential
         if (oracle.Count == 0)
             for (int k = MinKey; k <= MaxKey; k++)
                 Check(!sut.Contains(k), $"empty xor filter reported {k} present");
+    }
+
+    // ---- binary fuse filter (probabilistic, build-once, one-directional) ----
+
+    // The same one-directional check as the xor filter. The fuse store's shape steps with the set size (the
+    // segment length doubles roughly every 3.3x, and the slot factor shrinks toward 1.125), so half the
+    // trials draw a set up to 5,000 wide from a domain a few times that, reaching sizes the tiny shared key
+    // domain cannot; the other half use the shared domain, where duplicates are dense.
+    private static void BinaryFuseFilterCase(Random rng)
+    {
+        var oracle = new HashSet<int>();
+        if (rng.Next(0, 2) == 0)
+        {
+            int size = OpCount(rng);
+            for (int i = 0; i < size; i++)
+                oracle.Add(Key(rng));
+        }
+        else
+        {
+            int size = rng.Next(0, 5_000);
+            int domain = Math.Max(1, size * rng.Next(1, 4));
+            for (int i = 0; i < size; i++)
+                oracle.Add(rng.Next(-domain, domain));
+        }
+
+        var sut = new BinaryFuseFilter<int, Int32WangNaiveHasher>(oracle);
+
+        // The weak naive hasher can fold two distinct ints onto one key, so Count is a lower bound.
+        Check(sut.Count <= oracle.Count, $"distinct count {sut.Count} exceeds oracle {oracle.Count}");
+        Check(sut.SlotCount >= sut.Count, $"slot count {sut.SlotCount} below count {sut.Count}");
+
+        foreach (int k in oracle)
+            Check(sut.Contains(k), $"false negative for {k}");
+
+        if (oracle.Count == 0)
+            for (int k = MinKey; k <= MaxKey; k++)
+                Check(!sut.Contains(k), $"empty binary fuse filter reported {k} present");
     }
 
     // ---- minimal perfect hash (build-once, exact on members) ----------------
@@ -6542,6 +6581,26 @@ internal static class Differential
         if (oracle.Count == 0)
             for (long k = MinKey64; k <= MaxKey64; k++)
                 Check(!sut.Contains(k), $"empty xor filter reported {k} present");
+    }
+
+    private static void BinaryFuseFilterHash64Case(Random rng)
+    {
+        var oracle = new HashSet<long>();
+        int size = OpCount(rng);
+        for (int i = 0; i < size; i++)
+            oracle.Add(Key64(rng));
+
+        var sut = new BinaryFuseFilter<long, Int64WangHasher>(oracle);
+
+        // A bijective 64-bit hasher: no two distinct longs share a key, so the count is exact.
+        Check(sut.Count == oracle.Count, $"distinct count {sut.Count} != oracle {oracle.Count}");
+
+        foreach (long k in oracle)
+            Check(sut.Contains(k), $"false negative for {k}");
+
+        if (oracle.Count == 0)
+            for (long k = MinKey64; k <= MaxKey64; k++)
+                Check(!sut.Contains(k), $"empty binary fuse filter reported {k} present");
     }
 
     private static void HyperLogLogHash64Case(Random rng)

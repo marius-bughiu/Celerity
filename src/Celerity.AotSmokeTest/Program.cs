@@ -2945,6 +2945,35 @@ void Check(bool condition, string message)
     Check(guidXor.Contains(Guid.Empty), "XorFilter<Guid> empty-guid element");
 }
 
+// BinaryFuseFilter — XorFilter's build-once successor: the same 8-bit fingerprint and three-read query,
+// over consecutive power-of-two segments. Exercise the segment-sorted peel across int / Guid / string
+// instantiations, the null element that must never reach the string hasher, and the empty short-circuit.
+{
+    var filter = new BinaryFuseFilter<int, Int32WangNaiveHasher>(new[] { 42, 0, 7, 100, -3 });
+    Check(filter.Contains(42) && filter.Contains(0) && filter.Contains(-3), "BinaryFuseFilter build/contains");
+    Check(filter.Count == 5 && filter.SlotCount >= filter.Count, "BinaryFuseFilter count and slot count");
+    Check(BinaryFuseFilter<int, Int32WangNaiveHasher>.FingerprintBits == 8, "BinaryFuseFilter fingerprint width");
+
+    var big = new BinaryFuseFilter<int, Int32WangNaiveHasher>(Enumerable.Range(1, 50_000).Select(i => i * 3).ToArray());
+    bool noFalseNegatives = true;
+    for (int i = 1; i <= 50_000; i++) noFalseNegatives &= big.Contains(i * 3);
+    Check(noFalseNegatives, "BinaryFuseFilter no false negatives");
+    Check(big.BitsPerElement > 9d && big.BitsPerElement < 10d, "BinaryFuseFilter bits/element");
+
+    var empty = new BinaryFuseFilter<int, Int32WangNaiveHasher>(Array.Empty<int>());
+    Check(empty.Count == 0 && !empty.Contains(1), "BinaryFuseFilter empty reports absent");
+
+    var strFuse = new BinaryFuseFilter<string, StringFnV1AHasher>(new[] { "alice", "bob", null! });
+    Check(strFuse.Contains("alice") && strFuse.Contains("bob") && strFuse.Contains(null!),
+        "BinaryFuseFilter<string> ctor + null element");
+
+    var guidFuse = new BinaryFuseFilter<Guid, GuidHasher>(new[] { Guid.Empty, Guid.NewGuid() });
+    Check(guidFuse.Contains(Guid.Empty), "BinaryFuseFilter<Guid> empty-guid element");
+
+    var fuse64 = new BinaryFuseFilter<long, Int64WangHasher>(new long[] { 1, 2, 3 });
+    Check(fuse64.Contains(1) && fuse64.Contains(2) && fuse64.Contains(3), "BinaryFuseFilter with a 64-bit hasher");
+}
+
 // MinimalPerfectHash — build-once key -> [0, n) bijection that stores no keys. Exercise the 32-bit and
 // 64-bit hasher paths, the sort-based duplicate fold, the exact table for keys sharing a full hash, the
 // null key that must never reach the string hasher, and the rank lookup across several levels.
